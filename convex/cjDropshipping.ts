@@ -1110,9 +1110,14 @@ export const diagnosePendingProducts = internalAction({
         }
 
         const pendingProducts = await ctx.runQuery(internal.cjHelpers.getProductsPendingSourcing, {});
+        const approvedMissingVariants = await ctx.runQuery(internal.cjHelpers.getApprovedProductsMissingCjVariants, {});
+        const productsToDiagnose = [...pendingProducts, ...approvedMissingVariants]
+            .filter((product, index, products) =>
+                products.findIndex((candidate) => candidate._id === product._id) === index
+            );
 
-        if (pendingProducts.length === 0) {
-            return { results: [], summary: "No pending products to diagnose." };
+        if (productsToDiagnose.length === 0) {
+            return { results: [], summary: "No pending products or approved products missing CJ variants to diagnose." };
         }
 
         const results: Array<{
@@ -1131,7 +1136,7 @@ export const diagnosePendingProducts = internalAction({
 
         let autoApprovedCount = 0;
 
-        for (const product of pendingProducts) {
+        for (const product of productsToDiagnose) {
             const diag: typeof results[0] = {
                 productId: product._id,
                 productName: product.name,
@@ -1230,6 +1235,31 @@ export const diagnosePendingProducts = internalAction({
                             diag.cjProductIdFromCatalog = catData.data.pid || pidToCheck;
                             const variants = catData.data.variants || [];
                             diag.variantCount = variants.length;
+                            for (const variant of variants) {
+                                const vid = variant?.vid != null ? String(variant.vid).trim() : "";
+                                if (!vid) continue;
+
+                                const variantName =
+                                    (typeof variant.variantName === "string" && variant.variantName.trim()) ||
+                                    (typeof variant.variantKey === "string" && variant.variantKey.trim()) ||
+                                    (typeof variant.variantValue === "string" && variant.variantValue.trim()) ||
+                                    `Variant ${vid}`;
+                                const rawPrice = variant.variantSellPrice ?? variant.sellPrice ?? variant.price;
+                                const price = rawPrice != null && Number.isFinite(Number(rawPrice))
+                                    ? Number(rawPrice)
+                                    : undefined;
+
+                                await ctx.runMutation(internal.cjHelpers.appendCjVariant, {
+                                    productId: product._id,
+                                    cjVariant: {
+                                        vid,
+                                        sku: typeof variant.variantSku === "string" ? variant.variantSku : "",
+                                        name: variantName,
+                                        price,
+                                        image: typeof variant.variantImage === "string" ? variant.variantImage : undefined,
+                                    },
+                                });
+                            }
 
                             // ─── Auto-approve: product IS in CJ's catalog ───
                             const sourcingSku = typeof sourcing.cjVariantSku === "string" && sourcing.cjVariantSku.trim()

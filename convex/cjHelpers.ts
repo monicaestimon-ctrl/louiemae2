@@ -491,6 +491,26 @@ export const getProductsPendingSourcing = internalQuery({
 });
 
 /**
+ * Get approved products that have customer variants but are missing the CJ
+ * catalog variants needed by the admin variant mapping UI.
+ */
+export const getApprovedProductsMissingCjVariants = internalQuery({
+    args: {},
+    handler: async (ctx) => {
+        const products = await ctx.db
+            .query("products")
+            .withIndex("by_cj_sourcing_status", (q) => q.eq("cjSourcingStatus", "approved"))
+            .collect();
+
+        return products.filter((product) =>
+            !!product.cjProductId &&
+            (product.variants?.length ?? 0) > 0 &&
+            (product.cjVariants?.length ?? 0) === 0
+        );
+    },
+});
+
+/**
  * Get rejected products that have a cjSourcingId for re-checking.
  * CJ's ticket lifecycle can cause premature rejections — the cron job
  * re-checks these to auto-correct products that were actually sourced.
