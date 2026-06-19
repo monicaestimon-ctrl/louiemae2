@@ -21,6 +21,11 @@ const RECHECK_WINDOW_DAYS = 14;
 // Timeout for CJ API verification requests (Comments #5, #6)
 const CJ_FETCH_TIMEOUT_MS = 10_000;
 
+// Stale pending detection: auto-resubmit products stuck in pending > this threshold
+const STALE_PENDING_HOURS = 48;
+// Cap how many stale products get auto-resubmitted per cron cycle
+const MAX_AUTO_RESUBMIT_PER_CYCLE = 3;
+
 // Token expiration buffer (refresh tokens 1 day before they expire)
 const ACCESS_TOKEN_BUFFER_MS = 24 * 60 * 60 * 1000; // 1 day
 const REFRESH_TOKEN_BUFFER_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -614,11 +619,11 @@ export const submitForSourcing = internalAction({
  */
 export const checkSourcingStatus = internalAction({
     args: {},
-    handler: async (ctx): Promise<{ checked: number; approved: number; rejected: number; submitted: number }> => {
+    handler: async (ctx): Promise<{ checked: number; approved: number; rejected: number; submitted: number; stalePendingResubmitted: number }> => {
         const token = await ctx.runAction(internal.cjDropshipping.getAccessToken, {});
         if (!token) {
             console.error("CJ: Cannot check sourcing status - auth failed");
-            return { checked: 0, approved: 0, rejected: 0, submitted: 0 };
+            return { checked: 0, approved: 0, rejected: 0, submitted: 0, stalePendingResubmitted: 0 };
         }
 
         // Get products pending sourcing approval
@@ -664,6 +669,7 @@ export const checkSourcingStatus = internalAction({
         let approved = 0;
         let rejected = 0;
         let submitted = 0;
+        let stalePendingResubmitted = 0;
 
         // Combine pending (for submission + check) and rejected (for re-check only)
         // Rejected products already have cjSourcingId so they skip the submission step
@@ -1020,8 +1026,33 @@ export const checkSourcingStatus = internalAction({
                                 // Leave the product in its current state and let the next cron pass retry.
                                 console.log(`CJ Sourcing verification incomplete for ${product.name} — skipping rejection, will retry next cycle`);
                             }
+                        } else {
+                            // Still pending (status 1 or 2) — check if stale
+                            const submittedAt = product.cjSubmittedAt;
+                            if (submittedAt) {
+                                const hoursSinceSubmission = (Date.now() - new Date(submittedAt).getTime()) / (1000 * 60 * 60);
+                                if (hoursSinceSubmission > STALE_PENDING_HOURS && stalePendingResubmitted < MAX_AUTO_RESUBMIT_PER_CYCLE) {
+                                    // Product has been stuck in CJ's pending queue too long.
+                                    // Auto-clear sourcing status so it gets resubmitted on the
+                                    // next cron cycle with a fresh sourcing request + new webhook.
+                                    console.warn(
+                                        `CJ Sourcing STALE AUTO-RESUBMIT: ${product.name} stuck pending for ` +
+                                        `${Math.round(hoursSinceSubmission)}h (threshold: ${STALE_PENDING_HOURS}h). ` +
+                                        `Clearing cjSourcingId to trigger fresh submission next cycle.`
+                                    );
+                                    await ctx.runMutation(internal.cjHelpers.clearSourcingStatus, {
+                                        productId: product._id,
+                                    });
+                                    stalePendingResubmitted++;
+                                } else if (hoursSinceSubmission > STALE_PENDING_HOURS) {
+                                    // Hit the per-cycle cap — log but don't resubmit
+                                    console.warn(
+                                        `CJ Sourcing STALE (capped): ${product.name} stuck pending for ` +
+                                        `${Math.round(hoursSinceSubmission)}h but auto-resubmit cap reached (${MAX_AUTO_RESUBMIT_PER_CYCLE}/cycle)`
+                                    );
+                                }
+                            }
                         }
-                        // If still pending (status 1 or 2), leave it as is
                     }
                 }
 
@@ -1040,8 +1071,221 @@ export const checkSourcingStatus = internalAction({
             await new Promise(resolve => setTimeout(resolve, 300));
         }
 
-        console.log(`CJ Sourcing check: ${deduped.length} products (${pendingProducts.length} pending + ${rejectedProducts.length} rejected), ${submitted} submitted, ${approved} approved, ${rejected} rejected`);
-        return { checked: deduped.length, approved, rejected, submitted };
+        console.log(`CJ Sourcing check: ${deduped.length} products (${pendingProducts.length} pending + ${rejectedProducts.length} rejected), ${submitted} submitted, ${approved} approved, ${rejected} rejected, ${stalePendingResubmitted} stale-resubmitted`);
+        return { checked: deduped.length, approved, rejected, submitted, stalePendingResubmitted };
+    },
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SOURCING DIAGNOSTICS — Deep verification for stuck pending products
+// Queries CJ's sourcing ticket AND catalog to verify actual product status.
+// Auto-approves products confirmed in CJ's catalog. Returns detailed
+// per-product diagnostics to the admin UI.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const diagnosePendingProducts = internalAction({
+    args: {},
+    handler: async (ctx): Promise<{
+        results: Array<{
+            productId: string;
+            productName: string;
+            cjSourcingId: string | null;
+            sourcingTicketStatus: string;
+            sourcingTicketStatusCode: string | number | null;
+            cjProductIdFromTicket: string | null;
+            cjProductIdFromCatalog: string | null;
+            productFoundInCatalog: boolean;
+            variantCount: number;
+            autoApproved: boolean;
+            diagnosis: string;
+        }>;
+        summary: string;
+    }> => {
+        const token = await ctx.runAction(internal.cjDropshipping.getAccessToken, {});
+        if (!token) {
+            return {
+                results: [],
+                summary: "❌ CJ API authentication failed — cannot diagnose. Check your CJ_API_KEY.",
+            };
+        }
+
+        const pendingProducts = await ctx.runQuery(internal.cjHelpers.getProductsPendingSourcing, {});
+
+        if (pendingProducts.length === 0) {
+            return { results: [], summary: "No pending products to diagnose." };
+        }
+
+        const results: Array<{
+            productId: string;
+            productName: string;
+            cjSourcingId: string | null;
+            sourcingTicketStatus: string;
+            sourcingTicketStatusCode: string | number | null;
+            cjProductIdFromTicket: string | null;
+            cjProductIdFromCatalog: string | null;
+            productFoundInCatalog: boolean;
+            variantCount: number;
+            autoApproved: boolean;
+            diagnosis: string;
+        }> = [];
+
+        let autoApprovedCount = 0;
+
+        for (const product of pendingProducts) {
+            const diag: typeof results[0] = {
+                productId: product._id,
+                productName: product.name,
+                cjSourcingId: product.cjSourcingId || null,
+                sourcingTicketStatus: "unknown",
+                sourcingTicketStatusCode: null,
+                cjProductIdFromTicket: null,
+                cjProductIdFromCatalog: null,
+                productFoundInCatalog: false,
+                variantCount: 0,
+                autoApproved: false,
+                diagnosis: "",
+            };
+
+            // ─── Step 1: Check sourcing ticket ───
+            if (!product.cjSourcingId) {
+                diag.diagnosis = "No cjSourcingId stored — product was never successfully submitted to CJ, or submission is still in progress. Try clicking 'Resubmit'.";
+                results.push(diag);
+                continue;
+            }
+
+            try {
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), CJ_FETCH_TIMEOUT_MS);
+                let response: Response;
+                try {
+                    response = await fetch(`${CJ_API_BASE}/product/sourcing/query`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "CJ-Access-Token": token,
+                        },
+                        body: JSON.stringify({ sourceIds: [product.cjSourcingId] }),
+                        signal: controller.signal,
+                    });
+                } finally {
+                    clearTimeout(timeout);
+                }
+
+                const data = await response.json();
+                console.log(`DIAGNOSE ${product.name}:`, JSON.stringify(data, null, 2));
+
+                if (!data.result) {
+                    diag.diagnosis = `CJ API error: ${data.message || "Unknown error"}. The API may be temporarily unavailable.`;
+                    results.push(diag);
+                    continue;
+                }
+
+                const sourcing = Array.isArray(data.data) ? data.data[0] : data.data;
+
+                if (!sourcing) {
+                    diag.diagnosis = "CJ returned empty data for this sourcing ID — the ticket may have been deleted or expired. Try 'Resubmit'.";
+                    results.push(diag);
+                    continue;
+                }
+
+                // Map status codes to human-readable names
+                const statusMap: Record<string, string> = {
+                    "1": "Pending", "2": "Processing", "3": "Success",
+                    "4": "Failed/Closed", "5": "Search Failed", "9": "Sourcing Succeeded",
+                };
+                const statusCode = String(sourcing.sourceStatus);
+                diag.sourcingTicketStatusCode = sourcing.sourceStatus;
+                diag.sourcingTicketStatus = statusMap[statusCode] || `Unknown (${statusCode})`;
+                diag.cjProductIdFromTicket = sourcing.cjProductId || null;
+
+                // ─── Step 2: If sourcing ticket has a cjProductId, verify in catalog ───
+                const pidToCheck = sourcing.cjProductId || sourcing.productId;
+
+                if (pidToCheck) {
+                    try {
+                        const catController = new AbortController();
+                        const catTimeout = setTimeout(() => catController.abort(), CJ_FETCH_TIMEOUT_MS);
+                        let catResponse: Response;
+                        try {
+                            catResponse = await fetch(
+                                `${CJ_API_BASE}/product/query?pid=${encodeURIComponent(pidToCheck)}`,
+                                {
+                                    method: "GET",
+                                    headers: {
+                                        "Content-Type": "application/json",
+                                        "CJ-Access-Token": token,
+                                    },
+                                    signal: catController.signal,
+                                }
+                            );
+                        } finally {
+                            clearTimeout(catTimeout);
+                        }
+
+                        const catData = await catResponse.json();
+                        console.log(`DIAGNOSE CATALOG ${product.name}:`, JSON.stringify(catData, null, 2));
+
+                        if (catData.result && catData.data) {
+                            diag.productFoundInCatalog = true;
+                            diag.cjProductIdFromCatalog = catData.data.pid || pidToCheck;
+                            const variants = catData.data.variants || [];
+                            diag.variantCount = variants.length;
+
+                            // ─── Auto-approve: product IS in CJ's catalog ───
+                            const sourcingSku = sourcing.cjVariantSku;
+                            const matchedVariant = sourcingSku
+                                ? variants.find((v: any) => v.variantSku === sourcingSku)
+                                : null;
+                            const resolvedVariant = matchedVariant || (variants.length === 1 ? variants[0] : null);
+
+                            await ctx.runMutation(internal.cjHelpers.updateProductSourcingStatus, {
+                                productId: product._id,
+                                status: "approved",
+                                cjProductId: catData.data.pid || pidToCheck,
+                                cjVariantId: resolvedVariant?.vid,
+                                cjSku: resolvedVariant?.variantSku || sourcingSku,
+                            });
+                            diag.autoApproved = true;
+                            autoApprovedCount++;
+
+                            diag.diagnosis = `✅ CONFIRMED & AUTO-APPROVED — Product exists in CJ catalog (pid=${diag.cjProductIdFromCatalog}, ${diag.variantCount} variant(s)). Sourcing ticket shows "${diag.sourcingTicketStatus}" but product is in catalog and ready for fulfillment.`;
+                        } else {
+                            diag.diagnosis = `Sourcing ticket has cjProductId=${pidToCheck} but catalog lookup returned no data. CJ may still be indexing the product. Ticket status: "${diag.sourcingTicketStatus}".`;
+                        }
+                    } catch (catError: unknown) {
+                        const msg = catError instanceof Error ? catError.message : String(catError);
+                        diag.diagnosis = `Sourcing ticket has cjProductId=${pidToCheck} but catalog verification failed: ${msg}. Ticket status: "${diag.sourcingTicketStatus}".`;
+                    }
+                } else {
+                    // No cjProductId from sourcing ticket
+                    const isSuccess = statusCode === "3" || statusCode === "9";
+                    const isFailed = statusCode === "4" || statusCode === "5";
+                    const isPending = statusCode === "1" || statusCode === "2";
+
+                    if (isSuccess) {
+                        diag.diagnosis = `Sourcing ticket shows "${diag.sourcingTicketStatus}" (success) but no cjProductId was provided. This is unusual — CJ approved sourcing but hasn't assigned a product ID yet. Will auto-resolve on next webhook or cron cycle.`;
+                    } else if (isFailed) {
+                        diag.diagnosis = `Sourcing ticket shows "${diag.sourcingTicketStatus}". CJ may have closed the ticket after sourcing (known CJ behavior). No cjProductId available to verify catalog. Try 'Resubmit' to create a fresh sourcing request.`;
+                    } else if (isPending) {
+                        diag.diagnosis = `Sourcing ticket still shows "${diag.sourcingTicketStatus}" — CJ has not finished processing this request yet. No cjProductId assigned. If you received a confirmation email, CJ's API may be lagging behind their email system. Try 'Resubmit' to create a fresh request.`;
+                    } else {
+                        diag.diagnosis = `Unknown sourcing status "${diag.sourcingTicketStatus}" (code: ${statusCode}). No cjProductId available.`;
+                    }
+                }
+            } catch (error: unknown) {
+                const msg = error instanceof Error ? error.message : String(error);
+                diag.diagnosis = `Failed to query CJ API: ${msg}`;
+            }
+
+            results.push(diag);
+            await new Promise(resolve => setTimeout(resolve, 300)); // Rate limit
+        }
+
+        const summary = autoApprovedCount > 0
+            ? `✅ Diagnosed ${results.length} products: ${autoApprovedCount} confirmed in CJ catalog and auto-approved!`
+            : `Diagnosed ${results.length} products: none found in CJ catalog yet. See details below.`;
+
+        return { results, summary };
     },
 });
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAction, useQuery, useMutation } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
-import { Wifi, RefreshCw, Settings, CheckCircle, XCircle, Loader2, Package, Clock, AlertTriangle, ArrowRight, ExternalLink, Trash2, RotateCcw, Key, Link2 } from 'lucide-react';
+import { Wifi, RefreshCw, Settings, CheckCircle, XCircle, Loader2, Package, Clock, AlertTriangle, ArrowRight, ExternalLink, Trash2, RotateCcw, Key, Link2, Search } from 'lucide-react';
 import { FadeIn } from './FadeIn';
 import { CJVariantManager } from './CJVariantManager';
 
@@ -13,6 +13,7 @@ export const CJSettings: React.FC = () => {
     const checkSourcing = useAction(api.cjActions.checkSourcingStatus);
     const resubmitProduct = useAction(api.cjActions.resubmitProduct);
     const getTokenStatus = useAction(api.cjActions.getTokenStatus);
+    const diagnosePending = useAction(api.cjActions.diagnosePending);
 
     // Product sourcing queries
     const pendingProducts = useQuery(api.products.getPendingSourcing) || [];
@@ -27,6 +28,19 @@ export const CJSettings: React.FC = () => {
     const [deletingId, setDeletingId] = useState<Id<"products"> | null>(null);
     const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
     const [resubmittingId, setResubmittingId] = useState<Id<"products"> | null>(null);
+    const [diagnosing, setDiagnosing] = useState(false);
+    const [diagnosticResults, setDiagnosticResults] = useState<Array<{
+        productId: string;
+        productName: string;
+        cjSourcingId: string | null;
+        sourcingTicketStatus: string;
+        cjProductIdFromTicket: string | null;
+        cjProductIdFromCatalog: string | null;
+        productFoundInCatalog: boolean;
+        variantCount: number;
+        autoApproved: boolean;
+        diagnosis: string;
+    }> | null>(null);
     const [tokenStatus, setTokenStatus] = useState<{
         connected: boolean;
         accessTokenValid: boolean;
@@ -152,6 +166,25 @@ export const CJSettings: React.FC = () => {
             setResult({ success: false, message: getErrorMessage(error, 'Sourcing check failed') });
         } finally {
             setCheckingSourcing(false);
+        }
+    };
+
+    const handleDiagnose = async () => {
+        setDiagnosing(true);
+        setResult(null);
+        setDiagnosticResults(null);
+        try {
+            const res = await diagnosePending({});
+            setDiagnosticResults(res.results);
+            const approvedCount = res.results.filter((r: any) => r.autoApproved).length;
+            setResult({
+                success: approvedCount > 0,
+                message: res.summary,
+            });
+        } catch (error: unknown) {
+            setResult({ success: false, message: getErrorMessage(error, 'Diagnosis failed') });
+        } finally {
+            setDiagnosing(false);
         }
     };
 
@@ -350,6 +383,22 @@ export const CJSettings: React.FC = () => {
                                             </span>
                                         </div>
                                     </div>
+                                    {/* Diagnose & Fix button */}
+                                    {pendingProducts.length > 0 && (
+                                        <button
+                                            onClick={handleDiagnose}
+                                            disabled={diagnosing}
+                                            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 border border-emerald-500/30 rounded-xl transition-all disabled:opacity-50 shadow-inner"
+                                            title="Deep-verify each product against CJ's catalog and auto-approve confirmed items"
+                                        >
+                                            {diagnosing ? (
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin drop-shadow-[0_0_3px_currentColor]" />
+                                            ) : (
+                                                <Search className="w-3.5 h-3.5 drop-shadow-[0_0_3px_currentColor]" />
+                                            )}
+                                            {diagnosing ? 'Verifying...' : 'Diagnose & Fix'}
+                                        </button>
+                                    )}
                                 </div>
 
                                 {pendingProducts.length === 0 ? (
@@ -387,19 +436,34 @@ export const CJSettings: React.FC = () => {
                                                             <h4 className="font-medium text-cream text-sm truncate font-serif leading-tight mb-2 drop-shadow-sm">{product.name}</h4>
 
                                                             {/* Status Row */}
-                                                            <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-cream/40 mb-3">
-                                                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_3px_#fbbf24]"></span>
-                                                                <span>Awaiting CJ</span>
-                                                                {timeSince && (
-                                                                    <>
-                                                                        <span className="text-white/20">•</span>
-                                                                        <span className="flex items-center gap-1">
-                                                                            <Clock className="w-3 h-3 text-cream/30" />
-                                                                            {timeSince} ago
-                                                                        </span>
-                                                                    </>
-                                                                )}
-                                                            </div>
+                                                            {(() => {
+                                                                const isStuck = product.cjSubmittedAt && (Date.now() - new Date(product.cjSubmittedAt).getTime()) > 24 * 60 * 60 * 1000;
+                                                                return (
+                                                                    <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-cream/40 mb-3 flex-wrap">
+                                                                        {isStuck ? (
+                                                                            <>
+                                                                                <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse shadow-[0_0_5px_#f87171]"></span>
+                                                                                <span className="text-red-400 font-semibold drop-shadow-[0_0_3px_rgba(248,113,113,0.5)]">Stuck</span>
+                                                                                <span className="text-red-400/60 normal-case tracking-normal text-[9px]">(auto-retry queued)</span>
+                                                                            </>
+                                                                        ) : (
+                                                                            <>
+                                                                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_3px_#fbbf24]"></span>
+                                                                                <span>Awaiting CJ</span>
+                                                                            </>
+                                                                        )}
+                                                                        {timeSince && (
+                                                                            <>
+                                                                                <span className="text-white/20">•</span>
+                                                                                <span className={`flex items-center gap-1 ${isStuck ? 'text-red-400/70' : ''}`}>
+                                                                                    <Clock className="w-3 h-3 text-cream/30" />
+                                                                                    {timeSince} ago
+                                                                                </span>
+                                                                            </>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })()}
 
                                                             {/* CJ Info */}
                                                             <div className="space-y-1 text-[10px] font-medium tracking-widest">
@@ -469,6 +533,81 @@ export const CJSettings: React.FC = () => {
                                 )}
                             </div>
                         </FadeIn>
+
+                        {/* Diagnostic Results Panel — shown after clicking Diagnose & Fix */}
+                        {diagnosticResults && diagnosticResults.length > 0 && (
+                            <FadeIn delay={350} className="md:col-span-2">
+                                <div className="backdrop-blur-2xl bg-black/40 border border-white/10 rounded-[2rem] p-6 shadow-[0_15px_30px_rgba(0,0,0,0.3)] relative overflow-hidden">
+                                    <div className="absolute inset-0 border border-white/5 mix-blend-overlay rounded-[2rem] pointer-events-none z-0"></div>
+                                    <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent pointer-events-none z-0"></div>
+
+                                    <div className="flex items-center justify-between gap-4 mb-5 relative z-10">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 rounded-2xl bg-emerald-900/20 backdrop-blur-md border border-emerald-500/30 flex items-center justify-center shadow-inner">
+                                                <Search className="w-5 h-5 text-emerald-400 drop-shadow-[0_0_4px_rgba(52,211,153,0.5)]" />
+                                            </div>
+                                            <h3 className="font-serif text-lg text-cream leading-tight drop-shadow-sm">CJ Verification Results</h3>
+                                        </div>
+                                        <button
+                                            onClick={() => setDiagnosticResults(null)}
+                                            className="text-cream/30 hover:text-cream/60 text-xs uppercase tracking-widest transition-colors"
+                                        >
+                                            Dismiss
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-3 relative z-10">
+                                        {diagnosticResults.map((diag) => (
+                                            <div
+                                                key={diag.productId}
+                                                className={`p-4 rounded-xl border backdrop-blur-md shadow-inner ${
+                                                    diag.autoApproved
+                                                        ? 'bg-green-500/10 border-green-500/25'
+                                                        : diag.productFoundInCatalog
+                                                        ? 'bg-emerald-500/10 border-emerald-500/20'
+                                                        : 'bg-amber-500/5 border-amber-500/15'
+                                                }`}
+                                            >
+                                                <div className="flex items-start gap-3">
+                                                    {diag.autoApproved ? (
+                                                        <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5 drop-shadow-[0_0_3px_rgba(74,222,128,0.5)]" />
+                                                    ) : (
+                                                        <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5 drop-shadow-[0_0_3px_rgba(251,191,36,0.4)]" />
+                                                    )}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                                                            <span className="font-medium text-cream text-sm truncate drop-shadow-sm">{diag.productName}</span>
+                                                            {diag.autoApproved && (
+                                                                <span className="text-[9px] font-bold uppercase tracking-widest text-green-400 bg-green-500/20 px-2 py-0.5 rounded-full border border-green-500/30 shadow-inner">
+                                                                    Auto-Approved ✓
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        <p className="text-cream/60 text-xs leading-relaxed mb-2">{diag.diagnosis}</p>
+
+                                                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-mono text-cream/40">
+                                                            {diag.sourcingTicketStatus !== 'unknown' && (
+                                                                <span>Ticket: <span className="text-cream/60">{diag.sourcingTicketStatus}</span></span>
+                                                            )}
+                                                            {diag.cjProductIdFromTicket && (
+                                                                <span>PID: <span className="text-cream/60">{diag.cjProductIdFromTicket}</span></span>
+                                                            )}
+                                                            {diag.cjProductIdFromCatalog && (
+                                                                <span>Catalog: <span className="text-green-400">{diag.cjProductIdFromCatalog}</span></span>
+                                                            )}
+                                                            {diag.variantCount > 0 && (
+                                                                <span>Variants: <span className="text-cream/60">{diag.variantCount}</span></span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </FadeIn>
+                        )}
 
                         {/* Rejected & Approved Stack */}
                         <div className="space-y-8">

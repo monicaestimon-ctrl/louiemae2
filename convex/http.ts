@@ -321,6 +321,12 @@ http.route({
             }
 
             // Handle different webhook types
+            // webhookHandled tracks whether the handler found and updated a matching product.
+            // CRITICAL: Only mark the webhook as "processed" when handled === true.
+            // If a handler fails to find the product (e.g., cjSourcingId not stored yet),
+            // we intentionally leave the messageId unrecorded so CJ's retry can re-attempt.
+            let webhookHandled = true;
+
             switch (type) {
                 case "ORDER":
                     // Order status update from CJ
@@ -343,7 +349,7 @@ http.route({
                     // This is CJ's primary notification when a sourcing request completes.
                     // Contains: cjProductId, cjVariantId, cjVariantSku, cjSourcingId, status, failReason
                     console.log(`CJ SOURCINGCREATE:`, JSON.stringify(params));
-                    await handleCjSourcingCreateWebhook(ctx, params);
+                    webhookHandled = await handleCjSourcingCreateWebhook(ctx, params);
                     break;
 
                 case "PRODUCT":
@@ -368,11 +374,20 @@ http.route({
                     console.log(`Unknown CJ webhook type: ${type}`, params);
             }
 
-            // Record this messageId as processed to prevent duplicates
-            await ctx.runMutation(internal.cjHelpers.recordProcessedWebhook, {
-                messageId,
-                type,
-            });
+            // Only record as processed if the handler actually found and updated a product.
+            // This allows CJ retries to re-attempt if the first webhook fired before
+            // the product's cjSourcingId was stored in the database.
+            if (webhookHandled) {
+                await ctx.runMutation(internal.cjHelpers.recordProcessedWebhook, {
+                    messageId,
+                    type,
+                });
+            } else {
+                console.warn(
+                    `CJ Webhook: ${type} handler did not find a matching product — ` +
+                    `NOT marking messageId=${messageId} as processed (will allow CJ retry)`
+                );
+            }
 
             // CJ requires 200 response within 3 seconds
             return new Response(JSON.stringify({ success: true }), {
@@ -520,25 +535,29 @@ async function handleCjLogisticsWebhook(ctx: any, params: any) {
 // Per CJ docs: This is sent when a sourcing request is completed or failed.
 // Payload: { cjProductId, cjVariantId, cjVariantSku, cjSourcingId, status, failReason, createDate }
 // ═══════════════════════════════════════════════════════════════════════════
-async function handleCjSourcingCreateWebhook(ctx: any, params: any) {
+async function handleCjSourcingCreateWebhook(ctx: any, params: any): Promise<boolean> {
     const {
         cjProductId,
         cjVariantId,
         cjVariantSku,
         cjSourcingId,
-        status,      // "completed" or "failed"
+        status: rawStatus, // "completed" or "failed" (may arrive in different cases)
         failReason,
         createDate,
     } = params;
 
-    console.log(`CJ SOURCINGCREATE: sourcingId=${cjSourcingId}, status=${status}, cjProductId=${cjProductId}, cjVariantId=${cjVariantId}, sku=${cjVariantSku}`);
+    // Normalize status to lowercase for case-insensitive matching.
+    // CJ has been observed sending "completed", "Completed", and "COMPLETED".
+    const status = typeof rawStatus === "string" ? rawStatus.toLowerCase() : rawStatus;
+
+    console.log(`CJ SOURCINGCREATE: sourcingId=${cjSourcingId}, rawStatus=${rawStatus}, normalizedStatus=${status}, cjProductId=${cjProductId}, cjVariantId=${cjVariantId}, sku=${cjVariantSku}`);
 
     if (!cjSourcingId) {
         console.error("CJ SOURCINGCREATE webhook missing cjSourcingId");
-        return;
+        return false;
     }
 
-    // Primary strategy: Find product by cjSourcingId (the most reliable link)
+    // ─── Strategy 1: Find product by cjSourcingId (most reliable link) ───
     let products = await ctx.runQuery(internal.cjHelpers.getProductByCjSourcingId, {
         cjSourcingId: String(cjSourcingId),
     });
@@ -550,10 +569,11 @@ async function handleCjSourcingCreateWebhook(ctx: any, params: any) {
             `CJ SOURCINGCREATE: DATA INTEGRITY ERROR — ${products.length} products share cjSourcingId=${cjSourcingId}. ` +
             `Refusing to update. Product IDs: ${products.map((p: any) => p._id).join(', ')}`
         );
-        return;
+        // Return true to mark as processed — retrying won't fix a data integrity issue
+        return true;
     }
 
-    // Fallback: If not found by sourcingId, try cjProductId
+    // ─── Strategy 2: Fallback by cjProductId ───
     if ((!products || products.length === 0) && cjProductId) {
         console.log(`CJ SOURCINGCREATE: No match by sourcingId=${cjSourcingId}, trying cjProductId=${cjProductId}`);
         products = await ctx.runQuery(internal.cjHelpers.getProductByCjProductId, {
@@ -566,11 +586,11 @@ async function handleCjSourcingCreateWebhook(ctx: any, params: any) {
                 `CJ SOURCINGCREATE: DATA INTEGRITY ERROR — ${products.length} products share cjProductId=${cjProductId}. ` +
                 `Refusing to update. Product IDs: ${products.map((p: any) => p._id).join(', ')}`
             );
-            return;
+            return true;
         }
     }
 
-    // Last resort: Match pending/rejected products by name or thirdProductId
+    // ─── Strategy 3: Match by thirdProductId against pending/rejected products ───
     if (!products || products.length === 0) {
         console.log(`CJ SOURCINGCREATE: No match by sourcingId or productId, checking all pending products`);
         const pendingProducts = await ctx.runQuery(internal.cjHelpers.getProductsPendingSourcing, {});
@@ -587,10 +607,36 @@ async function handleCjSourcingCreateWebhook(ctx: any, params: any) {
         }
     }
 
+    // ─── Strategy 4: Match by sourceUrl (last resort) ───
+    // CJ's webhook payload sometimes includes productUrl. If all ID-based
+    // strategies failed (e.g., cjSourcingId not stored yet because the
+    // cron hadn't run), try matching by the original product URL.
+    if ((!products || products.length === 0) && params.productUrl) {
+        console.log(`CJ SOURCINGCREATE: Trying sourceUrl match: ${params.productUrl}`);
+        const urlMatches = await ctx.runQuery(internal.cjHelpers.getProductBySourceUrl, {
+            sourceUrl: params.productUrl,
+        });
+        // Only use URL match if it's unambiguous (exactly one product)
+        if (urlMatches && urlMatches.length === 1) {
+            products = urlMatches;
+            console.log(`CJ SOURCINGCREATE: Matched by sourceUrl for ${urlMatches[0].name}`);
+        } else if (urlMatches && urlMatches.length > 1) {
+            console.warn(
+                `CJ SOURCINGCREATE: ${urlMatches.length} products share sourceUrl=${params.productUrl}. ` +
+                `Skipping ambiguous match. Product IDs: ${urlMatches.map((p: any) => p._id).join(', ')}`
+            );
+        }
+    }
+
     if (!products || products.length === 0) {
-        console.error(`CJ SOURCINGCREATE: No product found for sourcingId=${cjSourcingId}. ` +
-            `This sourcing result will be picked up by the cron job instead.`);
-        return;
+        // CRITICAL: Return false so the webhook is NOT marked as processed.
+        // This allows CJ's automatic retry to re-attempt delivery, and the
+        // cron job will also pick this up as a safety net.
+        console.error(
+            `CJ SOURCINGCREATE: No product found for sourcingId=${cjSourcingId}. ` +
+            `Webhook will NOT be marked as processed — CJ retry + cron will catch this.`
+        );
+        return false;
     }
 
     for (const product of products) {
@@ -620,6 +666,8 @@ async function handleCjSourcingCreateWebhook(ctx: any, params: any) {
             console.log(`CJ SOURCINGCREATE: Unknown status "${status}" for ${product.name}, logging only`);
         }
     }
+
+    return true;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

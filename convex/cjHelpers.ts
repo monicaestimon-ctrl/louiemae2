@@ -536,6 +536,24 @@ export const getProductByCjSourcingId = internalQuery({
 });
 
 /**
+ * Find a product by its source URL.
+ * Used as a last-resort fallback in webhook handlers when neither
+ * cjSourcingId nor cjProductId match any stored product.
+ */
+export const getProductBySourceUrl = internalQuery({
+    args: { sourceUrl: v.string() },
+    handler: async (ctx, args) => {
+        // Linear scan — acceptable at current product count.
+        // Products table is not indexed by sourceUrl; add an index if
+        // this becomes a performance concern.
+        const allProducts = await ctx.db
+            .query("products")
+            .collect();
+        return allProducts.filter(p => p.sourceUrl === args.sourceUrl);
+    },
+});
+
+/**
  * Get recently approved products for admin notifications
  */
 export const getRecentlyApprovedProducts = internalQuery({

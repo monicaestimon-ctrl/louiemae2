@@ -604,9 +604,9 @@ export const auditProductHealth = query({
                     problems.push("Approved but no CJ variants (won't appear in Variant Mapping)");
                 }
                 if (hasCustomerVariants) {
-                    const unlinked = product.variants.filter(v => !v.cjVariantId);
+                    const unlinked = product.variants!.filter(v => !v.cjVariantId);
                     if (unlinked.length > 0) {
-                        problems.push(`${unlinked.length}/${product.variants.length} customer variants not linked to CJ`);
+                        problems.push(`${unlinked.length}/${product.variants!.length} customer variants not linked to CJ`);
                     }
                 }
             }

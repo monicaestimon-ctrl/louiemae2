@@ -122,6 +122,35 @@ export const checkSourcingStatus = action({
 });
 
 /**
+ * Deep diagnostic for pending products — verifies each product against
+ * CJ's sourcing ticket AND catalog. Auto-approves products confirmed in
+ * CJ's catalog even when the sourcing ticket status is stale.
+ * Returns detailed per-product diagnostics for the admin UI.
+ */
+export const diagnosePending = action({
+    args: {},
+    handler: async (ctx): Promise<{
+        results: Array<{
+            productId: string;
+            productName: string;
+            cjSourcingId: string | null;
+            sourcingTicketStatus: string;
+            sourcingTicketStatusCode: string | number | null;
+            cjProductIdFromTicket: string | null;
+            cjProductIdFromCatalog: string | null;
+            productFoundInCatalog: boolean;
+            variantCount: number;
+            autoApproved: boolean;
+            diagnosis: string;
+        }>;
+        summary: string;
+    }> => {
+        const result = await ctx.runAction(internal.cjDropshipping.diagnosePendingProducts, {});
+        return result;
+    },
+});
+
+/**
  * Submit a product for CJ sourcing
  * Called when importing products from AliExpress/other sources
  * Now includes optional image, description, and price for faster CJ review
