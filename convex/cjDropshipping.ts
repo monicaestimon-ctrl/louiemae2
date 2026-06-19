@@ -1232,18 +1232,26 @@ export const diagnosePendingProducts = internalAction({
                             diag.variantCount = variants.length;
 
                             // ─── Auto-approve: product IS in CJ's catalog ───
-                            const sourcingSku = sourcing.cjVariantSku;
+                            const sourcingSku = typeof sourcing.cjVariantSku === "string" && sourcing.cjVariantSku.trim()
+                                ? sourcing.cjVariantSku.trim()
+                                : undefined;
                             const matchedVariant = sourcingSku
                                 ? variants.find((v: any) => v.variantSku === sourcingSku)
                                 : null;
                             const resolvedVariant = matchedVariant || (variants.length === 1 ? variants[0] : null);
+                            const resolvedVariantId = typeof resolvedVariant?.vid === "string" && resolvedVariant.vid.trim()
+                                ? resolvedVariant.vid.trim()
+                                : undefined;
+                            const resolvedSku = typeof resolvedVariant?.variantSku === "string" && resolvedVariant.variantSku.trim()
+                                ? resolvedVariant.variantSku.trim()
+                                : sourcingSku;
 
                             await ctx.runMutation(internal.cjHelpers.updateProductSourcingStatus, {
                                 productId: product._id,
                                 status: "approved",
                                 cjProductId: catData.data.pid || pidToCheck,
-                                cjVariantId: resolvedVariant?.vid,
-                                cjSku: resolvedVariant?.variantSku || sourcingSku,
+                                cjVariantId: resolvedVariantId,
+                                cjSku: resolvedSku,
                             });
                             diag.autoApproved = true;
                             autoApprovedCount++;
