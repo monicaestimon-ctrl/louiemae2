@@ -1884,16 +1884,17 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
 
     // URL Import
     const handleImportByUrl = async () => {
-        if (!importUrl.trim()) return;
+        const originalSourceUrl = importUrl.trim();
+        if (!originalSourceUrl) return;
 
         setIsImportingUrl(true);
         setError(null);
 
         try {
             // Call generic scraper action
-            console.log('[URL Import] Calling scraper for:', importUrl);
+            console.log('[URL Import] Calling scraper for:', originalSourceUrl);
             toast.loading('Fetching product data...', { id: 'url-import' });
-            const result = await scrapeProduct({ url: importUrl });
+            const result = await scrapeProduct({ url: originalSourceUrl });
             console.log('[URL Import] Scraper result:', result);
             toast.dismiss('url-import');
 
@@ -2012,7 +2013,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                     },
                     reviewCount: parseInt(getFeaturedValue('SalesInLast30Days') || '0', 10),
                     averageRating: 0,
-                    productUrl: item.TaobaoItemUrl || item.ExternalItemUrl || importUrl,
+                    productUrl: originalSourceUrl,
                     source: '1688',
                     selected: true,
                     targetCollection: targetCollection as CollectionType,
@@ -2053,7 +2054,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                     seller: { id: '', name: 'Unknown', rating: 0, feedbackScore: 0 },
                     reviewCount: 0,
                     averageRating: 0,
-                    productUrl: data.url || importUrl,
+                    productUrl: originalSourceUrl,
                     source: 'generic',
                     selected: true,
                     targetCollection: targetCollection as CollectionType,

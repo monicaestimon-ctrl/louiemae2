@@ -80,6 +80,21 @@ export const update = mutation({
         collection: v.optional(v.string()),
         isNew: v.optional(v.boolean()),
         inStock: v.optional(v.boolean()),
+        sourceUrl: v.optional(v.string()),
+        cjSourcingStatus: v.optional(v.union(
+            v.literal("pending"),
+            v.literal("approved"),
+            v.literal("rejected"),
+            v.literal("none")
+        )),
+        sourcePriceCny: v.optional(v.number()),
+        estimatedCjCost: v.optional(v.number()),
+        estimatedShipping: v.optional(v.number()),
+        pricingStage: v.optional(v.union(
+            v.literal("estimated"),
+            v.literal("confirmed")
+        )),
+        subcategory: v.optional(v.string()),
         variants: v.optional(v.array(v.object({
             id: v.string(),
             name: v.string(),

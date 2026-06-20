@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Wand2, Send, ChevronRight, Type, Image as ImageIcon, CheckCircle, ArrowLeft, Eye, Loader2, Upload, Trash2, Box, DollarSign, Download } from 'lucide-react';
+import { X, Wand2, Send, ChevronRight, Type, Image as ImageIcon, CheckCircle, ArrowLeft, Eye, Loader2, Upload, Trash2, Box, DollarSign, Download, ExternalLink } from 'lucide-react';
 import { Product, SiteContent } from '../types';
 import { generateProductNameV2, generateProductDescriptionV2, extractKeywords, ProductContext, suggestProductCategory } from '../services/geminiService';
 import { FadeIn } from './FadeIn';
@@ -331,7 +331,7 @@ const EssenceStep: React.FC<{
                         price: fields.price,
                         description: fields.description,
                         images: fields.images,
-                        sourceUrl: fields.sourceUrl,
+                        sourceUrl: normalizedUrl,
                     };
                 }
             } else {
@@ -344,7 +344,7 @@ const EssenceStep: React.FC<{
                     images: Array.isArray(data.images) && data.images.length > 0
                         ? data.images
                         : (data.image ? [data.image] : []),
-                    sourceUrl: data.url || normalizedUrl,
+                    sourceUrl: normalizedUrl,
                 };
             }
 
@@ -621,6 +621,31 @@ const EssenceStep: React.FC<{
                                     className="w-full text-3xl font-serif text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.3)] border-b border-white/10 py-2 pl-8 focus:outline-none focus:border-bronze bg-transparent placeholder:text-cream/10 transition-colors"
                                 />
                             </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between gap-3">
+                                <label htmlFor="product-source-url" className="text-xs uppercase tracking-widest text-cream/40 glow-text">Sourcing URL</label>
+                                {product.sourceUrl && (
+                                    <a
+                                        href={product.sourceUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="flex items-center gap-1.5 text-[10px] uppercase tracking-widest text-bronze hover:text-amber-400 transition-colors"
+                                    >
+                                        <ExternalLink className="w-3 h-3" />
+                                        Open
+                                    </a>
+                                )}
+                            </div>
+                            <input
+                                id="product-source-url"
+                                type="url"
+                                value={product.sourceUrl || ''}
+                                onChange={(e) => onChange({ ...product, sourceUrl: e.target.value })}
+                                placeholder="https://supplier-product-url..."
+                                className="w-full text-sm font-mono text-cream/80 border-b border-white/10 py-3 focus:outline-none focus:border-bronze bg-transparent placeholder:text-cream/20 transition-colors"
+                            />
                         </div>
 
                         <div className="flex gap-6 pt-2">

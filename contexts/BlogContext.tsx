@@ -203,7 +203,30 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const updateProduct = (id: string, updatedData: Partial<Product>) => {
-    const { id: _, ...updates } = updatedData as any;
+    const allowedFields = [
+      'name',
+      'price',
+      'description',
+      'images',
+      'category',
+      'collection',
+      'isNew',
+      'inStock',
+      'variants',
+      'sourceUrl',
+      'cjSourcingStatus',
+      'sourcePriceCny',
+      'estimatedCjCost',
+      'estimatedShipping',
+      'pricingStage',
+      'subcategory',
+    ];
+    const updates = Object.fromEntries(
+      allowedFields
+        .filter((field) => Object.prototype.hasOwnProperty.call(updatedData, field))
+        .map((field) => [field, (updatedData as any)[field]])
+        .filter(([, value]) => value !== undefined)
+    );
     updateProductMutation({ id: id as Id<"products">, ...updates });
   };
 

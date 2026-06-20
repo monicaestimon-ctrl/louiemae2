@@ -16,6 +16,7 @@ const ALLOWED_DOMAINS = [
     'etsy.com',
     'walmart.com',
     'target.com',
+    'trendsi.com',
     'shopify.com',
     'myshopify.com',
 ];
