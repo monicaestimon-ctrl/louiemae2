@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Wand2, Send, ChevronRight, Type, Image as ImageIcon, CheckCircle, ArrowLeft, Eye, Loader2, Upload, Trash2, Box, DollarSign } from 'lucide-react';
+import { X, Wand2, Send, ChevronRight, Type, Image as ImageIcon, CheckCircle, ArrowLeft, Eye, Loader2, Upload, Trash2, Box, DollarSign, Download } from 'lucide-react';
 import { Product, SiteContent } from '../types';
 import { generateProductNameV2, generateProductDescriptionV2, extractKeywords, ProductContext, suggestProductCategory } from '../services/geminiService';
 import { FadeIn } from './FadeIn';
@@ -656,6 +656,7 @@ const EssenceStep: React.FC<{
 // --- Step 2: Visuals ---
 const VisualsStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => void; onBack: () => void; onNext: () => void; }> = ({ product, onChange, onBack, onNext }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [previewImage, setPreviewImage] = useState<{ src: string; index: number } | null>(null);
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -672,6 +673,31 @@ const VisualsStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => v
         const newImages = [...(product.images || [])];
         newImages.splice(index, 1);
         onChange({ ...product, images: newImages });
+        setPreviewImage((current) => current?.index === index ? null : current);
+    };
+
+    const getImageDownloadHref = (src: string, index: number) => {
+        const filename = `${(product.name || 'product').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'product'}-${index + 1}`;
+
+        if (src.startsWith('data:')) {
+            return src;
+        }
+
+        const absoluteUrl = src.startsWith('/')
+            ? `${window.location.origin}${src}`
+            : src;
+
+        return `/api/download-image?url=${encodeURIComponent(absoluteUrl)}&filename=${encodeURIComponent(filename)}`;
+    };
+
+    const handleDownload = (src: string, index: number) => {
+        const link = document.createElement('a');
+        link.href = getImageDownloadHref(src, index);
+        link.download = `${(product.name || 'product').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'product'}-${index + 1}`;
+        link.rel = 'noopener';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
     };
 
     return (
@@ -702,12 +728,36 @@ const VisualsStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => v
                     {product.images?.map((img, idx) => (
                         <div key={idx} className="relative aspect-[3/4] bg-black/20 group rounded-[2rem] overflow-hidden shadow-[0_10px_20px_rgba(0,0,0,0.2)] hover:shadow-[0_20px_40px_rgba(0,0,0,0.5)] border border-white/10 hover:border-white/20 hover:-translate-y-2 transition-all duration-300">
                             <div className="absolute inset-0 border border-white/5 mix-blend-overlay pointer-events-none rounded-[2rem] z-20"></div>
-                            <img src={img} alt={`Product ${idx}`} referrerPolicy="no-referrer" crossOrigin="anonymous" className="w-full h-full object-cover opacity-90 group-hover:scale-110 group-hover:opacity-100 transition-all duration-700" />
-                            <div className="absolute inset-0 bg-gradient-to-b from-black/0 to-black/60 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300 flex items-center justify-center z-10">
+                            <button
+                                type="button"
+                                onClick={() => setPreviewImage({ src: img, index: idx })}
+                                className="absolute inset-0 z-0 cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bronze/60"
+                                aria-label={`Open image ${idx + 1} full screen`}
+                            >
+                                <img src={img} alt={`Product ${idx + 1}`} referrerPolicy="no-referrer" crossOrigin="anonymous" className="w-full h-full object-cover opacity-90 group-hover:scale-110 group-hover:opacity-100 transition-all duration-700" />
+                            </button>
+                            <div className="absolute inset-0 bg-gradient-to-b from-black/0 to-black/70 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-2 z-10 pointer-events-none">
                                 <button
+                                    type="button"
+                                    onClick={() => setPreviewImage({ src: img, index: idx })}
+                                    aria-label={`View image ${idx + 1} full screen`}
+                                    className="pointer-events-auto p-3 bg-white/10 text-cream border border-white/20 rounded-full hover:bg-white/20 transition-colors shadow-lg backdrop-blur-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cream/60"
+                                >
+                                    <Eye className="w-5 h-5" />
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => handleDownload(img, idx)}
+                                    aria-label={`Download image ${idx + 1}`}
+                                    className="pointer-events-auto p-3 bg-emerald-500/15 text-emerald-300 border border-emerald-400/30 rounded-full hover:bg-emerald-500/25 transition-colors shadow-lg backdrop-blur-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+                                >
+                                    <Download className="w-5 h-5" />
+                                </button>
+                                <button
+                                    type="button"
                                     onClick={() => removeImage(idx)}
                                     aria-label={`Delete image ${idx + 1}`}
-                                    className="p-3 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full hover:bg-red-500/40 hover:text-red-300 transition-colors shadow-lg backdrop-blur-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                                    className="pointer-events-auto p-3 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full hover:bg-red-500/40 hover:text-red-300 transition-colors shadow-lg backdrop-blur-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
                                 >
                                     <Trash2 className="w-5 h-5" />
                                 </button>
@@ -720,6 +770,48 @@ const VisualsStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => v
                         </div>
                     ))}
                 </div>
+
+                {previewImage && (
+                    <div
+                        className="fixed inset-0 z-[120] bg-black/90 backdrop-blur-xl p-4 md:p-8 flex flex-col"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={`Image ${previewImage.index + 1} full screen preview`}
+                    >
+                        <div className="flex items-center justify-between gap-3 mb-4">
+                            <span className="text-cream/60 text-xs uppercase tracking-[0.25em]">
+                                Image {previewImage.index + 1} of {product.images?.length || 0}
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => handleDownload(previewImage.src, previewImage.index)}
+                                    className="flex items-center gap-2 px-4 py-2 bg-white/10 text-cream border border-white/20 rounded-xl hover:bg-white/20 transition-colors text-xs uppercase tracking-widest"
+                                >
+                                    <Download className="w-4 h-4" />
+                                    Download
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setPreviewImage(null)}
+                                    aria-label="Close image preview"
+                                    className="p-2 bg-white/10 text-cream border border-white/20 rounded-full hover:bg-white/20 transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="min-h-0 flex-1 flex items-center justify-center">
+                            <img
+                                src={previewImage.src}
+                                alt={`Product image ${previewImage.index + 1}`}
+                                referrerPolicy="no-referrer"
+                                crossOrigin="anonymous"
+                                className="max-h-full max-w-full object-contain rounded-xl shadow-[0_30px_80px_rgba(0,0,0,0.6)]"
+                            />
+                        </div>
+                    </div>
+                )}
 
                 <div className="flex justify-end pt-8">
                     <button onClick={onNext} className="py-4 px-12 bg-white/10 text-cream border border-white/20 rounded-xl hover:bg-white/20 hover:-translate-y-1 transition-all flex items-center gap-2 text-lg font-light tracking-wide shadow-[0_4px_20px_rgba(0,0,0,0.4)] backdrop-blur-md">
