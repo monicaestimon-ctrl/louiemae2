@@ -6,7 +6,7 @@ import { useSite } from '../contexts/BlogContext';
 import { RichTextEditor } from './RichTextEditor';
 import { useNewsletter } from '../contexts/NewsletterContext';
 import { FadeIn } from './FadeIn';
-import { Plus, Edit3, Trash2, LogOut, X, Image as ImageIcon, Layout, ArrowLeft, PenTool, BookOpen, Home, Settings, Wand2 as WandIcon, Loader2, FileText, ShoppingBag, Tag, ChevronDown, Layers, Menu, Upload, Grid, Maximize, Type, Mail, Users, Send, BarChart2, Package, Lock, ChevronLeft } from 'lucide-react';
+import { Plus, Edit3, Trash2, LogOut, X, Image as ImageIcon, Layout, ArrowLeft, PenTool, BookOpen, Home, Settings, Wand2 as WandIcon, Loader2, FileText, ShoppingBag, Tag, ChevronDown, Layers, Menu, Upload, Grid, Maximize, Type, Mail, Users, Send, BarChart2, Package, Lock, ChevronLeft, ExternalLink } from 'lucide-react';
 import { BlogPost, CustomPage, PageSection, Product, CollectionType, CollectionConfig, EmailCampaign } from '../types';
 import { generatePageStructure } from '../services/geminiService';
 import { AdminOrders } from './AdminOrders';
@@ -1100,12 +1100,37 @@ export const AdminPage: React.FC = () => {
                                     <div className="flex h-full w-full items-center justify-center text-white/30"><Package className="w-5 h-5" aria-hidden="true" /></div>
                                  )}
                               </div>
-                              <div className="flex-1 z-10">
+                              <div className="flex-1 min-w-0 z-10">
                                  <h4 className="font-serif text-lg text-cream drop-shadow-sm group-hover:text-white transition-colors">{product.name}</h4>
-                                 <div className="flex gap-4 text-[10px] uppercase tracking-widest text-cream/50 mt-1">
+                                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] uppercase tracking-widest text-cream/50 mt-1">
                                     <span>{product.category}</span>
                                     <span className="text-bronze font-medium">${product.price}</span>
                                     <span className={product.inStock ? 'text-green-400 drop-shadow-[0_0_5px_rgba(74,222,128,0.5)]' : 'text-red-400'}>{product.inStock ? 'In Stock' : 'Out of Stock'}</span>
+                                 </div>
+                                 <div className="mt-2 flex min-w-0 items-center text-[10px] uppercase tracking-widest">
+                                    {product.sourceUrl ? (
+                                       <a
+                                          href={product.sourceUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-bronze hover:text-amber-400 transition-colors"
+                                          title={product.sourceUrl}
+                                       >
+                                          <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                                          <span className="truncate normal-case font-mono tracking-normal">{product.sourceUrl}</span>
+                                       </a>
+                                    ) : (
+                                       <button
+                                          type="button"
+                                          onClick={() => handleEditProduct(product)}
+                                          className="inline-flex items-center gap-1.5 text-cream/30 hover:text-bronze transition-colors"
+                                          title="Add sourcing URL"
+                                       >
+                                          <ExternalLink className="w-3 h-3" />
+                                          Add sourcing URL
+                                       </button>
+                                    )}
                                  </div>
                               </div>
                               <div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity flex-shrink-0 z-10">
