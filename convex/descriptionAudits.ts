@@ -77,16 +77,18 @@ export const findSimilarDescriptions = internalQuery({
         limit: v.optional(v.number()),
     },
     handler: async (ctx, args) => {
-        const products = await ctx.db.query("products").collect();
-        const normalizedCollection = args.collection.toLowerCase();
         const normalizedType = args.productType.toLowerCase();
+        const scanLimit = Math.max((args.limit || 10) * 4, 20);
+        const products = await ctx.db
+            .query("products")
+            .filter(q => q.or(
+                q.eq(q.field("collection"), args.collection),
+                q.eq(q.field("descriptionFingerprint.collection"), args.collection)
+            ))
+            .take(scanLimit);
         return products
             .filter(product =>
                 product.description &&
-                (
-                    product.descriptionFingerprint?.collection?.toLowerCase() === normalizedCollection ||
-                    product.collection?.toLowerCase() === normalizedCollection
-                ) &&
                 (
                     !product.descriptionFingerprint?.productType ||
                     product.descriptionFingerprint.productType.toLowerCase().includes(normalizedType) ||

@@ -22,6 +22,7 @@ export interface ImportableProduct extends AliExpressProduct {
     sourcePriceOriginal?: number; // Original price in source currency for audit trail
     sourcePriceCny?: number; // Upstream CNY price for two-stage pricing
     descriptionAuditId?: string;
+    smartDescriptionAdminEdited?: boolean;
     smartDescriptionWarnings?: string[];
     smartDescriptionSourceQuality?: number;
     smartDescriptionFallbackUsed?: boolean;

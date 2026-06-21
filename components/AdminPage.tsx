@@ -16,6 +16,16 @@ import { ProductImport } from './ProductImport';
 import { CJSettings } from './CJSettings';
 import { buildSourceProductSnapshot } from '../lib/smartDescription';
 
+type SmartDescriptionActionResult = {
+   ok: boolean;
+   description?: string;
+   auditId?: string;
+   fallbackUsed?: boolean;
+   warnings?: string[];
+   facts?: { sourceQuality?: { score?: number } };
+   error?: string;
+};
+
 // --- Image Uploader Component ---
 const ImageUploader: React.FC<{
    currentImage?: string;
@@ -389,16 +399,16 @@ export const AdminPage: React.FC = () => {
                      forceFreshVariation: true,
                   },
                },
-            } as any);
+            } as any) as SmartDescriptionActionResult;
 
-            if ((result as any)?.ok && (result as any).description) {
+            if (result.ok && result.description && result.auditId) {
                previews.push({
                   product,
-                  description: (result as any).description,
-                  auditId: (result as any).auditId,
-                  fallbackUsed: Boolean((result as any).fallbackUsed),
-                  warnings: (result as any).warnings || [],
-                  sourceQuality: (result as any).facts?.sourceQuality?.score,
+                  description: result.description,
+                  auditId: result.auditId,
+                  fallbackUsed: Boolean(result.fallbackUsed),
+                  warnings: result.warnings || [],
+                  sourceQuality: result.facts?.sourceQuality?.score,
                });
             }
          }

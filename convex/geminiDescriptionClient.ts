@@ -1,6 +1,7 @@
 "use node";
 
 import { GoogleGenAI } from '@google/genai';
+import { Buffer } from 'buffer';
 import {
     GeneratedDescriptionDraft,
     NormalizedProductFacts,
@@ -180,6 +181,8 @@ async function imageToInlineData(url: string): Promise<{ mimeType: string; data:
         if (!response.ok) return null;
         const contentType = response.headers.get('content-type') || 'image/jpeg';
         if (!contentType.startsWith('image/')) return null;
+        const contentLength = Number(response.headers.get('content-length') || 0);
+        if (contentLength > 5 * 1024 * 1024) return null;
         const buffer = Buffer.from(await response.arrayBuffer());
         if (buffer.byteLength > 5 * 1024 * 1024) return null;
         return { mimeType: contentType, data: buffer.toString('base64') };

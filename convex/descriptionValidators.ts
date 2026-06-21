@@ -62,13 +62,25 @@ function hasDirectEvidenceFor(term: string, facts: NormalizedProductFacts, group
     });
 }
 
-function checkClaims(text: string, facts: NormalizedProductFacts): ClaimCheck[] {
+function claimCodeForTerm(term: string): DescriptionValidationIssue['code'] {
+    const lower = term.toLowerCase();
+    if (CARE_CLAIMS.some(claim => lower.includes(claim))) return 'UNSUPPORTED_CARE_CLAIM';
+    if (SAFETY_CLAIMS.some(claim => lower.includes(claim))) return 'UNSUPPORTED_SAFETY_CLAIM';
+    if (CERT_CLAIMS.some(claim => lower.includes(claim)) || /certified|fsc|oeko|gots|organic/.test(lower)) {
+        return 'UNSUPPORTED_CERTIFICATION_CLAIM';
+    }
+    return 'UNSUPPORTED_MATERIAL_CLAIM';
+}
+
+function checkClaims(text: string, facts: NormalizedProductFacts, brandVoice: BrandVoiceConfig): ClaimCheck[] {
     const lower = text.toLowerCase();
     const checks: ClaimCheck[] = [];
+    const seen = new Set<string>();
     const add = (terms: string[], groups: Array<keyof NormalizedProductFacts>, issueCode: DescriptionValidationIssue['code']) => {
         for (const term of terms) {
             if (!lower.includes(term.toLowerCase())) continue;
             const supported = hasDirectEvidenceFor(term, facts, groups);
+            seen.add(term.toLowerCase());
             checks.push({ claim: term, supported, issueCode: supported ? undefined : issueCode });
         }
     };
@@ -83,6 +95,12 @@ function checkClaims(text: string, facts: NormalizedProductFacts): ClaimCheck[] 
             supported: facts.dimensions.length > 0,
             issueCode: facts.dimensions.length > 0 ? undefined : 'UNSUPPORTED_DIMENSION_CLAIM',
         });
+    }
+    for (const term of brandVoice.bannedClaimsWithoutEvidence) {
+        const normalized = term.toLowerCase();
+        if (seen.has(normalized) || !lower.includes(normalized)) continue;
+        const supported = hasDirectEvidenceFor(term, facts, ['materials', 'certifications', 'careInstructions', 'dimensions', 'functionalDetails']);
+        checks.push({ claim: term, supported, issueCode: supported ? undefined : claimCodeForTerm(term) });
     }
     return checks;
 }
@@ -109,6 +127,7 @@ export function validateGeneratedDescription(args: {
     const errors: DescriptionValidationIssue[] = [];
     const warnings: DescriptionValidationIssue[] = [];
     const text = draftText(draft);
+    const validFactIds = new Set(getFactIds(facts));
 
     if (!draft.openingSentence?.trim()) errors.push(issue('MISSING_OPENING', 'Opening sentence is required.'));
     const openingWords = words(draft.openingSentence || '');
@@ -126,13 +145,14 @@ export function validateGeneratedDescription(args: {
         if (!line.detail?.trim() || /^(n\/?a|none|unknown|tbd|-)\.?$/i.test(line.detail.trim())) {
             errors.push(issue('GENERIC_COPY', 'Detail line is empty or filler.', 'error', `${line.label} · ${line.detail}`));
         }
-        if (line.label === 'Material' && line.supportedByFactIds.length === 0) {
+        const hasSupportedFacts = line.supportedByFactIds.some(factId => validFactIds.has(factId));
+        if (line.label === 'Material' && !hasSupportedFacts) {
             errors.push(issue('UNSUPPORTED_MATERIAL_CLAIM', 'Material label requires a supporting material fact.', 'error', line.detail));
         }
-        if (line.label === 'Care' && line.supportedByFactIds.length === 0) {
+        if (line.label === 'Care' && !hasSupportedFacts) {
             errors.push(issue('UNSUPPORTED_CARE_CLAIM', 'Care label requires direct care evidence.', 'error', line.detail));
         }
-        if (line.label === 'Dimensions' && line.supportedByFactIds.length === 0) {
+        if (line.label === 'Dimensions' && !hasSupportedFacts) {
             errors.push(issue('UNSUPPORTED_DIMENSION_CLAIM', 'Dimensions label requires direct dimension evidence.', 'error', line.detail));
         }
     }
@@ -145,7 +165,7 @@ export function validateGeneratedDescription(args: {
     const genericMatches = text.match(GENERIC_OPENING) || [];
     if (genericMatches.length >= 4) warnings.push(issue('GENERIC_COPY', 'Copy relies on too many generic adjectives.', 'warning'));
 
-    const claimChecks = checkClaims(text, facts);
+    const claimChecks = checkClaims(text, facts, brandVoice);
     for (const check of claimChecks) {
         if (!check.supported && check.issueCode) {
             errors.push(issue(check.issueCode, `Unsupported claim lacks direct evidence: ${check.claim}`, 'error', check.claim));

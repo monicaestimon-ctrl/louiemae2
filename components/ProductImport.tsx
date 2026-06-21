@@ -428,11 +428,13 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             if ((smartDescription as any)?.ok && (smartDescription as any).description) {
                 updateProductField(productId, 'customDescription', (smartDescription as any).description);
                 updateProductField(productId, 'descriptionAuditId', (smartDescription as any).auditId);
+                updateProductField(productId, 'smartDescriptionAdminEdited', false);
                 updateProductField(productId, 'smartDescriptionWarnings', (smartDescription as any).warnings || []);
                 updateProductField(productId, 'smartDescriptionSourceQuality', (smartDescription as any).facts?.sourceQuality?.score);
                 updateProductField(productId, 'smartDescriptionFallbackUsed', (smartDescription as any).fallbackUsed);
             } else {
                 toast.error((smartDescription as any)?.error || 'Smart description failed');
+                return;
             }
 
             toast.success('AI enhancement complete', {
@@ -531,6 +533,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             if ((smartDescription as any)?.ok && (smartDescription as any).description) {
                 updateProductField(productId, 'customDescription', (smartDescription as any).description);
                 updateProductField(productId, 'descriptionAuditId', (smartDescription as any).auditId);
+                updateProductField(productId, 'smartDescriptionAdminEdited', false);
                 updateProductField(productId, 'smartDescriptionWarnings', (smartDescription as any).warnings || []);
                 updateProductField(productId, 'smartDescriptionSourceQuality', (smartDescription as any).facts?.sourceQuality?.score);
                 updateProductField(productId, 'smartDescriptionFallbackUsed', (smartDescription as any).fallbackUsed);
@@ -703,12 +706,12 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                         model: 'server-configured',
                         promptVersion: 'smart-description-v2.0.0',
                         sourceSnapshotHash: 'pending-link',
-                        adminEdited: Boolean(p.customDescription && p.customDescription !== p.description),
+                        adminEdited: Boolean(p.smartDescriptionAdminEdited),
                         status: p.smartDescriptionFallbackUsed ? 'fallback' as const : 'generated' as const,
                     }
                     : undefined,
                 descriptionSource: p.descriptionAuditId
-                    ? (p.customDescription && p.customDescription !== p.description
+                    ? (p.smartDescriptionAdminEdited
                         ? 'ai_generated_admin_edited' as const
                         : 'ai_generated' as const)
                     : (p.description ? 'source_original' as const : 'safe_fallback' as const),
@@ -1456,10 +1459,15 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                             <textarea
                                                 rows={4}
                                                 value={currentProduct.customDescription || currentProduct.description || ''}
-                                                onChange={(e) => updateReviewProduct('customDescription', e.target.value)}
+                                                onChange={(e) => {
+                                                    updateReviewProduct('customDescription', e.target.value);
+                                                    if (currentProduct.descriptionAuditId) {
+                                                        updateReviewProduct('smartDescriptionAdminEdited', true);
+                                                    }
+                                                }}
                                                 className="w-full p-3 bg-white/60 backdrop-blur-sm border border-white/40 rounded-lg text-xs text-earth/90 focus:bg-white/80 focus:ring-2 ring-bronze/30 shadow-sm resize-none transition-all"
                                             />
-                                            {(currentProduct.descriptionAuditId || currentProduct.smartDescriptionSourceQuality !== undefined || currentProduct.smartDescriptionWarnings?.length) && (
+                                            {(currentProduct.descriptionAuditId || currentProduct.smartDescriptionSourceQuality !== undefined || (currentProduct.smartDescriptionWarnings?.length ?? 0) > 0) && (
                                                 <div className="mt-2 rounded-lg border border-purple-100 bg-purple-50/70 p-2 text-[10px] text-earth/60 space-y-1">
                                                     <div className="flex flex-wrap gap-x-3 gap-y-1">
                                                         {currentProduct.smartDescriptionSourceQuality !== undefined && (
@@ -2261,10 +2269,15 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                             ...importableProduct,
                             customName: isValidAiName ? enhancedName : importableProduct.name,
                             customDescription: isValidAiDesc ? smartDescriptionResult.description : importableProduct.description,
-                            descriptionAuditId: smartDescriptionResult?.auditId,
-                            smartDescriptionWarnings: smartDescriptionResult?.warnings || [],
-                            smartDescriptionSourceQuality: smartDescriptionResult?.facts?.sourceQuality?.score,
-                            smartDescriptionFallbackUsed: Boolean(smartDescriptionResult?.fallbackUsed),
+                            ...(isValidAiDesc
+                                ? {
+                                    descriptionAuditId: smartDescriptionResult.auditId,
+                                    smartDescriptionAdminEdited: false,
+                                    smartDescriptionWarnings: smartDescriptionResult.warnings || [],
+                                    smartDescriptionSourceQuality: smartDescriptionResult.facts?.sourceQuality?.score,
+                                    smartDescriptionFallbackUsed: Boolean(smartDescriptionResult.fallbackUsed),
+                                }
+                                : {}),
                         };
                         toast.success('Product found & AI enhanced');
                     } else {

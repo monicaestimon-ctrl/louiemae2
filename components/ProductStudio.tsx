@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Wand2, Send, ChevronRight, Type, Image as ImageIcon, CheckCircle, ArrowLeft, Eye, Loader2, Upload, Trash2, Box, DollarSign, Download, ExternalLink } from 'lucide-react';
 import { Product, SiteContent } from '../types';
-import { generateProductNameV2, extractKeywords, ProductContext, suggestProductCategory } from '../services/geminiService';
+import { generateProductNameV2, extractKeywords, ProductContext, suggestProductCategory, isLikelyFallback } from '../services/geminiService';
 import { FadeIn } from './FadeIn';
 import { useAction } from 'convex/react';
 import { api } from '../convex/_generated/api';
@@ -121,7 +121,6 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
                 const adminEdited = productToSave.description !== productToSave.smartDescription.description;
                 productToSave.smartDescription = {
                     ...productToSave.smartDescription,
-                    description: productToSave.description || productToSave.smartDescription.description,
                     adminEdited,
                     status: adminEdited ? 'edited' : 'approved',
                 };
@@ -425,12 +424,9 @@ const EssenceStep: React.FC<{
                         } as any).catch(() => null)
                     ]);
 
-                    // Helper to check for generic fallbacks
-                    const isGeneric = (text: string) => text.includes("Chair") || text.includes("Table") || text.includes("Unknown");
-
-                    if (!isGeneric(name)) updatedProduct.name = name;
+                    if (name && !isLikelyFallback(name)) updatedProduct.name = name;
                     const smartDescriptionResult = smartDescription as any;
-                    if (smartDescriptionResult?.ok && smartDescriptionResult.description && !isGeneric(smartDescriptionResult.description)) {
+                    if (smartDescriptionResult?.ok && smartDescriptionResult.description) {
                         updatedProduct.description = smartDescriptionResult.description;
                         updatedProduct.smartDescription = {
                             description: smartDescriptionResult.description,

@@ -106,6 +106,17 @@ function variantFacts(snapshot: SourceProductSnapshot): FactValue[] {
 
 function visualFacts(snapshot: SourceProductSnapshot): FactValue[] {
     const facts: FactValue[] = [];
+    for (const visual of ((snapshot as SourceProductSnapshot & { visualFacts?: VisualFact[] }).visualFacts || [])) {
+        if (!visual.allowedForCopy || visual.claimRisk === 'high') continue;
+        facts.push(fact(
+            'visual',
+            visual.factType,
+            visual.value,
+            'source_image',
+            visual.confidence,
+            [{ source: 'image', imageUrl: visual.imageUrl, value: visual.value, excerpt: visual.value.slice(0, 180) }]
+        ));
+    }
     const images = [...(snapshot.images || []), ...(snapshot.descriptionImages || [])];
     for (const image of images) {
         for (const visual of image.visualFacts || []) {

@@ -21,7 +21,7 @@ function findJsonLdBlocks(html: string): unknown[] {
     const regex = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
     let match: RegExpExecArray | null;
     while ((match = regex.exec(html)) !== null) {
-        const raw = sanitizeSourceText(match[1], 50000).text;
+        const raw = match[1].trim().slice(0, 50000);
         try {
             blocks.push(JSON.parse(raw));
         } catch {

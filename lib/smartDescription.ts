@@ -274,8 +274,10 @@ export function sanitizeSourceText(input = '', maxChars = 20000): { text: string
     text = text.replace(/<[^>]+>/g, ' ');
     text = text.replace(/\b(shipping|payment|returns?|refunds?|wholesale|dropshipping)\b[\s\S]{0,300}/gi, ' ');
     for (const pattern of PROMPT_INJECTION_PATTERNS) {
+        pattern.lastIndex = 0;
         if (pattern.test(text)) {
             warnings.push('Potential source prompt injection removed from source description.');
+            pattern.lastIndex = 0;
             text = text.replace(pattern, ' ');
         }
     }
@@ -354,9 +356,11 @@ export function buildSourceProductSnapshot(input: {
     sourceUrl?: string;
     name?: string;
     title?: string;
+    rawTitle?: string;
     description?: string;
+    rawDescription?: string;
     htmlDescription?: string;
-    price?: number;
+    price?: number | { amount?: number; currency?: string; raw?: string };
     currency?: string;
     images?: unknown;
     descriptionImages?: unknown;
@@ -365,13 +369,21 @@ export function buildSourceProductSnapshot(input: {
     category?: string;
     subcategory?: string;
     collection?: string;
+    categoryHints?: {
+        selectedCategory?: string;
+        selectedSubcategory?: string;
+        selectedCollection?: string;
+    };
     sellerName?: string;
     sellerRating?: number;
     salesCount?: number;
     sourceMetadata?: Record<string, unknown>;
 }): SourceProductSnapshot {
     const sourceUrl = input.sourceUrl;
-    const rawDescription = sanitizeSourceText(input.description || '').text;
+    const priceAmount = typeof input.price === 'number' ? input.price : input.price?.amount;
+    const priceCurrency = typeof input.price === 'object' ? input.price.currency : input.currency;
+    const priceRaw = typeof input.price === 'object' ? input.price.raw : undefined;
+    const rawDescription = sanitizeSourceText(input.rawDescription || input.description || '').text;
     const rawHtmlDescription = sanitizeSourceText(input.htmlDescription || '').text;
     const attributes = Array.isArray(input.attributes)
         ? input.attributes
@@ -386,22 +398,22 @@ export function buildSourceProductSnapshot(input: {
         sourceDomain: inferSourceDomain(sourceUrl),
         sourcePlatform: inferSourcePlatform(sourceUrl),
         importedAt: Date.now(),
-        rawTitle: sanitizeSourceText(input.title || input.name || '').text,
+        rawTitle: sanitizeSourceText(input.rawTitle || input.title || input.name || '').text,
         rawDescription,
         rawHtmlDescription,
         price: {
-            amount: input.price,
-            currency: input.currency || 'USD',
-            raw: typeof input.price === 'number' ? String(input.price) : undefined,
+            amount: priceAmount,
+            currency: priceCurrency || 'USD',
+            raw: priceRaw || (typeof priceAmount === 'number' ? String(priceAmount) : undefined),
         },
         images: normalizeImageList(input.images, 'gallery'),
         descriptionImages: normalizeImageList(input.descriptionImages, 'detail'),
         variants: normalizeVariants(input.variants),
         attributes,
         categoryHints: {
-            selectedCategory: input.category,
-            selectedSubcategory: input.subcategory,
-            selectedCollection: normalizeCollection(input.collection),
+            selectedCategory: input.categoryHints?.selectedCategory || input.category,
+            selectedSubcategory: input.categoryHints?.selectedSubcategory || input.subcategory,
+            selectedCollection: normalizeCollection(input.categoryHints?.selectedCollection || input.collection),
         },
         seller: {
             name: input.sellerName,
