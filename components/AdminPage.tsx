@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { useMutation } from 'convex/react';
+import { useAction, useMutation } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { useSite } from '../contexts/BlogContext';
 import { RichTextEditor } from './RichTextEditor';
@@ -14,6 +14,7 @@ import { NewsletterStudio } from './NewsletterStudio';
 import { ProductStudio } from './ProductStudio';
 import { ProductImport } from './ProductImport';
 import { CJSettings } from './CJSettings';
+import { buildSourceProductSnapshot } from '../lib/smartDescription';
 
 // --- Image Uploader Component ---
 const ImageUploader: React.FC<{
@@ -149,6 +150,8 @@ const ImageUploader: React.FC<{
 export const AdminPage: React.FC = () => {
    const { isAuthenticated, isAuthLoading, signIn, logout, posts, addPost, updatePost, deletePost, siteContent, updateSiteContent, addCustomPage, updateCustomPage, deleteCustomPage, products, addProduct, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
    const { subscribers, campaigns, createCampaign, updateCampaign, sendCampaign, deleteCampaign, stats } = useNewsletter();
+   const linkDescriptionAuditToProduct = useMutation(api.descriptionAudits.linkAuditToProduct);
+   const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
 
    const [email, setEmail] = useState('');
    const [password, setPassword] = useState('');
@@ -185,6 +188,15 @@ export const AdminPage: React.FC = () => {
    // Product Editor State
    const [isEditingProduct, setIsEditingProduct] = useState(false);
    const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
+   const [isBatchRegenerating, setIsBatchRegenerating] = useState(false);
+   const [batchDescriptionPreviews, setBatchDescriptionPreviews] = useState<Array<{
+      product: Product;
+      description: string;
+      auditId: string;
+      fallbackUsed: boolean;
+      warnings: string[];
+      sourceQuality?: number;
+   }>>([]);
 
 
    // Structure/Collection Editor State
@@ -329,6 +341,106 @@ export const AdminPage: React.FC = () => {
 
    const handleDeleteProduct = (id: string) => {
       if (confirm('Delete this product?')) deleteProduct(id);
+   };
+
+   const buildSnapshotFromProduct = (product: Product) => buildSourceProductSnapshot({
+      sourceUrl: product.sourceUrl,
+      rawTitle: product.name,
+      rawDescription: product.description,
+      price: {
+         amount: product.price,
+         currency: product.sourceCurrency || 'USD',
+         raw: String(product.price),
+      },
+      images: product.images || [],
+      variants: product.variants || [],
+      categoryHints: {
+         selectedCategory: product.category,
+         selectedSubcategory: product.subcategory,
+         selectedCollection: product.collection,
+      },
+      sourceMetadata: {
+         productId: product.id,
+         descriptionSource: product.descriptionSource,
+         sourcePriceCny: product.sourcePriceCny,
+      },
+   });
+
+   const handleBatchRegenerateDescriptions = async () => {
+      const candidates = filteredProducts.filter(product => !product.smartDescription?.adminEdited);
+      if (candidates.length === 0) {
+         alert('No eligible products found. Admin-edited descriptions are protected.');
+         return;
+      }
+
+      setIsBatchRegenerating(true);
+      setBatchDescriptionPreviews([]);
+      try {
+         const previews = [];
+         for (const product of candidates) {
+            const result = await generateSmartDescription({
+               request: {
+                  productId: product.id,
+                  sourceSnapshot: buildSnapshotFromProduct(product),
+                  adminContext: {
+                     selectedCategory: product.category,
+                     selectedSubcategory: product.subcategory,
+                     selectedCollection: product.collection,
+                  },
+                  generationMode: 'batch_regenerate',
+                  options: {
+                     allowImageAnalysis: true,
+                     allowSeoKeywords: true,
+                     forceFreshVariation: true,
+                  },
+               },
+            } as any);
+
+            if ((result as any)?.ok && (result as any).description) {
+               previews.push({
+                  product,
+                  description: (result as any).description,
+                  auditId: (result as any).auditId,
+                  fallbackUsed: Boolean((result as any).fallbackUsed),
+                  warnings: (result as any).warnings || [],
+                  sourceQuality: (result as any).facts?.sourceQuality?.score,
+               });
+            }
+         }
+         setBatchDescriptionPreviews(previews);
+      } catch (err) {
+         console.error('Batch smart description generation failed:', err);
+         alert('Batch smart description generation failed. Try again with fewer products.');
+      } finally {
+         setIsBatchRegenerating(false);
+      }
+   };
+
+   const approveBatchDescription = async (preview: typeof batchDescriptionPreviews[number]) => {
+      const updatedProduct: Partial<Product> = {
+         description: preview.description,
+         smartDescription: {
+            description: preview.description,
+            auditId: preview.auditId,
+            generatedAt: Date.now(),
+            model: 'server-configured',
+            promptVersion: 'smart-description-v2.0.0',
+            sourceSnapshotHash: 'pending-link',
+            adminEdited: false,
+            status: preview.fallbackUsed ? 'fallback' : 'approved',
+         },
+         descriptionSource: 'ai_generated',
+      };
+      await updateProduct(preview.product.id, updatedProduct);
+      try {
+         await linkDescriptionAuditToProduct({
+            auditId: preview.auditId as any,
+            productId: preview.product.id as any,
+         });
+      } catch (err) {
+         console.warn('Failed to link smart description audit:', err);
+      }
+      setBatchDescriptionPreviews(prev => prev.filter(item => item.auditId !== preview.auditId));
    };
 
    // --- STRUCTURE HANDLERS ---
@@ -781,6 +893,16 @@ export const AdminPage: React.FC = () => {
                         const results = await Promise.all(
                            productsToImport.map(async (product) => {
                               const productId = await addProduct(product);
+                              if (productId && product.smartDescription?.auditId) {
+                                 try {
+                                    await linkDescriptionAuditToProduct({
+                                       auditId: product.smartDescription.auditId as any,
+                                       productId: productId as any,
+                                    });
+                                 } catch (err) {
+                                    console.warn('Failed to link smart description audit:', err);
+                                 }
+                              }
                               // If product has source URL and was created successfully, submit for CJ sourcing
                               if (productId && product.sourceUrl && product.cjSourcingStatus === 'pending') {
                                  // CJ sourcing will be triggered by the cron job or manual check
@@ -1076,10 +1198,65 @@ export const AdminPage: React.FC = () => {
                         <span className="text-bronze text-xs uppercase tracking-[0.4em] mb-2 block glow-text">{getCollectionTitle(filterCollection)}</span>
                         <h1 className="font-serif text-2xl md:text-4xl text-cream drop-shadow-md">{filterCategory || 'All Items'}</h1>
                      </div>
-                     <button onClick={handleCreateProduct} className="bg-white/10 text-cream border border-white/20 px-5 md:px-6 py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-white/20 transition-all shadow-[0_4px_15px_rgba(0,0,0,0.3)] flex items-center gap-2 rounded-lg w-fit backdrop-blur-md">
-                        <Plus className="w-3 h-3" /> Add Product
-                     </button>
+                     <div className="flex flex-wrap gap-2">
+                        <button
+                           onClick={handleBatchRegenerateDescriptions}
+                           disabled={isBatchRegenerating || filteredProducts.length === 0}
+                           className="bg-purple-500/10 text-purple-100 border border-purple-300/20 px-5 md:px-6 py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-purple-500/20 transition-all shadow-[0_4px_15px_rgba(0,0,0,0.3)] flex items-center gap-2 rounded-lg w-fit backdrop-blur-md disabled:opacity-50"
+                        >
+                           {isBatchRegenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <WandIcon className="w-3 h-3" />}
+                           Smart Preview
+                        </button>
+                        <button onClick={handleCreateProduct} className="bg-white/10 text-cream border border-white/20 px-5 md:px-6 py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-white/20 transition-all shadow-[0_4px_15px_rgba(0,0,0,0.3)] flex items-center gap-2 rounded-lg w-fit backdrop-blur-md">
+                           <Plus className="w-3 h-3" /> Add Product
+                        </button>
+                     </div>
                   </div>
+
+                  {batchDescriptionPreviews.length > 0 && (
+                     <div className="mb-6 rounded-2xl border border-purple-300/20 bg-purple-500/10 p-4 backdrop-blur-xl">
+                        <div className="flex items-center justify-between gap-4 mb-4">
+                           <div>
+                              <h2 className="text-sm uppercase tracking-[0.2em] text-purple-100">Smart Description Previews</h2>
+                              <p className="text-xs text-cream/50 mt-1">Review each suggestion before saving it to inventory.</p>
+                           </div>
+                           <button onClick={() => setBatchDescriptionPreviews([])} className="text-cream/50 hover:text-cream">
+                              <X className="w-4 h-4" />
+                           </button>
+                        </div>
+                        <div className="space-y-3">
+                           {batchDescriptionPreviews.map(preview => (
+                              <div key={preview.auditId} className="rounded-xl border border-white/10 bg-black/20 p-4">
+                                 <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                                    <div className="min-w-0">
+                                       <p className="font-serif text-lg text-cream">{preview.product.name}</p>
+                                       <p className="text-[10px] uppercase tracking-widest text-cream/40 mt-1">
+                                          Source quality: {preview.sourceQuality ?? 'n/a'} / 100 {preview.fallbackUsed ? ' · fallback used' : ''}
+                                       </p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                       <button onClick={() => approveBatchDescription(preview)} className="px-3 py-2 rounded-lg bg-bronze text-white text-[10px] uppercase tracking-widest">
+                                          Approve
+                                       </button>
+                                       <button onClick={() => setBatchDescriptionPreviews(prev => prev.filter(item => item.auditId !== preview.auditId))} className="px-3 py-2 rounded-lg bg-white/10 text-cream text-[10px] uppercase tracking-widest">
+                                          Reject
+                                       </button>
+                                    </div>
+                                 </div>
+                                 <div className="mt-3 grid md:grid-cols-2 gap-3 text-sm">
+                                    <div className="rounded-lg bg-black/20 p-3 text-cream/50 whitespace-pre-wrap">{preview.product.description || 'No current description.'}</div>
+                                    <div className="rounded-lg bg-white/5 p-3 text-cream whitespace-pre-wrap">{preview.description}</div>
+                                 </div>
+                                 {preview.warnings.length > 0 && (
+                                    <div className="mt-3 text-xs text-amber-200/80">
+                                       {preview.warnings.map((warning, index) => <p key={`${warning}-${index}`}>{warning}</p>)}
+                                    </div>
+                                 )}
+                              </div>
+                           ))}
+                        </div>
+                     </div>
+                  )}
 
                   <div className="grid grid-cols-1 gap-4">
                      {filteredProducts.length === 0 ? (
@@ -1752,6 +1929,16 @@ export const AdminPage: React.FC = () => {
                if (prod.id) {
                   // Updating existing product - just update
                   await updateProduct(prod.id, prod);
+                  if (prod.smartDescription?.auditId) {
+                     try {
+                        await linkDescriptionAuditToProduct({
+                           auditId: prod.smartDescription.auditId as any,
+                           productId: prod.id as any,
+                        });
+                     } catch (err) {
+                        console.warn('Failed to link smart description audit:', err);
+                     }
+                  }
                } else {
                   // New product - set CJ sourcing status if it has a source URL
                   const productWithSourcing = {
@@ -1759,7 +1946,17 @@ export const AdminPage: React.FC = () => {
                      // Mark for CJ sourcing if product has a source URL (from AliExpress etc)
                      cjSourcingStatus: prod.sourceUrl ? 'pending' as const : 'none' as const,
                   };
-                  await addProduct(productWithSourcing as Omit<Product, 'id'>);
+                  const productId = await addProduct(productWithSourcing as Omit<Product, 'id'>);
+                  if (productId && prod.smartDescription?.auditId) {
+                     try {
+                        await linkDescriptionAuditToProduct({
+                           auditId: prod.smartDescription.auditId as any,
+                           productId: productId as any,
+                        });
+                     } catch (err) {
+                        console.warn('Failed to link smart description audit:', err);
+                     }
+                  }
 
                   // If marked as pending, the CJ cron job will handle submission
                   if (prod.sourceUrl) {

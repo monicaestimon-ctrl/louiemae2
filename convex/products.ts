@@ -55,6 +55,35 @@ export const create = mutation({
         )),
         // Multi-category support
         subcategory: v.optional(v.string()),
+        smartDescription: v.optional(v.object({
+            description: v.string(),
+            auditId: v.id("descriptionAudits"),
+            generatedAt: v.number(),
+            model: v.string(),
+            promptVersion: v.string(),
+            sourceSnapshotHash: v.string(),
+            adminEdited: v.boolean(),
+            status: v.union(
+                v.literal("generated"),
+                v.literal("edited"),
+                v.literal("approved"),
+                v.literal("failed"),
+                v.literal("fallback")
+            ),
+        })),
+        descriptionSource: v.optional(v.union(
+            v.literal("admin_written"),
+            v.literal("ai_generated"),
+            v.literal("ai_generated_admin_edited"),
+            v.literal("source_original"),
+            v.literal("safe_fallback")
+        )),
+        descriptionFingerprint: v.optional(v.object({
+            normalizedOpening: v.string(),
+            topPhrases: v.array(v.string()),
+            productType: v.string(),
+            collection: v.string(),
+        })),
     },
     handler: async (ctx, args) => {
         // Require authentication
@@ -95,6 +124,35 @@ export const update = mutation({
             v.literal("confirmed")
         )),
         subcategory: v.optional(v.string()),
+        smartDescription: v.optional(v.object({
+            description: v.string(),
+            auditId: v.id("descriptionAudits"),
+            generatedAt: v.number(),
+            model: v.string(),
+            promptVersion: v.string(),
+            sourceSnapshotHash: v.string(),
+            adminEdited: v.boolean(),
+            status: v.union(
+                v.literal("generated"),
+                v.literal("edited"),
+                v.literal("approved"),
+                v.literal("failed"),
+                v.literal("fallback")
+            ),
+        })),
+        descriptionSource: v.optional(v.union(
+            v.literal("admin_written"),
+            v.literal("ai_generated"),
+            v.literal("ai_generated_admin_edited"),
+            v.literal("source_original"),
+            v.literal("safe_fallback")
+        )),
+        descriptionFingerprint: v.optional(v.object({
+            normalizedOpening: v.string(),
+            topPhrases: v.array(v.string()),
+            productType: v.string(),
+            collection: v.string(),
+        })),
         variants: v.optional(v.array(v.object({
             id: v.string(),
             name: v.string(),

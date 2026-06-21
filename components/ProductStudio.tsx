@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Wand2, Send, ChevronRight, Type, Image as ImageIcon, CheckCircle, ArrowLeft, Eye, Loader2, Upload, Trash2, Box, DollarSign, Download, ExternalLink } from 'lucide-react';
 import { Product, SiteContent } from '../types';
-import { generateProductNameV2, generateProductDescriptionV2, extractKeywords, ProductContext, suggestProductCategory } from '../services/geminiService';
+import { generateProductNameV2, extractKeywords, ProductContext, suggestProductCategory } from '../services/geminiService';
 import { FadeIn } from './FadeIn';
 import { useAction } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { toast } from 'sonner';
 import { extractOtapiFields } from '../lib/otapiHelpers';
+import { buildSourceProductSnapshot } from '../lib/smartDescription';
 
 interface ProductStudioProps {
     isOpen: boolean;
@@ -116,6 +117,18 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
             // Normalize price draft before save
             const normalizedPrice = priceDraft === '' ? 0 : Number(priceDraft);
             const productToSave = { ...product, price: Number.isFinite(normalizedPrice) ? normalizedPrice : 0 };
+            if (productToSave.smartDescription) {
+                const adminEdited = productToSave.description !== productToSave.smartDescription.description;
+                productToSave.smartDescription = {
+                    ...productToSave.smartDescription,
+                    description: productToSave.description || productToSave.smartDescription.description,
+                    adminEdited,
+                    status: adminEdited ? 'edited' : 'approved',
+                };
+                productToSave.descriptionSource = adminEdited ? 'ai_generated_admin_edited' : 'ai_generated';
+            } else if (productToSave.description) {
+                productToSave.descriptionSource = productToSave.sourceUrl ? 'source_original' : 'admin_written';
+            }
             await Promise.resolve(onSave(productToSave));
         } catch (err) {
             console.error('Product save failed:', err);
@@ -130,6 +143,7 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
 
     // URL Scraper Action
     const scrapeProduct = useAction(api.scraper.scrapeProduct);
+    const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
 
     if (!isOpen) return null;
 
@@ -217,6 +231,7 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
                             onNext={() => setStep('visuals')}
                             collections={siteContent.collections}
                             scrapeProduct={scrapeProduct}
+                            generateSmartDescription={generateSmartDescription}
                         />
                     )}
 
@@ -236,6 +251,7 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
                             onBack={() => setStep('visuals')}
                             onNext={() => setStep('review')}
                             siteContent={siteContent}
+                            generateSmartDescription={generateSmartDescription}
                         />
                     )}
 
@@ -301,7 +317,8 @@ const EssenceStep: React.FC<{
     onNext: () => void;
     collections: any[];
     scrapeProduct: any;
-}> = ({ product, onChange, priceDraft, onPriceDraftChange, onNext, collections, scrapeProduct }) => {
+    generateSmartDescription: any;
+}> = ({ product, onChange, priceDraft, onPriceDraftChange, onNext, collections, scrapeProduct, generateSmartDescription }) => {
     const [isGeneratingName, setIsGeneratingName] = useState(false);
     const [nameSuggestions, setNameSuggestions] = useState<string[]>([]);
     const [isCategorizing, setIsCategorizing] = useState(false);
@@ -332,6 +349,8 @@ const EssenceStep: React.FC<{
                         description: fields.description,
                         images: fields.images,
                         sourceUrl: normalizedUrl,
+                        variants: fields.variants,
+                        sourceMetadata: { source: '1688' },
                     };
                 }
             } else {
@@ -345,6 +364,7 @@ const EssenceStep: React.FC<{
                         ? data.images
                         : (data.image ? [data.image] : []),
                     sourceUrl: normalizedUrl,
+                    sourceMetadata: data,
                 };
             }
 
@@ -373,16 +393,62 @@ const EssenceStep: React.FC<{
 
                 // Try AI enhancement
                 try {
-                    const [name, desc] = await Promise.all([
+                    const sourceSnapshot = buildSourceProductSnapshot({
+                        sourceUrl: normalizedUrl,
+                        rawTitle: updatedProduct.name,
+                        rawDescription: updatedProduct.description,
+                        price: {
+                            amount: Number(updatedProduct.price),
+                            currency: 'USD',
+                            raw: String(updatedProduct.price ?? ''),
+                        },
+                        images: updatedProduct.images || [],
+                        variants: updatedProduct.variants || [],
+                        categoryHints: {
+                            selectedCategory: updatedProduct.category,
+                            selectedCollection: updatedProduct.collection,
+                        },
+                        sourceMetadata: scrapedData.sourceMetadata || {},
+                    });
+
+                    const [name, smartDescription] = await Promise.all([
                         generateProductNameV2(context).catch(() => updatedProduct.name),
-                        generateProductDescriptionV2(context).catch(() => updatedProduct.description)
+                        generateSmartDescription({
+                            request: {
+                                sourceSnapshot,
+                                adminContext: {
+                                    selectedCategory: updatedProduct.category,
+                                    selectedCollection: updatedProduct.collection,
+                                },
+                                generationMode: 'manual_generate',
+                                options: {
+                                    allowImageAnalysis: true,
+                                    allowSeoKeywords: true,
+                                    forceFreshVariation: true,
+                                },
+                            },
+                        } as any).catch(() => null)
                     ]);
 
                     // Helper to check for generic fallbacks
                     const isGeneric = (text: string) => text.includes("Chair") || text.includes("Table") || text.includes("Unknown");
 
                     if (!isGeneric(name)) updatedProduct.name = name;
-                    if (!isGeneric(desc)) updatedProduct.description = desc;
+                    const smartDescriptionResult = smartDescription as any;
+                    if (smartDescriptionResult?.ok && smartDescriptionResult.description && !isGeneric(smartDescriptionResult.description)) {
+                        updatedProduct.description = smartDescriptionResult.description;
+                        updatedProduct.smartDescription = {
+                            description: smartDescriptionResult.description,
+                            auditId: smartDescriptionResult.auditId,
+                            generatedAt: Date.now(),
+                            model: 'server-configured',
+                            promptVersion: 'smart-description-v2.0.0',
+                            sourceSnapshotHash: 'pending-link',
+                            adminEdited: false,
+                            status: smartDescriptionResult.fallbackUsed ? 'fallback' : 'generated',
+                        };
+                        updatedProduct.descriptionSource = 'ai_generated';
+                    }
 
                     toast.success("Imported & Enhanced!");
                 } catch (e) {
@@ -849,24 +915,76 @@ const VisualsStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => v
 };
 
 // --- Step 3: Story (Zen Mode) ---
-const StoryStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => void; onBack: () => void; onNext: () => void; siteContent: SiteContent }> = ({ product, onChange, onBack, onNext, siteContent }) => {
+const StoryStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => void; onBack: () => void; onNext: () => void; siteContent: SiteContent; generateSmartDescription: any }> = ({ product, onChange, onBack, onNext, siteContent, generateSmartDescription }) => {
     const [isGenerating, setIsGenerating] = useState(false);
 
     const handleGenerateDescription = async () => {
         setIsGenerating(true);
-        const collectionName = siteContent.collections.find(c => c.id === product.collection)?.title || 'Furniture';
+        try {
+            const collectionName = siteContent.collections.find(c => c.id === product.collection)?.title || product.collection || 'Furniture';
+            const sourceSnapshot = buildSourceProductSnapshot({
+                sourceUrl: product.sourceUrl,
+                rawTitle: product.name || 'this item',
+                rawDescription: product.description || '',
+                price: {
+                    amount: Number(product.price),
+                    currency: 'USD',
+                    raw: String(product.price ?? ''),
+                },
+                images: product.images || [],
+                variants: product.variants || [],
+                categoryHints: {
+                    selectedCategory: product.category || 'home decor',
+                    selectedCollection: product.collection || collectionName,
+                },
+                sourceMetadata: {
+                    existingProductId: product.id,
+                    descriptionSource: product.descriptionSource,
+                },
+            });
 
-        const context: ProductContext = {
-            originalName: product.name || 'this item',
-            originalDescription: product.description || '',
-            category: product.category || 'home decor',
-            collection: collectionName,
-        };
+            const result = await generateSmartDescription({
+                request: {
+                    productId: product.id,
+                    sourceSnapshot,
+                    adminContext: {
+                        selectedCategory: product.category || 'home decor',
+                        selectedCollection: product.collection || collectionName,
+                    },
+                    generationMode: product.smartDescription?.auditId ? 'manual_regenerate' : 'manual_generate',
+                    options: {
+                        allowImageAnalysis: true,
+                        allowSeoKeywords: true,
+                        forceFreshVariation: true,
+                    },
+                },
+            } as any);
 
-        const description = await generateProductDescriptionV2(context);
+            if (!(result as any)?.ok || !(result as any).description) {
+                throw new Error((result as any)?.error || 'Smart description failed');
+            }
 
-        onChange({ ...product, description });
-        setIsGenerating(false);
+            onChange({
+                ...product,
+                description: (result as any).description,
+                smartDescription: {
+                    description: (result as any).description,
+                    auditId: (result as any).auditId,
+                    generatedAt: Date.now(),
+                    model: 'server-configured',
+                    promptVersion: 'smart-description-v2.0.0',
+                    sourceSnapshotHash: 'pending-link',
+                    adminEdited: false,
+                    status: (result as any).fallbackUsed ? 'fallback' : 'generated',
+                },
+                descriptionSource: 'ai_generated',
+            });
+        } catch (err) {
+            console.error('Smart description generation failed:', err);
+            toast.error('Smart description could not be generated');
+        } finally {
+            setIsGenerating(false);
+        }
     };
 
     return (
@@ -901,6 +1019,13 @@ const StoryStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => voi
                         placeholder="Start writing..."
                         className="w-full h-full resize-none focus:outline-none focus:border-bronze font-serif text-xl leading-relaxed text-cream placeholder:text-cream/20 bg-transparent p-6 rounded-2xl transition-all shadow-inner"
                     />
+                    {product.smartDescription && (
+                        <div className="absolute left-4 right-4 bottom-4 rounded-xl border border-white/10 bg-black/50 px-3 py-2 text-[10px] uppercase tracking-widest text-cream/50 backdrop-blur-md flex flex-wrap gap-3">
+                            <span>Status: {product.smartDescription.status}</span>
+                            <span>Audit: {String(product.smartDescription.auditId).slice(0, 10)}...</span>
+                            <span>{product.description === product.smartDescription.description ? 'Ready to approve' : 'Admin edited'}</span>
+                        </div>
+                    )}
                 </div>
 
                 <div className="pt-8 flex justify-end">

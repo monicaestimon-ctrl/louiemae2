@@ -29,6 +29,28 @@ export interface Product {
   sourcePriceOriginal?: number;     // Original price in source currency
   // Multi-category
   subcategory?: string;           // Specific subcategory (e.g., "Skirts")
+  smartDescription?: {
+    description: string;
+    auditId: string;
+    generatedAt: number;
+    model: string;
+    promptVersion: string;
+    sourceSnapshotHash: string;
+    adminEdited: boolean;
+    status: 'generated' | 'edited' | 'approved' | 'failed' | 'fallback';
+  };
+  descriptionSource?:
+    | 'admin_written'
+    | 'ai_generated'
+    | 'ai_generated_admin_edited'
+    | 'source_original'
+    | 'safe_fallback';
+  descriptionFingerprint?: {
+    normalizedOpening: string;
+    topPhrases: string[];
+    productType: string;
+    collection: string;
+  };
 }
 
 export interface Category {

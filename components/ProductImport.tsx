@@ -3,7 +3,7 @@ import { Search, Loader2, Check, X, DollarSign, Wand2, Package, ChevronDown, Ale
 import { toast, Toaster } from 'sonner';
 import { aliexpressService } from '../services/aliexpressService';
 import { CollectionType, Product, CollectionConfig } from '../types';
-import { generateProductNameV2, generateProductDescriptionV2, extractKeywords, ProductContext, translateVariantNames, isLikelyFallback, isLikelyFallbackDescription } from '../services/geminiService';
+import { generateProductNameV2, extractKeywords, ProductContext, translateVariantNames, isLikelyFallback } from '../services/geminiService';
 import { translateProductFields, detectChinese } from '../services/translateService';
 import { extractOtapiSourceProperties, cleanOtapiDescription } from '../lib/otapiHelpers';
 import { FadeIn } from './FadeIn';
@@ -11,6 +11,7 @@ import { ProductImageGallery } from './ProductImageGallery';
 import { ProductCard, ImportableProduct } from './import/ProductCard';
 import { useMutation, useAction } from 'convex/react';
 import { api } from '../convex/_generated/api';
+import { buildSourceProductSnapshot, SourceAttribute } from '../lib/smartDescription';
 
 interface ProductImportProps {
     collections: CollectionConfig[];
@@ -102,6 +103,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
 
     // Actions
     const scrapeProduct = useAction(api.scraper.scrapeProduct);
+    const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
 
     // Convex file upload mutations
     const generateUploadUrl = useMutation(api.files.generateUploadUrl);
@@ -122,6 +124,38 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     /** Drag-reorder state for image ordering strip */
     const [dragIdx, setDragIdx] = useState<number | null>(null);
     const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
+    const buildSnapshotForImportProduct = (product: ImportableProduct) => {
+        const attributes: SourceAttribute[] = Object.entries(product.sourceProperties || {}).map(([key, value]) => ({
+            key,
+            value: String(value),
+            source: 'otapi_property',
+            confidence: 0.9,
+        }));
+        return buildSourceProductSnapshot({
+            sourceUrl: product.productUrl,
+            name: product.name,
+            description: product.description || '',
+            price: product.salePrice || product.price,
+            currency: product.sourceCurrency || 'USD',
+            images: product.images || [],
+            descriptionImages: product.descriptionImages || [],
+            variants: product.variants || [],
+            attributes,
+            category: product.category || product.targetSubcategory || '',
+            subcategory: product.targetSubcategory || '',
+            collection: product.targetCollection || targetCollection,
+            sellerName: product.seller?.name,
+            sellerRating: product.seller?.rating,
+            salesCount: product.reviewCount,
+            sourceMetadata: {
+                sourceId: product.sourceId,
+                originalPrice: product.originalPrice,
+                sourcePriceCny: product.sourcePriceCny,
+                source: product.source,
+            },
+        });
+    };
 
     // Handle image upload for current review product
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -370,11 +404,36 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                 },
             };
 
-            const enhancedName = await generateProductNameV2(context);
-            const enhancedDescription = await generateProductDescriptionV2(context);
+            const [enhancedName, smartDescription] = await Promise.all([
+                generateProductNameV2(context),
+                generateSmartDescription({
+                    request: {
+                        sourceSnapshot: buildSnapshotForImportProduct(product),
+                        adminContext: {
+                            selectedCategory: product.category || '',
+                            selectedSubcategory: product.targetSubcategory || targetSubcategory,
+                            selectedCollection: product.targetCollection || targetCollection,
+                        },
+                        generationMode: 'manual_generate',
+                        options: {
+                            allowImageAnalysis: true,
+                            allowSeoKeywords: true,
+                            forceFreshVariation: true,
+                        },
+                    },
+                } as any),
+            ]);
 
             updateProductField(productId, 'customName', enhancedName);
-            updateProductField(productId, 'customDescription', enhancedDescription);
+            if ((smartDescription as any)?.ok && (smartDescription as any).description) {
+                updateProductField(productId, 'customDescription', (smartDescription as any).description);
+                updateProductField(productId, 'descriptionAuditId', (smartDescription as any).auditId);
+                updateProductField(productId, 'smartDescriptionWarnings', (smartDescription as any).warnings || []);
+                updateProductField(productId, 'smartDescriptionSourceQuality', (smartDescription as any).facts?.sourceQuality?.score);
+                updateProductField(productId, 'smartDescriptionFallbackUsed', (smartDescription as any).fallbackUsed);
+            } else {
+                toast.error((smartDescription as any)?.error || 'Smart description failed');
+            }
 
             toast.success('AI enhancement complete', {
                 description: `Enhanced "${enhancedName}"`
@@ -453,8 +512,31 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                 },
             };
 
-            const enhancedDescription = await generateProductDescriptionV2(context);
-            updateProductField(productId, 'customDescription', enhancedDescription);
+            const smartDescription = await generateSmartDescription({
+                request: {
+                    sourceSnapshot: buildSnapshotForImportProduct(product),
+                    adminContext: {
+                        selectedCategory: product.category || '',
+                        selectedSubcategory: product.targetSubcategory || targetSubcategory,
+                        selectedCollection: product.targetCollection || targetCollection,
+                    },
+                    generationMode: 'manual_generate',
+                    options: {
+                        allowImageAnalysis: true,
+                        allowSeoKeywords: true,
+                        forceFreshVariation: true,
+                    },
+                },
+            } as any);
+            if ((smartDescription as any)?.ok && (smartDescription as any).description) {
+                updateProductField(productId, 'customDescription', (smartDescription as any).description);
+                updateProductField(productId, 'descriptionAuditId', (smartDescription as any).auditId);
+                updateProductField(productId, 'smartDescriptionWarnings', (smartDescription as any).warnings || []);
+                updateProductField(productId, 'smartDescriptionSourceQuality', (smartDescription as any).facts?.sourceQuality?.score);
+                updateProductField(productId, 'smartDescriptionFallbackUsed', (smartDescription as any).fallbackUsed);
+            } else {
+                throw new Error((smartDescription as any)?.error || 'Smart description failed');
+            }
 
             toast.success('Description enhanced');
         } catch (err) {
@@ -613,6 +695,23 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                 })(),
                 sourceUrl: p.productUrl || '',
                 cjSourcingStatus: p.productUrl ? 'pending' as const : 'none' as const,
+                smartDescription: p.descriptionAuditId && (p.customDescription || p.description)
+                    ? {
+                        description: p.customDescription || p.description || '',
+                        auditId: p.descriptionAuditId as any,
+                        generatedAt: Date.now(),
+                        model: 'server-configured',
+                        promptVersion: 'smart-description-v2.0.0',
+                        sourceSnapshotHash: 'pending-link',
+                        adminEdited: Boolean(p.customDescription && p.customDescription !== p.description),
+                        status: p.smartDescriptionFallbackUsed ? 'fallback' as const : 'generated' as const,
+                    }
+                    : undefined,
+                descriptionSource: p.descriptionAuditId
+                    ? (p.customDescription && p.customDescription !== p.description
+                        ? 'ai_generated_admin_edited' as const
+                        : 'ai_generated' as const)
+                    : (p.description ? 'source_original' as const : 'safe_fallback' as const),
                 // Two-stage pricing metadata — use upstream CNY if available (from sourcePriceCny on the product)
                 sourcePriceCny: p.sourcePriceCny || undefined,
                 estimatedCjCost: calculateCostStackPrice(p.salePrice || p.price, productCollection).estimatedCjCost,
@@ -1360,6 +1459,24 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                 onChange={(e) => updateReviewProduct('customDescription', e.target.value)}
                                                 className="w-full p-3 bg-white/60 backdrop-blur-sm border border-white/40 rounded-lg text-xs text-earth/90 focus:bg-white/80 focus:ring-2 ring-bronze/30 shadow-sm resize-none transition-all"
                                             />
+                                            {(currentProduct.descriptionAuditId || currentProduct.smartDescriptionSourceQuality !== undefined || currentProduct.smartDescriptionWarnings?.length) && (
+                                                <div className="mt-2 rounded-lg border border-purple-100 bg-purple-50/70 p-2 text-[10px] text-earth/60 space-y-1">
+                                                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                                                        {currentProduct.smartDescriptionSourceQuality !== undefined && (
+                                                            <span>Source quality: {currentProduct.smartDescriptionSourceQuality}/100</span>
+                                                        )}
+                                                        {currentProduct.descriptionAuditId && (
+                                                            <span>Audit: {String(currentProduct.descriptionAuditId).slice(0, 10)}...</span>
+                                                        )}
+                                                        {currentProduct.smartDescriptionFallbackUsed && (
+                                                            <span className="text-amber-700">Fallback used</span>
+                                                        )}
+                                                    </div>
+                                                    {currentProduct.smartDescriptionWarnings?.map((warning, index) => (
+                                                        <p key={`${warning}-${index}`} className="text-amber-700">{warning}</p>
+                                                    ))}
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -2113,23 +2230,41 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
 
                     toast.loading('Enhancing with AI...', { id: 'ai-enhance' });
 
-                    // Run in parallel
-                    const [enhancedName, enhancedDescription] = await Promise.all([
+                    // Run name generation and server-side smart description in parallel.
+                    const [enhancedName, smartDescription] = await Promise.all([
                         generateProductNameV2(context),
-                        generateProductDescriptionV2(context)
+                        generateSmartDescription({
+                            request: {
+                                sourceSnapshot: buildSnapshotForImportProduct(importableProduct),
+                                adminContext: {
+                                    selectedCategory: importableProduct.category,
+                                    selectedCollection: importableProduct.collection,
+                                },
+                                generationMode: 'import_auto',
+                                options: {
+                                    allowImageAnalysis: true,
+                                    allowSeoKeywords: true,
+                                    forceFreshVariation: true,
+                                },
+                            },
+                        } as any)
                     ]);
 
                     toast.dismiss('ai-enhance');
 
-                    // Fix 2: Use isLikelyFallback instead of brittle keyword blocklist
                     const isValidAiName = enhancedName && !isLikelyFallback(enhancedName);
-                    const isValidAiDesc = enhancedDescription && enhancedDescription.length > 80 && !isLikelyFallbackDescription(enhancedDescription);
+                    const smartDescriptionResult = smartDescription as any;
+                    const isValidAiDesc = smartDescriptionResult?.ok && smartDescriptionResult.description && smartDescriptionResult.description.length > 80;
 
                     if (isValidAiName || isValidAiDesc) {
                         importableProduct = {
                             ...importableProduct,
                             customName: isValidAiName ? enhancedName : importableProduct.name,
-                            customDescription: isValidAiDesc ? enhancedDescription : importableProduct.description
+                            customDescription: isValidAiDesc ? smartDescriptionResult.description : importableProduct.description,
+                            descriptionAuditId: smartDescriptionResult?.auditId,
+                            smartDescriptionWarnings: smartDescriptionResult?.warnings || [],
+                            smartDescriptionSourceQuality: smartDescriptionResult?.facts?.sourceQuality?.score,
+                            smartDescriptionFallbackUsed: Boolean(smartDescriptionResult?.fallbackUsed),
                         };
                         toast.success('Product found & AI enhanced');
                     } else {
