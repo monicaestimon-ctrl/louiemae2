@@ -11,7 +11,7 @@ const pricingStageValidator = v.union(
 
 export const create = internalMutation({
     args: {
-        productId: v.optional(v.id("products")),
+        productId: v.id("products"),
         stage: pricingStageValidator,
         sourcePriceUsd: v.optional(v.number()),
         collection: v.optional(v.string()),

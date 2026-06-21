@@ -121,11 +121,16 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
             const adminPriceLocked = Boolean(initialProduct?.id) && Number.isFinite(suggestedRetailPrice)
                 ? Math.abs(normalizedProductPrice - Number(suggestedRetailPrice)) >= 0.01
                 : product.adminPriceLocked;
+            const unlockedPricingSource: Product['pricingSource'] = product.confirmedCjShippingCost !== undefined
+                ? 'cj_freight_confirmed'
+                : product.confirmedCjProductCost !== undefined || product.confirmedCjCost !== undefined
+                    ? 'cj_catalog_confirmed'
+                    : 'source_estimate';
             const productToSave = {
                 ...product,
                 price: normalizedProductPrice,
                 adminPriceLocked,
-                pricingSource: adminPriceLocked ? 'manual_locked' as const : product.pricingSource,
+                pricingSource: adminPriceLocked ? 'manual_locked' as const : unlockedPricingSource,
             };
             if (productToSave.smartDescription) {
                 const adminEdited = productToSave.description !== productToSave.smartDescription.description;

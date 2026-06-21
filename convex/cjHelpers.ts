@@ -3,6 +3,8 @@ import { internalMutation, internalQuery, mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { calculatePricingBreakdown } from "../lib/pricing";
 
+const hasFiniteNumber = (value: unknown): boolean => Number.isFinite(Number(value));
+
 // ═══════════════════════════════════════════════════════════════════════════
 // CJ DROPSHIPPING DATABASE HELPERS
 // These must be in a non-Node.js file for Convex to allow queries/mutations
@@ -419,12 +421,12 @@ export const updateProductSourcingStatus = internalMutation({
         // Skip if already approved AND no new data to update (prevents duplicate webhook processing)
         // But allow through if confirmedCjCost or other payload arrives for an already-approved product
         const hasUpdatePayload =
-            (args.confirmedCjCost ?? 0) > 0 ||
-            (args.confirmedCjShippingCost ?? 0) > 0 ||
-            (args.confirmedCjServiceFee ?? 0) > 0 ||
-            (args.confirmedCjTaxesFee ?? 0) > 0 ||
-            (args.confirmedCjClearanceFee ?? 0) > 0 ||
-            (args.confirmedCjRemoteFee ?? 0) > 0 ||
+            hasFiniteNumber(args.confirmedCjCost) ||
+            hasFiniteNumber(args.confirmedCjShippingCost) ||
+            hasFiniteNumber(args.confirmedCjServiceFee) ||
+            hasFiniteNumber(args.confirmedCjTaxesFee) ||
+            hasFiniteNumber(args.confirmedCjClearanceFee) ||
+            hasFiniteNumber(args.confirmedCjRemoteFee) ||
             !!args.sourcingId ||
             !!args.cjProductId ||
             !!args.cjVariantId ||
@@ -464,12 +466,12 @@ export const updateProductSourcingStatus = internalMutation({
 
         // Stage 2 pricing: recalculate selling price from confirmed CJ cost
         const hasPricingPayload =
-            (args.confirmedCjCost ?? 0) > 0 ||
-            (args.confirmedCjShippingCost ?? 0) > 0 ||
-            (args.confirmedCjServiceFee ?? 0) > 0 ||
-            (args.confirmedCjTaxesFee ?? 0) > 0 ||
-            (args.confirmedCjClearanceFee ?? 0) > 0 ||
-            (args.confirmedCjRemoteFee ?? 0) > 0;
+            hasFiniteNumber(args.confirmedCjCost) ||
+            hasFiniteNumber(args.confirmedCjShippingCost) ||
+            hasFiniteNumber(args.confirmedCjServiceFee) ||
+            hasFiniteNumber(args.confirmedCjTaxesFee) ||
+            hasFiniteNumber(args.confirmedCjClearanceFee) ||
+            hasFiniteNumber(args.confirmedCjRemoteFee);
 
         if (hasPricingPayload) {
             const confirmedProductCost =
@@ -513,7 +515,7 @@ export const updateProductSourcingStatus = internalMutation({
                 },
                 currentRetailPrice: product.price,
                 adminLockedPrice: product.adminPriceLocked,
-                pricingSource: confirmedShippingCost ? "cj_freight_confirmed" : "cj_catalog_confirmed",
+                pricingSource: hasFiniteNumber(confirmedShippingCost) ? "cj_freight_confirmed" : "cj_catalog_confirmed",
             });
             const adminPriceLocked = Boolean(product.adminPriceLocked);
 

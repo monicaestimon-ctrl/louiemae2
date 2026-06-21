@@ -654,13 +654,16 @@ async function handleCjSourcingCreateWebhook(ctx: any, params: any): Promise<boo
             });
             if (cjProductId) {
                 try {
-                    await ctx.runAction(internal.cjDropshipping.refreshConfirmedProductPricing, {
+                    const pricingRefresh = await ctx.runAction(internal.cjDropshipping.refreshConfirmedProductPricing, {
                         productId: product._id,
                         cjProductId: String(cjProductId),
                         cjVariantId: cjVariantId ? String(cjVariantId) : undefined,
                         cjSku: cjVariantSku ? String(cjVariantSku) : undefined,
                         sourcingId: String(cjSourcingId),
                     });
+                    if (!pricingRefresh?.success) {
+                        console.warn(`CJ SOURCINGCREATE: pricing refresh failed for ${product.name}:`, pricingRefresh?.error || "Unknown CJ pricing refresh error");
+                    }
                 } catch (pricingError: any) {
                     console.warn(`CJ SOURCINGCREATE: pricing refresh failed for ${product.name}:`, pricingError?.message || pricingError);
                 }

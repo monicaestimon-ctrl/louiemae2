@@ -50,6 +50,22 @@ describe('pricing engine', () => {
     expect(pricing.warnings).toHaveLength(0);
   });
 
+  it('treats zero-dollar confirmed shipping as confirmed', () => {
+    const pricing = calculatePricingBreakdown({
+      sourcePriceUsd: 5,
+      collection: 'kids',
+      confirmedProductCost: 7,
+      confirmedShippingCost: 0,
+      fees: { serviceFee: -3 },
+    });
+
+    expect(pricing.shippingCost).toBe(0);
+    expect(pricing.serviceFee).toBe(0);
+    expect(pricing.landedCost).toBe(7);
+    expect(pricing.pricingSource).toBe('cj_freight_confirmed');
+    expect(pricing.warnings).toHaveLength(0);
+  });
+
   it('keeps current retail price visible when admin locked', () => {
     const pricing = calculatePricingBreakdown({
       sourcePriceUsd: 10,

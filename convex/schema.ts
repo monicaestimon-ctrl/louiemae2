@@ -154,7 +154,7 @@ export default defineSchema({
         .index("by_createdAt", ["createdAt"]),
 
     pricingAudits: defineTable({
-        productId: v.optional(v.id("products")),
+        productId: v.id("products"),
         stage: v.union(
             v.literal("source_estimate"),
             v.literal("cj_catalog_confirmed"),

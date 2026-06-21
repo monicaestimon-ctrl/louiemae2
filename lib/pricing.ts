@@ -49,6 +49,10 @@ const roundMoney = (value: number): number => {
   return Math.round(value * 100) / 100;
 };
 
+const roundNonNegativeMoney = (value: number | undefined): number => {
+  return roundMoney(Math.max(0, value || 0));
+};
+
 export const getEstimatedShipping = (
   collection: string | undefined,
   shippingMap: CollectionShippingMap = DEFAULT_COLLECTION_SHIPPING,
@@ -101,8 +105,8 @@ export const calculatePricingBreakdown = (args: {
   pricingSource?: PricingStage;
 }): PricingBreakdown => {
   const warnings: string[] = [];
-  const hasConfirmedProductCost = Number.isFinite(args.confirmedProductCost) && (args.confirmedProductCost ?? 0) > 0;
-  const hasConfirmedShippingCost = Number.isFinite(args.confirmedShippingCost) && (args.confirmedShippingCost ?? 0) > 0;
+  const hasConfirmedProductCost = Number.isFinite(args.confirmedProductCost);
+  const hasConfirmedShippingCost = Number.isFinite(args.confirmedShippingCost);
   const productCost = hasConfirmedProductCost
     ? roundMoney(args.confirmedProductCost ?? 0)
     : calculateEstimatedCjProductCost(args.sourcePriceUsd ?? 0);
@@ -133,11 +137,11 @@ export const calculatePricingBreakdown = (args: {
   return {
     productCost,
     shippingCost,
-    serviceFee: roundMoney(args.fees?.serviceFee ?? 0),
-    taxesFee: roundMoney(args.fees?.taxesFee ?? 0),
-    clearanceFee: roundMoney(args.fees?.clearanceFee ?? 0),
-    remoteFee: roundMoney(args.fees?.remoteFee ?? 0),
-    otherFee: roundMoney(args.fees?.otherFee ?? 0),
+    serviceFee: roundNonNegativeMoney(args.fees?.serviceFee),
+    taxesFee: roundNonNegativeMoney(args.fees?.taxesFee),
+    clearanceFee: roundNonNegativeMoney(args.fees?.clearanceFee),
+    remoteFee: roundNonNegativeMoney(args.fees?.remoteFee),
+    otherFee: roundNonNegativeMoney(args.fees?.otherFee),
     landedCost,
     retailMultiplier,
     suggestedRetailPrice,

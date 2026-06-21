@@ -52,7 +52,7 @@ const chooseFreightRow = (rows: any[]): any | undefined => {
             row,
             cost: toFiniteNumber(row?.totalPostageFee ?? row?.logisticPrice ?? row?.postageAmount),
         }))
-        .filter((item): item is { row: any; cost: number } => item.cost !== undefined && item.cost > 0);
+        .filter((item): item is { row: any; cost: number } => item.cost !== undefined && item.cost >= 0);
     if (pricedRows.length === 0) return undefined;
 
     const cjPacket = pricedRows.find(item =>
@@ -1024,14 +1024,15 @@ export const checkSourcingStatus = internalAction({
                                             : null;
                                         // Fall back to variants[0] only for single-variant products
                                         const resolvedVariant = matchedVariant || (variants.length === 1 ? variants[0] : null);
+                                        const resolvedVariantId = resolvedVariant?.vid != null ? String(resolvedVariant.vid) : undefined;
                                         const confirmedCjCost = extractCjVariantPrice(resolvedVariant);
-                                        const freightQuote = await quoteCjFreightForVariant(token, resolvedVariant?.vid);
+                                        const freightQuote = await quoteCjFreightForVariant(token, resolvedVariantId);
 
                                         await ctx.runMutation(internal.cjHelpers.updateProductSourcingStatus, {
                                             productId: product._id,
                                             status: "approved",
                                             cjProductId: verifyData.data.pid || pidToVerify,
-                                            cjVariantId: resolvedVariant?.vid,
+                                            cjVariantId: resolvedVariantId,
                                             cjSku: resolvedVariant?.variantSku,
                                             confirmedCjCost,
                                             confirmedCjShippingCost: freightQuote?.shippingCost,
@@ -1123,14 +1124,15 @@ export const checkSourcingStatus = internalAction({
                                                     ? variants2.find((v: any) => v.variantSku === freshSku)
                                                     : null;
                                                 const resolvedVariant2 = matchedVariant2 || (variants2.length === 1 ? variants2[0] : null);
+                                                const resolvedVariantId2 = resolvedVariant2?.vid != null ? String(resolvedVariant2.vid) : undefined;
                                                 const confirmedCjCost2 = extractCjVariantPrice(resolvedVariant2);
-                                                const freightQuote2 = await quoteCjFreightForVariant(token, resolvedVariant2?.vid);
+                                                const freightQuote2 = await quoteCjFreightForVariant(token, resolvedVariantId2);
 
                                                 await ctx.runMutation(internal.cjHelpers.updateProductSourcingStatus, {
                                                     productId: product._id,
                                                     status: "approved",
                                                     cjProductId: freshSourcing.cjProductId,
-                                                    cjVariantId: resolvedVariant2?.vid,
+                                                    cjVariantId: resolvedVariantId2,
                                                     cjSku: resolvedVariant2?.variantSku || freshSourcing.cjVariantSku,
                                                     confirmedCjCost: confirmedCjCost2,
                                                     confirmedCjShippingCost: freightQuote2?.shippingCost,
