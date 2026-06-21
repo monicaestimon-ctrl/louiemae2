@@ -23,15 +23,15 @@ Replace category-only shipping estimates with an auditable pricing flow that use
 
 ## PR 2: Order-Time Reconciliation
 
-- [ ] Quote CJ freight with the actual customer destination before forwarding a CJ order.
-- [ ] Use the selected/quoted logistics name instead of a hardcoded shipping method when possible.
-- [ ] Store order-level CJ product cost, shipping, service/tax/clearance fees, landed cost, customer shipping collected, and profit estimate.
-- [ ] Flag orders where actual CJ cost differs materially from product-level assumptions.
-- [ ] Add admin order visibility for reconciliation warnings.
-- [ ] Protect checkout success flow from CJ quote failures while preserving admin retry data.
-- [ ] Add tests for order-level pricing/reconciliation helpers.
-- [ ] Run type-check, tests, lint, and production build.
-- [ ] Run CodeRabbit CLI review and fix actionable issues.
+- [x] Quote CJ freight with the actual customer destination before forwarding a CJ order.
+- [x] Use the selected/quoted logistics name instead of a hardcoded shipping method when possible.
+- [x] Store order-level CJ product cost, shipping, service/tax/clearance fees, landed cost, customer shipping collected, and profit estimate.
+- [x] Flag orders where actual CJ cost differs materially from product-level assumptions.
+- [x] Add admin order visibility for reconciliation warnings.
+- [x] Protect checkout success flow from CJ quote failures while preserving admin retry data.
+- [x] Add tests for order-level pricing/reconciliation helpers.
+- [x] Run type-check, tests, lint, and production build.
+- [x] Run CodeRabbit CLI review and fix actionable issues. Note: PR-relevant findings in changed pricing/CJ files were addressed; unrelated repo-wide findings were left out of scope.
 - [ ] Open ready-for-review GitHub PR, address review comments, and merge to main.
 
 ## Done

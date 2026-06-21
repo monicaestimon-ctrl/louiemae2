@@ -20,6 +20,8 @@ export const createOrder = mutation({
             // CJ Dropshipping product mapping
             cjVariantId: v.optional(v.string()),
             cjSku: v.optional(v.string()),
+            cjProductCost: v.optional(v.number()),
+            cjEstimatedLandedCost: v.optional(v.number()),
         })),
         subtotal: v.number(),
         shipping: v.optional(v.number()),

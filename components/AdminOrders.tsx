@@ -272,6 +272,43 @@ export const AdminOrders: React.FC = () => {
                                                             <span className="text-xl font-serif text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]">${order.total.toFixed(2)}</span>
                                                         </div>
                                                     </div>
+                                                    {(order.cjQuotedLandedCost !== undefined || order.cjPricingWarnings?.length) && (
+                                                        <div className="border-t border-white/10 pt-4 mt-4 space-y-2">
+                                                            <div className="flex justify-between text-xs tracking-wider uppercase">
+                                                                <span className="text-cream/40">CJ Product Cost</span>
+                                                                <span className="text-cream/70 font-mono">${(order.cjQuotedProductCost || 0).toFixed(2)}</span>
+                                                            </div>
+                                                            <div className="flex justify-between text-xs tracking-wider uppercase">
+                                                                <span className="text-cream/40">CJ Freight</span>
+                                                                <span className="text-cream/70 font-mono">${(order.cjQuotedShippingCost || 0).toFixed(2)}</span>
+                                                            </div>
+                                                            <div className="flex justify-between text-xs tracking-wider uppercase">
+                                                                <span className="text-cream/40">CJ Fees/Tax</span>
+                                                                <span className="text-cream/70 font-mono">${((order.cjQuotedTaxesFee || 0) + (order.cjQuotedClearanceFee || 0)).toFixed(2)}</span>
+                                                            </div>
+                                                            <div className="flex justify-between text-xs tracking-wider uppercase">
+                                                                <span className="text-cream/40">CJ Landed</span>
+                                                                <span className="text-cream/70 font-mono">${(order.cjQuotedLandedCost || 0).toFixed(2)}</span>
+                                                            </div>
+                                                            <div className="flex justify-between text-xs tracking-wider uppercase">
+                                                                <span className="text-cream/40">Customer Shipping</span>
+                                                                <span className="text-cream/70 font-mono">${(order.cjCustomerShippingCollected || 0).toFixed(2)}</span>
+                                                            </div>
+                                                            <div className="flex justify-between text-xs tracking-wider uppercase">
+                                                                <span className="text-cream/40">Est. Profit</span>
+                                                                <span className={`font-mono ${(order.cjEstimatedProfit || 0) >= 0 ? 'text-green-300' : 'text-red-300'}`}>${(order.cjEstimatedProfit || 0).toFixed(2)}</span>
+                                                            </div>
+                                                            {order.cjQuotedLogisticsName && (
+                                                                <p className="text-[10px] uppercase tracking-widest text-cream/40">Logistics: {order.cjQuotedLogisticsName}</p>
+                                                            )}
+                                                            {order.cjPricingWarnings?.map((warning: string, index: number) => (
+                                                                <p key={`${warning}-${index}`} className="text-[11px] text-amber-300 flex items-start gap-2">
+                                                                    <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                                                                    <span>{warning}</span>
+                                                                </p>
+                                                            ))}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
 

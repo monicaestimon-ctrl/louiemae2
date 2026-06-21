@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { calculateOrderPricingReconciliation } from "../lib/pricing";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CJ DROPSHIPPING API INTEGRATION
@@ -100,6 +101,53 @@ const quoteCjFreightForVariant = async (
         };
     } catch (error: any) {
         console.warn(`CJ freight quote failed for vid=${vid}:`, error?.message ?? error);
+        return undefined;
+    } finally {
+        clearTimeout(timeout);
+    }
+};
+
+const quoteCjFreightForProducts = async (
+    accessToken: string,
+    products: Array<{ vid?: string; quantity: number }>,
+    endCountryCode: string,
+): Promise<CjFreightQuote | undefined> => {
+    const quoteProducts = products
+        .filter(product => product.vid)
+        .map(product => ({ vid: product.vid, quantity: product.quantity }));
+    if (quoteProducts.length === 0) return undefined;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), CJ_FETCH_TIMEOUT_MS);
+    try {
+        const response = await fetch(`${CJ_API_BASE}/logistic/freightCalculate`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "CJ-Access-Token": accessToken,
+            },
+            body: JSON.stringify({
+                startCountryCode: "CN",
+                endCountryCode,
+                products: quoteProducts,
+            }),
+            signal: controller.signal,
+        });
+        const data = await response.json();
+        const rows = Array.isArray(data?.data) ? data.data : [];
+        const row = chooseFreightRow(rows);
+        if (!data?.result || !row) {
+            return { rawResponse: data };
+        }
+        return {
+            shippingCost: toFiniteNumber(row.totalPostageFee ?? row.logisticPrice ?? row.postageAmount),
+            taxesFee: toFiniteNumber(row.taxesFee),
+            clearanceFee: toFiniteNumber(row.clearanceOperationFee),
+            logisticsName: row.logisticName ?? row.logisticsName,
+            rawResponse: data,
+        };
+    } catch (error: any) {
+        console.warn("CJ order freight quote failed:", error?.message ?? error);
         return undefined;
     } finally {
         clearTimeout(timeout);
@@ -253,6 +301,9 @@ interface CjOrderProduct {
     vid?: string; // CJ variant ID
     sku?: string; // CJ SKU
     quantity: number;
+    productCost?: number;
+    estimatedShippingCost?: number;
+    retailPrice?: number;
 }
 
 interface CjOrderRequest {
@@ -296,7 +347,12 @@ export const createCjOrder = internalAction({
             vid: v.optional(v.string()),
             sku: v.optional(v.string()),
             quantity: v.number(),
+            productCost: v.optional(v.number()),
+            estimatedShippingCost: v.optional(v.number()),
+            retailPrice: v.optional(v.number()),
         })),
+        customerShippingCollected: v.optional(v.number()),
+        orderSubtotal: v.optional(v.number()),
     },
     handler: async (ctx, args): Promise<{ success: boolean; cjOrderId?: string; error?: string }> => {
         // Get access token
@@ -312,6 +368,23 @@ export const createCjOrder = internalAction({
 
         // Map country name to code (basic mapping)
         const countryCode = getCountryCode(args.shippingAddress.country);
+        const cjOrderProducts = args.products
+            .filter(p => p.vid || p.sku)
+            .map(p => ({
+                vid: p.vid,
+                sku: p.sku,
+                quantity: p.quantity,
+            }));
+        const freightQuote = await quoteCjFreightForProducts(accessToken, args.products, countryCode);
+        const reconciliation = calculateOrderPricingReconciliation({
+            items: args.products,
+            quotedShippingCost: freightQuote?.shippingCost,
+            quotedTaxesFee: freightQuote?.taxesFee,
+            quotedClearanceFee: freightQuote?.clearanceFee,
+            customerShippingCollected: args.customerShippingCollected,
+            orderSubtotal: args.orderSubtotal,
+            freightQuoteAvailable: freightQuote?.shippingCost !== undefined,
+        });
 
         // Build CJ order request
         const cjOrder: CjOrderRequest = {
@@ -326,14 +399,14 @@ export const createCjOrder = internalAction({
             shippingCountryCode: countryCode,
             shippingZip: args.shippingAddress.postalCode,
             email: args.customerEmail,
-            logisticName: "CJ Packet Ordinary", // Default shipping method
+            logisticName: freightQuote?.logisticsName || "CJ Packet Ordinary",
             fromCountryCode: "CN", // Ship from China
-            products: args.products.filter(p => p.vid || p.sku), // Only include valid products
+            products: cjOrderProducts,
             payType: 3, // No balance payment (use CJ balance)
         };
 
         // Validate we have products to ship
-        if (cjOrder.products.length === 0) {
+        if (cjOrderProducts.length === 0) {
             await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
                 orderId: args.orderId,
                 cjStatus: "failed",
@@ -347,6 +420,16 @@ export const createCjOrder = internalAction({
             await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
                 orderId: args.orderId,
                 cjStatus: "sending",
+                cjQuotedProductCost: reconciliation.productCostTotal,
+                cjQuotedShippingCost: freightQuote?.shippingCost,
+                cjQuotedTaxesFee: reconciliation.taxesFee,
+                cjQuotedClearanceFee: reconciliation.clearanceFee,
+                cjQuotedLandedCost: reconciliation.landedCost,
+                cjQuotedLogisticsName: freightQuote?.logisticsName || cjOrder.logisticName,
+                cjCustomerShippingCollected: reconciliation.customerShippingCollected,
+                cjEstimatedProfit: reconciliation.estimatedProfit,
+                cjPricingWarnings: reconciliation.warnings,
+                cjRawPricingResponse: freightQuote?.rawResponse,
             });
 
             const response = await fetch(`${CJ_API_BASE}/shopping/order/createOrderV2`, {
@@ -493,16 +576,24 @@ export const getTrackingInfo = internalAction({
         }
 
         try {
-            const response = await fetch(
-                `${CJ_API_BASE}/logistic/getTrackInfo?orderId=${args.cjOrderId}`,
-                {
-                    method: "GET",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "CJ-Access-Token": accessToken,
-                    },
-                }
-            );
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), CJ_FETCH_TIMEOUT_MS);
+            let response: Response;
+            try {
+                response = await fetch(
+                    `${CJ_API_BASE}/logistic/getTrackInfo?orderId=${args.cjOrderId}`,
+                    {
+                        method: "GET",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "CJ-Access-Token": accessToken,
+                        },
+                        signal: controller.signal,
+                    }
+                );
+            } finally {
+                clearTimeout(timeout);
+            }
 
             const data = await response.json();
 
