@@ -349,7 +349,7 @@ const EssenceStep: React.FC<{
                         description: fields.description,
                         images: fields.images,
                         sourceUrl: normalizedUrl,
-                        variants: fields.variants,
+                        variants: (fields as any).variants || [],
                         sourceMetadata: { source: '1688' },
                     };
                 }
@@ -395,19 +395,14 @@ const EssenceStep: React.FC<{
                 try {
                     const sourceSnapshot = buildSourceProductSnapshot({
                         sourceUrl: normalizedUrl,
-                        rawTitle: updatedProduct.name,
-                        rawDescription: updatedProduct.description,
-                        price: {
-                            amount: Number(updatedProduct.price),
-                            currency: 'USD',
-                            raw: String(updatedProduct.price ?? ''),
-                        },
+                        name: updatedProduct.name,
+                        description: updatedProduct.description,
+                        price: Number(updatedProduct.price),
+                        currency: 'USD',
                         images: updatedProduct.images || [],
                         variants: updatedProduct.variants || [],
-                        categoryHints: {
-                            selectedCategory: updatedProduct.category,
-                            selectedCollection: updatedProduct.collection,
-                        },
+                        category: updatedProduct.category,
+                        collection: updatedProduct.collection,
                         sourceMetadata: scrapedData.sourceMetadata || {},
                     });
 
@@ -924,19 +919,14 @@ const StoryStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => voi
             const collectionName = siteContent.collections.find(c => c.id === product.collection)?.title || product.collection || 'Furniture';
             const sourceSnapshot = buildSourceProductSnapshot({
                 sourceUrl: product.sourceUrl,
-                rawTitle: product.name || 'this item',
-                rawDescription: product.description || '',
-                price: {
-                    amount: Number(product.price),
-                    currency: 'USD',
-                    raw: String(product.price ?? ''),
-                },
+                name: product.name || 'this item',
+                description: product.description || '',
+                price: Number(product.price),
+                currency: 'USD',
                 images: product.images || [],
                 variants: product.variants || [],
-                categoryHints: {
-                    selectedCategory: product.category || 'home decor',
-                    selectedCollection: product.collection || collectionName,
-                },
+                category: product.category || 'home decor',
+                collection: product.collection || collectionName,
                 sourceMetadata: {
                     existingProductId: product.id,
                     descriptionSource: product.descriptionSource,

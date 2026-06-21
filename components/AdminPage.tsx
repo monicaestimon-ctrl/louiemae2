@@ -345,20 +345,15 @@ export const AdminPage: React.FC = () => {
 
    const buildSnapshotFromProduct = (product: Product) => buildSourceProductSnapshot({
       sourceUrl: product.sourceUrl,
-      rawTitle: product.name,
-      rawDescription: product.description,
-      price: {
-         amount: product.price,
-         currency: product.sourceCurrency || 'USD',
-         raw: String(product.price),
-      },
+      name: product.name,
+      description: product.description,
+      price: product.price,
+      currency: product.sourceCurrency || 'USD',
       images: product.images || [],
       variants: product.variants || [],
-      categoryHints: {
-         selectedCategory: product.category,
-         selectedSubcategory: product.subcategory,
-         selectedCollection: product.collection,
-      },
+      category: product.category,
+      subcategory: product.subcategory,
+      collection: product.collection,
       sourceMetadata: {
          productId: product.id,
          descriptionSource: product.descriptionSource,
@@ -421,7 +416,7 @@ export const AdminPage: React.FC = () => {
          description: preview.description,
          smartDescription: {
             description: preview.description,
-            auditId: preview.auditId,
+            auditId: preview.auditId as any,
             generatedAt: Date.now(),
             model: 'server-configured',
             promptVersion: 'smart-description-v2.0.0',

@@ -2,6 +2,7 @@
 
 import { action } from "./_generated/server";
 import { v } from "convex/values";
+import { createHash } from "crypto";
 import { internal } from "./_generated/api";
 import { auth } from "./auth";
 import {
@@ -26,11 +27,9 @@ import {
 } from "./geminiDescriptionClient";
 import { normalizeSourceProduct } from "./sourceProductNormalizer";
 
-async function hashSnapshot(snapshot: SourceProductSnapshot): Promise<string> {
+function hashSnapshot(snapshot: SourceProductSnapshot): string {
     const canonical = stableStringify(snapshot);
-    const bytes = new TextEncoder().encode(canonical);
-    const digest = await crypto.subtle.digest("SHA-256", bytes);
-    return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+    return createHash("sha256").update(canonical).digest("hex");
 }
 
 function stableStringify(value: unknown): string {
@@ -220,7 +219,7 @@ export const generateSmartDescription = action({
 
             validation = { ...validation, repaired };
             const description = formatDescription(finalDraft);
-            const sourceSnapshotHash = await hashSnapshot(sourceSnapshot);
+            const sourceSnapshotHash = hashSnapshot(sourceSnapshot);
             const auditId = await ctx.runMutation(internal.descriptionAudits.createDescriptionAudit, {
                 productId: typedRequest.productId as any,
                 importSessionId: typedRequest.importSessionId,

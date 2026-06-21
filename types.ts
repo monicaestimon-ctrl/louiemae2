@@ -1,6 +1,8 @@
 
 export type CollectionType = string; // Was 'furniture' | 'decor' | ... now dynamic
 
+import type { Id } from './convex/_generated/dataModel';
+
 export interface Product {
   id: string;
   name: string;
@@ -31,7 +33,7 @@ export interface Product {
   subcategory?: string;           // Specific subcategory (e.g., "Skirts")
   smartDescription?: {
     description: string;
-    auditId: string;
+    auditId: Id<'descriptionAudits'>;
     generatedAt: number;
     model: string;
     promptVersion: string;

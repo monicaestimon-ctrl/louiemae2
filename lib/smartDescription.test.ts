@@ -140,7 +140,7 @@ describe('grounded facts and validators', () => {
       categoryHints: { selectedCollection: 'furniture' },
     });
 
-    const fallback = buildSafeFallbackDescription(facts, { importedAt: Date.now(), images: [] }, LOUIE_MAE_BRAND_VOICE);
+    const fallback = buildSafeFallbackDescription(facts, { importedAt: Date.now(), images: [] });
     const text = `${fallback.openingSentence}\n${fallback.detailLines.map((line) => line.detail).join('\n')}`.toLowerCase();
 
     expect(text).not.toContain('solid oak');
