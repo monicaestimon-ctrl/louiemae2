@@ -12,6 +12,7 @@ import { ProductCard, ImportableProduct } from './import/ProductCard';
 import { useMutation, useAction } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { buildSourceProductSnapshot, SourceAttribute } from '../lib/smartDescription';
+import { calculatePricingBreakdown, getEstimatedShipping } from '../lib/pricing';
 
 interface ProductImportProps {
     collections: CollectionConfig[];
@@ -224,28 +225,22 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
 
     // Two-stage pricing: cost-stack formula
     // Stage 1 (Pre-Sourcing): estimated_cj = 1688_price × 1.4, selling = (cj + shipping) × 3
-    const getShippingEstimate = (collection: string): number => {
-        switch (collection) {
-            case 'fashion': return 8;
-            case 'kids': return 8;
-            case 'decor': return 12;
-            case 'furniture': return 22;
-            default: return 10;
-        }
-    };
+    const getShippingEstimate = (collection: string): number => getEstimatedShipping(collection);
 
     const calculateCostStackPrice = (basePriceUsd: number, collection: string): {
         estimatedCjCost: number;
         estimatedShipping: number;
         sellingPrice: number;
     } => {
-        const estimatedCjCost = basePriceUsd * 1.4;
-        const estimatedShipping = getShippingEstimate(collection);
-        let sellingPrice = (estimatedCjCost + estimatedShipping) * 3;
-
-        if (pricingRule.roundUp) {
-            sellingPrice = Math.ceil(sellingPrice) - 0.01;
-        }
+        const breakdown = calculatePricingBreakdown({
+            sourcePriceUsd: basePriceUsd,
+            collection,
+        });
+        const estimatedCjCost = breakdown.productCost;
+        const estimatedShipping = breakdown.shippingCost;
+        const sellingPrice = pricingRule.roundUp
+            ? breakdown.suggestedRetailPrice
+            : (estimatedCjCost + estimatedShipping) * breakdown.retailMultiplier;
 
         return {
             estimatedCjCost: Math.round(estimatedCjCost * 100) / 100,
@@ -657,13 +652,23 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
 
             // Detect if collection was changed from the default
             const collectionChanged = p.targetCollection && p.targetCollection !== targetCollection;
+            const sourcePriceUsd = p.salePrice || p.price;
+            const formulaPricing = calculateCostStackPrice(sourcePriceUsd, productCollection);
+            const hasCustomRetailPrice = typeof p.customPrice === 'number' && Number.isFinite(p.customPrice);
+            const selectedRetailPrice = hasCustomRetailPrice ? p.customPrice! : formulaPricing.sellingPrice;
+            const adminPriceLocked = hasCustomRetailPrice && Math.abs(p.customPrice! - formulaPricing.sellingPrice) >= 0.01;
+            const pricingBreakdown = calculatePricingBreakdown({
+                sourcePriceUsd,
+                collection: productCollection,
+                currentRetailPrice: selectedRetailPrice,
+                adminLockedPrice: adminPriceLocked,
+                pricingSource: adminPriceLocked ? 'manual_locked' : 'source_estimate',
+            });
 
             return {
                 // Always prefer user edits over originals
                 name: p.customName || p.name,
-                price: (typeof p.customPrice === 'number' && Number.isFinite(p.customPrice))
-                    ? p.customPrice
-                    : calculateProductPrice(p),
+                price: selectedRetailPrice,
                 description: p.customDescription || p.description || '',
                 images: finalImages,
                 category: subcategoryTitle,
@@ -717,8 +722,17 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                     : (p.description ? 'source_original' as const : 'safe_fallback' as const),
                 // Two-stage pricing metadata — use upstream CNY if available (from sourcePriceCny on the product)
                 sourcePriceCny: p.sourcePriceCny || undefined,
-                estimatedCjCost: calculateCostStackPrice(p.salePrice || p.price, productCollection).estimatedCjCost,
-                estimatedShipping: calculateCostStackPrice(p.salePrice || p.price, productCollection).estimatedShipping,
+                estimatedCjCost: pricingBreakdown.productCost,
+                estimatedShipping: pricingBreakdown.shippingCost,
+                estimatedCjProductCost: pricingBreakdown.productCost,
+                estimatedCjShippingCost: pricingBreakdown.shippingCost,
+                estimatedCjServiceFee: pricingBreakdown.serviceFee,
+                estimatedLandedCost: pricingBreakdown.landedCost,
+                suggestedRetailPrice: pricingBreakdown.suggestedRetailPrice,
+                adminPriceLocked,
+                pricingSource: pricingBreakdown.pricingSource,
+                pricingUpdatedAt: Date.now(),
+                pricingWarnings: pricingBreakdown.warnings,
                 pricingStage: 'estimated' as const,
 
 

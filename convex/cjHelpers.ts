@@ -1,5 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation } from "./_generated/server";
+import { internal } from "./_generated/api";
+import { calculatePricingBreakdown } from "../lib/pricing";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CJ DROPSHIPPING DATABASE HELPERS
@@ -383,6 +385,13 @@ export const updateProductSourcingStatus = internalMutation({
         cjSku: v.optional(v.string()),
         error: v.optional(v.string()),
         confirmedCjCost: v.optional(v.number()),
+        confirmedCjShippingCost: v.optional(v.number()),
+        confirmedCjServiceFee: v.optional(v.number()),
+        confirmedCjTaxesFee: v.optional(v.number()),
+        confirmedCjClearanceFee: v.optional(v.number()),
+        confirmedCjRemoteFee: v.optional(v.number()),
+        confirmedCjLogisticsName: v.optional(v.string()),
+        cjRawPricingResponse: v.optional(v.any()),
         // CAS guard: if provided, only apply the write when the product's
         // current cjSourcingStatus matches this value. Prevents the cron job
         // from overwriting a concurrent SOURCINGCREATE webhook update.
@@ -411,6 +420,11 @@ export const updateProductSourcingStatus = internalMutation({
         // But allow through if confirmedCjCost or other payload arrives for an already-approved product
         const hasUpdatePayload =
             (args.confirmedCjCost ?? 0) > 0 ||
+            (args.confirmedCjShippingCost ?? 0) > 0 ||
+            (args.confirmedCjServiceFee ?? 0) > 0 ||
+            (args.confirmedCjTaxesFee ?? 0) > 0 ||
+            (args.confirmedCjClearanceFee ?? 0) > 0 ||
+            (args.confirmedCjRemoteFee ?? 0) > 0 ||
             !!args.sourcingId ||
             !!args.cjProductId ||
             !!args.cjVariantId ||
@@ -449,14 +463,106 @@ export const updateProductSourcingStatus = internalMutation({
         }
 
         // Stage 2 pricing: recalculate selling price from confirmed CJ cost
-        if (args.confirmedCjCost && args.confirmedCjCost > 0) {
-            updateData.confirmedCjCost = args.confirmedCjCost;
+        const hasPricingPayload =
+            (args.confirmedCjCost ?? 0) > 0 ||
+            (args.confirmedCjShippingCost ?? 0) > 0 ||
+            (args.confirmedCjServiceFee ?? 0) > 0 ||
+            (args.confirmedCjTaxesFee ?? 0) > 0 ||
+            (args.confirmedCjClearanceFee ?? 0) > 0 ||
+            (args.confirmedCjRemoteFee ?? 0) > 0;
+
+        if (hasPricingPayload) {
+            const confirmedProductCost =
+                args.confirmedCjCost ??
+                product.confirmedCjProductCost ??
+                product.confirmedCjCost;
+            const confirmedShippingCost =
+                args.confirmedCjShippingCost ??
+                product.confirmedCjShippingCost;
+            const confirmedServiceFee =
+                args.confirmedCjServiceFee ??
+                product.confirmedCjServiceFee ??
+                0;
+            const confirmedTaxesFee =
+                args.confirmedCjTaxesFee ??
+                product.confirmedCjTaxesFee ??
+                0;
+            const confirmedClearanceFee =
+                args.confirmedCjClearanceFee ??
+                product.confirmedCjClearanceFee ??
+                0;
+            const confirmedRemoteFee =
+                args.confirmedCjRemoteFee ??
+                product.confirmedCjRemoteFee ??
+                0;
+            const sourcePriceUsd = product.estimatedCjProductCost
+                ? product.estimatedCjProductCost / 1.4
+                : product.estimatedCjCost
+                    ? product.estimatedCjCost / 1.4
+                    : undefined;
+            const pricing = calculatePricingBreakdown({
+                sourcePriceUsd,
+                collection: product.collection,
+                confirmedProductCost,
+                confirmedShippingCost,
+                fees: {
+                    serviceFee: confirmedServiceFee,
+                    taxesFee: confirmedTaxesFee,
+                    clearanceFee: confirmedClearanceFee,
+                    remoteFee: confirmedRemoteFee,
+                },
+                currentRetailPrice: product.price,
+                adminLockedPrice: product.adminPriceLocked,
+                pricingSource: confirmedShippingCost ? "cj_freight_confirmed" : "cj_catalog_confirmed",
+            });
+            const adminPriceLocked = Boolean(product.adminPriceLocked);
+
+            updateData.confirmedCjCost = confirmedProductCost;
+            updateData.confirmedCjProductCost = confirmedProductCost;
+            updateData.confirmedCjShippingCost = confirmedShippingCost;
+            updateData.confirmedCjServiceFee = confirmedServiceFee;
+            updateData.confirmedCjTaxesFee = confirmedTaxesFee;
+            updateData.confirmedCjClearanceFee = confirmedClearanceFee;
+            updateData.confirmedCjRemoteFee = confirmedRemoteFee;
+            updateData.confirmedCjLogisticsName = args.confirmedCjLogisticsName ?? product.confirmedCjLogisticsName;
+            updateData.confirmedLandedCost = pricing.landedCost;
+            updateData.suggestedRetailPrice = pricing.suggestedRetailPrice;
+            updateData.pricingSource = adminPriceLocked ? "manual_locked" : pricing.pricingSource;
+            updateData.pricingUpdatedAt = Date.now();
+            updateData.pricingWarnings = pricing.warnings;
             updateData.pricingStage = "confirmed";
-            // selling_price = (confirmed_cj_cost + estimated_shipping) × 3
-            const shipping = product.estimatedShipping ?? 10;
-            const confirmedSellingPrice = (args.confirmedCjCost + shipping) * 3;
-            updateData.price = Math.round(confirmedSellingPrice * 100) / 100;
-            console.log(`Stage 2 pricing for ${product.name}: CJ cost $${args.confirmedCjCost} + shipping $${shipping} → selling $${updateData.price}`);
+
+            if (!adminPriceLocked) {
+                updateData.price = pricing.suggestedRetailPrice;
+            }
+
+            await ctx.runMutation(internal.pricingAudits.create, {
+                productId: args.productId,
+                stage: adminPriceLocked ? "manual_locked" : pricing.pricingSource,
+                sourcePriceUsd,
+                collection: product.collection,
+                productCost: pricing.productCost,
+                shippingCost: pricing.shippingCost,
+                serviceFee: pricing.serviceFee,
+                taxesFee: pricing.taxesFee,
+                clearanceFee: pricing.clearanceFee,
+                remoteFee: pricing.remoteFee,
+                otherFee: pricing.otherFee,
+                landedCost: pricing.landedCost,
+                retailMultiplier: pricing.retailMultiplier,
+                suggestedRetailPrice: pricing.suggestedRetailPrice,
+                previousPrice: product.price,
+                appliedPrice: adminPriceLocked ? product.price : pricing.suggestedRetailPrice,
+                adminPriceLocked,
+                pricingWarnings: pricing.warnings,
+                cjProductId: args.cjProductId ?? product.cjProductId,
+                cjVariantId: args.cjVariantId ?? product.cjVariantId,
+                cjSku: args.cjSku ?? product.cjSku,
+                cjLogisticsName: args.confirmedCjLogisticsName ?? product.confirmedCjLogisticsName,
+                cjRawResponse: args.cjRawPricingResponse,
+            });
+
+            console.log(`Stage 2 pricing for ${product.name}: landed $${pricing.landedCost} -> suggested $${pricing.suggestedRetailPrice}${adminPriceLocked ? " (admin locked)" : ""}`);
         }
 
         await ctx.db.patch(args.productId, updateData);

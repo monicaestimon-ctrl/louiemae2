@@ -34,6 +34,14 @@ const descriptionFingerprintValidator = v.object({
     collection: v.string(),
 });
 
+const pricingSourceValidator = v.union(
+    v.literal("source_estimate"),
+    v.literal("cj_catalog_confirmed"),
+    v.literal("cj_freight_confirmed"),
+    v.literal("manual_locked"),
+    v.literal("order_reconciled")
+);
+
 // Public queries - no auth required
 export const list = query({
     args: {},
@@ -81,6 +89,23 @@ export const create = mutation({
         sourcePriceCny: v.optional(v.number()),
         estimatedCjCost: v.optional(v.number()),
         estimatedShipping: v.optional(v.number()),
+        estimatedCjProductCost: v.optional(v.number()),
+        estimatedCjShippingCost: v.optional(v.number()),
+        estimatedCjServiceFee: v.optional(v.number()),
+        estimatedLandedCost: v.optional(v.number()),
+        confirmedCjProductCost: v.optional(v.number()),
+        confirmedCjShippingCost: v.optional(v.number()),
+        confirmedCjServiceFee: v.optional(v.number()),
+        confirmedCjTaxesFee: v.optional(v.number()),
+        confirmedCjClearanceFee: v.optional(v.number()),
+        confirmedCjRemoteFee: v.optional(v.number()),
+        confirmedCjLogisticsName: v.optional(v.string()),
+        confirmedLandedCost: v.optional(v.number()),
+        suggestedRetailPrice: v.optional(v.number()),
+        adminPriceLocked: v.optional(v.boolean()),
+        pricingSource: v.optional(pricingSourceValidator),
+        pricingUpdatedAt: v.optional(v.number()),
+        pricingWarnings: v.optional(v.array(v.string())),
         pricingStage: v.optional(v.union(
             v.literal("estimated"),
             v.literal("confirmed")
@@ -125,6 +150,23 @@ export const update = mutation({
         sourcePriceCny: v.optional(v.number()),
         estimatedCjCost: v.optional(v.number()),
         estimatedShipping: v.optional(v.number()),
+        estimatedCjProductCost: v.optional(v.number()),
+        estimatedCjShippingCost: v.optional(v.number()),
+        estimatedCjServiceFee: v.optional(v.number()),
+        estimatedLandedCost: v.optional(v.number()),
+        confirmedCjProductCost: v.optional(v.number()),
+        confirmedCjShippingCost: v.optional(v.number()),
+        confirmedCjServiceFee: v.optional(v.number()),
+        confirmedCjTaxesFee: v.optional(v.number()),
+        confirmedCjClearanceFee: v.optional(v.number()),
+        confirmedCjRemoteFee: v.optional(v.number()),
+        confirmedCjLogisticsName: v.optional(v.string()),
+        confirmedLandedCost: v.optional(v.number()),
+        suggestedRetailPrice: v.optional(v.number()),
+        adminPriceLocked: v.optional(v.boolean()),
+        pricingSource: v.optional(pricingSourceValidator),
+        pricingUpdatedAt: v.optional(v.number()),
+        pricingWarnings: v.optional(v.array(v.string())),
         pricingStage: v.optional(v.union(
             v.literal("estimated"),
             v.literal("confirmed")

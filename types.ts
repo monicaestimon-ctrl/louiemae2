@@ -25,6 +25,23 @@ export interface Product {
   estimatedCjCost?: number;       // Estimated CJ cost (1688 × 1.4, USD)
   estimatedShipping?: number;     // Estimated shipping (category-based)
   confirmedCjCost?: number;       // Actual CJ cost after sourcing approval
+  estimatedCjProductCost?: number;
+  estimatedCjShippingCost?: number;
+  estimatedCjServiceFee?: number;
+  estimatedLandedCost?: number;
+  confirmedCjProductCost?: number;
+  confirmedCjShippingCost?: number;
+  confirmedCjServiceFee?: number;
+  confirmedCjTaxesFee?: number;
+  confirmedCjClearanceFee?: number;
+  confirmedCjRemoteFee?: number;
+  confirmedCjLogisticsName?: string;
+  confirmedLandedCost?: number;
+  suggestedRetailPrice?: number;
+  adminPriceLocked?: boolean;
+  pricingSource?: 'source_estimate' | 'cj_catalog_confirmed' | 'cj_freight_confirmed' | 'manual_locked' | 'order_reconciled';
+  pricingUpdatedAt?: number;
+  pricingWarnings?: string[];
   pricingStage?: 'estimated' | 'confirmed';
   // Currency conversion metadata
   sourceCurrency?: string;          // Original currency code (e.g. 'GBP', 'CNY')

@@ -57,6 +57,29 @@ export default defineSchema({
         estimatedCjCost: v.optional(v.number()),     // Estimated CJ cost (1688 × 1.4, in USD)
         estimatedShipping: v.optional(v.number()),   // Estimated shipping (category-based)
         confirmedCjCost: v.optional(v.number()),     // Actual CJ cost after sourcing approval
+        estimatedCjProductCost: v.optional(v.number()),
+        estimatedCjShippingCost: v.optional(v.number()),
+        estimatedCjServiceFee: v.optional(v.number()),
+        estimatedLandedCost: v.optional(v.number()),
+        confirmedCjProductCost: v.optional(v.number()),
+        confirmedCjShippingCost: v.optional(v.number()),
+        confirmedCjServiceFee: v.optional(v.number()),
+        confirmedCjTaxesFee: v.optional(v.number()),
+        confirmedCjClearanceFee: v.optional(v.number()),
+        confirmedCjRemoteFee: v.optional(v.number()),
+        confirmedCjLogisticsName: v.optional(v.string()),
+        confirmedLandedCost: v.optional(v.number()),
+        suggestedRetailPrice: v.optional(v.number()),
+        adminPriceLocked: v.optional(v.boolean()),
+        pricingSource: v.optional(v.union(
+            v.literal("source_estimate"),
+            v.literal("cj_catalog_confirmed"),
+            v.literal("cj_freight_confirmed"),
+            v.literal("manual_locked"),
+            v.literal("order_reconciled")
+        )),
+        pricingUpdatedAt: v.optional(v.number()),
+        pricingWarnings: v.optional(v.array(v.string())),
         pricingStage: v.optional(v.union(
             v.literal("estimated"),    // Pre-sourcing price based on 1688 + formula
             v.literal("confirmed")     // Post-sourcing price with real CJ cost
@@ -128,6 +151,41 @@ export default defineSchema({
     })
         .index("by_product", ["productId"])
         .index("by_import_session", ["importSessionId"])
+        .index("by_createdAt", ["createdAt"]),
+
+    pricingAudits: defineTable({
+        productId: v.optional(v.id("products")),
+        stage: v.union(
+            v.literal("source_estimate"),
+            v.literal("cj_catalog_confirmed"),
+            v.literal("cj_freight_confirmed"),
+            v.literal("manual_locked"),
+            v.literal("order_reconciled")
+        ),
+        sourcePriceUsd: v.optional(v.number()),
+        collection: v.optional(v.string()),
+        productCost: v.number(),
+        shippingCost: v.number(),
+        serviceFee: v.number(),
+        taxesFee: v.number(),
+        clearanceFee: v.number(),
+        remoteFee: v.number(),
+        otherFee: v.number(),
+        landedCost: v.number(),
+        retailMultiplier: v.number(),
+        suggestedRetailPrice: v.number(),
+        previousPrice: v.optional(v.number()),
+        appliedPrice: v.optional(v.number()),
+        adminPriceLocked: v.boolean(),
+        pricingWarnings: v.array(v.string()),
+        cjProductId: v.optional(v.string()),
+        cjVariantId: v.optional(v.string()),
+        cjSku: v.optional(v.string()),
+        cjLogisticsName: v.optional(v.string()),
+        cjRawResponse: v.optional(v.any()),
+        createdAt: v.number(),
+    })
+        .index("by_product", ["productId"])
         .index("by_createdAt", ["createdAt"]),
 
     // Blog posts table

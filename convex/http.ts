@@ -652,6 +652,19 @@ async function handleCjSourcingCreateWebhook(ctx: any, params: any): Promise<boo
                 cjSku: cjVariantSku || undefined,
                 sourcingId: String(cjSourcingId),
             });
+            if (cjProductId) {
+                try {
+                    await ctx.runAction(internal.cjDropshipping.refreshConfirmedProductPricing, {
+                        productId: product._id,
+                        cjProductId: String(cjProductId),
+                        cjVariantId: cjVariantId ? String(cjVariantId) : undefined,
+                        cjSku: cjVariantSku ? String(cjVariantSku) : undefined,
+                        sourcingId: String(cjSourcingId),
+                    });
+                } catch (pricingError: any) {
+                    console.warn(`CJ SOURCINGCREATE: pricing refresh failed for ${product.name}:`, pricingError?.message || pricingError);
+                }
+            }
         } else if (status === "failed") {
             // Sourcing actually failed — mark as rejected with reason
             console.log(`CJ SOURCINGCREATE REJECTED: ${product.name} → reason: ${failReason}`);

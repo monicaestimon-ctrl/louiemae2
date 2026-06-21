@@ -1,0 +1,43 @@
+# CJ Pricing Implementation Checklist
+
+## Goal
+
+Replace category-only shipping estimates with an auditable pricing flow that uses confirmed CJ product cost and confirmed CJ freight/fee data whenever CJ provides it.
+
+## PR 1: Product Pricing Foundation
+
+- [x] Add shared pricing engine with one source of truth for estimates, landed cost, charm rounding, margin, and profit math.
+- [x] Add product pricing fields for confirmed CJ product cost, confirmed CJ shipping, fees, landed cost, suggested retail price, pricing source, warnings, and admin price lock.
+- [x] Add pricing audit table to record every estimate/confirmation recalculation.
+- [x] Preserve the existing pre-sourcing estimate formula for products that are not linked to CJ yet.
+- [x] Capture CJ catalog variant sell price as confirmed product cost after sourcing/catalog verification.
+- [x] Call CJ freight calculation after a product has a CJ variant ID.
+- [x] Store confirmed freight, taxes, clearance, and logistics name when available.
+- [x] Recalculate suggested retail price from confirmed landed cost.
+- [x] Do not silently overwrite an admin-edited/locked product price.
+- [x] Show pricing breakdown and warnings in the admin product editor/import review.
+- [x] Add unit tests for pricing math.
+- [x] Run type-check, tests, lint, and production build.
+- [ ] Run CodeRabbit CLI review and fix actionable issues. Note: `coderabbit review --agent -t uncommitted` timed out after 10 minutes with no findings returned.
+- [ ] Open ready-for-review GitHub PR, address review comments, and merge to main.
+
+## PR 2: Order-Time Reconciliation
+
+- [ ] Quote CJ freight with the actual customer destination before forwarding a CJ order.
+- [ ] Use the selected/quoted logistics name instead of a hardcoded shipping method when possible.
+- [ ] Store order-level CJ product cost, shipping, service/tax/clearance fees, landed cost, customer shipping collected, and profit estimate.
+- [ ] Flag orders where actual CJ cost differs materially from product-level assumptions.
+- [ ] Add admin order visibility for reconciliation warnings.
+- [ ] Protect checkout success flow from CJ quote failures while preserving admin retry data.
+- [ ] Add tests for order-level pricing/reconciliation helpers.
+- [ ] Run type-check, tests, lint, and production build.
+- [ ] Run CodeRabbit CLI review and fix actionable issues.
+- [ ] Open ready-for-review GitHub PR, address review comments, and merge to main.
+
+## Done
+
+- [ ] Main contains product-level confirmed landed-cost pricing.
+- [ ] Main contains order-level actual-destination reconciliation.
+- [ ] Admins can see how a price was calculated and when it needs review.
+- [ ] Existing manual prices are not overwritten without explicit admin action.
+- [ ] User has been notified that production is ready to test.

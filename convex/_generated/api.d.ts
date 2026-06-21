@@ -25,6 +25,7 @@ import type * as files from "../files.js";
 import type * as geminiDescriptionClient from "../geminiDescriptionClient.js";
 import type * as http from "../http.js";
 import type * as orders from "../orders.js";
+import type * as pricingAudits from "../pricingAudits.js";
 import type * as productFacts from "../productFacts.js";
 import type * as products from "../products.js";
 import type * as scraper from "../scraper.js";
@@ -57,6 +58,7 @@ declare const fullApi: ApiFromModules<{
   geminiDescriptionClient: typeof geminiDescriptionClient;
   http: typeof http;
   orders: typeof orders;
+  pricingAudits: typeof pricingAudits;
   productFacts: typeof productFacts;
   products: typeof products;
   scraper: typeof scraper;

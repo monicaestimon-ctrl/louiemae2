@@ -116,7 +116,17 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
         try {
             // Normalize price draft before save
             const normalizedPrice = priceDraft === '' ? 0 : Number(priceDraft);
-            const productToSave = { ...product, price: Number.isFinite(normalizedPrice) ? normalizedPrice : 0 };
+            const normalizedProductPrice = Number.isFinite(normalizedPrice) ? normalizedPrice : 0;
+            const suggestedRetailPrice = product.suggestedRetailPrice;
+            const adminPriceLocked = Boolean(initialProduct?.id) && Number.isFinite(suggestedRetailPrice)
+                ? Math.abs(normalizedProductPrice - Number(suggestedRetailPrice)) >= 0.01
+                : product.adminPriceLocked;
+            const productToSave = {
+                ...product,
+                price: normalizedProductPrice,
+                adminPriceLocked,
+                pricingSource: adminPriceLocked ? 'manual_locked' as const : product.pricingSource,
+            };
             if (productToSave.smartDescription) {
                 const adminEdited = productToSave.description !== productToSave.smartDescription.description;
                 productToSave.smartDescription = {
@@ -678,6 +688,46 @@ const EssenceStep: React.FC<{
                                     className="w-full text-3xl font-serif text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.3)] border-b border-white/10 py-2 pl-8 focus:outline-none focus:border-bronze bg-transparent placeholder:text-cream/10 transition-colors"
                                 />
                             </div>
+                            {(product.estimatedLandedCost || product.confirmedLandedCost || product.suggestedRetailPrice || product.pricingWarnings?.length) && (
+                                <div className="rounded-lg border border-white/10 bg-black/20 p-4 space-y-2">
+                                    <div className="flex items-center justify-between gap-3 text-[10px] uppercase tracking-widest text-cream/40">
+                                        <span>Pricing Stack</span>
+                                        <span>{product.pricingSource || product.pricingStage || 'estimate'}</span>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2 text-xs text-cream/70">
+                                        <div className="flex justify-between gap-2">
+                                            <span>CJ Product</span>
+                                            <span className="font-mono text-cream">${(product.confirmedCjProductCost ?? product.confirmedCjCost ?? product.estimatedCjProductCost ?? product.estimatedCjCost ?? 0).toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between gap-2">
+                                            <span>CJ Shipping</span>
+                                            <span className="font-mono text-cream">${(product.confirmedCjShippingCost ?? product.estimatedCjShippingCost ?? product.estimatedShipping ?? 0).toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between gap-2">
+                                            <span>Fees/Tax</span>
+                                            <span className="font-mono text-cream">${((product.confirmedCjServiceFee ?? 0) + (product.confirmedCjTaxesFee ?? 0) + (product.confirmedCjClearanceFee ?? 0) + (product.confirmedCjRemoteFee ?? 0)).toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between gap-2">
+                                            <span>Landed</span>
+                                            <span className="font-mono text-cream">${(product.confirmedLandedCost ?? product.estimatedLandedCost ?? 0).toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between gap-2">
+                                            <span>Suggested</span>
+                                            <span className="font-mono text-amber-300">${(product.suggestedRetailPrice ?? 0).toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between gap-2">
+                                            <span>{product.adminPriceLocked ? 'Locked Price' : 'Current Price'}</span>
+                                            <span className="font-mono text-amber-300">${(Number(priceDraft) || product.price || 0).toFixed(2)}</span>
+                                        </div>
+                                    </div>
+                                    {product.confirmedCjLogisticsName && (
+                                        <p className="text-[11px] text-cream/50">Logistics: {product.confirmedCjLogisticsName}</p>
+                                    )}
+                                    {product.pricingWarnings?.map((warning, index) => (
+                                        <p key={`${warning}-${index}`} className="text-[11px] text-amber-200/80">{warning}</p>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
                         <div className="space-y-4">
