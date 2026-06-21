@@ -28,6 +28,83 @@ const MAX_AUTO_RESUBMIT_PER_CYCLE = 3;
 
 // Token expiration buffer (refresh tokens 1 day before they expire)
 const ACCESS_TOKEN_BUFFER_MS = 24 * 60 * 60 * 1000; // 1 day
+
+type CjFreightQuote = {
+    shippingCost?: number;
+    taxesFee?: number;
+    clearanceFee?: number;
+    logisticsName?: string;
+    rawResponse?: any;
+};
+
+const toFiniteNumber = (value: unknown): number | undefined => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const extractCjVariantPrice = (variant: any): number | undefined => {
+    return toFiniteNumber(variant?.variantSellPrice ?? variant?.sellPrice ?? variant?.price);
+};
+
+const chooseFreightRow = (rows: any[]): any | undefined => {
+    const pricedRows = rows
+        .map(row => ({
+            row,
+            cost: toFiniteNumber(row?.totalPostageFee ?? row?.logisticPrice ?? row?.postageAmount),
+        }))
+        .filter((item): item is { row: any; cost: number } => item.cost !== undefined && item.cost >= 0);
+    if (pricedRows.length === 0) return undefined;
+
+    const cjPacket = pricedRows.find(item =>
+        String(item.row?.logisticName ?? item.row?.logisticsName ?? '')
+            .toLowerCase()
+            .includes('cj packet')
+    );
+    return (cjPacket ?? pricedRows.sort((a, b) => a.cost - b.cost)[0]).row;
+};
+
+const quoteCjFreightForVariant = async (
+    accessToken: string,
+    vid: string | undefined,
+): Promise<CjFreightQuote | undefined> => {
+    if (!vid) return undefined;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), CJ_FETCH_TIMEOUT_MS);
+    try {
+        const response = await fetch(`${CJ_API_BASE}/logistic/freightCalculate`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "CJ-Access-Token": accessToken,
+            },
+            body: JSON.stringify({
+                startCountryCode: "CN",
+                endCountryCode: "US",
+                products: [{ quantity: 1, vid }],
+            }),
+            signal: controller.signal,
+        });
+        const data = await response.json();
+        const rows = Array.isArray(data?.data) ? data.data : [];
+        const row = chooseFreightRow(rows);
+        if (!data?.result || !row) {
+            return { rawResponse: data };
+        }
+        return {
+            shippingCost: toFiniteNumber(row.totalPostageFee ?? row.logisticPrice ?? row.postageAmount),
+            taxesFee: toFiniteNumber(row.taxesFee),
+            clearanceFee: toFiniteNumber(row.clearanceOperationFee),
+            logisticsName: row.logisticName ?? row.logisticsName,
+            rawResponse: data,
+        };
+    } catch (error: any) {
+        console.warn(`CJ freight quote failed for vid=${vid}:`, error?.message ?? error);
+        return undefined;
+    } finally {
+        clearTimeout(timeout);
+    }
+};
 const REFRESH_TOKEN_BUFFER_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -320,6 +397,77 @@ export const createCjOrder = internalAction({
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+export const refreshConfirmedProductPricing = internalAction({
+    args: {
+        productId: v.id("products"),
+        cjProductId: v.string(),
+        cjVariantId: v.optional(v.string()),
+        cjSku: v.optional(v.string()),
+        sourcingId: v.optional(v.string()),
+    },
+    handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
+        const token = await ctx.runAction(internal.cjDropshipping.getAccessToken, {});
+        if (!token) {
+            return { success: false, error: "Failed to authenticate with CJ API" };
+        }
+
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), CJ_FETCH_TIMEOUT_MS);
+            let response: Response;
+            try {
+                response = await fetch(
+                    `${CJ_API_BASE}/product/query?pid=${encodeURIComponent(args.cjProductId)}`,
+                    {
+                        method: "GET",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "CJ-Access-Token": token,
+                        },
+                        signal: controller.signal,
+                    }
+                );
+            } finally {
+                clearTimeout(timeout);
+            }
+
+            const data = await response.json();
+            if (!data?.result || !data?.data) {
+                return { success: false, error: data?.message || "CJ product query returned no catalog data" };
+            }
+
+            const variants = data.data.variants || [];
+            const resolvedVariant =
+                (args.cjVariantId ? variants.find((variant: any) => String(variant?.vid) === args.cjVariantId) : null) ||
+                (args.cjSku ? variants.find((variant: any) => variant?.variantSku === args.cjSku) : null) ||
+                (variants.length === 1 ? variants[0] : null);
+            const resolvedVariantId = resolvedVariant?.vid ? String(resolvedVariant.vid) : args.cjVariantId;
+            const resolvedSku = typeof resolvedVariant?.variantSku === "string" ? resolvedVariant.variantSku : args.cjSku;
+            const confirmedCjCost = extractCjVariantPrice(resolvedVariant);
+            const freightQuote = await quoteCjFreightForVariant(token, resolvedVariantId);
+
+            await ctx.runMutation(internal.cjHelpers.updateProductSourcingStatus, {
+                productId: args.productId,
+                status: "approved",
+                cjProductId: data.data.pid || args.cjProductId,
+                cjVariantId: resolvedVariantId,
+                cjSku: resolvedSku,
+                sourcingId: args.sourcingId,
+                confirmedCjCost,
+                confirmedCjShippingCost: freightQuote?.shippingCost,
+                confirmedCjTaxesFee: freightQuote?.taxesFee,
+                confirmedCjClearanceFee: freightQuote?.clearanceFee,
+                confirmedCjLogisticsName: freightQuote?.logisticsName,
+                cjRawPricingResponse: freightQuote?.rawResponse,
+            });
+
+            return { success: true };
+        } catch (error: any) {
+            return { success: false, error: error?.message || "Failed to refresh CJ pricing" };
+        }
+    },
+});
+
 // TRACKING SYNC
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -876,13 +1024,22 @@ export const checkSourcingStatus = internalAction({
                                             : null;
                                         // Fall back to variants[0] only for single-variant products
                                         const resolvedVariant = matchedVariant || (variants.length === 1 ? variants[0] : null);
+                                        const resolvedVariantId = resolvedVariant?.vid != null ? String(resolvedVariant.vid) : undefined;
+                                        const confirmedCjCost = extractCjVariantPrice(resolvedVariant);
+                                        const freightQuote = await quoteCjFreightForVariant(token, resolvedVariantId);
 
                                         await ctx.runMutation(internal.cjHelpers.updateProductSourcingStatus, {
                                             productId: product._id,
                                             status: "approved",
                                             cjProductId: verifyData.data.pid || pidToVerify,
-                                            cjVariantId: resolvedVariant?.vid,
+                                            cjVariantId: resolvedVariantId,
                                             cjSku: resolvedVariant?.variantSku,
+                                            confirmedCjCost,
+                                            confirmedCjShippingCost: freightQuote?.shippingCost,
+                                            confirmedCjTaxesFee: freightQuote?.taxesFee,
+                                            confirmedCjClearanceFee: freightQuote?.clearanceFee,
+                                            confirmedCjLogisticsName: freightQuote?.logisticsName,
+                                            cjRawPricingResponse: freightQuote?.rawResponse,
                                             expectedStatus: product.cjSourcingStatus,
                                         });
                                         approved++;
@@ -967,13 +1124,22 @@ export const checkSourcingStatus = internalAction({
                                                     ? variants2.find((v: any) => v.variantSku === freshSku)
                                                     : null;
                                                 const resolvedVariant2 = matchedVariant2 || (variants2.length === 1 ? variants2[0] : null);
+                                                const resolvedVariantId2 = resolvedVariant2?.vid != null ? String(resolvedVariant2.vid) : undefined;
+                                                const confirmedCjCost2 = extractCjVariantPrice(resolvedVariant2);
+                                                const freightQuote2 = await quoteCjFreightForVariant(token, resolvedVariantId2);
 
                                                 await ctx.runMutation(internal.cjHelpers.updateProductSourcingStatus, {
                                                     productId: product._id,
                                                     status: "approved",
                                                     cjProductId: freshSourcing.cjProductId,
-                                                    cjVariantId: resolvedVariant2?.vid,
+                                                    cjVariantId: resolvedVariantId2,
                                                     cjSku: resolvedVariant2?.variantSku || freshSourcing.cjVariantSku,
+                                                    confirmedCjCost: confirmedCjCost2,
+                                                    confirmedCjShippingCost: freightQuote2?.shippingCost,
+                                                    confirmedCjTaxesFee: freightQuote2?.taxesFee,
+                                                    confirmedCjClearanceFee: freightQuote2?.clearanceFee,
+                                                    confirmedCjLogisticsName: freightQuote2?.logisticsName,
+                                                    cjRawPricingResponse: freightQuote2?.rawResponse,
                                                     expectedStatus: product.cjSourcingStatus,
                                                 });
                                                 approved++;
@@ -1275,6 +1441,8 @@ export const diagnosePendingProducts = internalAction({
                             const resolvedSku = typeof resolvedVariant?.variantSku === "string" && resolvedVariant.variantSku.trim()
                                 ? resolvedVariant.variantSku.trim()
                                 : sourcingSku;
+                            const confirmedCjCost = extractCjVariantPrice(resolvedVariant);
+                            const freightQuote = await quoteCjFreightForVariant(token, resolvedVariantId);
 
                             await ctx.runMutation(internal.cjHelpers.updateProductSourcingStatus, {
                                 productId: product._id,
@@ -1282,6 +1450,12 @@ export const diagnosePendingProducts = internalAction({
                                 cjProductId: catData.data.pid || pidToCheck,
                                 cjVariantId: resolvedVariantId,
                                 cjSku: resolvedSku,
+                                confirmedCjCost,
+                                confirmedCjShippingCost: freightQuote?.shippingCost,
+                                confirmedCjTaxesFee: freightQuote?.taxesFee,
+                                confirmedCjClearanceFee: freightQuote?.clearanceFee,
+                                confirmedCjLogisticsName: freightQuote?.logisticsName,
+                                cjRawPricingResponse: freightQuote?.rawResponse,
                             });
                             diag.autoApproved = true;
                             autoApprovedCount++;
