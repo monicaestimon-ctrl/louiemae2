@@ -257,6 +257,8 @@ export default defineSchema({
             // CJ Dropshipping product mapping
             cjVariantId: v.optional(v.string()), // CJ variant ID (vid)
             cjSku: v.optional(v.string()), // CJ product SKU
+            cjProductCost: v.optional(v.number()),
+            cjEstimatedLandedCost: v.optional(v.number()),
         })),
         subtotal: v.number(),
         shipping: v.optional(v.number()),
@@ -293,6 +295,17 @@ export default defineSchema({
         )),
         cjError: v.optional(v.string()), // Error message if CJ order fails
         cjLastSyncAt: v.optional(v.string()), // Last time we synced with CJ
+        cjQuotedProductCost: v.optional(v.number()),
+        cjQuotedShippingCost: v.optional(v.number()),
+        cjQuotedTaxesFee: v.optional(v.number()),
+        cjQuotedClearanceFee: v.optional(v.number()),
+        cjQuotedLandedCost: v.optional(v.number()),
+        cjQuotedLogisticsName: v.optional(v.string()),
+        cjCustomerShippingCollected: v.optional(v.number()),
+        cjEstimatedProfit: v.optional(v.number()),
+        cjPricingWarnings: v.optional(v.array(v.string())),
+        cjPricingUpdatedAt: v.optional(v.string()),
+        cjRawPricingResponse: v.optional(v.any()),
         // Tracking information
         trackingNumber: v.optional(v.string()),
         trackingUrl: v.optional(v.string()),

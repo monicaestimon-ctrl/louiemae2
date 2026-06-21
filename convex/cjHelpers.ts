@@ -3,7 +3,7 @@ import { internalMutation, internalQuery, mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { calculatePricingBreakdown } from "../lib/pricing";
 
-const hasFiniteNumber = (value: unknown): boolean => Number.isFinite(Number(value));
+const hasFiniteNumber = (value: unknown): boolean => typeof value === "number" && Number.isFinite(value);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CJ DROPSHIPPING DATABASE HELPERS
@@ -28,15 +28,41 @@ export const updateOrderCjStatus = internalMutation({
         ),
         cjOrderId: v.optional(v.string()),
         cjError: v.optional(v.string()),
+        cjQuotedProductCost: v.optional(v.number()),
+        cjQuotedShippingCost: v.optional(v.number()),
+        cjQuotedTaxesFee: v.optional(v.number()),
+        cjQuotedClearanceFee: v.optional(v.number()),
+        cjQuotedLandedCost: v.optional(v.number()),
+        cjQuotedLogisticsName: v.optional(v.string()),
+        cjCustomerShippingCollected: v.optional(v.number()),
+        cjEstimatedProfit: v.optional(v.number()),
+        cjPricingWarnings: v.optional(v.array(v.string())),
+        cjRawPricingResponse: v.optional(v.any()),
     },
     handler: async (ctx, args) => {
-        await ctx.db.patch(args.orderId, {
+        const updateData: Record<string, any> = {
             cjStatus: args.cjStatus,
             cjOrderId: args.cjOrderId,
             cjError: args.cjError || undefined,
             cjLastSyncAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-        });
+        };
+
+        if (hasFiniteNumber(args.cjQuotedProductCost)) updateData.cjQuotedProductCost = args.cjQuotedProductCost;
+        if (hasFiniteNumber(args.cjQuotedShippingCost)) updateData.cjQuotedShippingCost = args.cjQuotedShippingCost;
+        if (hasFiniteNumber(args.cjQuotedTaxesFee)) updateData.cjQuotedTaxesFee = args.cjQuotedTaxesFee;
+        if (hasFiniteNumber(args.cjQuotedClearanceFee)) updateData.cjQuotedClearanceFee = args.cjQuotedClearanceFee;
+        if (hasFiniteNumber(args.cjQuotedLandedCost)) updateData.cjQuotedLandedCost = args.cjQuotedLandedCost;
+        if (args.cjQuotedLogisticsName) updateData.cjQuotedLogisticsName = args.cjQuotedLogisticsName;
+        if (hasFiniteNumber(args.cjCustomerShippingCollected)) updateData.cjCustomerShippingCollected = args.cjCustomerShippingCollected;
+        if (hasFiniteNumber(args.cjEstimatedProfit)) updateData.cjEstimatedProfit = args.cjEstimatedProfit;
+        if (args.cjPricingWarnings) updateData.cjPricingWarnings = args.cjPricingWarnings;
+        if (args.cjRawPricingResponse) {
+            updateData.cjRawPricingResponse = args.cjRawPricingResponse;
+            updateData.cjPricingUpdatedAt = new Date().toISOString();
+        }
+
+        await ctx.db.patch(args.orderId, updateData);
     },
 });
 
@@ -94,6 +120,34 @@ export const getOrdersNeedingSync = internalQuery({
         // Filter to only those that haven't been synced recently (1 hour)
         const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
         return orders.filter(o => !o.cjLastSyncAt || o.cjLastSyncAt < oneHourAgo);
+    },
+});
+
+export const getProductPricingByStringIds = internalQuery({
+    args: {
+        productIds: v.array(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const results = [];
+        for (const rawId of args.productIds) {
+            const productId = ctx.db.normalizeId("products", rawId);
+            if (!productId) {
+                console.warn(`getProductPricingByStringIds: Invalid product ID "${rawId}"`);
+                continue;
+            }
+            const product = await ctx.db.get(productId);
+            if (!product) {
+                console.warn(`getProductPricingByStringIds: Product not found for ID "${rawId}"`);
+                continue;
+            }
+            results.push({
+                id: rawId,
+                productCost: product.confirmedCjProductCost ?? product.confirmedCjCost ?? product.estimatedCjProductCost ?? product.estimatedCjCost,
+                estimatedShippingCost: product.confirmedCjShippingCost ?? product.estimatedCjShippingCost ?? product.estimatedShipping,
+                landedCost: product.confirmedLandedCost ?? product.estimatedLandedCost,
+            });
+        }
+        return results;
     },
 });
 

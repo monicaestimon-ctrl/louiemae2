@@ -33,6 +33,26 @@ export type PricingBreakdown = {
   warnings: string[];
 };
 
+export type OrderPricingItem = {
+  quantity: number;
+  productCost?: number;
+  estimatedShippingCost?: number;
+  retailPrice?: number;
+};
+
+export type OrderPricingReconciliation = {
+  productCostTotal: number;
+  estimatedShippingTotal: number;
+  shippingCost: number;
+  taxesFee: number;
+  clearanceFee: number;
+  landedCost: number;
+  customerShippingCollected: number;
+  retailSubtotal: number;
+  estimatedProfit: number;
+  warnings: string[];
+};
+
 export const DEFAULT_RETAIL_MULTIPLIER = 3;
 export const ESTIMATED_CJ_COST_MULTIPLIER = 1.4;
 
@@ -149,6 +169,53 @@ export const calculatePricingBreakdown = (args: {
     estimatedProfit,
     marginPercent,
     pricingSource: args.pricingSource ?? (hasConfirmedShippingCost ? 'cj_freight_confirmed' : hasConfirmedProductCost ? 'cj_catalog_confirmed' : 'source_estimate'),
+    warnings,
+  };
+};
+
+export const calculateOrderPricingReconciliation = (args: {
+  items: OrderPricingItem[];
+  quotedShippingCost?: number;
+  quotedTaxesFee?: number;
+  quotedClearanceFee?: number;
+  customerShippingCollected?: number;
+  orderSubtotal?: number;
+  freightQuoteAvailable: boolean;
+}): OrderPricingReconciliation => {
+  const productCostTotal = roundMoney(args.items.reduce((total, item) =>
+    total + Math.max(0, item.productCost ?? 0) * Math.max(0, item.quantity), 0));
+  const estimatedShippingTotal = roundMoney(args.items.reduce((total, item) =>
+    total + Math.max(0, item.estimatedShippingCost ?? 0) * Math.max(0, item.quantity), 0));
+  const shippingCost = roundNonNegativeMoney(args.quotedShippingCost);
+  const taxesFee = roundNonNegativeMoney(args.quotedTaxesFee);
+  const clearanceFee = roundNonNegativeMoney(args.quotedClearanceFee);
+  const landedCost = roundMoney(productCostTotal + shippingCost + taxesFee + clearanceFee);
+  const retailSubtotal = roundMoney(args.orderSubtotal ?? args.items.reduce((total, item) =>
+    total + Math.max(0, item.retailPrice ?? 0) * Math.max(0, item.quantity), 0));
+  const customerShippingCollected = roundNonNegativeMoney(args.customerShippingCollected);
+  const estimatedProfit = roundMoney(retailSubtotal + customerShippingCollected - landedCost);
+  const warnings: string[] = [];
+
+  if (!args.freightQuoteAvailable) {
+    warnings.push('CJ freight quote was unavailable before order forwarding.');
+  }
+  if (args.items.some(item => item.productCost === undefined)) {
+    warnings.push('One or more CJ product costs were missing; order profit may be understated.');
+  }
+  if (args.quotedShippingCost !== undefined && estimatedShippingTotal > 0 && args.quotedShippingCost > estimatedShippingTotal * 1.25) {
+    warnings.push('Actual destination freight is more than 25% above product-level shipping assumptions.');
+  }
+
+  return {
+    productCostTotal,
+    estimatedShippingTotal,
+    shippingCost,
+    taxesFee,
+    clearanceFee,
+    landedCost,
+    customerShippingCollected,
+    retailSubtotal,
+    estimatedProfit,
     warnings,
   };
 };

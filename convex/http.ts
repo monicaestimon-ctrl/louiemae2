@@ -195,7 +195,12 @@ http.route({
             const session = event.data.object as Stripe.Checkout.Session;
 
             // Parse items from metadata
-            const itemsData = session.metadata?.items ? JSON.parse(session.metadata.items) : [];
+            let itemsData: any[] = [];
+            try {
+                itemsData = session.metadata?.items ? JSON.parse(session.metadata.items) : [];
+            } catch (parseError) {
+                console.error("Failed to parse Stripe items metadata:", parseError);
+            }
 
             // Get shipping address from session
             const shippingDetails = (session as any).shipping_details;
@@ -252,13 +257,25 @@ http.route({
             }
 
             // Forward order to CJ Dropshipping if items have CJ mapping
+            const productPricingRows = await ctx.runQuery(internal.cjHelpers.getProductPricingByStringIds, {
+                productIds: itemsData
+                    .map((item: any) => item.productId)
+                    .filter((productId: unknown): productId is string => typeof productId === "string"),
+            });
+            const productPricingById = new Map(productPricingRows.map((row: any) => [row.id, row]));
             const cjProducts = itemsData
                 .filter((item: any) => item.cjVariantId || item.cjSku)
-                .map((item: any) => ({
-                    vid: item.cjVariantId || undefined,
-                    sku: item.cjSku || undefined,
-                    quantity: item.quantity,
-                }));
+                .map((item: any) => {
+                    const pricing = productPricingById.get(item.productId);
+                    return {
+                        vid: item.cjVariantId || undefined,
+                        sku: item.cjSku || undefined,
+                        quantity: item.quantity,
+                        productCost: pricing?.productCost,
+                        estimatedShippingCost: pricing?.estimatedShippingCost,
+                        retailPrice: item.price,
+                    };
+                });
 
             if (cjProducts.length > 0 && shippingAddress) {
                 try {
@@ -270,6 +287,8 @@ http.route({
                         customerEmail: session.customer_details?.email || "",
                         shippingAddress,
                         products: cjProducts,
+                        customerShippingCollected: (session.shipping_cost?.amount_total || 0) / 100,
+                        orderSubtotal: (session.amount_subtotal || 0) / 100,
                     });
                     console.log(`CJ order forwarding initiated for order ${orderId}`);
                 } catch (cjError: any) {
@@ -785,7 +804,7 @@ async function handleCjVariantWebhook(ctx: any, params: any) {
         vid: vid,
         sku: variantSku || "",
         name: friendlyName,
-        price: variantSellPrice ? parseFloat(variantSellPrice) : undefined,
+        price: variantSellPrice && Number.isFinite(parseFloat(variantSellPrice)) ? parseFloat(variantSellPrice) : undefined,
         image: variantImage,
     };
 

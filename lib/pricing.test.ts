@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   calculateEstimatedCjProductCost,
   calculateLandedCost,
+  calculateOrderPricingReconciliation,
   calculatePricingBreakdown,
   calculateRetailFromLandedCost,
   getEstimatedShipping,
@@ -78,5 +79,37 @@ describe('pricing engine', () => {
     expect(pricing.suggestedRetailPrice).toBe(77.99);
     expect(pricing.estimatedProfit).toBe(54);
     expect(pricing.warnings).toContain('Admin price is locked; suggested CJ price was not applied automatically.');
+  });
+
+  it('reconciles order-level CJ costs against customer shipping collected', () => {
+    const reconciliation = calculateOrderPricingReconciliation({
+      items: [
+        { quantity: 2, productCost: 6, estimatedShippingCost: 4, retailPrice: 24 },
+      ],
+      quotedShippingCost: 9,
+      quotedTaxesFee: 1,
+      quotedClearanceFee: 0.5,
+      customerShippingCollected: 9.99,
+      freightQuoteAvailable: true,
+    });
+
+    expect(reconciliation.productCostTotal).toBe(12);
+    expect(reconciliation.landedCost).toBe(22.5);
+    expect(reconciliation.estimatedProfit).toBe(35.49);
+    expect(reconciliation.warnings).toHaveLength(0);
+  });
+
+  it('warns when order freight or product costs are weak', () => {
+    const reconciliation = calculateOrderPricingReconciliation({
+      items: [
+        { quantity: 1, estimatedShippingCost: 4, retailPrice: 20 },
+      ],
+      quotedShippingCost: 8,
+      customerShippingCollected: 0,
+      freightQuoteAvailable: true,
+    });
+
+    expect(reconciliation.warnings).toContain('One or more CJ product costs were missing; order profit may be understated.');
+    expect(reconciliation.warnings).toContain('Actual destination freight is more than 25% above product-level shipping assumptions.');
   });
 });
