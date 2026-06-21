@@ -63,8 +63,72 @@ export default defineSchema({
         )),
         // Multi-category support
         subcategory: v.optional(v.string()),         // e.g., "Skirts" (parent category auto-derived)
+        smartDescription: v.optional(v.object({
+            description: v.string(),
+            auditId: v.id("descriptionAudits"),
+            generatedAt: v.number(),
+            model: v.string(),
+            promptVersion: v.string(),
+            sourceSnapshotHash: v.string(),
+            adminEdited: v.boolean(),
+            status: v.union(
+                v.literal("generated"),
+                v.literal("edited"),
+                v.literal("approved"),
+                v.literal("failed"),
+                v.literal("fallback")
+            ),
+        })),
+        descriptionSource: v.optional(v.union(
+            v.literal("admin_written"),
+            v.literal("ai_generated"),
+            v.literal("ai_generated_admin_edited"),
+            v.literal("source_original"),
+            v.literal("safe_fallback")
+        )),
+        descriptionFingerprint: v.optional(v.object({
+            normalizedOpening: v.string(),
+            topPhrases: v.array(v.string()),
+            productType: v.string(),
+            collection: v.string(),
+        })),
     }).index("by_cj_sourcing_status", ["cjSourcingStatus"])
         .index("by_cj_sourcing_id", ["cjSourcingId"]),
+
+    descriptionAudits: defineTable({
+        productId: v.optional(v.id("products")),
+        importSessionId: v.optional(v.string()),
+        sourceUrl: v.optional(v.string()),
+        sourceDomain: v.optional(v.string()),
+        generationMode: v.union(
+            v.literal("import_auto"),
+            v.literal("manual_generate"),
+            v.literal("manual_regenerate"),
+            v.literal("batch_regenerate"),
+            v.literal("repair_existing")
+        ),
+        model: v.string(),
+        promptVersion: v.string(),
+        brandVoiceVersion: v.string(),
+        sourceSnapshotHash: v.string(),
+        sourceSnapshot: v.any(),
+        normalizedFacts: v.any(),
+        generatedDraft: v.optional(v.any()),
+        finalDescription: v.optional(v.string()),
+        rawModelResponse: v.optional(v.string()),
+        validation: v.any(),
+        fallbackUsed: v.boolean(),
+        fallbackReason: v.optional(v.string()),
+        adminEdited: v.boolean(),
+        adminEditDistance: v.optional(v.number()),
+        warnings: v.array(v.string()),
+        createdBy: v.optional(v.string()),
+        createdAt: v.number(),
+        updatedAt: v.number(),
+    })
+        .index("by_product", ["productId"])
+        .index("by_import_session", ["importSessionId"])
+        .index("by_createdAt", ["createdAt"]),
 
     // Blog posts table
     blogPosts: defineTable({

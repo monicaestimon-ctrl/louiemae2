@@ -220,6 +220,9 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       'estimatedShipping',
       'pricingStage',
       'subcategory',
+      'smartDescription',
+      'descriptionSource',
+      'descriptionFingerprint',
     ];
     const updates = Object.fromEntries(
       allowedFields
