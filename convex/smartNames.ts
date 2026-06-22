@@ -63,6 +63,7 @@ export const generateSmartName = action({
         const typedRequest = request as SmartNameRequest;
         const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const warnings: string[] = [];
+        let existingNames: string[] = [];
         console.log("[SmartName] started", {
             requestId,
             generationMode: typedRequest.generationMode,
@@ -84,11 +85,15 @@ export const generateSmartName = action({
             }
 
             const facts = extractNormalizedProductFacts(sourceSnapshot);
-            const existingNames = await ctx.runQuery(internal.products.findExistingSmartNames, {
-                collection: facts.collection.value,
-                productType: facts.productType.value,
-                limit: 40,
-            });
+            try {
+                existingNames = await ctx.runQuery(internal.products.findExistingSmartNames, {
+                    collection: facts.collection.value,
+                    productType: facts.productType.value,
+                    limit: 40,
+                });
+            } catch (lookupError: any) {
+                warnings.push(`Existing name lookup failed; duplicate avoidance may be limited: ${lookupError?.message || 'unknown error'}.`);
+            }
             console.log("[SmartName] facts extracted", {
                 requestId,
                 sourceQualityScore: facts.sourceQuality.score,
@@ -140,7 +145,18 @@ export const generateSmartName = action({
             };
         } catch (error: any) {
             const facts = extractNormalizedProductFacts(normalizeSourceProduct(typedRequest.sourceSnapshot || {}));
-            const fallback = buildSafeNameFallback(facts);
+            if (existingNames.length === 0) {
+                try {
+                    existingNames = await ctx.runQuery(internal.products.findExistingSmartNames, {
+                        collection: facts.collection.value,
+                        productType: facts.productType.value,
+                        limit: 40,
+                    });
+                } catch {
+                    // Continue with the safest available local fallback.
+                }
+            }
+            const fallback = buildSafeNameFallback(facts, existingNames);
             return {
                 ok: true,
                 name: fallback.name,

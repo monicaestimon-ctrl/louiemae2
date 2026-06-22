@@ -219,6 +219,30 @@ describe('grounded facts and validators', () => {
     expect(facts.materials.some((fact) => fact.normalizedValue === 'oak')).toBe(false);
   });
 
+  it('keeps direct material evidence even when the phrase includes visual finish words', () => {
+    const facts = extractNormalizedProductFacts({
+      importedAt: Date.now(),
+      rawTitle: 'Solid oak chair',
+      rawDescription: 'Crafted from solid oak with a natural finish.',
+      images: [{ url: 'https://example.com/chair.jpg', role: 'primary' }],
+      categoryHints: { selectedCollection: 'furniture' },
+    });
+
+    expect(facts.materials.some((fact) => fact.normalizedValue === 'oak')).toBe(true);
+  });
+
+  it('rejects material terms that are only finish or tone descriptors inside direct phrases', () => {
+    const facts = extractNormalizedProductFacts({
+      importedAt: Date.now(),
+      rawTitle: 'Accent chair',
+      rawDescription: 'Made with an oak-toned finish and a curved profile.',
+      images: [{ url: 'https://example.com/chair.jpg', role: 'primary' }],
+      categoryHints: { selectedCollection: 'furniture' },
+    });
+
+    expect(facts.materials.some((fact) => fact.normalizedValue === 'oak')).toBe(false);
+  });
+
   it('requires material labels to cite material facts specifically', () => {
     const facts = extractNormalizedProductFacts({
       importedAt: Date.now(),
@@ -228,14 +252,15 @@ describe('grounded facts and validators', () => {
       categoryHints: { selectedCollection: 'kids' },
     });
 
-    const designFactId = facts.designDetails[0]?.id || 'missing';
+    const designFactId = facts.designDetails[0]?.id;
+    expect(designFactId).toBeDefined();
     const validation = validateGeneratedDescription({
       draft: {
         openingSentence: 'A sweet everyday romper with soft ruffle detail and an easy play-ready shape.',
         detailLines: [
-          { label: 'Design', detail: 'Ruffle straps give it a gentle boutique finish.', supportedByFactIds: [designFactId], riskLevel: 'low' },
-          { label: 'Material', detail: 'Soft cotton keeps the piece easy for everyday wear.', supportedByFactIds: [designFactId], riskLevel: 'high' },
-          { label: 'Details', detail: 'Clean visual lines keep the piece simple and polished.', supportedByFactIds: [designFactId], riskLevel: 'low' },
+          { label: 'Design', detail: 'Ruffle straps give it a gentle boutique finish.', supportedByFactIds: [designFactId!], riskLevel: 'low' },
+          { label: 'Material', detail: 'Soft cotton keeps the piece easy for everyday wear.', supportedByFactIds: [designFactId!], riskLevel: 'high' },
+          { label: 'Details', detail: 'Clean visual lines keep the piece simple and polished.', supportedByFactIds: [designFactId!], riskLevel: 'low' },
         ],
         seoKeywordsUsed: [],
         avoidedClaims: [],

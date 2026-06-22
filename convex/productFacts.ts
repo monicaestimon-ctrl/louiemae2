@@ -99,11 +99,11 @@ function textFacts(text: string, terms: string[], group: string, label: string):
 
 function materialFactsFromText(text: string): FactValue[] {
     const results: FactValue[] = [];
+    const escapeRegExp = (input: string) => input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const directPatterns = [
         /\b(?:material|materials|fabric|composition)\s*[:：-]\s*([^.;\n]{2,90})/gi,
         /\b(?:made|crafted|constructed)\s+(?:from|of|with)\s+([^.;\n]{2,90})/gi,
     ];
-    const visualOnly = /\b(?:tone|toned|color|colored|colour|coloured|finish|finished|look|style|effect|print|pattern)\b/i;
 
     for (const pattern of directPatterns) {
         let match: RegExpExecArray | null;
@@ -112,7 +112,11 @@ function materialFactsFromText(text: string): FactValue[] {
             const valueText = match[1].toLowerCase();
             for (const term of MATERIAL_TERMS) {
                 if (!valueText.includes(term.toLowerCase())) continue;
-                if (visualOnly.test(valueText) && !/\bmaterial|fabric|composition\b/i.test(excerpt)) continue;
+                const visualOnlyTermContext = new RegExp(
+                    `\\b${escapeRegExp(term.toLowerCase())}(?:[-\\s]*(?:tone|toned|color|colored|colour|coloured|finish|finished|look|style|effect|print|pattern))\\b`,
+                    'i'
+                );
+                if (visualOnlyTermContext.test(valueText)) continue;
                 results.push(fact('materials', 'Material', term, 'source_text', 0.82, [evidence('description', excerpt)]));
             }
         }
