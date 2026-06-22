@@ -113,8 +113,8 @@ Fashion: Design, Fit, Fabric, Details, Styling, Length, Closure
 Furniture: Design, Material, Finish, Function, Storage, Dimensions, Placement
 Decor/Home: Design, Texture, Finish, Placement, Details, Material, Scale
 
-Only use Material, Fabric, Care, Dimensions, or Sizing labels when directly supported by matching fact IDs.
-Use Details, Design, Feel, Finish, or Texture for low-risk visual facts when material, care, dimension, or sizing evidence is missing.
+Only use Material, Care, Dimensions, or Sizing labels when directly supported by fact IDs.
+Use Details or Design for low-risk visual facts.
 Use this product-specific angle: ${angle}.
 Avoid these existing openings/fragments: ${JSON.stringify(args.similarDescriptions.slice(0, 10))}
 Prompt version: ${SMART_DESCRIPTION_PROMPT_VERSION}
@@ -153,7 +153,6 @@ Repair this Louie Mae description draft.
 Return JSON only in the same GeneratedDescriptionDraft shape.
 Use the same verified facts. Do not add new claims.
 Fix validation issues, unsupported claims, banned phrases, similarity, and malformed labels.
-If Material, Fabric, Care, Dimensions, or Sizing lacks matching evidence, change the label to Details and keep only low-risk visual copy.
 `;
     const response = await ai.models.generateContent({
         model,

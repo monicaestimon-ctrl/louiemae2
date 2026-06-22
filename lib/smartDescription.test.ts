@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { DESCRIPTION_SEPARATOR, coerceGeneratedDescriptionDraft, formatDescription, isPlaceholderSourceText, sanitizeSourceText } from './smartDescription';
+import { DESCRIPTION_SEPARATOR, GeneratedDescriptionDraft, coerceGeneratedDescriptionDraft, formatDescription, isPlaceholderSourceText, sanitizeSourceText } from './smartDescription';
 import { normalizeSourceProduct } from '../convex/sourceProductNormalizer';
 import { extractNormalizedProductFacts } from '../convex/productFacts';
 import { LOUIE_MAE_BRAND_VOICE } from '../convex/brandVoice';
 import {
   buildSafeFallbackDescription,
-  normalizeDraftLabelsForAvailableFacts,
   validateGeneratedDescription,
 } from '../convex/descriptionValidators';
 import {
@@ -244,7 +243,7 @@ describe('grounded facts and validators', () => {
     expect(facts.materials.some((fact) => fact.normalizedValue === 'oak')).toBe(false);
   });
 
-  it('requires material labels to cite material facts specifically', () => {
+  it('rejects unsupported material claims inside otherwise branded copy', () => {
     const facts = extractNormalizedProductFacts({
       importedAt: Date.now(),
       rawTitle: 'Ruffle romper',
@@ -275,7 +274,7 @@ describe('grounded facts and validators', () => {
     expect(validation.errors.some((issue) => issue.code === 'UNSUPPORTED_MATERIAL_CLAIM')).toBe(true);
   });
 
-  it('downgrades unsupported restricted labels so branded low-risk copy can still pass', () => {
+  it('allows branded low-risk visual copy without forcing fallback', () => {
     const facts = extractNormalizedProductFacts({
       importedAt: Date.now(),
       rawTitle: 'Ruffle romper',
@@ -287,7 +286,7 @@ describe('grounded facts and validators', () => {
     const designFactId = facts.designDetails[0]?.id;
     expect(designFactId).toBeDefined();
 
-    const draft = normalizeDraftLabelsForAvailableFacts({
+    const draft: GeneratedDescriptionDraft = {
       openingSentence: 'A sweet everyday romper with ruffle detail and a soft, easygoing play-ready shape.',
       detailLines: [
         { label: 'Design', detail: 'Ruffle straps give it a gentle boutique finish.', supportedByFactIds: [designFactId!], riskLevel: 'low' },
@@ -297,9 +296,9 @@ describe('grounded facts and validators', () => {
       seoKeywordsUsed: [],
       avoidedClaims: [],
       confidence: 0.7,
-    }, facts);
+    };
 
-    expect(draft.detailLines[1].label).toBe('Details');
+    expect(draft.detailLines[1].label).toBe('Fabric');
     const validation = validateGeneratedDescription({
       draft,
       facts,
