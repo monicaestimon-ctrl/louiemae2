@@ -52,39 +52,6 @@ function allFacts(facts: NormalizedProductFacts) {
     ];
 }
 
-function factIdSet(values: Array<{ id: string }>): Set<string> {
-    return new Set(values.map(value => value.id));
-}
-
-function lineHasGroupFact(line: GeneratedDescriptionDraft['detailLines'][number], ids: Set<string>): boolean {
-    return line.supportedByFactIds.some(factId => ids.has(factId));
-}
-
-function restrictedLabelFactIds(facts: NormalizedProductFacts, label: string): Set<string> | undefined {
-    if (label === 'Material' || label === 'Fabric') return factIdSet(facts.materials);
-    if (label === 'Care') return factIdSet(facts.careInstructions);
-    if (label === 'Dimensions') return factIdSet(facts.dimensions);
-    if (label === 'Sizing') return factIdSet([...facts.ageOrSizeRange, ...facts.variants]);
-    return undefined;
-}
-
-export function normalizeDraftLabelsForAvailableFacts(
-    draft: GeneratedDescriptionDraft,
-    facts: NormalizedProductFacts
-): GeneratedDescriptionDraft {
-    return {
-        ...draft,
-        detailLines: draft.detailLines.map(line => {
-            const requiredIds = restrictedLabelFactIds(facts, line.label);
-            if (!requiredIds || lineHasGroupFact(line, requiredIds)) return line;
-            return {
-                ...line,
-                label: 'Details',
-            };
-        }),
-    };
-}
-
 function hasDirectEvidenceFor(term: string, facts: NormalizedProductFacts, groups: Array<keyof NormalizedProductFacts>): boolean {
     const lower = term.toLowerCase();
     return groups.some(group => {
@@ -161,10 +128,6 @@ export function validateGeneratedDescription(args: {
     const errors: DescriptionValidationIssue[] = [];
     const warnings: DescriptionValidationIssue[] = [];
     const text = draftText(draft);
-    const materialFactIds = factIdSet(facts.materials);
-    const careFactIds = factIdSet(facts.careInstructions);
-    const dimensionFactIds = factIdSet(facts.dimensions);
-    const sizingFactIds = factIdSet([...facts.ageOrSizeRange, ...facts.variants]);
 
     if (!draft.openingSentence?.trim()) errors.push(issue('MISSING_OPENING', 'Opening sentence is required.'));
     const openingWords = words(draft.openingSentence || '');
@@ -181,21 +144,6 @@ export function validateGeneratedDescription(args: {
         if (!VALID_LABELS.has(line.label)) errors.push(issue('INVALID_LABEL', `Invalid label: ${line.label}`, 'error', line.label));
         if (!line.detail?.trim() || /^(n\/?a|none|unknown|tbd|-)\.?$/i.test(line.detail.trim())) {
             errors.push(issue('GENERIC_COPY', 'Detail line is empty or filler.', 'error', `${line.label} · ${line.detail}`));
-        }
-        if (line.label === 'Material' && !lineHasGroupFact(line, materialFactIds)) {
-            errors.push(issue('UNSUPPORTED_MATERIAL_CLAIM', 'Material label requires a supporting material fact.', 'error', line.detail));
-        }
-        if (line.label === 'Fabric' && !lineHasGroupFact(line, materialFactIds)) {
-            errors.push(issue('UNSUPPORTED_MATERIAL_CLAIM', 'Fabric label requires a supporting material fact.', 'error', line.detail));
-        }
-        if (line.label === 'Care' && !lineHasGroupFact(line, careFactIds)) {
-            errors.push(issue('UNSUPPORTED_CARE_CLAIM', 'Care label requires direct care evidence.', 'error', line.detail));
-        }
-        if (line.label === 'Dimensions' && !lineHasGroupFact(line, dimensionFactIds)) {
-            errors.push(issue('UNSUPPORTED_DIMENSION_CLAIM', 'Dimensions label requires direct dimension evidence.', 'error', line.detail));
-        }
-        if (line.label === 'Sizing' && !lineHasGroupFact(line, sizingFactIds)) {
-            errors.push(issue('UNSUPPORTED_DIMENSION_CLAIM', 'Sizing label requires direct size or variant evidence.', 'error', line.detail));
         }
     }
     for (const phrase of brandVoice.bannedPhrases) {
