@@ -40,7 +40,7 @@ type CheckoutItem = {
     variantName?: string;
     cjVariantId?: string;
     cjSku?: string;
-    name?: string;
+    name: string;
     image?: string;
     price: number;
     quantity: number;
