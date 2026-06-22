@@ -87,6 +87,9 @@ export const create = mutation({
         )),
         // Two-stage pricing metadata
         sourcePriceCny: v.optional(v.number()),
+        rawSourceDescription: v.optional(v.string()),
+        rawHtmlDescription: v.optional(v.string()),
+        descriptionImages: v.optional(v.array(v.string())),
         estimatedCjCost: v.optional(v.number()),
         estimatedShipping: v.optional(v.number()),
         estimatedCjProductCost: v.optional(v.number()),
@@ -148,6 +151,9 @@ export const update = mutation({
             v.literal("none")
         )),
         sourcePriceCny: v.optional(v.number()),
+        rawSourceDescription: v.optional(v.string()),
+        rawHtmlDescription: v.optional(v.string()),
+        descriptionImages: v.optional(v.array(v.string())),
         estimatedCjCost: v.optional(v.number()),
         estimatedShipping: v.optional(v.number()),
         estimatedCjProductCost: v.optional(v.number()),

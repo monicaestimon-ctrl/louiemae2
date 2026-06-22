@@ -5,7 +5,7 @@ import { aliexpressService } from '../services/aliexpressService';
 import { CollectionType, Product, CollectionConfig } from '../types';
 import { generateProductNameV2, extractKeywords, ProductContext, translateVariantNames, isLikelyFallback } from '../services/geminiService';
 import { translateProductFields, detectChinese } from '../services/translateService';
-import { extractOtapiSourceProperties, cleanOtapiDescription } from '../lib/otapiHelpers';
+import { extractOtapiSourceProperties, cleanOtapiDescription, isPlaceholderSourceDescription } from '../lib/otapiHelpers';
 import { FadeIn } from './FadeIn';
 import { ProductImageGallery } from './ProductImageGallery';
 import { ProductCard, ImportableProduct } from './import/ProductCard';
@@ -137,7 +137,11 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
         return buildSourceProductSnapshot({
             sourceUrl: product.productUrl,
             name: product.name,
-            description: product.description || '',
+            description: isPlaceholderSourceDescription(product.description)
+                ? (product.rawSourceDescription || '')
+                : (product.description || ''),
+            rawDescription: product.rawSourceDescription || product.description || '',
+            htmlDescription: product.rawHtmlDescription || '',
             price: product.salePrice || product.price,
             currency: product.sourceCurrency || 'USD',
             images: product.images || [],
@@ -723,6 +727,9 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                     : (p.description ? 'source_original' as const : 'safe_fallback' as const),
                 // Two-stage pricing metadata — use upstream CNY if available (from sourcePriceCny on the product)
                 sourcePriceCny: p.sourcePriceCny || undefined,
+                rawSourceDescription: p.rawSourceDescription || undefined,
+                rawHtmlDescription: p.rawHtmlDescription || undefined,
+                descriptionImages: p.descriptionImages || undefined,
                 estimatedCjCost: pricingBreakdown.productCost,
                 estimatedShipping: pricingBreakdown.shippingCost,
                 estimatedCjProductCost: pricingBreakdown.productCost,
@@ -2106,8 +2113,14 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                 // Extract structured product attributes using shared helper
                 const urlSourceProperties = extractOtapiSourceProperties(item);
 
-                // Clean description using shared helper
-                const cleanDescription = cleanOtapiDescription(item);
+                // Preserve source detail text/HTML for grounded smart descriptions.
+                const rawSourceDescription = typeof (result as any).rawDescription === 'string'
+                    ? (result as any).rawDescription
+                    : '';
+                const rawHtmlDescription = typeof (result as any).rawHtmlDescription === 'string'
+                    ? (result as any).rawHtmlDescription
+                    : '';
+                const cleanDescription = cleanOtapiDescription(item) || rawSourceDescription;
 
                 // Extract variants from ConfiguredItems
                 const variants: any[] = [];
@@ -2135,7 +2148,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                     id: String(productId),
                     name: productName,
                     price: salePrice || origPrice,
-                    description: cleanDescription || 'Imported from 1688.com',
+                    description: cleanDescription || '',
                     images: images,
                     category: '',
                     sourcePriceCny: rawCnyPrice || undefined,
@@ -2160,6 +2173,8 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                     customPrice: calculateFinalPrice(salePrice || origPrice),
                     // Marketing/description images from GetItemDescription
                     descriptionImages: ('descriptionImages' in result ? (result as any).descriptionImages : []) || [],
+                    rawSourceDescription,
+                    rawHtmlDescription,
                     // Structured product attributes for AI description generation
                     sourceProperties: Object.keys(urlSourceProperties).length > 0 ? urlSourceProperties : undefined,
                 } as any;

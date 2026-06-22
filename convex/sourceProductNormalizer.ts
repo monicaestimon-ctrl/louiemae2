@@ -5,6 +5,7 @@ import {
     buildSourceProductSnapshot,
     inferSourceDomain,
     inferSourcePlatform,
+    isPlaceholderSourceText,
     normalizeImageList,
     sanitizeSourceText,
 } from '../lib/smartDescription';
@@ -114,7 +115,11 @@ export function normalizeSourceProduct(input: SourceProductSnapshot | any): Sour
     const tableAttributes = extractHtmlTableAttributes(html);
 
     const title = input.rawTitle || input.translatedTitle || input.name || jsonLd.title || input.title;
-    const descRaw = input.rawDescription || input.translatedDescription || input.description || jsonLd.description || '';
+    const descRawCandidate = input.rawDescription || input.translatedDescription || input.description || jsonLd.description || '';
+    const fallbackDescription = jsonLd.description || '';
+    const descRaw = isPlaceholderSourceText(descRawCandidate)
+        ? (isPlaceholderSourceText(fallbackDescription) ? '' : fallbackDescription)
+        : descRawCandidate;
     const desc = sanitizeSourceText(descRaw, maxChars);
     const htmlDesc = sanitizeSourceText(html, maxChars);
     warnings.push(...desc.warnings, ...htmlDesc.warnings);
@@ -176,7 +181,7 @@ export function calculateSourceQuality(snapshot: SourceProductSnapshot): { score
         score += 15;
         reasons.push('title found');
     }
-    if (snapshot.rawDescription || snapshot.translatedDescription) {
+    if (snapshot.rawDescription || snapshot.translatedDescription || snapshot.rawHtmlDescription) {
         score += 20;
         reasons.push('description found');
     }
