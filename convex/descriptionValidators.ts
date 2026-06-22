@@ -52,6 +52,14 @@ function allFacts(facts: NormalizedProductFacts) {
     ];
 }
 
+function factIdSet(values: Array<{ id: string }>): Set<string> {
+    return new Set(values.map(value => value.id));
+}
+
+function lineHasGroupFact(line: GeneratedDescriptionDraft['detailLines'][number], ids: Set<string>): boolean {
+    return line.supportedByFactIds.some(factId => ids.has(factId));
+}
+
 function hasDirectEvidenceFor(term: string, facts: NormalizedProductFacts, groups: Array<keyof NormalizedProductFacts>): boolean {
     const lower = term.toLowerCase();
     return groups.some(group => {
@@ -128,7 +136,10 @@ export function validateGeneratedDescription(args: {
     const errors: DescriptionValidationIssue[] = [];
     const warnings: DescriptionValidationIssue[] = [];
     const text = draftText(draft);
-    const validFactIds = new Set(getFactIds(facts));
+    const materialFactIds = factIdSet(facts.materials);
+    const careFactIds = factIdSet(facts.careInstructions);
+    const dimensionFactIds = factIdSet(facts.dimensions);
+    const sizingFactIds = factIdSet([...facts.ageOrSizeRange, ...facts.variants]);
 
     if (!draft.openingSentence?.trim()) errors.push(issue('MISSING_OPENING', 'Opening sentence is required.'));
     const openingWords = words(draft.openingSentence || '');
@@ -146,15 +157,20 @@ export function validateGeneratedDescription(args: {
         if (!line.detail?.trim() || /^(n\/?a|none|unknown|tbd|-)\.?$/i.test(line.detail.trim())) {
             errors.push(issue('GENERIC_COPY', 'Detail line is empty or filler.', 'error', `${line.label} · ${line.detail}`));
         }
-        const hasSupportedFacts = line.supportedByFactIds.some(factId => validFactIds.has(factId));
-        if (line.label === 'Material' && !hasSupportedFacts) {
+        if (line.label === 'Material' && !lineHasGroupFact(line, materialFactIds)) {
             errors.push(issue('UNSUPPORTED_MATERIAL_CLAIM', 'Material label requires a supporting material fact.', 'error', line.detail));
         }
-        if (line.label === 'Care' && !hasSupportedFacts) {
+        if (line.label === 'Fabric' && !lineHasGroupFact(line, materialFactIds)) {
+            errors.push(issue('UNSUPPORTED_MATERIAL_CLAIM', 'Fabric label requires a supporting material fact.', 'error', line.detail));
+        }
+        if (line.label === 'Care' && !lineHasGroupFact(line, careFactIds)) {
             errors.push(issue('UNSUPPORTED_CARE_CLAIM', 'Care label requires direct care evidence.', 'error', line.detail));
         }
-        if (line.label === 'Dimensions' && !hasSupportedFacts) {
+        if (line.label === 'Dimensions' && !lineHasGroupFact(line, dimensionFactIds)) {
             errors.push(issue('UNSUPPORTED_DIMENSION_CLAIM', 'Dimensions label requires direct dimension evidence.', 'error', line.detail));
+        }
+        if (line.label === 'Sizing' && !lineHasGroupFact(line, sizingFactIds)) {
+            errors.push(issue('UNSUPPORTED_DIMENSION_CLAIM', 'Sizing label requires direct size or variant evidence.', 'error', line.detail));
         }
     }
     for (const phrase of brandVoice.bannedPhrases) {
@@ -235,18 +251,30 @@ export function buildSafeFallbackDescription(facts: NormalizedProductFacts, _sna
             riskLevel: 'low',
         });
     }
-    detailLines.push({
-        label: 'Details',
-        detail: facts.missingImportantFacts.length
-            ? `${facts.missingImportantFacts.join(', ')}.`
-            : 'Additional source details should be confirmed before publishing.',
-        supportedByFactIds: [],
-        riskLevel: 'low',
-    });
+    const neutralLines: GeneratedDescriptionDraft['detailLines'] = [
+        {
+            label: facts.collection.value === 'furniture' ? 'Placement' : 'Styling',
+            detail: facts.collection.value === 'furniture'
+                ? 'A simple silhouette for pairing with layered home textures and collected pieces.'
+                : 'Easy styling keeps the piece ready to mix into a curated everyday wardrobe.',
+            supportedByFactIds: [],
+            riskLevel: 'low',
+        },
+        {
+            label: 'Details',
+            detail: 'Clean visual lines keep the look understated, polished, and easy to style.',
+            supportedByFactIds: [],
+            riskLevel: 'low',
+        },
+    ];
+    for (const neutralLine of neutralLines) {
+        if (detailLines.length >= 3) break;
+        detailLines.push(neutralLine);
+    }
     while (detailLines.length < 3) {
         detailLines.push({
             label: 'Details',
-            detail: 'Available source options should be reviewed before publishing.',
+            detail: 'Understated proportions keep the piece simple, refined, and easy to place.',
             supportedByFactIds: [],
             riskLevel: 'low',
         });

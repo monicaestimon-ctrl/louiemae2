@@ -2,6 +2,7 @@
 
 import { action } from "./_generated/server";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import { auth } from "./auth";
 import {
     SmartNameRequest,
@@ -83,6 +84,11 @@ export const generateSmartName = action({
             }
 
             const facts = extractNormalizedProductFacts(sourceSnapshot);
+            const existingNames = await ctx.runQuery(internal.products.findExistingSmartNames, {
+                collection: facts.collection.value,
+                productType: facts.productType.value,
+                limit: 40,
+            });
             console.log("[SmartName] facts extracted", {
                 requestId,
                 sourceQualityScore: facts.sourceQuality.score,
@@ -94,6 +100,7 @@ export const generateSmartName = action({
             const generated = await generateSmartNameWithGemini({
                 facts,
                 adminContext: typedRequest.adminContext || {},
+                existingNames,
             });
             warnings.push(...generated.warnings);
 
@@ -104,15 +111,15 @@ export const generateSmartName = action({
             if (!finalDraft) {
                 fallbackUsed = true;
                 fallbackReason = "MALFORMED_MODEL_OUTPUT";
-                finalDraft = buildSafeNameFallback(facts);
+                finalDraft = buildSafeNameFallback(facts, existingNames);
             }
 
-            const validationErrors = validateSmartNameDraft(finalDraft, facts);
+            const validationErrors = validateSmartNameDraft(finalDraft, facts, existingNames);
             if (validationErrors.length > 0) {
                 fallbackUsed = true;
                 fallbackReason = validationErrors.join(" ");
                 warnings.push(...validationErrors);
-                finalDraft = buildSafeNameFallback(facts);
+                finalDraft = buildSafeNameFallback(facts, existingNames);
             }
 
             console.log("[SmartName] generated", {

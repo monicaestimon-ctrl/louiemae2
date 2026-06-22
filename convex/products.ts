@@ -1,4 +1,4 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { auth } from "./auth";
 
@@ -54,6 +54,35 @@ export const get = query({
     args: { id: v.id("products") },
     handler: async (ctx, args) => {
         return await ctx.db.get(args.id);
+    },
+});
+
+function normalizeName(value = ""): string {
+    return value.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export const findExistingSmartNames = internalQuery({
+    args: {
+        collection: v.string(),
+        productType: v.string(),
+        limit: v.optional(v.number()),
+    },
+    handler: async (ctx, args) => {
+        const limit = Math.min(Math.max(args.limit || 30, 1), 80);
+        const typeWords = normalizeName(args.productType).split(" ").filter(word => word.length > 2);
+        const products = await ctx.db
+            .query("products")
+            .filter(q => q.eq(q.field("collection"), args.collection))
+            .take(120);
+
+        const names = products
+            .map(product => product.name)
+            .filter((name): name is string => Boolean(name?.trim()));
+        const prioritized = names.filter(name => {
+            const normalized = normalizeName(name);
+            return typeWords.length === 0 || typeWords.some(word => normalized.includes(word));
+        });
+        return [...new Set([...prioritized, ...names])].slice(0, limit);
     },
 });
 

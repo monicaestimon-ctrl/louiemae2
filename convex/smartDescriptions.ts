@@ -121,6 +121,7 @@ export const generateSmartDescription = action({
             }
 
             const facts = extractNormalizedProductFacts(sourceSnapshot);
+            warnings.push(...facts.missingImportantFacts.map(fact => `Missing source fact: ${fact}.`));
             console.log("[SmartDescription] facts extracted", {
                 requestId,
                 sourceQualityScore: facts.sourceQuality.score,
