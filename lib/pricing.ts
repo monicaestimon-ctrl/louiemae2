@@ -53,16 +53,30 @@ export type OrderPricingReconciliation = {
   warnings: string[];
 };
 
+export type CheckoutShippingTier = {
+  minSubtotal: number;
+  maxSubtotal?: number;
+  amount: number;
+  label: string;
+};
+
 export const DEFAULT_RETAIL_MULTIPLIER = 3;
 export const ESTIMATED_CJ_COST_MULTIPLIER = 1.4;
 
 export const DEFAULT_COLLECTION_SHIPPING: CollectionShippingMap = {
-  fashion: 8,
-  kids: 8,
-  decor: 12,
-  furniture: 22,
-  default: 10,
+  fashion: 22,
+  kids: 22,
+  decor: 69.99,
+  furniture: 120,
+  default: 22,
 };
+
+export const CHECKOUT_SHIPPING_TIERS: CheckoutShippingTier[] = [
+  { minSubtotal: 0, maxSubtotal: 199.99, amount: 49.99, label: 'Standard Shipping' },
+  { minSubtotal: 200, maxSubtotal: 348.99, amount: 69.99, label: 'Standard Shipping' },
+  { minSubtotal: 349, maxSubtotal: 499.99, amount: 89.99, label: 'Standard Shipping' },
+  { minSubtotal: 500, amount: 99.99, label: 'Standard Shipping' },
+];
 
 const roundMoney = (value: number): number => {
   if (!Number.isFinite(value)) return 0;
@@ -78,7 +92,21 @@ export const getEstimatedShipping = (
   shippingMap: CollectionShippingMap = DEFAULT_COLLECTION_SHIPPING,
 ): number => {
   const key = (collection || '').trim().toLowerCase();
-  return shippingMap[key] ?? shippingMap.default ?? 10;
+  return shippingMap[key] ?? shippingMap.default ?? 22;
+};
+
+export const getCheckoutShippingForSubtotal = (
+  subtotal: number,
+  tiers: CheckoutShippingTier[] = CHECKOUT_SHIPPING_TIERS,
+): CheckoutShippingTier => {
+  const safeSubtotal = Math.max(0, Number.isFinite(subtotal) ? subtotal : 0);
+  const tier = tiers.find((candidate) => {
+    const isAtOrAboveMin = safeSubtotal >= candidate.minSubtotal;
+    const isBelowMax = candidate.maxSubtotal === undefined || safeSubtotal <= candidate.maxSubtotal;
+    return isAtOrAboveMin && isBelowMax;
+  });
+
+  return tier ?? tiers[0] ?? { minSubtotal: 0, amount: 49.99, label: 'Standard Shipping' };
 };
 
 export const charmRoundTo99 = (value: number): number => {

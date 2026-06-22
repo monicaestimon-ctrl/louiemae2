@@ -5,6 +5,7 @@ import {
   calculateOrderPricingReconciliation,
   calculatePricingBreakdown,
   calculateRetailFromLandedCost,
+  getCheckoutShippingForSubtotal,
   getEstimatedShipping,
 } from './pricing';
 
@@ -16,10 +17,18 @@ describe('pricing engine', () => {
     });
 
     expect(calculateEstimatedCjProductCost(10)).toBe(14);
-    expect(getEstimatedShipping('furniture')).toBe(22);
-    expect(pricing.landedCost).toBe(36);
-    expect(pricing.suggestedRetailPrice).toBe(107.99);
+    expect(getEstimatedShipping('furniture')).toBe(120);
+    expect(pricing.landedCost).toBe(134);
+    expect(pricing.suggestedRetailPrice).toBe(401.99);
     expect(pricing.pricingSource).toBe('source_estimate');
+  });
+
+  it('uses conservative category shipping buffers before CJ freight is confirmed', () => {
+    expect(getEstimatedShipping('fashion')).toBe(22);
+    expect(getEstimatedShipping('kids')).toBe(22);
+    expect(getEstimatedShipping('decor')).toBe(69.99);
+    expect(getEstimatedShipping('furniture')).toBe(120);
+    expect(getEstimatedShipping('unknown')).toBe(22);
   });
 
   it('calculates retail from confirmed landed cost with fees', () => {
@@ -76,9 +85,20 @@ describe('pricing engine', () => {
     });
 
     expect(pricing.currentRetailPrice).toBe(80);
-    expect(pricing.suggestedRetailPrice).toBe(77.99);
-    expect(pricing.estimatedProfit).toBe(54);
+    expect(pricing.suggestedRetailPrice).toBe(251.99);
+    expect(pricing.estimatedProfit).toBe(-3.99);
     expect(pricing.warnings).toContain('Admin price is locked; suggested CJ price was not applied automatically.');
+  });
+
+  it('selects customer-facing checkout shipping from cart subtotal tiers', () => {
+    expect(getCheckoutShippingForSubtotal(0).amount).toBe(49.99);
+    expect(getCheckoutShippingForSubtotal(150).amount).toBe(49.99);
+    expect(getCheckoutShippingForSubtotal(199.99).amount).toBe(49.99);
+    expect(getCheckoutShippingForSubtotal(200).amount).toBe(69.99);
+    expect(getCheckoutShippingForSubtotal(348.99).amount).toBe(69.99);
+    expect(getCheckoutShippingForSubtotal(349).amount).toBe(89.99);
+    expect(getCheckoutShippingForSubtotal(499.99).amount).toBe(89.99);
+    expect(getCheckoutShippingForSubtotal(500).amount).toBe(99.99);
   });
 
   it('reconciles order-level CJ costs against customer shipping collected', () => {

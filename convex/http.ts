@@ -3,6 +3,7 @@ import { httpAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import { auth } from "./auth";
 import Stripe from "stripe";
+import { getCheckoutShippingForSubtotal } from "../lib/pricing";
 
 const http = httpRouter();
 
@@ -33,6 +34,39 @@ const corsHeaders = {
     "Access-Control-Allow-Headers": "Content-Type",
 };
 
+type CheckoutItem = {
+    productId?: string;
+    variantId?: string;
+    variantName?: string;
+    cjVariantId?: string;
+    cjSku?: string;
+    name?: string;
+    image?: string;
+    price: number;
+    quantity: number;
+};
+
+const normalizeCheckoutItems = (items: unknown): CheckoutItem[] => {
+    if (!Array.isArray(items)) return [];
+
+    return items
+        .map((item) => {
+            const value = item && typeof item === "object" ? item as Record<string, unknown> : {};
+            return {
+                productId: typeof value.productId === "string" ? value.productId : undefined,
+                variantId: typeof value.variantId === "string" ? value.variantId : undefined,
+                variantName: typeof value.variantName === "string" ? value.variantName : undefined,
+                cjVariantId: typeof value.cjVariantId === "string" ? value.cjVariantId : undefined,
+                cjSku: typeof value.cjSku === "string" ? value.cjSku : undefined,
+                name: typeof value.name === "string" && value.name.trim() ? value.name.trim() : "Louie Mae item",
+                image: typeof value.image === "string" ? value.image : undefined,
+                price: Number(value.price),
+                quantity: Math.floor(Number(value.quantity)),
+            };
+        })
+        .filter((item) => Number.isFinite(item.price) && item.price > 0 && Number.isFinite(item.quantity) && item.quantity > 0);
+};
+
 // Create Stripe checkout session
 http.route({
     path: "/stripe/checkout",
@@ -58,9 +92,23 @@ http.route({
         try {
             const body = await request.json();
             const { items, successUrl, cancelUrl } = body;
+            const checkoutItems = normalizeCheckoutItems(items);
+
+            if (checkoutItems.length === 0) {
+                return new Response(
+                    JSON.stringify({ error: "Checkout requires at least one valid item." }),
+                    {
+                        status: 400,
+                        headers: {
+                            "Content-Type": "application/json",
+                            ...corsHeaders,
+                        }
+                    }
+                );
+            }
 
             // Create line items for Stripe
-            const lineItems = items.map((item: any) => ({
+            const lineItems = checkoutItems.map((item) => ({
                 price_data: {
                     currency: "usd",
                     product_data: {
@@ -71,8 +119,11 @@ http.route({
                 },
                 quantity: item.quantity,
             }));
+            const checkoutSubtotal = checkoutItems.reduce((total, item) => total + item.price * item.quantity, 0);
+            const checkoutShipping = getCheckoutShippingForSubtotal(checkoutSubtotal);
+            const checkoutShippingAmountCents = Math.round(checkoutShipping.amount * 100);
 
-            // Create checkout session with shipping
+            // Create checkout session with one customer-facing fixed shipping rate.
             const session = await stripe.checkout.sessions.create({
                 mode: "payment",
                 line_items: lineItems,
@@ -80,34 +131,23 @@ http.route({
                 cancel_url: cancelUrl,
                 billing_address_collection: "required",
                 shipping_address_collection: {
-                    allowed_countries: ["US", "CA", "GB", "AU"],
+                    allowed_countries: ["US"],
                 },
                 shipping_options: [
                     {
                         shipping_rate_data: {
                             type: "fixed_amount",
-                            fixed_amount: { amount: 999, currency: "usd" },
-                            display_name: "Standard Shipping",
+                            fixed_amount: { amount: checkoutShippingAmountCents, currency: "usd" },
+                            display_name: checkoutShipping.label,
                             delivery_estimate: {
                                 minimum: { unit: "business_day", value: 5 },
                                 maximum: { unit: "business_day", value: 7 },
                             },
                         },
                     },
-                    {
-                        shipping_rate_data: {
-                            type: "fixed_amount",
-                            fixed_amount: { amount: 1999, currency: "usd" },
-                            display_name: "Express Shipping",
-                            delivery_estimate: {
-                                minimum: { unit: "business_day", value: 2 },
-                                maximum: { unit: "business_day", value: 3 },
-                            },
-                        },
-                    },
                 ],
                 metadata: {
-                    items: JSON.stringify(items.map((item: any) => ({
+                    items: JSON.stringify(checkoutItems.map((item) => ({
                         productId: item.productId,
                         variantId: item.variantId,
                         variantName: item.variantName,
