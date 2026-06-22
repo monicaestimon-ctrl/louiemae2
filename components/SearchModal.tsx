@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Search, ArrowRight } from 'lucide-react';
 import { useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
+import { SafeImage } from './SafeImage';
 
 interface SearchModalProps {
     isOpen: boolean;
@@ -134,7 +135,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
                                             {/* Inner glass highlight */}
                                             <div className="absolute inset-0 border border-white/10 pointer-events-none mix-blend-overlay z-10" />
                                             {product.images && product.images[0] ? (
-                                                <img
+                                                <SafeImage
                                                     src={product.images[0]}
                                                     alt={product.name}
                                                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"

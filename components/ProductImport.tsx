@@ -9,11 +9,13 @@ import { extractOtapiSourceProperties, cleanOtapiDescription, isPlaceholderSourc
 import { FadeIn } from './FadeIn';
 import { ProductImageGallery } from './ProductImageGallery';
 import { ProductCard, ImportableProduct } from './import/ProductCard';
+import { SafeImage } from './SafeImage';
 import { useMutation, useAction } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { buildSourceProductSnapshot, SourceAttribute } from '../lib/smartDescription';
 import { calculatePricingBreakdown, getEstimatedShipping } from '../lib/pricing';
 import { getUserFacingErrorMessage } from '../lib/errorMessages';
+import { normalizeImageUrl, shouldCacheImageUrl } from '../lib/imageUrls';
 
 interface ProductImportProps {
     collections: CollectionConfig[];
@@ -107,6 +109,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const scrapeProduct = useAction(api.scraper.scrapeProduct);
     const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
     const generateSmartName = useAction(api.smartNames.generateSmartName);
+    const cacheImageUrls = useAction(api.productImages.cacheImageUrls);
 
     // Convex file upload mutations
     const generateUploadUrl = useMutation(api.files.generateUploadUrl);
@@ -628,8 +631,54 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             .map(img => img.startsWith('//') ? 'https:' + img : img);
     };
 
+    const cacheProductImageUrls = async (args: {
+        images: string[];
+        variants?: Product['variants'];
+        sourceUrl?: string;
+        productName: string;
+    }) => {
+        const urls = [
+            ...args.images,
+            ...(args.variants || []).map((variant) => variant.image).filter((image): image is string => Boolean(image)),
+        ].map(normalizeImageUrl).filter(Boolean);
+        const cacheable = urls.filter(shouldCacheImageUrl);
+        if (cacheable.length === 0) {
+            return { images: args.images.map(normalizeImageUrl), variants: args.variants };
+        }
+
+        try {
+            const result = await cacheImageUrls({
+                urls: cacheable,
+                sourceUrl: args.sourceUrl,
+            }) as { results: Array<{ originalUrl: string; finalUrl: string; error?: string }> };
+            const replacements = new Map<string, string>(result.results.map((entry) => [entry.originalUrl, entry.finalUrl]));
+            const failed = result.results.filter((entry) => entry.error);
+            if (failed.length > 0) {
+                toast.warning(`Some images for "${args.productName}" could not be cached; storefront fallback will still try to render them.`);
+            }
+
+            return {
+                images: args.images.map((image) => replacements.get(normalizeImageUrl(image)) || normalizeImageUrl(image)),
+                variants: args.variants?.map((variant) => ({
+                    ...variant,
+                    image: variant.image ? (replacements.get(normalizeImageUrl(variant.image)) || normalizeImageUrl(variant.image)) : undefined,
+                })),
+            };
+        } catch (error) {
+            console.warn('Image caching failed; saving normalized remote URLs instead.', error);
+            toast.warning(`Image caching could not finish for "${args.productName}"; storefront fallback will still try to render them.`);
+            return {
+                images: args.images.map(normalizeImageUrl),
+                variants: args.variants?.map((variant) => ({
+                    ...variant,
+                    image: variant.image ? normalizeImageUrl(variant.image) : undefined,
+                })),
+            };
+        }
+    };
+
     // Final Import Action
-    const confirmImport = () => {
+    const confirmImport = async () => {
         if (isImporting) return;
         setIsImporting(true);
         const selectedProducts = searchResults.filter(p => p.selected);
@@ -737,12 +786,30 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
         });
 
         try {
-            onImportProducts(productsToImport);
+            toast.loading('Securing product images...', { id: 'cache-product-images' });
+            for (let index = 0; index < productsToImport.length; index++) {
+                const sourceProduct = selectedProducts[index];
+                const product = productsToImport[index];
+                const cached = await cacheProductImageUrls({
+                    images: product.images,
+                    variants: product.variants,
+                    sourceUrl: sourceProduct?.productUrl,
+                    productName: product.name,
+                });
+                productsToImport[index] = {
+                    ...product,
+                    images: cached.images,
+                    variants: cached.variants,
+                };
+            }
+            toast.dismiss('cache-product-images');
+            await Promise.resolve(onImportProducts(productsToImport));
             setSearchResultsRaw(prev => prev.map(p => ({ ...p, selected: false })));
             setSelectAll(false);
             setImportStep('search');
             try { sessionStorage.removeItem('import-search-results'); } catch { /* ignore */ }
         } finally {
+            toast.dismiss('cache-product-images');
             setIsImporting(false);
         }
     };
@@ -915,11 +982,9 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                 const displayUrl = allImages[currentIdx];
                                                 return (
                                                     <>
-                                                        <img
+                                                        <SafeImage
                                                             src={displayUrl}
                                                             alt="Main Preview"
-                                                            referrerPolicy="no-referrer"
-                                                            crossOrigin="anonymous"
                                                             className="w-full h-full object-contain p-3"
                                                         />
                                                         {allImages.length > 1 && (
@@ -1018,7 +1083,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                     ${isPreviewing ? 'ring-2 ring-bronze/30 shadow-md' : ''}
                                                     ${isSelected ? 'border-green-500 shadow-[0_4px_12px_rgba(34,197,94,0.15)]' : 'border-white/40 opacity-50 hover:opacity-100 hover:border-earth/20'}`}
                                             >
-                                                <img src={img} alt={`Product image ${i + 1}`} referrerPolicy="no-referrer" crossOrigin="anonymous" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                                                <SafeImage src={img} alt={`Product image ${i + 1}`} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
                                                 
                                                 {/* Selection Overlay */}
                                                 <div className={`absolute inset-0 transition-opacity duration-300 ${isSelected ? 'bg-green-500/10' : 'bg-black/0 group-hover:bg-black/5'}`} />
@@ -1144,7 +1209,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                                 ${isDragging ? 'opacity-40 scale-90' : ''}
                                                                 ${isDragOver ? 'ring-2 ring-bronze/50 scale-105 border-bronze' : ''}`}
                                                         >
-                                                            <img src={imgSrc} alt={`Order ${pos + 1}`} referrerPolicy="no-referrer" crossOrigin="anonymous" className="w-full h-full object-cover pointer-events-none" />
+                                                            <SafeImage src={imgSrc} alt={`Order ${pos + 1}`} className="w-full h-full object-cover pointer-events-none" />
                                                             {/* Position badge */}
                                                             <div className={`absolute top-0.5 left-0.5 rounded-full w-5 h-5 flex items-center justify-center text-[9px] font-bold shadow-sm
                                                                 ${isMain ? 'bg-green-500 text-white' : 'bg-white/90 backdrop-blur text-earth/60'}`}
@@ -1268,11 +1333,9 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                             ${isPreviewing ? 'ring-4 ring-bronze/30 shadow-lg' : ''}
                                                             ${isSelected ? 'border-green-500 shadow-[0_10px_20px_rgba(34,197,94,0.2)]' : 'border-white/40 opacity-50 hover:opacity-100 hover:border-earth/20'}`}
                                                     >
-                                                        <img
+                                                        <SafeImage
                                                             src={img}
                                                             alt={`Marketing ${idx + 1}`}
-                                                            referrerPolicy="no-referrer"
-                                                            crossOrigin="anonymous"
                                                             className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                                                         />
                                                         
@@ -1577,7 +1640,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                                             ? 'border-bronze ring-2 ring-bronze/30 shadow-lg scale-[1.05] z-10'
                                                                             : 'border-earth/10 hover:border-earth/30 hover:shadow-sm'}`}
                                                                 >
-                                                                    <img src={imgSrc} alt={`Stamp ${imgIdx + 1}`} referrerPolicy="no-referrer" crossOrigin="anonymous" className="w-full h-full object-cover" />
+                                                                    <SafeImage src={imgSrc} alt={`Stamp ${imgIdx + 1}`} className="w-full h-full object-cover" />
                                                                     {isActiveStamp && (
                                                                         <div className="absolute inset-0 bg-bronze/20 flex items-center justify-center">
                                                                             <div className="bg-white/90 rounded-full p-1 shadow-md">
@@ -1657,7 +1720,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                                 }}
                                                             >
                                                                 {displayImage ? (
-                                                                    <img src={displayImage} alt={variant.name} referrerPolicy="no-referrer" crossOrigin="anonymous" className="w-full h-full object-cover" />
+                                                                    <SafeImage src={displayImage} alt={variant.name} className="w-full h-full object-cover" />
                                                                 ) : (
                                                                     <Package className="w-8 h-8 text-earth/20" />
                                                                 )}
@@ -1758,7 +1821,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                                                 }}
                                                                                 className={`relative w-14 h-14 md:w-16 md:h-16 flex-shrink-0 rounded-xl border-2 cursor-pointer overflow-hidden hover:opacity-80 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bronze/50
                                                                                 ${allocatedIdx === imgIdx ? 'border-bronze ring-2 ring-transparent shadow-lg' : imgIdx === lastUsedImage ? 'border-amber-400/60' : 'border-earth/10'}`}>
-                                                                                <img src={allImages[imgIdx]} alt={`Option ${imgIdx + 1}`} referrerPolicy="no-referrer" crossOrigin="anonymous" className="w-full h-full object-cover" />
+                                                                                <SafeImage src={allImages[imgIdx]} alt={`Option ${imgIdx + 1}`} className="w-full h-full object-cover" />
                                                                                 {imgIdx === lastUsedImage && allocatedIdx !== imgIdx && (
                                                                                     <div className="absolute top-0.5 left-0.5 bg-amber-400 text-white text-[8px] rounded-full w-3.5 h-3.5 flex items-center justify-center shadow-sm">★</div>
                                                                                 )}
@@ -1935,7 +1998,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                                                 <td className="px-3 py-2">
                                                                                     <div className="flex items-center gap-2">
                                                                                         {variant.image && (
-                                                                                            <img src={variant.image} alt={variant.name} referrerPolicy="no-referrer" crossOrigin="anonymous" className="w-8 h-8 rounded-md object-cover border border-earth/10" />
+                                                                                            <SafeImage src={variant.image} alt={variant.name} className="w-8 h-8 rounded-md object-cover border border-earth/10" />
                                                                                         )}
                                                                                         <span className="text-earth truncate max-w-[160px]">{variant.name}</span>
                                                                                         {variant.priceAdjustment !== 0 && (

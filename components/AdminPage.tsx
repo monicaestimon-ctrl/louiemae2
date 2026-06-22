@@ -15,6 +15,7 @@ import { ProductStudio } from './ProductStudio';
 import { ProductImport } from './ProductImport';
 import { CJSettings } from './CJSettings';
 import { buildSourceProductSnapshot } from '../lib/smartDescription';
+import { SafeImage } from './SafeImage';
 
 type SmartDescriptionActionResult = {
    ok: boolean;
@@ -110,7 +111,7 @@ const ImageUploader: React.FC<{
                {isUploading ? (
                   <Loader2 className="w-6 h-6 text-bronze animate-spin" />
                ) : displayImage ? (
-                  <img src={displayImage} alt="Preview" className="w-full h-full object-cover" />
+                  <SafeImage src={displayImage} alt="Preview" className="w-full h-full object-cover" />
                ) : (
                   <ImageIcon className="w-8 h-8 text-earth/20" />
                )}
@@ -1280,7 +1281,7 @@ export const AdminPage: React.FC = () => {
 
                               <div className="w-16 h-16 bg-black/40 flex-shrink-0 rounded-lg overflow-hidden border border-white/10 shadow-inner z-10">
                                  {product.images?.[0] ? (
-                                    <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover opacity-90 group-hover:scale-110 group-hover:opacity-100 transition-all duration-700" />
+                                    <SafeImage src={product.images[0]} alt={product.name} className="w-full h-full object-cover opacity-90 group-hover:scale-110 group-hover:opacity-100 transition-all duration-700" />
                                  ) : (
                                     <div className="flex h-full w-full items-center justify-center text-white/30"><Package className="w-5 h-5" aria-hidden="true" /></div>
                                  )}

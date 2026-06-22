@@ -9,6 +9,7 @@ import { CircularGallery, GalleryItem } from './ui/circular-gallery-2';
 import { CurvedCategoryCarousel } from './ui/CurvedCategoryCarousel';
 import { GlassButton } from './ui/GlassButton';
 import { useNewsletter } from '../contexts/NewsletterContext';
+import { SafeImage } from './SafeImage';
 
 /** Sentinel for variants with no assigned image */
 const NO_IMAGE_KEY = '__no_image__';
@@ -122,7 +123,7 @@ const VariantSelector: React.FC<VariantSelectorProps> = React.memo(({
                     : 'border-earth/10 opacity-40 cursor-not-allowed'}`}
             >
               {hasImage ? (
-                <img src={imageKey} alt={firstVariant.name} className="w-14 h-14 md:w-16 md:h-16 object-cover" />
+                <SafeImage src={imageKey} alt={firstVariant.name} className="w-14 h-14 md:w-16 md:h-16 object-cover" />
               ) : (
                 <div className="w-14 h-14 md:w-16 md:h-16 bg-earth/5 flex items-center justify-center text-[9px] text-earth/40 uppercase tracking-wider px-1 text-center">
                   {firstVariant.name.split(/[\s-]/)[0]}
@@ -335,7 +336,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
             New
           </span>
         )}
-        <img
+        <SafeImage
           src={product.images[0]}
           alt={product.name}
           className="w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-105"
@@ -996,7 +997,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                             Multiple Options
                           </span>
                         )}
-                        <img
+                        <SafeImage
                           src={product.images[0]}
                           alt={product.name}
                           className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
@@ -1040,7 +1041,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
               <X className="w-5 h-5 text-earth" />
             </button>
             <div className="w-full md:w-1/2 bg-white h-1/2 md:h-auto overflow-hidden relative group">
-              <img
+              <SafeImage
                 src={selectedVariant?.image || (activeImageGroupKey && activeImageGroupKey !== NO_IMAGE_KEY ? activeImageGroupKey : selectedProduct.images[0])}
                 alt={selectedProduct.name}
                 className="w-full h-full object-cover"

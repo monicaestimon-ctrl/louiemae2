@@ -26,6 +26,7 @@ const safeFilename = (value: string | undefined, fallback: string) => {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     const rawUrl = Array.isArray(req.query.url) ? req.query.url[0] : req.query.url;
     const rawFilename = Array.isArray(req.query.filename) ? req.query.filename[0] : req.query.filename;
+    const rawDisposition = Array.isArray(req.query.disposition) ? req.query.disposition[0] : req.query.disposition;
 
     if (!rawUrl) {
         res.status(400).json({ error: 'Missing image URL' });
@@ -79,8 +80,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const filename = safeFilename(rawFilename, `product-image.${extension}`);
     const filenameWithExtension = /\.[a-z0-9]+$/i.test(filename) ? filename : `${filename}.${extension}`;
 
+    const inline = rawDisposition === 'inline';
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${filenameWithExtension}"`);
-    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename="${filenameWithExtension}"`);
+    res.setHeader('Cache-Control', inline ? 'public, max-age=86400, stale-while-revalidate=604800' : 'private, max-age=300');
     res.status(200).send(Buffer.from(bytes));
 }

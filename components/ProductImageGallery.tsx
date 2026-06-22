@@ -1,5 +1,6 @@
 import React from 'react';
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react';
+import { SafeImage } from './SafeImage';
 
 interface ProductImageGalleryProps {
     /** Ordered list of image URLs to display */
@@ -39,11 +40,9 @@ export const ProductImageGallery: React.FC<ProductImageGalleryProps> = ({
         <div className="space-y-2">
             {/* Main image with nav arrows */}
             <div className="aspect-square rounded-xl overflow-hidden border border-earth/10 relative group">
-                <img
+                <SafeImage
                     src={images[displayIdx]}
                     alt={alt}
-                    referrerPolicy="no-referrer"
-                    crossOrigin="anonymous"
                     className="w-full h-full object-cover"
                 />
                 {showMainBadge && displayIdx === 0 && (
@@ -85,7 +84,7 @@ export const ProductImageGallery: React.FC<ProductImageGalleryProps> = ({
                             onClick={() => onIndexChange(i)}
                             className={`w-14 h-14 flex-shrink-0 rounded-lg overflow-hidden border-2 transition-all ${displayIdx === i ? 'border-bronze ring-1 ring-bronze/30 scale-105' : 'border-earth/10 hover:border-earth/30'}`}
                         >
-                            <img src={img} alt={`Image ${i + 1}`} referrerPolicy="no-referrer" crossOrigin="anonymous" className="w-full h-full object-cover" />
+                            <SafeImage src={img} alt={`Image ${i + 1}`} className="w-full h-full object-cover" />
                         </button>
                     ))}
                 </div>

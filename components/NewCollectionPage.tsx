@@ -4,6 +4,7 @@ import { useSite } from '../contexts/BlogContext';
 import { useNewsletter } from '../contexts/NewsletterContext';
 import { Product } from '../types';
 import { ArrowRight, Check } from 'lucide-react';
+import { SafeImage } from './SafeImage';
 
 // Collection drop configuration
 const DROP_NAME = "Consider the Lilies";
@@ -34,7 +35,7 @@ const LuxuryProductCard: React.FC<{ product: Product; index: number }> = ({ prod
                 className="relative aspect-[3/4] overflow-hidden bg-stone-50 mb-6 rounded-sm shadow-sm transition-all duration-700 hover:shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)] hover:-translate-y-3"
                 onClick={() => navigateTo(`#collection/${product.collection}?cat=${encodeURIComponent(product.category)}`)}
             >
-                <img
+                <SafeImage
                     src={product.images[0]}
                     alt={product.name}
                     className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-[1.03]"

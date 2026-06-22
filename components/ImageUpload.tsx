@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useMutation } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { Upload, X, Loader2, Check } from 'lucide-react';
+import { SafeImage } from './SafeImage';
 
 interface ImageUploadProps {
     currentImage?: string;
@@ -22,6 +23,7 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const generateUploadUrl = useMutation(api.files.generateUploadUrl);
+    const saveFile = useMutation(api.files.saveFile);
 
     const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
@@ -59,11 +61,6 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
 
             const { storageId } = await response.json();
 
-            // Step 3: Get the public URL for the stored file
-            // Convex storage URLs are constructed as: https://<deployment>.convex.cloud/api/storage/<storageId>
-            // But we need to use the getUrl query to get the proper URL
-            // For now, we'll construct a data URL as preview and pass the storageId
-
             // Create preview
             const reader = new FileReader();
             reader.onload = (e) => {
@@ -71,15 +68,8 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
             };
             reader.readAsDataURL(file);
 
-            // Get the Convex storage URL
-            // The URL format from Convex storage
-            const convexUrl = `${import.meta.env.VITE_CONVEX_URL?.replace('.cloud/api', '.convex.site')}/getImage?storageId=${storageId}`;
-
-            // Actually, let's use a simpler approach - store the storageId and resolve it when needed
-            // For now, we'll use a special format that the app can recognize
-            const storageUrl = `convex-storage:${storageId}`;
-
-            onImageChange(storageUrl);
+            const result = await saveFile({ storageId, fileName: file.name, fileType: file.type, purpose: 'image-upload' });
+            onImageChange(result.url || `convex-storage:${storageId}`);
             setUploadSuccess(true);
 
             // Reset success indicator after 2 seconds
@@ -126,7 +116,7 @@ export const ImageUpload: React.FC<ImageUploadProps> = ({
             >
                 {displayImage ? (
                     <div className="relative aspect-video">
-                        <img
+                        <SafeImage
                             src={displayImage}
                             alt="Preview"
                             className="w-full h-full object-cover"

@@ -8,6 +8,7 @@ import { useNewsletter } from '../contexts/NewsletterContext';
 import { Product } from '../types';
 import { X, ShoppingBag, ArrowUpRight, Check } from 'lucide-react';
 import { DynamicSectionRenderer } from './DynamicPage';
+import { SafeImage } from './SafeImage';
 
 export const HomePage: React.FC = () => {
   const { siteContent, isLoading } = useSite();
@@ -250,7 +251,7 @@ export const HomePage: React.FC = () => {
                       New
                     </span>
                   )}
-                  <img
+                  <SafeImage
                     src={product.images[0]}
                     alt={product.name}
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
@@ -440,7 +441,7 @@ export const HomePage: React.FC = () => {
 
             {/* Image Gallery */}
             <div className="w-full md:w-1/2 bg-earth/5 h-1/2 md:h-auto overflow-hidden relative group">
-              <img src={selectedProduct.images[0]} alt={selectedProduct.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-[1.5s]" />
+              <SafeImage src={selectedProduct.images[0]} alt={selectedProduct.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-[1.5s]" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent pointer-events-none" />
             </div>
 

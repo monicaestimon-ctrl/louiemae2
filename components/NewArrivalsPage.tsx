@@ -5,6 +5,7 @@ import { useSite } from '../contexts/BlogContext';
 import { Product } from '../types';
 import { ArrowRight } from 'lucide-react';
 import { GlassButton } from './ui/GlassButton';
+import { SafeImage } from './SafeImage';
 
 // Collection config for display
 const COLLECTIONS = [
@@ -33,7 +34,7 @@ const ProductCard: React.FC<{ product: Product; index: number }> = ({ product, i
                     New
                 </span>
             )}
-            <img
+            <SafeImage
                 src={product.images[0]}
                 alt={product.name}
                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"

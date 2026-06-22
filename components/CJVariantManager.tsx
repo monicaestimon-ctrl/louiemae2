@@ -7,6 +7,7 @@ import {
     CheckCircle, AlertCircle, Loader2, ArrowRight
 } from 'lucide-react';
 import { FadeIn } from './FadeIn';
+import { SafeImage } from './SafeImage';
 
 interface CjVariant {
     vid: string;
@@ -171,7 +172,7 @@ export const CJVariantManager: React.FC = () => {
                                     {/* Product Image */}
                                     <div className="w-14 h-14 rounded-xl bg-black/60 border border-white/10 overflow-hidden flex-shrink-0 relative shadow-inner">
                                         {product.images?.[0] ? (
-                                            <img src={product.images[0]} alt="" className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" />
+                                            <SafeImage src={product.images[0]} alt="" className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity" />
                                         ) : (
                                             <div className="w-full h-full flex items-center justify-center text-cream/20">
                                                 <Package className="w-6 h-6" />

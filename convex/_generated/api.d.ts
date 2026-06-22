@@ -28,6 +28,8 @@ import type * as http from "../http.js";
 import type * as orders from "../orders.js";
 import type * as pricingAudits from "../pricingAudits.js";
 import type * as productFacts from "../productFacts.js";
+import type * as productImageRecords from "../productImageRecords.js";
+import type * as productImages from "../productImages.js";
 import type * as products from "../products.js";
 import type * as scraper from "../scraper.js";
 import type * as siteContent from "../siteContent.js";
@@ -63,6 +65,8 @@ declare const fullApi: ApiFromModules<{
   orders: typeof orders;
   pricingAudits: typeof pricingAudits;
   productFacts: typeof productFacts;
+  productImageRecords: typeof productImageRecords;
+  productImages: typeof productImages;
   products: typeof products;
   scraper: typeof scraper;
   siteContent: typeof siteContent;
