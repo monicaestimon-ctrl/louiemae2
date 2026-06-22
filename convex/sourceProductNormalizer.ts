@@ -116,7 +116,10 @@ export function normalizeSourceProduct(input: SourceProductSnapshot | any): Sour
 
     const title = input.rawTitle || input.translatedTitle || input.name || jsonLd.title || input.title;
     const descRawCandidate = input.rawDescription || input.translatedDescription || input.description || jsonLd.description || '';
-    const descRaw = isPlaceholderSourceText(descRawCandidate) ? (jsonLd.description || '') : descRawCandidate;
+    const fallbackDescription = jsonLd.description || '';
+    const descRaw = isPlaceholderSourceText(descRawCandidate)
+        ? (isPlaceholderSourceText(fallbackDescription) ? '' : fallbackDescription)
+        : descRawCandidate;
     const desc = sanitizeSourceText(descRaw, maxChars);
     const htmlDesc = sanitizeSourceText(html, maxChars);
     warnings.push(...desc.warnings, ...htmlDesc.warnings);

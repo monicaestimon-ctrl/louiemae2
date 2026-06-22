@@ -78,7 +78,7 @@ function getOtapiHtmlCandidates(node: any): string[] {
         node?.OtapiItemDescription?.ItemDescription,
         node?.OtapiItemDescription?.Html,
         node?.OtapiItemDescription?.Description,
-    ].filter((value): value is string => typeof value === 'string' && value.length > 50);
+    ].filter((value): value is string => typeof value === 'string');
 }
 
 export function extractOtapiDescriptionHtml(item: any, maxLength = 20000): string {

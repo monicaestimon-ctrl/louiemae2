@@ -318,8 +318,9 @@ async function scrape1688(productId: string, originalUrl?: string) {
 
         const pushDescriptionHtml = (html: string) => {
             if (typeof html !== 'string' || html.length <= 50) return;
-            if (!descriptionHtmlCandidates.includes(html)) {
-                descriptionHtmlCandidates.push(html.slice(0, 20000));
+            const storedHtml = html.slice(0, 20000);
+            if (!descriptionHtmlCandidates.includes(storedHtml)) {
+                descriptionHtmlCandidates.push(storedHtml);
             }
         };
 
