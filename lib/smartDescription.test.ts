@@ -203,6 +203,75 @@ describe('grounded facts and validators', () => {
     expect(text).not.toContain('fsc');
     expect(text).not.toContain('machine washable');
     expect(text).not.toContain('non-toxic');
+    expect(text).not.toContain('material not confirmed');
+    expect(text).not.toContain('dimensions not confirmed');
+  });
+
+  it('does not treat finish or tone words as direct material evidence', () => {
+    const facts = extractNormalizedProductFacts({
+      importedAt: Date.now(),
+      rawTitle: 'Oak toned accent chair',
+      rawDescription: 'A warm oak-toned finish with a curved profile.',
+      images: [{ url: 'https://example.com/chair.jpg', role: 'primary' }],
+      categoryHints: { selectedCollection: 'furniture' },
+    });
+
+    expect(facts.materials.some((fact) => fact.normalizedValue === 'oak')).toBe(false);
+  });
+
+  it('keeps direct material evidence even when the phrase includes visual finish words', () => {
+    const facts = extractNormalizedProductFacts({
+      importedAt: Date.now(),
+      rawTitle: 'Solid oak chair',
+      rawDescription: 'Crafted from solid oak with a natural finish.',
+      images: [{ url: 'https://example.com/chair.jpg', role: 'primary' }],
+      categoryHints: { selectedCollection: 'furniture' },
+    });
+
+    expect(facts.materials.some((fact) => fact.normalizedValue === 'oak')).toBe(true);
+  });
+
+  it('rejects material terms that are only finish or tone descriptors inside direct phrases', () => {
+    const facts = extractNormalizedProductFacts({
+      importedAt: Date.now(),
+      rawTitle: 'Accent chair',
+      rawDescription: 'Made with an oak-toned finish and a curved profile.',
+      images: [{ url: 'https://example.com/chair.jpg', role: 'primary' }],
+      categoryHints: { selectedCollection: 'furniture' },
+    });
+
+    expect(facts.materials.some((fact) => fact.normalizedValue === 'oak')).toBe(false);
+  });
+
+  it('requires material labels to cite material facts specifically', () => {
+    const facts = extractNormalizedProductFacts({
+      importedAt: Date.now(),
+      rawTitle: 'Ruffle romper',
+      rawDescription: 'Ruffle straps with gathered bodice.',
+      images: [{ url: 'https://example.com/romper.jpg', role: 'primary' }],
+      categoryHints: { selectedCollection: 'kids' },
+    });
+
+    const designFactId = facts.designDetails[0]?.id;
+    expect(designFactId).toBeDefined();
+    const validation = validateGeneratedDescription({
+      draft: {
+        openingSentence: 'A sweet everyday romper with soft ruffle detail and an easy play-ready shape.',
+        detailLines: [
+          { label: 'Design', detail: 'Ruffle straps give it a gentle boutique finish.', supportedByFactIds: [designFactId!], riskLevel: 'low' },
+          { label: 'Material', detail: 'Soft cotton keeps the piece easy for everyday wear.', supportedByFactIds: [designFactId!], riskLevel: 'high' },
+          { label: 'Details', detail: 'Clean visual lines keep the piece simple and polished.', supportedByFactIds: [designFactId!], riskLevel: 'low' },
+        ],
+        seoKeywordsUsed: [],
+        avoidedClaims: [],
+        confidence: 0.7,
+      },
+      facts,
+      brandVoice: LOUIE_MAE_BRAND_VOICE,
+    });
+
+    expect(validation.passed).toBe(false);
+    expect(validation.errors.some((issue) => issue.code === 'UNSUPPORTED_MATERIAL_CLAIM')).toBe(true);
   });
 
   it('builds grounded short smart names from product facts', () => {
@@ -241,5 +310,20 @@ describe('grounded facts and validators', () => {
     }, facts);
 
     expect(errors.some(error => error.includes('solid oak'))).toBe(true);
+  });
+
+  it('rotates safe smart name fallback away from existing inventory names', () => {
+    const facts = extractNormalizedProductFacts({
+      importedAt: Date.now(),
+      rawTitle: 'Baby floral ruffle romper',
+      rawHtmlDescription: '<p>Floral print with ruffle straps and gathered bodice.</p>',
+      images: [{ url: 'https://example.com/romper.jpg', role: 'primary' }],
+      categoryHints: { selectedCollection: 'kids' },
+    });
+    const first = buildSafeNameFallback(facts);
+    const second = buildSafeNameFallback(facts, [first.name]);
+
+    expect(second.name).not.toBe(first.name);
+    expect(validateSmartNameDraft(second, facts, [first.name])).toEqual([]);
   });
 });

@@ -134,7 +134,7 @@ export function normalizedNameProductType(facts: NormalizedProductFacts): string
     return fallback ? fallback.charAt(0).toUpperCase() + fallback.slice(1).toLowerCase() : 'Piece';
 }
 
-function groundedModifier(facts: NormalizedProductFacts): { modifier?: string; factIds: string[] } {
+function groundedModifiers(facts: NormalizedProductFacts): Array<{ modifier?: string; factIds: string[] }> {
     const candidates = [
         ...facts.designDetails,
         ...facts.patternOrFinish,
@@ -162,14 +162,23 @@ function groundedModifier(facts: NormalizedProductFacts): { modifier?: string; f
         [/sage/, 'Sage'],
         [/rose|pink/, 'Rose'],
     ];
+    const modifiers: Array<{ modifier?: string; factIds: string[] }> = [];
+    const seen = new Set<string>();
     for (const fact of candidates) {
         for (const [regex, modifier] of pairs) {
             if (regex.test(fact.value.toLowerCase()) || regex.test(fact.label.toLowerCase())) {
-                return { modifier, factIds: [fact.id] };
+                if (!seen.has(modifier)) {
+                    seen.add(modifier);
+                    modifiers.push({ modifier, factIds: [fact.id] });
+                }
             }
         }
     }
-    return { factIds: [] };
+    return modifiers;
+}
+
+function groundedModifier(facts: NormalizedProductFacts): { modifier?: string; factIds: string[] } {
+    return groundedModifiers(facts)[0] || { factIds: [] };
 }
 
 function tokenPattern(term: string): RegExp {
@@ -188,19 +197,45 @@ function seededIndex(seed: string, size: number): number {
     return Math.abs(hash) % Math.max(size, 1);
 }
 
-export function buildSafeNameFallback(facts: NormalizedProductFacts): GeneratedSmartNameDraft {
+function normalizeNameKey(name = ''): string {
+    return name.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function existingNameKeys(existingNames: string[] = []): Set<string> {
+    return new Set(existingNames.map(normalizeNameKey).filter(Boolean));
+}
+
+export function buildSafeNameFallback(facts: NormalizedProductFacts, existingNames: string[] = []): GeneratedSmartNameDraft {
     const collection = facts.collection.value;
     const pool = NAME_POOLS[collection] || NAME_POOLS.other;
     const productType = normalizedNameProductType(facts);
-    const modifier = groundedModifier(facts);
-    const firstName = pool[seededIndex(`${facts.titleFacts.cleanedTitle || ''}:${productType}:${modifier.modifier || ''}`, pool.length)];
-    const nameParts = [firstName, modifier.modifier, productType].filter(Boolean);
+    const modifiers = [...groundedModifiers(facts), { factIds: [] }];
+    const used = existingNameKeys(existingNames);
+    const seed = seededIndex(`${facts.titleFacts.cleanedTitle || ''}:${productType}:${modifiers[0]?.modifier || ''}`, pool.length);
+    let selected = {
+        firstName: pool[seed],
+        modifier: modifiers[0],
+        name: [pool[seed], modifiers[0]?.modifier, productType].filter(Boolean).join(' '),
+    };
+
+    for (let nameOffset = 0; nameOffset < pool.length; nameOffset++) {
+        const firstName = pool[(seed + nameOffset) % pool.length];
+        for (const modifier of modifiers) {
+            const name = [firstName, modifier.modifier, productType].filter(Boolean).join(' ');
+            selected = { firstName, modifier, name };
+            if (!used.has(normalizeNameKey(name))) {
+                nameOffset = pool.length;
+                break;
+            }
+        }
+    }
+
     return {
-        name: nameParts.join(' '),
-        firstName,
-        modifier: modifier.modifier,
+        name: selected.name,
+        firstName: selected.firstName,
+        modifier: selected.modifier.modifier,
         productType,
-        supportedByFactIds: modifier.factIds,
+        supportedByFactIds: selected.modifier.factIds,
         confidence: Math.min(0.68, Math.max(0.45, facts.sourceQuality.score / 100)),
         notesForAdmin: facts.missingImportantFacts,
     };
@@ -234,13 +269,14 @@ export function coerceSmartNameDraft(value: unknown): GeneratedSmartNameDraft | 
     };
 }
 
-export function validateSmartNameDraft(draft: GeneratedSmartNameDraft, facts: NormalizedProductFacts): string[] {
+export function validateSmartNameDraft(draft: GeneratedSmartNameDraft, facts: NormalizedProductFacts, existingNames: string[] = []): string[] {
     const errors: string[] = [];
     const name = draft.name.trim();
     const words = name.split(/\s+/).filter(Boolean);
     if (words.length < 2 || words.length > 4) errors.push('Name must be 2-4 words.');
     if (/^the\s/i.test(name)) errors.push('Name must not start with "The".');
     if (name.toLowerCase() === (facts.titleFacts.originalTitle || '').toLowerCase()) errors.push('Name cannot repeat the source title.');
+    if (existingNameKeys(existingNames).has(normalizeNameKey(name))) errors.push(`Name is already used in inventory: ${name}.`);
     const productType = normalizedNameProductType(facts).toLowerCase();
     if (!containsToken(name.toLowerCase(), productType)) errors.push(`Name must include the product type "${productType}".`);
 
@@ -260,11 +296,12 @@ export function validateSmartNameDraft(draft: GeneratedSmartNameDraft, facts: No
 export async function generateSmartNameWithGemini(args: {
     facts: NormalizedProductFacts;
     adminContext?: Record<string, unknown>;
+    existingNames?: string[];
 }): Promise<GeminiResult<GeneratedSmartNameDraft>> {
     const ai = getAI();
     const model = getModel();
     const productType = normalizedNameProductType(args.facts);
-    const fallback = buildSafeNameFallback(args.facts);
+    const fallback = buildSafeNameFallback(args.facts, args.existingNames || []);
     const collection = args.facts.collection.value;
     const firstNamePool = NAME_POOLS[collection] || NAME_POOLS.other;
     const systemInstruction = `
@@ -282,6 +319,8 @@ Strict rules:
 - Do not start with "The".
 - Do not repeat the marketplace/source title.
 - Product type must be exactly or very close to: ${productType}.
+- Do not reuse any exact name from AVOID_EXISTING_NAMES.
+- If a similar product already uses the same first name + product type, choose a different first name from the pool.
 - Use a modifier only when grounded in visible/source facts, such as ruffle, floral, bow, scallop, smocked, ribbed, curved, lowline, storage, stripe, lace.
 - Do not use material, certification, care, safety, handmade, solid wood, organic, FSC, OEKO-TEX, or washable claims unless directly present in verified source facts.
 - Choose first names from this collection-appropriate pool when possible: ${firstNamePool.join(', ')}.
@@ -303,6 +342,7 @@ JSON shape:
             verifiedFacts: factsForPrompt(args.facts),
             targetProductType: productType,
             safeFallbackExample: fallback,
+            avoidExistingNames: (args.existingNames || []).slice(0, 40),
             adminContext: args.adminContext || {},
         }),
         config: {

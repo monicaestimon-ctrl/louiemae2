@@ -97,6 +97,34 @@ function textFacts(text: string, terms: string[], group: string, label: string):
         .map(term => fact(group, label, term, 'source_text', 0.7, [evidence('description', term)]));
 }
 
+function materialFactsFromText(text: string): FactValue[] {
+    const results: FactValue[] = [];
+    const escapeRegExp = (input: string) => input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const directPatterns = [
+        /\b(?:material|materials|fabric|composition)\s*[:：-]\s*([^.;\n]{2,90})/gi,
+        /\b(?:made|crafted|constructed)\s+(?:from|of|with)\s+([^.;\n]{2,90})/gi,
+    ];
+
+    for (const pattern of directPatterns) {
+        let match: RegExpExecArray | null;
+        while ((match = pattern.exec(text)) !== null) {
+            const excerpt = match[0].replace(/\s+/g, ' ').trim();
+            const valueText = match[1].toLowerCase();
+            for (const term of MATERIAL_TERMS) {
+                if (!valueText.includes(term.toLowerCase())) continue;
+                const visualOnlyTermContext = new RegExp(
+                    `\\b${escapeRegExp(term.toLowerCase())}(?:[-\\s]*(?:tone|toned|color|colored|colour|coloured|finish|finished|look|style|effect|print|pattern))\\b`,
+                    'i'
+                );
+                if (visualOnlyTermContext.test(valueText)) continue;
+                results.push(fact('materials', 'Material', term, 'source_text', 0.82, [evidence('description', excerpt)]));
+            }
+        }
+    }
+
+    return results;
+}
+
 function sourceDetailFacts(text: string): FactValue[] {
     return text
         .split(/(?<=[.!?])\s+|\s+[•·]\s+|\n+/)
@@ -180,7 +208,7 @@ export function extractNormalizedProductFacts(snapshot: SourceProductSnapshot & 
 
     const materials = [
         ...attrFacts(attrs, ['material', 'fabric', 'composition'], 'materials', 'Material'),
-        ...textFacts(combinedText, MATERIAL_TERMS, 'materials', 'Material'),
+        ...materialFactsFromText(combinedText),
     ];
     const certifications = [
         ...attrFacts(attrs, ['certification', 'certified'], 'certifications', 'Certification'),
