@@ -15,6 +15,7 @@ const SAFETY_CLAIMS = ['baby-safe', 'child-safe', 'hypoallergenic', 'flame-retar
 const CONSTRUCTION_CLAIMS = ['handmade', 'handcrafted', 'handwoven', 'kiln-dried', 'artisan-made'];
 const MOJIBAKE_PATTERN = /Â|â€“|â€”|â€™|â€œ|â€|Ã—/;
 const GENERIC_OPENING = /\b(beautiful|stylish|premium|perfect|versatile|high-quality|comfortable|elegant|unique|charming)\b/gi;
+const EXTRA_MOJIBAKE_PATTERN = /Â|â€“|â€”|â€™|â€œ|â€|Ã—/;
 
 const VALID_LABELS = new Set([
     'Design', 'Feel', 'Fit', 'Details', 'Wear', 'Care', 'Sizing',
@@ -161,7 +162,7 @@ export function validateGeneratedDescription(args: {
             errors.push(issue('BANNED_PHRASE', `Banned phrase found: ${phrase}`, 'error', phrase));
         }
     }
-    if (MOJIBAKE_PATTERN.test(text)) errors.push(issue('MOJIBAKE_DETECTED', 'Mojibake characters detected.', 'error'));
+    if (MOJIBAKE_PATTERN.test(text) || EXTRA_MOJIBAKE_PATTERN.test(text)) errors.push(issue('MOJIBAKE_DETECTED', 'Mojibake characters detected.', 'error'));
     const genericMatches = text.match(GENERIC_OPENING) || [];
     if (genericMatches.length >= 4) warnings.push(issue('GENERIC_COPY', 'Copy relies on too many generic adjectives.', 'warning'));
 

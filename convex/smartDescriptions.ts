@@ -6,10 +6,10 @@ import { createHash } from "crypto";
 import { internal } from "./_generated/api";
 import { auth } from "./auth";
 import {
-    GeneratedDescriptionDraft,
     SmartDescriptionRequest,
     SmartDescriptionResponse,
     SourceProductSnapshot,
+    coerceGeneratedDescriptionDraft,
     formatDescription,
 } from "../lib/smartDescription";
 import { LOUIE_MAE_BRAND_VOICE, BRAND_VOICE_VERSION, SMART_DESCRIPTION_PROMPT_VERSION } from "./brandVoice";
@@ -59,23 +59,6 @@ function attachVisualFacts(snapshot: SourceProductSnapshot, facts: any[]): Sourc
         ...snapshot,
         images: add(snapshot.images as any),
         descriptionImages: add(snapshot.descriptionImages as any),
-    };
-}
-
-function draftFromUnknown(value?: GeneratedDescriptionDraft): GeneratedDescriptionDraft | undefined {
-    if (!value?.openingSentence || !Array.isArray(value.detailLines)) return undefined;
-    return {
-        openingSentence: String(value.openingSentence),
-        detailLines: value.detailLines.map((line: any) => ({
-            label: String(line.label || "Details"),
-            detail: String(line.detail || ""),
-            supportedByFactIds: Array.isArray(line.supportedByFactIds) ? line.supportedByFactIds.map(String) : [],
-            riskLevel: ["low", "medium", "high"].includes(line.riskLevel) ? line.riskLevel : "medium",
-        })),
-        seoKeywordsUsed: Array.isArray(value.seoKeywordsUsed) ? value.seoKeywordsUsed.map(String) : [],
-        avoidedClaims: Array.isArray(value.avoidedClaims) ? value.avoidedClaims.map(String) : [],
-        confidence: Number.isFinite(Number(value.confidence)) ? Number(value.confidence) : 0.5,
-        notesForAdmin: Array.isArray(value.notesForAdmin) ? value.notesForAdmin.map(String) : undefined,
     };
 }
 
@@ -164,19 +147,35 @@ export const generateSmartDescription = action({
                 adminContext: typedRequest.adminContext || {},
             });
             warnings.push(...generated.warnings);
-            let finalDraft = draftFromUnknown(generated.value);
-            if (!finalDraft) throw new Error("Gemini did not return a valid structured description draft.");
-
-            let validation = validateGeneratedDescription({
-                draft: finalDraft,
-                facts,
-                brandVoice: LOUIE_MAE_BRAND_VOICE,
-                similarDescriptions,
-            });
+            let finalDraft = coerceGeneratedDescriptionDraft(generated.value);
             let repaired = false;
             let rawModelResponse = generated.raw;
+            let fallbackUsed = false;
+            let fallbackReason: string | undefined;
+            let validation;
 
-            if (!validation.passed && validation.errors.every(isRepairableValidationIssue)) {
+            if (!finalDraft) {
+                fallbackUsed = true;
+                fallbackReason = "MALFORMED_MODEL_OUTPUT";
+                warnings.push("Smart description model returned malformed output; safe fallback copy was used.");
+                console.log("[SmartDescription] fallback used", { requestId, fallbackReason });
+                finalDraft = buildSafeFallbackDescription(facts, sourceSnapshot);
+                validation = validateGeneratedDescription({
+                    draft: finalDraft,
+                    facts,
+                    brandVoice: LOUIE_MAE_BRAND_VOICE,
+                    similarDescriptions,
+                });
+            } else {
+                validation = validateGeneratedDescription({
+                    draft: finalDraft,
+                    facts,
+                    brandVoice: LOUIE_MAE_BRAND_VOICE,
+                    similarDescriptions,
+                });
+            }
+
+            if (!fallbackUsed && !validation.passed && validation.errors.every(isRepairableValidationIssue)) {
                 console.log("[SmartDescription] validation failed", {
                     requestId,
                     issueCodes: validation.errors.map(issue => issue.code),
@@ -188,7 +187,7 @@ export const generateSmartDescription = action({
                     brandVoice: LOUIE_MAE_BRAND_VOICE,
                 });
                 warnings.push(...repairedResult.warnings);
-                const repairedDraft = draftFromUnknown(repairedResult.value);
+                const repairedDraft = coerceGeneratedDescriptionDraft(repairedResult.value);
                 if (repairedDraft) {
                     finalDraft = repairedDraft;
                     rawModelResponse = repairedResult.raw || rawModelResponse;
@@ -202,11 +201,10 @@ export const generateSmartDescription = action({
                 }
             }
 
-            let fallbackUsed = false;
-            let fallbackReason: string | undefined;
             if (!validation.passed) {
                 fallbackUsed = true;
                 fallbackReason = validation.errors.map(issue => issue.code).join(", ");
+                repaired = false;
                 console.log("[SmartDescription] fallback used", { requestId, fallbackReason });
                 finalDraft = buildSafeFallbackDescription(facts, sourceSnapshot);
                 validation = validateGeneratedDescription({

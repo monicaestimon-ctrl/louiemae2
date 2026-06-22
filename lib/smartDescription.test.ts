@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeSourceText } from './smartDescription';
+import { DESCRIPTION_SEPARATOR, coerceGeneratedDescriptionDraft, formatDescription, sanitizeSourceText } from './smartDescription';
 import { normalizeSourceProduct } from '../convex/sourceProductNormalizer';
 import { extractNormalizedProductFacts } from '../convex/productFacts';
 import { LOUIE_MAE_BRAND_VOICE } from '../convex/brandVoice';
@@ -22,6 +22,35 @@ describe('smart description sanitizer', () => {
     expect(result.text).not.toContain('Shipping:');
     expect(result.text).not.toContain('Â');
     expect(result.warnings).toContain('Potential source prompt injection removed from source description.');
+  });
+
+  it('formats generated descriptions with the canonical separator and no mojibake', () => {
+    const description = formatDescription({
+      openingSentence: 'A sweet everyday romper with soft ruffle detail and an easy play-ready shape.',
+      detailLines: [
+        { label: 'Design', detail: 'Ruffle straps give it a gentle boutique finish.', supportedByFactIds: [], riskLevel: 'low' },
+        { label: 'Details', detail: 'Available source options should be reviewed before publishing.', supportedByFactIds: [], riskLevel: 'low' },
+        { label: 'Feel', detail: 'Simple visual texture keeps the look soft and easy.', supportedByFactIds: [], riskLevel: 'low' },
+      ],
+      seoKeywordsUsed: [],
+      avoidedClaims: [],
+      confidence: 0.7,
+    });
+
+    expect(description).toContain(`Design${DESCRIPTION_SEPARATOR}Ruffle straps`);
+    expect(description).not.toContain('Â');
+  });
+
+  it('rejects malformed model drafts that stringify into character output', () => {
+    const draft = coerceGeneratedDescriptionDraft({
+      openingSentence: ['A', 'sweet', 'romper'],
+      detailLines: [
+        { label: 'Design', detail: ['r', 'u', 'f', 'f', 'l', 'e'], supportedByFactIds: [], riskLevel: 'low' },
+      ],
+      confidence: 0.4,
+    });
+
+    expect(draft).toBeUndefined();
   });
 });
 

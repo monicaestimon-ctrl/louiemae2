@@ -222,6 +222,8 @@ export type SmartDescriptionResponse = {
     error?: string;
 };
 
+export const DESCRIPTION_SEPARATOR = ' · ';
+
 export const MOJIBAKE_REPLACEMENTS: Record<string, string> = {
     'Â·': '·',
     'â€¢': '·',
@@ -246,10 +248,72 @@ const PROMPT_INJECTION_PATTERNS = [
 ];
 
 export function normalizeMojibake(input = ''): string {
-    return Object.entries(MOJIBAKE_REPLACEMENTS).reduce(
+    const firstPass = Object.entries(MOJIBAKE_REPLACEMENTS).reduce(
         (text, [bad, good]) => text.split(bad).join(good),
         input
     );
+    return firstPass
+        .split('Â·').join('·')
+        .split('â€¢').join('·')
+        .split('â€“').join('-')
+        .split('â€”').join('-')
+        .split('â€™').join("'")
+        .split('â€œ').join('"')
+        .split('â€').join('"')
+        .split('Ã—').join('x');
+}
+
+function cleanGeneratedText(value: unknown, options: { minAlpha?: number; minWords?: number } = {}): string | undefined {
+    if (typeof value !== 'string') return undefined;
+    const text = normalizeMojibake(decodeHtmlEntities(value)).replace(/\s+/g, ' ').trim();
+    if (!text || /^\[object Object\]$/i.test(text)) return undefined;
+
+    const alphaCount = (text.match(/[a-z]/gi) || []).length;
+    const commaCount = (text.match(/,/g) || []).length;
+    if (text.length > 20 && commaCount > Math.max(4, alphaCount / 3)) return undefined;
+    if (options.minAlpha && alphaCount < options.minAlpha) return undefined;
+    if (options.minWords && text.split(/\s+/).filter(Boolean).length < options.minWords) return undefined;
+    return text;
+}
+
+function cleanStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return value
+        .map(item => cleanGeneratedText(item))
+        .filter((item): item is string => Boolean(item));
+}
+
+export function coerceGeneratedDescriptionDraft(value: unknown): GeneratedDescriptionDraft | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const record = value as Record<string, unknown>;
+    const openingSentence = cleanGeneratedText(record.openingSentence, { minAlpha: 10, minWords: 5 });
+    if (!openingSentence || !Array.isArray(record.detailLines)) return undefined;
+
+    const detailLines = record.detailLines
+        .map((line): GeneratedDescriptionDraft['detailLines'][number] | undefined => {
+            if (!line || typeof line !== 'object' || Array.isArray(line)) return undefined;
+            const lineRecord = line as Record<string, unknown>;
+            const label = cleanGeneratedText(lineRecord.label, { minAlpha: 3 });
+            const detail = cleanGeneratedText(lineRecord.detail, { minAlpha: 6, minWords: 2 });
+            if (!label || !detail) return undefined;
+            const riskLevel = lineRecord.riskLevel;
+            return {
+                label,
+                detail,
+                supportedByFactIds: cleanStringArray(lineRecord.supportedByFactIds),
+                riskLevel: riskLevel === 'low' || riskLevel === 'medium' || riskLevel === 'high' ? riskLevel : 'medium',
+            };
+        })
+        .filter((line): line is GeneratedDescriptionDraft['detailLines'][number] => Boolean(line));
+
+    return {
+        openingSentence,
+        detailLines,
+        seoKeywordsUsed: cleanStringArray(record.seoKeywordsUsed),
+        avoidedClaims: cleanStringArray(record.avoidedClaims),
+        confidence: Number.isFinite(Number(record.confidence)) ? Number(record.confidence) : 0.5,
+        notesForAdmin: Array.isArray(record.notesForAdmin) ? cleanStringArray(record.notesForAdmin) : undefined,
+    };
 }
 
 export function decodeHtmlEntities(input = ''): string {
@@ -290,6 +354,10 @@ export function sanitizeSourceText(input = '', maxChars = 20000): { text: string
         warnings.push(`Source text was truncated to ${maxChars} characters.`);
         text = text.slice(0, maxChars).trim();
     }
+    text = normalizeMojibake(text)
+        .replace(/\s*(?:Â·|·)\s*/g, DESCRIPTION_SEPARATOR)
+        .replace(/\s+/g, ' ')
+        .trim();
     return { text, warnings: [...new Set(warnings)] };
 }
 
@@ -439,7 +507,7 @@ export function formatDescription(draft: GeneratedDescriptionDraft): string {
         draft.openingSentence.trim(),
         '',
         ...draft.detailLines.map(line => `${line.label.trim()} · ${line.detail.trim()}`),
-    ].join('\n').trim();
+    ].join('\n').trim().replace(/\s*Â·\s*/g, DESCRIPTION_SEPARATOR);
 }
 
 export function createEmptyValidationResult(message = 'Not validated'): DescriptionValidationResult {
