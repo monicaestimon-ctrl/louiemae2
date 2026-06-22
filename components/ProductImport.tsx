@@ -388,7 +388,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
 
         try {
             const sourceSnapshot = buildSnapshotForImportProduct(product);
-            const [smartName, smartDescription] = await Promise.all([
+            const [smartNameSettled, smartDescriptionSettled] = await Promise.allSettled([
                 generateSmartName({
                     request: {
                         sourceSnapshot,
@@ -421,20 +421,22 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                     },
                 } as any),
             ]);
-            const enhancedName = (smartName as any)?.ok && (smartName as any).name
-                ? (smartName as any).name
-                : product.name;
+            const smartName = smartNameSettled.status === 'fulfilled' ? smartNameSettled.value as any : null;
+            const smartDescription = smartDescriptionSettled.status === 'fulfilled' ? smartDescriptionSettled.value as any : null;
+            const enhancedName = smartName?.ok && smartName.name
+                ? smartName.name
+                : (product.customName || product.name);
 
             updateProductField(productId, 'customName', enhancedName);
-            if ((smartDescription as any)?.ok && (smartDescription as any).description) {
-                updateProductField(productId, 'customDescription', (smartDescription as any).description);
-                updateProductField(productId, 'descriptionAuditId', (smartDescription as any).auditId);
+            if (smartDescription?.ok && smartDescription.description) {
+                updateProductField(productId, 'customDescription', smartDescription.description);
+                updateProductField(productId, 'descriptionAuditId', smartDescription.auditId);
                 updateProductField(productId, 'smartDescriptionAdminEdited', false);
-                updateProductField(productId, 'smartDescriptionWarnings', (smartDescription as any).warnings || []);
-                updateProductField(productId, 'smartDescriptionSourceQuality', (smartDescription as any).facts?.sourceQuality?.score);
-                updateProductField(productId, 'smartDescriptionFallbackUsed', (smartDescription as any).fallbackUsed);
+                updateProductField(productId, 'smartDescriptionWarnings', smartDescription.warnings || []);
+                updateProductField(productId, 'smartDescriptionSourceQuality', smartDescription.facts?.sourceQuality?.score);
+                updateProductField(productId, 'smartDescriptionFallbackUsed', smartDescription.fallbackUsed);
             } else {
-                toast.error((smartDescription as any)?.error || 'Smart description failed');
+                toast.error(smartDescription?.error || 'Smart description failed');
                 return;
             }
 
@@ -2238,7 +2240,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                     const sourceSnapshot = buildSnapshotForImportProduct(importableProduct);
 
                     // Run name generation and server-side smart description in parallel.
-                    const [smartName, smartDescription] = await Promise.all([
+                    const [smartNameSettled, smartDescriptionSettled] = await Promise.allSettled([
                         generateSmartName({
                             request: {
                                 sourceSnapshot,
@@ -2272,16 +2274,16 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
 
                     toast.dismiss('ai-enhance');
 
-                    const smartNameResult = smartName as any;
+                    const smartNameResult = smartNameSettled.status === 'fulfilled' ? smartNameSettled.value as any : null;
                     const enhancedName = smartNameResult?.ok && smartNameResult.name ? smartNameResult.name : '';
                     const isValidAiName = Boolean(enhancedName);
-                    const smartDescriptionResult = smartDescription as any;
+                    const smartDescriptionResult = smartDescriptionSettled.status === 'fulfilled' ? smartDescriptionSettled.value as any : null;
                     const isValidAiDesc = smartDescriptionResult?.ok && smartDescriptionResult.description && smartDescriptionResult.description.length > 80;
 
                     if (isValidAiName || isValidAiDesc) {
                         importableProduct = {
                             ...importableProduct,
-                            customName: isValidAiName ? enhancedName : importableProduct.name,
+                            customName: isValidAiName ? enhancedName : (importableProduct.customName || importableProduct.name),
                             customDescription: isValidAiDesc ? smartDescriptionResult.description : importableProduct.description,
                             ...(isValidAiDesc
                                 ? {

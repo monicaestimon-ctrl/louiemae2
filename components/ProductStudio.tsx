@@ -454,11 +454,16 @@ const EssenceStep: React.FC<{
                         } as any).catch(() => null)
                     ]);
 
+                    let didEnhance = false;
                     const smartNameResult = smartName as any;
-                    if (smartNameResult?.ok && smartNameResult.name) updatedProduct.name = smartNameResult.name;
+                    if (smartNameResult?.ok && smartNameResult.name) {
+                        updatedProduct.name = smartNameResult.name;
+                        didEnhance = true;
+                    }
                     const smartDescriptionResult = smartDescription as any;
                     if (smartDescriptionResult?.ok && smartDescriptionResult.description) {
                         updatedProduct.description = smartDescriptionResult.description;
+                        didEnhance = true;
                         updatedProduct.smartDescription = {
                             description: smartDescriptionResult.description,
                             auditId: smartDescriptionResult.auditId,
@@ -472,7 +477,7 @@ const EssenceStep: React.FC<{
                         updatedProduct.descriptionSource = 'ai_generated';
                     }
 
-                    toast.success("Imported & Enhanced!");
+                    toast.success(didEnhance ? "Imported & Enhanced!" : "Imported (AI skipped)");
                 } catch (e) {
                     console.warn("AI Enhance failed", e);
                     toast.success("Imported (AI skipped)");

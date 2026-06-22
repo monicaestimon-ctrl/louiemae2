@@ -164,12 +164,22 @@ function groundedModifier(facts: NormalizedProductFacts): { modifier?: string; f
     ];
     for (const fact of candidates) {
         for (const [regex, modifier] of pairs) {
-            if (regex.test(fact.value) || regex.test(fact.label)) {
+            if (regex.test(fact.value.toLowerCase()) || regex.test(fact.label.toLowerCase())) {
                 return { modifier, factIds: [fact.id] };
             }
         }
     }
     return { factIds: [] };
+}
+
+function tokenPattern(term: string): RegExp {
+    const escaped = term.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+    return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i');
+}
+
+function containsToken(text: string, term: string): boolean {
+    if (!term.trim()) return false;
+    return tokenPattern(term).test(text);
 }
 
 function seededIndex(seed: string, size: number): number {
@@ -232,15 +242,15 @@ export function validateSmartNameDraft(draft: GeneratedSmartNameDraft, facts: No
     if (/^the\s/i.test(name)) errors.push('Name must not start with "The".');
     if (name.toLowerCase() === (facts.titleFacts.originalTitle || '').toLowerCase()) errors.push('Name cannot repeat the source title.');
     const productType = normalizedNameProductType(facts).toLowerCase();
-    if (!name.toLowerCase().includes(productType)) errors.push(`Name must include the product type "${productType}".`);
+    if (!containsToken(name.toLowerCase(), productType)) errors.push(`Name must include the product type "${productType}".`);
 
     const directFactText = allFactValues(facts)
         .filter(fact => ['source_structured', 'source_text', 'source_title', 'source_variant', 'admin_input'].includes(fact.evidenceLevel))
         .map(fact => `${fact.value} ${fact.label}`.toLowerCase())
         .join(' ');
     for (const term of RISKY_NAME_TERMS) {
-        if (!name.toLowerCase().includes(term)) continue;
-        if (!directFactText.includes(term)) {
+        if (!containsToken(name.toLowerCase(), term)) continue;
+        if (!containsToken(directFactText, term)) {
             errors.push(`Unsupported high-risk name term: ${term}.`);
         }
     }
