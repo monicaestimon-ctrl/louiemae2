@@ -13,6 +13,7 @@ import { useMutation, useAction } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { buildSourceProductSnapshot, SourceAttribute } from '../lib/smartDescription';
 import { calculatePricingBreakdown, getEstimatedShipping } from '../lib/pricing';
+import { getUserFacingErrorMessage } from '../lib/errorMessages';
 
 interface ProductImportProps {
     collections: CollectionConfig[];
@@ -2315,7 +2316,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
 
         } catch (err) {
             console.error('Import by URL failed:', err);
-            const errorMsg = err instanceof Error ? err.message : 'Failed to import product. Please try a different link.';
+            const errorMsg = getUserFacingErrorMessage(err, 'Failed to import product. Please try a different link.');
             setError(errorMsg);
             toast.error('Import failed', { description: errorMsg });
         } finally {

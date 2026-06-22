@@ -1,6 +1,6 @@
 "use node";
 import { action } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 
 /** Domain allowlist: only scrape from known storefront domains. */
 const ALLOWED_DOMAINS = [
@@ -51,6 +51,18 @@ const isBlockedHost = (hostname: string): boolean => {
         h.endsWith('.local') ||
         h.endsWith('.internal')
     );
+};
+
+const getScraperErrorCode = (message: string): string => {
+    if (/domain not supported|unsupported domain|redirect hop landed on unsupported/i.test(message)) return 'UNSUPPORTED_DOMAIN';
+    if (/blocked internal|blocked host/i.test(message)) return 'BLOCKED_URL';
+    if (/invalid url|invalid redirect|invalid protocol|invalid url format/i.test(message)) return 'INVALID_URL';
+    if (/rapidapi key not configured/i.test(message)) return 'MISSING_RAPIDAPI_KEY';
+    if (/otapi request timed out|aborted|timed out/i.test(message)) return 'UPSTREAM_TIMEOUT';
+    if (/http 403|http 401/i.test(message)) return 'UPSTREAM_FORBIDDEN';
+    if (/otapi|rapidapi/i.test(message)) return 'UPSTREAM_API_ERROR';
+    if (/could not extract meaningful data/i.test(message)) return 'EXTRACTION_FAILED';
+    return 'SCRAPE_FAILED';
 };
 
 export const scrapeProduct = action({
@@ -121,7 +133,10 @@ export const scrapeProduct = action({
             const errorMessage = err?.message || 'Unknown scraping error';
             console.error(`[Scraper] FATAL ERROR scraping ${url}: ${errorMessage}`);
             console.error(`[Scraper] Stack: ${err?.stack || 'no stack trace'}`);
-            throw new Error(`Scraping failed for "${url}": ${errorMessage}`);
+            throw new ConvexError({
+                code: getScraperErrorCode(errorMessage),
+                message: errorMessage,
+            });
         }
     },
 });

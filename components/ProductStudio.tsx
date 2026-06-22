@@ -8,6 +8,7 @@ import { api } from '../convex/_generated/api';
 import { toast } from 'sonner';
 import { extractOtapiFields } from '../lib/otapiHelpers';
 import { buildSourceProductSnapshot } from '../lib/smartDescription';
+import { getUserFacingErrorMessage } from '../lib/errorMessages';
 
 interface ProductStudioProps {
     isOpen: boolean;
@@ -469,7 +470,7 @@ const EssenceStep: React.FC<{
 
         } catch (err) {
             console.error(err);
-            toast.error(err instanceof Error ? err.message : 'Failed to import URL');
+            toast.error(getUserFacingErrorMessage(err, 'Failed to import URL. Please try a different link.'));
         } finally {
             setIsImporting(false);
         }
