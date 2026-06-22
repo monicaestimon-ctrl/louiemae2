@@ -3,7 +3,7 @@ import { Search, Loader2, Check, X, DollarSign, Wand2, Package, ChevronDown, Ale
 import { toast, Toaster } from 'sonner';
 import { aliexpressService } from '../services/aliexpressService';
 import { CollectionType, Product, CollectionConfig } from '../types';
-import { generateProductNameV2, extractKeywords, ProductContext, translateVariantNames, isLikelyFallback } from '../services/geminiService';
+import { translateVariantNames } from '../services/geminiService';
 import { translateProductFields, detectChinese } from '../services/translateService';
 import { extractOtapiSourceProperties, cleanOtapiDescription, isPlaceholderSourceDescription } from '../lib/otapiHelpers';
 import { FadeIn } from './FadeIn';
@@ -106,6 +106,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     // Actions
     const scrapeProduct = useAction(api.scraper.scrapeProduct);
     const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
+    const generateSmartName = useAction(api.smartNames.generateSmartName);
 
     // Convex file upload mutations
     const generateUploadUrl = useMutation(api.files.generateUploadUrl);
@@ -386,29 +387,26 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
         updateProductField(productId, 'isEnhancing', true);
 
         try {
-            // Build full context for AI
-            const context: ProductContext = {
-                originalName: product.name,
-                originalDescription: product.description || '',
-                category: product.category || '',
-                collection: product.targetCollection || targetCollection,
-                keywords: extractKeywords(product.name + ' ' + (product.description || '')),
-                sourceMetadata: {
-                    variantNames: product.variants?.map(v => v.name).filter(Boolean),
-                    imageCount: product.images?.length,
-                    priceUsd: product.salePrice || product.price,
-                    rating: product.averageRating,
-                    salesCount: product.reviewCount,
-                    sellerName: product.seller?.name,
-                    sourceProperties: product.sourceProperties || undefined,
-                },
-            };
-
-            const [enhancedName, smartDescription] = await Promise.all([
-                generateProductNameV2(context),
+            const sourceSnapshot = buildSnapshotForImportProduct(product);
+            const [smartName, smartDescription] = await Promise.all([
+                generateSmartName({
+                    request: {
+                        sourceSnapshot,
+                        adminContext: {
+                            selectedCategory: product.category || '',
+                            selectedSubcategory: product.targetSubcategory || targetSubcategory,
+                            selectedCollection: product.targetCollection || targetCollection,
+                        },
+                        generationMode: 'manual_generate',
+                        options: {
+                            allowImageAnalysis: true,
+                            forceFreshVariation: true,
+                        },
+                    },
+                } as any),
                 generateSmartDescription({
                     request: {
-                        sourceSnapshot: buildSnapshotForImportProduct(product),
+                        sourceSnapshot,
                         adminContext: {
                             selectedCategory: product.category || '',
                             selectedSubcategory: product.targetSubcategory || targetSubcategory,
@@ -423,6 +421,9 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                     },
                 } as any),
             ]);
+            const enhancedName = (smartName as any)?.ok && (smartName as any).name
+                ? (smartName as any).name
+                : product.name;
 
             updateProductField(productId, 'customName', enhancedName);
             if ((smartDescription as any)?.ok && (smartDescription as any).description) {
@@ -458,24 +459,25 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
         updateProductField(productId, 'isEnhancing', true);
 
         try {
-            const context: ProductContext = {
-                originalName: product.name,
-                originalDescription: product.description || '',
-                category: product.category || '',
-                collection: product.targetCollection || targetCollection,
-                keywords: extractKeywords(product.name + ' ' + (product.description || '')),
-                sourceMetadata: {
-                    variantNames: product.variants?.map(v => v.name).filter(Boolean),
-                    imageCount: product.images?.length,
-                    priceUsd: product.salePrice || product.price,
-                    rating: product.averageRating,
-                    salesCount: product.reviewCount,
-                    sellerName: product.seller?.name,
-                    sourceProperties: product.sourceProperties || undefined,
+            const smartName = await generateSmartName({
+                request: {
+                    sourceSnapshot: buildSnapshotForImportProduct(product),
+                    adminContext: {
+                        selectedCategory: product.category || '',
+                        selectedSubcategory: product.targetSubcategory || targetSubcategory,
+                        selectedCollection: product.targetCollection || targetCollection,
+                    },
+                    generationMode: 'manual_generate',
+                    options: {
+                        allowImageAnalysis: true,
+                        forceFreshVariation: true,
+                    },
                 },
-            };
-
-            const enhancedName = await generateProductNameV2(context);
+            } as any);
+            if (!(smartName as any)?.ok || !(smartName as any).name) {
+                throw new Error((smartName as any)?.error || 'Smart name failed');
+            }
+            const enhancedName = (smartName as any).name;
             updateProductField(productId, 'customName', enhancedName);
 
             toast.success('Name enhanced', {
@@ -497,23 +499,6 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
         updateProductField(productId, 'isEnhancing', true);
 
         try {
-            const context: ProductContext = {
-                originalName: product.customName || product.name,
-                originalDescription: product.description || '',
-                category: product.category || '',
-                collection: product.targetCollection || targetCollection,
-                keywords: extractKeywords((product.customName || product.name) + ' ' + (product.description || '')),
-                sourceMetadata: {
-                    variantNames: product.variants?.map(v => v.name).filter(Boolean),
-                    imageCount: product.images?.length,
-                    priceUsd: product.salePrice || product.price,
-                    rating: product.averageRating,
-                    salesCount: product.reviewCount,
-                    sellerName: product.seller?.name,
-                    sourceProperties: product.sourceProperties || undefined,
-                },
-            };
-
             const smartDescription = await generateSmartDescription({
                 request: {
                     sourceSnapshot: buildSnapshotForImportProduct(product),
@@ -2249,31 +2234,28 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             // Auto-AI Enhancement (optional - preserves original data if fails)
             if (autoEnhanceAi) {
                 try {
-                    const context: ProductContext = {
-                        originalName: importableProduct.name,
-                        originalDescription: importableProduct.description || '',
-                        category: '',
-                        collection: targetCollection,
-                        keywords: extractKeywords(importableProduct.name + ' ' + (importableProduct.description || '')),
-                        sourceMetadata: {
-                            variantNames: importableProduct.variants?.map((v: any) => v.name).filter(Boolean),
-                            imageCount: importableProduct.images?.length,
-                            priceUsd: importableProduct.salePrice || importableProduct.price,
-                            rating: importableProduct.averageRating,
-                            salesCount: importableProduct.reviewCount,
-                            sellerName: importableProduct.seller?.name,
-                            sourceProperties: importableProduct.sourceProperties || undefined,
-                        },
-                    };
-
                     toast.loading('Enhancing with AI...', { id: 'ai-enhance' });
+                    const sourceSnapshot = buildSnapshotForImportProduct(importableProduct);
 
                     // Run name generation and server-side smart description in parallel.
-                    const [enhancedName, smartDescription] = await Promise.all([
-                        generateProductNameV2(context),
+                    const [smartName, smartDescription] = await Promise.all([
+                        generateSmartName({
+                            request: {
+                                sourceSnapshot,
+                                adminContext: {
+                                    selectedCategory: importableProduct.category,
+                                    selectedCollection: importableProduct.collection,
+                                },
+                                generationMode: 'import_auto',
+                                options: {
+                                    allowImageAnalysis: true,
+                                    forceFreshVariation: true,
+                                },
+                            },
+                        } as any),
                         generateSmartDescription({
                             request: {
-                                sourceSnapshot: buildSnapshotForImportProduct(importableProduct),
+                                sourceSnapshot,
                                 adminContext: {
                                     selectedCategory: importableProduct.category,
                                     selectedCollection: importableProduct.collection,
@@ -2290,7 +2272,9 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
 
                     toast.dismiss('ai-enhance');
 
-                    const isValidAiName = enhancedName && !isLikelyFallback(enhancedName);
+                    const smartNameResult = smartName as any;
+                    const enhancedName = smartNameResult?.ok && smartNameResult.name ? smartNameResult.name : '';
+                    const isValidAiName = Boolean(enhancedName);
                     const smartDescriptionResult = smartDescription as any;
                     const isValidAiDesc = smartDescriptionResult?.ok && smartDescriptionResult.description && smartDescriptionResult.description.length > 80;
 

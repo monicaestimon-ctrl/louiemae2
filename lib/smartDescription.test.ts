@@ -7,6 +7,11 @@ import {
   buildSafeFallbackDescription,
   validateGeneratedDescription,
 } from '../convex/descriptionValidators';
+import {
+  buildSafeNameFallback,
+  normalizedNameProductType,
+  validateSmartNameDraft,
+} from '../convex/geminiNameClient';
 
 describe('smart description sanitizer', () => {
   it('decodes entities, strips scripts, removes prompt injection, and normalizes separators', () => {
@@ -198,5 +203,43 @@ describe('grounded facts and validators', () => {
     expect(text).not.toContain('fsc');
     expect(text).not.toContain('machine washable');
     expect(text).not.toContain('non-toxic');
+  });
+
+  it('builds grounded short smart names from product facts', () => {
+    const facts = extractNormalizedProductFacts({
+      importedAt: Date.now(),
+      rawTitle: 'Baby floral ruffle romper',
+      rawHtmlDescription: '<p>Floral print with ruffle straps and gathered bodice.</p>',
+      images: [{ url: 'https://example.com/romper.jpg', role: 'primary' }],
+      categoryHints: { selectedCollection: 'kids' },
+    });
+
+    const fallback = buildSafeNameFallback(facts);
+
+    expect(normalizedNameProductType(facts)).toBe('Romper');
+    expect(fallback.name).toMatch(/\b(Ruffle|Floral)\b/);
+    expect(fallback.name).toMatch(/\bRomper\b/);
+    expect(fallback.name.split(/\s+/).length).toBeLessThanOrEqual(4);
+    expect(validateSmartNameDraft(fallback, facts)).toEqual([]);
+  });
+
+  it('rejects smart names with unsupported high-risk terms', () => {
+    const facts = extractNormalizedProductFacts({
+      importedAt: Date.now(),
+      rawTitle: 'Oak toned accent chair',
+      images: [{ url: 'https://example.com/chair.jpg', role: 'primary' }],
+      categoryHints: { selectedCollection: 'furniture' },
+    });
+
+    const errors = validateSmartNameDraft({
+      name: 'Elma Solid Oak Chair',
+      firstName: 'Elma',
+      modifier: 'Solid Oak',
+      productType: 'Chair',
+      supportedByFactIds: [],
+      confidence: 0.5,
+    }, facts);
+
+    expect(errors.some(error => error.includes('solid oak'))).toBe(true);
   });
 });

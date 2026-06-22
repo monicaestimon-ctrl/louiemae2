@@ -222,6 +222,44 @@ export type SmartDescriptionResponse = {
     error?: string;
 };
 
+export type GeneratedSmartNameDraft = {
+    name: string;
+    firstName: string;
+    modifier?: string;
+    productType: string;
+    supportedByFactIds: string[];
+    confidence: number;
+    notesForAdmin?: string[];
+};
+
+export type SmartNameRequest = {
+    productId?: string;
+    sourceSnapshot: SourceProductSnapshot;
+    adminContext?: {
+        selectedCategory?: string;
+        selectedSubcategory?: string;
+        selectedCollection?: string;
+        desiredTone?: 'default' | 'softer' | 'more_elevated' | 'more_minimal' | 'more_playful';
+        notes?: string;
+    };
+    generationMode: 'import_auto' | 'manual_generate' | 'manual_regenerate' | 'batch_regenerate' | 'repair_existing';
+    options?: {
+        allowImageAnalysis?: boolean;
+        forceFreshVariation?: boolean;
+    };
+};
+
+export type SmartNameResponse = {
+    ok: boolean;
+    name?: string;
+    structured?: GeneratedSmartNameDraft;
+    facts?: NormalizedProductFacts;
+    warnings: string[];
+    fallbackUsed: boolean;
+    fallbackReason?: string;
+    error?: string;
+};
+
 export const DESCRIPTION_SEPARATOR = ' · ';
 
 export const MOJIBAKE_REPLACEMENTS: Record<string, string> = {

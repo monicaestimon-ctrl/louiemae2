@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Wand2, Send, ChevronRight, Type, Image as ImageIcon, CheckCircle, ArrowLeft, Eye, Loader2, Upload, Trash2, Box, DollarSign, Download, ExternalLink } from 'lucide-react';
 import { Product, SiteContent } from '../types';
-import { generateProductNameV2, extractKeywords, ProductContext, suggestProductCategory, isLikelyFallback } from '../services/geminiService';
+import { suggestProductCategory } from '../services/geminiService';
 import { FadeIn } from './FadeIn';
 import { useAction } from 'convex/react';
 import { api } from '../convex/_generated/api';
@@ -159,6 +159,7 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
     // URL Scraper Action
     const scrapeProduct = useAction(api.scraper.scrapeProduct);
     const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
+    const generateSmartName = useAction(api.smartNames.generateSmartName);
 
     if (!isOpen) return null;
 
@@ -247,6 +248,7 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
                             collections={siteContent.collections}
                             scrapeProduct={scrapeProduct}
                             generateSmartDescription={generateSmartDescription}
+                            generateSmartName={generateSmartName}
                         />
                     )}
 
@@ -333,7 +335,8 @@ const EssenceStep: React.FC<{
     collections: any[];
     scrapeProduct: any;
     generateSmartDescription: any;
-}> = ({ product, onChange, priceDraft, onPriceDraftChange, onNext, collections, scrapeProduct, generateSmartDescription }) => {
+    generateSmartName: any;
+}> = ({ product, onChange, priceDraft, onPriceDraftChange, onNext, collections, scrapeProduct, generateSmartDescription, generateSmartName }) => {
     const [isGeneratingName, setIsGeneratingName] = useState(false);
     const [nameSuggestions, setNameSuggestions] = useState<string[]>([]);
     const [isCategorizing, setIsCategorizing] = useState(false);
@@ -401,14 +404,6 @@ const EssenceStep: React.FC<{
 
             // AI Enhance if enabled
             if (autoEnhance) {
-                const context: ProductContext = {
-                    originalName: updatedProduct.name,
-                    originalDescription: updatedProduct.description || '',
-                    category: '',
-                    collection: updatedProduct.collection,
-                    keywords: extractKeywords(updatedProduct.name + ' ' + (updatedProduct.description || '')),
-                };
-
                 // Try AI enhancement
                 try {
                     const sourceSnapshot = buildSourceProductSnapshot({
@@ -427,8 +422,21 @@ const EssenceStep: React.FC<{
                         sourceMetadata: scrapedData.sourceMetadata || {},
                     });
 
-                    const [name, smartDescription] = await Promise.all([
-                        generateProductNameV2(context).catch(() => updatedProduct.name),
+                    const [smartName, smartDescription] = await Promise.all([
+                        generateSmartName({
+                            request: {
+                                sourceSnapshot,
+                                adminContext: {
+                                    selectedCategory: updatedProduct.category,
+                                    selectedCollection: updatedProduct.collection,
+                                },
+                                generationMode: 'manual_generate',
+                                options: {
+                                    allowImageAnalysis: true,
+                                    forceFreshVariation: true,
+                                },
+                            },
+                        } as any).catch(() => null),
                         generateSmartDescription({
                             request: {
                                 sourceSnapshot,
@@ -446,7 +454,8 @@ const EssenceStep: React.FC<{
                         } as any).catch(() => null)
                     ]);
 
-                    if (name && !isLikelyFallback(name)) updatedProduct.name = name;
+                    const smartNameResult = smartName as any;
+                    if (smartNameResult?.ok && smartNameResult.name) updatedProduct.name = smartNameResult.name;
                     const smartDescriptionResult = smartDescription as any;
                     if (smartDescriptionResult?.ok && smartDescriptionResult.description) {
                         updatedProduct.description = smartDescriptionResult.description;
@@ -487,14 +496,38 @@ const EssenceStep: React.FC<{
         setNameSuggestions([]);
         try {
             const collectionName = collections.find(c => c.id === product.collection)?.title || product.collection || 'Furniture';
-
-            const context: ProductContext = {
-                originalName: product.name || '',
-                originalDescription: product.description || '',
+            const sourceSnapshot = buildSourceProductSnapshot({
+                sourceUrl: product.sourceUrl,
+                name: product.name || '',
+                description: product.description || '',
+                rawDescription: (product as any).rawSourceDescription || product.description || '',
+                htmlDescription: (product as any).rawHtmlDescription || '',
+                price: Number(product.price),
+                currency: 'USD',
+                images: product.images || [],
+                descriptionImages: (product as any).descriptionImages || [],
+                variants: product.variants || [],
                 category: product.category || '',
-                collection: collectionName,
-            };
-            const name = await generateProductNameV2(context);
+                collection: product.collection || collectionName,
+            });
+            const result = await generateSmartName({
+                request: {
+                    sourceSnapshot,
+                    adminContext: {
+                        selectedCategory: product.category || '',
+                        selectedCollection: product.collection || collectionName,
+                    },
+                    generationMode: 'manual_generate',
+                    options: {
+                        allowImageAnalysis: true,
+                        forceFreshVariation: true,
+                    },
+                },
+            } as any);
+            if (!(result as any)?.ok || !(result as any).name) {
+                throw new Error((result as any)?.error || 'Smart name failed');
+            }
+            const name = (result as any).name;
             setNameSuggestions([name]);
         } catch (err) {
             console.error('Name generation failed:', err);

@@ -23,6 +23,7 @@ import type * as descriptionValidators from "../descriptionValidators.js";
 import type * as emails from "../emails.js";
 import type * as files from "../files.js";
 import type * as geminiDescriptionClient from "../geminiDescriptionClient.js";
+import type * as geminiNameClient from "../geminiNameClient.js";
 import type * as http from "../http.js";
 import type * as orders from "../orders.js";
 import type * as pricingAudits from "../pricingAudits.js";
@@ -31,6 +32,7 @@ import type * as products from "../products.js";
 import type * as scraper from "../scraper.js";
 import type * as siteContent from "../siteContent.js";
 import type * as smartDescriptions from "../smartDescriptions.js";
+import type * as smartNames from "../smartNames.js";
 import type * as sourceProductNormalizer from "../sourceProductNormalizer.js";
 import type * as subscribers from "../subscribers.js";
 
@@ -56,6 +58,7 @@ declare const fullApi: ApiFromModules<{
   emails: typeof emails;
   files: typeof files;
   geminiDescriptionClient: typeof geminiDescriptionClient;
+  geminiNameClient: typeof geminiNameClient;
   http: typeof http;
   orders: typeof orders;
   pricingAudits: typeof pricingAudits;
@@ -64,6 +67,7 @@ declare const fullApi: ApiFromModules<{
   scraper: typeof scraper;
   siteContent: typeof siteContent;
   smartDescriptions: typeof smartDescriptions;
+  smartNames: typeof smartNames;
   sourceProductNormalizer: typeof sourceProductNormalizer;
   subscribers: typeof subscribers;
 }>;
