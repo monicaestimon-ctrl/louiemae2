@@ -60,6 +60,31 @@ function lineHasGroupFact(line: GeneratedDescriptionDraft['detailLines'][number]
     return line.supportedByFactIds.some(factId => ids.has(factId));
 }
 
+function restrictedLabelFactIds(facts: NormalizedProductFacts, label: string): Set<string> | undefined {
+    if (label === 'Material' || label === 'Fabric') return factIdSet(facts.materials);
+    if (label === 'Care') return factIdSet(facts.careInstructions);
+    if (label === 'Dimensions') return factIdSet(facts.dimensions);
+    if (label === 'Sizing') return factIdSet([...facts.ageOrSizeRange, ...facts.variants]);
+    return undefined;
+}
+
+export function normalizeDraftLabelsForAvailableFacts(
+    draft: GeneratedDescriptionDraft,
+    facts: NormalizedProductFacts
+): GeneratedDescriptionDraft {
+    return {
+        ...draft,
+        detailLines: draft.detailLines.map(line => {
+            const requiredIds = restrictedLabelFactIds(facts, line.label);
+            if (!requiredIds || lineHasGroupFact(line, requiredIds)) return line;
+            return {
+                ...line,
+                label: 'Details',
+            };
+        }),
+    };
+}
+
 function hasDirectEvidenceFor(term: string, facts: NormalizedProductFacts, groups: Array<keyof NormalizedProductFacts>): boolean {
     const lower = term.toLowerCase();
     return groups.some(group => {

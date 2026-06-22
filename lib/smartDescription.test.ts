@@ -5,6 +5,7 @@ import { extractNormalizedProductFacts } from '../convex/productFacts';
 import { LOUIE_MAE_BRAND_VOICE } from '../convex/brandVoice';
 import {
   buildSafeFallbackDescription,
+  normalizeDraftLabelsForAvailableFacts,
   validateGeneratedDescription,
 } from '../convex/descriptionValidators';
 import {
@@ -272,6 +273,40 @@ describe('grounded facts and validators', () => {
 
     expect(validation.passed).toBe(false);
     expect(validation.errors.some((issue) => issue.code === 'UNSUPPORTED_MATERIAL_CLAIM')).toBe(true);
+  });
+
+  it('downgrades unsupported restricted labels so branded low-risk copy can still pass', () => {
+    const facts = extractNormalizedProductFacts({
+      importedAt: Date.now(),
+      rawTitle: 'Ruffle romper',
+      rawDescription: 'Ruffle straps with gathered bodice and soft visual texture.',
+      images: [{ url: 'https://example.com/romper.jpg', role: 'primary' }],
+      categoryHints: { selectedCollection: 'kids' },
+    });
+
+    const designFactId = facts.designDetails[0]?.id;
+    expect(designFactId).toBeDefined();
+
+    const draft = normalizeDraftLabelsForAvailableFacts({
+      openingSentence: 'A sweet everyday romper with ruffle detail and a soft, easygoing play-ready shape.',
+      detailLines: [
+        { label: 'Design', detail: 'Ruffle straps give it a gentle boutique finish.', supportedByFactIds: [designFactId!], riskLevel: 'low' },
+        { label: 'Fabric', detail: 'Soft visual texture keeps the look gentle and easygoing.', supportedByFactIds: [designFactId!], riskLevel: 'low' },
+        { label: 'Details', detail: 'Gathered details add a sweet finish without feeling overdone.', supportedByFactIds: [designFactId!], riskLevel: 'low' },
+      ],
+      seoKeywordsUsed: [],
+      avoidedClaims: [],
+      confidence: 0.7,
+    }, facts);
+
+    expect(draft.detailLines[1].label).toBe('Details');
+    const validation = validateGeneratedDescription({
+      draft,
+      facts,
+      brandVoice: LOUIE_MAE_BRAND_VOICE,
+    });
+
+    expect(validation.passed).toBe(true);
   });
 
   it('builds grounded short smart names from product facts', () => {
