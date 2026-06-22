@@ -117,6 +117,8 @@ export function normalizeSourceProduct(input: SourceProductSnapshot | any): Sour
     const title = input.rawTitle || input.translatedTitle || input.name || jsonLd.title || input.title;
     const descRawCandidate = input.rawDescription || input.translatedDescription || input.description || jsonLd.description || '';
     const fallbackDescription = jsonLd.description || '';
+    const descCandidatePreview = sanitizeSourceText(descRawCandidate, maxChars);
+    warnings.push(...descCandidatePreview.warnings);
     const descRaw = isPlaceholderSourceText(descRawCandidate)
         ? (isPlaceholderSourceText(fallbackDescription) ? '' : fallbackDescription)
         : descRawCandidate;

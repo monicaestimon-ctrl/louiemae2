@@ -12,6 +12,7 @@ import {
   normalizedNameProductType,
   validateSmartNameDraft,
 } from '../convex/geminiNameClient';
+import { cleanOtapiDescription } from './otapiHelpers';
 
 describe('smart description sanitizer', () => {
   it('decodes entities, strips scripts, removes prompt injection, and normalizes separators', () => {
@@ -61,6 +62,22 @@ describe('smart description sanitizer', () => {
   it('identifies source placeholder copy as unusable product description', () => {
     expect(isPlaceholderSourceText('Imported from 1688.com')).toBe(true);
     expect(isPlaceholderSourceText('Soft ruffle romper with gathered bodice')).toBe(false);
+  });
+
+  it('removes vendor Netdisk links and extraction codes from source descriptions', () => {
+    const result = sanitizeSourceText('Netdisk link: https://pan.baidu.com/s/1P2jH2bT__rJ7oKp7VIye9Q?pwd=nj3d Extraction code: nj3d');
+
+    expect(result.text).toBe('');
+    expect(result.warnings).toContain('Vendor file-sharing boilerplate removed from source description.');
+    expect(isPlaceholderSourceText('Netdisk link: https://pan.baidu.com/s/1P2jH2bT__rJ7oKp7VIye9Q?pwd=nj3d Extraction code: nj3d')).toBe(true);
+  });
+
+  it('keeps OTAPI Netdisk boilerplate out of saved source descriptions', () => {
+    const description = cleanOtapiDescription({
+      Description: 'Netdisk link: https://pan.baidu.com/s/1P2jH2bT__rJ7oKp7VIye9Q?pwd=nj3d Extraction code: nj3d',
+    });
+
+    expect(description).toBe('');
   });
 });
 
@@ -113,6 +130,19 @@ describe('source product normalization', () => {
     expect(facts.sourceQuality.score).toBeGreaterThanOrEqual(50);
     expect(facts.designDetails.some((fact) => /ruffle/i.test(fact.value))).toBe(true);
   });
+
+  it('ignores Netdisk-only descriptions during source normalization', () => {
+    const snapshot = normalizeSourceProduct({
+      sourceUrl: 'https://detail.1688.com/offer/123.html',
+      rawTitle: 'Girls matching floral set',
+      rawDescription: 'Netdisk link: https://pan.baidu.com/s/1P2jH2bT__rJ7oKp7VIye9Q?pwd=nj3d Extraction code: nj3d',
+      images: ['https://example.com/set.jpg'],
+      categoryHints: { selectedCollection: 'kids' },
+    });
+
+    expect(snapshot.rawDescription).toBe('');
+    expect(snapshot.warnings).toContain('Vendor file-sharing boilerplate removed from source description.');
+  });
 });
 
 describe('grounded facts and validators', () => {
@@ -143,6 +173,34 @@ describe('grounded facts and validators', () => {
     expect(validation.passed).toBe(false);
     expect(validation.errors.some((issue) => issue.code === 'UNSUPPORTED_MATERIAL_CLAIM')).toBe(true);
     expect(validation.errors.some((issue) => issue.code === 'UNSUPPORTED_CARE_CLAIM')).toBe(true);
+  });
+
+  it('rejects source file-sharing links in generated descriptions', () => {
+    const facts = extractNormalizedProductFacts({
+      importedAt: Date.now(),
+      rawTitle: 'Girls matching floral set',
+      images: [{ url: 'https://example.com/set.jpg', role: 'primary' }],
+      categoryHints: { selectedCollection: 'kids' },
+    });
+
+    const validation = validateGeneratedDescription({
+      draft: {
+        openingSentence: 'A sweet everyday set with soft styling potential and an easy polished shape.',
+        detailLines: [
+          { label: 'Details', detail: 'Netdisk link: https://pan.baidu.com/s/abc Extraction code: nj3d', supportedByFactIds: [], riskLevel: 'low' },
+          { label: 'Design', detail: 'Clean visual lines keep the look simple and easy.', supportedByFactIds: [], riskLevel: 'low' },
+          { label: 'Styling', detail: 'Easy styling keeps the set ready for everyday outfits.', supportedByFactIds: [], riskLevel: 'low' },
+        ],
+        seoKeywordsUsed: [],
+        avoidedClaims: [],
+        confidence: 0.4,
+      },
+      facts,
+      brandVoice: LOUIE_MAE_BRAND_VOICE,
+    });
+
+    expect(validation.passed).toBe(false);
+    expect(validation.errors.some((issue) => issue.message.includes('file-sharing links'))).toBe(true);
   });
 
   it('accepts low-risk image-supported design details', () => {
@@ -323,6 +381,22 @@ describe('grounded facts and validators', () => {
     expect(fallback.name).toMatch(/\b(Ruffle|Floral)\b/);
     expect(fallback.name).toMatch(/\bRomper\b/);
     expect(fallback.name.split(/\s+/).length).toBeLessThanOrEqual(4);
+    expect(validateSmartNameDraft(fallback, facts)).toEqual([]);
+  });
+
+  it('uses Sets as the product type for matching or coordinated sets', () => {
+    const facts = extractNormalizedProductFacts({
+      importedAt: Date.now(),
+      rawTitle: 'Girls matching floral dress set',
+      rawHtmlDescription: '<p>Two-piece coordinated outfit with floral top and skirt.</p>',
+      images: [{ url: 'https://example.com/set.jpg', role: 'primary' }],
+      categoryHints: { selectedCollection: 'kids', selectedCategory: 'Outfits & Sets' },
+    });
+
+    const fallback = buildSafeNameFallback(facts);
+
+    expect(normalizedNameProductType(facts)).toBe('Sets');
+    expect(fallback.name).toMatch(/\bSets\b/);
     expect(validateSmartNameDraft(fallback, facts)).toEqual([]);
   });
 

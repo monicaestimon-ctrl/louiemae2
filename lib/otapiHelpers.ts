@@ -54,7 +54,8 @@ export interface OtapiExtractedFields {
     sourceUrl: string;
 }
 
-const PLACEHOLDER_DESCRIPTION_PATTERN = /^(imported\s+from\s+1688\.com|imported\s+from\s+source|source\s+listing)$/i;
+const PLACEHOLDER_DESCRIPTION_PATTERN = /^(imported\s+from\s+1688\.com|imported\s+from\s+source|source\s+listing|(?:netdisk|network\s+disk|cloud\s+disk)\s+link\s*:.*|https?:\/\/pan\.baidu\.com\/.*|extraction\s+code\s*:.*)$/i;
+const VENDOR_FILE_SHARE_PATTERN = /(?:netdisk|network\s+disk|cloud\s+disk)\s+link\s*:\s*https?:\/\/\S+|https?:\/\/pan\.baidu\.com\/\S+|\bextraction\s+code\s*:\s*[a-z0-9]+|\bpassword\s*:\s*[a-z0-9]+|\bpwd\s*=\s*[a-z0-9]+/gi;
 
 export function isPlaceholderSourceDescription(description?: string): boolean {
     return PLACEHOLDER_DESCRIPTION_PATTERN.test(String(description || '').trim());
@@ -184,7 +185,10 @@ export function extractOtapiSourceProperties(item: any): Record<string, string> 
  */
 export function cleanOtapiDescription(item: any, maxLength = 1000): string {
     const html = extractOtapiDescriptionHtml(item, maxLength * 4);
-    const text = stripHtml(html || (typeof item.Description === 'string' ? item.Description : ''));
+    const text = stripHtml(html || (typeof item.Description === 'string' ? item.Description : ''))
+        .replace(VENDOR_FILE_SHARE_PATTERN, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
     if (!text || text.length <= 10 || isPlaceholderSourceDescription(text)) return '';
     return text.slice(0, maxLength);
 }

@@ -154,6 +154,9 @@ export function validateGeneratedDescription(args: {
     if (MOJIBAKE_PATTERN.test(text) || EXTRA_MOJIBAKE_PATTERN.test(text)) errors.push(issue('MOJIBAKE_DETECTED', 'Mojibake characters detected.', 'error'));
     const genericMatches = text.match(GENERIC_OPENING) || [];
     if (genericMatches.length >= 4) warnings.push(issue('GENERIC_COPY', 'Copy relies on too many generic adjectives.', 'warning'));
+    if (/\b(?:netdisk|network\s+disk|cloud\s+disk)\s+link\b|pan\.baidu\.com|extraction\s+code\s*:|https?:\/\//i.test(text)) {
+        errors.push(issue('GENERIC_COPY', 'Source file-sharing links or URLs cannot appear in customer-facing descriptions.', 'error'));
+    }
 
     const claimChecks = checkClaims(text, facts, brandVoice);
     for (const check of claimChecks) {

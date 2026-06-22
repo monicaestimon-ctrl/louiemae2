@@ -102,8 +102,8 @@ function titleText(facts: NormalizedProductFacts): string {
 export function normalizedNameProductType(facts: NormalizedProductFacts): string {
     const text = titleText(facts);
     const pairs: Array<[RegExp, string]> = [
+        [/\bsets?\b|2[-\s]?piece|two[-\s]?piece|matching|co[-\s]?ord|coordinat(?:ed|ing)/, 'Sets'],
         [/romper|onesie|bodysuit/, 'Romper'],
-        [/\bset\b|2\s?piece|two\s?piece|matching/, 'Set'],
         [/dress/, 'Dress'],
         [/blouse/, 'Blouse'],
         [/\btop\b|shirt|tee/, 'Top'],
@@ -311,7 +311,7 @@ Return JSON only. Do not return Markdown or prose outside JSON.
 Goal: a short boutique name that feels personal and specific, while keeping Louie Mae's format.
 Preferred format: Feminine first name + grounded modifier + product type.
 Acceptable fallback format: Feminine first name + product type.
-Examples: "Poppy Ruffle Romper", "Willow Floral Dress", "Elma Curved Chair", "Linnea Storage Cabinet".
+Examples: "Poppy Ruffle Romper", "Willow Floral Dress", "Sienna Matching Sets", "Elma Curved Chair", "Linnea Storage Cabinet".
 
 Strict rules:
 - Use only the verified facts provided.
@@ -319,6 +319,7 @@ Strict rules:
 - Do not start with "The".
 - Do not repeat the marketplace/source title.
 - Product type must be exactly or very close to: ${productType}.
+- If the product is a matching/coordinated outfit, two-piece item, or source/category says sets, the final name must include "Sets".
 - Do not reuse any exact name from AVOID_EXISTING_NAMES.
 - If a similar product already uses the same first name + product type, choose a different first name from the pool.
 - Use a modifier only when grounded in visible/source facts, such as ruffle, floral, bow, scallop, smocked, ribbed, curved, lowline, storage, stripe, lace.
