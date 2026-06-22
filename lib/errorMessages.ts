@@ -45,5 +45,9 @@ export const getUserFacingErrorMessage = (
     return isGenericConvexWrapper(error) ? fallback : cleanConvexPrefix(error);
   }
 
+  if (errorLike?.message && typeof errorLike.message === 'string' && errorLike.message.trim()) {
+    return isGenericConvexWrapper(errorLike.message) ? fallback : cleanConvexPrefix(errorLike.message);
+  }
+
   return fallback;
 };

@@ -28,4 +28,10 @@ describe('getUserFacingErrorMessage', () => {
       'OTAPI request timed out after 30s',
     );
   });
+
+  it('handles plain objects with message fields', () => {
+    expect(getUserFacingErrorMessage({ message: 'Failed to load page: HTTP 403 Forbidden' })).toBe(
+      'Failed to load page: HTTP 403 Forbidden',
+    );
+  });
 });
