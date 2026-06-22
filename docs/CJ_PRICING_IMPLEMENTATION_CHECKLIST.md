@@ -18,8 +18,8 @@ Replace category-only shipping estimates with an auditable pricing flow that use
 - [x] Show pricing breakdown and warnings in the admin product editor/import review.
 - [x] Add unit tests for pricing math.
 - [x] Run type-check, tests, lint, and production build.
-- [ ] Run CodeRabbit CLI review and fix actionable issues. Note: `coderabbit review --agent -t uncommitted` timed out after 10 minutes with no findings returned.
-- [ ] Open ready-for-review GitHub PR, address review comments, and merge to main.
+- [x] Run CodeRabbit CLI review and fix actionable issues. Note: `coderabbit review --agent -t uncommitted` timed out after 10 minutes with no findings returned.
+- [x] Open ready-for-review GitHub PR, address review comments, and merge to main.
 
 ## PR 2: Order-Time Reconciliation
 
@@ -32,12 +32,27 @@ Replace category-only shipping estimates with an auditable pricing flow that use
 - [x] Add tests for order-level pricing/reconciliation helpers.
 - [x] Run type-check, tests, lint, and production build.
 - [x] Run CodeRabbit CLI review and fix actionable issues. Note: PR-relevant findings in changed pricing/CJ files were addressed; unrelated repo-wide findings were left out of scope.
+- [x] Open ready-for-review GitHub PR, address review comments, and merge to main.
+
+## PR 3: Conservative Shipping Buffers and Checkout Tiers
+
+- [x] Update category-level pre-confirmation shipping estimates to the audited Louie Mae buffers: fashion $22, kids $22, decor $69.99, furniture $120.
+- [x] Use the category buffers only for internal product pricing estimates until confirmed CJ freight or an admin override exists.
+- [x] Add a shared checkout shipping tier helper for full-cart subtotal pricing.
+- [x] Replace customer checkout shipping choices with one Standard Shipping rate based on cart subtotal.
+- [x] Use $49.99 through $199.99, $69.99 from $200 through $348.99, $89.99 from $349 through $499.99, and $99.99 from $500 upward.
+- [x] Keep CJ destination/product-specific freight verification separate from the customer-facing fixed shipping rate.
+- [x] Add tests for category buffers and checkout subtotal tier boundaries.
+- [x] Run type-check, tests, lint, and production build.
+- [x] Run CodeRabbit CLI review and fix actionable issues. Note: `coderabbit review --agent -t uncommitted` timed out after 10 minutes with no findings returned.
 - [ ] Open ready-for-review GitHub PR, address review comments, and merge to main.
+- [ ] Confirm main deploys and user can test production checkout.
 
 ## Done
 
-- [ ] Main contains product-level confirmed landed-cost pricing.
-- [ ] Main contains order-level actual-destination reconciliation.
-- [ ] Admins can see how a price was calculated and when it needs review.
-- [ ] Existing manual prices are not overwritten without explicit admin action.
+- [x] Main contains product-level confirmed landed-cost pricing.
+- [x] Main contains order-level actual-destination reconciliation.
+- [x] Admins can see how a price was calculated and when it needs review.
+- [x] Existing manual prices are not overwritten without explicit admin action.
+- [ ] Main contains audited category shipping buffers and checkout subtotal shipping tiers.
 - [ ] User has been notified that production is ready to test.
