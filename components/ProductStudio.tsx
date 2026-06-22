@@ -9,6 +9,8 @@ import { toast } from 'sonner';
 import { extractOtapiFields } from '../lib/otapiHelpers';
 import { buildSourceProductSnapshot } from '../lib/smartDescription';
 import { getUserFacingErrorMessage } from '../lib/errorMessages';
+import { normalizeImageUrl, shouldCacheImageUrl } from '../lib/imageUrls';
+import { SafeImage } from './SafeImage';
 
 interface ProductStudioProps {
     isOpen: boolean;
@@ -109,6 +111,56 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
         setPriceDraft(String(product.price ?? 0));
     }, [product.price]);
 
+    const cacheProductImageUrls = async (draft: Partial<Product>): Promise<Partial<Product>> => {
+        const urls = [
+            ...(draft.images || []),
+            ...(draft.variants || []).map((variant) => variant.image).filter((image): image is string => Boolean(image)),
+        ].map(normalizeImageUrl).filter(Boolean);
+        const cacheable = urls.filter(shouldCacheImageUrl);
+        if (cacheable.length === 0) {
+            return {
+                ...draft,
+                images: (draft.images || []).map(normalizeImageUrl),
+                variants: draft.variants?.map((variant) => ({
+                    ...variant,
+                    image: variant.image ? normalizeImageUrl(variant.image) : undefined,
+                })),
+            };
+        }
+
+        try {
+            const result = await cacheImageUrls({
+                urls: cacheable,
+                sourceUrl: draft.sourceUrl,
+            }) as { results: Array<{ originalUrl: string; finalUrl: string; error?: string }> };
+            const replacements = new Map<string, string>(result.results.map((entry) => [entry.originalUrl, entry.finalUrl]));
+            const failed = result.results.filter((entry) => entry.error);
+            if (failed.length > 0) {
+                toast.warning('Some remote product images could not be cached; display fallback will still try to render them.');
+            }
+
+            return {
+                ...draft,
+                images: (draft.images || []).map((image) => replacements.get(normalizeImageUrl(image)) || normalizeImageUrl(image)),
+                variants: draft.variants?.map((variant) => ({
+                    ...variant,
+                    image: variant.image ? (replacements.get(normalizeImageUrl(variant.image)) || normalizeImageUrl(variant.image)) : undefined,
+                })),
+            };
+        } catch (error) {
+            console.warn('Image caching failed; saving normalized remote URLs instead.', error);
+            toast.warning('Image caching could not finish; display fallback will still try to render remote product images.');
+            return {
+                ...draft,
+                images: (draft.images || []).map(normalizeImageUrl),
+                variants: draft.variants?.map((variant) => ({
+                    ...variant,
+                    image: variant.image ? normalizeImageUrl(variant.image) : undefined,
+                })),
+            };
+        }
+    };
+
     // Shared save handler — prevents duplicate concurrent saves
     const handleSave = async () => {
         if (isSaving) return;
@@ -144,7 +196,8 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
             } else if (productToSave.description) {
                 productToSave.descriptionSource = productToSave.sourceUrl ? 'source_original' : 'admin_written';
             }
-            await Promise.resolve(onSave(productToSave));
+            const productWithCachedImages = await cacheProductImageUrls(productToSave);
+            await Promise.resolve(onSave(productWithCachedImages));
         } catch (err) {
             console.error('Product save failed:', err);
             toast.error('Failed to save product');
@@ -160,6 +213,7 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
     const scrapeProduct = useAction(api.scraper.scrapeProduct);
     const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
     const generateSmartName = useAction(api.smartNames.generateSmartName);
+    const cacheImageUrls = useAction(api.productImages.cacheImageUrls);
 
     if (!isOpen) return null;
 
@@ -916,7 +970,7 @@ const VisualsStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => v
                                 className="absolute inset-0 z-0 cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-bronze/60"
                                 aria-label={`Open image ${idx + 1} full screen`}
                             >
-                                <img src={img} alt={`Product ${idx + 1}`} referrerPolicy="no-referrer" crossOrigin="anonymous" className="w-full h-full object-cover opacity-90 group-hover:scale-110 group-hover:opacity-100 transition-all duration-700" />
+                                <SafeImage src={img} alt={`Product ${idx + 1}`} className="w-full h-full object-cover opacity-90 group-hover:scale-110 group-hover:opacity-100 transition-all duration-700" />
                             </button>
                             <div className="absolute inset-0 bg-gradient-to-b from-black/0 to-black/70 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-2 z-10 pointer-events-none">
                                 <button
@@ -984,11 +1038,9 @@ const VisualsStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => v
                             </div>
                         </div>
                         <div className="min-h-0 flex-1 flex items-center justify-center">
-                            <img
+                            <SafeImage
                                 src={previewImage.src}
                                 alt={`Product image ${previewImage.index + 1}`}
-                                referrerPolicy="no-referrer"
-                                crossOrigin="anonymous"
                                 className="max-h-full max-w-full object-contain rounded-xl shadow-[0_30px_80px_rgba(0,0,0,0.6)]"
                             />
                         </div>
@@ -1164,11 +1216,9 @@ const ReviewStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => vo
                         
                         <div className="aspect-[3/4] w-full overflow-hidden bg-black/40 relative">
                             {product.images && product.images.length > 0 ? (
-                                <img
+                                <SafeImage
                                     src={product.images[0]}
                                     alt={product.name}
-                                    referrerPolicy="no-referrer"
-                                    crossOrigin="anonymous"
                                     className="h-full w-full object-cover object-center transition-transform duration-1000 group-hover:scale-110 opacity-90 group-hover:opacity-100"
                                 />
                             ) : (

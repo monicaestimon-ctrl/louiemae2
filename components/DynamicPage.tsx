@@ -4,6 +4,7 @@ import { CustomPage, PageSection } from '../types';
 import { FadeIn } from './FadeIn';
 import { ArrowUpRight, ArrowRight } from 'lucide-react';
 import { useSite } from '../contexts/BlogContext';
+import { SafeImage } from './SafeImage';
 
 interface DynamicPageProps {
   page?: CustomPage;
@@ -140,7 +141,7 @@ export const DynamicSectionRenderer: React.FC<{ section: PageSection, index: num
                 <section className="px-6 md:px-12 mb-24 bg-cream-dark/30 py-20">
                     <div className="container mx-auto flex flex-col md:flex-row items-center gap-12 max-w-6xl">
                         <FadeIn className="flex-1 w-full aspect-square bg-white p-8 md:p-12 relative group">
-                            <img src={product.images[0]} alt={product.name} className="w-full h-full object-contain mix-blend-multiply" />
+                            <SafeImage src={product.images[0]} alt={product.name} className="w-full h-full object-contain mix-blend-multiply" />
                             {product.isNew && <span className="absolute top-6 left-6 text-[9px] uppercase tracking-widest bg-earth text-white px-2 py-1">New Arrival</span>}
                         </FadeIn>
                         <FadeIn className="flex-1 space-y-6 md:pl-10 text-center md:text-left">

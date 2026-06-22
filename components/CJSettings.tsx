@@ -5,6 +5,7 @@ import { Id } from '../convex/_generated/dataModel';
 import { Wifi, RefreshCw, Settings, CheckCircle, XCircle, Loader2, Package, Clock, AlertTriangle, ArrowRight, ExternalLink, Trash2, RotateCcw, Key, Link2, Search } from 'lucide-react';
 import { FadeIn } from './FadeIn';
 import { CJVariantManager } from './CJVariantManager';
+import { SafeImage } from './SafeImage';
 
 export const CJSettings: React.FC = () => {
     const testConnection = useAction(api.cjActions.testConnection);
@@ -417,7 +418,7 @@ export const CJSettings: React.FC = () => {
                                                         {/* Image Preview */}
                                                         <div className="h-16 w-16 rounded-xl bg-black/60 backdrop-blur-md border border-white/10 overflow-hidden flex-shrink-0 relative shadow-inner">
                                                             {product.images && product.images[0] && !failedImages.has(product._id) ? (
-                                                                <img
+                                                                <SafeImage
                                                                     src={product.images[0]}
                                                                     alt=""
                                                                     className="h-full w-full object-cover opacity-90 group-hover/item:opacity-100 transition-opacity"
@@ -679,7 +680,7 @@ export const CJSettings: React.FC = () => {
                                                         {/* Image Preview */}
                                                         <div className="h-16 w-16 rounded-xl bg-black/60 backdrop-blur-sm border border-white/10 overflow-hidden flex-shrink-0 relative shadow-inner">
                                                             {product.images && product.images[0] && !failedImages.has(product._id) ? (
-                                                                <img
+                                                                <SafeImage
                                                                     src={product.images[0]}
                                                                     alt=""
                                                                     className="h-full w-full object-cover opacity-90 group-hover/item:opacity-100 transition-opacity"

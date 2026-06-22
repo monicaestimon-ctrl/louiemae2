@@ -1,6 +1,7 @@
 import React from 'react';
 import { Minus, Plus, Trash2 } from 'lucide-react';
 import { useCart, CartItem as CartItemType } from '../../contexts/CartContext';
+import { SafeImage } from '../SafeImage';
 
 interface CartItemProps {
     item: CartItemType;
@@ -20,7 +21,7 @@ export const CartItem: React.FC<CartItemProps> = ({ item }) => {
         <div className="flex gap-4 py-4 border-b border-earth/10">
             {/* Product Image */}
             <div className="w-20 h-20 bg-cream flex-shrink-0 overflow-hidden">
-                <img
+                <SafeImage
                     src={displayImage}
                     alt={product.name}
                     className="w-full h-full object-cover"

@@ -3,6 +3,7 @@ import { Star, Wand2, ExternalLink, Check } from 'lucide-react';
 import { AliExpressProduct } from '../../services/aliexpressService';
 import { CollectionType } from '../../types';
 import { FadeIn } from '../FadeIn';
+import { SafeImage } from '../SafeImage';
 
 export interface ImportableProduct extends AliExpressProduct {
     selected: boolean;
@@ -87,11 +88,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 {/* Visible Content */}
                 <div className="relative">
                     <div className="h-72 overflow-hidden bg-cream/10">
-                        <img
+                        <SafeImage
                             src={product.images[0] || 'https://via.placeholder.com/160'}
                             alt={product.name}
-                            referrerPolicy="no-referrer"
-                            crossOrigin="anonymous"
                             className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                         />
                     </div>
