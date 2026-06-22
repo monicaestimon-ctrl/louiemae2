@@ -196,6 +196,8 @@ export const aliexpressService = {
                     source: p.source || '1688',
                     // Structured product attributes for AI description generation
                     sourceProperties: p.sourceProperties || undefined,
+                    rawSourceDescription: p.rawSourceDescription || p.description || undefined,
+                    rawHtmlDescription: p.rawHtmlDescription || undefined,
                 } as SourceProduct)),
                 totalCount: data.totalCount || data.products?.length || 0,
                 currentPage: data.currentPage ?? page,

@@ -23,6 +23,7 @@ const COLOR_TERMS = [
     'blue', 'navy', 'pink', 'rose', 'red', 'yellow', 'gold', 'brass', 'natural',
     'oak', 'walnut', 'gray', 'grey', 'charcoal',
 ];
+const DESIGN_DETAIL_PATTERN = /\b(ruffle|scalloped|ribbed|quilted|woven|drawer|door|button|pocket|gathered|pleated|floral|striped|bow|lace|embroidered|sleeve|neckline|collar|curved|rounded|low-profile|cushion|tufted|tiered|smocked|ruffled|storage|cabinet|shelf)\b/i;
 
 function evidence(source: EvidenceRef['source'], value: string, field?: string): EvidenceRef {
     return { source, field, value, excerpt: value.slice(0, 180) };
@@ -94,6 +95,15 @@ function textFacts(text: string, terms: string[], group: string, label: string):
     return terms
         .filter(term => lower.includes(term.toLowerCase()))
         .map(term => fact(group, label, term, 'source_text', 0.7, [evidence('description', term)]));
+}
+
+function sourceDetailFacts(text: string): FactValue[] {
+    return text
+        .split(/(?<=[.!?])\s+|\s+[•·]\s+|\n+/)
+        .map(part => part.replace(/\s+/g, ' ').trim())
+        .filter(part => part.length >= 18 && part.length <= 180 && DESIGN_DETAIL_PATTERN.test(part))
+        .slice(0, 8)
+        .map(part => fact('source-detail', 'Details', part, 'source_text', 0.72, [evidence('description', part)]));
 }
 
 function variantFacts(snapshot: SourceProductSnapshot): FactValue[] {
@@ -179,8 +189,10 @@ export function extractNormalizedProductFacts(snapshot: SourceProductSnapshot & 
     const variants = variantFacts(snapshot);
     const visuals = visualFacts(snapshot);
     const designDetails = [
+        ...sourceDetailFacts(combinedText),
         ...visuals,
         ...textFacts(combinedText, ['ruffle', 'scalloped', 'ribbed', 'quilted', 'woven', 'drawer', 'door', 'button', 'pocket'], 'design', 'Design'),
+        ...attrFacts(attrs, ['style', 'design', 'feature', 'decoration', 'craft', 'shape'], 'design', 'Design'),
     ];
     const colors = colorsFromTextAndVariants(snapshot, combinedText);
     const dimensions = [

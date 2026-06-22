@@ -314,12 +314,21 @@ async function scrape1688(productId: string, originalUrl?: string) {
         // ── Collect description/marketing images from ALL available sources ──
 
         const descriptionImages: string[] = [];
+        const descriptionHtmlCandidates: string[] = [];
+
+        const pushDescriptionHtml = (html: string) => {
+            if (typeof html !== 'string' || html.length <= 50) return;
+            if (!descriptionHtmlCandidates.includes(html)) {
+                descriptionHtmlCandidates.push(html.slice(0, 20000));
+            }
+        };
 
         // Source 1: Description block from BatchGetItemFullInfo (blockList=Description)
         const descBlock = item.Description || data.Result?.Description || data.Description;
         if (descBlock) {
             console.log(`[Scraper] Found Description block, type: ${typeof descBlock}`);
             if (typeof descBlock === 'string' && descBlock.length > 50) {
+                pushDescriptionHtml(descBlock);
                 const extracted = extractImagesFromHtml(descBlock);
                 extracted.forEach(pushImage);
                 console.log(`[Scraper] Source 1 (Description string): ${extracted.length} images`);
@@ -327,6 +336,7 @@ async function scrape1688(productId: string, originalUrl?: string) {
                 // Extract HTML from any nested shape (Html, Content.Html, ItemDescription.Html, etc.)
                 const htmlCandidates = getHtmlCandidates(descBlock);
                 for (const html of htmlCandidates) {
+                    pushDescriptionHtml(html);
                     const extracted = extractImagesFromHtml(html);
                     extracted.forEach(pushImage);
                     console.log(`[Scraper] Source 1 (Description nested HTML): ${extracted.length} images from ${html.length} chars`);
@@ -353,6 +363,7 @@ async function scrape1688(productId: string, originalUrl?: string) {
                 });
                 console.log(`[Scraper] Source 2 (item.${key}): ${val.length} items`);
             } else if (typeof val === 'string' && val.length > 50) {
+                pushDescriptionHtml(val);
                 const extracted = extractImagesFromHtml(val);
                 extracted.forEach(pushImage);
                 console.log(`[Scraper] Source 2 (item.${key} HTML): ${extracted.length} images`);
@@ -360,6 +371,7 @@ async function scrape1688(productId: string, originalUrl?: string) {
                 // Handle object-shaped values (e.g. { Html: "..." })
                 const htmlCandidates = getHtmlCandidates(val);
                 for (const html of htmlCandidates) {
+                    pushDescriptionHtml(html);
                     const extracted = extractImagesFromHtml(html);
                     extracted.forEach(pushImage);
                     console.log(`[Scraper] Source 2 (item.${key} nested HTML): ${extracted.length} images`);
@@ -377,6 +389,7 @@ async function scrape1688(productId: string, originalUrl?: string) {
                 // PRIMARY: OTAPI returns description HTML at OtapiItemDescription.ItemDescription
                 const otapiDescHtml = descData?.OtapiItemDescription?.ItemDescription;
                 if (typeof otapiDescHtml === 'string' && otapiDescHtml.length > 50) {
+                    pushDescriptionHtml(otapiDescHtml);
                     const extracted = extractImagesFromHtml(otapiDescHtml);
                     extracted.forEach(pushImage);
                     console.log(`[Scraper] Source 3 (OtapiItemDescription.ItemDescription): ${extracted.length} images from ${otapiDescHtml.length} char HTML`);
@@ -398,6 +411,7 @@ async function scrape1688(productId: string, originalUrl?: string) {
                     for (const html of htmlStrings) {
                         if (seenHtml.has(html)) continue;
                         seenHtml.add(html);
+                        pushDescriptionHtml(html);
                         const extracted = extractImagesFromHtml(html);
                         extracted.forEach(pushImage);
                         console.log(`[Scraper] Source 3 fallback: ${extracted.length} images from ${html.length} char HTML`);
@@ -426,12 +440,23 @@ async function scrape1688(productId: string, originalUrl?: string) {
             console.warn(`[Scraper] GetItemDescription returned null (timeout or network error)`);
         }
 
+        const rawHtmlDescription = descriptionHtmlCandidates.join('\n').slice(0, 40000);
+        const rawDescription = rawHtmlDescription
+            .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+            .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 4000);
+
         console.log(`[Scraper] Total description/marketing images collected: ${descriptionImages.length}`);
 
         return {
             source: '1688' as const,
             data: item,
             descriptionImages,
+            rawDescription,
+            rawHtmlDescription,
             apiType: 'otapi-1688',
         };
 

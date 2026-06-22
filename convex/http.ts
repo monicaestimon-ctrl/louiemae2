@@ -1141,6 +1141,8 @@ interface NormalizedProduct {
     shipping?: string;
     /** Structured product attributes extracted from OTAPI FeaturedValues / Properties. */
     sourceProperties?: Record<string, string>;
+    rawSourceDescription?: string;
+    rawHtmlDescription?: string;
     tierPricing?: Array<{ minQty: number; price: number }>;
     variants?: Array<{
         id: string;
@@ -1152,7 +1154,7 @@ interface NormalizedProduct {
 }
 
 // Shared OTAPI helpers — canonical extraction logic lives in lib/otapiHelpers.ts
-import { getOtapiUsdPrice as getUsdPrice, getOtapiFeaturedValue as getFeaturedValue, extractOtapiSourceProperties, cleanOtapiDescription } from '../lib/otapiHelpers';
+import { getOtapiUsdPrice as getUsdPrice, getOtapiFeaturedValue as getFeaturedValue, extractOtapiSourceProperties, cleanOtapiDescription, extractOtapiDescriptionHtml } from '../lib/otapiHelpers';
 
 // Normalize OTAPI 1688 search results to NormalizedProduct[]
 /** Result shape returned by normalizeOtapi1688. */
@@ -1228,6 +1230,7 @@ function normalizeOtapi1688(data: any): OtapiNormalizedResult {
 
         // Description: clean text from item.Description if available
         const description = cleanOtapiDescription(item) || undefined;
+        const rawHtmlDescription = extractOtapiDescriptionHtml(item);
 
         // URL
         const url = item.TaobaoItemUrl || item.ExternalItemUrl || '';
@@ -1280,6 +1283,8 @@ function normalizeOtapi1688(data: any): OtapiNormalizedResult {
             rating: rating,
             sales: sales,
             sourceProperties: Object.keys(sourceProperties).length > 0 ? sourceProperties : undefined,
+            rawSourceDescription: description,
+            rawHtmlDescription: rawHtmlDescription || undefined,
             tierPricing: tierPricing.length > 0 ? tierPricing : undefined,
             variants: variants.length > 0 ? variants : undefined,
         };

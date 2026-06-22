@@ -237,6 +237,12 @@ export const MOJIBAKE_REPLACEMENTS: Record<string, string> = {
     'Ã—': 'x',
 };
 
+const PLACEHOLDER_SOURCE_DESCRIPTIONS = [
+    /^imported\s+from\s+1688\.com$/i,
+    /^imported\s+from\s+source$/i,
+    /^source\s+listing$/i,
+];
+
 const PROMPT_INJECTION_PATTERNS = [
     /ignore\s+(all\s+)?previous\s+instructions/gi,
     /write\s+a\s+five[-\s]?star\s+review/gi,
@@ -361,6 +367,11 @@ export function sanitizeSourceText(input = '', maxChars = 20000): { text: string
     return { text, warnings: [...new Set(warnings)] };
 }
 
+export function isPlaceholderSourceText(input?: string): boolean {
+    const text = sanitizeSourceText(input || '', 500).text;
+    return PLACEHOLDER_SOURCE_DESCRIPTIONS.some(pattern => pattern.test(text));
+}
+
 export function inferSourceDomain(url?: string): string | undefined {
     if (!url) return undefined;
     try {
@@ -451,7 +462,10 @@ export function buildSourceProductSnapshot(input: {
     const priceAmount = typeof input.price === 'number' ? input.price : input.price?.amount;
     const priceCurrency = typeof input.price === 'object' ? input.price.currency : input.currency;
     const priceRaw = typeof input.price === 'object' ? input.price.raw : undefined;
-    const rawDescription = sanitizeSourceText(input.rawDescription || input.description || '').text;
+    const descriptionInput = input.rawDescription || input.description || '';
+    const rawDescription = isPlaceholderSourceText(descriptionInput)
+        ? ''
+        : sanitizeSourceText(descriptionInput).text;
     const rawHtmlDescription = sanitizeSourceText(input.htmlDescription || '').text;
     const attributes = Array.isArray(input.attributes)
         ? input.attributes

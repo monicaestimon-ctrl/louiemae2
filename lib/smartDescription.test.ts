@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DESCRIPTION_SEPARATOR, coerceGeneratedDescriptionDraft, formatDescription, sanitizeSourceText } from './smartDescription';
+import { DESCRIPTION_SEPARATOR, coerceGeneratedDescriptionDraft, formatDescription, isPlaceholderSourceText, sanitizeSourceText } from './smartDescription';
 import { normalizeSourceProduct } from '../convex/sourceProductNormalizer';
 import { extractNormalizedProductFacts } from '../convex/productFacts';
 import { LOUIE_MAE_BRAND_VOICE } from '../convex/brandVoice';
@@ -52,6 +52,11 @@ describe('smart description sanitizer', () => {
 
     expect(draft).toBeUndefined();
   });
+
+  it('identifies source placeholder copy as unusable product description', () => {
+    expect(isPlaceholderSourceText('Imported from 1688.com')).toBe(true);
+    expect(isPlaceholderSourceText('Soft ruffle romper with gathered bodice')).toBe(false);
+  });
 });
 
 describe('source product normalization', () => {
@@ -85,6 +90,23 @@ describe('source product normalization', () => {
     expect(snapshot.images[0]?.url).toBe('https://example.com/one.jpg');
     expect(snapshot.attributes?.some((attr) => attr.key === 'material' && attr.value === 'cotton')).toBe(true);
     expect(snapshot.attributes?.some((attr) => attr.key === 'Care' && attr.value === 'Hand wash cold')).toBe(true);
+  });
+
+  it('ignores placeholder descriptions and uses real detail HTML as source context', () => {
+    const snapshot = normalizeSourceProduct({
+      sourceUrl: 'https://detail.1688.com/offer/123.html',
+      rawTitle: 'Ruffle Baby Romper',
+      rawDescription: 'Imported from 1688.com',
+      rawHtmlDescription: '<section><p>Ruffle straps with gathered bodice and floral print.</p></section>',
+      images: ['https://example.com/romper.jpg'],
+      categoryHints: { selectedCollection: 'kids' },
+    });
+    const facts = extractNormalizedProductFacts(snapshot);
+
+    expect(snapshot.rawDescription).toBe('');
+    expect(snapshot.rawHtmlDescription).toContain('Ruffle straps');
+    expect(facts.sourceQuality.score).toBeGreaterThanOrEqual(50);
+    expect(facts.designDetails.some((fact) => /ruffle/i.test(fact.value))).toBe(true);
   });
 });
 

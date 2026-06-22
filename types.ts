@@ -46,6 +46,9 @@ export interface Product {
   // Currency conversion metadata
   sourceCurrency?: string;          // Original currency code (e.g. 'GBP', 'CNY')
   sourcePriceOriginal?: number;     // Original price in source currency
+  rawSourceDescription?: string;    // Cleaned source detail text for smart descriptions
+  rawHtmlDescription?: string;      // Raw source detail HTML for smart descriptions
+  descriptionImages?: string[];     // Source detail/marketing images for smart descriptions
   // Multi-category
   subcategory?: string;           // Specific subcategory (e.g., "Skirts")
   smartDescription?: {
@@ -265,6 +268,10 @@ export interface SourceProduct extends Product {
   source?: ProductSource;
   /** Structured product attributes extracted from OTAPI (material, season, style, etc.) */
   sourceProperties?: Record<string, string>;
+  /** Cleaned source listing/detail text used for smart description generation. */
+  rawSourceDescription?: string;
+  /** Raw source listing/detail HTML used for source normalization and image/detail context. */
+  rawHtmlDescription?: string;
 }
 
 /** @deprecated Use SourceProduct instead */

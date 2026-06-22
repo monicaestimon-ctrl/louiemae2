@@ -49,8 +49,47 @@ export interface OtapiExtractedFields {
     price: number;
     originalPrice: number;
     description: string;
+    rawHtmlDescription?: string;
     images: string[];
     sourceUrl: string;
+}
+
+const PLACEHOLDER_DESCRIPTION_PATTERN = /^(imported\s+from\s+1688\.com|imported\s+from\s+source|source\s+listing)$/i;
+
+export function isPlaceholderSourceDescription(description?: string): boolean {
+    return PLACEHOLDER_DESCRIPTION_PATTERN.test(String(description || '').trim());
+}
+
+function stripHtml(input = ''): string {
+    return input.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function getOtapiHtmlCandidates(node: any): string[] {
+    if (!node) return [];
+    return [
+        node?.Html,
+        node?.Description,
+        node?.Content,
+        node?.Content?.Html,
+        node?.Content?.Description,
+        node?.ItemDescription,
+        node?.ItemDescription?.Html,
+        node?.ItemDescription?.Description,
+        node?.OtapiItemDescription?.ItemDescription,
+        node?.OtapiItemDescription?.Html,
+        node?.OtapiItemDescription?.Description,
+    ].filter((value): value is string => typeof value === 'string' && value.length > 50);
+}
+
+export function extractOtapiDescriptionHtml(item: any, maxLength = 20000): string {
+    const candidates = [
+        ...getOtapiHtmlCandidates(item),
+        ...getOtapiHtmlCandidates(item?.Description),
+        ...getOtapiHtmlCandidates(item?.ExternalDescription),
+        ...getOtapiHtmlCandidates(item?.ItemDescription),
+    ];
+    const html = candidates.find(candidate => stripHtml(candidate).length > 20) || '';
+    return html.slice(0, maxLength);
 }
 
 /**
@@ -69,7 +108,8 @@ export function extractOtapiFields(item: any, fallbackUrl = ''): OtapiExtractedF
         name: item?.Title || item?.OriginalTitle || 'Unknown Product',
         price,
         originalPrice,
-        description: item?.Description || 'Imported from 1688.com',
+        description: cleanOtapiDescription(item),
+        rawHtmlDescription: extractOtapiDescriptionHtml(item),
         images: extractOtapiImages(item),
         sourceUrl: item?.TaobaoItemUrl || item?.ExternalItemUrl || fallbackUrl,
     };
@@ -143,8 +183,8 @@ export function extractOtapiSourceProperties(item: any): Record<string, string> 
  * Returns empty string if no meaningful description available.
  */
 export function cleanOtapiDescription(item: any, maxLength = 1000): string {
-    if (typeof item.Description === 'string' && item.Description.length > 10) {
-        return item.Description.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
-    }
-    return '';
+    const html = extractOtapiDescriptionHtml(item, maxLength * 4);
+    const text = stripHtml(html || (typeof item.Description === 'string' ? item.Description : ''));
+    if (!text || text.length <= 10 || isPlaceholderSourceDescription(text)) return '';
+    return text.slice(0, maxLength);
 }
