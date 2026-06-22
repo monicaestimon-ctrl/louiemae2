@@ -17,6 +17,7 @@ import { extractNormalizedProductFacts } from "./productFacts";
 import {
     buildSafeFallbackDescription,
     isRepairableValidationIssue,
+    normalizeDraftLabelsForAvailableFacts,
     validateGeneratedDescription,
 } from "./descriptionValidators";
 import {
@@ -168,6 +169,7 @@ export const generateSmartDescription = action({
                     similarDescriptions,
                 });
             } else {
+                finalDraft = normalizeDraftLabelsForAvailableFacts(finalDraft, facts);
                 validation = validateGeneratedDescription({
                     draft: finalDraft,
                     facts,
@@ -190,7 +192,7 @@ export const generateSmartDescription = action({
                 warnings.push(...repairedResult.warnings);
                 const repairedDraft = coerceGeneratedDescriptionDraft(repairedResult.value);
                 if (repairedDraft) {
-                    finalDraft = repairedDraft;
+                    finalDraft = normalizeDraftLabelsForAvailableFacts(repairedDraft, facts);
                     rawModelResponse = repairedResult.raw || rawModelResponse;
                     repaired = true;
                     validation = validateGeneratedDescription({
