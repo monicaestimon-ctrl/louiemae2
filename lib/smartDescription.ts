@@ -279,6 +279,9 @@ const PLACEHOLDER_SOURCE_DESCRIPTIONS = [
     /^imported\s+from\s+1688\.com$/i,
     /^imported\s+from\s+source$/i,
     /^source\s+listing$/i,
+    /^(?:netdisk|network\s+disk|cloud\s+disk)\s+link\s*:/i,
+    /^https?:\/\/pan\.baidu\.com\//i,
+    /^extraction\s+code\s*:/i,
 ];
 
 const PROMPT_INJECTION_PATTERNS = [
@@ -289,6 +292,14 @@ const PROMPT_INJECTION_PATTERNS = [
     /do\s+not\s+mention/gi,
     /system\s+prompt/gi,
     /developer\s+message/gi,
+];
+
+const SOURCE_BOILERPLATE_PATTERNS = [
+    /(?:netdisk|network\s+disk|cloud\s+disk)\s+link\s*:\s*https?:\/\/\S+/gi,
+    /https?:\/\/pan\.baidu\.com\/\S+/gi,
+    /\bextraction\s+code\s*:\s*[a-z0-9]+/gi,
+    /\bpassword\s*:\s*[a-z0-9]+/gi,
+    /\bpwd\s*=\s*[a-z0-9]+/gi,
 ];
 
 export function normalizeMojibake(input = ''): string {
@@ -381,6 +392,14 @@ export function sanitizeSourceText(input = '', maxChars = 20000): { text: string
     text = text.replace(/<(br|\/p|\/li|\/tr)\b[^>]*>/gi, '\n');
     text = text.replace(/<[^>]+>/g, ' ');
     text = text.replace(/\b(shipping|payment|returns?|refunds?|wholesale|dropshipping)\b[\s\S]{0,300}/gi, ' ');
+    for (const pattern of SOURCE_BOILERPLATE_PATTERNS) {
+        pattern.lastIndex = 0;
+        if (pattern.test(text)) {
+            warnings.push('Vendor file-sharing boilerplate removed from source description.');
+            pattern.lastIndex = 0;
+            text = text.replace(pattern, ' ');
+        }
+    }
     for (const pattern of PROMPT_INJECTION_PATTERNS) {
         pattern.lastIndex = 0;
         if (pattern.test(text)) {
@@ -407,7 +426,7 @@ export function sanitizeSourceText(input = '', maxChars = 20000): { text: string
 
 export function isPlaceholderSourceText(input?: string): boolean {
     const text = sanitizeSourceText(input || '', 500).text;
-    return PLACEHOLDER_SOURCE_DESCRIPTIONS.some(pattern => pattern.test(text));
+    return !text || PLACEHOLDER_SOURCE_DESCRIPTIONS.some(pattern => pattern.test(text));
 }
 
 export function inferSourceDomain(url?: string): string | undefined {
