@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { createOrderV2, formatCjApiError } from "./cjApiClient";
 import { getCjAutomationConfig } from "../lib/cjAutomation";
 import { calculateOrderPricingReconciliation } from "../lib/pricing";
 
@@ -322,7 +323,7 @@ interface CjOrderRequest {
     logisticName: string; // Shipping method
     fromCountryCode: string;
     products: CjOrderProduct[];
-    payType?: number; // 2 = balance payment, 3 = no balance payment
+    payType?: 1 | 2 | 3; // 1 = payment URL, 2 = balance payment, 3 = create only
     remark?: string;
 }
 
@@ -444,33 +445,29 @@ export const createCjOrder = internalAction({
                 cjRawPricingResponse: freightQuote?.rawResponse,
             });
 
-            const response = await fetch(`${CJ_API_BASE}/shopping/order/createOrderV2`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "CJ-Access-Token": accessToken,
-                },
-                body: JSON.stringify(cjOrder),
-            });
+            const createOrderResult = await createOrderV2(accessToken, cjOrder);
 
-            const data = await response.json();
-
-            if (data.result && data.data?.orderId) {
+            if (createOrderResult.ok && createOrderResult.data?.orderId) {
                 // Success! Update order with CJ order ID
                 await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
                     orderId: args.orderId,
                     cjStatus: "confirmed",
-                    cjOrderId: data.data.orderId,
+                    cjOrderId: createOrderResult.data.orderId,
                     cjAutomationMode: automationConfig.mode,
                     cjFulfillmentStep: "order_created",
                     cjPaymentStatus: "manual_payment_required",
+                    cjShipmentOrderId: createOrderResult.data.shipmentOrderId,
+                    cjPaymentUrl: createOrderResult.data.cjPayUrl,
+                    cjPaymentAmount: toFiniteNumber(createOrderResult.data.actualPayment ?? createOrderResult.data.orderAmount),
                 });
 
-                console.log(`CJ Order created: ${data.data.orderId}`);
-                return { success: true, cjOrderId: data.data.orderId };
+                console.log(`CJ Order created: ${createOrderResult.data.orderId}`);
+                return { success: true, cjOrderId: createOrderResult.data.orderId };
             } else {
                 // CJ API returned an error
-                const errorMsg = data.message || "Unknown CJ API error";
+                const errorMsg = "error" in createOrderResult
+                    ? formatCjApiError(createOrderResult.error)
+                    : "CJ order creation succeeded but did not return an orderId";
                 await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
                     orderId: args.orderId,
                     cjStatus: "failed",
