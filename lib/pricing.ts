@@ -141,6 +141,20 @@ export const calculateRetailFromLandedCost = (
   return charmRoundTo99(Math.max(0, landedCost || 0) * retailMultiplier);
 };
 
+export const calculateRetailFromProductCost = (
+  productCost: number,
+  shippingCost: number,
+  fees: PricingFees = {},
+  retailMultiplier = DEFAULT_RETAIL_MULTIPLIER,
+): number => {
+  const feesTotal = calculateLandedCost(0, 0, fees);
+  return charmRoundTo99(
+    Math.max(0, productCost || 0) * retailMultiplier +
+      Math.max(0, shippingCost || 0) +
+      feesTotal,
+  );
+};
+
 export const calculatePricingBreakdown = (args: {
   sourcePriceUsd?: number;
   collection?: string;
@@ -171,7 +185,7 @@ export const calculatePricingBreakdown = (args: {
 
   const landedCost = calculateLandedCost(productCost, shippingCost, args.fees);
   const retailMultiplier = args.retailMultiplier ?? DEFAULT_RETAIL_MULTIPLIER;
-  const suggestedRetailPrice = calculateRetailFromLandedCost(landedCost, retailMultiplier);
+  const suggestedRetailPrice = calculateRetailFromProductCost(productCost, shippingCost, args.fees, retailMultiplier);
   const currentRetailPrice = roundMoney(args.currentRetailPrice ?? suggestedRetailPrice);
   const estimatedProfit = roundMoney(currentRetailPrice - landedCost);
   const marginPercent = currentRetailPrice > 0
