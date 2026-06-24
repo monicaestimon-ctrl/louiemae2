@@ -38,6 +38,46 @@ export const updateOrderCjStatus = internalMutation({
         cjEstimatedProfit: v.optional(v.number()),
         cjPricingWarnings: v.optional(v.array(v.string())),
         cjRawPricingResponse: v.optional(v.any()),
+        cjAutomationMode: v.optional(v.union(
+            v.literal("create_only"),
+            v.literal("manual_payment"),
+            v.literal("balance_payment")
+        )),
+        cjFulfillmentStep: v.optional(v.union(
+            v.literal("not_started"),
+            v.literal("creating_order"),
+            v.literal("order_created"),
+            v.literal("adding_to_cart"),
+            v.literal("cart_added"),
+            v.literal("confirming_cart"),
+            v.literal("cart_confirmed"),
+            v.literal("generating_payment_order"),
+            v.literal("payment_order_generated"),
+            v.literal("paying_balance"),
+            v.literal("payment_submitted"),
+            v.literal("paid"),
+            v.literal("processing"),
+            v.literal("failed")
+        )),
+        cjPaymentStatus: v.optional(v.union(
+            v.literal("not_started"),
+            v.literal("manual_payment_required"),
+            v.literal("payment_order_generated"),
+            v.literal("balance_payment_ready"),
+            v.literal("balance_payment_submitted"),
+            v.literal("paid"),
+            v.literal("failed"),
+            v.literal("skipped")
+        )),
+        cjParentOrderId: v.optional(v.string()),
+        cjShipmentOrderId: v.optional(v.string()),
+        cjPayId: v.optional(v.string()),
+        cjPaymentUrl: v.optional(v.string()),
+        cjPaymentAmount: v.optional(v.number()),
+        cjAutoPaymentAttemptedAt: v.optional(v.string()),
+        cjAutoPaymentError: v.optional(v.string()),
+        cjFulfillmentRetryCount: v.optional(v.number()),
+        cjFulfillmentIdempotencyKey: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
         const updateData: Record<string, any> = {
@@ -61,6 +101,21 @@ export const updateOrderCjStatus = internalMutation({
             updateData.cjRawPricingResponse = args.cjRawPricingResponse;
             updateData.cjPricingUpdatedAt = new Date().toISOString();
         }
+        if (args.cjAutomationMode) updateData.cjAutomationMode = args.cjAutomationMode;
+        if (args.cjFulfillmentStep) {
+            updateData.cjFulfillmentStep = args.cjFulfillmentStep;
+            updateData.cjFulfillmentLastStepAt = new Date().toISOString();
+        }
+        if (args.cjPaymentStatus) updateData.cjPaymentStatus = args.cjPaymentStatus;
+        if (args.cjParentOrderId) updateData.cjParentOrderId = args.cjParentOrderId;
+        if (args.cjShipmentOrderId) updateData.cjShipmentOrderId = args.cjShipmentOrderId;
+        if (args.cjPayId) updateData.cjPayId = args.cjPayId;
+        if (args.cjPaymentUrl) updateData.cjPaymentUrl = args.cjPaymentUrl;
+        if (hasFiniteNumber(args.cjPaymentAmount)) updateData.cjPaymentAmount = args.cjPaymentAmount;
+        if (args.cjAutoPaymentAttemptedAt) updateData.cjAutoPaymentAttemptedAt = args.cjAutoPaymentAttemptedAt;
+        if (args.cjAutoPaymentError !== undefined) updateData.cjAutoPaymentError = args.cjAutoPaymentError || undefined;
+        if (hasFiniteNumber(args.cjFulfillmentRetryCount)) updateData.cjFulfillmentRetryCount = args.cjFulfillmentRetryCount;
+        if (args.cjFulfillmentIdempotencyKey) updateData.cjFulfillmentIdempotencyKey = args.cjFulfillmentIdempotencyKey;
 
         await ctx.db.patch(args.orderId, updateData);
     },

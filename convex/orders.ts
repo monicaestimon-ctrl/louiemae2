@@ -48,6 +48,9 @@ export const createOrder = mutation({
             status: "paid",
             // Set CJ status to pending if there are CJ products to fulfill
             cjStatus: hasCjProducts ? "pending" : undefined,
+            cjFulfillmentStep: hasCjProducts ? "not_started" : undefined,
+            cjPaymentStatus: hasCjProducts ? "not_started" : undefined,
+            cjFulfillmentRetryCount: hasCjProducts ? 0 : undefined,
             createdAt: now,
             updatedAt: now,
         });
@@ -120,6 +123,12 @@ export const resetCjStatus = mutation({
         await ctx.db.patch(args.orderId, {
             cjStatus: "pending",
             cjError: undefined,
+            cjFulfillmentStep: "not_started",
+            cjPaymentStatus: "not_started",
+            cjAutoPaymentError: undefined,
+            cjFulfillmentRetryCount: 0,
+            cjFulfillmentIdempotencyKey: undefined,
+            cjFulfillmentLastStepAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         });
     },

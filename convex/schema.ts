@@ -298,6 +298,47 @@ export default defineSchema({
         )),
         cjError: v.optional(v.string()), // Error message if CJ order fails
         cjLastSyncAt: v.optional(v.string()), // Last time we synced with CJ
+        cjAutomationMode: v.optional(v.union(
+            v.literal("create_only"),
+            v.literal("manual_payment"),
+            v.literal("balance_payment")
+        )),
+        cjFulfillmentStep: v.optional(v.union(
+            v.literal("not_started"),
+            v.literal("creating_order"),
+            v.literal("order_created"),
+            v.literal("adding_to_cart"),
+            v.literal("cart_added"),
+            v.literal("confirming_cart"),
+            v.literal("cart_confirmed"),
+            v.literal("generating_payment_order"),
+            v.literal("payment_order_generated"),
+            v.literal("paying_balance"),
+            v.literal("payment_submitted"),
+            v.literal("paid"),
+            v.literal("processing"),
+            v.literal("failed")
+        )),
+        cjFulfillmentLastStepAt: v.optional(v.string()),
+        cjFulfillmentRetryCount: v.optional(v.number()),
+        cjFulfillmentIdempotencyKey: v.optional(v.string()),
+        cjPaymentStatus: v.optional(v.union(
+            v.literal("not_started"),
+            v.literal("manual_payment_required"),
+            v.literal("payment_order_generated"),
+            v.literal("balance_payment_ready"),
+            v.literal("balance_payment_submitted"),
+            v.literal("paid"),
+            v.literal("failed"),
+            v.literal("skipped")
+        )),
+        cjParentOrderId: v.optional(v.string()),
+        cjShipmentOrderId: v.optional(v.string()),
+        cjPayId: v.optional(v.string()),
+        cjPaymentUrl: v.optional(v.string()),
+        cjPaymentAmount: v.optional(v.number()),
+        cjAutoPaymentAttemptedAt: v.optional(v.string()),
+        cjAutoPaymentError: v.optional(v.string()),
         cjQuotedProductCost: v.optional(v.number()),
         cjQuotedShippingCost: v.optional(v.number()),
         cjQuotedTaxesFee: v.optional(v.number()),
@@ -329,7 +370,9 @@ export default defineSchema({
     }).index("by_session", ["stripeSessionId"])
         .index("by_email", ["customerEmail"])
         .index("by_cj_status", ["cjStatus"])
-        .index("by_cj_order_id", ["cjOrderId"]),
+        .index("by_cj_order_id", ["cjOrderId"])
+        .index("by_cj_payment_status", ["cjPaymentStatus"])
+        .index("by_cj_fulfillment_step", ["cjFulfillmentStep"]),
 
     // AliExpress product cache - stores fetched products for faster access
     aliexpressCache: defineTable({
