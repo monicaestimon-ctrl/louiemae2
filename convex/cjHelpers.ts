@@ -4,11 +4,79 @@ import { internal } from "./_generated/api";
 import { calculatePricingBreakdown } from "../lib/pricing";
 
 const hasFiniteNumber = (value: unknown): boolean => typeof value === "number" && Number.isFinite(value);
+const CJ_RESERVATION_TTL_MS = 10 * 60 * 1000;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CJ DROPSHIPPING DATABASE HELPERS
 // These must be in a non-Node.js file for Convex to allow queries/mutations
 // ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Get an order by ID for internal action orchestration.
+ */
+export const getOrderByIdInternal = internalQuery({
+    args: {
+        orderId: v.id("orders"),
+    },
+    handler: async (ctx, args) => {
+        return await ctx.db.get(args.orderId);
+    },
+});
+
+export const reserveCjFulfillmentAttempt = internalMutation({
+    args: {
+        orderId: v.id("orders"),
+        automationMode: v.union(
+            v.literal("create_only"),
+            v.literal("manual_payment"),
+            v.literal("balance_payment")
+        ),
+        idempotencyKey: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const order = await ctx.db.get(args.orderId);
+        if (!order) {
+            return { reserved: false, reason: "not_found" as const, order: null };
+        }
+
+        if (order.cjPaymentStatus === "paid" || order.cjFulfillmentStep === "paid") {
+            return { reserved: false, reason: "terminal" as const, order };
+        }
+
+        const lastStepAt = order.cjFulfillmentLastStepAt ? new Date(order.cjFulfillmentLastStepAt).getTime() : 0;
+        const hasFreshActiveReservation =
+            order.cjFulfillmentIdempotencyKey &&
+            order.cjFulfillmentIdempotencyKey !== args.idempotencyKey &&
+            order.cjStatus !== "failed" &&
+            order.cjPaymentStatus !== "manual_payment_required" &&
+            order.cjPaymentStatus !== "balance_payment_submitted" &&
+            order.cjFulfillmentStep !== "payment_submitted" &&
+            Number.isFinite(lastStepAt) &&
+            Date.now() - lastStepAt < CJ_RESERVATION_TTL_MS;
+
+        if (hasFreshActiveReservation) {
+            return { reserved: false, reason: "in_progress" as const, order };
+        }
+
+        const now = new Date().toISOString();
+        const nextStep =
+            order.cjOrderId && (!order.cjFulfillmentStep || order.cjFulfillmentStep === "creating_order")
+                ? "order_created"
+                : order.cjFulfillmentStep || "creating_order";
+        const reservationPatch = {
+            cjAutomationMode: args.automationMode,
+            cjFulfillmentIdempotencyKey: args.idempotencyKey,
+            cjFulfillmentStep: nextStep,
+            cjFulfillmentLastStepAt: now,
+            cjStatus: order.cjStatus || "pending",
+            updatedAt: now,
+        } as const;
+
+        await ctx.db.patch(args.orderId, reservationPatch);
+
+        return { reserved: true, reason: "reserved" as const, order: { ...order, ...reservationPatch } };
+    },
+});
 
 /**
  * Update order CJ status and error
@@ -64,6 +132,7 @@ export const updateOrderCjStatus = internalMutation({
             v.literal("manual_payment_required"),
             v.literal("payment_order_generated"),
             v.literal("balance_payment_ready"),
+            v.literal("balance_payment_attempting"),
             v.literal("balance_payment_submitted"),
             v.literal("paid"),
             v.literal("failed"),
