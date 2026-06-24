@@ -56,12 +56,12 @@ If automatic balance payment is disabled, the app should still create the CJ ord
 - [x] Update imported/direct URL price estimation so source price is multiplied by `1.4` for CJ cost estimation.
 - [x] Update retail pricing so shipping is added after product markup instead of being multiplied.
 - [x] Add pricing tests that lock the requested formula.
-- [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
+- [x] Open PR, run CodeRabbit CLI, resolve issues, merge.
 
 ### Phase 1 - Fulfillment Configuration And State
 
-- [ ] Add explicit CJ automation environment flags.
-- [ ] Add typed fulfillment state fields to local orders:
+- [x] Add explicit CJ automation environment flags.
+- [x] Add typed fulfillment state fields to local orders:
   - CJ order ID
   - CJ parent/payment order ID
   - CJ payment ID/pay ID
@@ -71,8 +71,8 @@ If automatic balance payment is disabled, the app should still create the CJ ord
   - CJ fulfillment status
   - latest CJ error
   - retry/idempotency metadata
-- [ ] Add admin-visible diagnostics for whether automation is ready.
-- [ ] Add tests for disabled, manual-payment, and live-payment configurations.
+- [x] Add admin-visible diagnostics for whether automation is ready.
+- [x] Add tests for disabled, manual-payment, and live-payment configurations.
 - [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
 
 ### Phase 2 - CJ API Client Hardening

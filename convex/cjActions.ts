@@ -3,6 +3,7 @@
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { getCjAutomationConfig, type CjAutomationConfig } from "../lib/cjAutomation";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PUBLIC CJ ACTIONS
@@ -267,8 +268,11 @@ export const getTokenStatus = action({
         accessTokenExpiresAt?: string;
         refreshTokenValid: boolean;
         refreshTokenExpiresAt?: string;
+        automation: CjAutomationConfig;
         message: string;
     }> => {
+        const automation = getCjAutomationConfig(process.env);
+
         try {
             const tokens = await ctx.runQuery(internal.cjHelpers.getCjTokens, {});
 
@@ -277,6 +281,7 @@ export const getTokenStatus = action({
                     connected: false,
                     accessTokenValid: false,
                     refreshTokenValid: false,
+                    automation,
                     message: "No tokens stored - run Test Connection to authenticate"
                 };
             }
@@ -294,6 +299,7 @@ export const getTokenStatus = action({
                 accessTokenExpiresAt: tokens.accessTokenExpiryDate,
                 refreshTokenValid: refreshValid,
                 refreshTokenExpiresAt: tokens.refreshTokenExpiryDate,
+                automation,
                 message: accessValid
                     ? `Connected - token expires ${accessExpiry.toLocaleDateString()}`
                     : refreshValid
@@ -305,6 +311,7 @@ export const getTokenStatus = action({
                 connected: false,
                 accessTokenValid: false,
                 refreshTokenValid: false,
+                automation,
                 message: error.message || "Failed to check token status"
             };
         }

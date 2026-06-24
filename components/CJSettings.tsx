@@ -48,6 +48,17 @@ export const CJSettings: React.FC = () => {
         accessTokenExpiresAt?: string;
         refreshTokenValid: boolean;
         refreshTokenExpiresAt?: string;
+        automation: {
+            mode: 'create_only' | 'manual_payment' | 'balance_payment';
+            autoFulfillmentEnabled: boolean;
+            autoBalancePayEnabled: boolean;
+            webhookSignatureVerificationRequired: boolean;
+            apiKeyConfigured: boolean;
+            webhookUrlConfigured: boolean;
+            fulfillmentAutomationReady: boolean;
+            balancePaymentReady: boolean;
+            warnings: string[];
+        };
         message: string;
     } | null>(null);
 
@@ -349,6 +360,23 @@ export const CJSettings: React.FC = () => {
                                             }
                                         </span>
                                     </div>
+                                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-inner">
+                                        <span className="text-cream/50 uppercase tracking-widest text-[10px]">Automation</span>
+                                        <span className="font-mono text-[11px] text-cream/80">
+                                            {tokenStatus.automation.mode.replace('_', ' ')}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl shadow-inner">
+                                        <span className="text-cream/50 uppercase tracking-widest text-[10px]">Balance Pay</span>
+                                        <span className={`font-mono text-[11px] ${tokenStatus.automation.balancePaymentReady ? 'text-green-400 drop-shadow-[0_0_2px_rgba(74,222,128,0.5)]' : 'text-amber-400 drop-shadow-[0_0_2px_rgba(251,191,36,0.5)]'}`}>
+                                            {tokenStatus.automation.balancePaymentReady ? 'Ready' : 'Locked'}
+                                        </span>
+                                    </div>
+                                    {tokenStatus.automation.warnings.length > 0 && (
+                                        <div className="p-3 bg-amber-950/30 border border-amber-400/20 rounded-xl text-[11px] text-amber-100/80 leading-relaxed">
+                                            {tokenStatus.automation.warnings[0]}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>

@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { getCjAutomationConfig } from "../lib/cjAutomation";
 import { calculateOrderPricingReconciliation } from "../lib/pricing";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -355,6 +356,8 @@ export const createCjOrder = internalAction({
         orderSubtotal: v.optional(v.number()),
     },
     handler: async (ctx, args): Promise<{ success: boolean; cjOrderId?: string; error?: string }> => {
+        const automationConfig = getCjAutomationConfig(process.env);
+
         // Get access token
         const accessToken = await ctx.runAction(internal.cjDropshipping.getAccessToken, {});
         if (!accessToken) {
@@ -362,6 +365,9 @@ export const createCjOrder = internalAction({
                 orderId: args.orderId,
                 cjStatus: "failed",
                 cjError: "Failed to authenticate with CJ API",
+                cjAutomationMode: automationConfig.mode,
+                cjFulfillmentStep: "failed",
+                cjPaymentStatus: "failed",
             });
             return { success: false, error: "Failed to authenticate with CJ API" };
         }
@@ -411,6 +417,9 @@ export const createCjOrder = internalAction({
                 orderId: args.orderId,
                 cjStatus: "failed",
                 cjError: "No CJ products found in order (missing vid/sku)",
+                cjAutomationMode: automationConfig.mode,
+                cjFulfillmentStep: "failed",
+                cjPaymentStatus: "failed",
             });
             return { success: false, error: "No CJ products found in order" };
         }
@@ -420,6 +429,9 @@ export const createCjOrder = internalAction({
             await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
                 orderId: args.orderId,
                 cjStatus: "sending",
+                cjAutomationMode: automationConfig.mode,
+                cjFulfillmentStep: "creating_order",
+                cjPaymentStatus: "not_started",
                 cjQuotedProductCost: reconciliation.productCostTotal,
                 cjQuotedShippingCost: freightQuote?.shippingCost,
                 cjQuotedTaxesFee: reconciliation.taxesFee,
@@ -449,6 +461,9 @@ export const createCjOrder = internalAction({
                     orderId: args.orderId,
                     cjStatus: "confirmed",
                     cjOrderId: data.data.orderId,
+                    cjAutomationMode: automationConfig.mode,
+                    cjFulfillmentStep: "order_created",
+                    cjPaymentStatus: "manual_payment_required",
                 });
 
                 console.log(`CJ Order created: ${data.data.orderId}`);
@@ -460,6 +475,9 @@ export const createCjOrder = internalAction({
                     orderId: args.orderId,
                     cjStatus: "failed",
                     cjError: errorMsg,
+                    cjAutomationMode: automationConfig.mode,
+                    cjFulfillmentStep: "failed",
+                    cjPaymentStatus: "failed",
                 });
 
                 console.error("CJ Order creation failed:", errorMsg);
@@ -471,6 +489,9 @@ export const createCjOrder = internalAction({
                 orderId: args.orderId,
                 cjStatus: "failed",
                 cjError: errorMsg,
+                cjAutomationMode: automationConfig.mode,
+                cjFulfillmentStep: "failed",
+                cjPaymentStatus: "failed",
             });
 
             console.error("CJ Order error:", error);
