@@ -233,7 +233,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const [selectAll, setSelectAll] = useState(false);
 
     // Two-stage pricing: cost-stack formula
-    // Stage 1 (Pre-Sourcing): estimated_cj = 1688_price × 1.4, selling = (cj + shipping) × 3
+    // Stage 1 (Pre-Sourcing): estimated_cj = source price x 1.4, selling = (estimated_cj x 3) + shipping.
     const getShippingEstimate = (collection: string): number => getEstimatedShipping(collection);
 
     const calculateCostStackPrice = (basePriceUsd: number, collection: string): {
@@ -249,7 +249,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
         const estimatedShipping = breakdown.shippingCost;
         const sellingPrice = pricingRule.roundUp
             ? breakdown.suggestedRetailPrice
-            : (estimatedCjCost + estimatedShipping) * breakdown.retailMultiplier;
+            : Math.round(((estimatedCjCost * breakdown.retailMultiplier) + estimatedShipping) * 100) / 100;
 
         return {
             estimatedCjCost: Math.round(estimatedCjCost * 100) / 100,

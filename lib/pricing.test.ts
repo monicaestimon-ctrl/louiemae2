@@ -4,13 +4,14 @@ import {
   calculateLandedCost,
   calculateOrderPricingReconciliation,
   calculatePricingBreakdown,
+  calculateRetailFromProductCost,
   calculateRetailFromLandedCost,
   getCheckoutShippingForSubtotal,
   getEstimatedShipping,
 } from './pricing';
 
 describe('pricing engine', () => {
-  it('keeps the existing source estimate formula', () => {
+  it('calculates source estimates from source price, CJ buffer, retail multiplier, then shipping', () => {
     const pricing = calculatePricingBreakdown({
       sourcePriceUsd: 10,
       collection: 'furniture',
@@ -19,8 +20,12 @@ describe('pricing engine', () => {
     expect(calculateEstimatedCjProductCost(10)).toBe(14);
     expect(getEstimatedShipping('furniture')).toBe(120);
     expect(pricing.landedCost).toBe(134);
-    expect(pricing.suggestedRetailPrice).toBe(401.99);
+    expect(pricing.suggestedRetailPrice).toBe(161.99);
     expect(pricing.pricingSource).toBe('source_estimate');
+  });
+
+  it('adds shipping after the retail multiplier instead of multiplying shipping', () => {
+    expect(calculateRetailFromProductCost(14, 120)).toBe(161.99);
   });
 
   it('uses conservative category shipping buffers before CJ freight is confirmed', () => {
@@ -55,7 +60,7 @@ describe('pricing engine', () => {
     expect(pricing.productCost).toBe(9.25);
     expect(pricing.shippingCost).toBe(6.5);
     expect(pricing.landedCost).toBe(16);
-    expect(pricing.suggestedRetailPrice).toBe(47.99);
+    expect(pricing.suggestedRetailPrice).toBe(34.99);
     expect(pricing.pricingSource).toBe('cj_freight_confirmed');
     expect(pricing.warnings).toHaveLength(0);
   });
@@ -85,7 +90,7 @@ describe('pricing engine', () => {
     });
 
     expect(pricing.currentRetailPrice).toBe(80);
-    expect(pricing.suggestedRetailPrice).toBe(251.99);
+    expect(pricing.suggestedRetailPrice).toBe(111.99);
     expect(pricing.estimatedProfit).toBe(-3.99);
     expect(pricing.warnings).toContain('Admin price is locked; suggested CJ price was not applied automatically.');
   });

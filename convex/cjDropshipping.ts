@@ -402,7 +402,7 @@ export const createCjOrder = internalAction({
             logisticName: freightQuote?.logisticsName || "CJ Packet Ordinary",
             fromCountryCode: "CN", // Ship from China
             products: cjOrderProducts,
-            payType: 3, // No balance payment (use CJ balance)
+            payType: 3, // Create CJ order only; payment/fulfillment must be completed separately.
         };
 
         // Validate we have products to ship
