@@ -73,13 +73,13 @@ If automatic balance payment is disabled, the app should still create the CJ ord
   - retry/idempotency metadata
 - [x] Add admin-visible diagnostics for whether automation is ready.
 - [x] Add tests for disabled, manual-payment, and live-payment configurations.
-- [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
+- [x] Open PR, run CodeRabbit CLI, resolve issues, merge.
 
 ### Phase 2 - CJ API Client Hardening
 
-- [ ] Create a small typed CJ API client around existing token handling.
-- [ ] Centralize request timeout, response parsing, and error formatting.
-- [ ] Add helpers for:
+- [x] Create a small typed CJ API client around existing token handling.
+- [x] Centralize request timeout, response parsing, and error formatting.
+- [x] Add helpers for:
   - `createOrderV2`
   - `addCart`
   - `addCartConfirm`
@@ -88,7 +88,7 @@ If automatic balance payment is disabled, the app should still create the CJ ord
   - order detail/status lookup
   - logistics/tracking lookup
   - real-time inventory lookup
-- [ ] Add tests for success, CJ business errors, malformed responses, and network failures.
+- [x] Add tests for success, CJ business errors, malformed responses, and network failures.
 - [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
 
 ### Phase 3 - Order Fulfillment Orchestration
