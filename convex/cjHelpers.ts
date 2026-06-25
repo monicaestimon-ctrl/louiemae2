@@ -82,6 +82,68 @@ export const reserveCjFulfillmentAttempt = internalMutation({
     },
 });
 
+export const getProductsForInventoryRefresh = internalQuery({
+    args: {
+        productId: v.optional(v.id("products")),
+    },
+    handler: async (ctx, args) => {
+        if (args.productId) {
+            const product = await ctx.db.get(args.productId);
+            return product ? [product] : [];
+        }
+
+        const products = await ctx.db
+            .query("products")
+            .withIndex("by_cj_sourcing_status", (q) => q.eq("cjSourcingStatus", "approved"))
+            .collect();
+
+        return products.filter((product) =>
+            Boolean(product.cjProductId || product.cjVariantId || product.cjSku || (product.cjVariants?.length ?? 0) > 0)
+        );
+    },
+});
+
+const cjInventoryStatusValidator = v.union(
+    v.literal("unknown"),
+    v.literal("in_stock"),
+    v.literal("low_stock"),
+    v.literal("out_of_stock"),
+    v.literal("partial"),
+    v.literal("error")
+);
+
+const cjInventorySnapshotValidator = v.object({
+    vid: v.optional(v.string()),
+    sku: v.optional(v.string()),
+    totalInventoryNum: v.optional(v.number()),
+    cjInventoryNum: v.optional(v.number()),
+    factoryInventoryNum: v.optional(v.number()),
+    status: cjInventoryStatusValidator,
+    lowStockThreshold: v.number(),
+    lastCheckedAt: v.string(),
+    error: v.optional(v.string()),
+});
+
+export const updateProductInventorySnapshot = internalMutation({
+    args: {
+        productId: v.id("products"),
+        status: cjInventoryStatusValidator,
+        totalInventoryNum: v.optional(v.number()),
+        checkedAt: v.string(),
+        error: v.optional(v.string()),
+        snapshots: v.array(cjInventorySnapshotValidator),
+    },
+    handler: async (ctx, args) => {
+        await ctx.db.patch(args.productId, {
+            cjInventoryStatus: args.status,
+            cjInventoryTotal: args.totalInventoryNum,
+            cjInventoryLastCheckedAt: args.checkedAt,
+            cjInventoryError: args.error || undefined,
+            cjInventoryByVariant: args.snapshots,
+        });
+    },
+});
+
 /**
  * Update order CJ status and error
  */

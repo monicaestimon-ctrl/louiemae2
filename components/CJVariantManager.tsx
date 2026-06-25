@@ -17,6 +17,13 @@ interface CjVariant {
     image?: string;
 }
 
+interface CjInventorySnapshot {
+    vid?: string;
+    sku?: string;
+    totalInventoryNum?: number;
+    status: 'unknown' | 'in_stock' | 'low_stock' | 'out_of_stock' | 'partial' | 'error';
+}
+
 interface CustomerVariant {
     id: string;
     name: string;
@@ -33,6 +40,7 @@ interface ProductWithVariants {
     images: string[];
     variants?: CustomerVariant[];
     cjVariants?: CjVariant[];
+    cjInventoryByVariant?: CjInventorySnapshot[];
 }
 
 export const CJVariantManager: React.FC = () => {
@@ -158,6 +166,9 @@ export const CJVariantManager: React.FC = () => {
                         const linkedCount = product.variants?.filter(v => v.cjVariantId).length || 0;
                         const totalVariants = product.variants?.length || 0;
                         const allLinked = linkedCount === totalVariants && totalVariants > 0;
+                        const inventoryByVid = new Map((product.cjInventoryByVariant ?? [])
+                            .filter(snapshot => snapshot.vid)
+                            .map(snapshot => [snapshot.vid, snapshot]));
 
                         return (
                             <div
@@ -247,6 +258,9 @@ export const CJVariantManager: React.FC = () => {
                                                             </p>
                                                             <p className="text-[11px] text-green-400/60 font-mono mt-0.5">
                                                                 SKU: {customerVar.cjSku || 'N/A'}
+                                                                {inventoryByVid.get(customerVar.cjVariantId)?.totalInventoryNum !== undefined
+                                                                    ? ` • ${inventoryByVid.get(customerVar.cjVariantId)?.totalInventoryNum} in CJ`
+                                                                    : ''}
                                                             </p>
                                                         </div>
                                                     </div>
@@ -306,6 +320,9 @@ export const CJVariantManager: React.FC = () => {
                                                         className="text-[10px] bg-white/5 border border-white/10 px-2.5 py-1 rounded-md text-cream/60 font-mono shadow-inner"
                                                     >
                                                         {v.name}
+                                                        {inventoryByVid.get(v.vid)?.totalInventoryNum !== undefined
+                                                            ? ` • ${inventoryByVid.get(v.vid)?.totalInventoryNum} in CJ`
+                                                            : ''}
                                                     </span>
                                                 ))}
                                             </div>

@@ -105,7 +105,7 @@ If automatic balance payment is disabled, the app should still create the CJ ord
   - [x] generate parent/payment order
   - [x] optionally pay via balance API when live automation is enabled
   - [x] persist every external ID and status transition
-- [ ] Validate inventory before CJ order creation.
+- [x] Validate inventory before CJ order creation.
 - [ ] Ensure retrying the workflow cannot double-pay or duplicate fulfillment.
 - [ ] Add tests for partial failure and retry from each major step.
 - [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
@@ -128,12 +128,12 @@ If automatic balance payment is disabled, the app should still create the CJ ord
 
 - [x] Add product readiness checks before a product can be considered fulfillment-ready.
 - [x] Require each sellable variant to have CJ product ID, variant ID, and SKU.
-- [ ] Add a real-time inventory refresh path.
-- [ ] Show missing CJ mapping/inventory issues in admin tools.
+- [x] Add a real-time inventory refresh path.
+- [x] Show missing CJ mapping/inventory issues in admin tools.
 - [x] Prevent or clearly flag checkout for unmapped/unavailable CJ items.
-- [ ] Add tests for mapped, unmapped, low-stock, and unavailable variants.
+- [x] Add tests for mapped, unmapped, low-stock, and unavailable variants.
   - [x] Cover mapped, unmapped, unavailable/out-of-stock, missing variant, and invalid quantity readiness cases.
-  - [ ] Cover low-stock inventory once the CJ real-time inventory refresh path is wired in.
+  - [x] Cover low-stock and insufficient CJ inventory readiness cases.
 - [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
 
 ### Phase 6 - Tracking, Reconciliation, And Customer Updates

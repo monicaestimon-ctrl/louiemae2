@@ -1,6 +1,7 @@
 import { query, mutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { auth } from "./auth";
+import { evaluateProductCjReadiness } from "../lib/cjFulfillmentReadiness";
 
 const smartDescriptionValidator = v.object({
     description: v.string(),
@@ -685,6 +686,9 @@ export const auditProductHealth = query({
             cjSourcingId?: string;
             cjProductId?: string;
             cjVariantId?: string;
+            cjInventoryStatus?: string;
+            cjInventoryTotal?: number;
+            cjInventoryLastCheckedAt?: string;
             imageCount: number;
             firstImageUrl?: string;
             hasVariants: boolean;
@@ -741,15 +745,30 @@ export const auditProductHealth = query({
                 }
             }
 
-            if (problems.length > 0) {
+            const hasCjFootprint =
+                (product.cjSourcingStatus !== undefined && product.cjSourcingStatus !== "none") ||
+                Boolean(product.cjProductId || product.cjVariantId || product.cjSku || (product.cjVariants?.length ?? 0) > 0);
+            if (hasCjFootprint) {
+                const readiness = evaluateProductCjReadiness(product);
+                for (const problem of [...readiness.errors, ...readiness.warnings]) {
+                    problems.push(problem);
+                }
+            }
+
+            const uniqueProblems = [...new Set(problems)];
+
+            if (uniqueProblems.length > 0) {
                 issues.push({
                     productId: product._id,
                     name: product.name,
-                    problems,
+                    problems: uniqueProblems,
                     cjSourcingStatus: product.cjSourcingStatus,
                     cjSourcingId: product.cjSourcingId,
                     cjProductId: product.cjProductId,
                     cjVariantId: product.cjVariantId,
+                    cjInventoryStatus: product.cjInventoryStatus,
+                    cjInventoryTotal: product.cjInventoryTotal,
+                    cjInventoryLastCheckedAt: product.cjInventoryLastCheckedAt,
                     imageCount: product.images?.length || 0,
                     firstImageUrl: product.images?.[0],
                     hasVariants: (product.variants?.length || 0) > 0,

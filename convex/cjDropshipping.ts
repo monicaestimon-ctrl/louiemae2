@@ -8,12 +8,22 @@ import {
     addCartConfirm,
     createOrderV2,
     formatCjApiError,
+    getInventoryByPid,
+    getInventoryBySku,
+    getInventoryByVid,
     getOrderDetail,
     payBalanceV2,
     saveGenerateParentOrder,
     type CjApiErrorDetails,
+    type CjInventoryRow,
 } from "./cjApiClient";
 import { getCjAutomationConfig } from "../lib/cjAutomation";
+import {
+    createCjInventoryErrorSnapshot,
+    mergeCjInventoryStatuses,
+    summarizeCjInventoryRows,
+    type CjInventorySnapshot,
+} from "../lib/cjInventory";
 import { calculateOrderPricingReconciliation } from "../lib/pricing";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -317,6 +327,49 @@ interface CjOrderProduct {
     retailPrice?: number;
 }
 
+const validateCjInventoryForOrder = async (
+    accessToken: string,
+    products: CjOrderProduct[],
+): Promise<string[]> => {
+    const errors: string[] = [];
+    const checkedAt = new Date().toISOString();
+    const lowStockThreshold = getInventoryLowStockThreshold();
+
+    for (const product of products) {
+        const label = product.vid ? `vid=${product.vid}` : `sku=${product.sku}`;
+        const inventoryResult = product.vid
+            ? await getInventoryByVid(accessToken, product.vid)
+            : product.sku
+                ? await getInventoryBySku(accessToken, product.sku)
+                : null;
+
+        if (!inventoryResult) {
+            errors.push(`Missing CJ variant or SKU for order item.`);
+            continue;
+        }
+
+        if (inventoryResult.ok === false) {
+            errors.push(`Unable to verify CJ inventory for ${label}: ${formatCjApiError(inventoryResult.error)}`);
+            continue;
+        }
+
+        const snapshot = summarizeCjInventoryRows(normalizeInventoryRows(inventoryResult.data), {
+            vid: product.vid,
+            sku: product.sku,
+            lastCheckedAt: checkedAt,
+            lowStockThreshold,
+        });
+
+        if (snapshot.totalInventoryNum === undefined) {
+            errors.push(`CJ inventory is unknown for ${label}.`);
+        } else if (snapshot.totalInventoryNum < product.quantity) {
+            errors.push(`Insufficient CJ inventory for ${label}: ${snapshot.totalInventoryNum} available, ${product.quantity} requested.`);
+        }
+    }
+
+    return errors;
+};
+
 interface CjOrderRequest {
     orderNumber: string; // Your unique order ID
     shippingCustomerName: string;
@@ -348,6 +401,209 @@ const firstString = (...values: unknown[]): string | undefined => {
     }
     return undefined;
 };
+
+type CjInventoryTarget = {
+    vid?: string;
+    sku?: string;
+};
+
+type CjInventoryTargetOptions = {
+    allowSingleIdentifier?: boolean;
+};
+
+const getInventoryLowStockThreshold = (): number => {
+    const raw = process.env.CJ_LOW_STOCK_THRESHOLD?.trim();
+    if (!raw) return 3;
+
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 3;
+};
+
+const setInventoryTarget = (targets: Map<string, CjInventoryTarget>, target: CjInventoryTarget) => {
+    if (target.vid) targets.set(`vid:${target.vid}`, target);
+    if (target.sku) targets.set(`sku:${target.sku}`, target);
+};
+
+const addInventoryTarget = (
+    targets: Map<string, CjInventoryTarget>,
+    target: CjInventoryTarget,
+    options: CjInventoryTargetOptions = {},
+) => {
+    const vid = firstString(target.vid);
+    const sku = firstString(target.sku);
+    if (!vid && !sku) return;
+    if (!options.allowSingleIdentifier && (!vid || !sku)) {
+        const existingByVid = vid ? targets.get(`vid:${vid}`) : undefined;
+        const existingBySku = sku ? targets.get(`sku:${sku}`) : undefined;
+        if (!existingByVid && !existingBySku) return;
+    }
+
+    const vidKey = vid ? `vid:${vid}` : undefined;
+    const skuKey = sku ? `sku:${sku}` : undefined;
+    const existing = (vidKey ? targets.get(vidKey) : undefined) ?? (skuKey ? targets.get(skuKey) : undefined);
+    const merged = {
+        vid: vid || existing?.vid,
+        sku: sku || existing?.sku,
+    };
+
+    if (vidKey) targets.delete(vidKey);
+    if (skuKey) targets.delete(skuKey);
+    setInventoryTarget(targets, merged);
+};
+
+const getProductInventoryTargets = (product: any): CjInventoryTarget[] => {
+    const targets = new Map<string, CjInventoryTarget>();
+
+    for (const cjVariant of product.cjVariants ?? []) {
+        addInventoryTarget(targets, { vid: cjVariant?.vid, sku: cjVariant?.sku }, { allowSingleIdentifier: true });
+    }
+
+    for (const variant of product.variants ?? []) {
+        addInventoryTarget(targets, { vid: variant?.cjVariantId, sku: variant?.cjSku }, {
+            allowSingleIdentifier: targets.size === 0,
+        });
+    }
+
+    addInventoryTarget(targets, { vid: product.cjVariantId, sku: product.cjSku }, {
+        allowSingleIdentifier: targets.size === 0,
+    });
+
+    return [...new Set(targets.values())];
+};
+
+const sumSnapshotInventory = (snapshots: CjInventorySnapshot[]): number | undefined => {
+    const totals = snapshots
+        .map((snapshot) => snapshot.totalInventoryNum)
+        .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    return totals.length > 0 ? totals.reduce((total, value) => total + value, 0) : undefined;
+};
+
+const normalizeInventoryRows = (value: unknown): CjInventoryRow[] =>
+    Array.isArray(value) ? value.filter((row): row is CjInventoryRow => typeof row === "object" && row !== null) : [];
+
+export const refreshProductInventory = internalAction({
+    args: {
+        productId: v.optional(v.id("products")),
+    },
+    handler: async (ctx, args): Promise<{
+        checked: number;
+        updated: number;
+        errors: number;
+        products: Array<{
+            productId: string;
+            name: string;
+            status: string;
+            totalInventoryNum?: number;
+            error?: string;
+        }>;
+    }> => {
+        const accessToken = await ctx.runAction(internal.cjDropshipping.getAccessToken, {});
+        if (!accessToken) {
+            return { checked: 0, updated: 0, errors: 1, products: [] };
+        }
+
+        const products = await ctx.runQuery(internal.cjHelpers.getProductsForInventoryRefresh, {
+            productId: args.productId,
+        });
+        const lowStockThreshold = getInventoryLowStockThreshold();
+        const results: Array<{
+            productId: string;
+            name: string;
+            status: string;
+            totalInventoryNum?: number;
+            error?: string;
+        }> = [];
+        let updated = 0;
+        let errors = 0;
+
+        for (const product of products) {
+            const checkedAt = new Date().toISOString();
+            const snapshots: CjInventorySnapshot[] = [];
+            const targets = getProductInventoryTargets(product);
+
+            for (const target of targets) {
+                try {
+                    const inventoryResult = target.vid
+                        ? await getInventoryByVid(accessToken, target.vid)
+                        : target.sku
+                            ? await getInventoryBySku(accessToken, target.sku)
+                            : null;
+
+                    if (!inventoryResult) continue;
+                    if (inventoryResult.ok === false) {
+                        snapshots.push(createCjInventoryErrorSnapshot({
+                            vid: target.vid,
+                            sku: target.sku,
+                            lastCheckedAt: checkedAt,
+                            lowStockThreshold,
+                            error: formatCjApiError(inventoryResult.error),
+                        }));
+                        continue;
+                    }
+
+                    snapshots.push(summarizeCjInventoryRows(normalizeInventoryRows(inventoryResult.data), {
+                        vid: target.vid,
+                        sku: target.sku,
+                        lastCheckedAt: checkedAt,
+                        lowStockThreshold,
+                    }));
+                } catch (error: unknown) {
+                    snapshots.push(createCjInventoryErrorSnapshot({
+                        vid: target.vid,
+                        sku: target.sku,
+                        lastCheckedAt: checkedAt,
+                        lowStockThreshold,
+                        error: error instanceof Error ? error.message : String(error),
+                    }));
+                }
+            }
+
+            if (snapshots.length === 0 && product.cjProductId) {
+                const inventoryResult = await getInventoryByPid(accessToken, product.cjProductId);
+                if (inventoryResult.ok === false) {
+                    snapshots.push(createCjInventoryErrorSnapshot({
+                        lastCheckedAt: checkedAt,
+                        lowStockThreshold,
+                        error: formatCjApiError(inventoryResult.error),
+                    }));
+                } else {
+                    snapshots.push(summarizeCjInventoryRows(normalizeInventoryRows(inventoryResult.data?.inventories), {
+                        lastCheckedAt: checkedAt,
+                        lowStockThreshold,
+                    }));
+                }
+            }
+
+            const status = mergeCjInventoryStatuses(snapshots);
+            const totalInventoryNum = sumSnapshotInventory(snapshots);
+            const firstError = snapshots.find((snapshot) => snapshot.status === "error")?.error;
+            if (status === "error") {
+                errors++;
+            } else {
+                updated++;
+            }
+
+            await ctx.runMutation(internal.cjHelpers.updateProductInventorySnapshot, {
+                productId: product._id,
+                status,
+                totalInventoryNum,
+                checkedAt,
+                error: firstError,
+                snapshots,
+            });
+
+            results.push({
+                productId: product._id,
+                name: product.name,
+                status,
+                totalInventoryNum,
+                error: firstError,
+            });
+        }
+
+        return { checked: products.length, updated, errors, products: results };
+    },
+});
 
 const CJ_STEP_ORDER = [
     "not_started",
@@ -479,6 +735,34 @@ export const createCjOrder = internalAction({
                 sku: p.sku,
                 quantity: p.quantity,
             }));
+
+        // Validate we have products to ship
+        if (cjOrderProducts.length === 0) {
+            await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
+                orderId: args.orderId,
+                cjStatus: "failed",
+                cjError: "No CJ products found in order (missing vid/sku)",
+                cjAutomationMode: automationConfig.mode,
+                cjFulfillmentStep: "failed",
+                cjPaymentStatus: "failed",
+            });
+            return { success: false, error: "No CJ products found in order" };
+        }
+
+        const inventoryErrors = await validateCjInventoryForOrder(accessToken, cjOrderProducts);
+        if (inventoryErrors.length > 0) {
+            const errorMsg = inventoryErrors.join(" ");
+            await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
+                orderId: args.orderId,
+                cjStatus: "failed",
+                cjError: errorMsg,
+                cjAutomationMode: automationConfig.mode,
+                cjFulfillmentStep: "failed",
+                cjPaymentStatus: "failed",
+            });
+            return { success: false, error: errorMsg };
+        }
+
         const freightQuote = await quoteCjFreightForProducts(accessToken, args.products, countryCode);
         const reconciliation = calculateOrderPricingReconciliation({
             items: args.products,
@@ -508,19 +792,6 @@ export const createCjOrder = internalAction({
             products: cjOrderProducts,
             payType: 3, // Create CJ order only; payment/fulfillment must be completed separately.
         };
-
-        // Validate we have products to ship
-        if (cjOrderProducts.length === 0) {
-            await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
-                orderId: args.orderId,
-                cjStatus: "failed",
-                cjError: "No CJ products found in order (missing vid/sku)",
-                cjAutomationMode: automationConfig.mode,
-                cjFulfillmentStep: "failed",
-                cjPaymentStatus: "failed",
-            });
-            return { success: false, error: "No CJ products found in order" };
-        }
 
         let cjOrderId = existingOrder?.cjOrderId;
         let shipmentOrderId = existingOrder?.cjShipmentOrderId;
