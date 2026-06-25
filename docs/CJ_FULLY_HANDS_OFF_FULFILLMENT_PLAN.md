@@ -20,7 +20,7 @@ Official docs referenced:
   - Source/direct URL product price is multiplied by `1.4` to estimate CJ product cost.
   - The estimated CJ product cost is multiplied by `3`.
   - Shipping is added after the markup calculation.
-- Existing CJ cron jobs and webhook handlers provide partial sourcing/tracking support, but the webhook endpoint still needs signature verification and idempotency hardening.
+- Existing CJ cron jobs and webhook handlers provide partial sourcing/tracking support. CJ webhook signatures and duplicate `messageId` claims are now protected; topic-level idempotency and full tracking reconciliation still need hardening.
 
 ## CJ Flow Required For Hands-Off Fulfillment
 
@@ -106,6 +106,7 @@ If automatic balance payment is disabled, the app should still create the CJ ord
   - [x] optionally pay via balance API when live automation is enabled
   - [x] persist every external ID and status transition
 - [x] Validate inventory before CJ order creation.
+- [x] Reject unsigned Stripe webhook requests before creating local/CJ fulfillment orders, except behind an explicit non-production test flag.
 - [ ] Ensure retrying the workflow cannot double-pay or duplicate fulfillment.
 - [ ] Add tests for partial failure and retry from each major step.
 - [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
@@ -134,7 +135,7 @@ If automatic balance payment is disabled, the app should still create the CJ ord
 - [x] Add tests for mapped, unmapped, low-stock, and unavailable variants.
   - [x] Cover mapped, unmapped, unavailable/out-of-stock, missing variant, and invalid quantity readiness cases.
   - [x] Cover low-stock and insufficient CJ inventory readiness cases.
-- [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
+- [x] Open PR #46, run CodeRabbit CLI, resolve issues, merge.
 
 ### Phase 6 - Tracking, Reconciliation, And Customer Updates
 
