@@ -8,6 +8,7 @@ import { getCheckoutShippingForSubtotal } from "../lib/pricing";
 import { getCjAutomationConfig, readBooleanEnv } from "../lib/cjAutomation";
 import { evaluateCheckoutItemCjReadiness, type CjReadinessProduct } from "../lib/cjFulfillmentReadiness";
 import { verifyCjWebhookSignature } from "../lib/cjWebhookSignature";
+import { parseCjWebhookPayload } from "../lib/cjWebhookRequest";
 import { getStripeWebhookVerificationError, shouldAllowUnsignedStripeWebhook } from "../lib/stripeWebhook";
 
 const http = httpRouter();
@@ -525,33 +526,17 @@ http.route({
                 return cjJsonResponse({ success: false, error: signatureResult.error }, signatureResult.status);
             }
 
-            let parsedBody: unknown;
-            try {
-                parsedBody = JSON.parse(rawBody);
-            } catch {
-                return cjJsonResponse({ success: false, error: "Invalid webhook JSON" }, 400);
+            const parsedPayload = parseCjWebhookPayload(rawBody);
+            if ("error" in parsedPayload) {
+                return cjJsonResponse({ success: false, error: parsedPayload.error }, parsedPayload.status);
             }
 
-            if (parsedBody === null || typeof parsedBody !== "object" || Array.isArray(parsedBody)) {
-                return cjJsonResponse({ success: false, error: "Invalid webhook payload" }, 400);
-            }
-
-            const body = parsedBody as Record<string, unknown>;
-            const { messageId, type, messageType, params } = body;
-
-            if (typeof messageId !== "string" || !messageId.trim() || typeof type !== "string" || !type.trim()) {
-                return cjJsonResponse({ success: false, error: "Invalid webhook payload" }, 400);
-            }
-
-            if (params === null || typeof params !== "object" || Array.isArray(params)) {
-                return cjJsonResponse({ success: false, error: "Invalid webhook payload" }, 400);
-            }
-
-            const normalizedMessageId = messageId.trim();
-            const normalizedType = type.trim();
-            const normalizedMessageType = typeof messageType === "string" && messageType.trim()
-                ? messageType.trim()
-                : "unknown";
+            const {
+                messageId: normalizedMessageId,
+                type: normalizedType,
+                messageType: normalizedMessageType,
+                params,
+            } = parsedPayload.payload;
 
             console.log(`CJ Webhook received: messageId=${normalizedMessageId} type=${normalizedType} messageType=${normalizedMessageType}`);
 
@@ -931,18 +916,18 @@ async function handleCjSourcingCreateWebhook(ctx: any, params: any): Promise<boo
             });
             if (cjProductId) {
                 try {
-                    const pricingRefresh = await ctx.runAction(internal.cjDropshipping.refreshConfirmedProductPricing, {
+                    await ctx.scheduler.runAfter(0, internal.cjDropshipping.refreshConfirmedProductPricingWithRetry, {
                         productId: product._id,
                         cjProductId: String(cjProductId),
                         cjVariantId: cjVariantId ? String(cjVariantId) : undefined,
                         cjSku: cjVariantSku ? String(cjVariantSku) : undefined,
                         sourcingId: String(cjSourcingId),
+                        attempt: 1,
                     });
-                    if (!pricingRefresh?.success) {
-                        console.warn(`CJ SOURCINGCREATE: pricing refresh failed for ${product.name}:`, pricingRefresh?.error || "Unknown CJ pricing refresh error");
-                    }
-                } catch (pricingError: any) {
-                    console.warn(`CJ SOURCINGCREATE: pricing refresh failed for ${product.name}:`, pricingError?.message || pricingError);
+                    console.log(`CJ SOURCINGCREATE: scheduled pricing refresh for ${product.name}`);
+                } catch (scheduleError: any) {
+                    console.error(`CJ SOURCINGCREATE: failed to schedule pricing refresh for ${product.name}:`, scheduleError?.message || scheduleError);
+                    return false;
                 }
             }
         } else if (status === "failed") {

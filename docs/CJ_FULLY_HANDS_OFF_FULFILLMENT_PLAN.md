@@ -124,10 +124,12 @@ If automatic balance payment is disabled, the app should still create the CJ ord
 - [x] Make webhook handlers idempotent for product, stock, order, sourcing, and logistics events.
   - [x] Prevent exact duplicate `messageId` deliveries from running side effects concurrently.
   - [x] Harden each topic handler against out-of-order updates and equivalent payloads with different message IDs.
-- [ ] Ensure the endpoint returns `200 OK` quickly for valid events.
+- [x] Ensure the endpoint returns `200 OK` quickly for valid events.
+  - [x] Route asynchronous sourcing price refresh through durable retries and product-level failure reporting.
 - [ ] Add tests for valid signature, invalid signature, duplicate event, and unknown topic.
   - [x] Lock the HMAC-SHA256 Base64 signature helper against CJ's documented sample.
   - [x] Cover monotonic ORDER/LOGISTIC status resolution for duplicate and out-of-order webhook messages.
+  - [x] Cover CJ webhook payload parsing for valid and invalid request bodies.
   - [ ] Add Convex HTTP handler tests for valid/invalid webhook requests.
 - [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
 
