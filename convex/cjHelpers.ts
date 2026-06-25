@@ -5,6 +5,10 @@ import { calculatePricingBreakdown } from "../lib/pricing";
 
 const hasFiniteNumber = (value: unknown): boolean => typeof value === "number" && Number.isFinite(value);
 const CJ_RESERVATION_TTL_MS = 10 * 60 * 1000;
+const CJ_WEBHOOK_PROCESSING_TIMEOUT_MS = 30 * 60 * 1000;
+
+const createWebhookClaimToken = (): string =>
+    `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CJ DROPSHIPPING DATABASE HELPERS
@@ -1039,6 +1043,60 @@ export const unlinkCjVariant = internalMutation({
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
+ * Atomically claim a webhook messageId before running side effects.
+ */
+export const claimWebhookProcessing = internalMutation({
+    args: {
+        messageId: v.string(),
+        type: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const now = new Date().toISOString();
+        const claimToken = createWebhookClaimToken();
+        const existing = await ctx.db
+            .query("cjWebhookLog")
+            .withIndex("by_message_id", (q) => q.eq("messageId", args.messageId))
+            .first();
+
+        if (existing) {
+            const claimedAtMs = existing.claimedAt ? Date.parse(existing.claimedAt) : Number.NaN;
+            const staleProcessing =
+                existing.status === "processing" &&
+                Number.isFinite(claimedAtMs) &&
+                Date.now() - claimedAtMs > CJ_WEBHOOK_PROCESSING_TIMEOUT_MS;
+            const retryableStatus = existing.status === "retryable" || staleProcessing;
+
+            if (!retryableStatus) {
+                return { claimed: false, status: existing.status || "processed" };
+            }
+
+            await ctx.db.patch(existing._id, {
+                type: args.type,
+                status: "processing",
+                claimedAt: now,
+                claimToken,
+                processedAt: now,
+                lastError: "",
+                completedAt: undefined,
+                attempts: (existing.attempts || 1) + 1,
+            });
+            return { claimed: true, status: "processing", claimToken };
+        }
+
+        await ctx.db.insert("cjWebhookLog", {
+            messageId: args.messageId,
+            type: args.type,
+            processedAt: now,
+            status: "processing",
+            claimedAt: now,
+            claimToken,
+            attempts: 1,
+        });
+        return { claimed: true, status: "processing", claimToken };
+    },
+});
+
+/**
  * Check if a webhook messageId has already been processed
  */
 export const wasWebhookProcessed = internalQuery({
@@ -1050,24 +1108,96 @@ export const wasWebhookProcessed = internalQuery({
             .query("cjWebhookLog")
             .withIndex("by_message_id", (q) => q.eq("messageId", args.messageId))
             .first();
-        return existing !== null;
+        return existing !== null && (existing.status === undefined || existing.status === "processed");
     },
 });
 
-/**
- * Record a processed webhook messageId
- */
-export const recordProcessedWebhook = internalMutation({
+export const markWebhookProcessed = internalMutation({
     args: {
         messageId: v.string(),
         type: v.string(),
+        claimToken: v.string(),
     },
     handler: async (ctx, args) => {
-        await ctx.db.insert("cjWebhookLog", {
-            messageId: args.messageId,
-            type: args.type,
-            processedAt: new Date().toISOString(),
-        });
+        const existing = await ctx.db
+            .query("cjWebhookLog")
+            .withIndex("by_message_id", (q) => q.eq("messageId", args.messageId))
+            .first();
+        const now = new Date().toISOString();
+
+        if (existing) {
+            if (existing.claimToken !== args.claimToken || existing.status !== "processing") {
+                return;
+            }
+
+            await ctx.db.patch(existing._id, {
+                type: args.type,
+                status: "processed",
+                completedAt: now,
+                processedAt: existing.processedAt || now,
+                lastError: "",
+            });
+            return;
+        }
+    },
+});
+
+export const markWebhookRetryable = internalMutation({
+    args: {
+        messageId: v.string(),
+        type: v.string(),
+        error: v.string(),
+        claimToken: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const existing = await ctx.db
+            .query("cjWebhookLog")
+            .withIndex("by_message_id", (q) => q.eq("messageId", args.messageId))
+            .first();
+        const now = new Date().toISOString();
+
+        if (existing) {
+            if (existing.claimToken !== args.claimToken || existing.status !== "processing") {
+                return;
+            }
+
+            await ctx.db.patch(existing._id, {
+                type: args.type,
+                status: "retryable",
+                completedAt: undefined,
+                lastError: args.error,
+            });
+            return;
+        }
+    },
+});
+
+export const markWebhookFailed = internalMutation({
+    args: {
+        messageId: v.string(),
+        type: v.string(),
+        claimToken: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const existing = await ctx.db
+            .query("cjWebhookLog")
+            .withIndex("by_message_id", (q) => q.eq("messageId", args.messageId))
+            .first();
+        const now = new Date().toISOString();
+
+        if (existing) {
+            if (existing.claimToken !== args.claimToken || existing.status !== "processing") {
+                return;
+            }
+
+            await ctx.db.patch(existing._id, {
+                type: args.type,
+                status: "failed",
+                completedAt: now,
+                lastError: "Webhook processing failed",
+            });
+            return;
+        }
     },
 });
 
