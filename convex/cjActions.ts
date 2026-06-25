@@ -5,6 +5,7 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { auth } from "./auth";
 import { getCjAutomationConfig, type CjAutomationConfig } from "../lib/cjAutomation";
+import { buildCjRetryOrderPayload } from "../lib/cjOrderRetry";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PUBLIC CJ ACTIONS
@@ -16,7 +17,7 @@ const CJ_API_BASE = "https://developers.cjdropshipping.com/api2.0/v1";
 const requireAdminIdentity = async (ctx: Parameters<typeof auth.getUserId>[0]) => {
     const userId = await auth.getUserId(ctx).catch(() => null);
     if (!userId) {
-        throw new Error("You must be logged in to refresh CJ inventory.");
+        throw new Error("You must be logged in to manage CJ automation.");
     }
 };
 
@@ -30,6 +31,95 @@ export const syncTracking = action({
         // Call the internal sync action
         const result = await ctx.runAction(internal.cjDropshipping.syncAllTracking, {});
         return result;
+    },
+});
+
+export const syncOrderTracking = action({
+    args: {
+        orderId: v.id("orders"),
+    },
+    handler: async (ctx, args): Promise<{
+        success: boolean;
+        message: string;
+        trackingNumber?: string;
+        trackingUrl?: string;
+        carrier?: string;
+        cjTrackingStatus?: string;
+        estimatedDelivery?: string;
+        error?: string;
+    }> => {
+        await requireAdminIdentity(ctx);
+
+        const order = await ctx.runQuery(internal.cjHelpers.getOrderByIdInternal, {
+            orderId: args.orderId,
+        });
+        if (!order) {
+            return { success: false, message: "Order not found", error: "Order not found" };
+        }
+        if (!order.cjOrderId) {
+            return { success: false, message: "Order has no CJ order ID", error: "Order has no CJ order ID" };
+        }
+
+        const result = await ctx.runAction(internal.cjDropshipping.getTrackingInfo, {
+            orderId: args.orderId,
+            cjOrderId: order.cjOrderId,
+        });
+
+        return {
+            ...result,
+            message: result.success
+                ? result.trackingNumber
+                    ? `Tracking synced: ${result.trackingNumber}`
+                    : "Tracking sync completed"
+                : result.error || "Tracking sync failed",
+        };
+    },
+});
+
+export const retryOrderFulfillment = action({
+    args: {
+        orderId: v.id("orders"),
+    },
+    handler: async (ctx, args): Promise<{
+        success: boolean;
+        message: string;
+        cjOrderId?: string;
+        error?: string;
+    }> => {
+        await requireAdminIdentity(ctx);
+
+        const order = await ctx.runQuery(internal.cjHelpers.getOrderByIdInternal, {
+            orderId: args.orderId,
+        });
+        if (!order) {
+            return { success: false, message: "Order not found", error: "Order not found" };
+        }
+        if (order.cjPaymentStatus === "paid" || order.cjFulfillmentStep === "paid") {
+            return {
+                success: true,
+                message: "CJ fulfillment is already paid or processing",
+                cjOrderId: order.cjOrderId,
+            };
+        }
+
+        const retryPayload = buildCjRetryOrderPayload(order);
+        if ("error" in retryPayload) {
+            return { success: false, message: retryPayload.error, error: retryPayload.error };
+        }
+
+        const result = await ctx.runAction(internal.cjDropshipping.createCjOrder, {
+            orderId: args.orderId,
+            ...retryPayload.payload,
+        });
+
+        return {
+            ...result,
+            message: result.success
+                ? result.cjOrderId
+                    ? `CJ fulfillment retry submitted: ${result.cjOrderId}`
+                    : "CJ fulfillment retry submitted"
+                : result.error || "CJ fulfillment retry failed",
+        };
     },
 });
 
