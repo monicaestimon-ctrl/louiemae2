@@ -348,7 +348,19 @@ export type CjInventoryRow = {
     }> | null;
 };
 
-export type CjTrackingInfoData = unknown;
+export type CjTrackingInfoRow = {
+    trackingNumber?: string;
+    logisticName?: string;
+    trackingFrom?: string;
+    trackingTo?: string;
+    deliveryDay?: string;
+    deliveryTime?: string;
+    trackingStatus?: string;
+    lastMileCarrier?: string;
+    lastTrackNumber?: string;
+    trackingUrl?: string;
+    [key: string]: unknown;
+};
 
 export const createOrderV2 = (
     accessToken: string,
@@ -486,11 +498,11 @@ export const getInventoryByPid = (
 
 export const getTrackingInfo = (
     accessToken: string,
-    orderId: string,
+    trackNumber: string | string[],
     options?: CjApiCallOptions,
-) => cjApiRequest<CjTrackingInfoData>({
+) => cjApiRequest<CjTrackingInfoRow[]>({
     accessToken,
-    path: "logistic/getTrackInfo",
-    query: { orderId },
+    path: "logistic/trackInfo",
+    query: { trackNumber },
     ...options,
 });

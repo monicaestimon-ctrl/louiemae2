@@ -773,6 +773,7 @@ async function handleCjLogisticsWebhook(ctx: any, params: any) {
         trackingNumber: trackingNumber || undefined,
         trackingUrl: trackingUrl || undefined,
         carrier: logisticName || undefined,
+        cjTrackingStatus: trackingStatus !== undefined ? String(trackingStatus) : undefined,
         cjStatus,
     });
 

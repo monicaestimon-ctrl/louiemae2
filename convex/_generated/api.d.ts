@@ -14,6 +14,7 @@ import type * as blogPosts from "../blogPosts.js";
 import type * as brandVoice from "../brandVoice.js";
 import type * as campaigns from "../campaigns.js";
 import type * as cjActions from "../cjActions.js";
+import type * as cjApiClient from "../cjApiClient.js";
 import type * as cjDropshipping from "../cjDropshipping.js";
 import type * as cjHelpers from "../cjHelpers.js";
 import type * as crons from "../crons.js";
@@ -51,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   brandVoice: typeof brandVoice;
   campaigns: typeof campaigns;
   cjActions: typeof cjActions;
+  cjApiClient: typeof cjApiClient;
   cjDropshipping: typeof cjDropshipping;
   cjHelpers: typeof cjHelpers;
   crons: typeof crons;

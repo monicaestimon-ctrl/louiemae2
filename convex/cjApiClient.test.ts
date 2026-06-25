@@ -5,9 +5,10 @@ import {
   createOrderV2,
   formatCjApiError,
   getOrderDetail,
+  getTrackingInfo,
 } from './cjApiClient';
 
-function jsonResponse(body: unknown, init?: ResponseInit) {
+function jsonResponse(body: unknown, init?: ConstructorParameters<typeof Response>[1]) {
   return new Response(JSON.stringify(body), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
@@ -130,7 +131,7 @@ describe('CJ API client', () => {
   });
 
   it('returns timeout errors when a request exceeds its timeout', async () => {
-    const fetchFn = vi.fn((_url: RequestInfo | URL, init?: RequestInit) =>
+    const fetchFn = vi.fn((_url: Parameters<typeof fetch>[0] | URL, init?: Parameters<typeof fetch>[1]) =>
       new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener('abort', () => {
           const error = new Error('aborted');
@@ -168,6 +169,25 @@ describe('CJ API client', () => {
     expect(parsed.pathname).toBe('/api2.0/v1/shopping/order/getOrderDetail');
     expect(parsed.searchParams.get('orderId')).toBe('CJ-123');
     expect(parsed.searchParams.getAll('features')).toEqual(['LOGISTICS_TIMELINESS', 'POD']);
+  });
+
+  it('uses CJ logistic trackInfo with repeated trackNumber params', async () => {
+    const fetchFn = createFetch(jsonResponse({
+      code: 200,
+      result: true,
+      message: 'Success',
+      data: [{ trackingNumber: 'CJPKL7160102171YQ', trackingStatus: 'In transit' }],
+    }));
+
+    await getTrackingInfo('token-123', ['CJPKL7160102171YQ', '926112903032124'], { fetchFn });
+
+    const [url] = vi.mocked(fetchFn).mock.calls[0];
+    const parsed = new URL(String(url));
+    expect(parsed.pathname).toBe('/api2.0/v1/logistic/trackInfo');
+    expect(parsed.searchParams.getAll('trackNumber')).toEqual([
+      'CJPKL7160102171YQ',
+      '926112903032124',
+    ]);
   });
 
   it('rejects absolute non-CJ URLs before attaching CJ credentials', async () => {

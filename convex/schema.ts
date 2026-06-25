@@ -379,6 +379,7 @@ export default defineSchema({
         trackingNumber: v.optional(v.string()),
         trackingUrl: v.optional(v.string()),
         carrier: v.optional(v.string()), // Shipping carrier name
+        cjTrackingStatus: v.optional(v.string()),
         // CJ order split tracking — when CJ splits into multiple shipments
         splitOrders: v.optional(v.array(v.object({
             cjOrderId: v.string(),

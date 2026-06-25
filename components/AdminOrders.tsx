@@ -370,7 +370,7 @@ export const AdminOrders: React.FC = () => {
                                                                     </div>
                                                                 )}
 
-                                                                {(order.trackingNumber || order.carrier) && (
+                                                                {(order.trackingNumber || order.carrier || order.cjTrackingStatus || order.estimatedDelivery) && (
                                                                     <div className="text-xs pt-1 space-y-2">
                                                                         {order.carrier && (
                                                                             <div className="flex justify-between items-center">
@@ -394,6 +394,18 @@ export const AdminOrders: React.FC = () => {
                                                                                 ) : (
                                                                                     <span className="font-mono text-cream/90 bg-white/5 px-2 py-1 rounded select-all">{order.trackingNumber}</span>
                                                                                 )}
+                                                                            </div>
+                                                                        )}
+                                                                        {order.cjTrackingStatus && (
+                                                                            <div className="flex justify-between items-center">
+                                                                                <span className="text-cream/40 uppercase tracking-widest">CJ Tracking:</span>
+                                                                                <span className="text-cream/80">{order.cjTrackingStatus}</span>
+                                                                            </div>
+                                                                        )}
+                                                                        {order.estimatedDelivery && (
+                                                                            <div className="flex justify-between items-center">
+                                                                                <span className="text-cream/40 uppercase tracking-widest">ETA:</span>
+                                                                                <span className="text-cream/80">{order.estimatedDelivery}</span>
                                                                             </div>
                                                                         )}
                                                                     </div>
