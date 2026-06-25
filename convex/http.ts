@@ -4,6 +4,8 @@ import { api, internal } from "./_generated/api";
 import { auth } from "./auth";
 import Stripe from "stripe";
 import { getCheckoutShippingForSubtotal } from "../lib/pricing";
+import { readBooleanEnv } from "../lib/cjAutomation";
+import { verifyCjWebhookSignature } from "../lib/cjWebhookSignature";
 
 const http = httpRouter();
 
@@ -32,6 +34,50 @@ const corsHeaders = {
     "Access-Control-Allow-Origin": "*", // Will be set dynamically in handlers
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
+};
+
+const cjJsonResponse = (body: Record<string, unknown>, status = 200) =>
+    new Response(JSON.stringify(body), {
+        status,
+        headers: { "Content-Type": "application/json" },
+    });
+
+const getConfiguredCjOpenId = async (ctx: any): Promise<string | null> => {
+    const envOpenId = process.env.CJ_OPEN_ID?.trim();
+    if (envOpenId) {
+        return envOpenId;
+    }
+    const webhookOpenId = process.env.CJ_WEBHOOK_OPEN_ID?.trim();
+    if (webhookOpenId) {
+        return webhookOpenId;
+    }
+
+    const tokens = await ctx.runQuery(internal.cjHelpers.getCjTokens, {});
+    return typeof tokens?.openId === "string" && tokens.openId.trim() ? tokens.openId.trim() : null;
+};
+
+const verifyIncomingCjWebhook = async (ctx: any, request: Request, rawBody: string) => {
+    const signatureVerificationRequired = readBooleanEnv(process.env.CJ_WEBHOOK_VERIFY_SIGNATURE, true);
+    if (!signatureVerificationRequired) {
+        return { ok: true as const };
+    }
+
+    const signature = request.headers.get("sign");
+    if (!signature) {
+        return { ok: false as const, status: 401, error: "Missing CJ webhook signature" };
+    }
+
+    const openId = await getConfiguredCjOpenId(ctx);
+    if (!openId) {
+        return { ok: false as const, status: 503, error: "CJ webhook signature secret is not configured" };
+    }
+
+    const isValidSignature = await verifyCjWebhookSignature(openId, rawBody, signature);
+    if (!isValidSignature) {
+        return { ok: false as const, status: 401, error: "Invalid CJ webhook signature" };
+    }
+
+    return { ok: true as const };
 };
 
 type CheckoutItem = {
@@ -355,41 +401,70 @@ http.route({
     path: "/cj/webhook",
     method: "POST",
     handler: httpAction(async (ctx, request) => {
+        let claimedWebhook: { messageId: string; type: string; claimToken: string } | null = null;
+
         try {
-            const body = await request.json();
+            const rawBody = await request.text();
+            const signatureResult = await verifyIncomingCjWebhook(ctx, request, rawBody);
+            if (!signatureResult.ok) {
+                console.warn(`CJ Webhook rejected: ${signatureResult.error}`);
+                return cjJsonResponse({ success: false, error: signatureResult.error }, signatureResult.status);
+            }
 
-            console.log("CJ Webhook received:", JSON.stringify(body, null, 2));
+            let parsedBody: unknown;
+            try {
+                parsedBody = JSON.parse(rawBody);
+            } catch {
+                return cjJsonResponse({ success: false, error: "Invalid webhook JSON" }, 400);
+            }
 
+            if (parsedBody === null || typeof parsedBody !== "object" || Array.isArray(parsedBody)) {
+                return cjJsonResponse({ success: false, error: "Invalid webhook payload" }, 400);
+            }
+
+            const body = parsedBody as Record<string, unknown>;
             const { messageId, type, messageType, params } = body;
 
-            if (!messageId || !type) {
-                return new Response(JSON.stringify({ success: false, error: "Invalid webhook payload" }), {
-                    status: 400,
-                    headers: { "Content-Type": "application/json" },
-                });
+            if (typeof messageId !== "string" || !messageId.trim() || typeof type !== "string" || !type.trim()) {
+                return cjJsonResponse({ success: false, error: "Invalid webhook payload" }, 400);
             }
 
-            // DEDUPLICATION: Check if we've already processed this webhook
-            const alreadyProcessed = await ctx.runQuery(internal.cjHelpers.wasWebhookProcessed, { messageId });
-            if (alreadyProcessed) {
-                console.log(`CJ Webhook: Already processed messageId=${messageId}, skipping`);
-                return new Response(JSON.stringify({ success: true, skipped: true }), {
-                    status: 200,
-                    headers: { "Content-Type": "application/json" },
-                });
+            if (params === null || typeof params !== "object" || Array.isArray(params)) {
+                return cjJsonResponse({ success: false, error: "Invalid webhook payload" }, 400);
             }
+
+            const normalizedMessageId = messageId.trim();
+            const normalizedType = type.trim();
+            const normalizedMessageType = typeof messageType === "string" && messageType.trim()
+                ? messageType.trim()
+                : "unknown";
+
+            console.log(`CJ Webhook received: messageId=${normalizedMessageId} type=${normalizedType} messageType=${normalizedMessageType}`);
+
+            const claimResult = await ctx.runMutation(internal.cjHelpers.claimWebhookProcessing, {
+                messageId: normalizedMessageId,
+                type: normalizedType,
+            });
+            if (!claimResult.claimed) {
+                console.log(`CJ Webhook: Already claimed messageId=${normalizedMessageId}, skipping`);
+                return cjJsonResponse({ success: true, skipped: true, status: claimResult.status });
+            }
+            if (typeof claimResult.claimToken !== "string") {
+                throw new Error("CJ webhook claim did not return a claim token");
+            }
+            claimedWebhook = { messageId: normalizedMessageId, type: normalizedType, claimToken: claimResult.claimToken };
 
             // Handle different webhook types
             // webhookHandled tracks whether the handler found and updated a matching product.
             // CRITICAL: Only mark the webhook as "processed" when handled === true.
             // If a handler fails to find the product (e.g., cjSourcingId not stored yet),
-            // we intentionally leave the messageId unrecorded so CJ's retry can re-attempt.
+            // mark it retryable and return a non-2xx response so CJ can retry delivery.
             let webhookHandled = true;
 
-            switch (type) {
+            switch (normalizedType) {
                 case "ORDER":
                     // Order status update from CJ
-                    await handleCjOrderWebhook(ctx, params, messageType);
+                    webhookHandled = await handleCjOrderWebhook(ctx, params, normalizedMessageType);
                     break;
 
                 case "LOGISTIC":
@@ -430,48 +505,58 @@ http.route({
                     break;
 
                 default:
-                    console.log(`Unknown CJ webhook type: ${type}`, params);
+                    console.log(`Unknown CJ webhook type: ${normalizedType}`, {
+                        messageId: normalizedMessageId,
+                        paramKeys: Object.keys(params),
+                    });
             }
 
-            // Only record as processed if the handler actually found and updated a product.
-            // This allows CJ retries to re-attempt if the first webhook fired before
-            // the product's cjSourcingId was stored in the database.
+            // Only mark processed if the handler actually found and updated the target record.
             if (webhookHandled) {
-                await ctx.runMutation(internal.cjHelpers.recordProcessedWebhook, {
-                    messageId,
-                    type,
+                await ctx.runMutation(internal.cjHelpers.markWebhookProcessed, {
+                    messageId: normalizedMessageId,
+                    type: normalizedType,
+                    claimToken: claimedWebhook.claimToken,
                 });
             } else {
-                console.warn(
-                    `CJ Webhook: ${type} handler did not find a matching product — ` +
-                    `NOT marking messageId=${messageId} as processed (will allow CJ retry)`
-                );
+                const retryMessage = `${normalizedType} handler did not find a matching product`;
+                console.warn(`CJ Webhook: ${retryMessage}; returning 503 so CJ can retry messageId=${normalizedMessageId}`);
+                await ctx.runMutation(internal.cjHelpers.markWebhookRetryable, {
+                    messageId: normalizedMessageId,
+                    type: normalizedType,
+                    error: retryMessage,
+                    claimToken: claimedWebhook.claimToken,
+                });
+                return cjJsonResponse({ success: false, retry: true, error: retryMessage }, 503);
             }
 
             // CJ requires 200 response within 3 seconds
-            return new Response(JSON.stringify({ success: true }), {
-                status: 200,
-                headers: { "Content-Type": "application/json" },
-            });
+            return cjJsonResponse({ success: true });
 
-        } catch (error: any) {
-            console.error("CJ Webhook error:", error.message);
-            return new Response(JSON.stringify({ success: false, error: error.message }), {
-                status: 500,
-                headers: { "Content-Type": "application/json" },
-            });
+        } catch (error: unknown) {
+            console.error("CJ Webhook error:", error);
+            if (claimedWebhook) {
+                try {
+                    await ctx.runMutation(internal.cjHelpers.markWebhookFailed, {
+                        ...claimedWebhook,
+                    });
+                } catch (markError) {
+                    console.error("Failed to mark CJ webhook failure:", markError);
+                }
+            }
+            return cjJsonResponse({ success: false, error: "Internal server error" }, 500);
         }
     }),
 });
 
 // Handle CJ Order status webhook
 /** Handles CJ Dropshipping order status webhook events. */
-async function handleCjOrderWebhook(ctx: any, params: any, messageType: string) {
+async function handleCjOrderWebhook(ctx: any, params: any, _messageType: string): Promise<boolean> {
     const { cjOrderId, orderNumber, orderStatus, trackNumber, logisticName, trackingUrl } = params;
 
     if (!orderNumber) {
         console.error("CJ Order webhook missing orderNumber");
-        return;
+        return false;
     }
 
     console.log(`CJ Order ${orderNumber} status: ${orderStatus}, tracking: ${trackNumber}`);
@@ -486,8 +571,10 @@ async function handleCjOrderWebhook(ctx: any, params: any, messageType: string) 
             trackingUrl: trackingUrl || undefined,
             carrier: logisticName || undefined,
         });
+        return true;
     } catch (error: any) {
         console.error("Failed to process CJ order webhook:", error.message);
+        return false;
     }
 }
 

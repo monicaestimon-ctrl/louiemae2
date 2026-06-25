@@ -1,6 +1,6 @@
 # CJ Fully Hands-Off Fulfillment Plan
 
-Verified against official CJ Dropshipping developer documentation on 2026-06-24.
+Verified against official CJ Dropshipping developer documentation on 2026-06-25.
 
 Official docs referenced:
 
@@ -9,6 +9,7 @@ Official docs referenced:
 - Order synchronization process: https://developers.cjdropshipping.com/en/api/start/Orders-Synchronization-Processing.html
 - Shopping/order APIs: https://developers.cjdropshipping.com/en/api/api2/api/shopping.html
 - Webhook integration: https://developers.cjdropshipping.com/en/api/start/webhook.html
+- Webhook setting/subscription APIs: https://developers.cjdropshipping.cn/en/api/api2/api/webhook.html
 
 ## Current State
 
@@ -111,12 +112,16 @@ If automatic balance payment is disabled, the app should still create the CJ ord
 
 ### Phase 4 - Webhook Security And Idempotency
 
-- [ ] Verify CJ webhook signatures using HMAC-SHA256 and the CJ `openId` value as the signing secret, as documented by CJ.
-- [ ] Reject invalid signatures in production.
-- [ ] Store processed webhook IDs or stable event fingerprints.
+- [x] Verify CJ webhook signatures in the `/cj/webhook` HTTP handler using HMAC-SHA256 and the CJ `openId` value as the signing secret, as documented by CJ.
+- [x] Reject missing or invalid signatures before JSON parsing when `CJ_WEBHOOK_VERIFY_SIGNATURE` is enabled.
+- [x] Store processed webhook IDs and atomic processing claims.
 - [ ] Make webhook handlers idempotent for product, stock, order, sourcing, and logistics events.
+  - [x] Prevent exact duplicate `messageId` deliveries from running side effects concurrently.
+  - [ ] Harden each topic handler against out-of-order updates and equivalent payloads with different message IDs.
 - [ ] Ensure the endpoint returns `200 OK` quickly for valid events.
 - [ ] Add tests for valid signature, invalid signature, duplicate event, and unknown topic.
+  - [x] Lock the HMAC-SHA256 Base64 signature helper against CJ's documented sample.
+  - [ ] Add Convex HTTP handler tests for valid/invalid webhook requests.
 - [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
 
 ### Phase 5 - Product Mapping And Inventory Readiness

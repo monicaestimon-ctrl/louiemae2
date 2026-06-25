@@ -429,6 +429,17 @@ export default defineSchema({
         messageId: v.string(),
         type: v.string(), // ORDER, LOGISTIC, PRODUCT, VARIANT
         processedAt: v.string(), // ISO timestamp
+        status: v.optional(v.union(
+            v.literal("processing"),
+            v.literal("processed"),
+            v.literal("retryable"),
+            v.literal("failed")
+        )),
+        claimedAt: v.optional(v.string()),
+        claimToken: v.optional(v.string()),
+        completedAt: v.optional(v.string()),
+        lastError: v.optional(v.string()),
+        attempts: v.optional(v.number()),
     }).index("by_message_id", ["messageId"]),
 
     // CJ API Tokens - stores access and refresh tokens persistently
