@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { calculatePricingBreakdown } from "../lib/pricing";
+import { getCjFulfillmentReentryBlock } from "../lib/cjFulfillmentWorkflow";
 
 const hasFiniteNumber = (value: unknown): boolean => typeof value === "number" && Number.isFinite(value);
 const CJ_RESERVATION_TTL_MS = 10 * 60 * 1000;
@@ -43,7 +44,8 @@ export const reserveCjFulfillmentAttempt = internalMutation({
             return { reserved: false, reason: "not_found" as const, order: null };
         }
 
-        if (order.cjPaymentStatus === "paid" || order.cjFulfillmentStep === "paid") {
+        const terminalBlock = getCjFulfillmentReentryBlock(order);
+        if (terminalBlock) {
             return { reserved: false, reason: "terminal" as const, order };
         }
 
