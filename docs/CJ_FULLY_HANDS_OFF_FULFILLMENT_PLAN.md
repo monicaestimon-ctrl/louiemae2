@@ -97,8 +97,8 @@ If automatic balance payment is disabled, the app should still create the CJ ord
 
 ### Phase 3 - Order Fulfillment Orchestration
 
-- [ ] Replace the current create-only CJ path with an idempotent fulfillment workflow.
-- [ ] For each Stripe-paid order:
+- [x] Replace the current create-only CJ path with an idempotent fulfillment workflow.
+- [x] For each Stripe-paid order:
   - [x] validate address and country code
   - [x] validate product and variant mappings
   - [x] quote freight
@@ -114,19 +114,20 @@ If automatic balance payment is disabled, the app should still create the CJ ord
 - [x] Add tests for partial failure and retry from each major step.
   - [x] Cover terminal/in-flight CJ states that must block re-entry.
   - [x] Cover step-order resume decisions for order creation, cart, confirmation, payment generation, and paid states.
-- [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
+- [x] Open PR #50, run CodeRabbit CLI, resolve issues, merge.
 
 ### Phase 4 - Webhook Security And Idempotency
 
 - [x] Verify CJ webhook signatures in the `/cj/webhook` HTTP handler using HMAC-SHA256 and the CJ `openId` value as the signing secret, as documented by CJ.
 - [x] Reject missing or invalid signatures before JSON parsing when `CJ_WEBHOOK_VERIFY_SIGNATURE` is enabled.
 - [x] Store processed webhook IDs and atomic processing claims.
-- [ ] Make webhook handlers idempotent for product, stock, order, sourcing, and logistics events.
+- [x] Make webhook handlers idempotent for product, stock, order, sourcing, and logistics events.
   - [x] Prevent exact duplicate `messageId` deliveries from running side effects concurrently.
-  - [ ] Harden each topic handler against out-of-order updates and equivalent payloads with different message IDs.
+  - [x] Harden each topic handler against out-of-order updates and equivalent payloads with different message IDs.
 - [ ] Ensure the endpoint returns `200 OK` quickly for valid events.
 - [ ] Add tests for valid signature, invalid signature, duplicate event, and unknown topic.
   - [x] Lock the HMAC-SHA256 Base64 signature helper against CJ's documented sample.
+  - [x] Cover monotonic ORDER/LOGISTIC status resolution for duplicate and out-of-order webhook messages.
   - [ ] Add Convex HTTP handler tests for valid/invalid webhook requests.
 - [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
 
