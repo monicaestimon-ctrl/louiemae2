@@ -3,6 +3,7 @@ import { internalMutation, internalQuery, mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { calculatePricingBreakdown } from "../lib/pricing";
 import { getCjFulfillmentReentryBlock } from "../lib/cjFulfillmentWorkflow";
+import { resolveMonotonicCjStatus } from "../lib/cjWebhookIdempotency";
 
 const hasFiniteNumber = (value: unknown): boolean => typeof value === "number" && Number.isFinite(value);
 const CJ_RESERVATION_TTL_MS = 10 * 60 * 1000;
@@ -413,20 +414,20 @@ export const handleCjWebhookUpdate = internalMutation({
         }
 
         // Build update object
+        const now = new Date().toISOString();
         const updateData: Record<string, any> = {
-            cjLastSyncAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
+            cjLastSyncAt: now,
+            updatedAt: now,
         };
 
-        // Map cjStatus string to valid status
-        const validStatuses = ["pending", "sending", "confirmed", "processing", "shipped", "delivered", "failed", "cancelled"];
-        if (validStatuses.includes(args.cjStatus)) {
-            updateData.cjStatus = args.cjStatus;
+        const statusResolution = resolveMonotonicCjStatus(order.cjStatus, args.cjStatus);
+        if (statusResolution.status) {
+            updateData.cjStatus = statusResolution.status;
 
             // Also update main order status for shipped/delivered
-            if (args.cjStatus === "shipped") {
+            if (statusResolution.status === "shipped") {
                 updateData.status = "shipped";
-            } else if (args.cjStatus === "delivered") {
+            } else if (statusResolution.status === "delivered") {
                 updateData.status = "delivered";
             }
         }
@@ -437,7 +438,9 @@ export const handleCjWebhookUpdate = internalMutation({
 
         if (args.trackingNumber) {
             updateData.trackingNumber = args.trackingNumber;
-            updateData.shippedAt = new Date().toISOString();
+            if (!order.shippedAt) {
+                updateData.shippedAt = now;
+            }
         }
 
         if (args.trackingUrl) {
@@ -477,24 +480,24 @@ export const handleCjLogisticsUpdate = internalMutation({
             return;
         }
 
+        const now = new Date().toISOString();
         const updateData: Record<string, any> = {
-            cjLastSyncAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
+            cjLastSyncAt: now,
+            updatedAt: now,
         };
 
-        // Map status
-        const validStatuses = ["shipped", "delivered", "failed"];
-        if (validStatuses.includes(args.cjStatus)) {
-            updateData.cjStatus = args.cjStatus;
-            if (args.cjStatus === "shipped" || args.cjStatus === "delivered") {
-                updateData.status = args.cjStatus; // Sync main status
+        const statusResolution = resolveMonotonicCjStatus(order.cjStatus, args.cjStatus);
+        if (statusResolution.status) {
+            updateData.cjStatus = statusResolution.status;
+            if (statusResolution.status === "shipped" || statusResolution.status === "delivered") {
+                updateData.status = statusResolution.status; // Sync main status
             }
         }
 
         if (args.trackingNumber) {
             updateData.trackingNumber = args.trackingNumber;
             if (!order.shippedAt) {
-                updateData.shippedAt = new Date().toISOString();
+                updateData.shippedAt = now;
             }
         }
 
