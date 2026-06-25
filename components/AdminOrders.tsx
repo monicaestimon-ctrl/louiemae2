@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useAction } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
@@ -38,13 +38,17 @@ const cjStatusConfig: Record<CjStatus, { label: string; color: string; icon: Rea
 export const AdminOrders: React.FC = () => {
     const orders = useQuery(api.orders.getAll) || [];
     const updateStatus = useMutation(api.orders.updateStatus);
-    const resetCjStatus = useMutation(api.orders.resetCjStatus);
     const syncTracking = useAction(api.cjActions.syncTracking);
+    const syncOrderTracking = useAction(api.cjActions.syncOrderTracking);
+    const retryOrderFulfillment = useAction(api.cjActions.retryOrderFulfillment);
     const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
     const [filterStatus, setFilterStatus] = useState<OrderStatus | 'all' | 'cj-failed'>('all');
     const [retryingOrder, setRetryingOrder] = useState<string | null>(null);
+    const [resyncingOrder, setResyncingOrder] = useState<string | null>(null);
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncResult, setSyncResult] = useState<{ synced: number; errors: number } | null>(null);
+    const [orderActionResult, setOrderActionResult] = useState<{ orderId: string; success: boolean; message: string } | null>(null);
+    const orderActionClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const filteredOrders = filterStatus === 'all'
         ? orders
@@ -52,17 +56,60 @@ export const AdminOrders: React.FC = () => {
             ? orders.filter(o => o.cjStatus === 'failed')
             : orders.filter(o => o.status === filterStatus);
 
+    useEffect(() => {
+        return () => {
+            if (orderActionClearTimer.current) {
+                clearTimeout(orderActionClearTimer.current);
+            }
+        };
+    }, []);
+
+    const clearOrderActionResult = () => {
+        if (orderActionClearTimer.current) {
+            clearTimeout(orderActionClearTimer.current);
+            orderActionClearTimer.current = null;
+        }
+        setOrderActionResult(null);
+    };
+
+    const showOrderActionResult = (result: { orderId: string; success: boolean; message: string }) => {
+        clearOrderActionResult();
+        setOrderActionResult(result);
+        orderActionClearTimer.current = setTimeout(() => {
+            setOrderActionResult(null);
+            orderActionClearTimer.current = null;
+        }, 6000);
+    };
+
     const handleStatusChange = async (orderId: Id<"orders">, newStatus: OrderStatus) => {
         await updateStatus({ orderId, status: newStatus });
     };
 
     const handleRetryCj = async (orderId: Id<"orders">) => {
         setRetryingOrder(orderId);
+        clearOrderActionResult();
         try {
-            await resetCjStatus({ orderId });
-            // The CJ order will be resent on the next sync or manually triggered
+            const result = await retryOrderFulfillment({ orderId });
+            showOrderActionResult({ orderId, success: result.success, message: result.message });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'CJ retry failed';
+            showOrderActionResult({ orderId, success: false, message });
         } finally {
             setRetryingOrder(null);
+        }
+    };
+
+    const handleSyncOrderTracking = async (orderId: Id<"orders">) => {
+        setResyncingOrder(orderId);
+        clearOrderActionResult();
+        try {
+            const result = await syncOrderTracking({ orderId });
+            showOrderActionResult({ orderId, success: result.success, message: result.message });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Tracking resync failed';
+            showOrderActionResult({ orderId, success: false, message });
+        } finally {
+            setResyncingOrder(null);
         }
     };
 
@@ -418,15 +465,36 @@ export const AdminOrders: React.FC = () => {
                                                                     </div>
                                                                 )}
 
-                                                                {order.cjStatus === 'failed' && (
-                                                                    <button
-                                                                        onClick={(e) => { e.stopPropagation(); handleRetryCj(order._id as Id<"orders">); }}
-                                                                        disabled={retryingOrder === order._id}
-                                                                        className="mt-4 w-full px-4 py-2.5 bg-gradient-to-r from-red-500/20 to-red-600/20 border border-red-500/30 text-red-300 hover:text-red-200 text-xs font-medium uppercase tracking-widest rounded-lg hover:from-red-500/30 hover:to-red-600/30 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
-                                                                    >
-                                                                        <RefreshCw className={`w-3.5 h-3.5 mt-[-1px] ${retryingOrder === order._id ? 'animate-spin drop-shadow-[0_0_3px_currentColor]' : ''}`} />
-                                                                        Retry CJ Payload
-                                                                    </button>
+                                                                {orderActionResult?.orderId === order._id && (
+                                                                    <div className={`mt-3 p-3 border rounded-lg text-xs tracking-wide leading-relaxed shadow-inner ${orderActionResult.success ? 'bg-green-500/10 border-green-500/20 text-green-300' : 'bg-red-500/10 border-red-500/20 text-red-300'}`}>
+                                                                        {orderActionResult.message}
+                                                                    </div>
+                                                                )}
+
+                                                                {(order.cjOrderId || order.cjStatus === 'failed') && (
+                                                                    <div className="mt-4 grid grid-cols-1 gap-2">
+                                                                        {order.cjOrderId && (
+                                                                            <button
+                                                                                onClick={(e) => { e.stopPropagation(); handleSyncOrderTracking(order._id as Id<"orders">); }}
+                                                                                disabled={resyncingOrder === order._id}
+                                                                                className="w-full px-4 py-2.5 bg-white/5 border border-white/10 text-cream/70 hover:text-white text-xs font-medium uppercase tracking-widest rounded-lg hover:bg-white/10 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                                                            >
+                                                                                <RefreshCw className={`w-3.5 h-3.5 mt-[-1px] ${resyncingOrder === order._id ? 'animate-spin drop-shadow-[0_0_3px_currentColor]' : ''}`} />
+                                                                                Resync Tracking
+                                                                            </button>
+                                                                        )}
+
+                                                                        {order.cjStatus === 'failed' && (
+                                                                            <button
+                                                                                onClick={(e) => { e.stopPropagation(); handleRetryCj(order._id as Id<"orders">); }}
+                                                                                disabled={retryingOrder === order._id}
+                                                                                className="w-full px-4 py-2.5 bg-gradient-to-r from-red-500/20 to-red-600/20 border border-red-500/30 text-red-300 hover:text-red-200 text-xs font-medium uppercase tracking-widest rounded-lg hover:from-red-500/30 hover:to-red-600/30 transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+                                                                            >
+                                                                                <RefreshCw className={`w-3.5 h-3.5 mt-[-1px] ${retryingOrder === order._id ? 'animate-spin drop-shadow-[0_0_3px_currentColor]' : ''}`} />
+                                                                                Retry Fulfillment
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
                                                                 )}
                                                             </div>
                                                         </div>

@@ -46,6 +46,7 @@ The live balance payment call can spend funds from the connected CJ account. Cod
 
 - `CJ_AUTO_FULFILLMENT_ENABLED=true`
 - `CJ_AUTO_BALANCE_PAY_ENABLED=true`
+- `CJ_ADMIN_EMAILS` is set in Convex to a comma-separated list of admin emails allowed to run manual CJ retry/resync actions.
 - CJ API credentials are live and verified.
 - CJ balance funding, product mappings, and logistics settings have been tested with a low-value order.
 - Webhook signature verification is enabled.
@@ -144,9 +145,10 @@ If automatic balance payment is disabled, the app should still create the CJ ord
 - [x] Reconcile CJ order status and tracking through both webhooks and scheduled polling.
 - [x] Store tracking carrier, number, URL, latest status, and last sync timestamp.
 - [x] Trigger customer-facing order status updates when tracking is available.
-- [ ] Add manual admin retry/resync actions.
+- [x] Add manual admin retry/resync actions.
 - [ ] Add tests for webhook-first, cron-first, and delayed-tracking flows.
   - [x] Cover CJ documented order status mapping and cron-first `trackInfo` reconciliation.
+  - [x] Cover saved-order retry payload validation for missing shipping/CJ mappings.
 - [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
 
 ### Phase 7 - Operational Launch Checklist
