@@ -327,6 +327,7 @@ export default defineSchema({
             v.literal("manual_payment_required"),
             v.literal("payment_order_generated"),
             v.literal("balance_payment_ready"),
+            v.literal("balance_payment_attempting"),
             v.literal("balance_payment_submitted"),
             v.literal("paid"),
             v.literal("failed"),

@@ -3,7 +3,16 @@
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { createOrderV2, formatCjApiError } from "./cjApiClient";
+import {
+    addCart,
+    addCartConfirm,
+    createOrderV2,
+    formatCjApiError,
+    getOrderDetail,
+    payBalanceV2,
+    saveGenerateParentOrder,
+    type CjApiErrorDetails,
+} from "./cjApiClient";
 import { getCjAutomationConfig } from "../lib/cjAutomation";
 import { calculateOrderPricingReconciliation } from "../lib/pricing";
 
@@ -327,6 +336,73 @@ interface CjOrderRequest {
     remark?: string;
 }
 
+const hasCjApiError = (result: unknown): result is { error: CjApiErrorDetails } =>
+    typeof result === "object" && result !== null && "error" in result;
+
+const cjResultErrorMessage = (result: unknown, fallback: string): string =>
+    hasCjApiError(result) ? formatCjApiError(result.error) : fallback;
+
+const firstString = (...values: unknown[]): string | undefined => {
+    for (const value of values) {
+        if (typeof value === "string" && value.trim()) return value.trim();
+    }
+    return undefined;
+};
+
+const CJ_STEP_ORDER = [
+    "not_started",
+    "creating_order",
+    "order_created",
+    "adding_to_cart",
+    "cart_added",
+    "confirming_cart",
+    "cart_confirmed",
+    "generating_payment_order",
+    "payment_order_generated",
+    "paying_balance",
+    "payment_submitted",
+    "paid",
+    "processing",
+] as const;
+
+const hasReachedCjStep = (current: string | undefined, target: typeof CJ_STEP_ORDER[number]): boolean => {
+    if (!current || current === "failed") return false;
+    return CJ_STEP_ORDER.indexOf(current as typeof CJ_STEP_ORDER[number]) >= CJ_STEP_ORDER.indexOf(target);
+};
+
+const isPaidLikeCjOrderDetail = (detail: any): boolean => {
+    const statusText = [
+        detail?.orderStatus,
+        detail?.status,
+        detail?.paymentStatus,
+        detail?.payStatus,
+    ]
+        .filter((value) => value !== undefined && value !== null)
+        .map((value) => String(value).toLowerCase())
+        .join(" ");
+
+    return ["paid", "processing", "shipped", "delivered"].some((status) => statusText.includes(status));
+};
+
+const markCjFulfillmentFailed = async (
+    ctx: any,
+    orderId: any,
+    automationMode: "create_only" | "manual_payment" | "balance_payment",
+    errorMsg: string,
+    cjOrderId?: string,
+    resumeStep?: typeof CJ_STEP_ORDER[number],
+) => {
+    await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
+        orderId,
+        cjStatus: "failed",
+        cjOrderId,
+        cjError: errorMsg,
+        cjAutomationMode: automationMode,
+        cjFulfillmentStep: resumeStep,
+        cjPaymentStatus: "failed",
+    });
+};
+
 /**
  * Create an order in CJ Dropshipping
  */
@@ -358,6 +434,27 @@ export const createCjOrder = internalAction({
     },
     handler: async (ctx, args): Promise<{ success: boolean; cjOrderId?: string; error?: string }> => {
         const automationConfig = getCjAutomationConfig(process.env);
+        const idempotencyKey = `${args.orderId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+        const reservation = await ctx.runMutation(internal.cjHelpers.reserveCjFulfillmentAttempt, {
+            orderId: args.orderId,
+            automationMode: automationConfig.mode,
+            idempotencyKey,
+        });
+
+        if (!reservation.reserved) {
+            if (reservation.reason === "not_found") {
+                return { success: false, error: "Order not found for CJ fulfillment" };
+            }
+            if (reservation.reason === "in_progress") {
+                return {
+                    success: false,
+                    cjOrderId: reservation.order?.cjOrderId,
+                    error: "CJ fulfillment already in progress",
+                };
+            }
+            return { success: true, cjOrderId: reservation.order?.cjOrderId };
+        }
+        const existingOrder = reservation.order;
 
         // Get access token
         const accessToken = await ctx.runAction(internal.cjDropshipping.getAccessToken, {});
@@ -425,71 +522,316 @@ export const createCjOrder = internalAction({
             return { success: false, error: "No CJ products found in order" };
         }
 
+        let cjOrderId = existingOrder?.cjOrderId;
+        let shipmentOrderId = existingOrder?.cjShipmentOrderId;
+        let payId = existingOrder?.cjPayId;
+        let paymentAmount = existingOrder?.cjPaymentAmount;
+        const existingStep = existingOrder?.cjFulfillmentStep;
+        let resumeStep: typeof CJ_STEP_ORDER[number] | undefined =
+            existingStep && existingStep !== "failed" ? existingStep as typeof CJ_STEP_ORDER[number] : undefined;
+
         try {
-            // Mark order as sending
-            await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
-                orderId: args.orderId,
-                cjStatus: "sending",
-                cjAutomationMode: automationConfig.mode,
-                cjFulfillmentStep: "creating_order",
-                cjPaymentStatus: "not_started",
-                cjQuotedProductCost: reconciliation.productCostTotal,
-                cjQuotedShippingCost: freightQuote?.shippingCost,
-                cjQuotedTaxesFee: reconciliation.taxesFee,
-                cjQuotedClearanceFee: reconciliation.clearanceFee,
-                cjQuotedLandedCost: reconciliation.landedCost,
-                cjQuotedLogisticsName: freightQuote?.logisticsName || cjOrder.logisticName,
-                cjCustomerShippingCollected: reconciliation.customerShippingCollected,
-                cjEstimatedProfit: reconciliation.estimatedProfit,
-                cjPricingWarnings: reconciliation.warnings,
-                cjRawPricingResponse: freightQuote?.rawResponse,
-            });
+            if (!cjOrderId) {
+                // Mark order as sending
+                await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
+                    orderId: args.orderId,
+                    cjStatus: "sending",
+                    cjAutomationMode: automationConfig.mode,
+                    cjFulfillmentStep: "creating_order",
+                    cjPaymentStatus: "not_started",
+                    cjQuotedProductCost: reconciliation.productCostTotal,
+                    cjQuotedShippingCost: freightQuote?.shippingCost,
+                    cjQuotedTaxesFee: reconciliation.taxesFee,
+                    cjQuotedClearanceFee: reconciliation.clearanceFee,
+                    cjQuotedLandedCost: reconciliation.landedCost,
+                    cjQuotedLogisticsName: freightQuote?.logisticsName || cjOrder.logisticName,
+                    cjCustomerShippingCollected: reconciliation.customerShippingCollected,
+                    cjEstimatedProfit: reconciliation.estimatedProfit,
+                    cjPricingWarnings: reconciliation.warnings,
+                    cjRawPricingResponse: freightQuote?.rawResponse,
+                });
 
-            const createOrderResult = await createOrderV2(accessToken, cjOrder);
+                const createOrderResult = await createOrderV2(accessToken, cjOrder);
+                if (!createOrderResult.ok || !createOrderResult.data?.orderId) {
+                    const errorMsg = cjResultErrorMessage(createOrderResult, "CJ order creation succeeded but did not return an orderId");
+                    await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, errorMsg);
+                    console.error("CJ Order creation failed:", errorMsg);
+                    return { success: false, error: errorMsg };
+                }
 
-            if (createOrderResult.ok && createOrderResult.data?.orderId) {
-                // Success! Update order with CJ order ID
+                cjOrderId = createOrderResult.data.orderId;
+                shipmentOrderId = createOrderResult.data.shipmentOrderId;
+                paymentAmount = toFiniteNumber(createOrderResult.data.actualPayment ?? createOrderResult.data.orderAmount);
+
                 await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
                     orderId: args.orderId,
                     cjStatus: "confirmed",
-                    cjOrderId: createOrderResult.data.orderId,
+                    cjOrderId,
                     cjAutomationMode: automationConfig.mode,
                     cjFulfillmentStep: "order_created",
-                    cjPaymentStatus: "manual_payment_required",
-                    cjShipmentOrderId: createOrderResult.data.shipmentOrderId,
+                    cjPaymentStatus: automationConfig.autoFulfillmentEnabled ? "not_started" : "manual_payment_required",
+                    cjShipmentOrderId: shipmentOrderId,
                     cjPaymentUrl: createOrderResult.data.cjPayUrl,
-                    cjPaymentAmount: toFiniteNumber(createOrderResult.data.actualPayment ?? createOrderResult.data.orderAmount),
+                    cjPaymentAmount: paymentAmount,
+                });
+                resumeStep = "order_created";
+
+                console.log(`CJ Order created: ${cjOrderId}`);
+            }
+
+            if (!automationConfig.autoFulfillmentEnabled) {
+                return { success: true, cjOrderId };
+            }
+
+            if (!hasReachedCjStep(existingStep, "cart_added")) {
+                await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
+                    orderId: args.orderId,
+                    cjStatus: "confirmed",
+                    cjOrderId,
+                    cjAutomationMode: automationConfig.mode,
+                    cjFulfillmentStep: "adding_to_cart",
+                    cjPaymentStatus: "not_started",
                 });
 
-                console.log(`CJ Order created: ${createOrderResult.data.orderId}`);
-                return { success: true, cjOrderId: createOrderResult.data.orderId };
-            } else {
-                // CJ API returned an error
-                const errorMsg = "error" in createOrderResult
-                    ? formatCjApiError(createOrderResult.error)
-                    : "CJ order creation succeeded but did not return an orderId";
+                const addCartResult = await addCart(accessToken, [cjOrderId]);
+                if (!addCartResult.ok) {
+                    const errorMsg = cjResultErrorMessage(addCartResult, "CJ add cart failed");
+                    await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, errorMsg, cjOrderId, "order_created");
+                    return { success: false, cjOrderId, error: errorMsg };
+                }
+
+                await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
+                    orderId: args.orderId,
+                    cjStatus: "confirmed",
+                    cjOrderId,
+                    cjAutomationMode: automationConfig.mode,
+                    cjFulfillmentStep: "cart_added",
+                    cjPaymentStatus: "not_started",
+                });
+                resumeStep = "cart_added";
+            }
+
+            if (!hasReachedCjStep(existingStep, "cart_confirmed")) {
+                await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
+                    orderId: args.orderId,
+                    cjStatus: "confirmed",
+                    cjOrderId,
+                    cjAutomationMode: automationConfig.mode,
+                    cjFulfillmentStep: "confirming_cart",
+                    cjPaymentStatus: "not_started",
+                });
+
+                const confirmCartResult = await addCartConfirm(accessToken, [cjOrderId]);
+                if (!confirmCartResult.ok) {
+                    const errorMsg = cjResultErrorMessage(confirmCartResult, "CJ cart confirmation failed");
+                    await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, errorMsg, cjOrderId, "cart_added");
+                    return { success: false, cjOrderId, error: errorMsg };
+                }
+
+                shipmentOrderId = firstString(
+                    shipmentOrderId,
+                    (confirmCartResult.data as any)?.shipmentsId,
+                    (confirmCartResult.data as any)?.shipmentOrderId,
+                );
+
+                if (!shipmentOrderId) {
+                    const errorMsg = "CJ cart confirmation did not return a shipment order ID";
+                    await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, errorMsg, cjOrderId, "cart_added");
+                    return { success: false, cjOrderId, error: errorMsg };
+                }
+
+                await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
+                    orderId: args.orderId,
+                    cjStatus: "confirmed",
+                    cjOrderId,
+                    cjAutomationMode: automationConfig.mode,
+                    cjFulfillmentStep: "cart_confirmed",
+                    cjPaymentStatus: "not_started",
+                    cjShipmentOrderId: shipmentOrderId,
+                    cjParentOrderId: shipmentOrderId,
+                });
+                resumeStep = "cart_confirmed";
+            }
+
+            if (!payId) {
+                if (!shipmentOrderId) {
+                    const errorMsg = "CJ payment order generation requires shipmentOrderId";
+                    await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, errorMsg, cjOrderId, "cart_added");
+                    return { success: false, cjOrderId, error: errorMsg };
+                }
+
+                await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
+                    orderId: args.orderId,
+                    cjStatus: "confirmed",
+                    cjOrderId,
+                    cjAutomationMode: automationConfig.mode,
+                    cjFulfillmentStep: "generating_payment_order",
+                    cjPaymentStatus: "not_started",
+                    cjShipmentOrderId: shipmentOrderId,
+                });
+
+                const parentOrderResult = await saveGenerateParentOrder(accessToken, shipmentOrderId);
+                if (!parentOrderResult.ok) {
+                    const errorMsg = cjResultErrorMessage(parentOrderResult, "CJ payment order generation failed");
+                    await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, errorMsg, cjOrderId, "cart_confirmed");
+                    return { success: false, cjOrderId, error: errorMsg };
+                }
+
+                payId = parentOrderResult.data?.payId;
+                if (!payId) {
+                    const errorMsg = "CJ payment order generation did not return payId";
+                    await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, errorMsg, cjOrderId, "cart_confirmed");
+                    return { success: false, cjOrderId, error: errorMsg };
+                }
+                paymentAmount = toFiniteNumber(
+                    parentOrderResult.data?.paymentInformation?.actualPayment ??
+                    parentOrderResult.data?.paymentInformation?.payableAmount ??
+                    parentOrderResult.data?.orderMoney ??
+                    paymentAmount
+                );
+
+                await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
+                    orderId: args.orderId,
+                    cjStatus: "confirmed",
+                    cjOrderId,
+                    cjAutomationMode: automationConfig.mode,
+                    cjFulfillmentStep: "payment_order_generated",
+                    cjPaymentStatus: automationConfig.balancePaymentReady ? "balance_payment_ready" : "manual_payment_required",
+                    cjShipmentOrderId: shipmentOrderId,
+                    cjParentOrderId: shipmentOrderId,
+                    cjPayId: payId,
+                    cjPaymentAmount: paymentAmount,
+                });
+                resumeStep = "payment_order_generated";
+            }
+
+            if (!automationConfig.balancePaymentReady) {
+                return { success: true, cjOrderId };
+            }
+
+            if (!shipmentOrderId || !payId) {
+                const errorMsg = "CJ balance payment requires shipmentOrderId and payId";
+                await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, errorMsg, cjOrderId, "payment_order_generated");
+                return { success: false, cjOrderId, error: errorMsg };
+            }
+
+            const previousPaymentWasSubmitted = existingOrder?.cjPaymentStatus === "balance_payment_submitted";
+            const previousPaymentWasAttempting =
+                existingOrder?.cjPaymentStatus === "balance_payment_attempting" ||
+                hasReachedCjStep(existingStep, "paying_balance");
+            if (previousPaymentWasSubmitted || previousPaymentWasAttempting) {
+                const detailResult = await getOrderDetail(accessToken, cjOrderId);
+                if (detailResult.ok && isPaidLikeCjOrderDetail(detailResult.data)) {
+                    await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
+                        orderId: args.orderId,
+                        cjStatus: "processing",
+                        cjOrderId,
+                        cjAutomationMode: automationConfig.mode,
+                        cjFulfillmentStep: "paid",
+                        cjPaymentStatus: "paid",
+                        cjShipmentOrderId: shipmentOrderId,
+                        cjPayId: payId,
+                        cjPaymentAmount: paymentAmount,
+                        cjAutoPaymentError: "",
+                    });
+                    return { success: true, cjOrderId };
+                }
+
+                if (previousPaymentWasSubmitted || !detailResult.ok) {
+                    const errorMsg = detailResult.ok
+                        ? "CJ balance payment state is ambiguous and requires manual reconciliation"
+                        : cjResultErrorMessage(detailResult, "Failed to reconcile CJ balance payment state");
+                    await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
+                        orderId: args.orderId,
+                        cjStatus: "failed",
+                        cjOrderId,
+                        cjError: errorMsg,
+                        cjAutomationMode: automationConfig.mode,
+                        cjFulfillmentStep: previousPaymentWasSubmitted ? "payment_order_generated" : "paying_balance",
+                        cjPaymentStatus: previousPaymentWasSubmitted ? "balance_payment_submitted" : "balance_payment_attempting",
+                        cjAutoPaymentError: errorMsg,
+                    });
+                    return { success: false, cjOrderId, error: errorMsg };
+                }
+
+                await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
+                    orderId: args.orderId,
+                    cjStatus: "confirmed",
+                    cjOrderId,
+                    cjAutomationMode: automationConfig.mode,
+                    cjFulfillmentStep: "payment_order_generated",
+                    cjPaymentStatus: "balance_payment_ready",
+                    cjAutoPaymentError: "",
+                });
+            }
+
+            await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
+                orderId: args.orderId,
+                cjStatus: "confirmed",
+                cjOrderId,
+                cjAutomationMode: automationConfig.mode,
+                cjFulfillmentStep: "paying_balance",
+                cjPaymentStatus: "balance_payment_attempting",
+                cjShipmentOrderId: shipmentOrderId,
+                cjPayId: payId,
+                cjAutoPaymentAttemptedAt: new Date().toISOString(),
+            });
+
+            const paymentResult = await payBalanceV2(accessToken, { shipmentOrderId, payId });
+            if (!paymentResult.ok) {
+                const errorMsg = cjResultErrorMessage(paymentResult, "CJ balance payment failed");
+                if (hasCjApiError(paymentResult) && paymentResult.error.httpStatus === undefined) {
+                    await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
+                        orderId: args.orderId,
+                        cjStatus: "failed",
+                        cjOrderId,
+                        cjError: errorMsg,
+                        cjAutomationMode: automationConfig.mode,
+                        cjFulfillmentStep: "paying_balance",
+                        cjPaymentStatus: "balance_payment_submitted",
+                        cjAutoPaymentError: errorMsg,
+                    });
+                    return { success: false, cjOrderId, error: errorMsg };
+                }
+
                 await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
                     orderId: args.orderId,
                     cjStatus: "failed",
+                    cjOrderId,
                     cjError: errorMsg,
                     cjAutomationMode: automationConfig.mode,
-                    cjFulfillmentStep: "failed",
+                    cjFulfillmentStep: "payment_order_generated",
                     cjPaymentStatus: "failed",
+                    cjAutoPaymentError: errorMsg,
                 });
-
-                console.error("CJ Order creation failed:", errorMsg);
-                return { success: false, error: errorMsg };
+                return { success: false, cjOrderId, error: errorMsg };
             }
-        } catch (error: any) {
-            const errorMsg = error.message || "Network error contacting CJ API";
+
             await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
                 orderId: args.orderId,
-                cjStatus: "failed",
-                cjError: errorMsg,
+                cjStatus: "processing",
+                cjOrderId,
                 cjAutomationMode: automationConfig.mode,
-                cjFulfillmentStep: "failed",
-                cjPaymentStatus: "failed",
+                cjFulfillmentStep: "paid",
+                cjPaymentStatus: "paid",
+                cjShipmentOrderId: shipmentOrderId,
+                cjPayId: payId,
+                cjPaymentAmount: paymentAmount,
+                cjAutoPaymentError: "",
             });
+            resumeStep = "paid";
+
+            return { success: true, cjOrderId };
+        } catch (error: any) {
+            const errorMsg = error.message || "Network error contacting CJ API";
+            await markCjFulfillmentFailed(
+                ctx,
+                args.orderId,
+                automationConfig.mode,
+                errorMsg,
+                cjOrderId,
+                resumeStep,
+            );
 
             console.error("CJ Order error:", error);
             return { success: false, error: errorMsg };

@@ -89,22 +89,22 @@ If automatic balance payment is disabled, the app should still create the CJ ord
   - logistics/tracking lookup
   - real-time inventory lookup
 - [x] Add tests for success, CJ business errors, malformed responses, and network failures.
-- [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
+- [x] Open PR, run CodeRabbit CLI, resolve issues, merge.
 
 ### Phase 3 - Order Fulfillment Orchestration
 
 - [ ] Replace the current create-only CJ path with an idempotent fulfillment workflow.
 - [ ] For each Stripe-paid order:
-  - validate address and country code
-  - validate product and variant mappings
-  - validate inventory
-  - quote freight
-  - create CJ order
-  - add CJ order to cart
-  - confirm cart
-  - generate parent/payment order
-  - optionally pay via balance API when live automation is enabled
-  - persist every external ID and status transition
+  - [x] validate address and country code
+  - [x] validate product and variant mappings
+  - [x] quote freight
+  - [x] create CJ order
+  - [x] add CJ order to cart
+  - [x] confirm cart
+  - [x] generate parent/payment order
+  - [x] optionally pay via balance API when live automation is enabled
+  - [x] persist every external ID and status transition
+- [ ] Validate inventory before CJ order creation.
 - [ ] Ensure retrying the workflow cannot double-pay or duplicate fulfillment.
 - [ ] Add tests for partial failure and retry from each major step.
 - [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
