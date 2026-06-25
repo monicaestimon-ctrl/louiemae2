@@ -8,7 +8,8 @@ import { getCheckoutShippingForSubtotal } from "../lib/pricing";
 import { getCjAutomationConfig, readBooleanEnv } from "../lib/cjAutomation";
 import { evaluateCheckoutItemCjReadiness, type CjReadinessProduct } from "../lib/cjFulfillmentReadiness";
 import { verifyCjWebhookSignature } from "../lib/cjWebhookSignature";
-import { parseCjWebhookPayload } from "../lib/cjWebhookRequest";
+import { handleCjWebhookHttpRequest } from "../lib/cjWebhookHttp";
+import type { ParsedCjWebhookPayload } from "../lib/cjWebhookRequest";
 import { getStripeWebhookVerificationError, shouldAllowUnsignedStripeWebhook } from "../lib/stripeWebhook";
 
 const http = httpRouter();
@@ -39,12 +40,6 @@ const corsHeaders = {
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
 };
-
-const cjJsonResponse = (body: Record<string, unknown>, status = 200) =>
-    new Response(JSON.stringify(body), {
-        status,
-        headers: { "Content-Type": "application/json" },
-    });
 
 const getConfiguredCjOpenId = async (ctx: any): Promise<string | null> => {
     const envOpenId = process.env.CJ_OPEN_ID?.trim();
@@ -512,139 +507,89 @@ http.route({
 // Receives real-time notifications from CJ for order updates, tracking, etc.
 // ═══════════════════════════════════════════════════════════════════════════
 
+async function dispatchCjWebhookPayload(ctx: any, payload: ParsedCjWebhookPayload): Promise<boolean> {
+    const {
+        messageId: normalizedMessageId,
+        type: normalizedType,
+        messageType: normalizedMessageType,
+        params,
+    } = payload;
+
+    switch (normalizedType) {
+        case "ORDER":
+            // Order status update from CJ
+            return await handleCjOrderWebhook(ctx, params, normalizedMessageType);
+
+        case "LOGISTIC":
+            // Tracking/logistics update
+            await handleCjLogisticsWebhook(ctx, params);
+            return true;
+
+        case "ORDERSPLIT":
+            // Order was split into multiple shipments by CJ
+            console.log("CJ Order Split:", JSON.stringify(params));
+            await handleCjOrderSplitWebhook(ctx, params);
+            return true;
+
+        case "SOURCINGCREATE":
+            // Per CJ docs: Sourcing result - the definitive sourcing approval/rejection.
+            // This is CJ's primary notification when a sourcing request completes.
+            // Contains: cjProductId, cjVariantId, cjVariantSku, cjSourcingId, status, failReason
+            console.log(`CJ SOURCINGCREATE:`, JSON.stringify(params));
+            return await handleCjSourcingCreateWebhook(ctx, params);
+
+        case "PRODUCT":
+            // Per CJ docs: Product catalog update (description, price, image, status changes)
+            // NOTE: This is NOT for sourcing results - use SOURCINGCREATE for that.
+            console.log(`CJ PRODUCT update:`, params);
+            await handleCjProductWebhook(ctx, params);
+            return true;
+
+        case "VARIANT":
+            // Variant info from CJ - contains the vid we need for fulfillment
+            console.log(`CJ VARIANT update:`, params);
+            await handleCjVariantWebhook(ctx, params);
+            return true;
+
+        case "STOCK":
+            // Stock updates - log for now
+            console.log(`CJ STOCK update:`, params);
+            return true;
+
+        default:
+            console.log(`Unknown CJ webhook type: ${normalizedType}`, {
+                messageId: normalizedMessageId,
+                paramKeys: Object.keys(params),
+            });
+            return true;
+    }
+}
+
 http.route({
     path: "/cj/webhook",
     method: "POST",
     handler: httpAction(async (ctx, request) => {
-        let claimedWebhook: { messageId: string; type: string; claimToken: string } | null = null;
-
-        try {
-            const rawBody = await request.text();
-            const signatureResult = await verifyIncomingCjWebhook(ctx, request, rawBody);
-            if (!signatureResult.ok) {
-                console.warn(`CJ Webhook rejected: ${signatureResult.error}`);
-                return cjJsonResponse({ success: false, error: signatureResult.error }, signatureResult.status);
-            }
-
-            const parsedPayload = parseCjWebhookPayload(rawBody);
-            if ("error" in parsedPayload) {
-                return cjJsonResponse({ success: false, error: parsedPayload.error }, parsedPayload.status);
-            }
-
-            const {
-                messageId: normalizedMessageId,
-                type: normalizedType,
-                messageType: normalizedMessageType,
-                params,
-            } = parsedPayload.payload;
-
-            console.log(`CJ Webhook received: messageId=${normalizedMessageId} type=${normalizedType} messageType=${normalizedMessageType}`);
-
-            const claimResult = await ctx.runMutation(internal.cjHelpers.claimWebhookProcessing, {
-                messageId: normalizedMessageId,
-                type: normalizedType,
-            });
-            if (!claimResult.claimed) {
-                console.log(`CJ Webhook: Already claimed messageId=${normalizedMessageId}, skipping`);
-                return cjJsonResponse({ success: true, skipped: true, status: claimResult.status });
-            }
-            if (typeof claimResult.claimToken !== "string") {
-                throw new Error("CJ webhook claim did not return a claim token");
-            }
-            claimedWebhook = { messageId: normalizedMessageId, type: normalizedType, claimToken: claimResult.claimToken };
-
-            // Handle different webhook types
-            // webhookHandled tracks whether the handler found and updated a matching product.
-            // CRITICAL: Only mark the webhook as "processed" when handled === true.
-            // If a handler fails to find the product (e.g., cjSourcingId not stored yet),
-            // mark it retryable and return a non-2xx response so CJ can retry delivery.
-            let webhookHandled = true;
-
-            switch (normalizedType) {
-                case "ORDER":
-                    // Order status update from CJ
-                    webhookHandled = await handleCjOrderWebhook(ctx, params, normalizedMessageType);
-                    break;
-
-                case "LOGISTIC":
-                    // Tracking/logistics update
-                    await handleCjLogisticsWebhook(ctx, params);
-                    break;
-
-                case "ORDERSPLIT":
-                    // Order was split into multiple shipments by CJ
-                    console.log("CJ Order Split:", JSON.stringify(params));
-                    await handleCjOrderSplitWebhook(ctx, params);
-                    break;
-
-                case "SOURCINGCREATE":
-                    // Per CJ docs: Sourcing result — the definitive sourcing approval/rejection.
-                    // This is CJ's primary notification when a sourcing request completes.
-                    // Contains: cjProductId, cjVariantId, cjVariantSku, cjSourcingId, status, failReason
-                    console.log(`CJ SOURCINGCREATE:`, JSON.stringify(params));
-                    webhookHandled = await handleCjSourcingCreateWebhook(ctx, params);
-                    break;
-
-                case "PRODUCT":
-                    // Per CJ docs: Product catalog update (description, price, image, status changes)
-                    // NOTE: This is NOT for sourcing results — use SOURCINGCREATE for that.
-                    console.log(`CJ PRODUCT update:`, params);
-                    await handleCjProductWebhook(ctx, params);
-                    break;
-
-                case "VARIANT":
-                    // Variant info from CJ - contains the vid we need for fulfillment
-                    console.log(`CJ VARIANT update:`, params);
-                    await handleCjVariantWebhook(ctx, params);
-                    break;
-
-                case "STOCK":
-                    // Stock updates - log for now
-                    console.log(`CJ STOCK update:`, params);
-                    break;
-
-                default:
-                    console.log(`Unknown CJ webhook type: ${normalizedType}`, {
-                        messageId: normalizedMessageId,
-                        paramKeys: Object.keys(params),
-                    });
-            }
-
-            // Only mark processed if the handler actually found and updated the target record.
-            if (webhookHandled) {
-                await ctx.runMutation(internal.cjHelpers.markWebhookProcessed, {
-                    messageId: normalizedMessageId,
-                    type: normalizedType,
-                    claimToken: claimedWebhook.claimToken,
-                });
-            } else {
-                const retryMessage = `${normalizedType} handler did not find a matching product`;
-                console.warn(`CJ Webhook: ${retryMessage}; returning 503 so CJ can retry messageId=${normalizedMessageId}`);
+        return await handleCjWebhookHttpRequest(request, {
+            verifySignature: (incomingRequest, rawBody) => verifyIncomingCjWebhook(ctx, incomingRequest, rawBody),
+            claimWebhook: (messageId, type) => ctx.runMutation(internal.cjHelpers.claimWebhookProcessing, {
+                messageId,
+                type,
+            }),
+            handleWebhookTopic: (payload) => dispatchCjWebhookPayload(ctx, payload),
+            markProcessed: async (claim) => {
+                await ctx.runMutation(internal.cjHelpers.markWebhookProcessed, claim);
+            },
+            markRetryable: async (claim, error) => {
                 await ctx.runMutation(internal.cjHelpers.markWebhookRetryable, {
-                    messageId: normalizedMessageId,
-                    type: normalizedType,
-                    error: retryMessage,
-                    claimToken: claimedWebhook.claimToken,
+                    ...claim,
+                    error,
                 });
-                return cjJsonResponse({ success: false, retry: true, error: retryMessage }, 503);
-            }
+            },
+            markFailed: async (claim) => {
+                await ctx.runMutation(internal.cjHelpers.markWebhookFailed, claim);
+            },
+        });
 
-            // CJ requires 200 response within 3 seconds
-            return cjJsonResponse({ success: true });
-
-        } catch (error: unknown) {
-            console.error("CJ Webhook error:", error);
-            if (claimedWebhook) {
-                try {
-                    await ctx.runMutation(internal.cjHelpers.markWebhookFailed, {
-                        ...claimedWebhook,
-                    });
-                } catch (markError) {
-                    console.error("Failed to mark CJ webhook failure:", markError);
-                }
-            }
-            return cjJsonResponse({ success: false, error: "Internal server error" }, 500);
-        }
     }),
 });
 
