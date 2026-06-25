@@ -12,6 +12,7 @@ Official docs referenced:
 - Logistics/tracking APIs: https://developers.cjdropshipping.cn/en/api/api2/api/logistic.html
 - Webhook integration: https://developers.cjdropshipping.cn/en/api/start/webhook.html
 - Webhook setting/subscription APIs: https://developers.cjdropshipping.cn/en/api/api2/api/webhook.html
+- Operational launch runbook: [CJ_OPERATIONAL_LAUNCH_RUNBOOK.md](./CJ_OPERATIONAL_LAUNCH_RUNBOOK.md)
 
 ## Current State
 
@@ -154,13 +155,13 @@ If automatic balance payment is disabled, the app should still create the CJ ord
 - [x] Add tests for webhook-first, cron-first, and delayed-tracking flows.
   - [x] Cover CJ documented order status mapping and cron-first `trackInfo` reconciliation.
   - [x] Cover saved-order retry payload validation for missing shipping/CJ mappings.
-- [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
+- [x] Open PR, run CodeRabbit CLI, resolve issues, merge.
 
 ### Phase 7 - Operational Launch Checklist
 
-- [ ] Update environment variable documentation.
-- [ ] Add a dry-run procedure for a test order.
-- [ ] Add a live launch checklist for CJ balance funding and webhook registration.
+- [x] Update environment variable documentation.
+- [x] Add a dry-run procedure for a test order.
+- [x] Add a live launch checklist for CJ balance funding and webhook registration.
 - [ ] Run full test suite, type check, lint, and production build.
 - [ ] Open final PR, run CodeRabbit CLI, resolve issues, merge.
 
