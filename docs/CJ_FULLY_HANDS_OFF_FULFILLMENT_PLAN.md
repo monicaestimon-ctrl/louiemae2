@@ -162,8 +162,8 @@ If automatic balance payment is disabled, the app should still create the CJ ord
 - [x] Update environment variable documentation.
 - [x] Add a dry-run procedure for a test order.
 - [x] Add a live launch checklist for CJ balance funding and webhook registration.
-- [ ] Run full test suite, type check, lint, and production build.
-- [ ] Open final PR, run CodeRabbit CLI, resolve issues, merge.
+- [x] Run full test suite, type check, lint, and production build.
+- [x] Open final PR, run CodeRabbit CLI, resolve issues, merge.
 
 ## Definition Of Done
 
