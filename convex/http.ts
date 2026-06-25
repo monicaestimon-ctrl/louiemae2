@@ -1,10 +1,12 @@
 import { httpRouter } from "convex/server";
-import { httpAction } from "./_generated/server";
+import { httpAction, type ActionCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
+import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 import Stripe from "stripe";
 import { getCheckoutShippingForSubtotal } from "../lib/pricing";
-import { readBooleanEnv } from "../lib/cjAutomation";
+import { getCjAutomationConfig, readBooleanEnv } from "../lib/cjAutomation";
+import { evaluateCheckoutItemCjReadiness, type CjReadinessProduct } from "../lib/cjFulfillmentReadiness";
 import { verifyCjWebhookSignature } from "../lib/cjWebhookSignature";
 
 const http = httpRouter();
@@ -113,6 +115,92 @@ const normalizeCheckoutItems = (items: unknown): CheckoutItem[] => {
         .filter((item) => Number.isFinite(item.price) && item.price > 0 && Number.isFinite(item.quantity) && item.quantity > 0);
 };
 
+type CheckoutFulfillmentResolution = {
+    items: CheckoutItem[];
+    errors: string[];
+};
+
+const getCheckoutCjGate = () => {
+    const config = getCjAutomationConfig(process.env);
+    return {
+        required: config.autoFulfillmentEnabled && readBooleanEnv(process.env.CJ_REQUIRE_FULFILLMENT_READY_CHECKOUT, true),
+        config,
+    };
+};
+
+const getStoredCheckoutCjMapping = (
+    product: CjReadinessProduct,
+    item: CheckoutItem,
+): Pick<CheckoutItem, "cjVariantId" | "cjSku"> => {
+    const variants = Array.isArray(product.variants) ? product.variants : [];
+    if (variants.length > 0) {
+        const selectedVariant = variants.find((variant) => variant.id === item.variantId);
+        return {
+            cjVariantId: selectedVariant?.cjVariantId,
+            cjSku: selectedVariant?.cjSku,
+        };
+    }
+
+    return {
+        cjVariantId: product.cjVariantId,
+        cjSku: product.cjSku,
+    };
+};
+
+const resolveCheckoutFulfillmentItems = async (ctx: ActionCtx, checkoutItems: CheckoutItem[]): Promise<CheckoutFulfillmentResolution> => {
+    const { required, config } = getCheckoutCjGate();
+    const errors: string[] = [];
+    const resolvedItems = [...checkoutItems];
+
+    if (required && !config.fulfillmentAutomationReady) {
+        errors.push("CJ fulfillment automation is enabled, but CJ_API_KEY is not configured.");
+    }
+
+    for (const [index, item] of checkoutItems.entries()) {
+        if (!item.productId) {
+            if (required) {
+                errors.push(`${item.name} is missing product ID for CJ fulfillment validation.`);
+            }
+            continue;
+        }
+
+        let product: CjReadinessProduct | null = null;
+        try {
+            product = await ctx.runQuery(api.products.get, { id: item.productId as Id<"products"> });
+        } catch {
+            if (required) {
+                errors.push(`${item.name} could not be verified for CJ fulfillment.`);
+            }
+            continue;
+        }
+
+        if (!product) {
+            if (required) {
+                errors.push(`${item.name} could not be verified for CJ fulfillment.`);
+            }
+            continue;
+        }
+
+        const readiness = evaluateCheckoutItemCjReadiness(product, {
+            variantId: item.variantId,
+            variantName: item.variantName,
+            quantity: item.quantity,
+        });
+        if (required && !readiness.ready) {
+            errors.push(...readiness.errors);
+        }
+
+        const mapping = getStoredCheckoutCjMapping(product, item);
+        resolvedItems[index] = {
+            ...item,
+            cjVariantId: mapping.cjVariantId ?? item.cjVariantId,
+            cjSku: mapping.cjSku ?? item.cjSku,
+        };
+    }
+
+    return { items: resolvedItems, errors };
+};
+
 // Create Stripe checkout session
 http.route({
     path: "/stripe/checkout",
@@ -138,7 +226,7 @@ http.route({
         try {
             const body = await request.json();
             const { items, successUrl, cancelUrl } = body;
-            const checkoutItems = normalizeCheckoutItems(items);
+            let checkoutItems = normalizeCheckoutItems(items);
 
             if (checkoutItems.length === 0) {
                 return new Response(
@@ -152,6 +240,24 @@ http.route({
                     }
                 );
             }
+
+            const fulfillmentResolution = await resolveCheckoutFulfillmentItems(ctx, checkoutItems);
+            if (fulfillmentResolution.errors.length > 0) {
+                return new Response(
+                    JSON.stringify({
+                        error: "Some items are not ready for automated CJ fulfillment.",
+                        details: fulfillmentResolution.errors.slice(0, 10),
+                    }),
+                    {
+                        status: 409,
+                        headers: {
+                            "Content-Type": "application/json",
+                            ...corsHeaders,
+                        }
+                    }
+                );
+            }
+            checkoutItems = fulfillmentResolution.items;
 
             // Create line items for Stripe
             const lineItems = checkoutItems.map((item) => ({

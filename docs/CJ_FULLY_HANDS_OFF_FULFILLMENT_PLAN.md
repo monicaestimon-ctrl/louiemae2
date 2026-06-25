@@ -126,12 +126,14 @@ If automatic balance payment is disabled, the app should still create the CJ ord
 
 ### Phase 5 - Product Mapping And Inventory Readiness
 
-- [ ] Add product readiness checks before a product can be considered fulfillment-ready.
-- [ ] Require each sellable variant to have CJ product ID, variant ID, and SKU.
+- [x] Add product readiness checks before a product can be considered fulfillment-ready.
+- [x] Require each sellable variant to have CJ product ID, variant ID, and SKU.
 - [ ] Add a real-time inventory refresh path.
 - [ ] Show missing CJ mapping/inventory issues in admin tools.
-- [ ] Prevent or clearly flag checkout for unmapped/unavailable CJ items.
+- [x] Prevent or clearly flag checkout for unmapped/unavailable CJ items.
 - [ ] Add tests for mapped, unmapped, low-stock, and unavailable variants.
+  - [x] Cover mapped, unmapped, unavailable/out-of-stock, missing variant, and invalid quantity readiness cases.
+  - [ ] Cover low-stock inventory once the CJ real-time inventory refresh path is wired in.
 - [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
 
 ### Phase 6 - Tracking, Reconciliation, And Customer Updates
