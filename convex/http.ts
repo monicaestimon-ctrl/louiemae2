@@ -8,6 +8,7 @@ import { getCheckoutShippingForSubtotal } from "../lib/pricing";
 import { getCjAutomationConfig, readBooleanEnv } from "../lib/cjAutomation";
 import { evaluateCheckoutItemCjReadiness, type CjReadinessProduct } from "../lib/cjFulfillmentReadiness";
 import { verifyCjWebhookSignature } from "../lib/cjWebhookSignature";
+import { getStripeWebhookVerificationError, shouldAllowUnsignedStripeWebhook } from "../lib/stripeWebhook";
 
 const http = httpRouter();
 
@@ -371,11 +372,18 @@ http.route({
         let event: Stripe.Event;
 
         try {
+            const verificationError = getStripeWebhookVerificationError(webhookSecret, signature, process.env);
+            if (verificationError) {
+                console.error(`Stripe webhook rejected: ${verificationError}`);
+                return new Response(verificationError, { status: 400 });
+            }
+
             if (webhookSecret && signature) {
                 event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
-            } else {
-                // For testing without webhook signature verification
+            } else if (shouldAllowUnsignedStripeWebhook(process.env)) {
                 event = JSON.parse(body) as Stripe.Event;
+            } else {
+                return new Response("Stripe webhook signature verification required", { status: 400 });
             }
         } catch (err: any) {
             console.error("Webhook signature verification failed:", err.message);
