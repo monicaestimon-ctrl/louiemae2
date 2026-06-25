@@ -49,6 +49,8 @@ const RECHECK_WINDOW_DAYS = 14;
 
 // Timeout for CJ API verification requests (Comments #5, #6)
 const CJ_FETCH_TIMEOUT_MS = 10_000;
+const CJ_PRICING_REFRESH_MAX_ATTEMPTS = 3;
+const CJ_PRICING_REFRESH_RETRY_DELAY_MS = 60_000;
 
 // Stale pending detection: auto-resubmit products stuck in pending > this threshold
 const STALE_PENDING_HOURS = 48;
@@ -1165,6 +1167,70 @@ export const refreshConfirmedProductPricing = internalAction({
         } catch (error: any) {
             return { success: false, error: error?.message || "Failed to refresh CJ pricing" };
         }
+    },
+});
+
+export const refreshConfirmedProductPricingWithRetry = internalAction({
+    args: {
+        productId: v.id("products"),
+        cjProductId: v.string(),
+        cjVariantId: v.optional(v.string()),
+        cjSku: v.optional(v.string()),
+        sourcingId: v.optional(v.string()),
+        attempt: v.optional(v.number()),
+    },
+    handler: async (ctx, args): Promise<{
+        success: boolean;
+        error?: string;
+        retryScheduled?: boolean;
+    }> => {
+        const attempt = Math.max(1, Math.floor(args.attempt ?? 1));
+        let result: { success: boolean; error?: string };
+
+        try {
+            result = await ctx.runAction(internal.cjDropshipping.refreshConfirmedProductPricing, {
+                productId: args.productId,
+                cjProductId: args.cjProductId,
+                cjVariantId: args.cjVariantId,
+                cjSku: args.cjSku,
+                sourcingId: args.sourcingId,
+            });
+        } catch (error: any) {
+            result = { success: false, error: error?.message || "Failed to refresh CJ pricing" };
+        }
+
+        if (result.success) {
+            return { success: true };
+        }
+
+        const error = result.error || "Failed to refresh CJ pricing";
+        if (attempt < CJ_PRICING_REFRESH_MAX_ATTEMPTS) {
+            await ctx.scheduler.runAfter(
+                CJ_PRICING_REFRESH_RETRY_DELAY_MS * attempt,
+                internal.cjDropshipping.refreshConfirmedProductPricingWithRetry,
+                {
+                    productId: args.productId,
+                    cjProductId: args.cjProductId,
+                    cjVariantId: args.cjVariantId,
+                    cjSku: args.cjSku,
+                    sourcingId: args.sourcingId,
+                    attempt: attempt + 1,
+                }
+            );
+
+            console.warn(
+                `CJ pricing refresh failed for product ${args.productId} on attempt ${attempt}; retry scheduled: ${error}`
+            );
+            return { success: false, error, retryScheduled: true };
+        }
+
+        await ctx.runMutation(internal.cjHelpers.recordProductPricingRefreshFailure, {
+            productId: args.productId,
+            error,
+        });
+        console.error(`CJ pricing refresh failed permanently for product ${args.productId}: ${error}`);
+
+        return { success: false, error };
     },
 });
 

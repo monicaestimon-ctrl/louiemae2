@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import { calculatePricingBreakdown } from "../lib/pricing";
 import { getCjFulfillmentReentryBlock } from "../lib/cjFulfillmentWorkflow";
 import { resolveMonotonicCjStatus } from "../lib/cjWebhookIdempotency";
+import { mergePricingRefreshFailureWarning } from "../lib/cjPricingRefreshFailure";
 
 const hasFiniteNumber = (value: unknown): boolean => typeof value === "number" && Number.isFinite(value);
 const CJ_RESERVATION_TTL_MS = 10 * 60 * 1000;
@@ -866,6 +867,24 @@ export const updateProductSourcingStatus = internalMutation({
         }
 
         await ctx.db.patch(args.productId, updateData);
+    },
+});
+
+export const recordProductPricingRefreshFailure = internalMutation({
+    args: {
+        productId: v.id("products"),
+        error: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const product = await ctx.db.get(args.productId);
+        if (!product) {
+            return;
+        }
+
+        await ctx.db.patch(args.productId, {
+            pricingWarnings: mergePricingRefreshFailureWarning(product.pricingWarnings, args.error),
+            pricingUpdatedAt: Date.now(),
+        });
     },
 });
 
