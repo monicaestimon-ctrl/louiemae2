@@ -12,10 +12,12 @@ import {
     getInventoryBySku,
     getInventoryByVid,
     getOrderDetail,
+    getTrackingInfo as getCjTrackingInfo,
     payBalanceV2,
     saveGenerateParentOrder,
     type CjApiErrorDetails,
     type CjInventoryRow,
+    type CjTrackingInfoRow,
 } from "./cjApiClient";
 import { getCjAutomationConfig } from "../lib/cjAutomation";
 import {
@@ -25,6 +27,7 @@ import {
     type CjInventorySnapshot,
 } from "../lib/cjInventory";
 import { calculateOrderPricingReconciliation } from "../lib/pricing";
+import { getTrackNumberFromOrderDetail, reconcileCjTracking } from "../lib/cjTracking";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CJ DROPSHIPPING API INTEGRATION
@@ -1198,6 +1201,8 @@ export const getTrackingInfo = internalAction({
         trackingNumber?: string;
         trackingUrl?: string;
         carrier?: string;
+        cjTrackingStatus?: string;
+        estimatedDelivery?: string;
         status?: string;
         error?: string
     }> => {
@@ -1207,53 +1212,57 @@ export const getTrackingInfo = internalAction({
         }
 
         try {
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), CJ_FETCH_TIMEOUT_MS);
-            let response: Response;
-            try {
-                response = await fetch(
-                    `${CJ_API_BASE}/logistic/getTrackInfo?orderId=${args.cjOrderId}`,
-                    {
-                        method: "GET",
-                        headers: {
-                            "Content-Type": "application/json",
-                            "CJ-Access-Token": accessToken,
-                        },
-                        signal: controller.signal,
-                    }
+            const orderDetailResult = await getOrderDetail(
+                accessToken,
+                args.cjOrderId,
+                undefined,
+                { timeoutMs: CJ_FETCH_TIMEOUT_MS },
+            );
+            if ("error" in orderDetailResult) {
+                return { success: false, error: formatCjApiError(orderDetailResult.error) };
+            }
+
+            const orderDetail = orderDetailResult.data;
+            const trackNumber = getTrackNumberFromOrderDetail(orderDetail);
+            let trackingRows: CjTrackingInfoRow[] = [];
+
+            if (trackNumber) {
+                const trackingResult = await getCjTrackingInfo(
+                    accessToken,
+                    trackNumber,
+                    { timeoutMs: CJ_FETCH_TIMEOUT_MS },
                 );
-            } finally {
-                clearTimeout(timeout);
-            }
-
-            const data = await response.json();
-
-            if (data.result && data.data) {
-                const trackingData = data.data;
-
-                // Update order with tracking info
-                if (trackingData.trackNumber) {
-                    await ctx.runMutation(internal.cjHelpers.updateOrderTracking, {
-                        orderId: args.orderId,
-                        trackingNumber: trackingData.trackNumber,
-                        trackingUrl: trackingData.trackingUrl || buildTrackingUrl(trackingData.trackNumber, trackingData.logisticName),
-                        carrier: trackingData.logisticName,
-                        cjStatus: "shipped",
-                    });
-
-                    return {
-                        success: true,
-                        trackingNumber: trackingData.trackNumber,
-                        trackingUrl: trackingData.trackingUrl,
-                        carrier: trackingData.logisticName,
-                        status: trackingData.status,
-                    };
+                if ("error" in trackingResult) {
+                    console.warn(
+                        `CJ tracking lookup failed for order ${args.cjOrderId}, track ${trackNumber}: ${formatCjApiError(trackingResult.error)}`
+                    );
+                } else {
+                    trackingRows = Array.isArray(trackingResult.data) ? trackingResult.data : [];
                 }
-
-                return { success: true, status: trackingData.status || "processing" };
             }
 
-            return { success: false, error: data.message || "No tracking data available" };
+            const reconciled = reconcileCjTracking(orderDetail, trackingRows);
+
+            await ctx.runMutation(internal.cjHelpers.updateOrderTracking, {
+                orderId: args.orderId,
+                trackingNumber: reconciled.trackingNumber,
+                trackingUrl: reconciled.trackingUrl,
+                carrier: reconciled.carrier,
+                cjTrackingStatus: reconciled.cjTrackingStatus,
+                estimatedDelivery: reconciled.estimatedDelivery,
+                cjStatus: reconciled.cjStatus,
+                orderStatus: reconciled.orderStatus,
+            });
+
+            return {
+                success: true,
+                trackingNumber: reconciled.trackingNumber,
+                trackingUrl: reconciled.trackingUrl,
+                carrier: reconciled.carrier,
+                cjTrackingStatus: reconciled.cjTrackingStatus,
+                estimatedDelivery: reconciled.estimatedDelivery,
+                status: reconciled.cjStatus,
+            };
         } catch (error: any) {
             console.error("CJ Tracking fetch error:", error);
             return { success: false, error: error.message };
@@ -1282,18 +1291,30 @@ export const syncAllTracking = internalAction({
                     cjOrderId: order.cjOrderId,
                 });
 
-                if (result.success && result.trackingNumber) {
+                if (result.success) {
                     synced++;
+                }
 
+                if (result.success && result.trackingNumber && result.trackingNumber !== order.trackingNotificationSentFor) {
                     // Send shipping notification email
-                    await ctx.runAction(internal.emails.sendShippingNotification, {
+                    const emailResult = await ctx.runAction(internal.emails.sendShippingNotification, {
                         customerEmail: order.customerEmail,
                         customerName: order.customerName || undefined,
                         orderId: order.stripeSessionId.slice(-12).toUpperCase(),
                         trackingNumber: result.trackingNumber,
                         trackingUrl: result.trackingUrl || "",
                         carrier: result.carrier || "Standard Shipping",
+                        estimatedDelivery: result.estimatedDelivery,
                     });
+                    if (emailResult.success) {
+                        await ctx.runMutation(internal.cjHelpers.markTrackingNotificationSent, {
+                            orderId: order._id,
+                            trackingNumber: result.trackingNumber,
+                        });
+                    } else {
+                        errors++;
+                        console.error(`Shipping notification failed for order ${order._id}: ${emailResult.error}`);
+                    }
                 }
             } catch (error) {
                 errors++;
@@ -1348,28 +1369,6 @@ function getCountryCode(country: string): string {
 
     const upperCountry = country.toUpperCase();
     return countryMap[country] || countryMap[upperCountry] || upperCountry.slice(0, 2);
-}
-
-/**
- * Build tracking URL for common carriers
- */
-function buildTrackingUrl(trackingNumber: string, carrier?: string): string {
-    const carrierLower = (carrier || "").toLowerCase();
-
-    if (carrierLower.includes("usps")) {
-        return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${trackingNumber}`;
-    }
-    if (carrierLower.includes("fedex")) {
-        return `https://www.fedex.com/apps/fedextrack/?tracknumbers=${trackingNumber}`;
-    }
-    if (carrierLower.includes("ups")) {
-        return `https://www.ups.com/track?tracknum=${trackingNumber}`;
-    }
-    if (carrierLower.includes("dhl")) {
-        return `https://www.dhl.com/en/express/tracking.html?AWB=${trackingNumber}`;
-    }
-    // Default to 17track for international shipments
-    return `https://t.17track.net/en#nums=${trackingNumber}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

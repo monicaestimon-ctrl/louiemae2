@@ -4,11 +4,13 @@ Verified against official CJ Dropshipping developer documentation on 2026-06-25.
 
 Official docs referenced:
 
-- API introduction: https://developers.cjdropshipping.com/en/api/introduction.html
-- Product synchronization process: https://developers.cjdropshipping.com/en/api/start/Products-Synchronization-Processing.html
-- Order synchronization process: https://developers.cjdropshipping.com/en/api/start/Orders-Synchronization-Processing.html
-- Shopping/order APIs: https://developers.cjdropshipping.com/en/api/api2/api/shopping.html
-- Webhook integration: https://developers.cjdropshipping.com/en/api/start/webhook.html
+- API introduction: https://developers.cjdropshipping.cn/en/api/introduction.html
+- Product synchronization process: https://developers.cjdropshipping.cn/en/api/start/Products-Synchronization-Processing.html
+- Order synchronization process: https://developers.cjdropshipping.cn/en/api/start/Orders-Synchronization-Processing.html
+- API V2.0 index: https://developers.cjdropshipping.cn/en/api/api2/
+- Shopping/order APIs: https://developers.cjdropshipping.cn/en/api/api2/api/shopping.html
+- Logistics/tracking APIs: https://developers.cjdropshipping.cn/en/api/api2/api/logistic.html
+- Webhook integration: https://developers.cjdropshipping.cn/en/api/start/webhook.html
 - Webhook setting/subscription APIs: https://developers.cjdropshipping.cn/en/api/api2/api/webhook.html
 
 ## Current State
@@ -20,7 +22,7 @@ Official docs referenced:
   - Source/direct URL product price is multiplied by `1.4` to estimate CJ product cost.
   - The estimated CJ product cost is multiplied by `3`.
   - Shipping is added after the markup calculation.
-- Existing CJ cron jobs and webhook handlers provide partial sourcing/tracking support. CJ webhook signatures and duplicate `messageId` claims are now protected; topic-level idempotency and full tracking reconciliation still need hardening.
+- Existing CJ cron jobs and webhook handlers provide partial sourcing/tracking support. CJ webhook signatures and duplicate `messageId` claims are now protected; topic-level idempotency still needs hardening.
 
 ## CJ Flow Required For Hands-Off Fulfillment
 
@@ -139,11 +141,12 @@ If automatic balance payment is disabled, the app should still create the CJ ord
 
 ### Phase 6 - Tracking, Reconciliation, And Customer Updates
 
-- [ ] Reconcile CJ order status and tracking through both webhooks and scheduled polling.
-- [ ] Store tracking carrier, number, URL, latest status, and last sync timestamp.
-- [ ] Trigger customer-facing order status updates when tracking is available.
+- [x] Reconcile CJ order status and tracking through both webhooks and scheduled polling.
+- [x] Store tracking carrier, number, URL, latest status, and last sync timestamp.
+- [x] Trigger customer-facing order status updates when tracking is available.
 - [ ] Add manual admin retry/resync actions.
 - [ ] Add tests for webhook-first, cron-first, and delayed-tracking flows.
+  - [x] Cover CJ documented order status mapping and cron-first `trackInfo` reconciliation.
 - [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
 
 ### Phase 7 - Operational Launch Checklist

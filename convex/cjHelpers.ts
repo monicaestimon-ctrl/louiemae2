@@ -262,47 +262,90 @@ export const updateOrderCjStatus = internalMutation({
 export const updateOrderTracking = internalMutation({
     args: {
         orderId: v.id("orders"),
-        trackingNumber: v.string(),
+        trackingNumber: v.optional(v.string()),
         trackingUrl: v.optional(v.string()),
         carrier: v.optional(v.string()),
+        cjTrackingStatus: v.optional(v.string()),
+        estimatedDelivery: v.optional(v.string()),
         cjStatus: v.optional(v.union(
+            v.literal("pending"),
+            v.literal("sending"),
+            v.literal("confirmed"),
+            v.literal("processing"),
             v.literal("shipped"),
-            v.literal("delivered")
+            v.literal("delivered"),
+            v.literal("failed"),
+            v.literal("cancelled")
+        )),
+        orderStatus: v.optional(v.union(
+            v.literal("pending"),
+            v.literal("paid"),
+            v.literal("processing"),
+            v.literal("shipped"),
+            v.literal("delivered"),
+            v.literal("cancelled")
         )),
     },
     handler: async (ctx, args) => {
+        const order = await ctx.db.get(args.orderId);
+        if (!order) return;
+
         const updateData: Record<string, any> = {
-            trackingNumber: args.trackingNumber,
-            trackingUrl: args.trackingUrl,
-            carrier: args.carrier,
-            shippedAt: new Date().toISOString(),
             cjLastSyncAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
         };
 
+        if (args.trackingNumber) {
+            updateData.trackingNumber = args.trackingNumber;
+            if (!order.shippedAt) {
+                updateData.shippedAt = new Date().toISOString();
+            }
+        }
+        if (args.trackingUrl) updateData.trackingUrl = args.trackingUrl;
+        if (args.carrier) updateData.carrier = args.carrier;
+        if (args.cjTrackingStatus) updateData.cjTrackingStatus = args.cjTrackingStatus;
+        if (args.estimatedDelivery) updateData.estimatedDelivery = args.estimatedDelivery;
+
         if (args.cjStatus) {
             updateData.cjStatus = args.cjStatus;
-            updateData.status = args.cjStatus; // Also update main order status
+        }
+        if (args.orderStatus) {
+            updateData.status = args.orderStatus;
         }
 
         await ctx.db.patch(args.orderId, updateData);
     },
 });
 
+export const markTrackingNotificationSent = internalMutation({
+    args: {
+        orderId: v.id("orders"),
+        trackingNumber: v.string(),
+    },
+    handler: async (ctx, args) => {
+        await ctx.db.patch(args.orderId, {
+            trackingNotificationSentFor: args.trackingNumber,
+            trackingNotificationSentAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        });
+    },
+});
+
 /**
  * Get orders that need tracking sync
- * (CJ confirmed/processing but not yet shipped)
+ * (CJ accepted, processing, or shipped but not yet delivered/cancelled)
  */
 export const getOrdersNeedingSync = internalQuery({
     args: {},
     handler: async (ctx) => {
-        // Get orders with CJ status confirmed or processing
+        // Get orders with CJ status that can still produce new tracking or delivery updates
         const orders = await ctx.db
             .query("orders")
             .filter((q) =>
                 q.or(
                     q.eq(q.field("cjStatus"), "confirmed"),
-                    q.eq(q.field("cjStatus"), "processing")
+                    q.eq(q.field("cjStatus"), "processing"),
+                    q.eq(q.field("cjStatus"), "shipped")
                 )
             )
             .collect();
@@ -419,6 +462,7 @@ export const handleCjLogisticsUpdate = internalMutation({
         trackingNumber: v.optional(v.string()),
         trackingUrl: v.optional(v.string()),
         carrier: v.optional(v.string()),
+        cjTrackingStatus: v.optional(v.string()),
         cjStatus: v.string(),
     },
     handler: async (ctx, args) => {
@@ -440,7 +484,9 @@ export const handleCjLogisticsUpdate = internalMutation({
         const validStatuses = ["shipped", "delivered", "failed"];
         if (validStatuses.includes(args.cjStatus)) {
             updateData.cjStatus = args.cjStatus;
-            updateData.status = args.cjStatus; // Sync main status
+            if (args.cjStatus === "shipped" || args.cjStatus === "delivered") {
+                updateData.status = args.cjStatus; // Sync main status
+            }
         }
 
         if (args.trackingNumber) {
@@ -456,6 +502,9 @@ export const handleCjLogisticsUpdate = internalMutation({
 
         if (args.carrier) {
             updateData.carrier = args.carrier;
+        }
+        if (args.cjTrackingStatus) {
+            updateData.cjTrackingStatus = args.cjTrackingStatus;
         }
 
         await ctx.db.patch(order._id, updateData);

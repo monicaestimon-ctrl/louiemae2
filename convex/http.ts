@@ -756,14 +756,16 @@ async function handleCjOrderSplitWebhook(ctx: any, params: any) {
 /** Handles CJ Dropshipping logistics/tracking webhook events. */
 async function handleCjLogisticsWebhook(ctx: any, params: any) {
     const { orderId, trackingNumber, logisticName, trackingStatus, trackingUrl } = params;
+    const trackingStatusCode = Number(trackingStatus);
+    const cjTrackingStatus = getCjTrackingStatusLabel(trackingStatus);
 
     console.log(`CJ Logistics update for order ${orderId}: ${trackingNumber}, status: ${trackingStatus}`);
 
     // Map CJ tracking status to our status
     let cjStatus: string = "shipped";
-    if (trackingStatus === 12) {
+    if (trackingStatusCode === 12) {
         cjStatus = "delivered";
-    } else if (trackingStatus === 13 || trackingStatus === 14) {
+    } else if (trackingStatusCode === 14) {
         cjStatus = "failed";
     }
 
@@ -773,6 +775,7 @@ async function handleCjLogisticsWebhook(ctx: any, params: any) {
         trackingNumber: trackingNumber || undefined,
         trackingUrl: trackingUrl || undefined,
         carrier: logisticName || undefined,
+        cjTrackingStatus,
         cjStatus,
     });
 
@@ -788,6 +791,20 @@ async function handleCjLogisticsWebhook(ctx: any, params: any) {
         // Non-fatal — split order tracking is best-effort
         console.warn(`CJ Logistics: Split order tracking update failed (non-fatal): ${splitErr.message}`);
     }
+}
+
+function getCjTrackingStatusLabel(trackingStatus: unknown): string | undefined {
+    if (typeof trackingStatus === "string" && trackingStatus.trim() && Number.isNaN(Number(trackingStatus))) {
+        return trackingStatus.trim();
+    }
+
+    const code = Number(trackingStatus);
+    if (!Number.isFinite(code)) return undefined;
+
+    if (code === 12) return "Delivered";
+    if (code === 13) return "Delivery exception";
+    if (code === 14) return "Delivery failed";
+    return undefined;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
