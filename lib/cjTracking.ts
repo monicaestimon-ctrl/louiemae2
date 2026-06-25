@@ -15,6 +15,7 @@ export type CjTrackingSource = {
   trackingStatus?: unknown;
   lastMileCarrier?: unknown;
   lastTrackNumber?: unknown;
+  deliveryDay?: unknown;
   deliveryTime?: unknown;
   trackingUrl?: unknown;
 };
@@ -53,10 +54,19 @@ export const normalizeCjTrackingStatus = (status: unknown): LocalCjStatus | unde
   const normalized = firstString(status)?.toLowerCase();
   if (!normalized) return undefined;
 
-  if (normalized.includes("deliver")) return "delivered";
-  if (normalized.includes("cancel")) return "cancelled";
   if (normalized.includes("exception") || normalized.includes("fail")) return "failed";
-  return "shipped";
+  if (normalized.includes("cancel")) return "cancelled";
+  if (normalized.includes("deliver")) return "delivered";
+  if (
+    normalized.includes("transit") ||
+    normalized.includes("ship") ||
+    normalized.includes("dispatch") ||
+    normalized.includes("depart") ||
+    normalized.includes("arriv")
+  ) {
+    return "shipped";
+  }
+  return undefined;
 };
 
 export const orderStatusFromCjStatus = (status: LocalCjStatus | undefined): LocalOrderStatus | undefined => {
@@ -112,7 +122,7 @@ export const reconcileCjTracking = (
       : firstString(detail.trackingUrl),
     carrier,
     cjTrackingStatus,
-    estimatedDelivery: firstString(primaryRow.deliveryTime),
+    estimatedDelivery: firstString(primaryRow.deliveryDay),
     cjStatus,
     orderStatus: orderStatusFromCjStatus(cjStatus),
   };

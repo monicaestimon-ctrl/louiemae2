@@ -4,13 +4,13 @@ Verified against official CJ Dropshipping developer documentation on 2026-06-25.
 
 Official docs referenced:
 
-- API introduction: https://developers.cjdropshipping.com/en/api/introduction.html
-- Product synchronization process: https://developers.cjdropshipping.com/en/api/start/Products-Synchronization-Processing.html
-- Order synchronization process: https://developers.cjdropshipping.com/en/api/start/Orders-Synchronization-Processing.html
+- API introduction: https://developers.cjdropshipping.cn/en/api/introduction.html
+- Product synchronization process: https://developers.cjdropshipping.cn/en/api/start/Products-Synchronization-Processing.html
+- Order synchronization process: https://developers.cjdropshipping.cn/en/api/start/Orders-Synchronization-Processing.html
 - API V2.0 index: https://developers.cjdropshipping.cn/en/api/api2/
-- Shopping/order APIs: https://developers.cjdropshipping.com/en/api/api2/api/shopping.html
+- Shopping/order APIs: https://developers.cjdropshipping.cn/en/api/api2/api/shopping.html
 - Logistics/tracking APIs: https://developers.cjdropshipping.cn/en/api/api2/api/logistic.html
-- Webhook integration: https://developers.cjdropshipping.com/en/api/start/webhook.html
+- Webhook integration: https://developers.cjdropshipping.cn/en/api/start/webhook.html
 - Webhook setting/subscription APIs: https://developers.cjdropshipping.cn/en/api/api2/api/webhook.html
 
 ## Current State

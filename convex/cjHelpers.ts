@@ -287,6 +287,9 @@ export const updateOrderTracking = internalMutation({
         )),
     },
     handler: async (ctx, args) => {
+        const order = await ctx.db.get(args.orderId);
+        if (!order) return;
+
         const updateData: Record<string, any> = {
             cjLastSyncAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
@@ -294,7 +297,9 @@ export const updateOrderTracking = internalMutation({
 
         if (args.trackingNumber) {
             updateData.trackingNumber = args.trackingNumber;
-            updateData.shippedAt = new Date().toISOString();
+            if (!order.shippedAt) {
+                updateData.shippedAt = new Date().toISOString();
+            }
         }
         if (args.trackingUrl) updateData.trackingUrl = args.trackingUrl;
         if (args.carrier) updateData.carrier = args.carrier;
@@ -309,6 +314,20 @@ export const updateOrderTracking = internalMutation({
         }
 
         await ctx.db.patch(args.orderId, updateData);
+    },
+});
+
+export const markTrackingNotificationSent = internalMutation({
+    args: {
+        orderId: v.id("orders"),
+        trackingNumber: v.string(),
+    },
+    handler: async (ctx, args) => {
+        await ctx.db.patch(args.orderId, {
+            trackingNotificationSentFor: args.trackingNumber,
+            trackingNotificationSentAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+        });
     },
 });
 

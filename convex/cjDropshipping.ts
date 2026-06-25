@@ -1295,9 +1295,9 @@ export const syncAllTracking = internalAction({
                     synced++;
                 }
 
-                if (result.success && result.trackingNumber && result.trackingNumber !== order.trackingNumber) {
+                if (result.success && result.trackingNumber && result.trackingNumber !== order.trackingNotificationSentFor) {
                     // Send shipping notification email
-                    await ctx.runAction(internal.emails.sendShippingNotification, {
+                    const emailResult = await ctx.runAction(internal.emails.sendShippingNotification, {
                         customerEmail: order.customerEmail,
                         customerName: order.customerName || undefined,
                         orderId: order.stripeSessionId.slice(-12).toUpperCase(),
@@ -1306,6 +1306,15 @@ export const syncAllTracking = internalAction({
                         carrier: result.carrier || "Standard Shipping",
                         estimatedDelivery: result.estimatedDelivery,
                     });
+                    if (emailResult.success) {
+                        await ctx.runMutation(internal.cjHelpers.markTrackingNotificationSent, {
+                            orderId: order._id,
+                            trackingNumber: result.trackingNumber,
+                        });
+                    } else {
+                        errors++;
+                        console.error(`Shipping notification failed for order ${order._id}: ${emailResult.error}`);
+                    }
                 }
             } catch (error) {
                 errors++;
