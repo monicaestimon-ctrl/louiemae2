@@ -7,6 +7,16 @@ describe("CJ fulfillment readiness", () => {
     inStock: true,
     cjSourcingStatus: "approved",
     cjProductId: "pid-1",
+    cjInventoryByVariant: [
+      {
+        vid: "vid-2t",
+        sku: "sku-2t",
+        totalInventoryNum: 8,
+        status: "in_stock" as const,
+        lowStockThreshold: 3,
+        lastCheckedAt: "2026-06-25T00:00:00.000Z",
+      },
+    ],
     variants: [
       {
         id: "size-2t",
@@ -107,10 +117,72 @@ describe("CJ fulfillment readiness", () => {
         cjProductId: "pid-blanket",
         cjVariantId: "vid-blanket",
         cjSku: "sku-blanket",
+        cjInventoryStatus: "in_stock",
+        cjInventoryTotal: 12,
+        cjInventoryLastCheckedAt: "2026-06-25T00:00:00.000Z",
       },
       { quantity: 1 },
     );
 
     expect(result.ready).toBe(true);
+  });
+
+  it("rejects checkout when selected CJ inventory is below quantity", () => {
+    const result = evaluateCheckoutItemCjReadiness(
+      {
+        ...readyProduct,
+        cjInventoryByVariant: [{
+          vid: "vid-2t",
+          sku: "sku-2t",
+          totalInventoryNum: 1,
+          status: "low_stock",
+          lowStockThreshold: 3,
+          lastCheckedAt: "2026-06-25T00:00:00.000Z",
+        }],
+      },
+      { variantId: "size-2t", quantity: 2 },
+    );
+
+    expect(result.ready).toBe(false);
+    expect(result.errors).toContain("Mae Dress / 2T has insufficient CJ inventory (1 available).");
+  });
+
+  it("warns when selected CJ inventory is low but fulfillable", () => {
+    const result = evaluateCheckoutItemCjReadiness(
+      {
+        ...readyProduct,
+        cjInventoryByVariant: [{
+          vid: "vid-2t",
+          sku: "sku-2t",
+          totalInventoryNum: 2,
+          status: "low_stock",
+          lowStockThreshold: 3,
+          lastCheckedAt: "2026-06-25T00:00:00.000Z",
+        }],
+      },
+      { variantId: "size-2t", quantity: 1 },
+    );
+
+    expect(result.ready).toBe(true);
+    expect(result.warnings).toContain("Mae Dress / 2T is low at CJ (2 available).");
+  });
+
+  it("rejects checkout when product-level CJ inventory is out", () => {
+    const result = evaluateCheckoutItemCjReadiness(
+      {
+        name: "Mae Blanket",
+        cjSourcingStatus: "approved",
+        cjProductId: "pid-blanket",
+        cjVariantId: "vid-blanket",
+        cjSku: "sku-blanket",
+        cjInventoryStatus: "out_of_stock",
+        cjInventoryTotal: 0,
+        cjInventoryLastCheckedAt: "2026-06-25T00:00:00.000Z",
+      },
+      { quantity: 1 },
+    );
+
+    expect(result.ready).toBe(false);
+    expect(result.errors).toContain("Mae Blanket has insufficient CJ inventory (0 available).");
   });
 });

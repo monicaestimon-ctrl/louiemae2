@@ -2,6 +2,15 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
 
+const cjInventoryStatusValidator = v.union(
+    v.literal("unknown"),
+    v.literal("in_stock"),
+    v.literal("low_stock"),
+    v.literal("out_of_stock"),
+    v.literal("partial"),
+    v.literal("error")
+);
+
 export default defineSchema({
     // Convex Auth tables (users, sessions, accounts, etc.)
     ...authTables,
@@ -44,6 +53,21 @@ export default defineSchema({
         cjApprovedAt: v.optional(v.string()),    // When CJ approved the product
         cjSubmittedAt: v.optional(v.string()),   // When product was submitted to CJ
         cjLastCheckedAt: v.optional(v.string()), // Last time we checked CJ for status
+        cjInventoryStatus: v.optional(cjInventoryStatusValidator),
+        cjInventoryTotal: v.optional(v.number()),
+        cjInventoryLastCheckedAt: v.optional(v.string()),
+        cjInventoryError: v.optional(v.string()),
+        cjInventoryByVariant: v.optional(v.array(v.object({
+            vid: v.optional(v.string()),
+            sku: v.optional(v.string()),
+            totalInventoryNum: v.optional(v.number()),
+            cjInventoryNum: v.optional(v.number()),
+            factoryInventoryNum: v.optional(v.number()),
+            status: cjInventoryStatusValidator,
+            lowStockThreshold: v.number(),
+            lastCheckedAt: v.string(),
+            error: v.optional(v.string()),
+        }))),
         // All CJ variants received from webhooks (for admin linking)
         cjVariants: v.optional(v.array(v.object({
             vid: v.string(),                       // CJ variant ID

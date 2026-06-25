@@ -3,6 +3,7 @@
 import { action } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { auth } from "./auth";
 import { getCjAutomationConfig, type CjAutomationConfig } from "../lib/cjAutomation";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -11,6 +12,13 @@ import { getCjAutomationConfig, type CjAutomationConfig } from "../lib/cjAutomat
 // ═══════════════════════════════════════════════════════════════════════════
 
 const CJ_API_BASE = "https://developers.cjdropshipping.com/api2.0/v1";
+
+const requireAdminIdentity = async (ctx: Parameters<typeof auth.getUserId>[0]) => {
+    const userId = await auth.getUserId(ctx).catch(() => null);
+    if (!userId) {
+        throw new Error("You must be logged in to refresh CJ inventory.");
+    }
+};
 
 /**
  * Sync all CJ tracking info (can be called from admin dashboard)
@@ -22,6 +30,27 @@ export const syncTracking = action({
         // Call the internal sync action
         const result = await ctx.runAction(internal.cjDropshipping.syncAllTracking, {});
         return result;
+    },
+});
+
+export const refreshInventory = action({
+    args: {
+        productId: v.optional(v.id("products")),
+    },
+    handler: async (ctx, args): Promise<{
+        checked: number;
+        updated: number;
+        errors: number;
+        products: Array<{
+            productId: string;
+            name: string;
+            status: string;
+            totalInventoryNum?: number;
+            error?: string;
+        }>;
+    }> => {
+        await requireAdminIdentity(ctx);
+        return await ctx.runAction(internal.cjDropshipping.refreshProductInventory, args);
     },
 });
 

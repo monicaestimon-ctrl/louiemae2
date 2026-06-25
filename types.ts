@@ -3,6 +3,20 @@ export type CollectionType = string; // Was 'furniture' | 'decor' | ... now dyna
 
 import type { Id } from './convex/_generated/dataModel';
 
+export type CjInventoryStatus = 'unknown' | 'in_stock' | 'low_stock' | 'out_of_stock' | 'partial' | 'error';
+
+export interface CjInventorySnapshot {
+  vid?: string;
+  sku?: string;
+  totalInventoryNum?: number;
+  cjInventoryNum?: number;
+  factoryInventoryNum?: number;
+  status: CjInventoryStatus;
+  lowStockThreshold: number;
+  lastCheckedAt: string;
+  error?: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -19,6 +33,12 @@ export interface Product {
   cjSourcingStatus?: 'pending' | 'approved' | 'rejected' | 'none';
   cjVariantId?: string;
   cjSku?: string;
+  cjProductId?: string;
+  cjInventoryStatus?: CjInventoryStatus;
+  cjInventoryTotal?: number;
+  cjInventoryLastCheckedAt?: string;
+  cjInventoryError?: string;
+  cjInventoryByVariant?: CjInventorySnapshot[];
   publishedAt?: string; // ISO date string — used for 30-day auto-expire on New Arrivals
   // Two-stage pricing metadata
   sourcePriceCny?: number;        // Original 1688 factory price (CNY)
