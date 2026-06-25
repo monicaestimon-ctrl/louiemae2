@@ -1,6 +1,6 @@
 "use node";
 
-import { action } from "./_generated/server";
+import { action, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { auth } from "./auth";
@@ -14,10 +14,33 @@ import { buildCjRetryOrderPayload } from "../lib/cjOrderRetry";
 
 const CJ_API_BASE = "https://developers.cjdropshipping.com/api2.0/v1";
 
-const requireAdminIdentity = async (ctx: Parameters<typeof auth.getUserId>[0]) => {
+const parseAdminEmails = (rawEmails: string | undefined): Set<string> =>
+    new Set((rawEmails || "")
+        .split(/[,\s]+/)
+        .map(email => email.trim().toLowerCase())
+        .filter(Boolean));
+
+const getAdminEmailAllowlist = () =>
+    parseAdminEmails(process.env.CJ_ADMIN_EMAILS || process.env.ADMIN_EMAILS);
+
+const requireAdminIdentity = async (ctx: ActionCtx) => {
     const userId = await auth.getUserId(ctx).catch(() => null);
+    const identity = await ctx.auth.getUserIdentity().catch(() => null);
+    const email = typeof identity?.email === "string" ? identity.email.trim().toLowerCase() : "";
+
     if (!userId) {
         throw new Error("You must be logged in to manage CJ automation.");
+    }
+    if (!email) {
+        throw new Error("Your account is missing an email address required for CJ admin access.");
+    }
+
+    const adminEmails = getAdminEmailAllowlist();
+    if (adminEmails.size === 0) {
+        throw new Error("CJ admin access is not configured. Set CJ_ADMIN_EMAILS in Convex environment variables.");
+    }
+    if (!adminEmails.has(email)) {
+        throw new Error("You do not have permission to manage CJ automation.");
     }
 };
 
@@ -28,6 +51,8 @@ const requireAdminIdentity = async (ctx: Parameters<typeof auth.getUserId>[0]) =
 export const syncTracking = action({
     args: {},
     handler: async (ctx): Promise<{ synced: number; errors: number }> => {
+        await requireAdminIdentity(ctx);
+
         // Call the internal sync action
         const result = await ctx.runAction(internal.cjDropshipping.syncAllTracking, {});
         return result;
@@ -94,7 +119,11 @@ export const retryOrderFulfillment = action({
         if (!order) {
             return { success: false, message: "Order not found", error: "Order not found" };
         }
-        if (order.cjPaymentStatus === "paid" || order.cjFulfillmentStep === "paid") {
+        if (
+            order.cjPaymentStatus === "paid" ||
+            order.cjFulfillmentStep === "paid" ||
+            order.cjFulfillmentStep === "processing"
+        ) {
             return {
                 success: true,
                 message: "CJ fulfillment is already paid or processing",

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useAction } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
@@ -48,6 +48,7 @@ export const AdminOrders: React.FC = () => {
     const [isSyncing, setIsSyncing] = useState(false);
     const [syncResult, setSyncResult] = useState<{ synced: number; errors: number } | null>(null);
     const [orderActionResult, setOrderActionResult] = useState<{ orderId: string; success: boolean; message: string } | null>(null);
+    const orderActionClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const filteredOrders = filterStatus === 'all'
         ? orders
@@ -55,20 +56,44 @@ export const AdminOrders: React.FC = () => {
             ? orders.filter(o => o.cjStatus === 'failed')
             : orders.filter(o => o.status === filterStatus);
 
+    useEffect(() => {
+        return () => {
+            if (orderActionClearTimer.current) {
+                clearTimeout(orderActionClearTimer.current);
+            }
+        };
+    }, []);
+
+    const clearOrderActionResult = () => {
+        if (orderActionClearTimer.current) {
+            clearTimeout(orderActionClearTimer.current);
+            orderActionClearTimer.current = null;
+        }
+        setOrderActionResult(null);
+    };
+
+    const showOrderActionResult = (result: { orderId: string; success: boolean; message: string }) => {
+        clearOrderActionResult();
+        setOrderActionResult(result);
+        orderActionClearTimer.current = setTimeout(() => {
+            setOrderActionResult(null);
+            orderActionClearTimer.current = null;
+        }, 6000);
+    };
+
     const handleStatusChange = async (orderId: Id<"orders">, newStatus: OrderStatus) => {
         await updateStatus({ orderId, status: newStatus });
     };
 
     const handleRetryCj = async (orderId: Id<"orders">) => {
         setRetryingOrder(orderId);
-        setOrderActionResult(null);
+        clearOrderActionResult();
         try {
             const result = await retryOrderFulfillment({ orderId });
-            setOrderActionResult({ orderId, success: result.success, message: result.message });
-            setTimeout(() => setOrderActionResult(null), 6000);
+            showOrderActionResult({ orderId, success: result.success, message: result.message });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'CJ retry failed';
-            setOrderActionResult({ orderId, success: false, message });
+            showOrderActionResult({ orderId, success: false, message });
         } finally {
             setRetryingOrder(null);
         }
@@ -76,14 +101,13 @@ export const AdminOrders: React.FC = () => {
 
     const handleSyncOrderTracking = async (orderId: Id<"orders">) => {
         setResyncingOrder(orderId);
-        setOrderActionResult(null);
+        clearOrderActionResult();
         try {
             const result = await syncOrderTracking({ orderId });
-            setOrderActionResult({ orderId, success: result.success, message: result.message });
-            setTimeout(() => setOrderActionResult(null), 6000);
+            showOrderActionResult({ orderId, success: result.success, message: result.message });
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Tracking resync failed';
-            setOrderActionResult({ orderId, success: false, message });
+            showOrderActionResult({ orderId, success: false, message });
         } finally {
             setResyncingOrder(null);
         }
