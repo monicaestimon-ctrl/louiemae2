@@ -28,6 +28,10 @@ import {
 } from "../lib/cjInventory";
 import { calculateOrderPricingReconciliation } from "../lib/pricing";
 import { getTrackNumberFromOrderDetail, reconcileCjTracking } from "../lib/cjTracking";
+import {
+    hasReachedCjStep,
+    type CjFulfillmentStep,
+} from "../lib/cjFulfillmentWorkflow";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CJ DROPSHIPPING API INTEGRATION
@@ -608,27 +612,6 @@ export const refreshProductInventory = internalAction({
     },
 });
 
-const CJ_STEP_ORDER = [
-    "not_started",
-    "creating_order",
-    "order_created",
-    "adding_to_cart",
-    "cart_added",
-    "confirming_cart",
-    "cart_confirmed",
-    "generating_payment_order",
-    "payment_order_generated",
-    "paying_balance",
-    "payment_submitted",
-    "paid",
-    "processing",
-] as const;
-
-const hasReachedCjStep = (current: string | undefined, target: typeof CJ_STEP_ORDER[number]): boolean => {
-    if (!current || current === "failed") return false;
-    return CJ_STEP_ORDER.indexOf(current as typeof CJ_STEP_ORDER[number]) >= CJ_STEP_ORDER.indexOf(target);
-};
-
 const isPaidLikeCjOrderDetail = (detail: any): boolean => {
     const statusText = [
         detail?.orderStatus,
@@ -649,7 +632,7 @@ const markCjFulfillmentFailed = async (
     automationMode: "create_only" | "manual_payment" | "balance_payment",
     errorMsg: string,
     cjOrderId?: string,
-    resumeStep?: typeof CJ_STEP_ORDER[number],
+    resumeStep?: CjFulfillmentStep,
 ) => {
     await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
         orderId,
@@ -801,8 +784,8 @@ export const createCjOrder = internalAction({
         let payId = existingOrder?.cjPayId;
         let paymentAmount = existingOrder?.cjPaymentAmount;
         const existingStep = existingOrder?.cjFulfillmentStep;
-        let resumeStep: typeof CJ_STEP_ORDER[number] | undefined =
-            existingStep && existingStep !== "failed" ? existingStep as typeof CJ_STEP_ORDER[number] : undefined;
+        let resumeStep: CjFulfillmentStep | undefined =
+            hasReachedCjStep(existingStep, "not_started") ? existingStep as CjFulfillmentStep : undefined;
 
         try {
             if (!cjOrderId) {

@@ -110,8 +110,10 @@ If automatic balance payment is disabled, the app should still create the CJ ord
   - [x] persist every external ID and status transition
 - [x] Validate inventory before CJ order creation.
 - [x] Reject unsigned Stripe webhook requests before creating local/CJ fulfillment orders, except behind an explicit non-production test flag.
-- [ ] Ensure retrying the workflow cannot double-pay or duplicate fulfillment.
-- [ ] Add tests for partial failure and retry from each major step.
+- [x] Ensure retrying the workflow cannot double-pay or duplicate fulfillment.
+- [x] Add tests for partial failure and retry from each major step.
+  - [x] Cover terminal/in-flight CJ states that must block re-entry.
+  - [x] Cover step-order resume decisions for order creation, cart, confirmation, payment generation, and paid states.
 - [ ] Open PR, run CodeRabbit CLI, resolve issues, merge.
 
 ### Phase 4 - Webhook Security And Idempotency

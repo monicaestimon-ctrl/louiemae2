@@ -6,6 +6,7 @@ import { v } from "convex/values";
 import { auth } from "./auth";
 import { getCjAutomationConfig, type CjAutomationConfig } from "../lib/cjAutomation";
 import { buildCjRetryOrderPayload } from "../lib/cjOrderRetry";
+import { getCjFulfillmentReentryBlock } from "../lib/cjFulfillmentWorkflow";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PUBLIC CJ ACTIONS
@@ -119,14 +120,11 @@ export const retryOrderFulfillment = action({
         if (!order) {
             return { success: false, message: "Order not found", error: "Order not found" };
         }
-        if (
-            order.cjPaymentStatus === "paid" ||
-            order.cjFulfillmentStep === "paid" ||
-            order.cjFulfillmentStep === "processing"
-        ) {
+        const reentryBlock = getCjFulfillmentReentryBlock(order);
+        if (reentryBlock) {
             return {
                 success: true,
-                message: "CJ fulfillment is already paid or processing",
+                message: reentryBlock.message,
                 cjOrderId: order.cjOrderId,
             };
         }
