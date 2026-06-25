@@ -60,4 +60,57 @@ describe("CJ tracking reconciliation", () => {
       orderStatus: "delivered",
     });
   });
+
+  it("handles webhook-first tracking when logistic rows arrive before order detail has tracking", () => {
+    expect(reconcileCjTracking(
+      { orderStatus: "SHIPPED" },
+      [{
+        trackingNumber: "CJPKL7160102171YQ",
+        trackingStatus: "In transit",
+        logisticName: "CJPacket",
+        lastMileCarrier: "USPS",
+        lastTrackNumber: "926112903032125",
+      }],
+    )).toMatchObject({
+      trackingNumber: "926112903032125",
+      carrier: "USPS",
+      cjStatus: "shipped",
+      orderStatus: "shipped",
+    });
+  });
+
+  it("handles cron-first tracking when order detail has tracking before trackInfo rows are available", () => {
+    expect(reconcileCjTracking({
+      orderStatus: "SHIPPED",
+      trackNumber: "CJPKL7160102171YQ",
+      trackingProvider: "CJPacket",
+      trackingUrl: "https://cj.example/track/CJPKL7160102171YQ",
+    })).toMatchObject({
+      trackingNumber: "CJPKL7160102171YQ",
+      carrier: "CJPacket",
+      cjStatus: "shipped",
+      orderStatus: "shipped",
+      trackingUrl: "https://cj.example/track/CJPKL7160102171YQ",
+    });
+  });
+
+  it("handles delayed tracking by progressing from processing to shipped once CJ returns a track number", () => {
+    expect(reconcileCjTracking({ orderStatus: "UNSHIPPED" })).toMatchObject({
+      cjStatus: "processing",
+      orderStatus: "processing",
+      trackingNumber: undefined,
+    });
+
+    expect(reconcileCjTracking({
+      orderStatus: "SHIPPED",
+      trackNumber: "CJPKL7160102171YQ",
+      trackingProvider: "CJPacket",
+    })).toMatchObject({
+      trackingNumber: "CJPKL7160102171YQ",
+      carrier: "CJPacket",
+      cjStatus: "shipped",
+      orderStatus: "shipped",
+      trackingUrl: "https://t.17track.net/en#nums=CJPKL7160102171YQ",
+    });
+  });
 });
