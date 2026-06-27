@@ -293,6 +293,24 @@ export const CJControlRoom: React.FC = () => {
         },
     ];
 
+    const dailySteps = [
+        {
+            label: '1. Clear review',
+            text: 'Start with red review orders. These are blocked until a person checks the problem.',
+            Icon: AlertTriangle,
+        },
+        {
+            label: '2. Check payment',
+            text: 'Payment means CJ has the order, but the supplier still needs to be paid or confirmed.',
+            Icon: WalletCards,
+        },
+        {
+            label: '3. Sync tracking',
+            text: 'Use sync when an order is paid in CJ but Louie Mae has not received tracking yet.',
+            Icon: RefreshCw,
+        },
+    ];
+
     return (
         <div className="p-2 md:p-8 animate-fade-in-up">
             <div className="relative mb-8 overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.28)] backdrop-blur-3xl">
@@ -336,6 +354,20 @@ export const CJControlRoom: React.FC = () => {
                     <span>{toast.message}</span>
                 </div>
             )}
+
+            <div className="mb-6 grid grid-cols-1 gap-3 xl:grid-cols-3">
+                {dailySteps.map(({ label, text, Icon }) => (
+                    <div key={label} className="rounded-2xl border border-white/10 bg-black/20 p-4 backdrop-blur-2xl">
+                        <div className="mb-3 flex items-center gap-3">
+                            <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-bronze/25 bg-bronze/10 text-amber-100">
+                                <Icon className="h-4 w-4" />
+                            </span>
+                            <p className="text-[10px] uppercase tracking-[0.2em] text-bronze">{label}</p>
+                        </div>
+                        <p className="text-sm leading-6 text-cream/60">{text}</p>
+                    </div>
+                ))}
+            </div>
 
             <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 {metricCards.map(({ label, value, Icon, tone, subtext }) => (

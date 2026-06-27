@@ -9,6 +9,11 @@ Primary CJ references verified for this implementation:
 - Logistics and `trackInfo`: https://developers.cjdropshipping.cn/en/api/api2/api/logistic.html
 - Shopping/order APIs, including order detail and balance payment: https://developers.cjdropshipping.cn/en/api/api2/api/shopping.html
 
+Related Louie Mae guides:
+
+- Admin operator guide: [CJ_ADMIN_OPERATOR_GUIDE.md](./CJ_ADMIN_OPERATOR_GUIDE.md)
+- Full implementation plan: [CJ_ADMIN_CONTROL_ROOM_IMPLEMENTATION_PLAN.md](./CJ_ADMIN_CONTROL_ROOM_IMPLEMENTATION_PLAN.md)
+
 ## Required Environment Variables
 
 Set server-side values in the Convex dashboard for the production deployment unless noted otherwise.
@@ -110,12 +115,17 @@ Do this only after the dry-run is clean.
 
 ## Ongoing Operations
 
-- Review CJ product health before publishing new products.
-- Keep enough CJ balance for automatic payment.
-- Use admin retry actions for failed orders instead of creating duplicate orders manually.
-- Use admin tracking sync for delayed tracking.
-- Investigate any product with pricing warnings before relying on the suggested retail price.
-- If CJ webhook delivery fails, re-run webhook registration and verify `CJ_WEBHOOK_URL` and signing configuration.
+Use the admin panel for daily oversight:
+
+1. Open **CJ Risk Check** first.
+2. Fix critical risks before assuming hands-off fulfillment is healthy.
+3. Open **CJ Control Room** and clear the **Needs review** filter.
+4. Use admin retry actions for failed orders instead of creating duplicate orders manually.
+5. Use admin tracking sync for delayed tracking.
+6. Keep enough CJ balance for automatic payment.
+7. Review CJ product health before publishing new products.
+8. Investigate any product with pricing warnings before relying on the suggested retail price.
+9. If CJ webhook delivery fails, re-run webhook registration and verify `CJ_WEBHOOK_URL` and signing configuration.
 
 ## Rollback
 
