@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import {
+    applyReviewedRiskAudits,
     getAutomationRisks,
     getCjControlRoomOrder,
     getProductRisks,
@@ -9,6 +10,7 @@ import {
     sortRisks,
     type CjAdminRisk,
     type CjAdminSeverity,
+    type CjReviewedRiskAudit,
 } from "../lib/cjAdminReadModels";
 import { getCjAutomationConfig } from "../lib/cjAutomation";
 
@@ -86,23 +88,33 @@ const getSystemHealth = (
     };
 };
 
-const getAllRisks = async (ctx: QueryCtx, nowMs: number) => {
-    const [orders, products] = await Promise.all([
+const getAllRisks = async (ctx: QueryCtx, nowMs: number, includeReviewed = false) => {
+    const [orders, products, reviewedAudits] = await Promise.all([
         ctx.db.query("orders").order("desc").take(MAX_ORDERS),
         ctx.db.query("products").take(MAX_PRODUCTS),
+        ctx.db
+            .query("cjFulfillmentAudits")
+            .withIndex("by_action_type", q => q.eq("actionType", "risk_reviewed"))
+            .collect(),
     ]);
     const automation = getCjAutomationConfig(process.env);
     const controlRoomOrders = orders.map((order) => getCjControlRoomOrder(order, nowMs));
+    const unresolvedRisks = sortRisks([
+        ...getAutomationRisks(automation, nowMs),
+        ...controlRoomOrders.flatMap((order) => order.risks),
+        ...getProductRisks(products, nowMs),
+    ]);
 
     return {
         orders,
         products,
         automation,
-        risks: sortRisks([
-            ...getAutomationRisks(automation, nowMs),
-            ...controlRoomOrders.flatMap((order) => order.risks),
-            ...getProductRisks(products, nowMs),
-        ]),
+        reviewedRiskCount: reviewedAudits.length,
+        risks: applyReviewedRiskAudits(
+            unresolvedRisks,
+            reviewedAudits as CjReviewedRiskAudit[],
+            includeReviewed,
+        ),
     };
 };
 
@@ -110,12 +122,13 @@ export const getSummary = query({
     args: {},
     handler: async (ctx) => {
         const nowMs = Date.now();
-        const { risks, automation } = await getAllRisks(ctx, nowMs);
+        const { risks, automation, reviewedRiskCount } = await getAllRisks(ctx, nowMs);
 
         return {
             generatedAt: new Date(nowMs).toISOString(),
             automation,
             riskSummary: getRiskSummary(risks),
+            reviewedRiskCount,
             topRisks: risks.slice(0, 8),
         };
     },
@@ -124,12 +137,13 @@ export const getSummary = query({
 export const getRisks = query({
     args: {
         severity: riskSeverityValidator,
+        includeReviewed: v.optional(v.boolean()),
         limit: v.optional(v.number()),
     },
     handler: async (ctx, args) => {
         const nowMs = Date.now();
         const limit = Math.min(Math.max(args.limit ?? 50, 1), MAX_RISKS);
-        const { risks } = await getAllRisks(ctx, nowMs);
+        const { risks } = await getAllRisks(ctx, nowMs, args.includeReviewed);
 
         return risks
             .filter((risk: CjAdminRisk) => {

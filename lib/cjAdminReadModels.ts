@@ -167,6 +167,19 @@ export type CjAdminRisk = {
   orderId?: string;
   productId?: string;
   createdAt: string;
+  reviewed?: {
+    reviewedAt: string;
+    note?: string;
+    actorEmail?: string;
+  };
+};
+
+export type CjReviewedRiskAudit = {
+  riskKey?: string;
+  reviewedAt?: string;
+  createdAt: string;
+  note?: string;
+  actorEmail?: string;
 };
 
 export type CjControlRoomSummary = {
@@ -674,6 +687,42 @@ export const sortRisks = (risks: CjAdminRisk[]): CjAdminRisk[] =>
     if (severityDiff !== 0) return severityDiff;
     return toTime(b.createdAt) - toTime(a.createdAt);
   });
+
+export const applyReviewedRiskAudits = (
+  risks: CjAdminRisk[],
+  audits: CjReviewedRiskAudit[],
+  includeReviewed = false,
+): CjAdminRisk[] => {
+  const latestReviewByRiskKey = new Map<string, CjReviewedRiskAudit>();
+
+  audits.forEach((audit) => {
+    if (!hasValue(audit.riskKey)) return;
+    const previous = latestReviewByRiskKey.get(audit.riskKey);
+    const auditTime = toTime(audit.reviewedAt || audit.createdAt);
+    const previousTime = toTime(previous?.reviewedAt || previous?.createdAt);
+    if (!previous || auditTime >= previousTime) {
+      latestReviewByRiskKey.set(audit.riskKey, audit);
+    }
+  });
+
+  const decoratedRisks = risks.map((risk) => {
+    const review = latestReviewByRiskKey.get(risk.key);
+    if (!review) return risk;
+
+    return {
+      ...risk,
+      reviewed: {
+        reviewedAt: review.reviewedAt || review.createdAt,
+        note: review.note,
+        actorEmail: review.actorEmail,
+      },
+    };
+  });
+
+  return sortRisks(includeReviewed
+    ? decoratedRisks
+    : decoratedRisks.filter((risk) => !risk.reviewed));
+};
 
 const getNextAction = (
   order: CjAdminOrderInput,
