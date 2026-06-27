@@ -14,6 +14,7 @@ import { NewsletterStudio } from './NewsletterStudio';
 import { ProductStudio } from './ProductStudio';
 import { ProductImport } from './ProductImport';
 import { CJSettings } from './CJSettings';
+import { CJControlRoom } from './CJControlRoom';
 import { buildSourceProductSnapshot } from '../lib/smartDescription';
 import { SafeImage } from './SafeImage';
 
@@ -171,9 +172,9 @@ export const AdminPage: React.FC = () => {
    const [authFlow] = useState<'signIn' | 'signUp'>('signIn');
 
    // Navigation State
-   const [activeTab, setActiveTabState] = useState<'dashboard' | 'journal' | 'pages' | 'products' | 'structure' | 'newsletter' | 'orders' | 'import' | 'cj-settings'>(() => {
+   const [activeTab, setActiveTabState] = useState<'dashboard' | 'journal' | 'pages' | 'products' | 'structure' | 'newsletter' | 'orders' | 'cj-control-room' | 'import' | 'cj-settings'>(() => {
       const saved = localStorage.getItem('admin-active-tab');
-      const validTabs = ['dashboard', 'journal', 'pages', 'products', 'structure', 'newsletter', 'orders', 'import', 'cj-settings'] as const;
+      const validTabs = ['dashboard', 'journal', 'pages', 'products', 'structure', 'newsletter', 'orders', 'cj-control-room', 'import', 'cj-settings'] as const;
       return saved && (validTabs as readonly string[]).includes(saved) ? saved as typeof validTabs[number] : 'dashboard';
    });
    const setActiveTab = (tab: typeof activeTab) => {
@@ -697,6 +698,15 @@ export const AdminPage: React.FC = () => {
                   <span className="relative z-10 font-medium">Orders</span>
                </button>
 
+               {/* CJ Control Room */}
+               <button
+                  onClick={() => switchTab('cj-control-room', () => setActivePageEditor(null))}
+                  className={`relative group w-full text-left px-5 py-3.5 text-xs uppercase tracking-[0.15em] flex items-center gap-4 rounded-xl transition-all mb-2 overflow-hidden ${activeTab === 'cj-control-room' ? 'bg-white/10 text-white shadow-lg border border-white/5' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
+               >
+                  <BarChart2 className={`w-4 h-4 transition-transform duration-500 ${activeTab === 'cj-control-room' ? 'scale-110 text-bronze' : 'group-hover:scale-110'}`} />
+                  <span className="relative z-10 font-medium">CJ Control</span>
+               </button>
+
                {/* Separator */}
                <div className="px-4 pt-6 pb-2">
                   <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent mb-4" />
@@ -889,6 +899,13 @@ export const AdminPage: React.FC = () => {
             {activeTab === 'orders' && (
                <FadeIn>
                   <AdminOrders />
+               </FadeIn>
+            )}
+
+            {/* CJ CONTROL ROOM TAB */}
+            {activeTab === 'cj-control-room' && (
+               <FadeIn>
+                  <CJControlRoom />
                </FadeIn>
             )}
 
