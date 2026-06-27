@@ -17,6 +17,7 @@ Related Louie Mae docs:
 
 - [CJ_FULLY_HANDS_OFF_FULFILLMENT_PLAN.md](./CJ_FULLY_HANDS_OFF_FULFILLMENT_PLAN.md)
 - [CJ_OPERATIONAL_LAUNCH_RUNBOOK.md](./CJ_OPERATIONAL_LAUNCH_RUNBOOK.md)
+- [CJ_ADMIN_OPERATOR_GUIDE.md](./CJ_ADMIN_OPERATOR_GUIDE.md)
 
 ## Goal
 
@@ -254,56 +255,56 @@ Core layout:
 
 ### PR 1 - Plan And Scope
 
-- [ ] Add this implementation plan.
-- [ ] Run `npm run type-check` when practical.
-- [ ] Run CodeRabbit CLI on the committed diff.
-- [ ] Open a ready-for-review PR.
-- [ ] Merge after review is clean.
+- [x] Add this implementation plan.
+- [x] Run `npm run type-check` when practical.
+- [x] Run CodeRabbit CLI on the committed diff.
+- [x] Open a ready-for-review PR.
+- [x] Merge after review is clean.
 
 ### PR 2 - Backend Read Models
 
-- [ ] Add control room summary and order pipeline queries.
-- [ ] Add risk monitor summary and risk list queries.
-- [ ] Add tests for status labels, severity ordering, and stuck-order detection.
-- [ ] Run type check and targeted tests.
-- [ ] Run CodeRabbit CLI.
-- [ ] Open and merge PR after review.
+- [x] Add control room summary and order pipeline queries.
+- [x] Add risk monitor summary and risk list queries.
+- [x] Add tests for status labels, severity ordering, and stuck-order detection.
+- [x] Run type check and targeted tests.
+- [x] Run CodeRabbit CLI.
+- [x] Open and merge PR after review.
 
 ### PR 3 - Audit State And Safe Actions
 
-- [ ] Add reviewed risk/note storage if needed.
-- [ ] Add mutations for marking risks reviewed and adding internal notes.
-- [ ] Keep money-moving actions guarded by existing CJ admin access checks.
-- [ ] Add tests for permissions and duplicate-safe retries.
-- [ ] Run CodeRabbit CLI.
-- [ ] Open and merge PR after review.
+- [x] Add reviewed risk/note storage if needed.
+- [x] Add mutations for marking risks reviewed and adding internal notes.
+- [x] Keep money-moving actions guarded by existing CJ admin access checks.
+- [x] Add tests for permissions and duplicate-safe retries.
+- [x] Run CodeRabbit CLI.
+- [x] Open and merge PR after review.
 
 ### PR 4 - CJ Control Room UI
 
-- [ ] Add admin nav item.
-- [ ] Build summary cards, filters, order list, detail panel, and action buttons.
-- [ ] Use simple labels instead of backend terms.
-- [ ] Verify mobile and desktop layout.
-- [ ] Run type check/build.
-- [ ] Run CodeRabbit CLI.
-- [ ] Open and merge PR after review.
+- [x] Add admin nav item.
+- [x] Build summary cards, filters, order list, detail panel, and action buttons.
+- [x] Use simple labels instead of backend terms.
+- [x] Verify mobile and desktop layout.
+- [x] Run type check/build.
+- [x] Run CodeRabbit CLI.
+- [x] Open and merge PR after review.
 
 ### PR 5 - Silent Risk Check UI
 
-- [ ] Add admin nav item.
-- [ ] Build critical risk cards, warning cards, system health, and action buttons.
-- [ ] Keep wording simple enough for non-developers.
-- [ ] Verify mobile and desktop layout.
-- [ ] Run type check/build.
-- [ ] Run CodeRabbit CLI.
-- [ ] Open and merge PR after review.
+- [x] Add admin nav item.
+- [x] Build critical risk cards, warning cards, system health, and action buttons.
+- [x] Keep wording simple enough for non-developers.
+- [x] Verify mobile and desktop layout.
+- [x] Run type check/build.
+- [x] Run CodeRabbit CLI.
+- [x] Open and merge PR after review.
 
 ### PR 6 - Final Operational Polish
 
-- [ ] Add empty states and loading states.
-- [ ] Confirm all actions show success/error feedback.
-- [ ] Confirm every backend failure path appears somewhere in admin.
-- [ ] Update launch runbook with the new pages.
+- [x] Add empty states and loading states.
+- [x] Confirm all actions show success/error feedback.
+- [x] Confirm every backend failure path appears somewhere in admin.
+- [x] Update launch runbook with the new pages.
 - [ ] Run full tests, lint, type check, and build.
 - [ ] Run CodeRabbit CLI.
 - [ ] Open and merge final PR after review.

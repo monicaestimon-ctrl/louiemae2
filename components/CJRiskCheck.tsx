@@ -243,6 +243,27 @@ export const CJRiskCheck: React.FC = () => {
         },
     ];
 
+    const readingGuide = [
+        {
+            label: 'Critical',
+            text: 'Treat this as stopped. Fix it before assuming the order is moving.',
+            Icon: ShieldAlert,
+            tone: 'text-red-100',
+        },
+        {
+            label: 'Warning',
+            text: 'Check it the same day. It may still move, but it should not be ignored.',
+            Icon: AlertTriangle,
+            tone: 'text-amber-100',
+        },
+        {
+            label: 'Reviewed',
+            text: 'Use this only after you checked the issue or left a note for the next person.',
+            Icon: CheckCircle2,
+            tone: 'text-emerald-100',
+        },
+    ];
+
     return (
         <div className="p-2 md:p-8 animate-fade-in-up">
             <div className="relative mb-8 overflow-hidden rounded-[2rem] border border-white/10 bg-white/[0.06] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.28)] backdrop-blur-3xl">
@@ -295,6 +316,20 @@ export const CJRiskCheck: React.FC = () => {
                     <span>{toast.message}</span>
                 </div>
             )}
+
+            <div className="mb-6 grid grid-cols-1 gap-3 xl:grid-cols-3">
+                {readingGuide.map(({ label, text, Icon, tone }) => (
+                    <div key={label} className="rounded-2xl border border-white/10 bg-black/20 p-4 backdrop-blur-2xl">
+                        <div className="mb-3 flex items-center gap-3">
+                            <span className={`inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/5 ${tone}`}>
+                                <Icon className="h-4 w-4" />
+                            </span>
+                            <p className="text-[10px] uppercase tracking-[0.2em] text-bronze">{label}</p>
+                        </div>
+                        <p className="text-sm leading-6 text-cream/60">{text}</p>
+                    </div>
+                ))}
+            </div>
 
             <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 {topCards.map(({ label, value, subtext, Icon, tone }) => (
