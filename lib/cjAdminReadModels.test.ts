@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyReviewedRiskAudits,
   getAutomationRisks,
   getCjControlRoomOrder,
   getCjControlRoomSummary,
@@ -168,5 +169,27 @@ describe("CJ admin read models", () => {
       variants: [{ name: "Default", inStock: true }],
       inStock: true,
     }], NOW)).toEqual([]);
+  });
+
+  it("filters reviewed risks unless reviewed items are requested", () => {
+    const risks = getCjOrderRisks(baseOrder({
+      items: [{ name: "Louie Dress", quantity: 1, cjVariantId: "vid-1" }],
+    }), NOW);
+    const reviewedAudit = {
+      riskKey: risks[0]?.key,
+      reviewedAt: "2026-06-26T12:05:00.000Z",
+      createdAt: "2026-06-26T12:05:00.000Z",
+      note: "Mapping is being fixed.",
+      actorEmail: "admin@louiemae.com",
+    };
+
+    expect(applyReviewedRiskAudits(risks, [reviewedAudit])).toEqual([]);
+
+    expect(applyReviewedRiskAudits(risks, [reviewedAudit], true)[0]).toMatchObject({
+      reviewed: {
+        note: "Mapping is being fixed.",
+        actorEmail: "admin@louiemae.com",
+      },
+    });
   });
 });

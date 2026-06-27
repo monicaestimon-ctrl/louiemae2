@@ -402,6 +402,43 @@ export default defineSchema({
         .index("by_cj_payment_status", ["cjPaymentStatus"])
         .index("by_cj_fulfillment_step", ["cjFulfillmentStep"]),
 
+    // CJ fulfillment audit log - reviewed risks and internal operator notes
+    cjFulfillmentAudits: defineTable({
+        actionType: v.union(
+            v.literal("risk_reviewed"),
+            v.literal("note_added")
+        ),
+        riskKey: v.optional(v.string()),
+        riskType: v.optional(v.union(
+            v.literal("automation"),
+            v.literal("mapping"),
+            v.literal("shipping"),
+            v.literal("fulfillment"),
+            v.literal("payment"),
+            v.literal("tracking"),
+            v.literal("inventory"),
+            v.literal("notification"),
+            v.literal("refund"),
+            v.literal("pricing")
+        )),
+        severity: v.optional(v.union(
+            v.literal("critical"),
+            v.literal("warning"),
+            v.literal("info")
+        )),
+        title: v.optional(v.string()),
+        orderId: v.optional(v.id("orders")),
+        productId: v.optional(v.id("products")),
+        note: v.optional(v.string()),
+        actorEmail: v.string(),
+        createdAt: v.string(),
+        reviewedAt: v.optional(v.string()),
+    }).index("by_order", ["orderId"])
+        .index("by_product", ["productId"])
+        .index("by_risk_key", ["riskKey"])
+        .index("by_action_type", ["actionType"])
+        .index("by_created_at", ["createdAt"]),
+
     // AliExpress product cache - stores fetched products for faster access
     aliexpressCache: defineTable({
         aliexpressId: v.string(), // Original AliExpress product ID
