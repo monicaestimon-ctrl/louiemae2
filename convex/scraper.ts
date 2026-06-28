@@ -1,62 +1,104 @@
 "use node";
 import { action } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
+import { lookup } from "node:dns/promises";
+import type { LookupAddress } from "node:dns";
+import { isIP } from "node:net";
 
-/** Domain allowlist: only scrape from known storefront domains. */
-const ALLOWED_DOMAINS = [
-    '1688.com',
-    'detail.1688.com',
-    'm.1688.com',
-    'aliexpress.com',
-    'aliexpress.us',
-    'amazon.com',
-    'amazon.co.uk',
-    'amazon.ca',
-    'ebay.com',
-    'etsy.com',
-    'walmart.com',
-    'target.com',
-    'trendsi.com',
-    'shopify.com',
-    'myshopify.com',
-];
+const normalizeHostname = (hostname: string): string =>
+    hostname.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
 
-/** Checks if a hostname matches the allowed storefront domains (supports subdomains). */
-const isAllowedDomain = (hostname: string): boolean => {
-    const h = hostname.toLowerCase();
-    return ALLOWED_DOMAINS.some(domain =>
-        h === domain || h.endsWith(`.${domain}`)
+const isPrivateOrReservedIpv4 = (address: string): boolean => {
+    const parts = address.split('.').map(part => Number(part));
+    if (parts.length !== 4 || parts.some(part => !Number.isInteger(part) || part < 0 || part > 255)) {
+        return true;
+    }
+
+    const [a, b, c] = parts;
+    return (
+        a === 0 ||
+        a === 10 ||
+        a === 127 ||
+        (a === 100 && b >= 64 && b <= 127) ||
+        (a === 169 && b === 254) ||
+        (a === 172 && b >= 16 && b <= 31) ||
+        (a === 192 && b === 0 && c === 0) ||
+        (a === 192 && b === 0 && c === 2) ||
+        (a === 192 && b === 168) ||
+        (a === 198 && (b === 18 || b === 19)) ||
+        (a === 198 && b === 51 && c === 100) ||
+        (a === 203 && b === 0 && c === 113) ||
+        a >= 224
     );
 };
 
-/** SSRF defense-in-depth: checks if a hostname resolves to private/internal IPs or IPv6 literals. */
-const isBlockedHost = (hostname: string): boolean => {
-    const h = hostname.toLowerCase();
-    // Reject IPv6 literals (e.g. [::1], [fe80::1])
-    if (h.startsWith('[') || h.includes(':')) return true;
-    // Check for IP-based private ranges with proper octet parsing
-    const ipv4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (ipv4) {
-        const a = Number(ipv4[1]);
-        const b = Number(ipv4[2]);
-        if (a === 127 || a === 10 || a === 0 ||
-            (a === 192 && b === 168) ||
-            (a === 169 && b === 254) ||
-            (a === 172 && b >= 16 && b <= 31)) {
-            return true;
-        }
+const isPrivateOrReservedIp = (address: string): boolean => {
+    const normalized = normalizeHostname(address);
+    const version = isIP(normalized);
+
+    if (version === 4) return isPrivateOrReservedIpv4(normalized);
+    if (version !== 6) return false;
+
+    if (normalized.startsWith('::ffff:')) {
+        return isPrivateOrReservedIpv4(normalized.replace('::ffff:', ''));
     }
+
+    return (
+        normalized === '::' ||
+        normalized === '::1' ||
+        normalized.startsWith('fc') ||
+        normalized.startsWith('fd') ||
+        normalized.startsWith('fe80') ||
+        normalized.startsWith('ff') ||
+        normalized.startsWith('2001:db8')
+    );
+};
+
+/** SSRF defense-in-depth: blocks internal hosts and direct IP-literal URLs. */
+const isBlockedHost = (hostname: string): boolean => {
+    const h = normalizeHostname(hostname);
+    if (!h) return true;
+    if (isIP(h)) return true;
+
     return (
         h === 'localhost' ||
+        h === 'metadata.google.internal' ||
         h.endsWith('.local') ||
         h.endsWith('.internal')
     );
 };
 
+const assertSafePublicHttpUrl = async (parsedUrl: URL): Promise<void> => {
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+        throw new Error(`Invalid URL protocol: "${parsedUrl.protocol}". Only http:// and https:// are allowed.`);
+    }
+
+    if (isBlockedHost(parsedUrl.hostname)) {
+        throw new Error(`Blocked internal/private URL: "${parsedUrl.hostname}"`);
+    }
+
+    let addresses: LookupAddress[];
+    try {
+        addresses = await lookup(parsedUrl.hostname, { all: true });
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'DNS lookup failed';
+        throw new Error(`Could not resolve URL host "${parsedUrl.hostname}": ${message}`);
+    }
+
+    if (addresses.length === 0) {
+        throw new Error(`Could not resolve URL host "${parsedUrl.hostname}".`);
+    }
+
+    const blockedAddress = addresses.find(({ address }) => isPrivateOrReservedIp(address));
+    if (blockedAddress) {
+        throw new Error(`Blocked internal/private URL: "${parsedUrl.hostname}" resolved to ${blockedAddress.address}`);
+    }
+};
+
 const getScraperErrorCode = (message: string): string => {
     if (/domain not supported|unsupported domain|redirect hop landed on unsupported/i.test(message)) return 'UNSUPPORTED_DOMAIN';
     if (/blocked internal|blocked host/i.test(message)) return 'BLOCKED_URL';
-    if (/invalid url|invalid redirect|invalid protocol|invalid url format/i.test(message)) return 'INVALID_URL';
+    if (/invalid url|invalid redirect|invalid protocol|invalid url format|could not resolve url host/i.test(message)) return 'INVALID_URL';
     if (/rapidapi key not configured/i.test(message)) return 'MISSING_RAPIDAPI_KEY';
     if (/otapi request timed out|aborted|timed out/i.test(message)) return 'UPSTREAM_TIMEOUT';
     if (/http 403|http 401/i.test(message)) return 'UPSTREAM_FORBIDDEN';
@@ -71,8 +113,7 @@ export const scrapeProduct = action({
         console.log(`[Scraper] Starting scrape for URL: ${url}`);
 
         try {
-            // Validate URL format
-            // Validate URL format — only allow http/https
+            // Validate URL format and confirm the host is public before fetching.
             let parsedUrl: URL;
             try {
                 parsedUrl = new URL(url);
@@ -82,20 +123,7 @@ export const scrapeProduct = action({
             if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
                 throw new Error(`Invalid URL protocol: "${parsedUrl.protocol}". Only http:// and https:// are allowed.`);
             }
-
-            // Validate against domain allowlist and SSRF blocklist
-            try {
-                const parsed = new URL(url);
-                if (isBlockedHost(parsed.hostname)) {
-                    throw new Error(`Blocked internal/private URL: "${parsed.hostname}"`);
-                }
-                if (!isAllowedDomain(parsed.hostname)) {
-                    throw new Error(`Domain not supported for scraping: "${parsed.hostname}". Only known storefronts are allowed.`);
-                }
-            } catch (parseErr: any) {
-                if (parseErr.message.startsWith('Blocked') || parseErr.message.startsWith('Domain')) throw parseErr;
-                throw new Error(`Invalid URL: "${url}"`);
-            }
+            await assertSafePublicHttpUrl(parsedUrl);
 
             let resolvedUrl = url;
 
@@ -473,7 +501,7 @@ async function scrape1688(productId: string, originalUrl?: string) {
 /**
  * Generic HTML scraper with manual redirect handling and SSRF validation per hop.
  * Extracts title, description, images, and price from meta tags and HTML content.
- * @param url - The URL to scrape (must be on an allowed domain).
+ * @param url - The public URL to scrape.
  * @returns Scraped product data with source 'generic'.
  */
 async function scrapeGeneric(url: string) {
@@ -482,7 +510,7 @@ async function scrapeGeneric(url: string) {
         let currentUrl = url;
         const MAX_REDIRECTS = 5;
 
-        // Manual redirect handling: validate each hop against allowlist + SSRF
+        // Manual redirect handling: validate each hop against SSRF protections.
         try {
             for (let hops = 0; hops <= MAX_REDIRECTS; hops++) {
                 const controller = new AbortController();
@@ -514,14 +542,9 @@ async function scrapeGeneric(url: string) {
                         throw new Error(`Invalid redirect URL: "${location}"`);
                     }
 
-                    // Validate redirect target
+                    // Validate redirect target before following it.
                     const nextParsed = new URL(nextUrl);
-                    if (isBlockedHost(nextParsed.hostname)) {
-                        throw new Error(`Redirect hop landed on blocked host: "${nextParsed.hostname}"`);
-                    }
-                    if (!isAllowedDomain(nextParsed.hostname)) {
-                        throw new Error(`Redirect hop landed on unsupported domain: "${nextParsed.hostname}"`);
-                    }
+                    await assertSafePublicHttpUrl(nextParsed);
 
                     currentUrl = nextUrl;
                     if (hops === MAX_REDIRECTS) {

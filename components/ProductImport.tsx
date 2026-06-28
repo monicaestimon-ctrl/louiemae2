@@ -16,6 +16,7 @@ import { buildSourceProductSnapshot, SourceAttribute } from '../lib/smartDescrip
 import { calculatePricingBreakdown, getEstimatedShipping } from '../lib/pricing';
 import { getUserFacingErrorMessage } from '../lib/errorMessages';
 import { normalizeImageUrl, shouldCacheImageUrl } from '../lib/imageUrls';
+import { normalizeProductImportUrl } from '../lib/importUrl';
 
 interface ProductImportProps {
     collections: CollectionConfig[];
@@ -2081,7 +2082,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
 
     // URL Import
     const handleImportByUrl = async () => {
-        const originalSourceUrl = importUrl.trim();
+        const originalSourceUrl = normalizeProductImportUrl(importUrl);
         if (!originalSourceUrl) return;
 
         setIsImportingUrl(true);
@@ -2505,11 +2506,11 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                         </button>
                                     </div>
 
-                                    {/* Validation Tip (Removed strict regex check to support generic sites) */}
-                                    {importUrl && !importUrl.startsWith('http') && (
+                                    {/* URL normalization tip */}
+                                    {importUrl && !/^[a-z][a-z0-9+.-]*:\/\//i.test(importUrl.trim()) && (
                                         <div className="text-[10px] text-orange-600 flex items-center gap-1 font-medium bg-orange-50 p-2 rounded-lg border border-orange-100">
                                             <AlertCircle className="w-3 h-3" />
-                                            Please enter a valid URL (starting with http/https)
+                                            We will add https:// automatically before importing.
                                         </div>
                                     )}
 
