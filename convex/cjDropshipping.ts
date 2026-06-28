@@ -2087,16 +2087,17 @@ export const diagnosePendingProducts = internalAction({
         }> = [];
 
         let autoApprovedCount = 0;
-        let nextDiagnosticRequestAt = 0;
         const waitForDiagnosticRequestSlot = async () => {
-            const waitMs = Math.max(0, nextDiagnosticRequestAt - Date.now());
-            if (waitMs > 0) {
-                await new Promise(resolve => setTimeout(resolve, waitMs));
+            const slot = await ctx.runMutation(internal.cjHelpers.reserveCjDiagnosticRequestSlot, {
+                spacingMs: CJ_DIAGNOSTIC_REQUEST_SPACING_MS,
+            });
+            if (slot.waitMs > 0) {
+                await new Promise(resolve => setTimeout(resolve, slot.waitMs));
             }
-            nextDiagnosticRequestAt = Date.now() + CJ_DIAGNOSTIC_REQUEST_SPACING_MS;
         };
         const isCjRateLimitMessage = (message: unknown) =>
-            typeof message === "string" && /too many requests|qps|1\s*time\s*\/\s*1\s*second|limit/i.test(message);
+            typeof message === "string" &&
+            /too many requests|too much request|qps|request frequency|frequency limit|1600200|1\s*time\s*\/\s*1\s*second|1\s*request\s*\/\s*second/i.test(message);
         const formatCjDiagnosticApiFailure = (message: unknown, purpose: string) => {
             const normalizedMessage =
                 typeof message === "string" && message.trim() ? message.trim() : "Unknown error";

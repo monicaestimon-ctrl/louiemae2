@@ -9,9 +9,54 @@ import { mergePricingRefreshFailureWarning } from "../lib/cjPricingRefreshFailur
 const hasFiniteNumber = (value: unknown): boolean => typeof value === "number" && Number.isFinite(value);
 const CJ_RESERVATION_TTL_MS = 10 * 60 * 1000;
 const CJ_WEBHOOK_PROCESSING_TIMEOUT_MS = 30 * 60 * 1000;
+const CJ_DIAGNOSTIC_RATE_LIMIT_KEY = "cjDiagnosticNextRequestAt";
 
 const createWebhookClaimToken = (): string =>
     `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+
+export const reserveCjDiagnosticRequestSlot = internalMutation({
+    args: {
+        spacingMs: v.number(),
+    },
+    handler: async (ctx, args) => {
+        const now = Date.now();
+        const existing = await ctx.db
+            .query("adminPreferences")
+            .withIndex("by_key", q => q.eq("key", CJ_DIAGNOSTIC_RATE_LIMIT_KEY))
+            .unique();
+
+        const storedNextRequestAt =
+            existing &&
+                existing.value &&
+                typeof existing.value === "object" &&
+                "nextRequestAt" in existing.value &&
+                typeof existing.value.nextRequestAt === "number"
+                ? existing.value.nextRequestAt
+                : 0;
+        const reservedAt = Math.max(now, storedNextRequestAt);
+        const nextRequestAt = reservedAt + args.spacingMs;
+        const updatedAt = new Date().toISOString();
+
+        if (existing) {
+            await ctx.db.patch(existing._id, {
+                value: { nextRequestAt },
+                updatedAt,
+            });
+        } else {
+            await ctx.db.insert("adminPreferences", {
+                key: CJ_DIAGNOSTIC_RATE_LIMIT_KEY,
+                value: { nextRequestAt },
+                updatedAt,
+            });
+        }
+
+        return {
+            waitMs: Math.max(0, reservedAt - now),
+            reservedAt,
+            nextRequestAt,
+        };
+    },
+});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CJ DROPSHIPPING DATABASE HELPERS

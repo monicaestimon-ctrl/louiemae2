@@ -36,6 +36,11 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
     const recentlyApproved = useQuery(api.products.getRecentlyApproved) || [];
     const rejectedProducts = useQuery(api.products.getRejectedProducts) || [];
     const productHealth = useQuery(api.products.auditProductHealth);
+    const approvedMissingCjVariantIssues = productHealth?.issues?.filter(issue =>
+        issue.problems.some(problem => problem.includes("Approved but no CJ variants"))
+    ) || [];
+    const diagnosticCandidateCount = pendingProducts.length + approvedMissingCjVariantIssues.length;
+    const hasDiagnosticCandidates = diagnosticCandidateCount > 0;
 
     const [testing, setTesting] = useState(false);
     const [configuring, setConfiguring] = useState(false);
@@ -217,8 +222,8 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
             setDiagnosticResults(res.results);
             const approvedCount = res.results.filter((diagnosticResult: CjDiagnosticResult) => diagnosticResult.autoApproved).length;
             setResult({
-                success: approvedCount > 0,
-                message: res.summary,
+                success: true,
+                message: approvedCount > 0 ? res.summary : `${res.summary} No resubmission was made automatically.`,
             });
         } catch (error: unknown) {
             setResult({ success: false, message: getErrorMessage(error, 'Diagnosis failed') });
@@ -520,17 +525,18 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
                                         <div className="flex items-center gap-2 mt-1">
                                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_5px_rgba(251,191,36,0.8)]" />
                                             <span className="text-[10px] uppercase tracking-widest text-cream/50 font-medium">
-                                                {pendingProducts.length} Items Waiting
+                                                {pendingProducts.length} Pending
+                                                {approvedMissingCjVariantIssues.length > 0 && ` - ${approvedMissingCjVariantIssues.length} Missing CJ Variants`}
                                             </span>
                                         </div>
                                     </div>
                                     {/* Diagnose & Fix button */}
-                                    {pendingProducts.length > 0 && (
+                                    {hasDiagnosticCandidates && (
                                         <button
                                             onClick={handleDiagnose}
                                             disabled={diagnosing || diagnosingProductId !== null}
                                             className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 border border-emerald-500/30 rounded-xl transition-all disabled:opacity-50 shadow-inner"
-                                            title="Deep-verify all pending products slowly against CJ's 1 request/second limit"
+                                            title="Deep-verify all diagnostic candidates slowly against CJ's 1 request/second limit"
                                         >
                                             {diagnosing ? (
                                                 <Loader2 className="w-3.5 h-3.5 animate-spin drop-shadow-[0_0_3px_currentColor]" />
@@ -542,16 +548,23 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
                                     )}
                                 </div>
 
-                                {pendingProducts.length > 0 && (
+                                {hasDiagnosticCandidates && (
                                     <div className="relative z-10 mb-4 rounded-xl border border-emerald-500/15 bg-emerald-500/5 px-3 py-2 text-[10px] leading-relaxed text-cream/50">
-                                        CJ allows about 1 API request per second. Diagnose All runs slowly on purpose; use Diagnose on one item for a targeted recheck.
+                                        CJ allows about 1 API request per second. Diagnose All runs slowly on purpose across pending products and approved items missing CJ variants.
                                     </div>
                                 )}
 
                                 {pendingProducts.length === 0 ? (
                                     <div className="flex-1 flex flex-col items-center justify-center text-cream/30 py-12 relative z-10">
                                         <CheckCircle className="w-12 h-12 mb-3 opacity-50 drop-shadow-sm text-green-400" />
-                                        <p className="font-serif text-lg tracking-wide text-green-400/50">All cleared</p>
+                                        <p className="font-serif text-lg tracking-wide text-green-400/50">
+                                            {approvedMissingCjVariantIssues.length > 0 ? 'Pending queue clear' : 'All cleared'}
+                                        </p>
+                                        {approvedMissingCjVariantIssues.length > 0 && (
+                                            <p className="mt-2 text-xs text-cream/40 text-center max-w-xs">
+                                                {approvedMissingCjVariantIssues.length} approved item(s) need CJ variant verification. Use Diagnose All.
+                                            </p>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="space-y-4 relative z-10 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
