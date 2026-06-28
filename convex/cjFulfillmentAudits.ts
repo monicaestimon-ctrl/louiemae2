@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import type { QueryCtx } from "./_generated/server";
 import { requireCjAdminIdentity } from "./cjAdminAccess";
 
 const riskTypeValidator = v.union(
@@ -24,6 +25,15 @@ const severityValidator = v.union(
 const trimOptional = (value: string | undefined): string | undefined => {
     const trimmed = value?.trim();
     return trimmed ? trimmed : undefined;
+};
+
+const canReadFulfillmentAudits = async (ctx: QueryCtx): Promise<boolean> => {
+    try {
+        await requireCjAdminIdentity(ctx);
+        return true;
+    } catch {
+        return false;
+    }
 };
 
 export const markRiskReviewed = mutation({
@@ -110,7 +120,7 @@ export const getForOrder = query({
         orderId: v.id("orders"),
     },
     handler: async (ctx, args) => {
-        await requireCjAdminIdentity(ctx);
+        if (!await canReadFulfillmentAudits(ctx)) return [];
         const audits = await ctx.db
             .query("cjFulfillmentAudits")
             .withIndex("by_order", q => q.eq("orderId", args.orderId))
@@ -125,7 +135,7 @@ export const getForProduct = query({
         productId: v.id("products"),
     },
     handler: async (ctx, args) => {
-        await requireCjAdminIdentity(ctx);
+        if (!await canReadFulfillmentAudits(ctx)) return [];
         const audits = await ctx.db
             .query("cjFulfillmentAudits")
             .withIndex("by_product", q => q.eq("productId", args.productId))
@@ -140,7 +150,7 @@ export const getRecent = query({
         limit: v.optional(v.number()),
     },
     handler: async (ctx, args) => {
-        await requireCjAdminIdentity(ctx);
+        if (!await canReadFulfillmentAudits(ctx)) return [];
         const limit = Math.floor(Math.min(Math.max(args.limit ?? 50, 1), 100));
         return await ctx.db
             .query("cjFulfillmentAudits")
