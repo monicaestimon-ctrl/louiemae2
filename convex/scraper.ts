@@ -4,6 +4,10 @@ import { ConvexError, v } from "convex/values";
 import { lookup } from "node:dns/promises";
 import type { LookupAddress } from "node:dns";
 import { isIP } from "node:net";
+import type { LookupFunction } from "node:net";
+import * as http from "node:http";
+import * as https from "node:https";
+import type { IncomingHttpHeaders } from "node:http";
 
 const normalizeHostname = (hostname: string): string =>
     hostname.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
@@ -68,7 +72,20 @@ const isBlockedHost = (hostname: string): boolean => {
     );
 };
 
-const assertSafePublicHttpUrl = async (parsedUrl: URL): Promise<void> => {
+type ValidatedPublicUrl = {
+    parsedUrl: URL;
+    address: LookupAddress;
+};
+
+type ScraperHttpResponse = {
+    status: number;
+    statusText: string;
+    headers: IncomingHttpHeaders;
+    ok: boolean;
+    text: () => Promise<string>;
+};
+
+const assertSafePublicHttpUrl = async (parsedUrl: URL): Promise<ValidatedPublicUrl> => {
     if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
         throw new Error(`Invalid URL protocol: "${parsedUrl.protocol}". Only http:// and https:// are allowed.`);
     }
@@ -93,7 +110,65 @@ const assertSafePublicHttpUrl = async (parsedUrl: URL): Promise<void> => {
     if (blockedAddress) {
         throw new Error(`Blocked internal/private URL: "${parsedUrl.hostname}" resolved to ${blockedAddress.address}`);
     }
+
+    return { parsedUrl, address: addresses[0] };
 };
+
+const getHeader = (headers: IncomingHttpHeaders, name: string): string | undefined => {
+    const value = headers[name.toLowerCase()];
+    return Array.isArray(value) ? value[0] : value;
+};
+
+const requestPinnedPublicUrl = (
+    validatedUrl: ValidatedPublicUrl,
+    signal: http.RequestOptions['signal'],
+): Promise<ScraperHttpResponse> => new Promise((resolve, reject) => {
+    const { parsedUrl, address } = validatedUrl;
+    const pinnedLookup: LookupFunction = (_hostname, _options, callback) => {
+        callback(null, address.address, address.family);
+    };
+    const requestOptions: http.RequestOptions = {
+        protocol: parsedUrl.protocol,
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port,
+        path: `${parsedUrl.pathname}${parsedUrl.search}`,
+        method: 'GET',
+        headers: {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Host": parsedUrl.host,
+        },
+        lookup: pinnedLookup,
+        signal,
+    };
+
+    if (parsedUrl.protocol === 'https:') {
+        (requestOptions as https.RequestOptions).servername = parsedUrl.hostname;
+    }
+
+    const client = parsedUrl.protocol === 'https:' ? https : http;
+    const request = client.request(requestOptions, response => {
+        const chunks: Buffer[] = [];
+        response.on('data', chunk => {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        response.on('end', () => {
+            const body = Buffer.concat(chunks).toString('utf8');
+            const status = response.statusCode ?? 0;
+            resolve({
+                status,
+                statusText: response.statusMessage || '',
+                headers: response.headers,
+                ok: status >= 200 && status < 300,
+                text: async () => body,
+            });
+        });
+    });
+
+    request.on('error', reject);
+    request.end();
+});
 
 const getScraperErrorCode = (message: string): string => {
     if (/domain not supported|unsupported domain|redirect hop landed on unsupported/i.test(message)) return 'UNSUPPORTED_DOMAIN';
@@ -123,7 +198,7 @@ export const scrapeProduct = action({
             if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
                 throw new Error(`Invalid URL protocol: "${parsedUrl.protocol}". Only http:// and https:// are allowed.`);
             }
-            await assertSafePublicHttpUrl(parsedUrl);
+            const safeInitialUrl = await assertSafePublicHttpUrl(parsedUrl);
 
             let resolvedUrl = url;
 
@@ -153,7 +228,7 @@ export const scrapeProduct = action({
 
             // 2. Generic Scraper (handles AliExpress, Amazon, and any other URLs)
             console.log(`[Scraper] Using generic scraper for: ${resolvedUrl}`);
-            return await scrapeGeneric(resolvedUrl);
+            return await scrapeGeneric(resolvedUrl, safeInitialUrl);
 
         } catch (err: any) {
             // Top-level catch: prevents generic "Server Error" from Convex
@@ -504,10 +579,11 @@ async function scrape1688(productId: string, originalUrl?: string) {
  * @param url - The public URL to scrape.
  * @returns Scraped product data with source 'generic'.
  */
-async function scrapeGeneric(url: string) {
+async function scrapeGeneric(url: string, initialValidatedUrl?: ValidatedPublicUrl) {
     try {
-        let response: Response | undefined;
+        let response: ScraperHttpResponse | undefined;
         let currentUrl = url;
+        let validatedCurrentUrl = initialValidatedUrl ?? await assertSafePublicHttpUrl(new URL(currentUrl));
         const MAX_REDIRECTS = 5;
 
         // Manual redirect handling: validate each hop against SSRF protections.
@@ -516,22 +592,14 @@ async function scrapeGeneric(url: string) {
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 30000);
                 try {
-                    response = await fetch(currentUrl, {
-                        headers: {
-                            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                            "Accept-Language": "en-US,en;q=0.9",
-                        },
-                        redirect: 'manual',
-                        signal: controller.signal,
-                    });
+                    response = await requestPinnedPublicUrl(validatedCurrentUrl, controller.signal);
                 } finally {
                     clearTimeout(timeoutId);
                 }
 
                 // Check for redirect (3xx)
                 if (response.status >= 300 && response.status < 400) {
-                    const location = response.headers.get('location');
+                    const location = getHeader(response.headers, 'location');
                     if (!location) break; // No Location header — treat as final
 
                     // Resolve relative redirects against current URL
@@ -544,7 +612,7 @@ async function scrapeGeneric(url: string) {
 
                     // Validate redirect target before following it.
                     const nextParsed = new URL(nextUrl);
-                    await assertSafePublicHttpUrl(nextParsed);
+                    validatedCurrentUrl = await assertSafePublicHttpUrl(nextParsed);
 
                     currentUrl = nextUrl;
                     if (hops === MAX_REDIRECTS) {
