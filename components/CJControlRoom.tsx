@@ -183,7 +183,7 @@ const getErrorMessage = (error: unknown, fallback: string) =>
 const asOrderId = (value: string | undefined) => value as Id<'orders'> | undefined;
 const asProductId = (value: string | undefined) => value as Id<'products'> | undefined;
 
-export const CJControlRoom: React.FC<CJControlRoomProps> = ({ onNavigateToTab, targetOrderId }) => {
+export const CJControlRoom: React.FC<CJControlRoomProps> = ({ onNavigateToTab, targetOrderId, targetProductId }) => {
     const [filter, setFilter] = useState<FilterKey>('needs_review');
     const [selectedOrderId, setSelectedOrderId] = useState<Id<'orders'> | null>(null);
     const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -220,8 +220,19 @@ export const CJControlRoom: React.FC<CJControlRoomProps> = ({ onNavigateToTab, t
         const incomingOrderId = asOrderId(targetOrderId);
         if (incomingOrderId) {
             setSelectedOrderId(incomingOrderId);
+            return;
         }
-    }, [targetOrderId]);
+
+        if (targetProductId && orders?.length) {
+            const matchingOrder = orders.find(order =>
+                order.risks.some(risk => risk.productId === targetProductId),
+            );
+            const matchingOrderId = asOrderId(matchingOrder?.orderId);
+            if (matchingOrderId) {
+                setSelectedOrderId(matchingOrderId);
+            }
+        }
+    }, [orders, targetOrderId, targetProductId]);
 
     const runWithToast = async (key: string, action: () => Promise<string>) => {
         setBusyKey(key);

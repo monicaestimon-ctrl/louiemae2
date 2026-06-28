@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
@@ -48,6 +48,7 @@ export const CJVariantManager: React.FC<{ targetProductId?: string }> = ({ targe
     const linkVariant = useMutation(api.products.linkCjVariant);
     const unlinkVariant = useMutation(api.products.unlinkCjVariant);
 
+    const productRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const [expandedProduct, setExpandedProduct] = useState<Id<"products"> | null>(null);
     const [linking, setLinking] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -57,8 +58,14 @@ export const CJVariantManager: React.FC<{ targetProductId?: string }> = ({ targe
         const target = targetProductId as Id<"products"> | undefined;
         if (target) {
             setExpandedProduct(target);
+            window.setTimeout(() => {
+                productRefs.current.get(target)?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center',
+                });
+            }, 50);
         }
-    }, [targetProductId]);
+    }, [products, targetProductId]);
 
     const handleLink = async (
         productId: Id<"products">,
@@ -181,6 +188,13 @@ export const CJVariantManager: React.FC<{ targetProductId?: string }> = ({ targe
                         return (
                             <div
                                 key={product._id}
+                                ref={(node) => {
+                                    if (node) {
+                                        productRefs.current.set(product._id, node);
+                                    } else {
+                                        productRefs.current.delete(product._id);
+                                    }
+                                }}
                                 className={`bg-white/5 backdrop-blur-md border rounded-2xl overflow-hidden shadow-inner group transition-all ${isTargeted ? 'border-amber-400/40 ring-1 ring-amber-400/20' : 'border-white/10'}`}
                             >
                                 {/* Product Header - Clickable */}
