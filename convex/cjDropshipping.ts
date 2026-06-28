@@ -49,6 +49,7 @@ const RECHECK_WINDOW_DAYS = 14;
 
 // Timeout for CJ API verification requests (Comments #5, #6)
 const CJ_FETCH_TIMEOUT_MS = 10_000;
+const CJ_DIAGNOSTIC_REQUEST_SPACING_MS = 1_250;
 const CJ_PRICING_REFRESH_MAX_ATTEMPTS = 3;
 const CJ_PRICING_REFRESH_RETRY_DELAY_MS = 60_000;
 
@@ -2020,8 +2021,10 @@ export const checkSourcingStatus = internalAction({
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const diagnosePendingProducts = internalAction({
-    args: {},
-    handler: async (ctx): Promise<{
+    args: {
+        productId: v.optional(v.id("products")),
+    },
+    handler: async (ctx, args): Promise<{
         results: Array<{
             productId: string;
             productName: string;
@@ -2045,15 +2048,28 @@ export const diagnosePendingProducts = internalAction({
             };
         }
 
-        const pendingProducts = await ctx.runQuery(internal.cjHelpers.getProductsPendingSourcing, {});
-        const approvedMissingVariants = await ctx.runQuery(internal.cjHelpers.getApprovedProductsMissingCjVariants, {});
-        const productsToDiagnose = [...pendingProducts, ...approvedMissingVariants]
-            .filter((product, index, products) =>
-                products.findIndex((candidate) => candidate._id === product._id) === index
-            );
+        let productsToDiagnose;
+        if (args.productId) {
+            const product = await ctx.runQuery(internal.cjHelpers.getProductById, {
+                productId: args.productId,
+            });
+            productsToDiagnose = product ? [product] : [];
+        } else {
+            const pendingProducts = await ctx.runQuery(internal.cjHelpers.getProductsPendingSourcing, {});
+            const approvedMissingVariants = await ctx.runQuery(internal.cjHelpers.getApprovedProductsMissingCjVariants, {});
+            productsToDiagnose = [...pendingProducts, ...approvedMissingVariants]
+                .filter((product, index, products) =>
+                    products.findIndex((candidate) => candidate._id === product._id) === index
+                );
+        }
 
         if (productsToDiagnose.length === 0) {
-            return { results: [], summary: "No pending products or approved products missing CJ variants to diagnose." };
+            return {
+                results: [],
+                summary: args.productId
+                    ? "Product not found, so there was nothing to diagnose."
+                    : "No pending products or approved products missing CJ variants to diagnose.",
+            };
         }
 
         const results: Array<{
@@ -2071,6 +2087,27 @@ export const diagnosePendingProducts = internalAction({
         }> = [];
 
         let autoApprovedCount = 0;
+        const waitForDiagnosticRequestSlot = async () => {
+            const slot = await ctx.runMutation(internal.cjHelpers.reserveCjDiagnosticRequestSlot, {
+                spacingMs: CJ_DIAGNOSTIC_REQUEST_SPACING_MS,
+            });
+            if (slot.waitMs > 0) {
+                await new Promise(resolve => setTimeout(resolve, slot.waitMs));
+            }
+        };
+        const isCjRateLimitMessage = (message: unknown) =>
+            typeof message === "string" &&
+            /too many requests|too much request|qps|request frequency|frequency limit|1600200|1\s*time\s*\/\s*1\s*second|1\s*request\s*\/\s*second/i.test(message);
+        const formatCjDiagnosticApiFailure = (message: unknown, purpose: string) => {
+            const normalizedMessage =
+                typeof message === "string" && message.trim() ? message.trim() : "Unknown error";
+
+            if (isCjRateLimitMessage(normalizedMessage)) {
+                return `CJ rate limit hit while ${purpose}. CJ only allows about 1 API request per second, so this diagnostic lookup was throttled. This did not resubmit the product. Wait about 60 seconds, then run Diagnose on this item.`;
+            }
+
+            return `CJ API error while ${purpose}: ${normalizedMessage}. The API may be temporarily unavailable.`;
+        };
 
         for (const product of productsToDiagnose) {
             const diag: typeof results[0] = {
@@ -2099,6 +2136,7 @@ export const diagnosePendingProducts = internalAction({
                 const timeout = setTimeout(() => controller.abort(), CJ_FETCH_TIMEOUT_MS);
                 let response: Response;
                 try {
+                    await waitForDiagnosticRequestSlot();
                     response = await fetch(`${CJ_API_BASE}/product/sourcing/query`, {
                         method: "POST",
                         headers: {
@@ -2116,7 +2154,7 @@ export const diagnosePendingProducts = internalAction({
                 console.log(`DIAGNOSE ${product.name}:`, JSON.stringify(data, null, 2));
 
                 if (!data.result) {
-                    diag.diagnosis = `CJ API error: ${data.message || "Unknown error"}. The API may be temporarily unavailable.`;
+                    diag.diagnosis = formatCjDiagnosticApiFailure(data.message, "checking CJ sourcing status");
                     results.push(diag);
                     continue;
                 }
@@ -2148,6 +2186,7 @@ export const diagnosePendingProducts = internalAction({
                         const catTimeout = setTimeout(() => catController.abort(), CJ_FETCH_TIMEOUT_MS);
                         let catResponse: Response;
                         try {
+                            await waitForDiagnosticRequestSlot();
                             catResponse = await fetch(
                                 `${CJ_API_BASE}/product/query?pid=${encodeURIComponent(pidToCheck)}`,
                                 {
@@ -2166,7 +2205,12 @@ export const diagnosePendingProducts = internalAction({
                         const catData = await catResponse.json();
                         console.log(`DIAGNOSE CATALOG ${product.name}:`, JSON.stringify(catData, null, 2));
 
-                        if (catData.result && catData.data) {
+                        if (!catData.result && isCjRateLimitMessage(catData.message)) {
+                            diag.diagnosis = formatCjDiagnosticApiFailure(
+                                catData.message,
+                                `verifying CJ catalog data for pid=${pidToCheck}`
+                            );
+                        } else if (catData.result && catData.data) {
                             diag.productFoundInCatalog = true;
                             diag.cjProductIdFromCatalog = catData.data.pid || pidToCheck;
                             const variants = catData.data.variants || [];
@@ -2212,6 +2256,7 @@ export const diagnosePendingProducts = internalAction({
                                 ? resolvedVariant.variantSku.trim()
                                 : sourcingSku;
                             const confirmedCjCost = extractCjVariantPrice(resolvedVariant);
+                            await waitForDiagnosticRequestSlot();
                             const freightQuote = await quoteCjFreightForVariant(token, resolvedVariantId);
 
                             await ctx.runMutation(internal.cjHelpers.updateProductSourcingStatus, {
@@ -2236,7 +2281,9 @@ export const diagnosePendingProducts = internalAction({
                         }
                     } catch (catError: unknown) {
                         const msg = catError instanceof Error ? catError.message : String(catError);
-                        diag.diagnosis = `Sourcing ticket has cjProductId=${pidToCheck} but catalog verification failed: ${msg}. Ticket status: "${diag.sourcingTicketStatus}".`;
+                        diag.diagnosis = isCjRateLimitMessage(msg)
+                            ? formatCjDiagnosticApiFailure(msg, `verifying CJ catalog data for pid=${pidToCheck}`)
+                            : `Sourcing ticket has cjProductId=${pidToCheck} but catalog verification failed: ${msg}. Ticket status: "${diag.sourcingTicketStatus}".`;
                     }
                 } else {
                     // No cjProductId from sourcing ticket
@@ -2256,16 +2303,17 @@ export const diagnosePendingProducts = internalAction({
                 }
             } catch (error: unknown) {
                 const msg = error instanceof Error ? error.message : String(error);
-                diag.diagnosis = `Failed to query CJ API: ${msg}`;
+                diag.diagnosis = isCjRateLimitMessage(msg)
+                    ? formatCjDiagnosticApiFailure(msg, "checking CJ sourcing status")
+                    : `Failed to query CJ API: ${msg}`;
             }
 
             results.push(diag);
-            await new Promise(resolve => setTimeout(resolve, 300)); // Rate limit
         }
 
         const summary = autoApprovedCount > 0
-            ? `✅ Diagnosed ${results.length} products: ${autoApprovedCount} confirmed in CJ catalog and auto-approved!`
-            : `Diagnosed ${results.length} products: none found in CJ catalog yet. See details below.`;
+            ? `✅ Diagnosed ${results.length} product(s): ${autoApprovedCount} confirmed in CJ catalog and auto-approved. CJ requests were paced for the 1 request/second limit.`
+            : `Diagnosed ${results.length} product(s): none found in CJ catalog yet. CJ requests were paced for the 1 request/second limit. See details below.`;
 
         return { results, summary };
     },
