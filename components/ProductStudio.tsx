@@ -11,6 +11,7 @@ import { buildSourceProductSnapshot } from '../lib/smartDescription';
 import { getUserFacingErrorMessage } from '../lib/errorMessages';
 import { normalizeImageUrl, shouldCacheImageUrl } from '../lib/imageUrls';
 import { SafeImage } from './SafeImage';
+import { normalizeProductImportUrl } from '../lib/importUrl';
 
 interface ProductStudioProps {
     isOpen: boolean;
@@ -401,7 +402,7 @@ const EssenceStep: React.FC<{
     const [autoEnhance, setAutoEnhance] = useState(false); // Default off to avoid quota issues
 
     const handleImport = async () => {
-        const normalizedUrl = importUrl.trim();
+        const normalizedUrl = normalizeProductImportUrl(importUrl);
         if (!normalizedUrl) return;
         setIsImporting(true);
         try {
