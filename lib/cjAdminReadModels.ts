@@ -691,7 +691,7 @@ export const sortRisks = (risks: CjAdminRisk[]): CjAdminRisk[] =>
 export const applyReviewedRiskAudits = (
   risks: CjAdminRisk[],
   audits: CjReviewedRiskAudit[],
-  includeReviewed = false,
+  _includeReviewed = false,
 ): CjAdminRisk[] => {
   const latestReviewByRiskKey = new Map<string, CjReviewedRiskAudit>();
 
@@ -719,9 +719,7 @@ export const applyReviewedRiskAudits = (
     };
   });
 
-  return sortRisks(includeReviewed
-    ? decoratedRisks
-    : decoratedRisks.filter((risk) => !risk.reviewed));
+  return sortRisks(decoratedRisks);
 };
 
 const getNextAction = (

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
@@ -14,6 +14,7 @@ import {
     PackageCheck,
     RefreshCw,
     RotateCcw,
+    Settings,
     ShieldCheck,
     Truck,
     WalletCards,
@@ -101,6 +102,19 @@ type AuditRecord = {
     reviewedAt?: string;
 };
 
+type AdminNavTarget = 'cj-settings' | 'cj-risk-check';
+type AdminNavRequest = AdminNavTarget | {
+    tab: AdminNavTarget;
+    orderId?: string;
+    productId?: string;
+};
+
+type CJControlRoomProps = {
+    onNavigateToTab?: (request: AdminNavRequest) => void;
+    targetOrderId?: string;
+    targetProductId?: string;
+};
+
 const FILTERS: Array<{ key: FilterKey; label: string }> = [
     { key: 'all', label: 'All' },
     { key: 'needs_review', label: 'Needs review' },
@@ -126,6 +140,15 @@ const pipelineClasses: Record<string, string> = {
     delivered: 'border-emerald-300/25 bg-emerald-400/10 text-emerald-100',
     ready_for_cj: 'border-bronze/40 bg-bronze/10 text-amber-100',
 };
+
+const actionToneClasses = {
+    red: 'border-red-400/30 bg-red-500/15 text-red-100 hover:bg-red-500/20',
+    amber: 'border-amber-300/30 bg-amber-400/15 text-amber-100 hover:bg-amber-400/20',
+    green: 'border-emerald-300/25 bg-emerald-400/15 text-emerald-100 hover:bg-emerald-400/20',
+    blue: 'border-blue-300/25 bg-blue-400/15 text-blue-100 hover:bg-blue-400/20',
+    purple: 'border-purple-300/25 bg-purple-400/15 text-purple-100 hover:bg-purple-400/20',
+    neutral: 'border-white/10 bg-black/25 text-cream/75 hover:bg-white/10',
+} as const;
 
 const formatMoney = (amount: number, currency: string) => {
     const normalizedCurrency = currency?.trim().toUpperCase();
@@ -160,7 +183,7 @@ const getErrorMessage = (error: unknown, fallback: string) =>
 const asOrderId = (value: string | undefined) => value as Id<'orders'> | undefined;
 const asProductId = (value: string | undefined) => value as Id<'products'> | undefined;
 
-export const CJControlRoom: React.FC = () => {
+export const CJControlRoom: React.FC<CJControlRoomProps> = ({ onNavigateToTab, targetOrderId }) => {
     const [filter, setFilter] = useState<FilterKey>('needs_review');
     const [selectedOrderId, setSelectedOrderId] = useState<Id<'orders'> | null>(null);
     const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -183,6 +206,7 @@ export const CJControlRoom: React.FC = () => {
     const syncOrderTracking = useAction(api.cjActions.syncOrderTracking);
     const retryOrderFulfillment = useAction(api.cjActions.retryOrderFulfillment);
     const refreshInventory = useAction(api.cjActions.refreshInventory);
+    const configureWebhooks = useAction(api.cjActions.configureWebhooks);
     const markRiskReviewed = useMutation(api.cjFulfillmentAudits.markRiskReviewed);
     const addFulfillmentNote = useMutation(api.cjFulfillmentAudits.addFulfillmentNote);
 
@@ -191,6 +215,13 @@ export const CJControlRoom: React.FC = () => {
     const automation = overview?.automation;
 
     const orderedRisks = useMemo(() => currentOrder?.risks || [], [currentOrder]);
+
+    useEffect(() => {
+        const incomingOrderId = asOrderId(targetOrderId);
+        if (incomingOrderId) {
+            setSelectedOrderId(incomingOrderId);
+        }
+    }, [targetOrderId]);
 
     const runWithToast = async (key: string, action: () => Promise<string>) => {
         setBusyKey(key);
@@ -205,20 +236,26 @@ export const CJControlRoom: React.FC = () => {
         }
     };
 
-    const handleRetryOrder = (orderId?: string) => {
+    const handleRetryOrder = (orderId?: string, busyKeyOverride?: string) => {
         const id = asOrderId(orderId);
-        if (!id) return;
-        void runWithToast(`retry-${id}`, async () => {
+        if (!id) {
+            setToast({ success: false, message: 'No order id is available for this retry.' });
+            return;
+        }
+        void runWithToast(busyKeyOverride || `retry-${id}`, async () => {
             const result = await retryOrderFulfillment({ orderId: id });
             if (!result.success) throw new Error(result.message || result.error || 'CJ retry failed');
             return result.message || 'CJ retry submitted';
         });
     };
 
-    const handleSyncOrder = (orderId?: string) => {
+    const handleSyncOrder = (orderId?: string, busyKeyOverride?: string) => {
         const id = asOrderId(orderId);
-        if (!id) return;
-        void runWithToast(`sync-${id}`, async () => {
+        if (!id) {
+            setToast({ success: false, message: 'No order id is available for this tracking sync.' });
+            return;
+        }
+        void runWithToast(busyKeyOverride || `sync-${id}`, async () => {
             const result = await syncOrderTracking({ orderId: id });
             if (!result.success) throw new Error(result.message || result.error || 'Tracking sync failed');
             return result.message || 'Tracking synced';
@@ -251,6 +288,101 @@ export const CJControlRoom: React.FC = () => {
             });
             return 'Risk marked reviewed';
         });
+    };
+
+    const navigateToTab = (request: AdminNavRequest, message: string) => {
+        onNavigateToTab?.(request);
+        setToast({ success: true, message });
+    };
+
+    const handleRefreshRiskInventory = (risk: ControlRisk) => {
+        const productId = asProductId(risk.productId);
+        void runWithToast(`action-${risk.key}`, async () => {
+            const result = await refreshInventory(productId ? { productId } : {});
+            return `Inventory refreshed for ${result.updated}/${result.checked} products${result.errors ? `, ${result.errors} errors` : ''}`;
+        });
+    };
+
+    const getControlRiskActionConfig = (risk: ControlRisk): {
+        label: string;
+        description: string;
+        Icon: React.ComponentType<{ className?: string }>;
+        tone: keyof typeof actionToneClasses;
+        onClick: () => void;
+    } => {
+        switch (risk.actionKey) {
+            case 'review_mapping':
+                return {
+                    label: 'Edit mapping',
+                    description: 'Open CJ Settings to connect the product variant or SKU.',
+                    Icon: Settings,
+                    tone: 'amber',
+                    onClick: () => navigateToTab({ tab: 'cj-settings', productId: risk.productId }, 'Open CJ Settings and fix the product variant mapping.'),
+                };
+            case 'refresh_inventory':
+                return {
+                    label: 'Refresh stock',
+                    description: 'Ask CJ for fresh product inventory.',
+                    Icon: PackageCheck,
+                    tone: 'green',
+                    onClick: () => handleRefreshRiskInventory(risk),
+                };
+            case 'sync_order_tracking':
+                return {
+                    label: 'Sync tracking',
+                    description: 'Refresh tracking for this order.',
+                    Icon: RefreshCw,
+                    tone: 'blue',
+                    onClick: () => handleSyncOrder(risk.orderId || currentOrder?.orderId, `action-${risk.key}`),
+                };
+            case 'retry_order':
+                return {
+                    label: 'Retry order',
+                    description: 'Run the safe CJ retry flow.',
+                    Icon: RotateCcw,
+                    tone: 'amber',
+                    onClick: () => handleRetryOrder(risk.orderId || currentOrder?.orderId, `action-${risk.key}`),
+                };
+            case 'open_cj_payment':
+                return {
+                    label: 'Open payment',
+                    description: 'Open the CJ payment page if available.',
+                    Icon: ExternalLink,
+                    tone: 'amber',
+                    onClick: () => currentOrder?.cjPaymentUrl
+                        ? window.open(currentOrder.cjPaymentUrl, '_blank', 'noopener,noreferrer')
+                        : setToast({ success: true, message: 'No CJ payment URL is saved yet. Check CJ directly or retry after reviewing the order.' }),
+                };
+            case 'configure_webhooks':
+                return {
+                    label: 'Configure',
+                    description: 'Register CJ webhook callbacks.',
+                    Icon: ShieldCheck,
+                    tone: 'amber',
+                    onClick: () => void runWithToast(`action-${risk.key}`, async () => {
+                        const result = await configureWebhooks({});
+                        if (!result.success) throw new Error(result.message);
+                        return result.message;
+                    }),
+                };
+            case 'review_refund':
+            case 'review_shipping':
+                return {
+                    label: 'Review order',
+                    description: 'Check the selected order before changing CJ state.',
+                    Icon: AlertTriangle,
+                    tone: risk.actionKey === 'review_refund' ? 'red' : 'amber',
+                    onClick: () => setToast({ success: true, message: risk.nextAction }),
+                };
+            default:
+                return {
+                    label: 'View risk',
+                    description: risk.nextAction,
+                    Icon: FileText,
+                    tone: 'neutral',
+                    onClick: () => setToast({ success: true, message: risk.nextAction }),
+                };
+        }
     };
 
     const handleAddNote = () => {
@@ -331,7 +463,7 @@ export const CJControlRoom: React.FC = () => {
                         <button
                             onClick={handleSyncAll}
                             disabled={busyKey === 'sync-all'}
-                            className="inline-flex items-center gap-2 rounded-xl border border-bronze/30 bg-bronze/15 px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-amber-100 transition hover:border-bronze/60 hover:bg-bronze/20 disabled:opacity-50"
+                            className="inline-flex items-center gap-2 rounded-xl border border-blue-300/25 bg-blue-400/10 px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-blue-100 transition hover:bg-blue-400/15 disabled:opacity-50"
                         >
                             {busyKey === 'sync-all' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                             Sync all
@@ -339,7 +471,7 @@ export const CJControlRoom: React.FC = () => {
                         <button
                             onClick={handleRefreshInventory}
                             disabled={busyKey === 'refresh-inventory'}
-                            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-cream/80 transition hover:bg-white/10 disabled:opacity-50"
+                            className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/25 bg-emerald-400/10 px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-emerald-100 transition hover:bg-emerald-400/15 disabled:opacity-50"
                         >
                             {busyKey === 'refresh-inventory' ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
                             Inventory
@@ -521,7 +653,7 @@ export const CJControlRoom: React.FC = () => {
                                 <button
                                     onClick={() => handleSyncOrder(currentOrder.orderId)}
                                     disabled={!currentOrder.orderId || busyKey === `sync-${currentOrder.orderId}`}
-                                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-3 text-[10px] uppercase tracking-[0.16em] text-cream/80 transition hover:bg-white/10 disabled:opacity-50"
+                                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-blue-300/25 bg-blue-400/10 px-3 py-3 text-[10px] uppercase tracking-[0.16em] text-blue-100 transition hover:bg-blue-400/15 disabled:opacity-50"
                                 >
                                     {busyKey === `sync-${currentOrder.orderId}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                                     Sync
@@ -556,29 +688,46 @@ export const CJControlRoom: React.FC = () => {
                                         <div className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 p-4 text-sm text-emerald-100">
                                             Everything visible for this order is moving normally.
                                         </div>
-                                    ) : orderedRisks.map(risk => (
-                                        <div key={risk.key} className={`rounded-2xl border p-4 ${severityClasses[risk.severity]}`}>
+                                    ) : orderedRisks.map(risk => {
+                                        const action = getControlRiskActionConfig(risk);
+                                        const ActionIcon = action.Icon;
+
+                                        return (
+                                        <div key={risk.key} className={`rounded-2xl border p-4 ${severityClasses[risk.severity]} ${risk.reviewed ? 'ring-1 ring-emerald-300/20' : ''}`}>
                                             <div className="flex items-start justify-between gap-3">
                                                 <div>
                                                     <h3 className="text-sm font-medium text-cream">{risk.title}</h3>
                                                     <p className="mt-1 text-xs leading-5 text-cream/60">{risk.description}</p>
                                                     <p className="mt-2 text-[10px] uppercase tracking-[0.16em] text-bronze">{risk.nextAction}</p>
                                                     {risk.reviewed && (
-                                                        <p className="mt-2 text-[10px] text-cream/45">Reviewed {formatDate(risk.reviewed.reviewedAt)}</p>
+                                                        <p className="mt-2 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-3 py-2 text-xs leading-5 text-emerald-100">
+                                                            Reviewed {formatDate(risk.reviewed.reviewedAt)}. This stays open until the source issue is fixed.
+                                                        </p>
                                                     )}
                                                 </div>
-                                                {!risk.reviewed && (
-                                                    <button
-                                                        onClick={() => handleMarkReviewed(risk)}
-                                                        disabled={busyKey === `review-${risk.key}`}
-                                                        className="shrink-0 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-[9px] uppercase tracking-[0.14em] text-cream/70 transition hover:bg-white/10 disabled:opacity-50"
-                                                    >
-                                                        {busyKey === `review-${risk.key}` ? 'Saving' : 'Review'}
-                                                    </button>
-                                                )}
+                                            </div>
+                                            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                                <button
+                                                    onClick={action.onClick}
+                                                    disabled={busyKey === `action-${risk.key}`}
+                                                    title={action.description}
+                                                    className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[9px] uppercase tracking-[0.14em] transition disabled:opacity-50 ${actionToneClasses[action.tone]}`}
+                                                >
+                                                    {busyKey === `action-${risk.key}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <ActionIcon className="h-4 w-4" />}
+                                                    {action.label}
+                                                </button>
+                                                <button
+                                                    onClick={() => handleMarkReviewed(risk)}
+                                                    disabled={Boolean(risk.reviewed) || busyKey === `review-${risk.key}`}
+                                                    className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[9px] uppercase tracking-[0.14em] transition disabled:opacity-70 ${risk.reviewed ? 'border-emerald-300/30 bg-emerald-400/15 text-emerald-100' : 'border-emerald-300/20 bg-black/25 text-emerald-100 hover:bg-emerald-400/10'}`}
+                                                >
+                                                    {busyKey === `review-${risk.key}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                                                    {risk.reviewed ? 'Reviewed' : 'Mark reviewed'}
+                                                </button>
                                             </div>
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </section>
 
