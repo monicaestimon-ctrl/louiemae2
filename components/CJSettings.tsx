@@ -7,6 +7,20 @@ import { FadeIn } from './FadeIn';
 import { CJVariantManager } from './CJVariantManager';
 import { SafeImage } from './SafeImage';
 
+type CjDiagnosticResult = {
+    productId: string;
+    productName: string;
+    cjSourcingId: string | null;
+    sourcingTicketStatus: string;
+    sourcingTicketStatusCode: string | number | null;
+    cjProductIdFromTicket: string | null;
+    cjProductIdFromCatalog: string | null;
+    productFoundInCatalog: boolean;
+    variantCount: number;
+    autoApproved: boolean;
+    diagnosis: string;
+};
+
 export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProductId }) => {
     const testConnection = useAction(api.cjActions.testConnection);
     const configureWebhooks = useAction(api.cjActions.configureWebhooks);
@@ -33,18 +47,8 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
     const [failedImages, setFailedImages] = useState<Set<string>>(new Set());
     const [resubmittingId, setResubmittingId] = useState<Id<"products"> | null>(null);
     const [diagnosing, setDiagnosing] = useState(false);
-    const [diagnosticResults, setDiagnosticResults] = useState<Array<{
-        productId: string;
-        productName: string;
-        cjSourcingId: string | null;
-        sourcingTicketStatus: string;
-        cjProductIdFromTicket: string | null;
-        cjProductIdFromCatalog: string | null;
-        productFoundInCatalog: boolean;
-        variantCount: number;
-        autoApproved: boolean;
-        diagnosis: string;
-    }> | null>(null);
+    const [diagnosingProductId, setDiagnosingProductId] = useState<Id<"products"> | null>(null);
+    const [diagnosticResults, setDiagnosticResults] = useState<CjDiagnosticResult[] | null>(null);
     const [tokenStatus, setTokenStatus] = useState<{
         connected: boolean;
         accessTokenValid: boolean;
@@ -200,14 +204,18 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
         }
     };
 
-    const handleDiagnose = async () => {
-        setDiagnosing(true);
+    const runDiagnose = async (productId?: Id<"products">) => {
+        if (productId) {
+            setDiagnosingProductId(productId);
+        } else {
+            setDiagnosing(true);
+        }
         setResult(null);
         setDiagnosticResults(null);
         try {
-            const res = await diagnosePending({});
+            const res = await diagnosePending(productId ? { productId } : {});
             setDiagnosticResults(res.results);
-            const approvedCount = res.results.filter((r: any) => r.autoApproved).length;
+            const approvedCount = res.results.filter((diagnosticResult: CjDiagnosticResult) => diagnosticResult.autoApproved).length;
             setResult({
                 success: approvedCount > 0,
                 message: res.summary,
@@ -215,9 +223,16 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
         } catch (error: unknown) {
             setResult({ success: false, message: getErrorMessage(error, 'Diagnosis failed') });
         } finally {
-            setDiagnosing(false);
+            if (productId) {
+                setDiagnosingProductId(null);
+            } else {
+                setDiagnosing(false);
+            }
         }
     };
+
+    const handleDiagnose = async () => runDiagnose();
+    const handleDiagnoseProduct = async (productId: Id<"products">) => runDiagnose(productId);
 
     // Action Card Component (Refined & Minimalist)
     const ActionCard = ({ icon: Icon, title, description, loading, onClick, colorClass = "text-bronze" }: { icon: React.FC<{ className?: string }>; title: string; description: string; loading: boolean; onClick: () => void; colorClass?: string }) => (
@@ -513,19 +528,25 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
                                     {pendingProducts.length > 0 && (
                                         <button
                                             onClick={handleDiagnose}
-                                            disabled={diagnosing}
+                                            disabled={diagnosing || diagnosingProductId !== null}
                                             className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 border border-emerald-500/30 rounded-xl transition-all disabled:opacity-50 shadow-inner"
-                                            title="Deep-verify each product against CJ's catalog and auto-approve confirmed items"
+                                            title="Deep-verify all pending products slowly against CJ's 1 request/second limit"
                                         >
                                             {diagnosing ? (
                                                 <Loader2 className="w-3.5 h-3.5 animate-spin drop-shadow-[0_0_3px_currentColor]" />
                                             ) : (
                                                 <Search className="w-3.5 h-3.5 drop-shadow-[0_0_3px_currentColor]" />
                                             )}
-                                            {diagnosing ? 'Verifying...' : 'Diagnose & Fix'}
+                                            {diagnosing ? 'Verifying...' : 'Diagnose All'}
                                         </button>
                                     )}
                                 </div>
+
+                                {pendingProducts.length > 0 && (
+                                    <div className="relative z-10 mb-4 rounded-xl border border-emerald-500/15 bg-emerald-500/5 px-3 py-2 text-[10px] leading-relaxed text-cream/50">
+                                        CJ allows about 1 API request per second. Diagnose All runs slowly on purpose; use Diagnose on one item for a targeted recheck.
+                                    </div>
+                                )}
 
                                 {pendingProducts.length === 0 ? (
                                     <div className="flex-1 flex flex-col items-center justify-center text-cream/30 py-12 relative z-10">
@@ -610,6 +631,21 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
 
                                                     {/* Action Buttons */}
                                                     <div className="flex flex-wrap items-center justify-end gap-2 mt-4 pt-3 border-t border-white/5">
+                                                        {/* Diagnose one product */}
+                                                        <button
+                                                            onClick={() => handleDiagnoseProduct(product._id)}
+                                                            disabled={diagnosing || diagnosingProductId !== null}
+                                                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 rounded-lg transition-all disabled:opacity-50 border border-emerald-500/30 shadow-inner uppercase tracking-widest"
+                                                            title="Check this item only without re-running the full queue"
+                                                        >
+                                                            {diagnosingProductId === product._id ? (
+                                                                <Loader2 className="w-3.5 h-3.5 animate-spin drop-shadow-[0_0_3px_currentColor]" />
+                                                            ) : (
+                                                                <Search className="w-3.5 h-3.5 drop-shadow-[0_0_3px_currentColor]" />
+                                                            )}
+                                                            Diagnose
+                                                        </button>
+
                                                         {/* Resubmit */}
                                                         <button
                                                             onClick={() => handleResubmit(product._id)}

@@ -275,8 +275,10 @@ export const checkSourcingStatus = action({
  * Returns detailed per-product diagnostics for the admin UI.
  */
 export const diagnosePending = action({
-    args: {},
-    handler: async (ctx): Promise<{
+    args: {
+        productId: v.optional(v.id("products")),
+    },
+    handler: async (ctx, args): Promise<{
         results: Array<{
             productId: string;
             productName: string;
@@ -292,7 +294,9 @@ export const diagnosePending = action({
         }>;
         summary: string;
     }> => {
-        const result = await ctx.runAction(internal.cjDropshipping.diagnosePendingProducts, {});
+        const result = await ctx.runAction(internal.cjDropshipping.diagnosePendingProducts, {
+            productId: args.productId,
+        });
         return result;
     },
 });
