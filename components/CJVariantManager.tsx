@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
@@ -43,15 +43,29 @@ interface ProductWithVariants {
     cjInventoryByVariant?: CjInventorySnapshot[];
 }
 
-export const CJVariantManager: React.FC = () => {
+export const CJVariantManager: React.FC<{ targetProductId?: string }> = ({ targetProductId }) => {
     const products = useQuery(api.products.getProductsWithCjVariants) as ProductWithVariants[] | undefined;
     const linkVariant = useMutation(api.products.linkCjVariant);
     const unlinkVariant = useMutation(api.products.unlinkCjVariant);
 
+    const productRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const [expandedProduct, setExpandedProduct] = useState<Id<"products"> | null>(null);
     const [linking, setLinking] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
+
+    useEffect(() => {
+        const target = targetProductId as Id<"products"> | undefined;
+        if (target) {
+            setExpandedProduct(target);
+            window.setTimeout(() => {
+                productRefs.current.get(target)?.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center',
+                });
+            }, 50);
+        }
+    }, [products, targetProductId]);
 
     const handleLink = async (
         productId: Id<"products">,
@@ -163,6 +177,7 @@ export const CJVariantManager: React.FC = () => {
                 <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar relative z-10">
                     {products.map((product) => {
                         const isExpanded = expandedProduct === product._id;
+                        const isTargeted = targetProductId === product._id;
                         const linkedCount = product.variants?.filter(v => v.cjVariantId).length || 0;
                         const totalVariants = product.variants?.length || 0;
                         const allLinked = linkedCount === totalVariants && totalVariants > 0;
@@ -173,7 +188,14 @@ export const CJVariantManager: React.FC = () => {
                         return (
                             <div
                                 key={product._id}
-                                className="bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden shadow-inner group transition-all"
+                                ref={(node) => {
+                                    if (node) {
+                                        productRefs.current.set(product._id, node);
+                                    } else {
+                                        productRefs.current.delete(product._id);
+                                    }
+                                }}
+                                className={`bg-white/5 backdrop-blur-md border rounded-2xl overflow-hidden shadow-inner group transition-all ${isTargeted ? 'border-amber-400/40 ring-1 ring-amber-400/20' : 'border-white/10'}`}
                             >
                                 {/* Product Header - Clickable */}
                                 <button

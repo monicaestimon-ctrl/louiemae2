@@ -7,7 +7,7 @@ import { FadeIn } from './FadeIn';
 import { CJVariantManager } from './CJVariantManager';
 import { SafeImage } from './SafeImage';
 
-export const CJSettings: React.FC = () => {
+export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProductId }) => {
     const testConnection = useAction(api.cjActions.testConnection);
     const configureWebhooks = useAction(api.cjActions.configureWebhooks);
     const syncTracking = useAction(api.cjActions.syncTracking);
@@ -907,7 +907,7 @@ export const CJSettings: React.FC = () => {
                 </FadeIn>
                 <div className="w-full">
                     {/* The CJVariantManager creates its own dark-glass wrapper internally if needed, but we provide it full width and context */}
-                    <CJVariantManager />
+                    <CJVariantManager targetProductId={targetProductId} />
                 </div>
             </div>
 

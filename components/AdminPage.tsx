@@ -29,6 +29,26 @@ type SmartDescriptionActionResult = {
    error?: string;
 };
 
+type AdminTab =
+   | 'dashboard'
+   | 'journal'
+   | 'pages'
+   | 'products'
+   | 'structure'
+   | 'newsletter'
+   | 'orders'
+   | 'cj-control-room'
+   | 'cj-risk-check'
+   | 'import'
+   | 'cj-settings';
+
+type CjAdminNavTarget = 'cj-settings' | 'cj-control-room' | 'cj-risk-check';
+type CjAdminNavRequest = CjAdminNavTarget | {
+   tab: CjAdminNavTarget;
+   orderId?: string;
+   productId?: string;
+};
+
 // --- Image Uploader Component ---
 const ImageUploader: React.FC<{
    currentImage?: string;
@@ -173,14 +193,23 @@ export const AdminPage: React.FC = () => {
    const [authFlow] = useState<'signIn' | 'signUp'>('signIn');
 
    // Navigation State
-   const [activeTab, setActiveTabState] = useState<'dashboard' | 'journal' | 'pages' | 'products' | 'structure' | 'newsletter' | 'orders' | 'cj-control-room' | 'cj-risk-check' | 'import' | 'cj-settings'>(() => {
+   const [activeTab, setActiveTabState] = useState<AdminTab>(() => {
       const saved = localStorage.getItem('admin-active-tab');
       const validTabs = ['dashboard', 'journal', 'pages', 'products', 'structure', 'newsletter', 'orders', 'cj-control-room', 'cj-risk-check', 'import', 'cj-settings'] as const;
       return saved && (validTabs as readonly string[]).includes(saved) ? saved as typeof validTabs[number] : 'dashboard';
    });
-   const setActiveTab = (tab: typeof activeTab) => {
+   const [cjNavContext, setCjNavContext] = useState<{ orderId?: string; productId?: string }>({});
+   const setActiveTab = (tab: AdminTab, options?: { preserveCjContext?: boolean }) => {
+      if (!options?.preserveCjContext) {
+         setCjNavContext({});
+      }
       setActiveTabState(tab);
       localStorage.setItem('admin-active-tab', tab);
+   };
+   const navigateCjAdmin = (request: CjAdminNavRequest) => {
+      const target = typeof request === 'string' ? { tab: request } : request;
+      setCjNavContext({ orderId: target.orderId, productId: target.productId });
+      setActiveTab(target.tab, { preserveCjContext: true });
    };
    const [newsletterSubTab, setNewsletterSubTab] = useState<'overview' | 'campaigns' | 'subscribers'>('overview');
    const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -616,7 +645,7 @@ export const AdminPage: React.FC = () => {
    }
 
    // Helper to switch tabs and close mobile sidebar
-   const switchTab = (tab: typeof activeTab, extra?: () => void) => {
+   const switchTab = (tab: AdminTab, extra?: () => void) => {
       setActiveTab(tab);
       setSidebarOpen(false);
       extra?.();
@@ -915,14 +944,18 @@ export const AdminPage: React.FC = () => {
             {/* CJ CONTROL ROOM TAB */}
             {activeTab === 'cj-control-room' && (
                <FadeIn>
-                  <CJControlRoom />
+                  <CJControlRoom
+                     onNavigateToTab={navigateCjAdmin}
+                     targetOrderId={cjNavContext.orderId}
+                     targetProductId={cjNavContext.productId}
+                  />
                </FadeIn>
             )}
 
             {/* CJ RISK CHECK TAB */}
             {activeTab === 'cj-risk-check' && (
                <FadeIn>
-                  <CJRiskCheck />
+                  <CJRiskCheck onNavigateToTab={navigateCjAdmin} />
                </FadeIn>
             )}
 
@@ -968,7 +1001,7 @@ export const AdminPage: React.FC = () => {
             {/* CJ SETTINGS TAB */}
             {activeTab === 'cj-settings' && (
                <FadeIn>
-                  <CJSettings />
+                  <CJSettings targetProductId={cjNavContext.productId} />
                </FadeIn>
             )}
 

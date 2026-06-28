@@ -171,7 +171,7 @@ describe("CJ admin read models", () => {
     }], NOW)).toEqual([]);
   });
 
-  it("filters reviewed risks unless reviewed items are requested", () => {
+  it("keeps reviewed unresolved risks visible with review context", () => {
     const risks = getCjOrderRisks(baseOrder({
       items: [{ name: "Louie Dress", quantity: 1, cjVariantId: "vid-1" }],
     }), NOW);
@@ -183,9 +183,7 @@ describe("CJ admin read models", () => {
       actorEmail: "admin@louiemae.com",
     };
 
-    expect(applyReviewedRiskAudits(risks, [reviewedAudit])).toEqual([]);
-
-    expect(applyReviewedRiskAudits(risks, [reviewedAudit], true)[0]).toMatchObject({
+    expect(applyReviewedRiskAudits(risks, [reviewedAudit])[0]).toMatchObject({
       reviewed: {
         note: "Mapping is being fixed.",
         actorEmail: "admin@louiemae.com",

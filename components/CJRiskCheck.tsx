@@ -5,14 +5,17 @@ import { Id } from '../convex/_generated/dataModel';
 import {
     Activity,
     AlertTriangle,
+    ArrowRight,
     CheckCircle2,
     Clock3,
+    ExternalLink,
     FileText,
     Loader2,
     PackageCheck,
     RefreshCw,
     RotateCcw,
     SatelliteDish,
+    Settings,
     ShieldAlert,
     ShieldCheck,
     XCircle,
@@ -64,6 +67,28 @@ type SystemStatus = {
     };
 };
 
+type AuditRecord = {
+    _id: string;
+    actionType: 'risk_reviewed' | 'note_added';
+    title?: string;
+    note?: string;
+    actorEmail: string;
+    createdAt: string;
+    reviewedAt?: string;
+    riskKey?: string;
+};
+
+type AdminNavTarget = 'cj-settings' | 'cj-control-room';
+type AdminNavRequest = AdminNavTarget | {
+    tab: AdminNavTarget;
+    orderId?: string;
+    productId?: string;
+};
+
+type CJRiskCheckProps = {
+    onNavigateToTab?: (request: AdminNavRequest) => void;
+};
+
 const SEVERITY_FILTERS: Array<{ key: SeverityFilter; label: string }> = [
     { key: 'all', label: 'Unresolved' },
     { key: 'critical', label: 'Critical' },
@@ -76,6 +101,15 @@ const severityClasses: Record<RiskSeverity, string> = {
     warning: 'border-amber-300/30 bg-amber-400/10 text-amber-100',
     info: 'border-white/15 bg-white/5 text-cream/70',
 };
+
+const actionToneClasses = {
+    red: 'border-red-400/30 bg-red-500/15 text-red-100 hover:bg-red-500/20',
+    amber: 'border-amber-300/30 bg-amber-400/15 text-amber-100 hover:bg-amber-400/20',
+    green: 'border-emerald-300/25 bg-emerald-400/15 text-emerald-100 hover:bg-emerald-400/20',
+    blue: 'border-blue-300/25 bg-blue-400/15 text-blue-100 hover:bg-blue-400/20',
+    purple: 'border-purple-300/25 bg-purple-400/15 text-purple-100 hover:bg-purple-400/20',
+    neutral: 'border-white/10 bg-black/25 text-cream/75 hover:bg-white/10',
+} as const;
 
 const severityIcon: Record<RiskSeverity, React.ReactNode> = {
     critical: <ShieldAlert className="h-4 w-4" />,
@@ -99,16 +133,16 @@ const formatDate = (value?: string) => {
     }).format(new Date(value));
 };
 
-export const CJRiskCheck: React.FC = () => {
+export const CJRiskCheck: React.FC<CJRiskCheckProps> = ({ onNavigateToTab }) => {
     const [severity, setSeverity] = useState<SeverityFilter>('all');
-    const [includeReviewed, setIncludeReviewed] = useState(false);
     const [busyKey, setBusyKey] = useState<string | null>(null);
     const [toast, setToast] = useState<{ success: boolean; message: string } | null>(null);
     const [noteByRisk, setNoteByRisk] = useState<Record<string, string>>({});
 
     const summary = useQuery(api.cjRiskMonitor.getSummary);
-    const risks = useQuery(api.cjRiskMonitor.getRisks, { severity, includeReviewed, limit: 75 }) as RiskItem[] | undefined;
+    const risks = useQuery(api.cjRiskMonitor.getRisks, { severity, includeReviewed: true, limit: 75 }) as RiskItem[] | undefined;
     const systemStatus = useQuery(api.cjRiskMonitor.getSystemStatus) as SystemStatus | undefined;
+    const recentAudits = useQuery(api.cjFulfillmentAudits.getRecent, { limit: 8 }) as AuditRecord[] | undefined;
 
     const configureWebhooks = useAction(api.cjActions.configureWebhooks);
     const syncTracking = useAction(api.cjActions.syncTracking);
@@ -212,6 +246,104 @@ export const CJRiskCheck: React.FC = () => {
         });
     };
 
+    const navigateToTab = (request: AdminNavRequest, message: string) => {
+        onNavigateToTab?.(request);
+        setToast({ success: true, message });
+    };
+
+    const getRiskActionConfig = (risk: RiskItem): {
+        label: string;
+        description: string;
+        Icon: React.ComponentType<{ className?: string }>;
+        tone: keyof typeof actionToneClasses;
+        onClick: () => void;
+    } => {
+        const orderId = asOrderId(risk.orderId);
+
+        switch (risk.actionKey) {
+            case 'configure_webhooks':
+                return {
+                    label: 'Configure webhooks',
+                    description: 'Registers Louie Mae callback URLs in CJ.',
+                    Icon: SatelliteDish,
+                    tone: 'amber',
+                    onClick: () => handleRiskAction(risk),
+                };
+            case 'sync_all_tracking':
+                return {
+                    label: 'Sync all tracking',
+                    description: 'Checks active CJ orders for fresh tracking.',
+                    Icon: RefreshCw,
+                    tone: 'blue',
+                    onClick: () => handleRiskAction(risk),
+                };
+            case 'sync_order_tracking':
+                return {
+                    label: orderId ? 'Sync order' : 'Open order',
+                    description: orderId ? 'Checks this order for CJ tracking updates.' : 'Open the order view to inspect this risk.',
+                    Icon: RefreshCw,
+                    tone: 'blue',
+                    onClick: () => orderId
+                        ? handleRiskAction(risk)
+                        : navigateToTab({ tab: 'cj-control-room', orderId: risk.orderId, productId: risk.productId }, 'Open CJ Control and inspect the matching order.'),
+                };
+            case 'retry_order':
+                return {
+                    label: orderId ? 'Retry order' : 'Open order',
+                    description: orderId ? 'Runs the safe CJ retry flow for this order.' : 'Open the order view to inspect this risk.',
+                    Icon: RotateCcw,
+                    tone: 'amber',
+                    onClick: () => orderId
+                        ? handleRiskAction(risk)
+                        : navigateToTab({ tab: 'cj-control-room', orderId: risk.orderId, productId: risk.productId }, 'Open CJ Control and inspect the matching order.'),
+                };
+            case 'refresh_inventory':
+                return {
+                    label: 'Refresh inventory',
+                    description: 'Asks CJ for fresh stock information.',
+                    Icon: PackageCheck,
+                    tone: 'green',
+                    onClick: () => handleRiskAction(risk),
+                };
+            case 'review_mapping':
+                return {
+                    label: 'Edit mapping',
+                    description: 'Go to CJ Settings to connect variants and SKUs.',
+                    Icon: Settings,
+                    tone: 'amber',
+                    onClick: () => navigateToTab({ tab: 'cj-settings', productId: risk.productId }, 'Open CJ Settings, then fix the product variant mapping.'),
+                };
+            case 'review_shipping':
+            case 'review_refund':
+            case 'open_cj_payment':
+                return {
+                    label: 'Open order',
+                    description: 'Review this order in the CJ Control Room.',
+                    Icon: ArrowRight,
+                    tone: risk.actionKey === 'review_refund' ? 'red' : 'amber',
+                    onClick: () => navigateToTab({ tab: 'cj-control-room', orderId: risk.orderId, productId: risk.productId }, 'Open CJ Control and review the selected order state.'),
+                };
+            default:
+                if (risk.type === 'automation' || risk.type === 'payment') {
+                    return {
+                        label: 'Open setup',
+                        description: 'Review CJ settings and production flags.',
+                        Icon: Settings,
+                        tone: risk.severity === 'critical' ? 'red' : 'amber',
+                        onClick: () => navigateToTab({ tab: 'cj-settings' }, 'Automation flags are controlled in Convex env so they cannot be changed accidentally from the browser.'),
+                    };
+                }
+
+                return {
+                    label: 'View next step',
+                    description: risk.nextAction,
+                    Icon: ExternalLink,
+                    tone: 'neutral',
+                    onClick: () => setToast({ success: true, message: risk.nextAction }),
+                };
+        }
+    };
+
     const topCards = [
         {
             label: 'Critical',
@@ -237,7 +369,7 @@ export const CJRiskCheck: React.FC = () => {
         {
             label: 'Total risks',
             value: riskSummary?.totalRisks ?? 0,
-            subtext: includeReviewed ? 'Including reviewed' : 'Unresolved only',
+            subtext: 'Visible until fixed',
             Icon: Activity,
             tone: 'text-blue-100',
         },
@@ -290,7 +422,7 @@ export const CJRiskCheck: React.FC = () => {
                                 return result.message;
                             })}
                             disabled={busyKey === 'test-connection'}
-                            className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-cream/80 transition hover:bg-white/10 disabled:opacity-50"
+                            className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/25 bg-emerald-400/10 px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-emerald-100 transition hover:bg-emerald-400/15 disabled:opacity-50"
                         >
                             {busyKey === 'test-connection' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
                             Test CJ
@@ -301,7 +433,7 @@ export const CJRiskCheck: React.FC = () => {
                                 return `Synced ${result.synced} orders${result.errors ? `, ${result.errors} errors` : ''}`;
                             })}
                             disabled={busyKey === 'sync-all'}
-                            className="inline-flex items-center gap-2 rounded-xl border border-bronze/30 bg-bronze/15 px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-amber-100 transition hover:bg-bronze/20 disabled:opacity-50"
+                            className="inline-flex items-center gap-2 rounded-xl border border-blue-300/25 bg-blue-400/10 px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-blue-100 transition hover:bg-blue-400/15 disabled:opacity-50"
                         >
                             {busyKey === 'sync-all' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                             Sync all
@@ -369,15 +501,10 @@ export const CJRiskCheck: React.FC = () => {
                             </button>
                         ))}
                     </div>
-                    <label className="flex items-center gap-3 text-[10px] uppercase tracking-[0.18em] text-cream/55">
-                        <input
-                            type="checkbox"
-                            checked={includeReviewed}
-                            onChange={(event) => setIncludeReviewed(event.target.checked)}
-                            className="h-4 w-4 accent-[#a88c77]"
-                        />
-                        Include reviewed
-                    </label>
+                    <div className="flex items-center gap-2 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-3 py-2 text-[10px] uppercase tracking-[0.16em] text-emerald-100">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Reviewed stays visible until fixed
+                    </div>
                 </div>
             </div>
 
@@ -405,8 +532,12 @@ export const CJRiskCheck: React.FC = () => {
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                        {risks.map(risk => (
-                            <article key={risk.key} className={`rounded-2xl border p-5 ${severityClasses[risk.severity]}`}>
+                        {risks.map(risk => {
+                            const action = getRiskActionConfig(risk);
+                            const ActionIcon = action.Icon;
+
+                            return (
+                            <article key={risk.key} className={`rounded-2xl border p-5 ${severityClasses[risk.severity]} ${risk.reviewed ? 'ring-1 ring-emerald-300/20' : ''}`}>
                                 <div className="flex items-start justify-between gap-4">
                                     <div className="min-w-0">
                                         <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -427,30 +558,36 @@ export const CJRiskCheck: React.FC = () => {
                                         <p className="mt-2 text-sm leading-6 text-cream/65">{risk.description}</p>
                                         <p className="mt-3 text-[10px] uppercase tracking-[0.16em] text-bronze">{risk.nextAction}</p>
                                         <p className="mt-2 text-[10px] text-cream/35">Detected {formatDate(risk.createdAt)}</p>
+                                        {risk.reviewed && (
+                                            <p className="mt-2 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-3 py-2 text-xs leading-5 text-emerald-100">
+                                                Reviewed {formatDate(risk.reviewed.reviewedAt)}{risk.reviewed.actorEmail ? ` by ${risk.reviewed.actorEmail}` : ''}. This stays open until the source issue is fixed.
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
 
                                 <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-3">
                                     <button
-                                        onClick={() => handleRiskAction(risk)}
+                                        onClick={action.onClick}
                                         disabled={busyKey === `action-${risk.key}`}
-                                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-[10px] uppercase tracking-[0.15em] text-cream/75 transition hover:bg-white/10 disabled:opacity-50"
+                                        title={action.description}
+                                        className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[10px] uppercase tracking-[0.15em] transition disabled:opacity-50 ${actionToneClasses[action.tone]}`}
                                     >
-                                        {busyKey === `action-${risk.key}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
-                                        Action
+                                        {busyKey === `action-${risk.key}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <ActionIcon className="h-4 w-4" />}
+                                        {action.label}
                                     </button>
                                     <button
                                         onClick={() => handleMarkReviewed(risk)}
                                         disabled={Boolean(risk.reviewed) || busyKey === `review-${risk.key}`}
-                                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-[10px] uppercase tracking-[0.15em] text-cream/75 transition hover:bg-white/10 disabled:opacity-50"
+                                        className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[10px] uppercase tracking-[0.15em] transition disabled:opacity-70 ${risk.reviewed ? 'border-emerald-300/30 bg-emerald-400/15 text-emerald-100' : 'border-emerald-300/20 bg-black/25 text-emerald-100 hover:bg-emerald-400/10'}`}
                                     >
                                         {busyKey === `review-${risk.key}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                                        Reviewed
+                                        {risk.reviewed ? 'Reviewed' : 'Mark reviewed'}
                                     </button>
                                     <button
                                         onClick={() => handleAddNote(risk)}
                                         disabled={!noteByRisk[risk.key]?.trim() || busyKey === `note-${risk.key}`}
-                                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-[10px] uppercase tracking-[0.15em] text-cream/75 transition hover:bg-white/10 disabled:opacity-50"
+                                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-blue-300/20 bg-blue-400/10 px-3 py-2 text-[10px] uppercase tracking-[0.15em] text-blue-100 transition hover:bg-blue-400/15 disabled:opacity-50"
                                     >
                                         {busyKey === `note-${risk.key}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
                                         Note
@@ -460,10 +597,49 @@ export const CJRiskCheck: React.FC = () => {
                                 <textarea
                                     value={noteByRisk[risk.key] || ''}
                                     onChange={(event) => setNoteByRisk(prev => ({ ...prev, [risk.key]: event.target.value }))}
-                                    placeholder="Optional note before marking reviewed..."
-                                    className="mt-3 min-h-20 w-full resize-none rounded-xl border border-white/10 bg-black/25 p-3 text-sm text-cream outline-none transition placeholder:text-cream/25 focus:border-bronze/50"
+                                    placeholder="Add what you checked or what still needs fixing..."
+                                    className="mt-3 min-h-20 w-full resize-none rounded-xl border border-blue-300/15 bg-black/25 p-3 text-sm text-cream outline-none transition placeholder:text-cream/25 focus:border-blue-300/40"
                                 />
                             </article>
+                            );
+                        })}
+                    </div>
+                )}
+            </section>
+
+            <section className="mt-6 rounded-[2rem] border border-white/10 bg-black/25 p-4 shadow-[0_20px_60px_rgba(0,0,0,0.22)] backdrop-blur-3xl">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                    <div>
+                        <p className="text-[10px] uppercase tracking-[0.24em] text-bronze">Recent activity</p>
+                        <h2 className="mt-1 font-serif text-2xl text-cream">Notes and reviews</h2>
+                    </div>
+                    <FileText className="h-5 w-5 text-blue-100/70" />
+                </div>
+
+                {!recentAudits ? (
+                    <div className="flex min-h-24 items-center justify-center text-sm text-cream/45">
+                        <Loader2 className="mr-3 h-4 w-4 animate-spin" />
+                        Loading saved activity
+                    </div>
+                ) : recentAudits.length === 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm text-cream/45">
+                        No CJ risk notes or reviews have been saved yet.
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                        {recentAudits.map(audit => (
+                            <div key={audit._id} className={`rounded-2xl border p-4 ${audit.actionType === 'risk_reviewed' ? 'border-emerald-300/20 bg-emerald-400/10' : 'border-blue-300/20 bg-blue-400/10'}`}>
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.14em] ${audit.actionType === 'risk_reviewed' ? 'border-emerald-300/20 text-emerald-100' : 'border-blue-300/20 text-blue-100'}`}>
+                                        {audit.actionType === 'risk_reviewed' ? <CheckCircle2 className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
+                                        {audit.actionType === 'risk_reviewed' ? 'Reviewed' : 'Note'}
+                                    </span>
+                                    <span className="text-[10px] text-cream/35">{formatDate(audit.reviewedAt || audit.createdAt)}</span>
+                                </div>
+                                <p className="mt-3 text-sm text-cream/80">{audit.title || 'CJ fulfillment activity'}</p>
+                                {audit.note && <p className="mt-2 text-xs leading-5 text-cream/55">{audit.note}</p>}
+                                <p className="mt-3 text-[10px] uppercase tracking-[0.14em] text-cream/35">{audit.actorEmail}</p>
+                            </div>
                         ))}
                     </div>
                 )}
