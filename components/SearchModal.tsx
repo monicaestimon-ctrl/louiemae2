@@ -13,7 +13,7 @@ interface SearchModalProps {
 export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onProductClick }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
-    const products = useQuery(api.products.list) || [];
+    const products = useQuery(api.products.listForStorefront) || [];
 
     // Filter products based on search term
     const filteredProducts = products.filter(product => {

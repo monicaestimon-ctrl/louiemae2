@@ -970,7 +970,7 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_5px_#fbbf24]"></span>
                             Automated Workflow
                         </strong>
-                        <p className="font-light">Products imported from AliExpress are automatically submitted to CJ for sourcing. They remain "Pending" and hidden from the storefront until CJ approves the sourcing request. Once approved, they automatically go live.</p>
+                        <p className="font-light">Imported source products are automatically queued for CJ sourcing when a source URL exists. They stay hidden from shoppers until you publish them or add them to a launch; CJ approval means the product is fulfillment-ready.</p>
                     </div>
                     <div className="flex-1 relative z-10">
                         <strong className="flex items-center gap-2 text-amber-400 uppercase tracking-widest mb-3 font-medium drop-shadow-sm text-[10px] md:text-xs">

@@ -10,6 +10,7 @@ import { CurvedCategoryCarousel } from './ui/CurvedCategoryCarousel';
 import { GlassButton } from './ui/GlassButton';
 import { useNewsletter } from '../contexts/NewsletterContext';
 import { SafeImage } from './SafeImage';
+import { isProductVisibleOnStorefront } from '../lib/productVisibility';
 
 /** Sentinel for variants with no assigned image */
 const NO_IMAGE_KEY = '__no_image__';
@@ -248,7 +249,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
 
   // Filter products by collection
   const collectionProducts = useMemo(() => {
-    return products.filter(p => p.collection === collection);
+    return products.filter(p => p.collection === collection && isProductVisibleOnStorefront(p));
   }, [products, collection]);
 
   // Get products for a specific category (for previews and product grid)

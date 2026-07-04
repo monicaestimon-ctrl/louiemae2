@@ -37,6 +37,7 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
         category: '',
         isNew: true,
         inStock: true,
+        storefrontStatus: initialProduct?.id ? initialProduct.storefrontStatus : 'hidden',
         ...initialProduct
     });
 
@@ -54,6 +55,7 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
                 category: '',
                 isNew: true,
                 inStock: true,
+                storefrontStatus: initialProduct?.id ? initialProduct.storefrontStatus : 'hidden',
                 ...initialProduct
             });
             setStep('essence');
@@ -163,29 +165,36 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
     };
 
     // Shared save handler — prevents duplicate concurrent saves
-    const handleSave = async () => {
+    const saveProduct = async (override: Partial<Product> = {}) => {
         if (isSaving) return;
         const session = saveSessionRef.current;
         setIsSaving(true);
         try {
+            const draft = { ...product, ...override };
             // Normalize price draft before save
             const normalizedPrice = priceDraft === '' ? 0 : Number(priceDraft);
             const normalizedProductPrice = Number.isFinite(normalizedPrice) ? normalizedPrice : 0;
-            const suggestedRetailPrice = product.suggestedRetailPrice;
+            const suggestedRetailPrice = draft.suggestedRetailPrice;
             const adminPriceLocked = Boolean(initialProduct?.id) && Number.isFinite(suggestedRetailPrice)
                 ? Math.abs(normalizedProductPrice - Number(suggestedRetailPrice)) >= 0.01
-                : product.adminPriceLocked;
-            const unlockedPricingSource: Product['pricingSource'] = product.confirmedCjShippingCost !== undefined
+                : draft.adminPriceLocked;
+            const unlockedPricingSource: Product['pricingSource'] = draft.confirmedCjShippingCost !== undefined
                 ? 'cj_freight_confirmed'
-                : product.confirmedCjProductCost !== undefined || product.confirmedCjCost !== undefined
+                : draft.confirmedCjProductCost !== undefined || draft.confirmedCjCost !== undefined
                     ? 'cj_catalog_confirmed'
                     : 'source_estimate';
             const productToSave = {
-                ...product,
+                ...draft,
                 price: normalizedProductPrice,
                 adminPriceLocked,
                 pricingSource: adminPriceLocked ? 'manual_locked' as const : unlockedPricingSource,
             };
+            if (productToSave.storefrontStatus === 'published' && !productToSave.publishedAt) {
+                productToSave.publishedAt = new Date().toISOString();
+            }
+            if (productToSave.storefrontStatus === 'next_launch' && !productToSave.launchAddedAt) {
+                productToSave.launchAddedAt = new Date().toISOString();
+            }
             if (productToSave.smartDescription) {
                 const adminEdited = productToSave.description !== productToSave.smartDescription.description;
                 productToSave.smartDescription = {
@@ -209,6 +218,9 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
             }
         }
     };
+
+    const handleSave = () => saveProduct();
+    const handleSaveDraft = () => saveProduct({ storefrontStatus: 'hidden' });
 
     // URL Scraper Action
     const scrapeProduct = useAction(api.scraper.scrapeProduct);
@@ -257,6 +269,13 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
                                 <X className="w-5 h-5 group-hover:rotate-90 transition-transform duration-500" />
                                 <span className="text-[10px] uppercase tracking-widest font-medium group-hover:opacity-100 opacity-60">Close</span>
                             </button>
+                            <button
+                                onClick={handleSaveDraft}
+                                disabled={isSaving}
+                                className="md:hidden group relative overflow-hidden bg-white/5 text-cream/75 px-4 py-2 rounded-full text-[10px] uppercase tracking-[0.15em] font-medium border border-white/10 disabled:opacity-50"
+                            >
+                                Draft
+                            </button>
                             {/* Save on mobile - inline with close */}
                             <button
                                 onClick={handleSave}
@@ -275,7 +294,14 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
                         </div>
 
                         {/* Right: Save (desktop) */}
-                        <div className="hidden md:flex justify-end flex-1">
+                        <div className="hidden md:flex justify-end flex-1 gap-3">
+                            <button
+                                onClick={handleSaveDraft}
+                                disabled={isSaving}
+                                className="group relative overflow-hidden bg-white/5 backdrop-blur-md text-cream/75 px-6 py-3 rounded-full text-xs uppercase tracking-[0.2em] font-medium border border-white/10 hover:bg-white/10 hover:text-cream transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                Save Draft
+                            </button>
                             <button
                                 onClick={handleSave}
                                 disabled={isSaving}
@@ -613,6 +639,42 @@ const EssenceStep: React.FC<{
         }
     };
 
+    const applyVariantChanges = (updatedVariants: NonNullable<Product['variants']>) => {
+        onChange({
+            ...product,
+            variants: updatedVariants,
+            ...(product.sourceUrl ? {
+                cjSourcingStatus: 'pending' as const,
+                storefrontStatus: (product.storefrontStatus || 'published') === 'published' ? 'hidden' as const : product.storefrontStatus,
+            } : {}),
+        });
+    };
+
+    const updateVariant = (variantId: string, updates: Record<string, unknown>) => {
+        const updatedVariants = (product.variants || []).map(variant => (
+            variant.id === variantId ? { ...variant, ...updates } : variant
+        ));
+        applyVariantChanges(updatedVariants);
+    };
+
+    const addVariant = () => {
+        const nextNumber = (product.variants?.length || 0) + 1;
+        const newVariant = {
+            id: `variant_${Date.now()}`,
+            name: `Variant ${nextNumber}`,
+            image: product.images?.[0],
+            priceAdjustment: 0,
+            inStock: true,
+        };
+        applyVariantChanges([...(product.variants || []), newVariant]);
+    };
+
+    const removeVariant = (variantId: string) => {
+        const variant = product.variants?.find(item => item.id === variantId);
+        if (variant?.cjVariantId && !confirm('This variant has a CJ mapping. Remove it from your inventory anyway?')) return;
+        applyVariantChanges((product.variants || []).filter(item => item.id !== variantId));
+    };
+
     return (
         <div className="h-full flex flex-col items-center justify-start animate-fade-in-up p-8 overflow-y-auto">
             <div className="w-full max-w-5xl space-y-12 pb-24">
@@ -860,6 +922,34 @@ const EssenceStep: React.FC<{
                             />
                         </div>
 
+                        <div className="space-y-3">
+                            <span className="text-xs uppercase tracking-widest text-cream/40 glow-text">Storefront Status</span>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                {([
+                                    { value: 'published', label: 'Published', helper: 'Visible to shoppers' },
+                                    { value: 'hidden', label: 'Draft / Hidden', helper: 'Admin only' },
+                                    { value: 'next_launch', label: 'Next Launch', helper: 'Hold for launch' },
+                                ] as const).map(option => {
+                                    const active = (product.storefrontStatus || 'published') === option.value;
+                                    return (
+                                        <button
+                                            key={option.value}
+                                            type="button"
+                                            onClick={() => onChange({
+                                                ...product,
+                                                storefrontStatus: option.value,
+                                                launchAddedAt: option.value === 'next_launch' ? product.launchAddedAt || new Date().toISOString() : product.launchAddedAt,
+                                            })}
+                                            className={`rounded-xl border px-4 py-3 text-left transition-all ${active ? 'border-bronze/50 bg-bronze/15 text-amber-200 shadow-[0_0_15px_rgba(193,154,107,0.18)]' : 'border-white/10 bg-black/20 text-cream/55 hover:bg-white/5 hover:text-cream'}`}
+                                        >
+                                            <span className="block text-[10px] uppercase tracking-widest">{option.label}</span>
+                                            <span className="mt-1 block text-[11px] normal-case tracking-normal opacity-70">{option.helper}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+
                         <div className="flex gap-6 pt-2">
                             <label className="flex items-center gap-3 cursor-pointer group">
                                 <input type="checkbox" checked={product.isNew || false} onChange={(e) => onChange({ ...product, isNew: e.target.checked })} className="sr-only peer" />
@@ -878,6 +968,84 @@ const EssenceStep: React.FC<{
                             </label>
                         </div>
                     </div>
+                </div>
+
+                <div className="bg-white/5 backdrop-blur-3xl p-8 rounded-[2rem] shadow-[0_15px_30px_rgba(0,0,0,0.3)] border border-white/10 relative overflow-hidden">
+                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-6">
+                        <div>
+                            <h3 className="font-serif text-2xl text-cream drop-shadow-sm">Variants</h3>
+                            <p className="text-sm text-cream/50 font-light">Edit customer-facing colors, sizes, images, and stock before mapping them to CJ.</p>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={addVariant}
+                            className="w-fit rounded-xl border border-bronze/30 bg-bronze/10 px-4 py-2 text-[10px] uppercase tracking-widest text-bronze hover:bg-bronze/20"
+                        >
+                            Add Variant
+                        </button>
+                    </div>
+
+                    {(product.variants || []).length === 0 ? (
+                        <div className="rounded-2xl border border-white/10 bg-black/20 p-5 text-sm text-cream/45">
+                            No variants yet. Add variants when this item has different sizes, colors, or set options.
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            {(product.variants || []).map(variant => (
+                                <div key={variant.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_110px_auto] gap-3 items-end">
+                                        <div>
+                                            <label className="block text-[9px] uppercase tracking-widest text-cream/35 mb-2">Customer Variant</label>
+                                            <input
+                                                value={variant.name}
+                                                onChange={(event) => updateVariant(variant.id, { name: event.target.value })}
+                                                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-cream focus:border-bronze focus:outline-none"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[9px] uppercase tracking-widest text-cream/35 mb-2">Variant Image URL</label>
+                                            <input
+                                                value={variant.image || ''}
+                                                onChange={(event) => updateVariant(variant.id, { image: event.target.value || undefined })}
+                                                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-cream focus:border-bronze focus:outline-none"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[9px] uppercase tracking-widest text-cream/35 mb-2">Price +/-</label>
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                value={variant.priceAdjustment}
+                                                onChange={(event) => updateVariant(variant.id, { priceAdjustment: Number(event.target.value) || 0 })}
+                                                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-cream focus:border-bronze focus:outline-none"
+                                            />
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => updateVariant(variant.id, { inStock: !variant.inStock })}
+                                                className={`rounded-lg border px-3 py-2 text-[10px] uppercase tracking-widest ${variant.inStock ? 'border-green-400/30 bg-green-500/10 text-green-300' : 'border-red-400/30 bg-red-500/10 text-red-300'}`}
+                                            >
+                                                {variant.inStock ? 'In Stock' : 'Hidden'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeVariant(variant.id)}
+                                                aria-label={`Remove ${variant.name}`}
+                                                className="rounded-lg border border-red-400/25 bg-red-500/10 p-2 text-red-300 hover:bg-red-500/20"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap gap-2 text-[10px] uppercase tracking-widest text-cream/40">
+                                        <span>CJ Variant: {variant.cjVariantId || 'not mapped'}</span>
+                                        <span>SKU: {variant.cjSku || 'not mapped'}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 <div className="flex justify-end pt-8">
@@ -1205,8 +1373,15 @@ const ReviewStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => vo
                 <div className="flex items-center gap-4 mb-4 justify-center relative">
                     <button onClick={onBack} aria-label="Go back" className="text-cream/40 hover:text-cream p-2 rounded-full hover:bg-white/10 transition-colors absolute left-0 md:left-8"><ArrowLeft className="w-6 h-6" /></button>
                     <div className="text-center">
-                        <h2 className="font-serif text-3xl text-cream drop-shadow-md">Ready to Launch?</h2>
-                        <p className="text-cream/60 font-light">Review the final card as it will appear on the site.</p>
+                        <h2 className="font-serif text-3xl text-cream drop-shadow-md">Ready to Save?</h2>
+                        <p className="text-cream/60 font-light">Review the card and choose whether it stays hidden, waits for launch, or goes live.</p>
+                    </div>
+                </div>
+
+                <div className="flex justify-center">
+                    <div className="flex flex-wrap items-center justify-center gap-2 rounded-full border border-white/10 bg-black/20 px-4 py-2 text-[10px] uppercase tracking-widest text-cream/55">
+                        <span>Status:</span>
+                        <span className="text-bronze">{product.storefrontStatus === 'next_launch' ? 'Next Launch' : product.storefrontStatus === 'hidden' ? 'Draft / Hidden' : 'Published'}</span>
                     </div>
                 </div>
 
@@ -1256,7 +1431,7 @@ const ReviewStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => vo
                 <div className="flex justify-center pt-8">
                     <button onClick={onSave} disabled={isSaving} className="py-4 px-16 bg-white/10 text-cream backdrop-blur-md border border-white/20 rounded-xl hover:bg-white/20 hover:-translate-y-1 transition-all flex items-center gap-3 text-xl font-light tracking-wide shadow-[0_10px_30px_rgba(0,0,0,0.4)] hover:shadow-[0_15px_40px_rgba(0,0,0,0.6)] duration-300 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none">
                         <span className="absolute inset-0 bg-gradient-to-r from-bronze/0 via-bronze/20 to-bronze/0 transform -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></span>
-                        {isSaving ? <Loader2 className="w-6 h-6 animate-spin text-bronze" /> : <Send className="w-6 h-6 text-bronze drop-shadow-[0_0_5px_currentColor]" />} <span className="relative z-10">{isSaving ? 'Publishing...' : 'Publish Product'}</span>
+                        {isSaving ? <Loader2 className="w-6 h-6 animate-spin text-bronze" /> : <Send className="w-6 h-6 text-bronze drop-shadow-[0_0_5px_currentColor]" />} <span className="relative z-10">{isSaving ? 'Saving...' : 'Save Product'}</span>
                     </button>
                 </div>
             </div>

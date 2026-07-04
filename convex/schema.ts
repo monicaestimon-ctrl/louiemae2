@@ -11,6 +11,12 @@ const cjInventoryStatusValidator = v.union(
     v.literal("error")
 );
 
+const productStorefrontStatusValidator = v.union(
+    v.literal("published"),
+    v.literal("hidden"),
+    v.literal("next_launch")
+);
+
 export default defineSchema({
     // Convex Auth tables (users, sessions, accounts, etc.)
     ...authTables,
@@ -26,6 +32,10 @@ export default defineSchema({
         isNew: v.optional(v.boolean()),
         inStock: v.optional(v.boolean()),
         publishedAt: v.optional(v.string()),
+        storefrontStatus: v.optional(productStorefrontStatusValidator),
+        launchBatchId: v.optional(v.string()),
+        launchAddedAt: v.optional(v.string()),
+        launchedAt: v.optional(v.string()),
         // Customer-facing variants (sizes, colors, etc.)
         variants: v.optional(v.array(v.object({
             id: v.string(),
@@ -143,6 +153,7 @@ export default defineSchema({
             collection: v.string(),
         })),
     }).index("by_cj_sourcing_status", ["cjSourcingStatus"])
+        .index("by_storefront_status", ["storefrontStatus"])
         .index("by_cj_sourcing_id", ["cjSourcingId"]),
 
     descriptionAudits: defineTable({

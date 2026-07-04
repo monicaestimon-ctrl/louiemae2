@@ -43,6 +43,52 @@ const pricingSourceValidator = v.union(
     v.literal("order_reconciled")
 );
 
+const productStorefrontStatusValidator = v.union(
+    v.literal("published"),
+    v.literal("hidden"),
+    v.literal("next_launch")
+);
+
+const cjInventoryStatusValidator = v.union(
+    v.literal("unknown"),
+    v.literal("in_stock"),
+    v.literal("low_stock"),
+    v.literal("out_of_stock"),
+    v.literal("partial"),
+    v.literal("error")
+);
+
+const cjInventorySnapshotValidator = v.object({
+    vid: v.optional(v.string()),
+    sku: v.optional(v.string()),
+    totalInventoryNum: v.optional(v.number()),
+    cjInventoryNum: v.optional(v.number()),
+    factoryInventoryNum: v.optional(v.number()),
+    status: cjInventoryStatusValidator,
+    lowStockThreshold: v.number(),
+    lastCheckedAt: v.string(),
+    error: v.optional(v.string()),
+});
+
+const cjVariantValidator = v.object({
+    vid: v.string(),
+    sku: v.string(),
+    name: v.string(),
+    price: v.optional(v.number()),
+    image: v.optional(v.string()),
+});
+
+const isProductVisibleOnStorefront = (product: {
+    storefrontStatus?: "published" | "hidden" | "next_launch";
+    cjSourcingStatus?: "pending" | "approved" | "rejected" | "none";
+}) => {
+    const visibilityReady = !product.storefrontStatus || product.storefrontStatus === "published";
+    const fulfillmentReady = !product.cjSourcingStatus
+        || product.cjSourcingStatus === "none"
+        || product.cjSourcingStatus === "approved";
+    return visibilityReady && fulfillmentReady;
+};
+
 // Public queries - no auth required
 export const list = query({
     args: {},
@@ -98,6 +144,11 @@ export const create = mutation({
         collection: v.string(),
         isNew: v.optional(v.boolean()),
         inStock: v.optional(v.boolean()),
+        publishedAt: v.optional(v.string()),
+        storefrontStatus: v.optional(productStorefrontStatusValidator),
+        launchBatchId: v.optional(v.string()),
+        launchAddedAt: v.optional(v.string()),
+        launchedAt: v.optional(v.string()),
         variants: v.optional(v.array(v.object({
             id: v.string(),
             name: v.string(),
@@ -157,7 +208,7 @@ export const create = mutation({
         }
         return await ctx.db.insert("products", {
             ...args,
-            publishedAt: new Date().toISOString(),
+            publishedAt: args.publishedAt || new Date().toISOString(),
         });
     },
 });
@@ -173,6 +224,11 @@ export const update = mutation({
         collection: v.optional(v.string()),
         isNew: v.optional(v.boolean()),
         inStock: v.optional(v.boolean()),
+        publishedAt: v.optional(v.string()),
+        storefrontStatus: v.optional(productStorefrontStatusValidator),
+        launchBatchId: v.optional(v.string()),
+        launchAddedAt: v.optional(v.string()),
+        launchedAt: v.optional(v.string()),
         sourceUrl: v.optional(v.string()),
         cjSourcingStatus: v.optional(v.union(
             v.literal("pending"),
@@ -180,6 +236,15 @@ export const update = mutation({
             v.literal("rejected"),
             v.literal("none")
         )),
+        cjVariantId: v.optional(v.string()),
+        cjSku: v.optional(v.string()),
+        cjProductId: v.optional(v.string()),
+        cjInventoryStatus: v.optional(cjInventoryStatusValidator),
+        cjInventoryTotal: v.optional(v.number()),
+        cjInventoryLastCheckedAt: v.optional(v.string()),
+        cjInventoryError: v.optional(v.string()),
+        cjInventoryByVariant: v.optional(v.array(cjInventorySnapshotValidator)),
+        cjVariants: v.optional(v.array(cjVariantValidator)),
         sourcePriceCny: v.optional(v.number()),
         rawSourceDescription: v.optional(v.string()),
         rawHtmlDescription: v.optional(v.string()),
@@ -278,15 +343,36 @@ export const listForStorefront = query({
     handler: async (ctx) => {
         const allProducts = await ctx.db.query("products").collect();
 
-        // Filter out products that are pending or rejected CJ sourcing
-        return allProducts.filter(product => {
-            // If no CJ sourcing status set, show the product (legacy or manual products)
-            if (!product.cjSourcingStatus || product.cjSourcingStatus === "none") {
-                return true;
-            }
-            // Only show approved products
-            return product.cjSourcingStatus === "approved";
-        });
+        return allProducts.filter(isProductVisibleOnStorefront);
+    },
+});
+
+export const launchNextProducts = mutation({
+    args: {},
+    handler: async (ctx) => {
+        const userId = await auth.getUserId(ctx);
+        if (!userId) {
+            throw new Error("You must be logged in to launch products");
+        }
+
+        const now = new Date().toISOString();
+        const launchBatchId = `launch-${Date.now()}`;
+        const products = await ctx.db
+            .query("products")
+            .withIndex("by_storefront_status", (q) => q.eq("storefrontStatus", "next_launch"))
+            .collect();
+
+        for (const product of products) {
+            await ctx.db.patch(product._id, {
+                storefrontStatus: "published",
+                isNew: true,
+                publishedAt: now,
+                launchedAt: now,
+                launchBatchId,
+            });
+        }
+
+        return { launched: products.length, launchBatchId };
     },
 });
 
@@ -419,6 +505,30 @@ export const unlinkCjVariant = mutation({
 
         await ctx.db.patch(args.productId, {
             variants: updatedVariants,
+        });
+    },
+});
+
+export const removeCustomerVariant = mutation({
+    args: {
+        productId: v.id("products"),
+        customerVariantId: v.string(),
+    },
+    handler: async (ctx, args) => {
+        const userId = await auth.getUserId(ctx);
+        if (!userId) {
+            throw new Error("You must be logged in to manage variants");
+        }
+
+        const product = await ctx.db.get(args.productId);
+        if (!product || !product.variants) {
+            throw new Error("Product or variants not found");
+        }
+
+        const updatedVariants = product.variants.filter(variant => variant.id !== args.customerVariantId);
+        await ctx.db.patch(args.productId, {
+            variants: updatedVariants,
+            inStock: updatedVariants.length === 0 ? false : product.inStock,
         });
     },
 });

@@ -4,6 +4,7 @@ export type CollectionType = string; // Was 'furniture' | 'decor' | ... now dyna
 import type { Id } from './convex/_generated/dataModel';
 
 export type CjInventoryStatus = 'unknown' | 'in_stock' | 'low_stock' | 'out_of_stock' | 'partial' | 'error';
+export type ProductStorefrontStatus = 'published' | 'hidden' | 'next_launch';
 
 export interface CjInventorySnapshot {
   vid?: string;
@@ -27,6 +28,10 @@ export interface Product {
   collection: CollectionType;
   isNew?: boolean;
   inStock?: boolean;
+  storefrontStatus?: ProductStorefrontStatus;
+  launchBatchId?: string;
+  launchAddedAt?: string;
+  launchedAt?: string;
   variants?: ProductVariant[];  // Optional - for products with color/size options
   // CJ Sourcing fields
   sourceUrl?: string;

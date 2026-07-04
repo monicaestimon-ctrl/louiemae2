@@ -6,7 +6,7 @@ import { useSite } from '../contexts/BlogContext';
 import { RichTextEditor } from './RichTextEditor';
 import { useNewsletter } from '../contexts/NewsletterContext';
 import { FadeIn } from './FadeIn';
-import { Plus, Edit3, Trash2, LogOut, X, Image as ImageIcon, Layout, ArrowLeft, PenTool, BookOpen, Home, Settings, Wand2 as WandIcon, Loader2, FileText, ShoppingBag, Tag, ChevronDown, Layers, Menu, Upload, Grid, Maximize, Type, Mail, Users, Send, BarChart2, Package, Lock, ChevronLeft, ExternalLink } from 'lucide-react';
+import { Plus, Edit3, Trash2, LogOut, X, Image as ImageIcon, Layout, ArrowLeft, PenTool, BookOpen, Home, Settings, Wand2 as WandIcon, Loader2, FileText, ShoppingBag, Tag, ChevronDown, Layers, Menu, Upload, Grid, Maximize, Type, Mail, Users, Send, BarChart2, Package, Lock, ChevronLeft, ExternalLink, Search, Eye, EyeOff, Rocket, RefreshCw } from 'lucide-react';
 import { BlogPost, CustomPage, PageSection, Product, CollectionType, CollectionConfig, EmailCampaign } from '../types';
 import { generatePageStructure } from '../services/geminiService';
 import { AdminOrders } from './AdminOrders';
@@ -18,6 +18,7 @@ import { CJControlRoom } from './CJControlRoom';
 import { CJRiskCheck } from './CJRiskCheck';
 import { buildSourceProductSnapshot } from '../lib/smartDescription';
 import { SafeImage } from './SafeImage';
+import { productStorefrontStatusLabel } from '../lib/productVisibility';
 
 type SmartDescriptionActionResult = {
    ok: boolean;
@@ -184,6 +185,7 @@ export const AdminPage: React.FC = () => {
    const { isAuthenticated, isAuthLoading, signIn, logout, posts, addPost, updatePost, deletePost, siteContent, updateSiteContent, addCustomPage, updateCustomPage, deleteCustomPage, products, addProduct, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
    const { subscribers, campaigns, createCampaign, updateCampaign, sendCampaign, deleteCampaign, stats } = useNewsletter();
    const linkDescriptionAuditToProduct = useMutation(api.descriptionAudits.linkAuditToProduct);
+   const launchNextProducts = useMutation(api.products.launchNextProducts);
    const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
 
    const [email, setEmail] = useState('');
@@ -217,6 +219,7 @@ export const AdminPage: React.FC = () => {
    const [activePageEditor, setActivePageEditor] = useState<'home' | 'story' | string | null>(null);
    const [filterCollection, setFilterCollection] = useState<CollectionType | 'all'>('all');
    const [filterCategory, setFilterCategory] = useState<string | null>(null);
+   const [inventorySearch, setInventorySearch] = useState('');
 
    // Expanded Menus State in Sidebar
    const [expandedCollections, setExpandedCollections] = useState<Record<string, boolean>>({});
@@ -371,7 +374,8 @@ export const AdminPage: React.FC = () => {
          // Auto-select category if we are in a specific filter
          category: filterCategory || '',
          isNew: false,
-         inStock: true
+         inStock: true,
+         storefrontStatus: 'hidden'
       });
       setIsEditingProduct(true);
    };
@@ -383,6 +387,28 @@ export const AdminPage: React.FC = () => {
 
    const handleDeleteProduct = (id: string) => {
       if (confirm('Delete this product?')) deleteProduct(id);
+   };
+
+   const handleSetProductStorefrontStatus = async (product: Product, storefrontStatus: Product['storefrontStatus']) => {
+      const updates: Partial<Product> = {
+         storefrontStatus,
+         launchAddedAt: storefrontStatus === 'next_launch' ? new Date().toISOString() : product.launchAddedAt,
+      };
+      if (storefrontStatus === 'published' && !product.publishedAt) {
+         updates.publishedAt = new Date().toISOString();
+      }
+      await updateProduct(product.id, updates);
+   };
+
+   const handleLaunchNextProducts = async () => {
+      if (!confirm('Publish every item marked Next Launch and refresh the New Arrivals timing?')) return;
+      try {
+         const result = await launchNextProducts({});
+         alert(`Launched ${result.launched} product${result.launched === 1 ? '' : 's'} to the storefront.`);
+      } catch (err) {
+         console.error('Launch failed:', err);
+         alert('Launch failed. Please try again or check the console for details.');
+      }
    };
 
    const buildSnapshotFromProduct = (product: Product) => buildSourceProductSnapshot({
@@ -555,10 +581,28 @@ export const AdminPage: React.FC = () => {
    };
 
    // Filter products
+   const nextLaunchCount = products.filter(product => product.storefrontStatus === 'next_launch').length;
+
    const filteredProducts = products.filter(p => {
       const matchCollection = filterCollection === 'all' ? true : p.collection === filterCollection;
       const matchCategory = filterCategory ? p.category === filterCategory : true;
-      return matchCollection && matchCategory;
+      const term = inventorySearch.trim().toLowerCase();
+      const searchable = [
+         p.name,
+         p.description,
+         p.category,
+         p.collection,
+         p.sourceUrl,
+         p.cjProductId,
+         p.cjVariantId,
+         p.cjSku,
+         ...(p.variants || []).flatMap(variant => [variant.name, variant.cjVariantId, variant.cjSku]),
+      ]
+         .filter(Boolean)
+         .join(' ')
+         .toLowerCase();
+      const matchSearch = term.length === 0 || searchable.includes(term);
+      return matchCollection && matchCategory && matchSearch;
    });
 
    // --- LOGIN SCREEN ---
@@ -990,8 +1034,8 @@ export const AdminPage: React.FC = () => {
                         );
                         const pendingCount = results.filter(r => r.pending).length;
                         const successMessage = pendingCount > 0
-                           ? `Successfully imported ${productsToImport.length} products! ${pendingCount} products submitted for CJ sourcing.`
-                           : `Successfully imported ${productsToImport.length} products!`;
+                           ? `Successfully imported ${productsToImport.length} products as hidden inventory. ${pendingCount} products were queued for CJ sourcing. Publish them or add them to Next Launch when ready.`
+                           : `Successfully imported ${productsToImport.length} products as hidden inventory. Publish them or add them to Next Launch when ready.`;
                         alert(successMessage);
                      }}
                   />
@@ -1275,6 +1319,15 @@ export const AdminPage: React.FC = () => {
                         <h1 className="font-serif text-2xl md:text-4xl text-cream drop-shadow-md">{filterCategory || 'All Items'}</h1>
                      </div>
                      <div className="flex flex-wrap gap-2">
+                        {nextLaunchCount > 0 && (
+                           <button
+                              onClick={handleLaunchNextProducts}
+                              className="bg-emerald-500/10 text-emerald-100 border border-emerald-300/20 px-5 md:px-6 py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-emerald-500/20 transition-all shadow-[0_4px_15px_rgba(0,0,0,0.3)] flex items-center gap-2 rounded-lg w-fit backdrop-blur-md"
+                           >
+                              <Rocket className="w-3 h-3" />
+                              Launch {nextLaunchCount}
+                           </button>
+                        )}
                         <button
                            onClick={handleBatchRegenerateDescriptions}
                            disabled={isBatchRegenerating || filteredProducts.length === 0}
@@ -1286,6 +1339,24 @@ export const AdminPage: React.FC = () => {
                         <button onClick={handleCreateProduct} className="bg-white/10 text-cream border border-white/20 px-5 md:px-6 py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-white/20 transition-all shadow-[0_4px_15px_rgba(0,0,0,0.3)] flex items-center gap-2 rounded-lg w-fit backdrop-blur-md">
                            <Plus className="w-3 h-3" /> Add Product
                         </button>
+                     </div>
+                  </div>
+
+                  <div className="mb-6 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-2xl shadow-[0_10px_25px_rgba(0,0,0,0.25)]">
+                     <label htmlFor="inventory-search" className="mb-2 flex items-center gap-2 text-[10px] uppercase tracking-[0.25em] text-cream/50">
+                        <Search className="w-3.5 h-3.5 text-bronze" />
+                        Search Inventory
+                     </label>
+                     <div className="relative">
+                        <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-cream/35" />
+                        <input
+                           id="inventory-search"
+                           type="search"
+                           value={inventorySearch}
+                           onChange={(event) => setInventorySearch(event.target.value)}
+                           placeholder="Search product, source URL, CJ ID, SKU, color, or size..."
+                           className="w-full rounded-xl border border-white/10 bg-black/20 py-3 pl-11 pr-4 text-sm text-cream placeholder:text-cream/30 focus:border-bronze focus:outline-none"
+                        />
                      </div>
                   </div>
 
@@ -1309,6 +1380,17 @@ export const AdminPage: React.FC = () => {
                                        <p className="text-[10px] uppercase tracking-widest text-cream/40 mt-1">
                                           Source quality: {preview.sourceQuality ?? 'n/a'} / 100 {preview.fallbackUsed ? ' · fallback used' : ''}
                                        </p>
+                                       {preview.product.sourceUrl && (
+                                          <a
+                                             href={preview.product.sourceUrl}
+                                             target="_blank"
+                                             rel="noreferrer"
+                                             className="mt-2 inline-flex max-w-full items-center gap-1.5 text-[10px] text-bronze hover:text-amber-400"
+                                          >
+                                             <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                                             <span className="truncate normal-case font-mono tracking-normal">{preview.product.sourceUrl}</span>
+                                          </a>
+                                       )}
                                     </div>
                                     <div className="flex gap-2">
                                        <button onClick={() => approveBatchDescription(preview)} className="px-3 py-2 rounded-lg bg-bronze text-white text-[10px] uppercase tracking-widest">
@@ -1321,7 +1403,12 @@ export const AdminPage: React.FC = () => {
                                  </div>
                                  <div className="mt-3 grid md:grid-cols-2 gap-3 text-sm">
                                     <div className="rounded-lg bg-black/20 p-3 text-cream/50 whitespace-pre-wrap">{preview.product.description || 'No current description.'}</div>
-                                    <div className="rounded-lg bg-white/5 p-3 text-cream whitespace-pre-wrap">{preview.description}</div>
+                                    <textarea
+                                       value={preview.description}
+                                       onChange={(event) => setBatchDescriptionPreviews(prev => prev.map(item => item.auditId === preview.auditId ? { ...item, description: event.target.value } : item))}
+                                       className="min-h-[180px] rounded-lg bg-white/5 p-3 text-cream whitespace-pre-wrap border border-white/10 focus:border-bronze focus:outline-none"
+                                       aria-label={`Edit smart description for ${preview.product.name}`}
+                                    />
                                  </div>
                                  {preview.warnings.length > 0 && (
                                     <div className="mt-3 text-xs text-amber-200/80">
@@ -1341,57 +1428,105 @@ export const AdminPage: React.FC = () => {
                            <button onClick={handleCreateProduct} className="mt-4 text-bronze hover:text-white transition-colors underline text-xs uppercase tracking-widest">Add your first item</button>
                         </div>
                      ) : (
-                        filteredProducts.map(product => (
-                           <div key={product.id} className="bg-white/5 backdrop-blur-xl p-4 md:p-5 border border-white/10 rounded-2xl flex gap-4 md:gap-6 items-center group hover:bg-white/10 hover:-translate-y-1 hover:shadow-[0_15px_30px_rgba(0,0,0,0.4)] transition-all overflow-hidden relative">
-                              {/* Inner Highlight Overlay */}
-                              <div className="absolute inset-0 border border-white/5 pointer-events-none rounded-2xl group-hover:border-white/20 transition-colors" />
+                        filteredProducts.map(product => {
+                           const storefrontStatus = product.storefrontStatus || 'published';
+                           const statusClass = storefrontStatus === 'published'
+                              ? 'bg-green-500/15 text-green-300 border-green-400/25'
+                              : storefrontStatus === 'next_launch'
+                                 ? 'bg-amber-500/15 text-amber-200 border-amber-300/25'
+                                 : 'bg-white/10 text-cream/60 border-white/15';
+                           const variants = product.variants || [];
+                           const mappedVariants = variants.filter(variant => variant.cjVariantId).length;
+                           const variantImageCount = variants.filter(variant => variant.image).length;
+                           const imageCount = product.images?.filter(Boolean).length || 0;
+                           const cjIdentifier = product.cjProductId || product.cjVariantId || 'Not linked yet';
+                           const inventoryCheckedAt = product.cjInventoryLastCheckedAt
+                              ? new Date(product.cjInventoryLastCheckedAt).toLocaleString()
+                              : 'Not checked yet';
 
-                              <div className="w-16 h-16 bg-black/40 flex-shrink-0 rounded-lg overflow-hidden border border-white/10 shadow-inner z-10">
-                                 {product.images?.[0] ? (
-                                    <SafeImage src={product.images[0]} alt={product.name} className="w-full h-full object-cover opacity-90 group-hover:scale-110 group-hover:opacity-100 transition-all duration-700" />
-                                 ) : (
-                                    <div className="flex h-full w-full items-center justify-center text-white/30"><Package className="w-5 h-5" aria-hidden="true" /></div>
-                                 )}
-                              </div>
-                              <div className="flex-1 min-w-0 z-10">
-                                 <h4 className="font-serif text-lg text-cream drop-shadow-sm group-hover:text-white transition-colors">{product.name}</h4>
-                                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] uppercase tracking-widest text-cream/50 mt-1">
-                                    <span>{product.category}</span>
-                                    <span className="text-bronze font-medium">${product.price}</span>
-                                    <span className={product.inStock ? 'text-green-400 drop-shadow-[0_0_5px_rgba(74,222,128,0.5)]' : 'text-red-400'}>{product.inStock ? 'In Stock' : 'Out of Stock'}</span>
-                                 </div>
-                                 <div className="mt-2 flex min-w-0 items-center text-[10px] uppercase tracking-widest">
-                                    {product.sourceUrl ? (
-                                       <a
-                                          href={product.sourceUrl}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          onClick={(e) => e.stopPropagation()}
-                                          className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-bronze hover:text-amber-400 transition-colors"
-                                          title={product.sourceUrl}
-                                       >
-                                          <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                                          <span className="truncate normal-case font-mono tracking-normal">{product.sourceUrl}</span>
-                                       </a>
+                           return (
+                              <div key={product.id} className="bg-white/5 backdrop-blur-xl p-4 md:p-5 border border-white/10 rounded-2xl flex flex-col md:flex-row gap-4 md:gap-6 md:items-center group hover:bg-white/10 hover:-translate-y-1 hover:shadow-[0_15px_30px_rgba(0,0,0,0.4)] transition-all overflow-hidden relative">
+                                 {/* Inner Highlight Overlay */}
+                                 <div className="absolute inset-0 border border-white/5 pointer-events-none rounded-2xl group-hover:border-white/20 transition-colors" />
+
+                                 <div className="w-full md:w-20 h-36 md:h-24 bg-black/40 flex-shrink-0 rounded-xl overflow-hidden border border-white/10 shadow-inner z-10">
+                                    {product.images?.[0] ? (
+                                       <SafeImage src={product.images[0]} alt={product.name} className="w-full h-full object-cover opacity-90 group-hover:scale-105 group-hover:opacity-100 transition-all duration-700" />
                                     ) : (
-                                       <button
-                                          type="button"
-                                          onClick={() => handleEditProduct(product)}
-                                          className="inline-flex items-center gap-1.5 text-cream/30 hover:text-bronze transition-colors"
-                                          title="Add sourcing URL"
-                                       >
-                                          <ExternalLink className="w-3 h-3" />
-                                          Add sourcing URL
-                                       </button>
+                                       <div className="flex h-full w-full items-center justify-center text-white/30"><Package className="w-5 h-5" aria-hidden="true" /></div>
                                     )}
                                  </div>
+
+                                 <div className="flex-1 min-w-0 z-10 space-y-3">
+                                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2">
+                                       <div className="min-w-0">
+                                          <h4 className="font-serif text-lg text-cream drop-shadow-sm group-hover:text-white transition-colors">{product.name}</h4>
+                                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] uppercase tracking-widest text-cream/50 mt-1">
+                                             <span>{product.category || 'No category'}</span>
+                                             <span className="text-bronze font-medium">${product.price}</span>
+                                             <span className={product.inStock ? 'text-green-400 drop-shadow-[0_0_5px_rgba(74,222,128,0.5)]' : 'text-red-400'}>{product.inStock ? 'In Stock' : 'Out of Stock'}</span>
+                                          </div>
+                                       </div>
+                                       <span className={`w-fit rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${statusClass}`}>
+                                          {productStorefrontStatusLabel(product)}
+                                       </span>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 text-[11px] text-cream/55">
+                                       <div className="min-w-0 rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                                          <span className="block text-[9px] uppercase tracking-widest text-cream/30">Source URL</span>
+                                          {product.sourceUrl ? (
+                                             <a href={product.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1.5 text-bronze hover:text-amber-400" title={product.sourceUrl}>
+                                                <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                                                <span className="truncate font-mono">{product.sourceUrl}</span>
+                                             </a>
+                                          ) : (
+                                             <button type="button" onClick={() => handleEditProduct(product)} className="text-cream/35 hover:text-bronze">Add source link</button>
+                                          )}
+                                       </div>
+                                       <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                                          <span className="block text-[9px] uppercase tracking-widest text-cream/30">CJ ID / SKU</span>
+                                          <span className="font-mono text-cream/70">{cjIdentifier}</span>
+                                          {product.cjSku && <span className="ml-2 font-mono text-cream/35">{product.cjSku}</span>}
+                                       </div>
+                                       <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                                          <span className="block text-[9px] uppercase tracking-widest text-cream/30">Variants</span>
+                                          <span className={variants.length > 0 && mappedVariants < variants.length ? 'text-amber-200' : 'text-cream/70'}>
+                                             {mappedVariants}/{variants.length} mapped
+                                          </span>
+                                          <span className="ml-2 text-cream/35">{variantImageCount} variant images</span>
+                                       </div>
+                                       <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                                          <span className="flex items-center gap-1.5 text-[9px] uppercase tracking-widest text-cream/30"><RefreshCw className="w-3 h-3 text-bronze/70" /> Images / Inventory</span>
+                                          <span className={imageCount > 0 ? 'text-cream/70' : 'text-red-300'}>{imageCount} image{imageCount === 1 ? '' : 's'}</span>
+                                          <span className="ml-2 text-cream/35">{product.cjInventoryStatus || 'CJ not synced'}</span>
+                                          <span className="block truncate text-cream/30">Checked: {inventoryCheckedAt}</span>
+                                       </div>
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-2">
+                                       <button onClick={() => handleSetProductStorefrontStatus(product, 'published')} className="inline-flex items-center gap-1.5 rounded-lg border border-green-400/25 bg-green-500/10 px-3 py-2 text-[10px] uppercase tracking-widest text-green-200 hover:bg-green-500/20">
+                                          <Eye className="w-3 h-3" /> Publish
+                                       </button>
+                                       <button onClick={() => handleSetProductStorefrontStatus(product, 'hidden')} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[10px] uppercase tracking-widest text-cream/65 hover:bg-white/10">
+                                          <EyeOff className="w-3 h-3" /> Hide
+                                       </button>
+                                       <button onClick={() => handleSetProductStorefrontStatus(product, 'next_launch')} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300/25 bg-amber-500/10 px-3 py-2 text-[10px] uppercase tracking-widest text-amber-100 hover:bg-amber-500/20">
+                                          <Rocket className="w-3 h-3" /> Next Launch
+                                       </button>
+                                       <button onClick={() => handleEditProduct(product)} className="inline-flex items-center gap-1.5 rounded-lg border border-bronze/25 bg-bronze/10 px-3 py-2 text-[10px] uppercase tracking-widest text-bronze hover:bg-bronze/20">
+                                          <Edit3 className="w-3 h-3" /> Edit Item
+                                       </button>
+                                    </div>
+                                 </div>
+
+                                 <div className="flex gap-2 flex-shrink-0 z-10 md:self-start">
+                                    <button onClick={() => handleEditProduct(product)} aria-label={`Edit ${product.name}`} className="p-2 hover:bg-white/20 rounded-full text-cream"><Edit3 className="w-4 h-4" /></button>
+                                    <button onClick={() => handleDeleteProduct(product.id)} aria-label={`Delete ${product.name}`} className="p-2 hover:bg-red-500/20 text-red-400 rounded-full"><Trash2 className="w-4 h-4" /></button>
+                                 </div>
                               </div>
-                              <div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity flex-shrink-0 z-10">
-                                 <button onClick={() => handleEditProduct(product)} aria-label={`Edit ${product.name}`} className="p-2 hover:bg-white/20 rounded-full text-cream"><Edit3 className="w-4 h-4" /></button>
-                                 <button onClick={() => handleDeleteProduct(product.id)} aria-label={`Delete ${product.name}`} className="p-2 hover:bg-red-500/20 text-red-400 rounded-full"><Trash2 className="w-4 h-4" /></button>
-                              </div>
-                           </div>
-                        ))
+                           );
+                        })
                      )}
                   </div>
                </FadeIn>
@@ -2036,7 +2171,7 @@ export const AdminPage: React.FC = () => {
 
                   // If marked as pending, the CJ cron job will handle submission
                   if (prod.sourceUrl) {
-                     alert('Product saved! It has been submitted for CJ sourcing approval and will appear on your site once approved.');
+                     alert('Product saved! It is queued for CJ sourcing and will stay hidden until you publish it or add it to a launch.');
                   }
                }
                setIsEditingProduct(false);
