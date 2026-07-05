@@ -5,6 +5,7 @@ import { FadeIn } from './FadeIn';
 import { ArrowUpRight, ArrowRight } from 'lucide-react';
 import { useSite } from '../contexts/BlogContext';
 import { SafeImage } from './SafeImage';
+import { isProductVisibleOnStorefront } from '../lib/productVisibility';
 
 interface DynamicPageProps {
   page?: CustomPage;
@@ -131,7 +132,7 @@ export const DynamicSectionRenderer: React.FC<{ section: PageSection, index: num
             );
 
         case 'product-feature': {
-            const product = products.find(p => p.id === section.productId);
+            const product = products.find(p => p.id === section.productId && isProductVisibleOnStorefront(p));
             if (!product) {
                 // Return a placeholder or null, but for admin preview purposes, user might want to see that something is there.
                 // For now, returning null is standard, but let's at least log it or check if we should show a placeholder.

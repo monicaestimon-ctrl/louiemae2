@@ -6,6 +6,7 @@ import { Product } from '../types';
 import { ArrowRight } from 'lucide-react';
 import { GlassButton } from './ui/GlassButton';
 import { SafeImage } from './SafeImage';
+import { isProductVisibleOnStorefront } from '../lib/productVisibility';
 
 // Collection config for display
 const COLLECTIONS = [
@@ -136,7 +137,7 @@ export const NewArrivalsPage: React.FC = () => {
         const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
         COLLECTIONS.forEach(col => {
-            const colProducts = products.filter(p => p.collection === col.id);
+            const colProducts = products.filter(p => p.collection === col.id && isProductVisibleOnStorefront(p));
 
             // Filter to products published within last 30 days, or marked isNew (legacy fallback)
             const newArrivals = colProducts.filter(p => {

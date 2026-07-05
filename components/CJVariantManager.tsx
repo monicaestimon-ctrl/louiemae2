@@ -4,7 +4,7 @@ import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
 import {
     Link2, Unlink, ChevronDown, ChevronUp, Package,
-    CheckCircle, AlertCircle, Loader2, ArrowRight
+    CheckCircle, AlertCircle, Loader2, ArrowRight, Trash2
 } from 'lucide-react';
 import { FadeIn } from './FadeIn';
 import { SafeImage } from './SafeImage';
@@ -47,6 +47,7 @@ export const CJVariantManager: React.FC<{ targetProductId?: string }> = ({ targe
     const products = useQuery(api.products.getProductsWithCjVariants) as ProductWithVariants[] | undefined;
     const linkVariant = useMutation(api.products.linkCjVariant);
     const unlinkVariant = useMutation(api.products.unlinkCjVariant);
+    const removeCustomerVariant = useMutation(api.products.removeCustomerVariant);
 
     const productRefs = useRef<Map<string, HTMLDivElement>>(new Map());
     const [expandedProduct, setExpandedProduct] = useState<Id<"products"> | null>(null);
@@ -102,6 +103,22 @@ export const CJVariantManager: React.FC<{ targetProductId?: string }> = ({ targe
             setTimeout(() => setSuccess(null), 3000);
         } catch (err: any) {
             setError(err.message || 'Failed to unlink variant');
+        } finally {
+            setLinking(null);
+        }
+    };
+
+    const handleRemoveCustomerVariant = async (productId: Id<"products">, customerVariantId: string, variantName: string) => {
+        if (!confirm(`Remove "${variantName}" from this product inventory? Customers will no longer be able to buy this option.`)) return;
+        setLinking(customerVariantId);
+        setError(null);
+
+        try {
+            await removeCustomerVariant({ productId, customerVariantId });
+            setSuccess('Removed customer variant from inventory');
+            setTimeout(() => setSuccess(null), 3000);
+        } catch (err: any) {
+            setError(err.message || 'Failed to remove variant');
         } finally {
             setLinking(null);
         }
@@ -250,24 +267,38 @@ export const CJVariantManager: React.FC<{ targetProductId?: string }> = ({ targe
                                                 key={customerVar.id}
                                                 className="bg-white/5 rounded-2xl p-4 border border-white/10 shadow-inner"
                                             >
-                                                <div className="flex items-center justify-between mb-4">
+                                                <div className="flex items-center justify-between gap-3 mb-4">
                                                     <span className="font-serif text-base text-cream drop-shadow-sm">
                                                         {customerVar.name}
                                                     </span>
-                                                    {customerVar.cjVariantId && (
+                                                    <div className="flex flex-wrap justify-end gap-2">
+                                                        {customerVar.cjVariantId && (
+                                                            <button
+                                                                onClick={() => handleUnlink(product._id, customerVar.id)}
+                                                                disabled={linking === customerVar.id}
+                                                                className="text-[11px] uppercase tracking-widest font-medium text-red-400 hover:text-red-300 active:text-red-300 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/30 transition-colors border border-red-500/30 shadow-inner"
+                                                            >
+                                                                {linking === customerVar.id ? (
+                                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                ) : (
+                                                                    <Unlink className="w-3.5 h-3.5" />
+                                                                )}
+                                                                Unlink
+                                                            </button>
+                                                        )}
                                                         <button
-                                                            onClick={() => handleUnlink(product._id, customerVar.id)}
+                                                            onClick={() => handleRemoveCustomerVariant(product._id, customerVar.id, customerVar.name)}
                                                             disabled={linking === customerVar.id}
-                                                            className="text-[11px] uppercase tracking-widest font-medium text-red-400 hover:text-red-300 active:text-red-300 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/30 transition-colors border border-red-500/30 shadow-inner"
+                                                            className="text-[11px] uppercase tracking-widest font-medium text-amber-300 hover:text-amber-200 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 transition-colors border border-amber-300/25 shadow-inner"
                                                         >
                                                             {linking === customerVar.id ? (
                                                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                                             ) : (
-                                                                <Unlink className="w-3.5 h-3.5" />
+                                                                <Trash2 className="w-3.5 h-3.5" />
                                                             )}
-                                                            Unlink
+                                                            Remove option
                                                         </button>
-                                                    )}
+                                                    </div>
                                                 </div>
 
                                                 {customerVar.cjVariantId ? (
@@ -316,14 +347,19 @@ export const CJVariantManager: React.FC<{ targetProductId?: string }> = ({ targe
                                                                             ) : (
                                                                                 <ArrowRight className="w-4 h-4 opacity-70" />
                                                                             )}
-                                                                            {cjVar.name}
+                                                                            <span className="flex flex-col items-start">
+                                                                                <span>{cjVar.name}</span>
+                                                                                <span className="font-mono text-[10px] opacity-60">{cjVar.sku}</span>
+                                                                            </span>
                                                                         </>
                                                                     )}
                                                                 </button>
                                                             );
                                                         })}
                                                         {product.cjVariants?.every(cjVar => product.variants?.some(v => v.cjVariantId === cjVar.vid && v.id !== customerVar.id)) && (
-                                                            <span className="text-[11px] text-cream/40 italic py-2">All available CJ sizes have been mapped to other variants.</span>
+                                                            <span className="text-[11px] text-cream/40 italic py-2">
+                                                                No unused CJ variants are left for this option. Check the reference list below to see whether this option exists in CJ or was mapped to another customer variant.
+                                                            </span>
                                                         )}
                                                     </div>
                                                 )}
@@ -342,6 +378,8 @@ export const CJVariantManager: React.FC<{ targetProductId?: string }> = ({ targe
                                                         className="text-[10px] bg-white/5 border border-white/10 px-2.5 py-1 rounded-md text-cream/60 font-mono shadow-inner"
                                                     >
                                                         {v.name}
+                                                        {v.sku ? ` | SKU ${v.sku}` : ''}
+                                                        {v.vid ? ` | VID ${v.vid}` : ''}
                                                         {inventoryByVid.get(v.vid)?.totalInventoryNum !== undefined
                                                             ? ` • ${inventoryByVid.get(v.vid)?.totalInventoryNum} in CJ`
                                                             : ''}

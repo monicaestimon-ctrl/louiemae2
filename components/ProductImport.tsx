@@ -69,7 +69,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const [isSearching, setIsSearching] = useState(false);
     const [searchResults, setSearchResultsRaw] = useState<ImportableProduct[]>(() => {
         try {
-            const saved = sessionStorage.getItem('import-search-results');
+            const saved = sessionStorage.getItem('import-search-results') || localStorage.getItem('import-draft-results');
             return saved ? JSON.parse(saved) : [];
         } catch { return []; }
     });
@@ -552,10 +552,10 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     // Import Multi-Step Workflow State
     const [importStep, setImportStepRaw] = useState<'search' | 'review' | 'final-review'>(() => {
         try {
-            const savedStep = sessionStorage.getItem('import-step');
+            const savedStep = sessionStorage.getItem('import-step') || localStorage.getItem('import-draft-step');
             if (savedStep === 'review' || savedStep === 'final-review') {
                 // Only restore non-search steps if the saved batch has selected products
-                const savedResults = JSON.parse(sessionStorage.getItem('import-search-results') || '[]');
+                const savedResults = JSON.parse(sessionStorage.getItem('import-search-results') || localStorage.getItem('import-draft-results') || '[]');
                 if (Array.isArray(savedResults) && savedResults.some((p: any) => p.selected)) {
                     return savedStep;
                 }
@@ -571,12 +571,15 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             if (step === 'search') {
                 sessionStorage.removeItem('import-search-results');
                 sessionStorage.removeItem('import-review-index');
+                localStorage.removeItem('import-draft-results');
+                localStorage.removeItem('import-draft-step');
+                localStorage.removeItem('import-draft-review-index');
             }
         } catch { /* ignore sessionStorage errors */ }
     };
     const [reviewIndex, setReviewIndexRaw] = useState(() => {
         try {
-            const saved = sessionStorage.getItem('import-review-index');
+            const saved = sessionStorage.getItem('import-review-index') || localStorage.getItem('import-draft-review-index');
             return saved ? parseInt(saved, 10) : 0;
         } catch { return 0; }
     });
@@ -600,6 +603,20 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
         } else {
             setReviewIndexRaw(idxOrUpdater);
             try { sessionStorage.setItem('import-review-index', String(idxOrUpdater)); } catch { /* ignore sessionStorage errors */ }
+        }
+    };
+
+    const handleSaveImportDraft = () => {
+        try {
+            sessionStorage.setItem('import-search-results', JSON.stringify(searchResults));
+            sessionStorage.setItem('import-step', importStep);
+            sessionStorage.setItem('import-review-index', String(reviewIndex));
+            localStorage.setItem('import-draft-results', JSON.stringify(searchResults));
+            localStorage.setItem('import-draft-step', importStep);
+            localStorage.setItem('import-draft-review-index', String(reviewIndex));
+            toast.success('Import draft saved. You can return to this import review later from this browser.');
+        } catch {
+            toast.error('Could not save import draft in this browser.');
         }
     };
 
@@ -717,6 +734,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                 collection: productCollection as CollectionType,
                 isNew: true,
                 inStock: p.inStock,
+                storefrontStatus: 'hidden' as const,
                 // Filter variants: undefined = all, [] = none, [...ids] = only those
                 // Normalize variant prices so they round-trip correctly after import
                 variants: (() => {
@@ -809,6 +827,11 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             setSelectAll(false);
             setImportStep('search');
             try { sessionStorage.removeItem('import-search-results'); } catch { /* ignore */ }
+            try {
+                localStorage.removeItem('import-draft-results');
+                localStorage.removeItem('import-draft-step');
+                localStorage.removeItem('import-draft-review-index');
+            } catch { /* ignore */ }
         } finally {
             toast.dismiss('cache-product-images');
             setIsImporting(false);
@@ -926,6 +949,12 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                 })()}
                             </div>
                             <div className="relative z-10 flex flex-wrap gap-2 md:gap-4">
+                                <button
+                                    onClick={handleSaveImportDraft}
+                                    className="px-4 py-2 rounded-full border border-bronze/30 bg-white/20 backdrop-blur-md hover:bg-white/40 transition-all text-[10px] uppercase tracking-widest font-bold text-bronze"
+                                >
+                                    Save Draft
+                                </button>
                                 <button
                                     onClick={() => setReviewIndex(prev => Math.max(0, prev - 1))}
                                     disabled={reviewIndex === 0}
@@ -1903,13 +1932,21 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                 <div className="h-4 w-px bg-earth/10"></div>
                                 <span className="text-xl font-serif text-earth">Final Preview — {selectedProducts.length} Product{selectedProducts.length !== 1 ? 's' : ''}</span>
                             </div>
-                            <button
-                                onClick={confirmImport}
-                                disabled={isImporting}
-                                className="px-8 py-3 rounded-full bg-green-700 text-white hover:bg-green-600 transition-all text-xs uppercase tracking-widest font-bold shadow-lg shadow-green-900/20 flex items-center gap-2 disabled:opacity-50"
-                            >
-                                <Check className="w-4 h-4" /> Confirm & Import ({selectedProducts.length})
-                            </button>
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    onClick={handleSaveImportDraft}
+                                    className="px-5 py-3 rounded-full border border-bronze/30 bg-white/50 text-bronze hover:bg-white transition-all text-xs uppercase tracking-widest font-bold"
+                                >
+                                    Save Draft
+                                </button>
+                                <button
+                                    onClick={confirmImport}
+                                    disabled={isImporting}
+                                    className="px-8 py-3 rounded-full bg-green-700 text-white hover:bg-green-600 transition-all text-xs uppercase tracking-widest font-bold shadow-lg shadow-green-900/20 flex items-center gap-2 disabled:opacity-50"
+                                >
+                                    <Check className="w-4 h-4" /> Confirm & Import ({selectedProducts.length})
+                                </button>
+                            </div>
                         </div>
 
                         {/* Product Cards */}

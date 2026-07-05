@@ -5,6 +5,7 @@ import { useNewsletter } from '../contexts/NewsletterContext';
 import { Product } from '../types';
 import { ArrowRight, Check } from 'lucide-react';
 import { SafeImage } from './SafeImage';
+import { isProductVisibleOnStorefront } from '../lib/productVisibility';
 
 // Collection drop configuration
 const DROP_NAME = "Consider the Lilies";
@@ -130,7 +131,7 @@ export const NewCollectionPage: React.FC = () => {
         const result: Record<string, Product[]> = {};
 
         CATEGORY_SECTIONS.forEach(sec => {
-            const colProducts = products.filter(p => p.collection === sec.id);
+            const colProducts = products.filter(p => p.collection === sec.id && isProductVisibleOnStorefront(p));
 
             colProducts.sort((a, b) => {
                 const dateA = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;

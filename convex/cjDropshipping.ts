@@ -49,7 +49,8 @@ const RECHECK_WINDOW_DAYS = 14;
 
 // Timeout for CJ API verification requests (Comments #5, #6)
 const CJ_FETCH_TIMEOUT_MS = 10_000;
-const CJ_DIAGNOSTIC_REQUEST_SPACING_MS = 1_250;
+const CJ_API_REQUEST_SPACING_MS = 1_250;
+const CJ_DIAGNOSTIC_REQUEST_SPACING_MS = CJ_API_REQUEST_SPACING_MS;
 const CJ_PRICING_REFRESH_MAX_ATTEMPTS = 3;
 const CJ_PRICING_REFRESH_RETRY_DELAY_MS = 60_000;
 
@@ -1677,8 +1678,8 @@ export const checkSourcingStatus = internalAction({
                     console.error(`Error auto-submitting ${product.name}:`, error.message);
                 }
 
-                // Small delay to avoid rate limits
-                await new Promise(resolve => setTimeout(resolve, 300));
+                // CJ allows roughly 1 request/second; leave margin between products.
+                await new Promise(resolve => setTimeout(resolve, CJ_API_REQUEST_SPACING_MS));
                 continue; // Move to next product
             }
 
@@ -2004,8 +2005,8 @@ export const checkSourcingStatus = internalAction({
                 console.error(`Error checking sourcing for ${product.name}:`, message);
             }
 
-            // Small delay to avoid rate limits
-            await new Promise(resolve => setTimeout(resolve, 300));
+            // CJ allows roughly 1 request/second; leave margin between products.
+            await new Promise(resolve => setTimeout(resolve, CJ_API_REQUEST_SPACING_MS));
         }
 
         console.log(`CJ Sourcing check: ${deduped.length} products (${pendingProducts.length} pending + ${rejectedProducts.length} rejected), ${submitted} submitted, ${approved} approved, ${rejected} rejected, ${stalePendingResubmitted} stale-resubmitted`);
