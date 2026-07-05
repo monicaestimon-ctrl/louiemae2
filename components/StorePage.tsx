@@ -164,6 +164,8 @@ VariantSelector.displayName = 'VariantSelector';
 export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategory = 'All', forceProductView = false }) => {
   const { siteContent, isLoading } = useSite();
   const storefrontProducts = useQuery(api.products.listForStorefront);
+  const storefrontProductsLoaded = storefrontProducts !== undefined;
+  const storefrontIsLoading = isLoading || !storefrontProductsLoaded;
   const [sortOption, setSortOption] = useState<'newest' | 'price-asc' | 'price-desc'>('newest');
 
   // Find the configuration for this collection from the dynamic state
@@ -376,6 +378,18 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
     </FadeIn>
   );
 
+  const ProductLoadingGrid: React.FC<{ compact?: boolean }> = ({ compact }) => (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
+      {Array.from({ length: compact ? 4 : 8 }).map((_, index) => (
+        <div key={index} className="animate-pulse">
+          <div className={`${compact ? 'aspect-square' : 'aspect-[3/4]'} rounded-2xl bg-earth/5 border border-earth/10 mb-3`} />
+          <div className="h-3 w-2/3 rounded-full bg-earth/10 mb-2" />
+          <div className="h-3 w-16 rounded-full bg-earth/10" />
+        </div>
+      ))}
+    </div>
+  );
+
   // Reusable Coming Soon newsletter signup for empty product views
   const ComingSoonSignup: React.FC = () => {
     const { addSubscriberWithTags } = useNewsletter();
@@ -464,7 +478,9 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
         </div>
 
         {/* Product Previews */}
-        {previewProducts.length > 0 ? (
+        {storefrontIsLoading ? (
+          <ProductLoadingGrid compact />
+        ) : previewProducts.length > 0 ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
             {previewProducts.map((product, idx) => (
               <ProductCard key={product.id} product={product} index={idx} compact />
@@ -957,7 +973,9 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
 
           <section className="px-4 md:px-8 py-12 md:py-16 min-h-[60vh]">
             <div className="container mx-auto">
-              {filteredProducts.length === 0 ? (
+              {storefrontIsLoading ? (
+                <ProductLoadingGrid />
+              ) : filteredProducts.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-24 animate-fade-in-up md:min-h-[60vh]">
                   <div className="relative w-full max-w-3xl mx-auto rounded-[2rem] shadow-[0_30px_80px_-20px_rgba(0,0,0,0.3)] translate-y-0 hover:-translate-y-2 transition-transform duration-700">
                     {/* Atmospheric Parallax Background Image */}
