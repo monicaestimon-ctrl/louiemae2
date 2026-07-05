@@ -1,5 +1,7 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
+import { useQuery } from 'convex/react';
+import { api } from '../convex/_generated/api';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
 import { Product, CollectionType, ProductVariant, Category } from '../types';
@@ -10,7 +12,6 @@ import { CurvedCategoryCarousel } from './ui/CurvedCategoryCarousel';
 import { GlassButton } from './ui/GlassButton';
 import { useNewsletter } from '../contexts/NewsletterContext';
 import { SafeImage } from './SafeImage';
-import { isProductVisibleOnStorefront } from '../lib/productVisibility';
 
 /** Sentinel for variants with no assigned image */
 const NO_IMAGE_KEY = '__no_image__';
@@ -161,7 +162,8 @@ const VariantSelector: React.FC<VariantSelectorProps> = React.memo(({
 VariantSelector.displayName = 'VariantSelector';
 
 export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategory = 'All', forceProductView = false }) => {
-  const { products, siteContent, isLoading } = useSite();
+  const { siteContent, isLoading } = useSite();
+  const storefrontProducts = useQuery(api.products.listForStorefront);
   const [sortOption, setSortOption] = useState<'newest' | 'price-asc' | 'price-desc'>('newest');
 
   // Find the configuration for this collection from the dynamic state
@@ -248,8 +250,15 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
   }, [config.subcategories, selectedCategory, viewLevel]);
 
   // Filter products by collection
+  const products = useMemo(() => {
+    return (storefrontProducts || []).map((product: any) => ({
+      ...product,
+      id: product._id || product.id,
+    })) as Product[];
+  }, [storefrontProducts]);
+
   const collectionProducts = useMemo(() => {
-    return products.filter(p => p.collection === collection && isProductVisibleOnStorefront(p));
+    return products.filter(p => p.collection === collection);
   }, [products, collection]);
 
   // Get products for a specific category (for previews and product grid)

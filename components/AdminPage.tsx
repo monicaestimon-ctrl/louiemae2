@@ -237,6 +237,7 @@ export const AdminPage: React.FC = () => {
    const [batchDescriptionPreviews, setBatchDescriptionPreviews] = useState<Array<{
       product: Product;
       description: string;
+      generatedDescription: string;
       auditId: string;
       fallbackUsed: boolean;
       warnings: string[];
@@ -466,6 +467,7 @@ export const AdminPage: React.FC = () => {
                previews.push({
                   product,
                   description: result.description,
+                  generatedDescription: result.description,
                   auditId: result.auditId,
                   fallbackUsed: Boolean(result.fallbackUsed),
                   warnings: result.warnings || [],
@@ -483,6 +485,7 @@ export const AdminPage: React.FC = () => {
    };
 
    const approveBatchDescription = async (preview: typeof batchDescriptionPreviews[number]) => {
+      const adminEdited = preview.description.trim() !== preview.generatedDescription.trim();
       const updatedProduct: Partial<Product> = {
          description: preview.description,
          smartDescription: {
@@ -492,10 +495,10 @@ export const AdminPage: React.FC = () => {
             model: 'server-configured',
             promptVersion: 'smart-description-v2.0.0',
             sourceSnapshotHash: 'pending-link',
-            adminEdited: false,
-            status: preview.fallbackUsed ? 'fallback' : 'approved',
+            adminEdited,
+            status: adminEdited ? 'edited' : preview.fallbackUsed ? 'fallback' : 'approved',
          },
-         descriptionSource: 'ai_generated',
+         descriptionSource: adminEdited ? 'ai_generated_admin_edited' : 'ai_generated',
       };
       await updateProduct(preview.product.id, updatedProduct);
       try {

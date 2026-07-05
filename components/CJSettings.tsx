@@ -989,24 +989,6 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
                 </div>
             </FadeIn>
 
-            {/* Custom Scrollbar Styles for this component only */}
-            <style>{`
-                .custom-scrollbar::-webkit-scrollbar {
-                    width: 6px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-track {
-                    background: rgba(255,255,255,0.02);
-                    border-radius: 10px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb {
-                    background: rgba(255,255,255,0.1);
-                    border-radius: 10px;
-                    border: 1px solid rgba(255,255,255,0.05);
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-                    background: rgba(255,255,255,0.2);
-                }
-            `}</style>
         </div>
     );
 };

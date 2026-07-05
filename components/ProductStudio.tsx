@@ -639,11 +639,11 @@ const EssenceStep: React.FC<{
         }
     };
 
-    const applyVariantChanges = (updatedVariants: NonNullable<Product['variants']>) => {
+    const applyVariantChanges = (updatedVariants: NonNullable<Product['variants']>, options: { resubmitForSourcing?: boolean } = {}) => {
         onChange({
             ...product,
             variants: updatedVariants,
-            ...(product.sourceUrl ? {
+            ...(product.sourceUrl && options.resubmitForSourcing ? {
                 cjSourcingStatus: 'pending' as const,
                 storefrontStatus: (product.storefrontStatus || 'published') === 'published' ? 'hidden' as const : product.storefrontStatus,
             } : {}),
@@ -654,7 +654,9 @@ const EssenceStep: React.FC<{
         const updatedVariants = (product.variants || []).map(variant => (
             variant.id === variantId ? { ...variant, ...updates } : variant
         ));
-        applyVariantChanges(updatedVariants);
+        applyVariantChanges(updatedVariants, {
+            resubmitForSourcing: 'name' in updates || 'image' in updates,
+        });
     };
 
     const addVariant = () => {
@@ -666,13 +668,13 @@ const EssenceStep: React.FC<{
             priceAdjustment: 0,
             inStock: true,
         };
-        applyVariantChanges([...(product.variants || []), newVariant]);
+        applyVariantChanges([...(product.variants || []), newVariant], { resubmitForSourcing: true });
     };
 
     const removeVariant = (variantId: string) => {
         const variant = product.variants?.find(item => item.id === variantId);
         if (variant?.cjVariantId && !confirm('This variant has a CJ mapping. Remove it from your inventory anyway?')) return;
-        applyVariantChanges((product.variants || []).filter(item => item.id !== variantId));
+        applyVariantChanges((product.variants || []).filter(item => item.id !== variantId), { resubmitForSourcing: true });
     };
 
     return (
