@@ -23,6 +23,26 @@ describe("CJ inventory normalization", () => {
     })).toBe(5);
   });
 
+  it("reads CJ documented inventory field names", () => {
+    expect(getCjInventoryRowTotal({
+      totalInventory: 7,
+      cjInventory: 2,
+      factoryInventory: 3,
+    })).toBe(7);
+
+    expect(getCjInventoryRowTotal({
+      cjInventory: 2,
+      factoryInventory: 3,
+    })).toBe(5);
+  });
+
+  it("uses client available quantity before storage fallback", () => {
+    expect(getCjInventoryRowTotal({
+      clientAvailableQuantity: 4,
+      storageNum: 99,
+    })).toBe(4);
+  });
+
   it("falls back to stock rows before deprecated storageNum", () => {
     expect(getCjInventoryRowTotal({
       storageNum: 99,
@@ -44,7 +64,7 @@ describe("CJ inventory normalization", () => {
     expect(summarizeCjInventoryRows(
       [
         { totalInventoryNum: 2, cjInventoryNum: 1 },
-        { totalInventoryNum: 4, cjInventoryNum: 2, factoryInventoryNum: 1 },
+        { totalInventory: 4, cjInventory: 2, factoryInventory: 1 },
       ],
       { vid: "vid-1", sku: "sku-1", lastCheckedAt: "2026-06-25T00:00:00.000Z", lowStockThreshold: 3 },
     )).toMatchObject({

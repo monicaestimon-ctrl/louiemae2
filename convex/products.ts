@@ -81,12 +81,15 @@ const cjVariantValidator = v.object({
 const isProductVisibleOnStorefront = (product: {
     storefrontStatus?: "published" | "hidden" | "next_launch";
     cjSourcingStatus?: "pending" | "approved" | "rejected" | "none";
+    inStock?: boolean;
+    cjInventoryStatus?: string;
 }) => {
     const visibilityReady = !product.storefrontStatus || product.storefrontStatus === "published";
     const fulfillmentReady = !product.cjSourcingStatus
         || product.cjSourcingStatus === "none"
         || product.cjSourcingStatus === "approved";
-    return visibilityReady && fulfillmentReady;
+    const inventoryReady = product.inStock !== false && product.cjInventoryStatus !== "out_of_stock";
+    return visibilityReady && fulfillmentReady && inventoryReady;
 };
 
 // Public queries - no auth required
@@ -243,6 +246,17 @@ export const update = mutation({
         cjInventoryTotal: v.optional(v.number()),
         cjInventoryLastCheckedAt: v.optional(v.string()),
         cjInventoryError: v.optional(v.string()),
+        cjInventoryNeedsReview: v.optional(v.boolean()),
+        cjInventoryReviewReason: v.optional(v.union(
+            v.literal("restocked"),
+            v.literal("out_of_stock"),
+            v.literal("manual")
+        )),
+        cjInventoryRestockedAt: v.optional(v.string()),
+        cjInventoryAutoHiddenAt: v.optional(v.string()),
+        cjInventoryPreviousStatus: v.optional(cjInventoryStatusValidator),
+        cjInventoryLastStatusChangeAt: v.optional(v.string()),
+        cjInventoryLastWebhookAt: v.optional(v.string()),
         cjInventoryByVariant: v.optional(v.array(cjInventorySnapshotValidator)),
         cjVariants: v.optional(v.array(cjVariantValidator)),
         sourcePriceCny: v.optional(v.number()),

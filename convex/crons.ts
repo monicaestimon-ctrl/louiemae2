@@ -21,4 +21,12 @@ crons.interval(
     {}
 );
 
+// Refresh CJ inventory in small batches so free/low-tier CJ API limits are respected.
+crons.interval(
+    "sync-cj-inventory",
+    { minutes: 30 },
+    internal.cjDropshipping.refreshProductInventory,
+    { limit: 25, source: "cron" }
+);
+
 export default crons;

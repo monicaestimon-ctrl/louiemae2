@@ -339,8 +339,14 @@ export type CjInventoryRow = {
     countryCode?: string;
     countryNameEn?: string;
     totalInventoryNum?: number;
+    totalInventory?: number;
     cjInventoryNum?: number;
+    cjInventory?: number;
     factoryInventoryNum?: number;
+    factoryInventory?: number;
+    clientAvailableQuantity?: number;
+    storageNum?: number;
+    sku?: string;
     stock?: Array<{
         stockId?: string;
         inventory?: number;
@@ -489,7 +495,15 @@ export const getInventoryByPid = (
     accessToken: string,
     pid: string,
     options?: CjApiCallOptions,
-) => cjApiRequest<{ inventories?: CjInventoryRow[] }>({
+) => cjApiRequest<{
+    inventories?: CjInventoryRow[];
+    variantInventories?: Array<{
+        vid?: string;
+        sku?: string;
+        inventory?: CjInventoryRow[];
+        inventories?: CjInventoryRow[];
+    }>;
+}>({
     accessToken,
     path: "product/stock/getInventoryByPid",
     query: { pid },

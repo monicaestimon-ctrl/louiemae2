@@ -7,6 +7,11 @@ import Stripe from "stripe";
 import { getCheckoutShippingForSubtotal } from "../lib/pricing";
 import { getCjAutomationConfig, readBooleanEnv } from "../lib/cjAutomation";
 import { evaluateCheckoutItemCjReadiness, type CjReadinessProduct } from "../lib/cjFulfillmentReadiness";
+import {
+    mergeCjInventoryStatuses,
+    summarizeCjInventoryRows,
+    type CjInventorySnapshot,
+} from "../lib/cjInventory";
 import { verifyCjWebhookSignature } from "../lib/cjWebhookSignature";
 import { handleCjWebhookHttpRequest } from "../lib/cjWebhookHttp";
 import type { ParsedCjWebhookPayload } from "../lib/cjWebhookRequest";
@@ -115,6 +120,23 @@ const normalizeCheckoutItems = (items: unknown): CheckoutItem[] => {
 type CheckoutFulfillmentResolution = {
     items: CheckoutItem[];
     errors: string[];
+    unavailableItems: Array<{
+        productId?: string;
+        variantId?: string;
+        name: string;
+        reason: string;
+    }>;
+};
+
+const getCustomerUnavailableReason = (errors: string[]): string => {
+    const combined = errors.join(" ").toLowerCase();
+    if (combined.includes("out of stock") || combined.includes("insufficient") || combined.includes("marked out")) {
+        return "This item is no longer available in the selected option.";
+    }
+    if (combined.includes("could not be confirmed") || combined.includes("could not be refreshed") || combined.includes("unknown")) {
+        return "We could not confirm current stock for this item.";
+    }
+    return "This item is temporarily unavailable for checkout.";
 };
 
 const getCheckoutCjGate = () => {
@@ -147,6 +169,7 @@ const getStoredCheckoutCjMapping = (
 const resolveCheckoutFulfillmentItems = async (ctx: ActionCtx, checkoutItems: CheckoutItem[]): Promise<CheckoutFulfillmentResolution> => {
     const { required, config } = getCheckoutCjGate();
     const errors: string[] = [];
+    const unavailableItems: CheckoutFulfillmentResolution["unavailableItems"] = [];
     const resolvedItems = [...checkoutItems];
 
     if (required && !config.fulfillmentAutomationReady) {
@@ -167,6 +190,12 @@ const resolveCheckoutFulfillmentItems = async (ctx: ActionCtx, checkoutItems: Ch
         } catch {
             if (required) {
                 errors.push(`${item.name} could not be verified for CJ fulfillment.`);
+                unavailableItems.push({
+                    productId: item.productId,
+                    variantId: item.variantId,
+                    name: item.name,
+                    reason: "We could not verify this item for checkout.",
+                });
             }
             continue;
         }
@@ -174,17 +203,61 @@ const resolveCheckoutFulfillmentItems = async (ctx: ActionCtx, checkoutItems: Ch
         if (!product) {
             if (required) {
                 errors.push(`${item.name} could not be verified for CJ fulfillment.`);
+                unavailableItems.push({
+                    productId: item.productId,
+                    variantId: item.variantId,
+                    name: item.name,
+                    reason: "We could not verify this item for checkout.",
+                });
             }
             continue;
+        }
+
+        if (required) {
+            try {
+                await ctx.runAction(internal.cjDropshipping.refreshProductInventory, {
+                    productId: item.productId as Id<"products">,
+                    variantId: item.variantId,
+                    limit: 1,
+                    source: "checkout",
+                });
+                product = await ctx.runQuery(api.products.get, { id: item.productId as Id<"products"> });
+                if (!product) {
+                    errors.push(`${item.name} could not be verified for CJ fulfillment.`);
+                    unavailableItems.push({
+                        productId: item.productId,
+                        variantId: item.variantId,
+                        name: item.name,
+                        reason: "We could not verify this item for checkout.",
+                    });
+                    continue;
+                }
+            } catch (error: any) {
+                const message = error?.message || "CJ inventory could not be refreshed.";
+                errors.push(`${item.name} inventory could not be refreshed from CJ: ${message}`);
+                unavailableItems.push({
+                    productId: item.productId,
+                    variantId: item.variantId,
+                    name: item.name,
+                    reason: "We could not confirm current stock for this item.",
+                });
+                continue;
+            }
         }
 
         const readiness = evaluateCheckoutItemCjReadiness(product, {
             variantId: item.variantId,
             variantName: item.variantName,
             quantity: item.quantity,
-        });
+        }, { strictInventory: required });
         if (required && !readiness.ready) {
             errors.push(...readiness.errors);
+            unavailableItems.push({
+                productId: item.productId,
+                variantId: item.variantId,
+                name: item.name,
+                reason: getCustomerUnavailableReason(readiness.errors),
+            });
         }
 
         const mapping = getStoredCheckoutCjMapping(product, item);
@@ -195,7 +268,7 @@ const resolveCheckoutFulfillmentItems = async (ctx: ActionCtx, checkoutItems: Ch
         };
     }
 
-    return { items: resolvedItems, errors };
+    return { items: resolvedItems, errors, unavailableItems };
 };
 
 // Create Stripe checkout session
@@ -242,8 +315,10 @@ http.route({
             if (fulfillmentResolution.errors.length > 0) {
                 return new Response(
                     JSON.stringify({
-                        error: "Some items are not ready for automated CJ fulfillment.",
+                        code: "OUT_OF_STOCK",
+                        error: "We're sorry, one or more items in your cart are no longer available. Please remove the unavailable item before checking out.",
                         details: fulfillmentResolution.errors.slice(0, 10),
+                        unavailableItems: fulfillmentResolution.unavailableItems.slice(0, 10),
                     }),
                     {
                         status: 409,
@@ -552,8 +627,8 @@ async function dispatchCjWebhookPayload(ctx: any, payload: ParsedCjWebhookPayloa
             return true;
 
         case "STOCK":
-            // Stock updates - log for now
             console.log(`CJ STOCK update:`, params);
+            await handleCjStockWebhook(ctx, params);
             return true;
 
         default:
@@ -562,6 +637,134 @@ async function dispatchCjWebhookPayload(ctx: any, payload: ParsedCjWebhookPayloa
                 paramKeys: Object.keys(params),
             });
             return true;
+    }
+}
+
+const getInventoryLowStockThreshold = (): number => {
+    const raw = process.env.CJ_LOW_STOCK_THRESHOLD?.trim();
+    if (!raw) return 3;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 3;
+};
+
+const firstString = (...values: unknown[]): string | undefined => {
+    for (const value of values) {
+        if (typeof value === "string" && value.trim()) return value.trim();
+        if (typeof value === "number" && Number.isFinite(value)) return String(value);
+    }
+    return undefined;
+};
+
+const normalizeWebhookInventoryRows = (value: unknown): Array<Record<string, unknown>> =>
+    Array.isArray(value) ? value.filter((row): row is Record<string, unknown> => typeof row === "object" && row !== null) : [];
+
+const getRowsFromWebhookStockValue = (value: unknown): Array<Record<string, unknown>> => {
+    if (Array.isArray(value)) return normalizeWebhookInventoryRows(value);
+    if (!value || typeof value !== "object") return [];
+    const record = value as Record<string, unknown>;
+    return normalizeWebhookInventoryRows(
+        record.inventory ??
+        record.inventories ??
+        record.stock ??
+        record.rows ??
+        [record]
+    );
+};
+
+const getCjStockWebhookEntries = (params: unknown): Array<{
+    vid?: string;
+    sku?: string;
+    rows: Array<Record<string, unknown>>;
+}> => {
+    if (!params || typeof params !== "object") return [];
+
+    if (Array.isArray(params)) {
+        return params.map((entry) => {
+            const record = entry && typeof entry === "object" ? entry as Record<string, unknown> : {};
+            return {
+                vid: firstString(record.vid, record.variantId, record.cjVariantId),
+                sku: firstString(record.sku, record.variantSku, record.cjVariantSku),
+                rows: getRowsFromWebhookStockValue(record),
+            };
+        }).filter((entry) => (entry.vid || entry.sku) && entry.rows.length > 0);
+    }
+
+    const record = params as Record<string, unknown>;
+    const directRows = getRowsFromWebhookStockValue(record);
+    const directEntry = (record.vid || record.sku || record.variantId || record.cjVariantId) && directRows.length > 0
+        ? [{
+            vid: firstString(record.vid, record.variantId, record.cjVariantId),
+            sku: firstString(record.sku, record.variantSku, record.cjVariantSku),
+            rows: directRows,
+        }]
+        : [];
+
+    const nestedEntries = Object.entries(record)
+        .filter(([key]) => !["vid", "variantId", "cjVariantId", "sku", "variantSku", "cjVariantSku", "inventory", "inventories", "stock", "rows"].includes(key))
+        .map(([key, value]) => {
+            const nested = value && typeof value === "object" ? value as Record<string, unknown> : {};
+            const rows = getRowsFromWebhookStockValue(value);
+            return {
+                vid: firstString(nested.vid, nested.variantId, nested.cjVariantId, key),
+                sku: firstString(nested.sku, nested.variantSku, nested.cjVariantSku),
+                rows,
+            };
+        })
+        .filter((entry) => (entry.vid || entry.sku) && entry.rows.length > 0);
+
+    return [...directEntry, ...nestedEntries];
+};
+
+const sumSnapshotInventory = (snapshots: CjInventorySnapshot[]): number | undefined => {
+    const totals = snapshots
+        .map((snapshot) => snapshot.totalInventoryNum)
+        .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    return totals.length > 0 ? totals.reduce((total, value) => total + value, 0) : undefined;
+};
+
+async function handleCjStockWebhook(ctx: any, params: unknown) {
+    const checkedAt = new Date().toISOString();
+    const lowStockThreshold = getInventoryLowStockThreshold();
+    const entries = getCjStockWebhookEntries(params);
+
+    for (const entry of entries) {
+        const snapshot = summarizeCjInventoryRows(entry.rows as any, {
+            vid: entry.vid,
+            sku: entry.sku,
+            lastCheckedAt: checkedAt,
+            lowStockThreshold,
+        });
+        const products = await ctx.runQuery(internal.cjHelpers.getProductsLinkedToCjInventoryTarget, {
+            vid: snapshot.vid,
+            sku: snapshot.sku,
+        });
+
+        for (const product of products) {
+            const existingSnapshots = Array.isArray(product.cjInventoryByVariant)
+                ? product.cjInventoryByVariant as CjInventorySnapshot[]
+                : [];
+            const snapshotKey = snapshot.vid ? `vid:${snapshot.vid}` : snapshot.sku ? `sku:${snapshot.sku}` : "product";
+            const mergedSnapshots = [
+                ...existingSnapshots.filter((existing) => {
+                    const existingKey = existing.vid ? `vid:${existing.vid}` : existing.sku ? `sku:${existing.sku}` : "product";
+                    return existingKey !== snapshotKey;
+                }),
+                snapshot,
+            ];
+            const status = mergeCjInventoryStatuses(mergedSnapshots);
+            const totalInventoryNum = sumSnapshotInventory(mergedSnapshots);
+            const firstError = mergedSnapshots.find((item) => item.status === "error")?.error;
+
+            await ctx.runMutation(internal.cjHelpers.updateProductInventorySnapshot, {
+                productId: product._id,
+                status,
+                totalInventoryNum,
+                checkedAt,
+                error: firstError,
+                snapshots: mergedSnapshots,
+                source: "webhook",
+            });
+        }
     }
 }
 

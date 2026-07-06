@@ -4,9 +4,13 @@ export type CjInventorySourceRow = {
   vid?: string;
   sku?: string;
   totalInventoryNum?: number;
+  totalInventory?: number;
   storageNum?: number;
   cjInventoryNum?: number;
+  cjInventory?: number;
   factoryInventoryNum?: number;
+  factoryInventory?: number;
+  clientAvailableQuantity?: number;
   stock?: Array<{
     inventory?: number;
     factoryInventory?: number;
@@ -48,11 +52,14 @@ export const classifyCjInventory = (
 };
 
 export const getCjInventoryRowTotal = (row: CjInventorySourceRow): number | undefined => {
-  const totalInventoryNum = toFiniteNumber(row.totalInventoryNum);
+  const totalInventoryNum = toFiniteNumber(row.totalInventoryNum ?? row.totalInventory);
   if (totalInventoryNum !== undefined) return totalInventoryNum;
 
-  const cjInventoryNum = toFiniteNumber(row.cjInventoryNum);
-  const factoryInventoryNum = toFiniteNumber(row.factoryInventoryNum);
+  const clientAvailableQuantity = toFiniteNumber(row.clientAvailableQuantity);
+  if (clientAvailableQuantity !== undefined) return clientAvailableQuantity;
+
+  const cjInventoryNum = toFiniteNumber(row.cjInventoryNum ?? row.cjInventory);
+  const factoryInventoryNum = toFiniteNumber(row.factoryInventoryNum ?? row.factoryInventory);
   const combinedInventory = sumNumbers([cjInventoryNum, factoryInventoryNum]);
   if (combinedInventory !== undefined) return combinedInventory;
 
@@ -79,8 +86,8 @@ export const summarizeCjInventoryRows = (
 ): CjInventorySnapshot => {
   const lowStockThreshold = options.lowStockThreshold ?? DEFAULT_LOW_STOCK_THRESHOLD;
   const totalInventoryNum = sumNumbers(rows.map(getCjInventoryRowTotal));
-  const cjInventoryNum = sumNumbers(rows.map((row) => toFiniteNumber(row.cjInventoryNum)));
-  const factoryInventoryNum = sumNumbers(rows.map((row) => toFiniteNumber(row.factoryInventoryNum)));
+  const cjInventoryNum = sumNumbers(rows.map((row) => toFiniteNumber(row.cjInventoryNum ?? row.cjInventory)));
+  const factoryInventoryNum = sumNumbers(rows.map((row) => toFiniteNumber(row.factoryInventoryNum ?? row.factoryInventory)));
 
   return {
     vid: options.vid,

@@ -2,6 +2,7 @@
 import React, { useState, useRef } from 'react';
 import { useAction, useMutation } from 'convex/react';
 import { api } from '../convex/_generated/api';
+import type { Id } from '../convex/_generated/dataModel';
 import { useSite } from '../contexts/BlogContext';
 import { RichTextEditor } from './RichTextEditor';
 import { useNewsletter } from '../contexts/NewsletterContext';
@@ -187,6 +188,7 @@ export const AdminPage: React.FC = () => {
    const linkDescriptionAuditToProduct = useMutation(api.descriptionAudits.linkAuditToProduct);
    const launchNextProducts = useMutation(api.products.launchNextProducts);
    const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
+   const refreshInventory = useAction(api.cjActions.refreshInventory);
 
    const [email, setEmail] = useState('');
    const [password, setPassword] = useState('');
@@ -234,6 +236,7 @@ export const AdminPage: React.FC = () => {
    const [isEditingProduct, setIsEditingProduct] = useState(false);
    const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
    const [isBatchRegenerating, setIsBatchRegenerating] = useState(false);
+   const [refreshingInventoryProductId, setRefreshingInventoryProductId] = useState<string | null>(null);
    const [batchDescriptionPreviews, setBatchDescriptionPreviews] = useState<Array<{
       product: Product;
       description: string;
@@ -399,6 +402,23 @@ export const AdminPage: React.FC = () => {
          updates.publishedAt = new Date().toISOString();
       }
       await updateProduct(product.id, updates);
+   };
+
+   const handleRefreshProductInventory = async (product: Product) => {
+      setRefreshingInventoryProductId(product.id);
+      try {
+         const result = await refreshInventory({ productId: product.id as Id<'products'> });
+         const summary = result.products[0];
+         alert(summary
+            ? `${product.name} stock checked: ${summary.status}${summary.totalInventoryNum !== undefined ? ` (${summary.totalInventoryNum} available)` : ''}.`
+            : `${product.name} stock check finished.`
+         );
+      } catch (err) {
+         console.error('Inventory refresh failed:', err);
+         alert('Inventory refresh failed. Please try again in a minute.');
+      } finally {
+         setRefreshingInventoryProductId(null);
+      }
    };
 
    const handleLaunchNextProducts = async () => {
@@ -1446,6 +1466,15 @@ export const AdminPage: React.FC = () => {
                            const inventoryCheckedAt = product.cjInventoryLastCheckedAt
                               ? new Date(product.cjInventoryLastCheckedAt).toLocaleString()
                               : 'Not checked yet';
+                           const inventoryStatus = product.cjInventoryStatus || 'unknown';
+                           const inventoryStatusClass = inventoryStatus === 'in_stock'
+                              ? 'text-green-300'
+                              : inventoryStatus === 'low_stock' || inventoryStatus === 'partial'
+                                 ? 'text-amber-200'
+                                 : inventoryStatus === 'out_of_stock' || inventoryStatus === 'error'
+                                    ? 'text-red-300'
+                                    : 'text-cream/35';
+                           const isRefreshingInventory = refreshingInventoryProductId === product.id;
 
                            return (
                               <div key={product.id} className="bg-white/5 backdrop-blur-xl p-4 md:p-5 border border-white/10 rounded-2xl flex flex-col md:flex-row gap-4 md:gap-6 md:items-center group hover:bg-white/10 hover:-translate-y-1 hover:shadow-[0_15px_30px_rgba(0,0,0,0.4)] transition-all overflow-hidden relative">
@@ -1473,6 +1502,11 @@ export const AdminPage: React.FC = () => {
                                        <span className={`w-fit rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${statusClass}`}>
                                           {productStorefrontStatusLabel(product)}
                                        </span>
+                                       {product.cjInventoryNeedsReview && (
+                                          <span className="w-fit rounded-full border border-amber-300/30 bg-amber-500/15 px-3 py-1 text-[10px] uppercase tracking-widest text-amber-100">
+                                             {product.cjInventoryReviewReason === 'restocked' ? 'Restock review' : 'Inventory review'}
+                                          </span>
+                                       )}
                                     </div>
 
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 text-[11px] text-cream/55">
@@ -1502,7 +1536,8 @@ export const AdminPage: React.FC = () => {
                                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
                                           <span className="flex items-center gap-1.5 text-[9px] uppercase tracking-widest text-cream/30"><RefreshCw className="w-3 h-3 text-bronze/70" /> Images / Inventory</span>
                                           <span className={imageCount > 0 ? 'text-cream/70' : 'text-red-300'}>{imageCount} image{imageCount === 1 ? '' : 's'}</span>
-                                          <span className="ml-2 text-cream/35">{product.cjInventoryStatus || 'CJ not synced'}</span>
+                                          <span className={`ml-2 ${inventoryStatusClass}`}>{product.cjInventoryStatus || 'CJ not synced'}</span>
+                                          {product.cjInventoryTotal !== undefined && <span className="ml-2 text-cream/45">{product.cjInventoryTotal} available</span>}
                                           <span className="block truncate text-cream/30">Checked: {inventoryCheckedAt}</span>
                                        </div>
                                     </div>
@@ -1516,6 +1551,13 @@ export const AdminPage: React.FC = () => {
                                        </button>
                                        <button onClick={() => handleSetProductStorefrontStatus(product, 'next_launch')} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300/25 bg-amber-500/10 px-3 py-2 text-[10px] uppercase tracking-widest text-amber-100 hover:bg-amber-500/20">
                                           <Rocket className="w-3 h-3" /> Next Launch
+                                       </button>
+                                       <button
+                                          onClick={() => handleRefreshProductInventory(product)}
+                                          disabled={isRefreshingInventory}
+                                          className="inline-flex items-center gap-1.5 rounded-lg border border-sky-300/25 bg-sky-500/10 px-3 py-2 text-[10px] uppercase tracking-widest text-sky-100 hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                                       >
+                                          <RefreshCw className={`w-3 h-3 ${isRefreshingInventory ? 'animate-spin' : ''}`} /> Check Stock
                                        </button>
                                        <button onClick={() => handleEditProduct(product)} className="inline-flex items-center gap-1.5 rounded-lg border border-bronze/25 bg-bronze/10 px-3 py-2 text-[10px] uppercase tracking-widest text-bronze hover:bg-bronze/20">
                                           <Edit3 className="w-3 h-3" /> Edit Item

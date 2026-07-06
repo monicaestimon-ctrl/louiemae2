@@ -67,6 +67,17 @@ export default defineSchema({
         cjInventoryTotal: v.optional(v.number()),
         cjInventoryLastCheckedAt: v.optional(v.string()),
         cjInventoryError: v.optional(v.string()),
+        cjInventoryNeedsReview: v.optional(v.boolean()),
+        cjInventoryReviewReason: v.optional(v.union(
+            v.literal("restocked"),
+            v.literal("out_of_stock"),
+            v.literal("manual")
+        )),
+        cjInventoryRestockedAt: v.optional(v.string()),
+        cjInventoryAutoHiddenAt: v.optional(v.string()),
+        cjInventoryPreviousStatus: v.optional(cjInventoryStatusValidator),
+        cjInventoryLastStatusChangeAt: v.optional(v.string()),
+        cjInventoryLastWebhookAt: v.optional(v.string()),
         cjInventoryByVariant: v.optional(v.array(v.object({
             vid: v.optional(v.string()),
             sku: v.optional(v.string()),

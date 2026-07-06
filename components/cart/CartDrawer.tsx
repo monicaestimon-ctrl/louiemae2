@@ -4,15 +4,25 @@ import { useCart } from '../../contexts/CartContext';
 import CartItem from './CartItem';
 
 export const CartDrawer: React.FC = () => {
-    const { isOpen, closeCart, items, subtotal, itemCount } = useCart();
+    const { isOpen, closeCart, items, subtotal, itemCount, removeFromCart } = useCart();
     const [isCheckingOut, setIsCheckingOut] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [checkoutBlock, setCheckoutBlock] = useState<{
+        message: string;
+        items: Array<{
+            productId?: string;
+            variantId?: string;
+            name: string;
+            reason?: string;
+        }>;
+    } | null>(null);
 
     const handleCheckout = async () => {
         if (items.length === 0) return;
 
         setIsCheckingOut(true);
         setError(null);
+        setCheckoutBlock(null);
 
         try {
             // Get Convex URL from environment
@@ -62,6 +72,14 @@ export const CartDrawer: React.FC = () => {
 
             if (!response.ok) {
                 const errorData = await response.json();
+                if (errorData?.code === 'OUT_OF_STOCK' || Array.isArray(errorData?.unavailableItems)) {
+                    setCheckoutBlock({
+                        message: errorData?.error || "We're sorry, one or more items in your cart are no longer available. Please remove the unavailable item before checking out.",
+                        items: Array.isArray(errorData?.unavailableItems) ? errorData.unavailableItems : [],
+                    });
+                    setIsCheckingOut(false);
+                    return;
+                }
                 throw new Error(errorData.error || 'Checkout failed');
             }
 
@@ -78,6 +96,16 @@ export const CartDrawer: React.FC = () => {
             setError(err.message || 'Something went wrong. Please try again.');
             setIsCheckingOut(false);
         }
+    };
+
+    const handleRemoveBlockedItem = (productId?: string, variantId?: string) => {
+        if (!productId) return;
+        removeFromCart(productId, variantId);
+        setCheckoutBlock(prev => {
+            if (!prev) return null;
+            const remaining = prev.items.filter(item => !(item.productId === productId && item.variantId === variantId));
+            return remaining.length > 0 ? { ...prev, items: remaining } : null;
+        });
     };
 
     if (!isOpen) return null;
@@ -152,6 +180,34 @@ export const CartDrawer: React.FC = () => {
                         </p>
 
                         {/* Error Message */}
+                        {checkoutBlock && (
+                            <div className="bg-[#fbf4ef] border border-[#d7a77d]/40 rounded-md p-3 mb-4">
+                                <p className="text-xs leading-relaxed text-earth">{checkoutBlock.message}</p>
+                                {checkoutBlock.items.length > 0 && (
+                                    <div className="mt-3 space-y-2">
+                                        {checkoutBlock.items.map((blockedItem, index) => (
+                                            <div key={`${blockedItem.productId || blockedItem.name}-${blockedItem.variantId || index}`} className="flex items-start justify-between gap-3 rounded-sm bg-white/70 border border-earth/10 p-2">
+                                                <div className="min-w-0">
+                                                    <p className="text-xs font-medium text-earth truncate">{blockedItem.name}</p>
+                                                    {blockedItem.reason && (
+                                                        <p className="mt-1 text-[10px] leading-snug text-earth/55">{blockedItem.reason}</p>
+                                                    )}
+                                                </div>
+                                                {blockedItem.productId && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveBlockedItem(blockedItem.productId, blockedItem.variantId)}
+                                                        className="flex-shrink-0 text-[9px] uppercase tracking-widest text-bronze hover:text-earth transition-colors"
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         {error && (
                             <div className="bg-red-50 border border-red-200 rounded-md p-3 mb-4">
                                 <p className="text-xs text-red-600">{error}</p>

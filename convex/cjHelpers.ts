@@ -134,6 +134,8 @@ export const reserveCjFulfillmentAttempt = internalMutation({
 export const getProductsForInventoryRefresh = internalQuery({
     args: {
         productId: v.optional(v.id("products")),
+        variantId: v.optional(v.string()),
+        limit: v.optional(v.number()),
     },
     handler: async (ctx, args) => {
         if (args.productId) {
@@ -146,9 +148,17 @@ export const getProductsForInventoryRefresh = internalQuery({
             .withIndex("by_cj_sourcing_status", (q) => q.eq("cjSourcingStatus", "approved"))
             .collect();
 
-        return products.filter((product) =>
-            Boolean(product.cjProductId || product.cjVariantId || product.cjSku || (product.cjVariants?.length ?? 0) > 0)
-        );
+        const limit = Math.min(Math.max(args.limit ?? 25, 1), 100);
+        return products
+            .filter((product) =>
+                Boolean(product.cjProductId || product.cjVariantId || product.cjSku || (product.cjVariants?.length ?? 0) > 0)
+            )
+            .sort((a, b) => {
+                const aChecked = a.cjInventoryLastCheckedAt ? Date.parse(a.cjInventoryLastCheckedAt) : 0;
+                const bChecked = b.cjInventoryLastCheckedAt ? Date.parse(b.cjInventoryLastCheckedAt) : 0;
+                return aChecked - bChecked;
+            })
+            .slice(0, limit);
     },
 });
 
@@ -173,6 +183,28 @@ const cjInventorySnapshotValidator = v.object({
     error: v.optional(v.string()),
 });
 
+const cjInventoryUpdateSourceValidator = v.union(
+    v.literal("manual"),
+    v.literal("checkout"),
+    v.literal("cron"),
+    v.literal("webhook")
+);
+
+const hasSellableCjInventoryStatus = (status: string, totalInventoryNum?: number): boolean => {
+    if (typeof totalInventoryNum === "number" && Number.isFinite(totalInventoryNum)) {
+        return totalInventoryNum > 0;
+    }
+    return status === "in_stock" || status === "low_stock" || status === "partial";
+};
+
+const findVariantSnapshot = (
+    variant: { cjVariantId?: string; cjSku?: string },
+    snapshots: Array<{ vid?: string; sku?: string; status: string; totalInventoryNum?: number }>,
+) => snapshots.find((snapshot) =>
+    (variant.cjVariantId && snapshot.vid === variant.cjVariantId) ||
+    (variant.cjSku && snapshot.sku === variant.cjSku)
+);
+
 export const updateProductInventorySnapshot = internalMutation({
     args: {
         productId: v.id("products"),
@@ -181,14 +213,98 @@ export const updateProductInventorySnapshot = internalMutation({
         checkedAt: v.string(),
         error: v.optional(v.string()),
         snapshots: v.array(cjInventorySnapshotValidator),
+        source: v.optional(cjInventoryUpdateSourceValidator),
     },
     handler: async (ctx, args) => {
-        await ctx.db.patch(args.productId, {
-            cjInventoryStatus: args.status,
+        const product = await ctx.db.get(args.productId);
+        if (!product) return;
+
+        const previousStatus = product.cjInventoryStatus;
+        const wasOutOfStock = previousStatus === "out_of_stock";
+        const autoHiddenBefore = Boolean(product.cjInventoryAutoHiddenAt);
+        const now = args.checkedAt;
+        let effectiveStatus = args.status;
+        let isSellableNow = hasSellableCjInventoryStatus(args.status, args.totalInventoryNum);
+
+        const patch: Record<string, unknown> = {
+            cjInventoryStatus: effectiveStatus,
             cjInventoryTotal: args.totalInventoryNum,
             cjInventoryLastCheckedAt: args.checkedAt,
             cjInventoryError: args.error || undefined,
             cjInventoryByVariant: args.snapshots,
+        };
+
+        if (args.source === "webhook") {
+            patch.cjInventoryLastWebhookAt = now;
+        }
+
+        if (Array.isArray(product.variants) && product.variants.length > 0) {
+            const updatedVariants = product.variants.map((variant) => {
+                const snapshot = findVariantSnapshot(variant, args.snapshots);
+                if (!snapshot) return variant;
+                return {
+                    ...variant,
+                    inStock: hasSellableCjInventoryStatus(snapshot.status, snapshot.totalInventoryNum),
+                };
+            });
+            const hasSellableVariant = updatedVariants.some((variant) => variant.inStock !== false);
+            if (args.status === "out_of_stock" && hasSellableVariant) {
+                effectiveStatus = "partial";
+            }
+            isSellableNow = hasSellableVariant;
+            patch.cjInventoryStatus = effectiveStatus;
+            patch.variants = updatedVariants;
+            patch.inStock = hasSellableVariant;
+        } else if (args.status === "out_of_stock") {
+            patch.inStock = false;
+        } else if (isSellableNow) {
+            patch.inStock = true;
+        }
+
+        const statusChanged = previousStatus !== effectiveStatus;
+        if (statusChanged) {
+            patch.cjInventoryPreviousStatus = previousStatus;
+            patch.cjInventoryLastStatusChangeAt = now;
+        }
+
+        if (effectiveStatus === "out_of_stock") {
+            if ((product.storefrontStatus || "published") === "published") {
+                patch.storefrontStatus = "hidden";
+                patch.cjInventoryAutoHiddenAt = now;
+            }
+            patch.cjInventoryNeedsReview = true;
+            patch.cjInventoryReviewReason = "out_of_stock";
+        } else if (isSellableNow && (wasOutOfStock || autoHiddenBefore)) {
+            patch.cjInventoryNeedsReview = true;
+            patch.cjInventoryReviewReason = "restocked";
+            patch.cjInventoryRestockedAt = now;
+        }
+
+        await ctx.db.patch(args.productId, patch);
+    },
+});
+
+export const getProductsLinkedToCjInventoryTarget = internalQuery({
+    args: {
+        vid: v.optional(v.string()),
+        sku: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        if (!args.vid && !args.sku) return [];
+
+        const products = await ctx.db.query("products").collect();
+        return products.filter((product) => {
+            if (args.vid && product.cjVariantId === args.vid) return true;
+            if (args.sku && product.cjSku === args.sku) return true;
+            if (Array.isArray(product.variants) && product.variants.some((variant) =>
+                (args.vid && variant.cjVariantId === args.vid) ||
+                (args.sku && variant.cjSku === args.sku)
+            )) return true;
+            if (Array.isArray(product.cjVariants) && product.cjVariants.some((variant) =>
+                (args.vid && variant.vid === args.vid) ||
+                (args.sku && variant.sku === args.sku)
+            )) return true;
+            return false;
         });
     },
 });

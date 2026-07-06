@@ -339,6 +339,7 @@ interface CjOrderProduct {
 }
 
 const validateCjInventoryForOrder = async (
+    ctx: any,
     accessToken: string,
     products: CjOrderProduct[],
 ): Promise<string[]> => {
@@ -348,6 +349,7 @@ const validateCjInventoryForOrder = async (
 
     for (const product of products) {
         const label = product.vid ? `vid=${product.vid}` : `sku=${product.sku}`;
+        await waitForCjInventoryRequestSlot(ctx);
         const inventoryResult = product.vid
             ? await getInventoryByVid(accessToken, product.vid)
             : product.sku
@@ -430,6 +432,17 @@ const getInventoryLowStockThreshold = (): number => {
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : 3;
 };
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+const waitForCjInventoryRequestSlot = async (ctx: any) => {
+    const slot = await ctx.runMutation(internal.cjHelpers.reserveCjDiagnosticRequestSlot, {
+        spacingMs: CJ_API_REQUEST_SPACING_MS,
+    });
+    if (slot.waitMs > 0) {
+        await sleep(slot.waitMs);
+    }
+};
+
 const setInventoryTarget = (targets: Map<string, CjInventoryTarget>, target: CjInventoryTarget) => {
     if (target.vid) targets.set(`vid:${target.vid}`, target);
     if (target.sku) targets.set(`sku:${target.sku}`, target);
@@ -462,8 +475,25 @@ const addInventoryTarget = (
     setInventoryTarget(targets, merged);
 };
 
-const getProductInventoryTargets = (product: any): CjInventoryTarget[] => {
+const getProductInventoryTargets = (
+    product: any,
+    filter: { variantId?: string; vid?: string; sku?: string } = {},
+): CjInventoryTarget[] => {
     const targets = new Map<string, CjInventoryTarget>();
+
+    if (filter.vid || filter.sku) {
+        addInventoryTarget(targets, { vid: filter.vid, sku: filter.sku }, { allowSingleIdentifier: true });
+        return [...new Set(targets.values())];
+    }
+
+    if (filter.variantId) {
+        const selectedVariant = (product.variants ?? []).find((variant: any) => variant?.id === filter.variantId);
+        addInventoryTarget(targets, {
+            vid: selectedVariant?.cjVariantId,
+            sku: selectedVariant?.cjSku,
+        }, { allowSingleIdentifier: true });
+        return [...new Set(targets.values())];
+    }
 
     for (const cjVariant of product.cjVariants ?? []) {
         addInventoryTarget(targets, { vid: cjVariant?.vid, sku: cjVariant?.sku }, { allowSingleIdentifier: true });
@@ -492,9 +522,36 @@ const sumSnapshotInventory = (snapshots: CjInventorySnapshot[]): number | undefi
 const normalizeInventoryRows = (value: unknown): CjInventoryRow[] =>
     Array.isArray(value) ? value.filter((row): row is CjInventoryRow => typeof row === "object" && row !== null) : [];
 
+const getInventorySnapshotKey = (snapshot: CjInventorySnapshot): string =>
+    snapshot.vid ? `vid:${snapshot.vid}` : snapshot.sku ? `sku:${snapshot.sku}` : "product";
+
+const mergeInventorySnapshots = (
+    existing: unknown,
+    fresh: CjInventorySnapshot[],
+): CjInventorySnapshot[] => {
+    const existingSnapshots = Array.isArray(existing)
+        ? existing.filter((snapshot): snapshot is CjInventorySnapshot => typeof snapshot === "object" && snapshot !== null)
+        : [];
+    const freshKeys = new Set(fresh.map(getInventorySnapshotKey));
+    return [
+        ...existingSnapshots.filter((snapshot) => !freshKeys.has(getInventorySnapshotKey(snapshot))),
+        ...fresh,
+    ];
+};
+
 export const refreshProductInventory = internalAction({
     args: {
         productId: v.optional(v.id("products")),
+        variantId: v.optional(v.string()),
+        vid: v.optional(v.string()),
+        sku: v.optional(v.string()),
+        limit: v.optional(v.number()),
+        source: v.optional(v.union(
+            v.literal("manual"),
+            v.literal("checkout"),
+            v.literal("cron"),
+            v.literal("webhook")
+        )),
     },
     handler: async (ctx, args): Promise<{
         checked: number;
@@ -515,6 +572,8 @@ export const refreshProductInventory = internalAction({
 
         const products = await ctx.runQuery(internal.cjHelpers.getProductsForInventoryRefresh, {
             productId: args.productId,
+            variantId: args.variantId,
+            limit: args.limit,
         });
         const lowStockThreshold = getInventoryLowStockThreshold();
         const results: Array<{
@@ -530,10 +589,15 @@ export const refreshProductInventory = internalAction({
         for (const product of products) {
             const checkedAt = new Date().toISOString();
             const snapshots: CjInventorySnapshot[] = [];
-            const targets = getProductInventoryTargets(product);
+            const targets = getProductInventoryTargets(product, {
+                variantId: args.variantId,
+                vid: args.vid,
+                sku: args.sku,
+            });
 
             for (const target of targets) {
                 try {
+                    await waitForCjInventoryRequestSlot(ctx);
                     const inventoryResult = target.vid
                         ? await getInventoryByVid(accessToken, target.vid)
                         : target.sku
@@ -570,6 +634,7 @@ export const refreshProductInventory = internalAction({
             }
 
             if (snapshots.length === 0 && product.cjProductId) {
+                await waitForCjInventoryRequestSlot(ctx);
                 const inventoryResult = await getInventoryByPid(accessToken, product.cjProductId);
                 if (inventoryResult.ok === false) {
                     snapshots.push(createCjInventoryErrorSnapshot({
@@ -578,16 +643,35 @@ export const refreshProductInventory = internalAction({
                         error: formatCjApiError(inventoryResult.error),
                     }));
                 } else {
-                    snapshots.push(summarizeCjInventoryRows(normalizeInventoryRows(inventoryResult.data?.inventories), {
-                        lastCheckedAt: checkedAt,
-                        lowStockThreshold,
-                    }));
+                    const variantInventories = Array.isArray(inventoryResult.data?.variantInventories)
+                        ? inventoryResult.data.variantInventories
+                        : [];
+                    for (const variantInventory of variantInventories) {
+                        const rows = normalizeInventoryRows(variantInventory?.inventory ?? variantInventory?.inventories);
+                        snapshots.push(summarizeCjInventoryRows(rows, {
+                            vid: firstString(variantInventory?.vid, rows[0]?.vid),
+                            sku: firstString(variantInventory?.sku, rows[0]?.sku),
+                            lastCheckedAt: checkedAt,
+                            lowStockThreshold,
+                        }));
+                    }
+
+                    if (snapshots.length === 0) {
+                        snapshots.push(summarizeCjInventoryRows(normalizeInventoryRows(inventoryResult.data?.inventories), {
+                            lastCheckedAt: checkedAt,
+                            lowStockThreshold,
+                        }));
+                    }
                 }
             }
 
-            const status = mergeCjInventoryStatuses(snapshots);
-            const totalInventoryNum = sumSnapshotInventory(snapshots);
-            const firstError = snapshots.find((snapshot) => snapshot.status === "error")?.error;
+            const isTargetedRefresh = Boolean(args.variantId || args.vid || args.sku);
+            const storedSnapshots = isTargetedRefresh
+                ? mergeInventorySnapshots(product.cjInventoryByVariant, snapshots)
+                : snapshots;
+            const status = mergeCjInventoryStatuses(storedSnapshots);
+            const totalInventoryNum = sumSnapshotInventory(storedSnapshots);
+            const firstError = storedSnapshots.find((snapshot) => snapshot.status === "error")?.error;
             if (status === "error") {
                 errors++;
             } else {
@@ -600,7 +684,8 @@ export const refreshProductInventory = internalAction({
                 totalInventoryNum,
                 checkedAt,
                 error: firstError,
-                snapshots,
+                snapshots: storedSnapshots,
+                source: args.source ?? "manual",
             });
 
             results.push({
@@ -739,7 +824,7 @@ export const createCjOrder = internalAction({
             return { success: false, error: "No CJ products found in order" };
         }
 
-        const inventoryErrors = await validateCjInventoryForOrder(accessToken, cjOrderProducts);
+        const inventoryErrors = await validateCjInventoryForOrder(ctx, accessToken, cjOrderProducts);
         if (inventoryErrors.length > 0) {
             const errorMsg = inventoryErrors.join(" ");
             await ctx.runMutation(internal.cjHelpers.updateOrderCjStatus, {
