@@ -35,6 +35,10 @@ export type CjReadinessResult = {
   warnings: string[];
 };
 
+export type CjReadinessOptions = {
+  strictInventory?: boolean;
+};
+
 const hasValue = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
 
 const labelProduct = (product: CjReadinessProduct): string => product.name?.trim() || "Product";
@@ -73,14 +77,24 @@ const addInventoryReadiness = (
   errors: string[],
   warnings: string[],
   quantity = 1,
+  options: CjReadinessOptions = {},
 ) => {
   if (!snapshot) {
-    warnings.push(`${label} has not been checked against CJ inventory.`);
+    if (options.strictInventory) {
+      errors.push(`${label} inventory could not be confirmed with CJ.`);
+    } else {
+      warnings.push(`${label} has not been checked against CJ inventory.`);
+    }
     return;
   }
 
   if (snapshot.status === "error") {
-    warnings.push(`${label} inventory could not be refreshed from CJ${snapshot.error ? `: ${snapshot.error}` : "."}`);
+    const message = `${label} inventory could not be refreshed from CJ${snapshot.error ? `: ${snapshot.error}` : "."}`;
+    if (options.strictInventory) {
+      errors.push(message);
+    } else {
+      warnings.push(message);
+    }
     return;
   }
 
@@ -96,7 +110,11 @@ const addInventoryReadiness = (
   } else if (snapshot.status === "partial") {
     warnings.push(`${label} has partial CJ inventory availability.`);
   } else if (snapshot.status === "unknown") {
-    warnings.push(`${label} has unknown CJ inventory availability.`);
+    if (options.strictInventory) {
+      errors.push(`${label} inventory could not be confirmed with CJ.`);
+    } else {
+      warnings.push(`${label} has unknown CJ inventory availability.`);
+    }
   }
 };
 
@@ -145,6 +163,7 @@ export const evaluateProductCjReadiness = (product: CjReadinessProduct): CjReadi
 export const evaluateCheckoutItemCjReadiness = (
   product: CjReadinessProduct,
   item: CjReadinessCheckoutItem,
+  options: CjReadinessOptions = {},
 ): CjReadinessResult => {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -183,7 +202,7 @@ export const evaluateCheckoutItemCjReadiness = (
     if (!hasValue(selectedVariant.cjSku)) {
       errors.push(`${variantLabel} is missing a CJ SKU.`);
     }
-    addInventoryReadiness(variantLabel, findVariantInventory(product, selectedVariant), errors, warnings, item.quantity);
+    addInventoryReadiness(variantLabel, findVariantInventory(product, selectedVariant), errors, warnings, item.quantity, options);
   } else {
     if (!hasValue(product.cjVariantId)) {
       errors.push(`${productLabel} is missing a CJ variant ID.`);
@@ -191,7 +210,7 @@ export const evaluateCheckoutItemCjReadiness = (
     if (!hasValue(product.cjSku)) {
       errors.push(`${productLabel} is missing a CJ SKU.`);
     }
-    addInventoryReadiness(productLabel, getProductInventorySnapshot(product), errors, warnings, item.quantity);
+    addInventoryReadiness(productLabel, getProductInventorySnapshot(product), errors, warnings, item.quantity, options);
   }
 
   if (item.quantity !== undefined && (!Number.isInteger(item.quantity) || item.quantity <= 0)) {

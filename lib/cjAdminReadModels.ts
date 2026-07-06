@@ -76,6 +76,9 @@ export type CjAdminProductInput = {
   cjInventoryTotal?: number;
   cjInventoryLastCheckedAt?: string;
   cjInventoryError?: string;
+  cjInventoryNeedsReview?: boolean;
+  cjInventoryReviewReason?: string;
+  cjInventoryRestockedAt?: string;
   sourceUrl?: string;
   inStock?: boolean;
 };
@@ -591,6 +594,22 @@ export const getProductRisks = (products: CjAdminProductInput[], nowMs = Date.no
         title: product.cjInventoryStatus === "low_stock" ? "CJ inventory is low" : "CJ inventory is partial",
         description: `${product.name} may still be fulfillable, but inventory should be watched closely.`,
         nextAction: "Refresh inventory before approving new orders.",
+        actionKey: "refresh_inventory",
+        productId,
+        createdAt,
+      });
+    }
+
+    if (product.cjInventoryNeedsReview) {
+      risks.push({
+        key: `product:${productId || product.name}:inventory-review-${product.cjInventoryReviewReason || "manual"}`,
+        type: "inventory",
+        severity: product.cjInventoryReviewReason === "restocked" ? "warning" : "info",
+        title: product.cjInventoryReviewReason === "restocked" ? "Restock needs review" : "Inventory needs review",
+        description: product.cjInventoryReviewReason === "restocked"
+          ? `${product.name} appears to be back in stock at CJ. Review it before publishing again.`
+          : `${product.name} needs an inventory review before it is treated as ready.`,
+        nextAction: "Open the product, confirm stock and variants, then publish it only when ready.",
         actionKey: "refresh_inventory",
         productId,
         createdAt,

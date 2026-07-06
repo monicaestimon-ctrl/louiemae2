@@ -167,6 +167,61 @@ describe("CJ fulfillment readiness", () => {
     expect(result.warnings).toContain("Mae Dress / 2T is low at CJ (2 available).");
   });
 
+  it("blocks checkout strictly when CJ inventory has not been confirmed", () => {
+    const result = evaluateCheckoutItemCjReadiness(
+      {
+        ...readyProduct,
+        cjInventoryByVariant: [],
+      },
+      { variantId: "size-2t", quantity: 1 },
+      { strictInventory: true },
+    );
+
+    expect(result.ready).toBe(false);
+    expect(result.errors).toContain("Mae Dress / 2T inventory could not be confirmed with CJ.");
+  });
+
+  it("blocks checkout strictly when CJ inventory refresh errors", () => {
+    const result = evaluateCheckoutItemCjReadiness(
+      {
+        ...readyProduct,
+        cjInventoryByVariant: [{
+          vid: "vid-2t",
+          sku: "sku-2t",
+          status: "error",
+          lowStockThreshold: 3,
+          lastCheckedAt: "2026-06-25T00:00:00.000Z",
+          error: "Too Many Requests",
+        }],
+      },
+      { variantId: "size-2t", quantity: 1 },
+      { strictInventory: true },
+    );
+
+    expect(result.ready).toBe(false);
+    expect(result.errors).toContain("Mae Dress / 2T inventory could not be refreshed from CJ: Too Many Requests");
+  });
+
+  it("blocks checkout strictly when CJ inventory is unknown", () => {
+    const result = evaluateCheckoutItemCjReadiness(
+      {
+        ...readyProduct,
+        cjInventoryByVariant: [{
+          vid: "vid-2t",
+          sku: "sku-2t",
+          status: "unknown",
+          lowStockThreshold: 3,
+          lastCheckedAt: "2026-06-25T00:00:00.000Z",
+        }],
+      },
+      { variantId: "size-2t", quantity: 1 },
+      { strictInventory: true },
+    );
+
+    expect(result.ready).toBe(false);
+    expect(result.errors).toContain("Mae Dress / 2T inventory could not be confirmed with CJ.");
+  });
+
   it("rejects checkout when product-level CJ inventory is out", () => {
     const result = evaluateCheckoutItemCjReadiness(
       {

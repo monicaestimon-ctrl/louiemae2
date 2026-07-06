@@ -4,6 +4,7 @@ export type CollectionType = string; // Was 'furniture' | 'decor' | ... now dyna
 import type { Id } from './convex/_generated/dataModel';
 
 export type CjInventoryStatus = 'unknown' | 'in_stock' | 'low_stock' | 'out_of_stock' | 'partial' | 'error';
+export type CjInventoryReviewReason = 'restocked' | 'out_of_stock' | 'manual';
 export type ProductStorefrontStatus = 'published' | 'hidden' | 'next_launch';
 
 export interface CjInventorySnapshot {
@@ -43,6 +44,13 @@ export interface Product {
   cjInventoryTotal?: number;
   cjInventoryLastCheckedAt?: string;
   cjInventoryError?: string;
+  cjInventoryNeedsReview?: boolean;
+  cjInventoryReviewReason?: CjInventoryReviewReason;
+  cjInventoryRestockedAt?: string;
+  cjInventoryAutoHiddenAt?: string;
+  cjInventoryPreviousStatus?: CjInventoryStatus;
+  cjInventoryLastStatusChangeAt?: string;
+  cjInventoryLastWebhookAt?: string;
   cjInventoryByVariant?: CjInventorySnapshot[];
   publishedAt?: string; // ISO date string — used for 30-day auto-expire on New Arrivals
   // Two-stage pricing metadata

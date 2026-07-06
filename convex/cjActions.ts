@@ -153,6 +153,7 @@ export const retryOrderFulfillment = action({
 export const refreshInventory = action({
     args: {
         productId: v.optional(v.id("products")),
+        limit: v.optional(v.number()),
     },
     handler: async (ctx, args): Promise<{
         checked: number;
@@ -167,7 +168,10 @@ export const refreshInventory = action({
         }>;
     }> => {
         await requireAdminIdentity(ctx);
-        return await ctx.runAction(internal.cjDropshipping.refreshProductInventory, args);
+        return await ctx.runAction(internal.cjDropshipping.refreshProductInventory, {
+            ...args,
+            source: "manual",
+        });
     },
 });
 
@@ -242,7 +246,7 @@ export const configureWebhooks = action({
             if (data.result === true) {
                 return {
                     success: true,
-                    message: "Webhooks configured! You'll now receive real-time order and tracking updates."
+                    message: "Webhooks configured! You'll now receive real-time product, stock, order, and tracking updates."
                 };
             } else {
                 return {
