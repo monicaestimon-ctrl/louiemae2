@@ -99,40 +99,91 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* Hide scrollbar for clean horizontal scrolling */
-    .no-scrollbar::-webkit-scrollbar {
-      display: none;
+    /* Louie Mae scrollbars — slim, warm, and translucent across every surface. */
+    :root {
+      --lm-scrollbar-track: rgba(140, 107, 81, 0.08);
+      --lm-scrollbar-thumb: rgba(140, 107, 81, 0.56);
+      --lm-scrollbar-thumb-hover: rgba(140, 107, 81, 0.78);
     }
 
-    .no-scrollbar {
+    html,
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--lm-scrollbar-thumb) var(--lm-scrollbar-track);
+    }
+
+    *::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+
+    *::-webkit-scrollbar-track {
+      background: var(--lm-scrollbar-track);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      box-shadow: inset 0 0 8px rgba(74, 59, 50, 0.05);
+    }
+
+    *::-webkit-scrollbar-thumb {
+      min-height: 36px;
+      background: linear-gradient(180deg, rgba(230, 210, 185, 0.88), var(--lm-scrollbar-thumb));
+      background-clip: padding-box;
+      border: 2px solid transparent;
+      border-radius: 999px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.38), 0 3px 10px rgba(74, 59, 50, 0.16);
+    }
+
+    *::-webkit-scrollbar-thumb:hover {
+      background: linear-gradient(180deg, rgba(244, 226, 203, 0.96), var(--lm-scrollbar-thumb-hover));
+      background-clip: padding-box;
+    }
+
+    *::-webkit-scrollbar-thumb:active {
+      background: rgba(140, 107, 81, 0.9);
+      background-clip: padding-box;
+    }
+
+    *::-webkit-scrollbar-button {
+      display: none;
+      width: 0;
+      height: 0;
+    }
+
+    *::-webkit-scrollbar-corner {
+      background: transparent;
+    }
+
+    /* Existing opt-in class now inherits the same global branded treatment. */
+    .custom-scrollbar {
+      scrollbar-color: var(--lm-scrollbar-thumb) var(--lm-scrollbar-track);
+    }
+
+    /* Keep swipe-first product rails visually clean. */
+    .no-scrollbar,
+    .scrollbar-hide {
       -ms-overflow-style: none;
       scrollbar-width: none;
     }
 
-    .custom-scrollbar {
-      scrollbar-width: thin;
-      scrollbar-color: rgba(193, 154, 107, 0.5) rgba(255, 255, 255, 0.06);
+    .no-scrollbar::-webkit-scrollbar,
+    .scrollbar-hide::-webkit-scrollbar {
+      display: none;
+      width: 0;
+      height: 0;
     }
 
-    .custom-scrollbar::-webkit-scrollbar {
-      width: 10px;
-      height: 10px;
+    @media (pointer: coarse) {
+      *::-webkit-scrollbar {
+        width: 5px;
+        height: 5px;
+      }
     }
 
-    .custom-scrollbar::-webkit-scrollbar-track {
-      background: rgba(255, 255, 255, 0.04);
-      border-radius: 999px;
-    }
-
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-      background: linear-gradient(180deg, rgba(230, 210, 185, 0.72), rgba(193, 154, 107, 0.58));
-      border: 2px solid rgba(25, 18, 12, 0.55);
-      border-radius: 999px;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 4px 14px rgba(0, 0, 0, 0.18);
-    }
-
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-      background: linear-gradient(180deg, rgba(244, 226, 203, 0.9), rgba(193, 154, 107, 0.78));
+    @media (forced-colors: active) {
+      html,
+      * {
+        scrollbar-color: auto;
+      }
     }
 
     .glass-panel {
