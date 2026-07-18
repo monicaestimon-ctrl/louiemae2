@@ -1,4 +1,5 @@
 import type { MutationCtx, QueryCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 
 type AdminCtx = Pick<MutationCtx | QueryCtx, "auth" | "db">;
@@ -21,7 +22,7 @@ export const requireCjAdminIdentity = async (ctx: AdminCtx): Promise<{ email: st
 
     // Convex Password sessions do not consistently expose email on the JWT
     // identity. The canonical auth user record does, so use it as the fallback.
-    const user = await ctx.db.get(userId);
+    const user = await ctx.db.get(userId as Id<"users">);
     const identityEmail = typeof identity?.email === "string" ? identity.email : "";
     const userEmail = typeof user?.email === "string" ? user.email : "";
     const email = (identityEmail || userEmail).trim().toLowerCase();
