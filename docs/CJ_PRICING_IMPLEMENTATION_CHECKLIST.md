@@ -36,7 +36,7 @@ Replace category-only shipping estimates with an auditable pricing flow that use
 
 ## PR 3: Conservative Shipping Buffers and Checkout Tiers
 
-- [x] Update category-level pre-confirmation shipping estimates to the audited Louie Mae buffers: fashion $22, kids $22, decor $69.99, furniture $120.
+- [x] Update category-level pre-confirmation shipping estimates to the audited Louie Mae buffers: fashion $20, kids $20, decor $69.99, furniture $120.
 - [x] Use the category buffers only for internal product pricing estimates until confirmed CJ freight or an admin override exists.
 - [x] Add a shared checkout shipping tier helper for full-cart subtotal pricing.
 - [x] Replace customer checkout shipping choices with one Standard Shipping rate based on cart subtotal.

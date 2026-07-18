@@ -8,6 +8,7 @@ import {
     isUpstreamRateLimitError,
     MAX_BATCH_IMPORT_ATTEMPTS,
 } from "../lib/batchImportRetry";
+import { isObsoleteBatchImportError } from "../lib/batchImportObsolete";
 
 const FETCH_CONCURRENCY = 3;
 const REVIEW_BATCH_SIZE = 12;
@@ -18,6 +19,15 @@ const normalizeUrl = (value: string): string => {
     if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return trimmed;
     if (trimmed.startsWith("//")) return `https:${trimmed}`;
     return `https://${trimmed}`;
+};
+
+const hasOpenBatchWork = (item: { status: string }): boolean =>
+    ["pending", "fetching", "ready", "error"].includes(item.status);
+
+const refreshJobCompletion = async (ctx: any, jobId: Id<"batchImportJobs">, now = Date.now()) => {
+    const remaining = await ctx.db.query("batchImportItems").withIndex("by_job", (q: any) => q.eq("jobId", jobId)).collect();
+    const hasOpenWork = remaining.some(hasOpenBatchWork);
+    if (!hasOpenWork) await ctx.db.patch(jobId, { status: "completed", updatedAt: now });
 };
 
 export const create = mutation({
@@ -250,9 +260,29 @@ export const markImported = mutation({
             if (item?.status === "ready") await ctx.db.patch(itemId, { status: "imported", stage: "Imported", updatedAt: now });
         }
         for (const jobId of jobIds) {
-            const remaining = await ctx.db.query("batchImportItems").withIndex("by_job", q => q.eq("jobId", jobId)).collect();
-            const hasOpenWork = remaining.some(item => ["pending", "fetching", "ready", "error"].includes(item.status));
-            if (!hasOpenWork) await ctx.db.patch(jobId, { status: "completed", updatedAt: now });
+            await refreshJobCompletion(ctx, jobId, now);
         }
+    },
+});
+
+export const skipObsoleteErrors = mutation({
+    args: { jobId: v.id("batchImportJobs") },
+    handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
+        const now = Date.now();
+        const items = await ctx.db.query("batchImportItems").withIndex("by_job", q => q.eq("jobId", args.jobId)).collect();
+        let skipped = 0;
+        for (const item of items) {
+            if (!isObsoleteBatchImportError(item)) continue;
+            await ctx.db.patch(item._id, {
+                status: "skipped",
+                stage: "Skipped old wrapped URL fragment",
+                error: undefined,
+                updatedAt: now,
+            });
+            skipped += 1;
+        }
+        if (skipped > 0) await refreshJobCompletion(ctx, args.jobId, now);
+        return { skipped };
     },
 });

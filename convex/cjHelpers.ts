@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { calculatePricingBreakdown } from "../lib/pricing";
+import { calculatePricingBreakdown, ESTIMATED_CJ_COST_MULTIPLIER } from "../lib/pricing";
 import { getCjFulfillmentReentryBlock } from "../lib/cjFulfillmentWorkflow";
 import { resolveMonotonicCjStatus } from "../lib/cjWebhookIdempotency";
 import { mergePricingRefreshFailureWarning } from "../lib/cjPricingRefreshFailure";
@@ -958,9 +958,9 @@ export const updateProductSourcingStatus = internalMutation({
                 product.confirmedCjRemoteFee ??
                 0;
             const sourcePriceUsd = product.estimatedCjProductCost
-                ? product.estimatedCjProductCost / 1.4
+                ? product.estimatedCjProductCost / ESTIMATED_CJ_COST_MULTIPLIER
                 : product.estimatedCjCost
-                    ? product.estimatedCjCost / 1.4
+                    ? product.estimatedCjCost / ESTIMATED_CJ_COST_MULTIPLIER
                     : undefined;
             const pricing = calculatePricingBreakdown({
                 sourcePriceUsd,

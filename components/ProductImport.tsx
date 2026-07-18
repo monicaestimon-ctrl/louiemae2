@@ -19,6 +19,7 @@ import { getUserFacingErrorMessage } from '../lib/errorMessages';
 import { normalizeImageUrl, shouldCacheImageUrl } from '../lib/imageUrls';
 import { normalizeProductImportUrl, parseProductImportUrls } from '../lib/importUrl';
 import { buildBatchImportProduct } from '../lib/batchImportProduct';
+import { isObsoleteBatchImportError } from '../lib/batchImportObsolete';
 
 interface ProductImportProps {
     collections: CollectionConfig[];
@@ -122,6 +123,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const cacheImageUrls = useAction(api.productImages.cacheImageUrls);
     const createBatchImport = useMutation(api.batchImports.create);
     const retryBatchItem = useMutation(api.batchImports.retry);
+    const skipObsoleteBatchErrors = useMutation(api.batchImports.skipObsoleteErrors);
     const markBatchPreparationError = useMutation(api.batchImports.markPreparationError);
     const markBatchItemsImported = useMutation(api.batchImports.markImported);
     const latestBatchJob = useQuery(api.batchImports.getLatest);
@@ -252,7 +254,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const [selectAll, setSelectAll] = useState(false);
 
     // Two-stage pricing: cost-stack formula
-    // Stage 1 (Pre-Sourcing): estimated_cj = source price x 1.4, selling = (estimated_cj x 3) + shipping.
+    // Stage 1 (Pre-Sourcing): estimated_cj = source price x 1.2, selling = (estimated_cj x 2) + shipping.
     const getShippingEstimate = (collection: string): number => getEstimatedShipping(collection);
 
     const calculateCostStackPrice = (basePriceUsd: number, collection: string): {
@@ -330,6 +332,11 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             return additions.length ? [...prev, ...additions] : prev;
         });
     }, [batchItems, targetCollection]);
+
+    useEffect(() => {
+        if (!batchJob || !batchItems?.some(item => isObsoleteBatchImportError(item))) return;
+        void skipObsoleteBatchErrors({ jobId: batchJob._id });
+    }, [batchJob, batchItems, skipObsoleteBatchErrors]);
 
     /**
      * Shared helper: compute a variant's selling price with optional markup scaling.
@@ -1599,7 +1606,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                                 <span>${(currentProduct.salePrice || currentProduct.price).toFixed(2)}</span>
                                                             </div>
                                                             <div className="flex justify-between text-xs text-earth/60">
-                                                                <span>Est. CJ Cost (×1.4):</span>
+                                                                <span>Est. CJ Cost (×1.2):</span>
                                                                 <span>${pStack.estimatedCjCost.toFixed(2)}</span>
                                                             </div>
                                                             <div className="flex justify-between text-xs text-earth/60">
@@ -1607,7 +1614,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                                 <span>${pStack.estimatedShipping.toFixed(2)}</span>
                                                             </div>
                                                             <div className="flex justify-between text-xs text-earth/60 border-t border-earth/10 pt-1 mt-1">
-                                                                <span>Selling (×3):</span>
+                                                                <span>Selling (×2):</span>
                                                                 <span className="font-bold">${pStack.sellingPrice.toFixed(2)}</span>
                                                             </div>
                                                             <div className="flex justify-between text-xs font-bold text-green-700 border-t border-earth/10 pt-1 mt-1">
@@ -2097,7 +2104,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                         <p className="text-sm font-bold text-earth">${(product.salePrice || product.price).toFixed(2)}</p>
                                                     </div>
                                                     <div>
-                                                        <p className="text-[9px] uppercase tracking-widest text-earth/40 font-bold">Est. CJ (×1.4)</p>
+                                                        <p className="text-[9px] uppercase tracking-widest text-earth/40 font-bold">Est. CJ (×1.2)</p>
                                                         <p className="text-sm font-bold text-earth">${pStack.estimatedCjCost.toFixed(2)}</p>
                                                     </div>
                                                     <div>
@@ -2562,7 +2569,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const fetchingItems = pipelineItems.filter(item => item.status === 'fetching');
     const waitingCount = pipelineItems.filter(item => item.status === 'pending').length;
     const readyCount = pipelineItems.filter(item => item.status === 'ready').length;
-    const errorItems = pipelineItems.filter(item => item.status === 'error');
+    const errorItems = pipelineItems.filter(item => item.status === 'error' && !isObsoleteBatchImportError(item));
     const importedCount = pipelineItems.filter(item => item.status === 'imported').length;
     const processedCount = readyCount + errorItems.length + importedCount + pipelineItems.filter(item => item.status === 'skipped').length;
     const startReadyBatchReview = () => {
