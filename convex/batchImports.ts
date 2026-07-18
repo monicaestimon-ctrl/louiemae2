@@ -3,6 +3,11 @@ import { api, internal } from "./_generated/api";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { requireCjAdminIdentity } from "./cjAdminAccess";
+import {
+    getBatchImportRetryDelayMs,
+    isUpstreamRateLimitError,
+    MAX_BATCH_IMPORT_ATTEMPTS,
+} from "../lib/batchImportRetry";
 
 const FETCH_CONCURRENCY = 3;
 const REVIEW_BATCH_SIZE = 12;
@@ -91,6 +96,21 @@ export const setStage = internalMutation({
     },
 });
 
+export const prepareAutomaticRetry = internalMutation({
+    args: { itemId: v.id("batchImportItems"), delayMs: v.number() },
+    handler: async (ctx, args) => {
+        const item = await ctx.db.get(args.itemId);
+        if (!item || item.status !== "fetching") return false;
+        await ctx.db.patch(args.itemId, {
+            stage: `Provider busy — retrying in ${Math.ceil(args.delayMs / 1000)}s`,
+            error: undefined,
+            attempts: item.attempts + 1,
+            updatedAt: Date.now(),
+        });
+        return true;
+    },
+});
+
 export const finishItem = internalMutation({
     args: {
         itemId: v.id("batchImportItems"),
@@ -156,9 +176,21 @@ export const processItem = internalAction({
                 resolvedUrl: result?.resolvedUrl,
             });
         } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : "Product import failed";
+            if (isUpstreamRateLimitError(errorMessage) && item.attempts < MAX_BATCH_IMPORT_ATTEMPTS) {
+                const delayMs = getBatchImportRetryDelayMs(item.attempts, item.position);
+                const shouldRetry = await ctx.runMutation(internal.batchImports.prepareAutomaticRetry, {
+                    itemId: args.itemId,
+                    delayMs,
+                });
+                if (shouldRetry) {
+                    await ctx.scheduler.runAfter(delayMs, internal.batchImports.processItem, { itemId: args.itemId });
+                    return;
+                }
+            }
             await ctx.runMutation(internal.batchImports.finishItem, {
                 itemId: args.itemId,
-                error: error instanceof Error ? error.message : "Product import failed",
+                error: errorMessage,
             });
         }
     },

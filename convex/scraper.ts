@@ -223,6 +223,7 @@ const getScraperErrorCode = (message: string): string => {
     if (/rapidapi key not configured/i.test(message)) return 'MISSING_RAPIDAPI_KEY';
     if (/otapi request timed out|aborted|timed out/i.test(message)) return 'UPSTREAM_TIMEOUT';
     if (/http 403|http 401/i.test(message)) return 'UPSTREAM_FORBIDDEN';
+    if (/http 429|too many requests|rate[ -]?limit/i.test(message)) return 'UPSTREAM_RATE_LIMITED';
     if (/otapi|rapidapi/i.test(message)) return 'UPSTREAM_API_ERROR';
     if (/could not extract meaningful data/i.test(message)) return 'EXTRACTION_FAILED';
     return 'SCRAPE_FAILED';
