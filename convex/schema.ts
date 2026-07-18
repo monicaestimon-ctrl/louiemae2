@@ -510,6 +510,40 @@ export default defineSchema({
         updatedAt: v.string(),
     }).index("by_key", ["key"]),
 
+    // Durable product-import pipeline. Jobs continue running when the admin
+    // closes a mobile browser and can be resumed from any signed-in device.
+    batchImportJobs: defineTable({
+        status: v.union(v.literal("processing"), v.literal("ready"), v.literal("completed"), v.literal("cancelled")),
+        total: v.number(),
+        fetchConcurrency: v.number(),
+        reviewBatchSize: v.number(),
+        createdAt: v.number(),
+        updatedAt: v.number(),
+    }).index("by_updated_at", ["updatedAt"]),
+
+    batchImportItems: defineTable({
+        jobId: v.id("batchImportJobs"),
+        position: v.number(),
+        inputUrl: v.string(),
+        normalizedUrl: v.string(),
+        resolvedUrl: v.optional(v.string()),
+        status: v.union(
+            v.literal("pending"),
+            v.literal("fetching"),
+            v.literal("ready"),
+            v.literal("error"),
+            v.literal("imported"),
+            v.literal("skipped")
+        ),
+        stage: v.string(),
+        result: v.optional(v.any()),
+        error: v.optional(v.string()),
+        attempts: v.number(),
+        createdAt: v.number(),
+        updatedAt: v.number(),
+    }).index("by_job", ["jobId"])
+        .index("by_job_status", ["jobId", "status"]),
+
     // CJ Webhook Log - tracks processed messageIds to prevent duplicate processing
     cjWebhookLog: defineTable({
         messageId: v.string(),

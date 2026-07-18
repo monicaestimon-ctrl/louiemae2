@@ -170,6 +170,29 @@ const requestPinnedPublicUrl = (
     request.end();
 });
 
+/** Resolve share/short links before platform detection, validating every hop. */
+const resolvePublicRedirectUrl = async (initial: ValidatedPublicUrl): Promise<string> => {
+    const MAX_REDIRECTS = 5;
+    let current = initial;
+
+    for (let hop = 0; hop < MAX_REDIRECTS; hop++) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15_000);
+        try {
+            const response = await requestPinnedPublicUrl(current, controller.signal);
+            if (response.status < 300 || response.status >= 400) return current.parsedUrl.toString();
+            const location = getHeader(response.headers, 'location');
+            if (!location) return current.parsedUrl.toString();
+            const nextUrl = new URL(location, current.parsedUrl).toString();
+            current = await assertSafePublicHttpUrl(new URL(nextUrl));
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
+    throw new Error(`Too many redirects (>${MAX_REDIRECTS})`);
+};
+
 const getScraperErrorCode = (message: string): string => {
     if (/domain not supported|unsupported domain|redirect hop landed on unsupported/i.test(message)) return 'UNSUPPORTED_DOMAIN';
     if (/blocked internal|blocked host/i.test(message)) return 'BLOCKED_URL';
@@ -200,7 +223,11 @@ export const scrapeProduct = action({
             }
             const safeInitialUrl = await assertSafePublicHttpUrl(parsedUrl);
 
-            let resolvedUrl = url;
+            // 1688 mobile's app commonly copies a short/share link. Only pre-resolve
+            // 1688 hosts; generic scraping already follows redirects and should not
+            // download every AliExpress page twice.
+            const is1688Host = parsedUrl.hostname === '1688.com' || parsedUrl.hostname.endsWith('.1688.com');
+            const resolvedUrl = is1688Host ? await resolvePublicRedirectUrl(safeInitialUrl) : url;
 
             // 1. Check for 1688.com product URLs
             // Support formats:
@@ -212,7 +239,7 @@ export const scrapeProduct = action({
                 const productId = match1688[1];
                 console.log(`[Scraper] Detected 1688 product ID: ${productId}`);
                 try {
-                    return await scrape1688(productId, url);
+                    return { ...(await scrape1688(productId, resolvedUrl)), resolvedUrl };
                 } catch (apiErr: any) {
                     // OTAPI failed — 1688 pages are JS-rendered so generic HTML
                     // scraping will almost certainly also fail. Throw a clear error
@@ -228,7 +255,8 @@ export const scrapeProduct = action({
 
             // 2. Generic Scraper (handles AliExpress, Amazon, and any other URLs)
             console.log(`[Scraper] Using generic scraper for: ${resolvedUrl}`);
-            return await scrapeGeneric(resolvedUrl, safeInitialUrl);
+            const generic = await scrapeGeneric(resolvedUrl, is1688Host ? undefined : safeInitialUrl);
+            return { ...generic, resolvedUrl: generic.data?.url || resolvedUrl };
 
         } catch (err: any) {
             // Top-level catch: prevents generic "Server Error" from Convex

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeProductImportUrl } from './importUrl';
+import { normalizeProductImportUrl, parseProductImportUrls } from './importUrl';
 
 describe('normalizeProductImportUrl', () => {
   it('keeps complete http and https URLs unchanged apart from trimming', () => {
@@ -17,5 +17,14 @@ describe('normalizeProductImportUrl', () => {
 
   it('returns an empty string for blank input', () => {
     expect(normalizeProductImportUrl('   ')).toBe('');
+  });
+});
+
+describe('parseProductImportUrls', () => {
+  it('accepts newline, space, and comma-separated URLs and removes duplicates', () => {
+    expect(parseProductImportUrls('1688.com/a\nhttps://example.com/b, 1688.com/a')).toEqual([
+      'https://1688.com/a',
+      'https://example.com/b',
+    ]);
   });
 });
