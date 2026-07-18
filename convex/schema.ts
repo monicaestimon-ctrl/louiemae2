@@ -60,6 +60,7 @@ export default defineSchema({
         cjProductId: v.optional(v.string()),     // CJ product ID
         cjSourcingError: v.optional(v.string()), // Rejection reason
         sourceUrl: v.optional(v.string()),       // Original AliExpress/source URL
+        batchImportItemId: v.optional(v.id("batchImportItems")), // Idempotency key for batch imports
         cjApprovedAt: v.optional(v.string()),    // When CJ approved the product
         cjSubmittedAt: v.optional(v.string()),   // When product was submitted to CJ
         cjLastCheckedAt: v.optional(v.string()), // Last time we checked CJ for status
@@ -165,7 +166,8 @@ export default defineSchema({
         })),
     }).index("by_cj_sourcing_status", ["cjSourcingStatus"])
         .index("by_storefront_status", ["storefrontStatus"])
-        .index("by_cj_sourcing_id", ["cjSourcingId"]),
+        .index("by_cj_sourcing_id", ["cjSourcingId"])
+        .index("by_batch_import_item", ["batchImportItemId"]),
 
     descriptionAudits: defineTable({
         productId: v.optional(v.id("products")),
@@ -509,6 +511,41 @@ export default defineSchema({
         value: v.any(),
         updatedAt: v.string(),
     }).index("by_key", ["key"]),
+
+    // Durable product-import pipeline. Jobs continue running when the admin
+    // closes a mobile browser and can be resumed from any signed-in device.
+    batchImportJobs: defineTable({
+        status: v.union(v.literal("processing"), v.literal("ready"), v.literal("completed"), v.literal("cancelled")),
+        total: v.number(),
+        fetchConcurrency: v.number(),
+        reviewBatchSize: v.number(),
+        createdAt: v.number(),
+        updatedAt: v.number(),
+    }).index("by_updated_at", ["updatedAt"])
+        .index("by_status", ["status", "updatedAt"]),
+
+    batchImportItems: defineTable({
+        jobId: v.id("batchImportJobs"),
+        position: v.number(),
+        inputUrl: v.string(),
+        normalizedUrl: v.string(),
+        resolvedUrl: v.optional(v.string()),
+        status: v.union(
+            v.literal("pending"),
+            v.literal("fetching"),
+            v.literal("ready"),
+            v.literal("error"),
+            v.literal("imported"),
+            v.literal("skipped")
+        ),
+        stage: v.string(),
+        result: v.optional(v.any()),
+        error: v.optional(v.string()),
+        attempts: v.number(),
+        createdAt: v.number(),
+        updatedAt: v.number(),
+    }).index("by_job", ["jobId"])
+        .index("by_job_status", ["jobId", "status"]),
 
     // CJ Webhook Log - tracks processed messageIds to prevent duplicate processing
     cjWebhookLog: defineTable({

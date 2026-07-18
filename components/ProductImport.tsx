@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Loader2, Check, X, DollarSign, Wand2, Package, ChevronDown, AlertCircle, Link, ChevronLeft, ChevronRight, Globe, Filter, Upload, Image as ImageIcon, RotateCcw } from 'lucide-react';
+import { Search, Loader2, Check, X, DollarSign, Wand2, Package, ChevronDown, AlertCircle, Link, ChevronLeft, ChevronRight, Globe, Filter, Upload, Image as ImageIcon, RotateCcw, Clock3, RefreshCw, ListChecks } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 import { aliexpressService } from '../services/aliexpressService';
 import { CollectionType, Product, CollectionConfig } from '../types';
@@ -10,13 +10,15 @@ import { FadeIn } from './FadeIn';
 import { ProductImageGallery } from './ProductImageGallery';
 import { ProductCard, ImportableProduct } from './import/ProductCard';
 import { SafeImage } from './SafeImage';
-import { useMutation, useAction } from 'convex/react';
+import { useMutation, useAction, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
+import type { Id } from '../convex/_generated/dataModel';
 import { buildSourceProductSnapshot, SourceAttribute } from '../lib/smartDescription';
 import { calculatePricingBreakdown, getEstimatedShipping } from '../lib/pricing';
 import { getUserFacingErrorMessage } from '../lib/errorMessages';
 import { normalizeImageUrl, shouldCacheImageUrl } from '../lib/imageUrls';
-import { normalizeProductImportUrl } from '../lib/importUrl';
+import { normalizeProductImportUrl, parseProductImportUrls } from '../lib/importUrl';
+import { buildBatchImportProduct } from '../lib/batchImportProduct';
 
 interface ProductImportProps {
     collections: CollectionConfig[];
@@ -35,6 +37,8 @@ const DEFAULT_PRICING_RULE: PricingRule = {
     value: 45, // 45% markup
     roundUp: true
 };
+
+const REVIEW_BATCH_SIZE = 12;
 
 // Approximate exchange rates for pre-sourcing estimation (CJ confirms final pricing)
 const CURRENCY_RATES_TO_USD: Record<string, number> = {
@@ -93,6 +97,11 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     // URL Import state
     const [importUrl, setImportUrl] = useState('');
     const [isImportingUrl, setIsImportingUrl] = useState(false);
+    const [batchUrls, setBatchUrls] = useState('');
+    const [isImportingBatch, setIsImportingBatch] = useState(false);
+    const [activeBatchJobId, setActiveBatchJobId] = useState<Id<'batchImportJobs'> | null>(() => {
+        try { return localStorage.getItem('active-batch-import-job') as Id<'batchImportJobs'> | null; } catch { return null; }
+    });
     const [autoEnhanceAi, setAutoEnhanceAi] = useState(true);
 
     // Filters
@@ -111,6 +120,15 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
     const generateSmartName = useAction(api.smartNames.generateSmartName);
     const cacheImageUrls = useAction(api.productImages.cacheImageUrls);
+    const createBatchImport = useMutation(api.batchImports.create);
+    const retryBatchItem = useMutation(api.batchImports.retry);
+    const markBatchPreparationError = useMutation(api.batchImports.markPreparationError);
+    const markBatchItemsImported = useMutation(api.batchImports.markImported);
+    const latestBatchJob = useQuery(api.batchImports.getLatest);
+    const effectiveBatchJobId = activeBatchJobId || latestBatchJob?._id || null;
+    const batchJob = useQuery(api.batchImports.getJob, effectiveBatchJobId ? { jobId: effectiveBatchJobId } : 'skip');
+    const batchItems = useQuery(api.batchImports.getItems, effectiveBatchJobId ? { jobId: effectiveBatchJobId } : 'skip');
+    const reportedPreparationErrors = useRef(new Set<string>());
 
     // Convex file upload mutations
     const generateUploadUrl = useMutation(api.files.generateUploadUrl);
@@ -269,6 +287,49 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const calculateFinalPrice = (basePrice: number): number => {
         return calculateCostStackPrice(basePrice, targetCollection).sellingPrice;
     };
+
+    useEffect(() => {
+        if (!effectiveBatchJobId) return;
+        setActiveBatchJobId(effectiveBatchJobId);
+        try { localStorage.setItem('active-batch-import-job', effectiveBatchJobId); } catch { /* storage unavailable */ }
+    }, [effectiveBatchJobId]);
+
+    useEffect(() => {
+        if (!batchJob || (batchJob.status !== 'completed' && batchJob.status !== 'cancelled')) return;
+        if (activeBatchJobId === batchJob._id) {
+            setActiveBatchJobId(null);
+            try { localStorage.removeItem('active-batch-import-job'); } catch { /* storage unavailable */ }
+        }
+    }, [batchJob, activeBatchJobId]);
+
+    useEffect(() => {
+        if (!batchItems) return;
+        for (const item of batchItems) {
+            if (item.status !== 'ready') reportedPreparationErrors.current.delete(item._id);
+        }
+        const readyRows = batchItems.filter(item => item.status === 'ready' && item.result);
+        if (readyRows.length === 0) return;
+        setSearchResults(prev => {
+            const known = new Set(prev.map(product => product.batchItemId).filter(Boolean));
+            const additions: ImportableProduct[] = [];
+            for (const row of readyRows) {
+                if (known.has(row._id)) continue;
+                try {
+                    additions.push(buildBatchImportProduct(row as any, targetCollection, calculateFinalPrice));
+                } catch (error) {
+                    console.error('[Batch Import] Could not prepare ready product', row._id, error);
+                    if (!reportedPreparationErrors.current.has(row._id)) {
+                        reportedPreparationErrors.current.add(row._id);
+                        void markBatchPreparationError({
+                            itemId: row._id,
+                            error: error instanceof Error ? error.message : 'Could not prepare this product for review.',
+                        });
+                    }
+                }
+            }
+            return additions.length ? [...prev, ...additions] : prev;
+        });
+    }, [batchItems, targetCollection]);
 
     /**
      * Shared helper: compute a variant's selling price with optional markup scaling.
@@ -583,6 +644,9 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             return saved ? parseInt(saved, 10) : 0;
         } catch { return 0; }
     });
+    const [reviewBatchNumber, setReviewBatchNumber] = useState(1);
+    const getReviewBatch = (products = searchResults.filter(p => p.selected)) =>
+        products.slice(0, REVIEW_BATCH_SIZE);
 
     // Reset preview and stamp/drag state when switching products or entering review mode
     useEffect(() => {
@@ -632,6 +696,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
         // Initialize review step
         setImportStep('review');
         setReviewIndex(0);
+        setReviewBatchNumber(1);
         setError(null);
     };
 
@@ -699,7 +764,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const confirmImport = async () => {
         if (isImporting) return;
         setIsImporting(true);
-        const selectedProducts = searchResults.filter(p => p.selected);
+        const selectedProducts = getReviewBatch();
 
         const productsToImport: Omit<Product, 'id'>[] = selectedProducts.map(p => {
             const productCollection = p.targetCollection || targetCollection;
@@ -762,6 +827,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                     }).map(({ sellingPriceOverride: _drop, ...rest }) => rest);
                 })(),
                 sourceUrl: p.productUrl || '',
+                batchImportItemId: p.batchItemId as Id<'batchImportItems'> | undefined,
                 cjSourcingStatus: p.productUrl ? 'pending' as const : 'none' as const,
                 smartDescription: p.descriptionAuditId && (p.customDescription || p.description)
                     ? {
@@ -823,15 +889,30 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             }
             toast.dismiss('cache-product-images');
             await Promise.resolve(onImportProducts(productsToImport));
-            setSearchResultsRaw(prev => prev.map(p => ({ ...p, selected: false })));
+            const importedBatchItemIds = selectedProducts
+                .map(product => product.batchItemId)
+                .filter((id): id is Id<'batchImportItems'> => Boolean(id));
+            if (importedBatchItemIds.length > 0) {
+                await markBatchItemsImported({ itemIds: importedBatchItemIds });
+            }
+            const importedIds = new Set(selectedProducts.map(p => p.id));
+            const remainingSelected = searchResults.filter(p => p.selected && !importedIds.has(p.id));
+            setSearchResults(prev => prev.map(p => importedIds.has(p.id) ? { ...p, selected: false } : p));
             setSelectAll(false);
-            setImportStep('search');
-            try { sessionStorage.removeItem('import-search-results'); } catch { /* ignore */ }
-            try {
-                localStorage.removeItem('import-draft-results');
-                localStorage.removeItem('import-draft-step');
-                localStorage.removeItem('import-draft-review-index');
-            } catch { /* ignore */ }
+            setReviewIndex(0);
+            if (remainingSelected.length > 0) {
+                setReviewBatchNumber(prev => prev + 1);
+                setImportStep('review');
+                toast.success(`${productsToImport.length} imported. ${remainingSelected.length} product${remainingSelected.length === 1 ? '' : 's'} ready in the next review batch.`);
+            } else {
+                setImportStep('search');
+                try { sessionStorage.removeItem('import-search-results'); } catch { /* ignore */ }
+                try {
+                    localStorage.removeItem('import-draft-results');
+                    localStorage.removeItem('import-draft-step');
+                    localStorage.removeItem('import-draft-review-index');
+                } catch { /* ignore */ }
+            }
         } finally {
             toast.dismiss('cache-product-images');
             setIsImporting(false);
@@ -847,7 +928,8 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
 
     // Render Review Screen
     if (importStep === 'review') {
-        const selectedProducts = searchResults.filter(p => p.selected);
+        const allSelectedProducts = searchResults.filter(p => p.selected);
+        const selectedProducts = getReviewBatch(allSelectedProducts);
         const currentProduct = selectedProducts[reviewIndex];
         const progress = ((reviewIndex + 1) / selectedProducts.length) * 100;
 
@@ -869,7 +951,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                     <ChevronLeft className="w-4 h-4" /> Back
                                 </button>
                                 <div className="h-4 w-px bg-earth/10"></div>
-                                <span className="text-base font-serif text-earth">Reviewing {reviewIndex + 1} of {selectedProducts.length}</span>
+                                <span className="text-base font-serif text-earth">Review batch {reviewBatchNumber} · {reviewIndex + 1} of {selectedProducts.length} <span className="text-xs text-earth/50">({allSelectedProducts.length} in pipeline)</span></span>
                             </div>
                             {/* Translate button */}
                             <div className="relative z-10 flex items-center gap-2 mr-auto md:mr-0">
@@ -974,7 +1056,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                         onClick={() => setImportStep('final-review')}
                                         className="px-5 py-2 rounded-full bg-green-600 border border-green-500/50 text-white hover:bg-green-500 transition-all text-[10px] uppercase tracking-widest font-bold shadow-[0_8px_20px_rgba(34,197,94,0.25)] hover:-translate-y-0.5"
                                     >
-                                        Final Review → ({selectedProducts.length})
+                                        Review this batch → ({selectedProducts.length})
                                     </button>
                                 )}
                             </div>
@@ -1888,6 +1970,23 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                         </div>
                     </div>
                 </FadeIn>
+                <nav aria-label="Mobile product review actions" className="fixed inset-x-3 bottom-3 z-[70] grid grid-cols-3 gap-2 rounded-2xl border border-white/60 bg-white/85 p-2 shadow-2xl backdrop-blur-2xl md:hidden">
+                    <button type="button" onClick={() => enhanceNameWithAI(currentProduct.id)} disabled={currentProduct.isEnhancing} className="min-h-12 rounded-xl bg-purple-50 px-2 text-[9px] font-bold uppercase tracking-wider text-purple-700 disabled:opacity-50">
+                        <Wand2 className="mx-auto mb-1 h-4 w-4" />Name
+                    </button>
+                    <button type="button" onClick={() => enhanceDescriptionWithAI(currentProduct.id)} disabled={currentProduct.isEnhancing} className="min-h-12 rounded-xl bg-purple-50 px-2 text-[9px] font-bold uppercase tracking-wider text-purple-700 disabled:opacity-50">
+                        <Wand2 className="mx-auto mb-1 h-4 w-4" />Description
+                    </button>
+                    {reviewIndex < selectedProducts.length - 1 ? (
+                        <button type="button" onClick={() => setReviewIndex(prev => Math.min(selectedProducts.length - 1, prev + 1))} className="min-h-12 rounded-xl bg-earth px-2 text-[9px] font-bold uppercase tracking-wider text-cream">
+                            Next <ChevronRight className="mx-auto mt-1 h-4 w-4" />
+                        </button>
+                    ) : (
+                        <button type="button" onClick={() => setImportStep('final-review')} className="min-h-12 rounded-xl bg-green-700 px-2 text-[9px] font-bold uppercase tracking-wider text-white">
+                            Batch <Check className="mx-auto mt-1 h-4 w-4" />
+                        </button>
+                    )}
+                </nav>
             </div>
         );
     }
@@ -1896,7 +1995,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     // FINAL REVIEW PAGE — Storefront-style preview before import
     // ═══════════════════════════════════════════════════════════════════════
     if (importStep === 'final-review') {
-        const selectedProducts = searchResults.filter(p => p.selected);
+        const selectedProducts = getReviewBatch();
 
         // Per-variant selling price calculator (returns explicit override when present)
         const getVariantSellingPrice = (product: ImportableProduct, variant: { priceAdjustment: number; sellingPriceOverride?: number }) => {
@@ -2118,9 +2217,12 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     }
 
     // URL Import
-    const handleImportByUrl = async () => {
-        const originalSourceUrl = normalizeProductImportUrl(importUrl);
-        if (!originalSourceUrl) return;
+    const handleImportByUrl = async (
+        urlValue = importUrl,
+        options: { append?: boolean; switchToReview?: boolean } = {},
+    ): Promise<boolean> => {
+        const originalSourceUrl = normalizeProductImportUrl(urlValue);
+        if (!originalSourceUrl) return false;
 
         setIsImportingUrl(true);
         setError(null);
@@ -2254,7 +2356,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                     },
                     reviewCount: parseInt(getFeaturedValue('SalesInLast30Days') || '0', 10),
                     averageRating: 0,
-                    productUrl: originalSourceUrl,
+                    productUrl: (result as any).resolvedUrl || originalSourceUrl,
                     source: '1688',
                     selected: true,
                     targetCollection: targetCollection as CollectionType,
@@ -2297,7 +2399,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                     seller: { id: '', name: 'Unknown', rating: 0, feedbackScore: 0 },
                     reviewCount: 0,
                     averageRating: 0,
-                    productUrl: originalSourceUrl,
+                    productUrl: (result as any).resolvedUrl || originalSourceUrl,
                     source: 'generic',
                     selected: true,
                     targetCollection: targetCollection as CollectionType,
@@ -2411,23 +2513,69 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             }
 
             // Set results to just this product and switch to review immediately
-            setSearchResults([importableProduct]);
-            setImportUrl('');
-            setImportStep('review');
-            setReviewIndex(0);
+            setSearchResults(prev => options.append ? [...prev, importableProduct] : [importableProduct]);
+            if (!options.append) setImportUrl('');
+            if (options.switchToReview !== false) {
+                setImportStep('review');
+                setReviewIndex(0);
+                setReviewBatchNumber(1);
+            }
+            return true;
 
         } catch (err) {
             console.error('Import by URL failed:', err);
             const errorMsg = getUserFacingErrorMessage(err, 'Failed to import product. Please try a different link.');
             setError(errorMsg);
             toast.error('Import failed', { description: errorMsg });
+            return false;
         } finally {
             toast.dismiss('url-import');
             setIsImportingUrl(false);
         }
     };
 
+    const handleBatchImport = async () => {
+        const urls = parseProductImportUrls(batchUrls);
+        if (!urls.length) return;
+        setIsImportingBatch(true);
+        setError(null);
+        try {
+            const jobId = await createBatchImport({ urls });
+            setActiveBatchJobId(jobId);
+            try { localStorage.setItem('active-batch-import-job', jobId); } catch { /* storage unavailable */ }
+            setBatchUrls('');
+            setImportStep('search');
+            setReviewIndex(0);
+            setReviewBatchNumber(1);
+            toast.success(`${urls.length} links added. The first three are processing now.`);
+        } catch (error) {
+            const message = getUserFacingErrorMessage(error, 'Could not start the batch import.');
+            setError(message);
+            toast.error('Batch import failed', { description: message });
+        } finally {
+            setIsImportingBatch(false);
+        }
+    };
+
     const selectedCount = searchResults.filter(p => p.selected).length;
+    const pipelineItems = batchItems || [];
+    const fetchingItems = pipelineItems.filter(item => item.status === 'fetching');
+    const waitingCount = pipelineItems.filter(item => item.status === 'pending').length;
+    const readyCount = pipelineItems.filter(item => item.status === 'ready').length;
+    const errorItems = pipelineItems.filter(item => item.status === 'error');
+    const importedCount = pipelineItems.filter(item => item.status === 'imported').length;
+    const processedCount = readyCount + errorItems.length + importedCount + pipelineItems.filter(item => item.status === 'skipped').length;
+    const startReadyBatchReview = () => {
+        const readyIds = new Set(pipelineItems.filter(item => item.status === 'ready').slice(0, REVIEW_BATCH_SIZE).map(item => item._id));
+        if (readyIds.size === 0) return;
+        setSearchResults(prev => prev.map(product => ({
+            ...product,
+            selected: Boolean(product.batchItemId && readyIds.has(product.batchItemId as Id<'batchImportItems'>)),
+        })));
+        setReviewIndex(0);
+        setReviewBatchNumber(Math.floor(importedCount / REVIEW_BATCH_SIZE) + 1);
+        setImportStep('review');
+    };
 
     return (
         <div className="relative min-h-[80vh]">
@@ -2500,7 +2648,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                     <div className="glass-card rounded-[2rem] p-4 md:p-10 relative group transition-all duration-700 shadow-xl border border-white/50">
                         {/* Direct Link Import - Enhanced */}
                         <FadeIn delay={200} className="relative z-20" mobileFast>
-                            <div className="glass-card max-w-2xl mx-auto rounded-2xl p-6 border border-white/50 relative overflow-hidden">
+                            <div className="glass-card max-w-5xl mx-auto rounded-2xl p-4 md:p-6 border border-white/50 relative overflow-hidden">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-bronze/5 rounded-full blur-3xl -z-10" />
 
                                 <div className="flex flex-col gap-4">
@@ -2514,7 +2662,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                 <div className={`absolute top-0.5 bottom-0.5 w-3 h-3 bg-white rounded-full transition-all shadow-sm ${autoEnhanceAi ? 'left-4.5' : 'left-0.5'}`} />
                                             </div>
                                             <span className={`text-[10px] uppercase tracking-widest font-bold transition-colors ${autoEnhanceAi ? 'text-purple-600' : 'text-earth/40 group-hover:text-earth/60'}`}>
-                                                Auto-Enhance
+                                                Generate on fetch
                                             </span>
                                             <input
                                                 type="checkbox"
@@ -2535,13 +2683,97 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                             className="flex-1 bg-white border border-earth/10 rounded-xl px-4 py-3 text-sm text-earth placeholder:text-earth/30 focus:outline-none focus:ring-2 focus:ring-bronze/20 focus:border-bronze shadow-inner"
                                         />
                                         <button
-                                            onClick={handleImportByUrl}
+                                            onClick={() => handleImportByUrl()}
                                             disabled={isImportingUrl || !importUrl.trim()}
                                             className="bg-earth text-cream px-6 py-3 rounded-xl text-xs uppercase tracking-widest font-bold hover:bg-bronze transition-colors disabled:opacity-50 whitespace-nowrap shadow-lg shadow-earth/10"
                                         >
                                             {isImportingUrl ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Fetch & Review'}
                                         </button>
                                     </div>
+
+                                    <div className="border-t border-earth/10 pt-4 space-y-2">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <label htmlFor="batch-product-urls" className="text-[10px] uppercase tracking-widest font-bold text-earth/60">Batch import</label>
+                                            <span className="text-[10px] text-earth/40">One per line, or paste from Notes</span>
+                                        </div>
+                                        <textarea
+                                            id="batch-product-urls"
+                                            value={batchUrls}
+                                            onChange={(e) => setBatchUrls(e.target.value)}
+                                            placeholder="Paste 1688, AliExpress, or other product links here…"
+                                            rows={4}
+                                            className="w-full resize-y bg-white border border-earth/10 rounded-xl px-4 py-3 text-sm text-earth placeholder:text-earth/30 focus:outline-none focus:ring-2 focus:ring-bronze/20 focus:border-bronze shadow-inner"
+                                        />
+                                        <button
+                                            onClick={handleBatchImport}
+                                            disabled={isImportingBatch || !batchUrls.trim()}
+                                            className="w-full bg-bronze text-white px-6 py-3 rounded-xl text-xs uppercase tracking-widest font-bold hover:bg-earth transition-colors disabled:opacity-50"
+                                        >
+                                            {isImportingBatch
+                                                ? <span className="flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Starting pipeline…</span>
+                                                : `Start batch (${parseProductImportUrls(batchUrls).length || 0})`}
+                                        </button>
+                                        <p className="text-[10px] leading-relaxed text-earth/45">1688 short/share links are accepted too: Louie Mae resolves the destination before extracting the listing.</p>
+                                    </div>
+
+                                    {batchJob && pipelineItems.length > 0 && (
+                                        <section aria-label="Batch import pipeline" className="rounded-2xl border border-bronze/15 bg-white/60 p-3 md:p-4 shadow-inner">
+                                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                                <div>
+                                                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-bronze">Intake in progress</p>
+                                                    <h4 className="mt-1 font-serif text-xl text-earth">Fetching 3 at a time</h4>
+                                                </div>
+                                                <div className="flex items-center gap-2 text-xs text-earth/60">
+                                                    <span className="rounded-full bg-cream px-3 py-1 font-mono">{processedCount}/{batchJob.total}</span>
+                                                    <span>processed</span>
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-earth/10">
+                                                <div className="h-full rounded-full bg-gradient-to-r from-bronze to-amber-600 transition-all duration-500" style={{ width: `${batchJob.total ? (processedCount / batchJob.total) * 100 : 0}%` }} />
+                                            </div>
+
+                                            <div className="mt-4 grid gap-2 lg:grid-cols-3">
+                                                {fetchingItems.map(item => (
+                                                    <div key={item._id} className="flex min-w-0 items-center gap-3 rounded-xl border border-earth/10 bg-white/75 p-3">
+                                                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-bronze/10 font-mono text-xs font-bold text-bronze">{item.position + 1}</div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="truncate font-mono text-[10px] text-earth/55" title={item.normalizedUrl}>{item.normalizedUrl}</p>
+                                                            <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-earth"><Loader2 className="h-3 w-3 animate-spin text-bronze" />{item.stage}</p>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                {fetchingItems.length === 0 && batchJob.status === 'ready' && (
+                                                    <div className="lg:col-span-3 flex items-center gap-2 rounded-xl bg-green-50 p-3 text-sm text-green-800"><Check className="h-4 w-4" /> Intake complete. Continue through the ready review groups.</div>
+                                                )}
+                                            </div>
+
+                                            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                                <div className="flex flex-wrap gap-2 text-[10px] font-bold uppercase tracking-wider">
+                                                    <span className="rounded-full bg-amber-50 px-3 py-1.5 text-amber-800"><Clock3 className="mr-1 inline h-3 w-3" />{waitingCount} waiting</span>
+                                                    <span className="rounded-full bg-green-50 px-3 py-1.5 text-green-800"><ListChecks className="mr-1 inline h-3 w-3" />{readyCount} ready</span>
+                                                    <span className="rounded-full bg-earth/5 px-3 py-1.5 text-earth/60">{importedCount} imported</span>
+                                                </div>
+                                                {readyCount > 0 && (
+                                                    <button type="button" onClick={startReadyBatchReview} className="min-h-11 rounded-xl bg-earth px-5 py-2.5 text-xs font-bold uppercase tracking-widest text-cream transition-colors hover:bg-bronze">
+                                                        Review next {Math.min(REVIEW_BATCH_SIZE, readyCount)}
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {errorItems.length > 0 && (
+                                                <div className="mt-3 space-y-2">
+                                                    {errorItems.map(item => (
+                                                        <div key={item._id} role="alert" className="flex flex-col gap-2 rounded-xl border border-red-200 bg-red-50 p-3 sm:flex-row sm:items-center">
+                                                            <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
+                                                            <div className="min-w-0 flex-1"><p className="truncate font-mono text-[10px] text-red-800">{item.normalizedUrl}</p><p className="text-xs text-red-700">{item.error || 'This link needs attention.'}</p></div>
+                                                            <button type="button" onClick={() => retryBatchItem({ itemId: item._id })} className="min-h-10 rounded-lg border border-red-200 bg-white px-4 text-xs font-bold text-red-700"><RefreshCw className="mr-1 inline h-3 w-3" />Retry</button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </section>
+                                    )}
 
                                     {/* URL normalization tip */}
                                     {importUrl && !/^[a-z][a-z0-9+.-]*:\/\//i.test(importUrl.trim()) && (

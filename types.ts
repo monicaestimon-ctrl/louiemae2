@@ -36,6 +36,7 @@ export interface Product {
   variants?: ProductVariant[];  // Optional - for products with color/size options
   // CJ Sourcing fields
   sourceUrl?: string;
+  batchImportItemId?: Id<'batchImportItems'>;
   cjSourcingStatus?: 'pending' | 'approved' | 'rejected' | 'none';
   cjVariantId?: string;
   cjSku?: string;

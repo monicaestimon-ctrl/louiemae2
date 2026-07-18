@@ -6,6 +6,7 @@ import { FadeIn } from '../FadeIn';
 import { SafeImage } from '../SafeImage';
 
 export interface ImportableProduct extends AliExpressProduct {
+    batchItemId?: string;
     selected: boolean;
     customName?: string;
     customPrice?: number;

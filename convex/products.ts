@@ -163,6 +163,7 @@ export const create = mutation({
         }))),
         // CJ Sourcing fields
         sourceUrl: v.optional(v.string()),
+        batchImportItemId: v.optional(v.id("batchImportItems")),
         cjSourcingStatus: v.optional(v.union(
             v.literal("pending"),
             v.literal("approved"),
@@ -208,6 +209,12 @@ export const create = mutation({
         const userId = await auth.getUserId(ctx);
         if (!userId) {
             throw new Error("You must be logged in to create products");
+        }
+        if (args.batchImportItemId) {
+            const existing = await ctx.db.query("products")
+                .withIndex("by_batch_import_item", q => q.eq("batchImportItemId", args.batchImportItemId))
+                .unique();
+            if (existing) return existing._id;
         }
         return await ctx.db.insert("products", {
             ...args,
