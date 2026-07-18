@@ -27,4 +27,21 @@ describe('parseProductImportUrls', () => {
       'https://example.com/b',
     ]);
   });
+
+  it('repairs a Notes line-wrap inside an encoded 1688 query string', () => {
+    const wrapped =
+      'https://detail.1688.com/offer/922839791630.html?topicCode=abc&optName=%E8%B6%8B%E5%8A%BF%\n' +
+      'E5%95%86%E6%9C%BA&topicName=%E5%A5%B3%E5%A3%AB&offerId=922839791630';
+
+    expect(parseProductImportUrls(wrapped)).toEqual([
+      'https://detail.1688.com/offer/922839791630.html?topicCode=abc&optName=%E8%B6%8B%E5%8A%BF%E5%95%86%E6%9C%BA&topicName=%E5%A5%B3%E5%A3%AB&offerId=922839791630',
+    ]);
+  });
+
+  it('still accepts multiple complete URLs separated by spaces on one line', () => {
+    expect(parseProductImportUrls('https://example.com/a https://example.com/b')).toEqual([
+      'https://example.com/a',
+      'https://example.com/b',
+    ]);
+  });
 });

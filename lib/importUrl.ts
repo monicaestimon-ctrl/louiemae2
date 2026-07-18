@@ -12,10 +12,30 @@ export const normalizeProductImportUrl = (value: string): string => {
  * the server, where redirects are resolved safely before product extraction.
  */
 export const parseProductImportUrls = (value: string): string[] => {
-  const candidates = value
-    .split(/[\s,]+/)
-    .map(normalizeProductImportUrl)
-    .filter(Boolean);
+  const startsLikeUrl = (candidate: string): boolean =>
+    /^(?:https?:\/\/|\/\/|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:[/:?#]|$))/i.test(candidate.trim());
+
+  // Notes and messaging apps sometimes insert a hard line-wrap in the middle
+  // of a long encoded query string. Treat a line that does not start like a
+  // URL as a continuation of the preceding URL instead of inventing a new one.
+  const rawCandidates: string[] = [];
+  for (const line of value.replace(/\r\n?/g, '\n').split('\n')) {
+    const fragments = line
+      .trim()
+      .split(/(?:,\s*|\s+)(?=(?:https?:\/\/|\/\/|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:[/:?#]|$)))/i)
+      .map(fragment => fragment.trim())
+      .filter(Boolean);
+
+    for (const fragment of fragments) {
+      if (startsLikeUrl(fragment) || rawCandidates.length === 0) {
+        rawCandidates.push(fragment);
+      } else {
+        rawCandidates[rawCandidates.length - 1] += fragment.replace(/\s+/g, '');
+      }
+    }
+  }
+
+  const candidates = rawCandidates.map(normalizeProductImportUrl).filter(Boolean);
 
   return [...new Set(candidates)];
 };
