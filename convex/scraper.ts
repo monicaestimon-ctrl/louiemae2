@@ -4,10 +4,10 @@ import { ConvexError, v } from "convex/values";
 import { lookup } from "node:dns/promises";
 import type { LookupAddress } from "node:dns";
 import { isIP } from "node:net";
-import type { LookupFunction } from "node:net";
 import * as http from "node:http";
 import * as https from "node:https";
 import type { IncomingHttpHeaders } from "node:http";
+import { createPinnedLookup } from "./pinnedLookup";
 
 const normalizeHostname = (hostname: string): string =>
     hostname.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
@@ -124,9 +124,7 @@ const requestPinnedPublicUrl = (
     signal: http.RequestOptions['signal'],
 ): Promise<ScraperHttpResponse> => new Promise((resolve, reject) => {
     const { parsedUrl, address } = validatedUrl;
-    const pinnedLookup: LookupFunction = (_hostname, _options, callback) => {
-        callback(null, address.address, address.family);
-    };
+    const pinnedLookup = createPinnedLookup(address);
     const requestOptions: http.RequestOptions = {
         protocol: parsedUrl.protocol,
         hostname: parsedUrl.hostname,
@@ -182,7 +180,7 @@ const requestPinnedRedirectHeaders = (
         path: `${parsedUrl.pathname}${parsedUrl.search}`,
         method: 'GET',
         headers: { "User-Agent": "Mozilla/5.0", "Accept": "text/html,*/*", "Host": parsedUrl.host },
-        lookup: (_hostname, _options, callback) => callback(null, address.address, address.family),
+        lookup: createPinnedLookup(address),
         signal,
     };
     if (parsedUrl.protocol === 'https:') (requestOptions as https.RequestOptions).servername = parsedUrl.hostname;
