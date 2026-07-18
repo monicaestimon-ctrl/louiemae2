@@ -60,15 +60,15 @@ export type CheckoutShippingTier = {
   label: string;
 };
 
-export const DEFAULT_RETAIL_MULTIPLIER = 3;
-export const ESTIMATED_CJ_COST_MULTIPLIER = 1.4;
+export const DEFAULT_RETAIL_MULTIPLIER = 2;
+export const ESTIMATED_CJ_COST_MULTIPLIER = 1.2;
 
 export const DEFAULT_COLLECTION_SHIPPING: CollectionShippingMap = {
-  fashion: 22,
-  kids: 22,
+  fashion: 20,
+  kids: 20,
   decor: 69.99,
   furniture: 120,
-  default: 22,
+  default: 20,
 };
 
 export const CHECKOUT_SHIPPING_TIERS: CheckoutShippingTier[] = [
@@ -92,7 +92,7 @@ export const getEstimatedShipping = (
   shippingMap: CollectionShippingMap = DEFAULT_COLLECTION_SHIPPING,
 ): number => {
   const key = (collection || '').trim().toLowerCase();
-  return shippingMap[key] ?? shippingMap.default ?? 22;
+  return shippingMap[key] ?? shippingMap.default ?? 20;
 };
 
 export const getCheckoutShippingForSubtotal = (

@@ -20,8 +20,8 @@ Official docs referenced:
 - Verified, paid Stripe webhook events enter the CJ fulfillment workflow when order items have CJ identifiers.
 - The CJ fulfillment workflow validates product and variant mappings, confirms inventory and freight, creates the CJ order, adds the order to cart, confirms the cart, generates the parent/payment order, and can pay by CJ balance when live automation flags are enabled.
 - Pricing now uses the requested formula:
-  - Source/direct URL product price is multiplied by `1.4` to estimate CJ product cost.
-  - The estimated CJ product cost is multiplied by `3`.
+  - Source/direct URL product price is multiplied by `1.2` to estimate CJ product cost.
+  - The estimated CJ product cost is multiplied by `2`.
   - Shipping is added after the markup calculation.
 - CJ webhook signatures, duplicate `messageId` claims, topic-level idempotency, fast acknowledgement, durable pricing refresh retries, and tracking reconciliation are implemented.
 - Production hands-off mode still requires the operational launch prerequisites in [CJ_OPERATIONAL_LAUNCH_RUNBOOK.md](./CJ_OPERATIONAL_LAUNCH_RUNBOOK.md): live CJ credentials, registered CJ webhooks, mapped products, funded CJ balance, and explicit automation flags.
@@ -59,7 +59,7 @@ If automatic balance payment is disabled, the app should still create the CJ ord
 
 ### Phase 0 - Pricing Foundation
 
-- [x] Update imported/direct URL price estimation so source price is multiplied by `1.4` for CJ cost estimation.
+- [x] Update imported/direct URL price estimation so source price is multiplied by `1.2` for CJ cost estimation.
 - [x] Update retail pricing so shipping is added after product markup instead of being multiplied.
 - [x] Add pricing tests that lock the requested formula.
 - [x] Open PR, run CodeRabbit CLI, resolve issues, merge.

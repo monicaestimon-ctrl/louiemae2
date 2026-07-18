@@ -17,23 +17,23 @@ describe('pricing engine', () => {
       collection: 'furniture',
     });
 
-    expect(calculateEstimatedCjProductCost(10)).toBe(14);
+    expect(calculateEstimatedCjProductCost(10)).toBe(12);
     expect(getEstimatedShipping('furniture')).toBe(120);
-    expect(pricing.landedCost).toBe(134);
-    expect(pricing.suggestedRetailPrice).toBe(161.99);
+    expect(pricing.landedCost).toBe(132);
+    expect(pricing.suggestedRetailPrice).toBe(143.99);
     expect(pricing.pricingSource).toBe('source_estimate');
   });
 
   it('adds shipping after the retail multiplier instead of multiplying shipping', () => {
-    expect(calculateRetailFromProductCost(14, 120)).toBe(161.99);
+    expect(calculateRetailFromProductCost(12, 120)).toBe(143.99);
   });
 
   it('uses conservative category shipping buffers before CJ freight is confirmed', () => {
-    expect(getEstimatedShipping('fashion')).toBe(22);
-    expect(getEstimatedShipping('kids')).toBe(22);
+    expect(getEstimatedShipping('fashion')).toBe(20);
+    expect(getEstimatedShipping('kids')).toBe(20);
     expect(getEstimatedShipping('decor')).toBe(69.99);
     expect(getEstimatedShipping('furniture')).toBe(120);
-    expect(getEstimatedShipping('unknown')).toBe(22);
+    expect(getEstimatedShipping('unknown')).toBe(20);
   });
 
   it('calculates retail from confirmed landed cost with fees', () => {
@@ -45,7 +45,7 @@ describe('pricing engine', () => {
     });
 
     expect(landedCost).toBe(23);
-    expect(calculateRetailFromLandedCost(landedCost)).toBe(68.99);
+    expect(calculateRetailFromLandedCost(landedCost)).toBe(45.99);
   });
 
   it('uses confirmed product and shipping costs when available', () => {
@@ -60,7 +60,7 @@ describe('pricing engine', () => {
     expect(pricing.productCost).toBe(9.25);
     expect(pricing.shippingCost).toBe(6.5);
     expect(pricing.landedCost).toBe(16);
-    expect(pricing.suggestedRetailPrice).toBe(34.99);
+    expect(pricing.suggestedRetailPrice).toBe(25.99);
     expect(pricing.pricingSource).toBe('cj_freight_confirmed');
     expect(pricing.warnings).toHaveLength(0);
   });
@@ -90,8 +90,8 @@ describe('pricing engine', () => {
     });
 
     expect(pricing.currentRetailPrice).toBe(80);
-    expect(pricing.suggestedRetailPrice).toBe(111.99);
-    expect(pricing.estimatedProfit).toBe(-3.99);
+    expect(pricing.suggestedRetailPrice).toBe(93.99);
+    expect(pricing.estimatedProfit).toBe(-1.99);
     expect(pricing.warnings).toContain('Admin price is locked; suggested CJ price was not applied automatically.');
   });
 

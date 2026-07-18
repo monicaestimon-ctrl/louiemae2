@@ -103,7 +103,7 @@ export default defineSchema({
         rawSourceDescription: v.optional(v.string()), // Cleaned source detail text for smart descriptions
         rawHtmlDescription: v.optional(v.string()),   // Raw source detail HTML for smart descriptions
         descriptionImages: v.optional(v.array(v.string())), // Source detail/marketing images for smart descriptions
-        estimatedCjCost: v.optional(v.number()),     // Estimated CJ cost (1688 × 1.4, in USD)
+        estimatedCjCost: v.optional(v.number()),     // Estimated CJ cost (1688 × 1.2, in USD)
         estimatedShipping: v.optional(v.number()),   // Estimated shipping (category-based)
         confirmedCjCost: v.optional(v.number()),     // Actual CJ cost after sourcing approval
         estimatedCjProductCost: v.optional(v.number()),
