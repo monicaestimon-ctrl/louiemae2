@@ -38,4 +38,15 @@ describe('buildBatchImportProduct', () => {
     expect(product.variants[0]).toMatchObject({ id: 'v1', name: 'Natural', priceAdjustment: 2, inStock: true });
     expect(product.productUrl).toBe('https://detail.1688.com/offer/123.html');
   });
+
+  it('converts an unconverted 1688 OriginalPrice from CNY instead of treating it as USD', () => {
+    const product = buildBatchImportProduct({
+      _id: 'item-3',
+      normalizedUrl: 'https://detail.1688.com/offer/456.html',
+      result: { source: '1688', data: { Id: '456', Title: 'Cotton Throw', Price: { OriginalPrice: 100 } } },
+    }, 'decor', price => price * 3);
+
+    expect(product.price).toBe(14);
+    expect(product.sourcePriceCny).toBe(100);
+  });
 });

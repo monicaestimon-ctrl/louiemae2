@@ -19,8 +19,9 @@ export const create = mutation({
     args: { urls: v.array(v.string()) },
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
-        const urls = [...new Set(args.urls.map(normalizeUrl).filter(Boolean))].slice(0, 200);
+        const urls = [...new Set(args.urls.map(normalizeUrl).filter(Boolean))];
         if (urls.length === 0) throw new Error("Paste at least one product URL.");
+        if (urls.length > 200) throw new Error(`A batch can contain up to 200 unique URLs. This paste contains ${urls.length}.`);
 
         const now = Date.now();
         const jobId = await ctx.db.insert("batchImportJobs", {
@@ -72,8 +73,13 @@ export const getLatest = query({
     args: {},
     handler: async (ctx) => {
         await requireCjAdminIdentity(ctx);
-        const recent = await ctx.db.query("batchImportJobs").withIndex("by_updated_at").order("desc").take(20);
-        return recent.find(job => job.status === "processing" || job.status === "ready") ?? null;
+        const [processing, ready] = await Promise.all([
+            ctx.db.query("batchImportJobs").withIndex("by_status", q => q.eq("status", "processing")).order("desc").first(),
+            ctx.db.query("batchImportJobs").withIndex("by_status", q => q.eq("status", "ready")).order("desc").first(),
+        ]);
+        if (!processing) return ready;
+        if (!ready) return processing;
+        return processing.updatedAt >= ready.updatedAt ? processing : ready;
     },
 });
 
@@ -185,20 +191,36 @@ export const retry = mutation({
     },
 });
 
+export const markPreparationError = mutation({
+    args: { itemId: v.id("batchImportItems"), error: v.string() },
+    handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
+        const item = await ctx.db.get(args.itemId);
+        if (item?.status !== "ready") return;
+        await ctx.db.patch(args.itemId, {
+            status: "error",
+            stage: "Needs attention",
+            error: args.error.slice(0, 500),
+            updatedAt: Date.now(),
+        });
+    },
+});
+
 export const markImported = mutation({
     args: { itemIds: v.array(v.id("batchImportItems")) },
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
         const now = Date.now();
+        const jobIds = new Set<Id<"batchImportJobs">>();
         for (const itemId of args.itemIds) {
             const item = await ctx.db.get(itemId);
+            if (item) jobIds.add(item.jobId);
             if (item?.status === "ready") await ctx.db.patch(itemId, { status: "imported", stage: "Imported", updatedAt: now });
         }
-        const first = args.itemIds[0] ? await ctx.db.get(args.itemIds[0]) : null;
-        if (first) {
-            const remaining = await ctx.db.query("batchImportItems").withIndex("by_job", q => q.eq("jobId", first.jobId)).collect();
+        for (const jobId of jobIds) {
+            const remaining = await ctx.db.query("batchImportItems").withIndex("by_job", q => q.eq("jobId", jobId)).collect();
             const hasOpenWork = remaining.some(item => ["pending", "fetching", "ready", "error"].includes(item.status));
-            if (!hasOpenWork) await ctx.db.patch(first.jobId, { status: "completed", updatedAt: now });
+            if (!hasOpenWork) await ctx.db.patch(jobId, { status: "completed", updatedAt: now });
         }
     },
 });

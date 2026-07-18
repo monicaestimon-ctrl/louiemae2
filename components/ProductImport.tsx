@@ -122,11 +122,13 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const cacheImageUrls = useAction(api.productImages.cacheImageUrls);
     const createBatchImport = useMutation(api.batchImports.create);
     const retryBatchItem = useMutation(api.batchImports.retry);
+    const markBatchPreparationError = useMutation(api.batchImports.markPreparationError);
     const markBatchItemsImported = useMutation(api.batchImports.markImported);
     const latestBatchJob = useQuery(api.batchImports.getLatest);
     const effectiveBatchJobId = activeBatchJobId || latestBatchJob?._id || null;
     const batchJob = useQuery(api.batchImports.getJob, effectiveBatchJobId ? { jobId: effectiveBatchJobId } : 'skip');
     const batchItems = useQuery(api.batchImports.getItems, effectiveBatchJobId ? { jobId: effectiveBatchJobId } : 'skip');
+    const reportedPreparationErrors = useRef(new Set<string>());
 
     // Convex file upload mutations
     const generateUploadUrl = useMutation(api.files.generateUploadUrl);
@@ -293,7 +295,18 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     }, [effectiveBatchJobId]);
 
     useEffect(() => {
+        if (!batchJob || (batchJob.status !== 'completed' && batchJob.status !== 'cancelled')) return;
+        if (activeBatchJobId === batchJob._id) {
+            setActiveBatchJobId(null);
+            try { localStorage.removeItem('active-batch-import-job'); } catch { /* storage unavailable */ }
+        }
+    }, [batchJob, activeBatchJobId]);
+
+    useEffect(() => {
         if (!batchItems) return;
+        for (const item of batchItems) {
+            if (item.status !== 'ready') reportedPreparationErrors.current.delete(item._id);
+        }
         const readyRows = batchItems.filter(item => item.status === 'ready' && item.result);
         if (readyRows.length === 0) return;
         setSearchResults(prev => {
@@ -305,6 +318,13 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                     additions.push(buildBatchImportProduct(row as any, targetCollection, calculateFinalPrice));
                 } catch (error) {
                     console.error('[Batch Import] Could not prepare ready product', row._id, error);
+                    if (!reportedPreparationErrors.current.has(row._id)) {
+                        reportedPreparationErrors.current.add(row._id);
+                        void markBatchPreparationError({
+                            itemId: row._id,
+                            error: error instanceof Error ? error.message : 'Could not prepare this product for review.',
+                        });
+                    }
                 }
             }
             return additions.length ? [...prev, ...additions] : prev;
@@ -807,6 +827,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                     }).map(({ sellingPriceOverride: _drop, ...rest }) => rest);
                 })(),
                 sourceUrl: p.productUrl || '',
+                batchImportItemId: p.batchItemId as Id<'batchImportItems'> | undefined,
                 cjSourcingStatus: p.productUrl ? 'pending' as const : 'none' as const,
                 smartDescription: p.descriptionAuditId && (p.customDescription || p.description)
                     ? {
@@ -876,7 +897,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             }
             const importedIds = new Set(selectedProducts.map(p => p.id));
             const remainingSelected = searchResults.filter(p => p.selected && !importedIds.has(p.id));
-            setSearchResultsRaw(prev => prev.map(p => importedIds.has(p.id) ? { ...p, selected: false } : p));
+            setSearchResults(prev => prev.map(p => importedIds.has(p.id) ? { ...p, selected: false } : p));
             setSelectAll(false);
             setReviewIndex(0);
             if (remainingSelected.length > 0) {
@@ -2544,6 +2565,17 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const errorItems = pipelineItems.filter(item => item.status === 'error');
     const importedCount = pipelineItems.filter(item => item.status === 'imported').length;
     const processedCount = readyCount + errorItems.length + importedCount + pipelineItems.filter(item => item.status === 'skipped').length;
+    const startReadyBatchReview = () => {
+        const readyIds = new Set(pipelineItems.filter(item => item.status === 'ready').slice(0, REVIEW_BATCH_SIZE).map(item => item._id));
+        if (readyIds.size === 0) return;
+        setSearchResults(prev => prev.map(product => ({
+            ...product,
+            selected: Boolean(product.batchItemId && readyIds.has(product.batchItemId as Id<'batchImportItems'>)),
+        })));
+        setReviewIndex(0);
+        setReviewBatchNumber(Math.floor(importedCount / REVIEW_BATCH_SIZE) + 1);
+        setImportStep('review');
+    };
 
     return (
         <div className="relative min-h-[80vh]">
@@ -2723,7 +2755,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                     <span className="rounded-full bg-earth/5 px-3 py-1.5 text-earth/60">{importedCount} imported</span>
                                                 </div>
                                                 {readyCount > 0 && (
-                                                    <button type="button" onClick={handleImport} className="min-h-11 rounded-xl bg-earth px-5 py-2.5 text-xs font-bold uppercase tracking-widest text-cream transition-colors hover:bg-bronze">
+                                                    <button type="button" onClick={startReadyBatchReview} className="min-h-11 rounded-xl bg-earth px-5 py-2.5 text-xs font-bold uppercase tracking-widest text-cream transition-colors hover:bg-bronze">
                                                         Review next {Math.min(REVIEW_BATCH_SIZE, readyCount)}
                                                     </button>
                                                 )}

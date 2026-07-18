@@ -170,6 +170,31 @@ const requestPinnedPublicUrl = (
     request.end();
 });
 
+const requestPinnedRedirectHeaders = (
+    validatedUrl: ValidatedPublicUrl,
+    signal: http.RequestOptions['signal'],
+): Promise<{ status: number; headers: IncomingHttpHeaders }> => new Promise((resolve, reject) => {
+    const { parsedUrl, address } = validatedUrl;
+    const requestOptions: http.RequestOptions = {
+        protocol: parsedUrl.protocol,
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port,
+        path: `${parsedUrl.pathname}${parsedUrl.search}`,
+        method: 'GET',
+        headers: { "User-Agent": "Mozilla/5.0", "Accept": "text/html,*/*", "Host": parsedUrl.host },
+        lookup: (_hostname, _options, callback) => callback(null, address.address, address.family),
+        signal,
+    };
+    if (parsedUrl.protocol === 'https:') (requestOptions as https.RequestOptions).servername = parsedUrl.hostname;
+    const client = parsedUrl.protocol === 'https:' ? https : http;
+    const request = client.request(requestOptions, response => {
+        response.resume();
+        resolve({ status: response.statusCode ?? 0, headers: response.headers });
+    });
+    request.on('error', reject);
+    request.end();
+});
+
 /** Resolve share/short links before platform detection, validating every hop. */
 const resolvePublicRedirectUrl = async (initial: ValidatedPublicUrl): Promise<string> => {
     const MAX_REDIRECTS = 5;
@@ -179,7 +204,7 @@ const resolvePublicRedirectUrl = async (initial: ValidatedPublicUrl): Promise<st
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 15_000);
         try {
-            const response = await requestPinnedPublicUrl(current, controller.signal);
+            const response = await requestPinnedRedirectHeaders(current, controller.signal);
             if (response.status < 300 || response.status >= 400) return current.parsedUrl.toString();
             const location = getHeader(response.headers, 'location');
             if (!location) return current.parsedUrl.toString();

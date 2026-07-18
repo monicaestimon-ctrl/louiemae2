@@ -27,7 +27,12 @@ export const buildBatchImportProduct = (
     if (result.source === '1688') {
         const item = result.data?.Result ?? result.data;
         if (!item || typeof item !== 'object') throw new Error('1688 payload missing item data.');
-        const getUsd = (price: any) => price?.ConvertedPriceList?.Internal?.Price || price?.OriginalPrice || 0;
+        const getUsd = (price: any) => {
+            const converted = Number(price?.ConvertedPriceList?.Internal?.Price || 0);
+            if (converted > 0) return converted;
+            const cny = Number(price?.OriginalPrice || price?.ConvertedPriceList?.Original?.Price || 0);
+            return cny > 0 ? Math.round(cny * CURRENCY_RATES_TO_USD.CNY * 100) / 100 : 0;
+        };
         const getCny = (price: any) => price?.OriginalPrice || price?.ConvertedPriceList?.Original?.Price || 0;
         const promo = getUsd(item.PromotionPrice);
         const regular = getUsd(item.Price);
