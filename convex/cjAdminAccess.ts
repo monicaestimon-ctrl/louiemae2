@@ -1,6 +1,8 @@
-import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
+import { auth } from "./auth";
 
-type AdminCtx = Pick<ActionCtx | MutationCtx | QueryCtx, "auth">;
+type AdminCtx = Pick<MutationCtx | QueryCtx, "auth" | "db">;
 
 const parseAdminEmails = (rawEmails: string | undefined): Set<string> =>
     new Set((rawEmails || "")
@@ -9,14 +11,24 @@ const parseAdminEmails = (rawEmails: string | undefined): Set<string> =>
         .filter(Boolean));
 
 const getAdminEmailAllowlist = () =>
-    parseAdminEmails(process.env.CJ_ADMIN_EMAILS);
+    parseAdminEmails(process.env.CJ_ADMIN_EMAILS || process.env.ADMIN_EMAILS);
 
 export const requireCjAdminIdentity = async (ctx: AdminCtx): Promise<{ email: string }> => {
+    const userId = await auth.getUserId(ctx).catch(() => null);
     const identity = await ctx.auth.getUserIdentity().catch(() => null);
-    const email = typeof identity?.email === "string" ? identity.email.trim().toLowerCase() : "";
+    if (!userId) {
+        throw new Error("You must be logged in to manage CJ fulfillment.");
+    }
+
+    // Convex Password sessions do not consistently expose email on the JWT
+    // identity. The canonical auth user record does, so use it as the fallback.
+    const user = await ctx.db.get(userId as Id<"users">);
+    const identityEmail = typeof identity?.email === "string" ? identity.email : "";
+    const userEmail = typeof user?.email === "string" ? user.email : "";
+    const email = (identityEmail || userEmail).trim().toLowerCase();
 
     if (!email) {
-        throw new Error("You must be logged in with an email address to manage CJ fulfillment.");
+        throw new Error("Your account is missing an email address required for CJ admin access.");
     }
 
     const adminEmails = getAdminEmailAllowlist();
