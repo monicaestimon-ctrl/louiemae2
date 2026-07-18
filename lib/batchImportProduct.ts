@@ -2,7 +2,7 @@ import type { ImportableProduct } from '../components/import/ProductCard';
 import type { CollectionType } from '../types';
 import { cleanOtapiDescription, extractOtapiSourceProperties } from './otapiHelpers';
 
-const CURRENCY_RATES_TO_USD: Record<string, number> = {
+export const CURRENCY_RATES_TO_USD: Record<string, number> = {
     USD: 1, CNY: 0.14, RMB: 0.14, GBP: 1.27, EUR: 1.09, CAD: 0.74,
     AUD: 0.66, JPY: 0.0067, KRW: 0.00075, HKD: 0.13, SGD: 0.75,
     MYR: 0.22, THB: 0.029, INR: 0.012,

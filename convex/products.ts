@@ -213,7 +213,7 @@ export const create = mutation({
         if (args.batchImportItemId) {
             const existing = await ctx.db.query("products")
                 .withIndex("by_batch_import_item", q => q.eq("batchImportItemId", args.batchImportItemId))
-                .first();
+                .unique();
             if (existing) return existing._id;
         }
         return await ctx.db.insert("products", {

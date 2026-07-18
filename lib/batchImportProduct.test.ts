@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBatchImportProduct } from './batchImportProduct';
+import { buildBatchImportProduct, CURRENCY_RATES_TO_USD } from './batchImportProduct';
 
 describe('buildBatchImportProduct', () => {
   it('prepares a generic source row for the review queue', () => {
@@ -46,7 +46,7 @@ describe('buildBatchImportProduct', () => {
       result: { source: '1688', data: { Id: '456', Title: 'Cotton Throw', Price: { OriginalPrice: 100 } } },
     }, 'decor', price => price * 3);
 
-    expect(product.price).toBe(14);
+    expect(product.price).toBeCloseTo(100 * CURRENCY_RATES_TO_USD.CNY, 2);
     expect(product.sourcePriceCny).toBe(100);
   });
 });
