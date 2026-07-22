@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extract1688ProductId, normalizeProductImportUrl, parseProductImportUrls } from './importUrl';
+import { extract1688ProductId, extract1688ProductIdFromSharePayload, normalizeProductImportUrl, parseProductImportUrls } from './importUrl';
 
 describe('normalizeProductImportUrl', () => {
   it('keeps complete http and https URLs unchanged apart from trimming', () => {
@@ -32,6 +32,17 @@ describe('extract1688ProductId', () => {
 
   it('does not extract IDs from unrelated hosts', () => {
     expect(extract1688ProductId('https://example.com/offer/922839791630.html')).toBeNull();
+  });
+});
+
+describe('extract1688ProductIdFromSharePayload', () => {
+  it('extracts the offer ID from a qr.1688.com wireless app-link response', () => {
+    const payload = 'wireless1688://ma.m.1688.com/offer?id=1058720644146.html?share_token=abc&amp;rpg-cnt=share.offerDetail&amp;offerId=1058720644146';
+    expect(extract1688ProductIdFromSharePayload(payload)).toBe('1058720644146');
+  });
+
+  it('returns null for an expired or unrelated payload', () => {
+    expect(extract1688ProductIdFromSharePayload('This share link has expired')).toBeNull();
   });
 });
 

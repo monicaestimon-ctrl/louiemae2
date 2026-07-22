@@ -8,7 +8,7 @@ import * as http from "node:http";
 import * as https from "node:https";
 import type { IncomingHttpHeaders } from "node:http";
 import { createPinnedLookup } from "./pinnedLookup";
-import { extract1688ProductId } from "../lib/importUrl";
+import { extract1688ProductId, extract1688ProductIdFromSharePayload } from "../lib/importUrl";
 
 const normalizeHostname = (hostname: string): string =>
     hostname.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
@@ -203,6 +203,19 @@ const resolvePublicRedirectUrl = async (initial: ValidatedPublicUrl): Promise<st
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 15_000);
         try {
+            if (current.parsedUrl.hostname === 'qr.1688.com') {
+                const response = await requestPinnedPublicUrl(current, controller.signal);
+                if (response.status >= 300 && response.status < 400) {
+                    const location = getHeader(response.headers, 'location');
+                    if (!location) return current.parsedUrl.toString();
+                    current = await assertSafePublicHttpUrl(new URL(location, current.parsedUrl));
+                    continue;
+                }
+                const productId = extract1688ProductIdFromSharePayload(await response.text());
+                if (productId) return `https://detail.1688.com/offer/${productId}.html`;
+                throw new Error('This 1688 QR share link is expired or no longer contains a product listing.');
+            }
+
             const response = await requestPinnedRedirectHeaders(current, controller.signal);
             if (response.status < 300 || response.status >= 400) return current.parsedUrl.toString();
             const location = getHeader(response.headers, 'location');

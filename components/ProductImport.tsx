@@ -2858,7 +2858,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                     {errorItems.map(item => (
                                                         <div key={item._id} role="alert" className="flex flex-col gap-2 rounded-xl border border-red-200 bg-red-50 p-3 sm:flex-row sm:items-center">
                                                             <AlertCircle className="h-4 w-4 shrink-0 text-red-600" />
-                                                            <div className="min-w-0 flex-1"><p className="truncate font-mono text-[10px] text-red-800">{item.normalizedUrl}</p><p className="text-xs text-red-700">{item.error || 'This link needs attention.'}</p></div>
+                                                            <div className="min-w-0 flex-1"><p className="truncate font-mono text-[10px] text-red-800">{item.normalizedUrl}</p><p className="text-xs text-red-700">{getUserFacingErrorMessage(item.error, 'This link needs attention.')}</p></div>
                                                             <button type="button" onClick={() => retryBatchItem({ itemId: item._id })} className="min-h-10 rounded-lg border border-red-200 bg-white px-4 text-xs font-bold text-red-700"><RefreshCw className="mr-1 inline h-3 w-3" />Retry</button>
                                                         </div>
                                                     ))}

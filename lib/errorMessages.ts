@@ -4,11 +4,21 @@ type ErrorLike = {
 };
 
 const cleanConvexPrefix = (message: string): string => {
-  return message
+  const cleaned = message
     .replace(/^Uncaught ConvexError:\s*/i, '')
     .replace(/^Uncaught Error:\s*/i, '')
     .replace(/\s+Called by client\s*$/i, '')
     .trim();
+  const jsonEnd = cleaned.lastIndexOf('}');
+  if (cleaned.startsWith('{') && jsonEnd >= 0) {
+    try {
+      const payload = JSON.parse(cleaned.slice(0, jsonEnd + 1)) as { message?: unknown };
+      if (typeof payload.message === 'string' && payload.message.trim()) return payload.message.trim();
+    } catch {
+      // Fall through to the cleaned message when the upstream text is not valid JSON.
+    }
+  }
+  return cleaned.replace(/\s+at handler\s+\([^)]*\)\s*$/i, '').trim();
 };
 
 const isGenericConvexWrapper = (message: string): boolean => {

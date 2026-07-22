@@ -25,6 +25,13 @@ export const extract1688ProductId = (value: string): string | null => {
   }
 };
 
+export const extract1688ProductIdFromSharePayload = (value: string): string | null => {
+  const decoded = value.replace(/&amp;/gi, '&');
+  const offerId = decoded.match(/[?&]offerId=(\d+)/i)?.[1];
+  if (offerId) return offerId;
+  return decoded.match(/\/offer\?id=(\d+)(?:\.html)?/i)?.[1] || null;
+};
+
 /**
  * Extracts URLs pasted from Notes, messages, or a line-separated list.
  * Keeping this deliberately permissive lets 1688 share links pass through to
