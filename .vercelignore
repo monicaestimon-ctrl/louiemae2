@@ -6,3 +6,6 @@ dist-ssr
 .env*
 *.log
 coverage
+output
+tools
+docs

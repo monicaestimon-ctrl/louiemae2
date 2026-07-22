@@ -40,6 +40,41 @@ const DEFAULT_PRICING_RULE: PricingRule = {
 };
 
 const REVIEW_BATCH_SIZE = 12;
+const SEARCH_PAGE_SIZE = 24;
+const MAX_RESTORED_PRODUCTS = 60;
+const MAX_RESTORED_DRAFT_BYTES = 1_500_000;
+
+const getStoredImportDraft = (): ImportableProduct[] => {
+    try {
+        const saved = sessionStorage.getItem('import-search-results') || localStorage.getItem('import-draft-results');
+        if (!saved || saved.length > MAX_RESTORED_DRAFT_BYTES) return [];
+        const parsed = JSON.parse(saved);
+        return Array.isArray(parsed) ? parsed.slice(0, MAX_RESTORED_PRODUCTS) : [];
+    } catch {
+        return [];
+    }
+};
+
+const hasSelectedStoredImportDraft = (): boolean => {
+    try {
+        return getStoredImportDraft().some((product: any) => product?.selected);
+    } catch {
+        return false;
+    }
+};
+
+const persistImportSessionResults = (results: ImportableProduct[]) => {
+    try {
+        const serialized = JSON.stringify(results.slice(0, MAX_RESTORED_PRODUCTS));
+        if (serialized.length > MAX_RESTORED_DRAFT_BYTES) {
+            sessionStorage.removeItem('import-search-results');
+            return;
+        }
+        sessionStorage.setItem('import-search-results', serialized);
+    } catch {
+        /* ignore sessionStorage errors */
+    }
+};
 
 // Approximate exchange rates for pre-sourcing estimation (CJ confirms final pricing)
 const CURRENCY_RATES_TO_USD: Record<string, number> = {
@@ -73,21 +108,18 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearching, setIsSearching] = useState(false);
     const [searchResults, setSearchResultsRaw] = useState<ImportableProduct[]>(() => {
-        try {
-            const saved = sessionStorage.getItem('import-search-results') || localStorage.getItem('import-draft-results');
-            return saved ? JSON.parse(saved) : [];
-        } catch { return []; }
+        return getStoredImportDraft();
     });
     const setSearchResults = (resultsOrUpdater: ImportableProduct[] | ((prev: ImportableProduct[]) => ImportableProduct[])) => {
         if (typeof resultsOrUpdater === 'function') {
             setSearchResultsRaw(prev => {
                 const next = resultsOrUpdater(prev);
-                try { sessionStorage.setItem('import-search-results', JSON.stringify(next)); } catch { /* ignore sessionStorage errors */ }
+                persistImportSessionResults(next);
                 return next;
             });
         } else {
             setSearchResultsRaw(resultsOrUpdater);
-            try { sessionStorage.setItem('import-search-results', JSON.stringify(resultsOrUpdater)); } catch { /* ignore sessionStorage errors */ }
+            persistImportSessionResults(resultsOrUpdater);
         }
     };
 
@@ -367,7 +399,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             const result = await aliexpressService.searchAllSources({
                 query: searchQuery,
                 page,
-                pageSize: 100,
+                pageSize: SEARCH_PAGE_SIZE,
                 minPrice: minPrice ? parseFloat(minPrice) : undefined,
                 maxPrice: maxPrice ? parseFloat(maxPrice) : undefined,
                 sortBy: sortBy === 'default' ? undefined : sortBy,
@@ -393,7 +425,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                 }));
 
             setSearchResults(filteredProducts);
-            setTotalPages(result.totalPages || Math.ceil(result.totalCount / 20));
+            setTotalPages(result.totalPages || Math.ceil(result.totalCount / SEARCH_PAGE_SIZE));
             setCurrentPage(page);
             setSelectAll(false);
             toast.dismiss('search-progress');
@@ -622,9 +654,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
         try {
             const savedStep = sessionStorage.getItem('import-step') || localStorage.getItem('import-draft-step');
             if (savedStep === 'review' || savedStep === 'final-review') {
-                // Only restore non-search steps if the saved batch has selected products
-                const savedResults = JSON.parse(sessionStorage.getItem('import-search-results') || localStorage.getItem('import-draft-results') || '[]');
-                if (Array.isArray(savedResults) && savedResults.some((p: any) => p.selected)) {
+                if (hasSelectedStoredImportDraft()) {
                     return savedStep;
                 }
             }
@@ -679,10 +709,15 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
 
     const handleSaveImportDraft = () => {
         try {
-            sessionStorage.setItem('import-search-results', JSON.stringify(searchResults));
+            const serializedResults = JSON.stringify(searchResults.slice(0, MAX_RESTORED_PRODUCTS));
+            if (serializedResults.length > MAX_RESTORED_DRAFT_BYTES) {
+                toast.error('This import draft is too large to save in the browser. Import a smaller review batch first.');
+                return;
+            }
+            sessionStorage.setItem('import-search-results', serializedResults);
             sessionStorage.setItem('import-step', importStep);
             sessionStorage.setItem('import-review-index', String(reviewIndex));
-            localStorage.setItem('import-draft-results', JSON.stringify(searchResults));
+            localStorage.setItem('import-draft-results', serializedResults);
             localStorage.setItem('import-draft-step', importStep);
             localStorage.setItem('import-draft-review-index', String(reviewIndex));
             toast.success('Import draft saved. You can return to this import review later from this browser.');

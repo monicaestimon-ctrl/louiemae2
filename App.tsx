@@ -172,7 +172,9 @@ const AppContent = () => {
 
     // Hash handler
     const handleHash = () => {
-      const fullHash = window.location.hash;
+      // Let /admin work as a real entry path so it survives domain redirects.
+      const isAdminPath = window.location.pathname.replace(/\/+$/, '') === '/admin';
+      const fullHash = isAdminPath ? '#admin' : window.location.hash;
       // Split query params to determine main route
       const [baseHash] = fullHash.split('?');
 
