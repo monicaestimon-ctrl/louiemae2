@@ -106,6 +106,47 @@ export const getLatest = query({
     },
 });
 
+const clearBatchJob = async (ctx: any, jobId: Id<"batchImportJobs">) => {
+    const now = Date.now();
+    const items = await ctx.db.query("batchImportItems").withIndex("by_job", (q: any) => q.eq("jobId", jobId)).collect();
+    let cleared = 0;
+    for (const item of items) {
+        if (!hasOpenBatchWork(item)) continue;
+        await ctx.db.patch(item._id, {
+            status: "skipped",
+            stage: "Cleared by admin",
+            result: undefined,
+            error: undefined,
+            updatedAt: now,
+        });
+        cleared += 1;
+    }
+    await ctx.db.patch(jobId, { status: "cancelled", updatedAt: now });
+    return { cleared };
+};
+
+export const cancel = mutation({
+    args: { jobId: v.id("batchImportJobs") },
+    handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
+        return clearBatchJob(ctx, args.jobId);
+    },
+});
+
+export const cancelLatest = mutation({
+    args: {},
+    handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
+        const [processing, ready] = await Promise.all([
+            ctx.db.query("batchImportJobs").withIndex("by_status", q => q.eq("status", "processing")).order("desc").first(),
+            ctx.db.query("batchImportJobs").withIndex("by_status", q => q.eq("status", "ready")).order("desc").first(),
+        ]);
+        const job = !processing ? ready : !ready ? processing : processing.updatedAt >= ready.updatedAt ? processing : ready;
+        if (!job) return { cleared: 0 };
+        return clearBatchJob(ctx, job._id);
+    },
+});
+
 export const setStage = internalMutation({
     args: { itemId: v.id("batchImportItems"), stage: v.string() },
     handler: async (ctx, args) => {
@@ -138,7 +179,9 @@ export const finishItem = internalMutation({
     },
     handler: async (ctx, args) => {
         const item = await ctx.db.get(args.itemId);
-        if (!item) return;
+        if (!item || item.status !== "fetching") return;
+        const job = await ctx.db.get(item.jobId);
+        if (job?.status === "cancelled") return;
         const now = Date.now();
         await ctx.db.patch(args.itemId, args.error ? {
             status: "error",

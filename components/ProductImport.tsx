@@ -180,6 +180,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const cacheImageUrls = useAction(api.productImages.cacheImageUrls);
     const createBatchImport = useMutation(api.batchImports.create);
     const retryBatchItem = useMutation(api.batchImports.retry);
+    const cancelBatchImport = useMutation(api.batchImports.cancel);
     const skipObsoleteBatchErrors = useMutation(api.batchImports.skipObsoleteErrors);
     const markBatchPreparationError = useMutation(api.batchImports.markPreparationError);
     const markBatchItemsImported = useMutation(api.batchImports.markImported);
@@ -2624,6 +2625,27 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
         }
     };
 
+    const handleClearBatchImport = async () => {
+        if (!batchJob) return;
+        if (!confirm(`Clear this batch import queue? This removes ${batchJob.total} uploaded link${batchJob.total === 1 ? '' : 's'} from review, but it will not delete products you already imported.`)) return;
+        try {
+            const result = await cancelBatchImport({ jobId: batchJob._id });
+            setActiveBatchJobId(null);
+            try { localStorage.removeItem('active-batch-import-job'); } catch { /* storage unavailable */ }
+            const batchItemIds = new Set(pipelineItems.map(item => item._id));
+            setSearchResults(prev => prev.filter(product => !product.batchItemId || !batchItemIds.has(product.batchItemId as Id<'batchImportItems'>)));
+            setImportStep('search');
+            setReviewIndex(0);
+            setReviewBatchNumber(1);
+            setSelectAll(false);
+            toast.success(`Cleared ${result.cleared} import link${result.cleared === 1 ? '' : 's'} from review.`);
+        } catch (error) {
+            const message = getUserFacingErrorMessage(error, 'Could not clear this batch import.');
+            setError(message);
+            toast.error('Clear batch failed', { description: message });
+        }
+    };
+
     const selectedCount = searchResults.filter(p => p.selected).length;
     const pipelineItems = batchItems || [];
     const fetchingItems = pipelineItems.filter(item => item.status === 'fetching');
@@ -2826,6 +2848,9 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                         Review next {Math.min(REVIEW_BATCH_SIZE, readyCount)}
                                                     </button>
                                                 )}
+                                                <button type="button" onClick={handleClearBatchImport} className="min-h-11 rounded-xl border border-red-200 bg-white px-5 py-2.5 text-xs font-bold uppercase tracking-widest text-red-700 transition-colors hover:bg-red-50">
+                                                    Clear batch
+                                                </button>
                                             </div>
 
                                             {errorItems.length > 0 && (

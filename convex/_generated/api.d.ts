@@ -32,6 +32,7 @@ import type * as geminiDescriptionClient from "../geminiDescriptionClient.js";
 import type * as geminiNameClient from "../geminiNameClient.js";
 import type * as http from "../http.js";
 import type * as orders from "../orders.js";
+import type * as pinnedLookup from "../pinnedLookup.js";
 import type * as pricingAudits from "../pricingAudits.js";
 import type * as productFacts from "../productFacts.js";
 import type * as productImageRecords from "../productImageRecords.js";
@@ -75,6 +76,7 @@ declare const fullApi: ApiFromModules<{
   geminiNameClient: typeof geminiNameClient;
   http: typeof http;
   orders: typeof orders;
+  pinnedLookup: typeof pinnedLookup;
   pricingAudits: typeof pricingAudits;
   productFacts: typeof productFacts;
   productImageRecords: typeof productImageRecords;
