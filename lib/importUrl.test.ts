@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeProductImportUrl, parseProductImportUrls } from './importUrl';
+import { extract1688ProductId, normalizeProductImportUrl, parseProductImportUrls } from './importUrl';
 
 describe('normalizeProductImportUrl', () => {
   it('keeps complete http and https URLs unchanged apart from trimming', () => {
@@ -17,6 +17,21 @@ describe('normalizeProductImportUrl', () => {
 
   it('returns an empty string for blank input', () => {
     expect(normalizeProductImportUrl('   ')).toBe('');
+  });
+});
+
+describe('extract1688ProductId', () => {
+  it('recognizes desktop and mobile offer paths with or without .html', () => {
+    expect(extract1688ProductId('https://detail.1688.com/offer/922839791630.html')).toBe('922839791630');
+    expect(extract1688ProductId('https://m.1688.com/offer/922839791630')).toBe('922839791630');
+  });
+
+  it('recognizes item IDs carried in 1688 query strings', () => {
+    expect(extract1688ProductId('https://m.1688.com/page/index.html?offerId=922839791630')).toBe('922839791630');
+  });
+
+  it('does not extract IDs from unrelated hosts', () => {
+    expect(extract1688ProductId('https://example.com/offer/922839791630.html')).toBeNull();
   });
 });
 

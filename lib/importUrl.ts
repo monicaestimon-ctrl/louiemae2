@@ -6,6 +6,25 @@ export const normalizeProductImportUrl = (value: string): string => {
   return `https://${trimmed}`;
 };
 
+export const extract1688ProductId = (value: string): string | null => {
+  try {
+    const url = new URL(normalizeProductImportUrl(value));
+    const hostname = url.hostname.toLowerCase();
+    if (hostname !== '1688.com' && !hostname.endsWith('.1688.com')) return null;
+
+    const pathMatch = url.pathname.match(/\/offer\/(?:offer_detail-)?(\d+)(?:\.html)?(?:\/|$)/i);
+    if (pathMatch) return pathMatch[1];
+
+    for (const key of ['offerId', 'itemId', 'offer_id']) {
+      const candidate = url.searchParams.get(key);
+      if (candidate && /^\d+$/.test(candidate)) return candidate;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
+
 /**
  * Extracts URLs pasted from Notes, messages, or a line-separated list.
  * Keeping this deliberately permissive lets 1688 share links pass through to

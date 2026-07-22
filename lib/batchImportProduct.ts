@@ -27,6 +27,7 @@ export const buildBatchImportProduct = (
     if (result.source === '1688') {
         const item = result.data?.Result ?? result.data;
         if (!item || typeof item !== 'object') throw new Error('1688 payload missing item data.');
+        if (!item.Title && !item.OriginalTitle) throw new Error('1688 payload is missing the product title.');
         const getUsd = (price: any) => {
             const converted = Number(price?.ConvertedPriceList?.Internal?.Price || 0);
             if (converted > 0) return converted;
@@ -38,6 +39,7 @@ export const buildBatchImportProduct = (
         const regular = getUsd(item.Price);
         const salePrice = promo > 0 ? promo : regular;
         const originalPrice = regular > promo && promo > 0 ? regular : salePrice;
+        if (salePrice <= 0 && originalPrice <= 0) throw new Error('1688 payload is missing a valid product price.');
         const images: string[] = [];
         const addImage = (url?: string) => { if (url && !images.includes(url)) images.push(url); };
         (item.Pictures || []).forEach((pic: any) => addImage(pic?.Large?.Url || pic?.Medium?.Url || pic?.Url));

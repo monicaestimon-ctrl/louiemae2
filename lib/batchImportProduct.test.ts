@@ -49,4 +49,12 @@ describe('buildBatchImportProduct', () => {
     expect(product.price).toBeCloseTo(100 * CURRENCY_RATES_TO_USD.CNY, 2);
     expect(product.sourcePriceCny).toBe(100);
   });
+
+  it('rejects an incomplete 1688 wrapper instead of creating a placeholder review item', () => {
+    expect(() => buildBatchImportProduct({
+      _id: 'item-4',
+      normalizedUrl: 'https://m.1688.com/share/abc',
+      result: { source: '1688', data: { Result: { HasError: false } } },
+    }, 'decor', price => price * 3)).toThrow('missing the product title');
+  });
 });

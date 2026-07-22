@@ -8,6 +8,7 @@ import * as http from "node:http";
 import * as https from "node:https";
 import type { IncomingHttpHeaders } from "node:http";
 import { createPinnedLookup } from "./pinnedLookup";
+import { extract1688ProductId } from "../lib/importUrl";
 
 const normalizeHostname = (hostname: string): string =>
     hostname.trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
@@ -257,10 +258,9 @@ export const scrapeProduct = action({
             // Support formats:
             // https://detail.1688.com/offer/838924089999.html
             // https://m.1688.com/offer/838924089999.html
-            const match1688 = resolvedUrl.match(/1688\.com\/offer\/(\d+)\.html/);
+            const productId = extract1688ProductId(resolvedUrl);
 
-            if (match1688) {
-                const productId = match1688[1];
+            if (productId) {
                 console.log(`[Scraper] Detected 1688 product ID: ${productId}`);
                 try {
                     return { ...(await scrape1688(productId, resolvedUrl)), resolvedUrl };
@@ -280,6 +280,15 @@ export const scrapeProduct = action({
             // 2. Generic Scraper (handles AliExpress, Amazon, and any other URLs)
             console.log(`[Scraper] Using generic scraper for: ${resolvedUrl}`);
             const generic = await scrapeGeneric(resolvedUrl, is1688Host ? undefined : safeInitialUrl);
+            if (is1688Host && (
+                generic.data?.title === 'Unknown Product' ||
+                !Number.isFinite(Number(generic.data?.price)) ||
+                Number(generic.data?.price) <= 0
+            )) {
+                throw new Error(
+                    'Could not resolve this 1688 link to a product listing. Paste the full item URL containing /offer/<item-id> and try again.'
+                );
+            }
             return { ...generic, resolvedUrl: generic.data?.url || resolvedUrl };
 
         } catch (err: any) {
