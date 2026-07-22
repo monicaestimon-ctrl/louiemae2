@@ -44,10 +44,34 @@ const SEARCH_PAGE_SIZE = 24;
 const MAX_RESTORED_PRODUCTS = 60;
 const MAX_RESTORED_DRAFT_BYTES = 1_500_000;
 
+const isMobileImportBrowser = (): boolean =>
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches;
+
+const clearStoredImportDraft = () => {
+    try {
+        sessionStorage.removeItem('import-search-results');
+        sessionStorage.removeItem('import-step');
+        sessionStorage.removeItem('import-review-index');
+        localStorage.removeItem('import-draft-results');
+        localStorage.removeItem('import-draft-step');
+        localStorage.removeItem('import-draft-review-index');
+    } catch {
+        /* ignore storage errors */
+    }
+};
+
 const getStoredImportDraft = (): ImportableProduct[] => {
     try {
+        if (isMobileImportBrowser()) {
+            clearStoredImportDraft();
+            return [];
+        }
         const saved = sessionStorage.getItem('import-search-results') || localStorage.getItem('import-draft-results');
-        if (!saved || saved.length > MAX_RESTORED_DRAFT_BYTES) return [];
+        if (!saved) return [];
+        if (saved.length > MAX_RESTORED_DRAFT_BYTES) {
+            clearStoredImportDraft();
+            return [];
+        }
         const parsed = JSON.parse(saved);
         return Array.isArray(parsed) ? parsed.slice(0, MAX_RESTORED_PRODUCTS) : [];
     } catch {
@@ -65,6 +89,7 @@ const hasSelectedStoredImportDraft = (): boolean => {
 
 const persistImportSessionResults = (results: ImportableProduct[]) => {
     try {
+        if (isMobileImportBrowser()) return;
         const serialized = JSON.stringify(results.slice(0, MAX_RESTORED_PRODUCTS));
         if (serialized.length > MAX_RESTORED_DRAFT_BYTES) {
             sessionStorage.removeItem('import-search-results');
@@ -341,7 +366,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
         for (const item of batchItems) {
             if (item.status !== 'ready') reportedPreparationErrors.current.delete(item._id);
         }
-        const readyRows = batchItems.filter(item => item.status === 'ready' && item.result);
+        const readyRows = batchItems.filter(item => item.status === 'ready' && 'result' in item && item.result);
         if (readyRows.length === 0) return;
         setSearchResults(prev => {
             const known = new Set(prev.map(product => product.batchItemId).filter(Boolean));

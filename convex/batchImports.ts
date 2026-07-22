@@ -80,7 +80,15 @@ export const getItems = query({
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
         const items = await ctx.db.query("batchImportItems").withIndex("by_job", q => q.eq("jobId", args.jobId)).collect();
-        return items.sort((a, b) => a.position - b.position);
+        let readyResultsIncluded = 0;
+        return items.sort((a, b) => a.position - b.position).map((item) => {
+            if (item.status !== "ready" || readyResultsIncluded >= REVIEW_BATCH_SIZE) {
+                const { result, ...summary } = item;
+                return summary;
+            }
+            readyResultsIncluded += 1;
+            return item;
+        });
     },
 });
 
