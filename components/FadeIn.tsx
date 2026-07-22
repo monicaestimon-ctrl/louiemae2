@@ -34,10 +34,20 @@ export const FadeIn: React.FC<FadeInProps> = ({
   const effectiveThreshold = (mobileFast && isMobile) ? 0.005 : threshold;
 
   useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return;
+    }
+
+    const fallback = window.setTimeout(() => {
+      setVisible(true);
+    }, Math.max(700, delay + 300));
+
     const observer = new IntersectionObserver(entries => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
           setVisible(true);
+          window.clearTimeout(fallback);
           if (domRef.current) observer.unobserve(domRef.current);
         }
       });
@@ -47,9 +57,10 @@ export const FadeIn: React.FC<FadeInProps> = ({
     if (currentRef) observer.observe(currentRef);
 
     return () => {
+      window.clearTimeout(fallback);
       if (currentRef) observer.unobserve(currentRef);
     };
-  }, [effectiveThreshold]);
+  }, [delay, effectiveThreshold]);
 
   // Mobile fast: quick 300ms opacity fade, no vertical shift
   const useFastFade = mobileFast && isMobile;
