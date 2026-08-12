@@ -3,7 +3,6 @@
 import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { auth } from "./auth";
 
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_CACHE_URLS = 40;
@@ -30,9 +29,7 @@ const isDurableUrl = (value = "") => {
 const shouldCache = (value = "") => isHttpUrl(value) && !isDurableUrl(value);
 
 const requireIdentity = async (ctx: any) => {
-    const userId = await auth.getUserId(ctx).catch(() => null);
-    const identity = await ctx.auth.getUserIdentity().catch(() => null);
-    if (!userId && !identity) throw new Error("Authentication required to cache product images.");
+    await ctx.runQuery(internal.cjAdminAccess.verifyCjAdminIdentity, {});
 };
 
 async function fetchImageBlob(url: string, sourceUrl?: string): Promise<Blob> {

@@ -5,11 +5,10 @@ import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
 import { useSite } from '../contexts/BlogContext';
 import { RichTextEditor } from './RichTextEditor';
-import { useNewsletter } from '../contexts/NewsletterContext';
+import { useNewsletterAdmin } from '../contexts/NewsletterContext';
 import { FadeIn } from './FadeIn';
 import { Plus, Edit3, Trash2, LogOut, X, Image as ImageIcon, Layout, ArrowLeft, PenTool, BookOpen, Home, Settings, Wand2 as WandIcon, Loader2, FileText, ShoppingBag, Tag, ChevronDown, Layers, Menu, Upload, Grid, Maximize, Type, Mail, Users, Send, BarChart2, Package, Lock, ChevronLeft, ExternalLink, Search, Eye, EyeOff, Rocket, RefreshCw } from 'lucide-react';
 import { BlogPost, CustomPage, PageSection, Product, CollectionType, CollectionConfig, EmailCampaign } from '../types';
-import { generatePageStructure } from '../services/geminiService';
 import { AdminOrders } from './AdminOrders';
 import { NewsletterStudio } from './NewsletterStudio';
 import { ProductStudio } from './ProductStudio';
@@ -184,11 +183,13 @@ const ImageUploader: React.FC<{
 
 export const AdminPage: React.FC = () => {
    const { isAuthenticated, isAuthLoading, signIn, logout, posts, addPost, updatePost, deletePost, siteContent, updateSiteContent, addCustomPage, updateCustomPage, deleteCustomPage, products, addProduct, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
-   const { subscribers, campaigns, createCampaign, updateCampaign, sendCampaign, deleteCampaign, stats } = useNewsletter();
+   const { subscribers, campaigns, createCampaign, updateCampaign, sendCampaign, deleteCampaign, stats } = useNewsletterAdmin();
    const linkDescriptionAuditToProduct = useMutation(api.descriptionAudits.linkAuditToProduct);
    const launchNextProducts = useMutation(api.products.launchNextProducts);
    const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
    const refreshInventory = useAction(api.cjActions.refreshInventory);
+   const generatePageStructure = useAction(api.ai.generatePageStructure);
+   const generateBlogExcerpts = useAction(api.ai.generateBlogExcerpts);
 
    const [email, setEmail] = useState('');
    const [password, setPassword] = useState('');
@@ -570,13 +571,16 @@ export const AdminPage: React.FC = () => {
 
       setIsGenerating(true);
       try {
-         const generatedContent = await generatePageStructure(generatorPrompt.description, generatorPrompt.title);
+         const generatedContent = await generatePageStructure({
+            prompt: generatorPrompt.description,
+            title: generatorPrompt.title,
+         });
 
          const newPage: CustomPage = {
             id: Date.now().toString(),
             slug: generatorPrompt.title.toLowerCase().replace(/\s+/g, '-'),
             title: generatedContent.title,
-            sections: generatedContent.sections as PageSection[]
+            sections: generatedContent.sections as unknown as PageSection[]
          };
 
          addCustomPage(newPage);
@@ -2275,28 +2279,10 @@ export const AdminPage: React.FC = () => {
                                        setExcerptGenerating(true);
                                        setExcerptOptions([]);
                                        try {
-                                          const plainText = editingPost.content.replace(/<[^>]*>/g, '').trim();
-                                          const { GoogleGenAI } = await import('@google/genai');
-                                          const genAI = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
-                                          const response = await genAI.models.generateContent({
-                                             model: 'gemini-2.0-flash',
-                                             contents: `You are an editorial assistant for a premium lifestyle and faith blog called "Simply Mae." Generate exactly 4 excerpt options for this blog post. Each excerpt should be 1-2 sentences that entice readers to click and read the full post.
-
-The 4 styles are:
-1. THE HOOK — provocative, challenges assumptions, draws you in
-2. THE HEART — personal, speaks directly to the reader, makes them feel seen
-3. THE THESIS — clear and bold, summarizes the core message
-4. THE REFRAME — offers a surprising perspective or reframes a common belief
-
-Return ONLY a JSON array of 4 objects with "style" and "text" fields. No markdown formatting, no code blocks, just the raw JSON array.
-
-Blog post content:
-${plainText.slice(0, 3000)}`,
-                                          });
-                                          const text = response?.text || '';
-                                          const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-                                          const options = JSON.parse(cleaned);
-                                          setExcerptOptions(options);
+                                           const options = await generateBlogExcerpts({
+                                              content: editingPost.content,
+                                           });
+                                           setExcerptOptions(options);
                                        } catch (err) {
                                           console.error('Excerpt generation failed:', err);
                                           alert('Failed to generate excerpts. Please try again.');

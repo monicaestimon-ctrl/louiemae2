@@ -4,8 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/verify-environment.mjs",
     "dev": "vite",
-    "build": "vite build",
+    "prebuild": "node scripts/verify-environment.mjs",
+    "build": "vite build && npm run verify:client-secrets",
     "preview": "vite preview",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -13,7 +15,9 @@
     "type-check": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "verify:client-secrets": "node scripts/verify-client-secrets.mjs",
+    "verify:environment": "node scripts/verify-environment.mjs"
   },
   "dependencies": {
     "@auth/core": "^0.37.0",

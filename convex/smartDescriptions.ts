@@ -81,6 +81,17 @@ export const generateSmartDescription = action({
                 error: "Authentication required",
             };
         }
+        try {
+            await ctx.runQuery(internal.cjAdminAccess.verifyCjAdminIdentity, {});
+        } catch {
+            return {
+                ok: false,
+                warnings: [],
+                validation: { passed: false, errors: [], warnings: [], claimChecks: [], repaired: false },
+                fallbackUsed: false,
+                error: "Admin permission required",
+            };
+        }
         if (process.env.SMART_DESCRIPTION_ENABLED === "false") {
             return {
                 ok: false,

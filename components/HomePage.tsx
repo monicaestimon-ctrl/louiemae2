@@ -300,22 +300,25 @@ export const HomePage: React.FC = () => {
                 >
                   {/* Mobile-only override for Girls category */}
                   {cat.id === 'girls' ? (
-                    <>
-                      <img
-                        src="/images/brand/girls-dress1.png"
-                        alt={cat.title}
-                        className="md:hidden w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
+                    <picture>
+                      <source
+                        media="(max-width: 767px)"
+                        srcSet="/images/brand/girls-dress1.png"
                       />
                       <img
                         src={cat.image}
                         alt={cat.title}
-                        className="hidden md:block w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
+                        loading="lazy"
+                        decoding="async"
+                        className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
                       />
-                    </>
+                    </picture>
                   ) : (
                     <img
                       src={cat.image}
                       alt={cat.title}
+                      loading="lazy"
+                      decoding="async"
                       className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
                     />
                   )}

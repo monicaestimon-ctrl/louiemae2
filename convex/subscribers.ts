@@ -1,10 +1,12 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { requireCjAdminIdentity } from "./cjAdminAccess";
 
 export const list = query({
     args: {},
     handler: async (ctx) => {
-        return await ctx.db.query("subscribers").collect();
+        await requireCjAdminIdentity(ctx);
+        return await ctx.db.query("subscribers").take(500);
     },
 });
 
@@ -47,6 +49,7 @@ export const create = mutation({
 export const remove = mutation({
     args: { id: v.id("subscribers") },
     handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
         await ctx.db.delete(args.id);
     },
 });
@@ -64,6 +67,7 @@ export const seed = mutation({
         })),
     },
     handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("subscribers").first();
         if (existing) return; // Already seeded
 

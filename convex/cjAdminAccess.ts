@@ -1,4 +1,4 @@
-import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 
@@ -41,3 +41,9 @@ export const requireCjAdminIdentity = async (ctx: AdminCtx): Promise<{ email: st
 
     return { email };
 };
+
+/** Lets Node actions reuse the same canonical DB-backed admin allowlist check. */
+export const verifyCjAdminIdentity = internalQuery({
+    args: {},
+    handler: async (ctx): Promise<{ email: string }> => requireCjAdminIdentity(ctx),
+});

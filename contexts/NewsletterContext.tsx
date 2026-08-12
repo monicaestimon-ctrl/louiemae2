@@ -1,15 +1,18 @@
 
 import React, { createContext, useContext, ReactNode, useEffect } from 'react';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
 import { Subscriber, EmailCampaign } from '../types';
 
 interface NewsletterContextType {
-  subscribers: Subscriber[];
-  campaigns: EmailCampaign[];
   addSubscriber: (email: string, firstName?: string) => Promise<boolean>;
   addSubscriberWithTags: (email: string, firstName: string, tags: string[]) => Promise<boolean>;
+}
+
+interface NewsletterAdminContextType {
+  subscribers: Subscriber[];
+  campaigns: EmailCampaign[];
   deleteSubscriber: (id: string) => void;
   createCampaign: (campaign: Omit<EmailCampaign, 'id' | 'stats' | 'status'>) => void;
   updateCampaign: (id: string, updates: Partial<EmailCampaign>) => void;
@@ -54,44 +57,9 @@ const INITIAL_CAMPAIGNS = [
 ];
 
 export const NewsletterProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // --- Convex Queries ---
-  const convexSubscribers = useQuery(api.subscribers.list);
-  const convexCampaigns = useQuery(api.campaigns.list);
-
-  // --- Convex Mutations ---
+  // Public pages only receive the subscribe mutation. Subscriber and campaign
+  // records are loaded by useNewsletterAdmin, which is mounted with AdminPage.
   const createSubscriber = useMutation(api.subscribers.create);
-  const removeSubscriber = useMutation(api.subscribers.remove);
-  const seedSubscribers = useMutation(api.subscribers.seed);
-
-  const createCampaignMutation = useMutation(api.campaigns.create);
-  const updateCampaignMutation = useMutation(api.campaigns.update);
-  const sendCampaignMutation = useMutation(api.campaigns.send);
-  const removeCampaign = useMutation(api.campaigns.remove);
-  const seedCampaigns = useMutation(api.campaigns.seed);
-
-  // --- Seed initial data if Convex is empty ---
-  useEffect(() => {
-    if (convexSubscribers !== undefined && convexSubscribers.length === 0) {
-      seedSubscribers({ subscribers: INITIAL_SUBSCRIBERS });
-    }
-  }, [convexSubscribers, seedSubscribers]);
-
-  useEffect(() => {
-    if (convexCampaigns !== undefined && convexCampaigns.length === 0) {
-      seedCampaigns({ campaigns: INITIAL_CAMPAIGNS });
-    }
-  }, [convexCampaigns, seedCampaigns]);
-
-  // --- Transform Convex data to match existing types ---
-  const subscribers: Subscriber[] = (convexSubscribers ?? []).map(s => ({
-    ...s,
-    id: s._id,
-  }));
-
-  const campaigns: EmailCampaign[] = (convexCampaigns ?? []).map(c => ({
-    ...c,
-    id: c._id,
-  }));
 
   // --- Actions ---
   const addSubscriber = async (email: string, firstName?: string): Promise<boolean> => {
@@ -106,46 +74,10 @@ export const NewsletterProvider: React.FC<{ children: ReactNode }> = ({ children
     return true;
   };
 
-  const deleteSubscriber = (id: string) => {
-    removeSubscriber({ id: id as Id<"subscribers"> });
-  };
-
-  const createCampaign = (campaignData: Omit<EmailCampaign, 'id' | 'stats' | 'status'>) => {
-    createCampaignMutation(campaignData);
-  };
-
-  const updateCampaign = (id: string, updates: Partial<EmailCampaign>) => {
-    const { id: _, ...rest } = updates as any;
-    updateCampaignMutation({ id: id as Id<"campaigns">, ...rest });
-  };
-
-  const sendCampaign = async (id: string) => {
-    await sendCampaignMutation({ id: id as Id<"campaigns"> });
-  };
-
-  const deleteCampaign = (id: string) => {
-    removeCampaign({ id: id as Id<"campaigns"> });
-  };
-
-  // --- Derived Stats ---
-  const stats = {
-    totalSubscribers: subscribers.length,
-    avgOpenRate: Math.round(subscribers.reduce((acc, curr) => acc + curr.openRate, 0) / (subscribers.length || 1)),
-    totalEmailsSent: campaigns.reduce((acc, curr) => acc + curr.stats.sent, 0)
-  };
-
   return (
     <NewsletterContext.Provider value={{
-      subscribers,
-      campaigns,
       addSubscriber,
       addSubscriberWithTags,
-      deleteSubscriber,
-      createCampaign,
-      updateCampaign,
-      sendCampaign,
-      deleteCampaign,
-      stats
     }}>
       {children}
     </NewsletterContext.Provider>
@@ -158,4 +90,56 @@ export const useNewsletter = () => {
     throw new Error('useNewsletter must be used within a NewsletterProvider');
   }
   return context;
+};
+
+export const useNewsletterAdmin = (): NewsletterAdminContextType => {
+  const { isAuthenticated } = useConvexAuth();
+  const convexSubscribers = useQuery(api.subscribers.list, isAuthenticated ? {} : 'skip');
+  const convexCampaigns = useQuery(api.campaigns.list, isAuthenticated ? {} : 'skip');
+  const removeSubscriber = useMutation(api.subscribers.remove);
+  const seedSubscribers = useMutation(api.subscribers.seed);
+  const createCampaignMutation = useMutation(api.campaigns.create);
+  const updateCampaignMutation = useMutation(api.campaigns.update);
+  const sendCampaignMutation = useMutation(api.campaigns.send);
+  const removeCampaign = useMutation(api.campaigns.remove);
+  const seedCampaigns = useMutation(api.campaigns.seed);
+
+  useEffect(() => {
+    if (isAuthenticated && convexSubscribers?.length === 0) {
+      void seedSubscribers({ subscribers: INITIAL_SUBSCRIBERS });
+    }
+  }, [isAuthenticated, convexSubscribers, seedSubscribers]);
+
+  useEffect(() => {
+    if (isAuthenticated && convexCampaigns?.length === 0) {
+      void seedCampaigns({ campaigns: INITIAL_CAMPAIGNS });
+    }
+  }, [isAuthenticated, convexCampaigns, seedCampaigns]);
+
+  const subscribers: Subscriber[] = (convexSubscribers ?? []).map((subscriber) => ({
+    ...subscriber,
+    id: subscriber._id,
+  }));
+  const campaigns: EmailCampaign[] = (convexCampaigns ?? []).map((campaign) => ({
+    ...campaign,
+    id: campaign._id,
+  }));
+
+  return {
+    subscribers,
+    campaigns,
+    deleteSubscriber: (id) => { void removeSubscriber({ id: id as Id<"subscribers"> }); },
+    createCampaign: (campaign) => { void createCampaignMutation(campaign); },
+    updateCampaign: (id, updates) => {
+      const { id: _id, ...rest } = updates as any;
+      void updateCampaignMutation({ id: id as Id<"campaigns">, ...rest });
+    },
+    sendCampaign: async (id) => { await sendCampaignMutation({ id: id as Id<"campaigns"> }); },
+    deleteCampaign: (id) => { void removeCampaign({ id: id as Id<"campaigns"> }); },
+    stats: {
+      totalSubscribers: subscribers.length,
+      avgOpenRate: Math.round(subscribers.reduce((sum, subscriber) => sum + subscriber.openRate, 0) / (subscribers.length || 1)),
+      totalEmailsSent: campaigns.reduce((sum, campaign) => sum + campaign.stats.sent, 0),
+    },
+  };
 };

@@ -186,7 +186,7 @@ const resolveCheckoutFulfillmentItems = async (ctx: ActionCtx, checkoutItems: Ch
 
         let product: CjReadinessProduct | null = null;
         try {
-            product = await ctx.runQuery(api.products.get, { id: item.productId as Id<"products"> });
+            product = await ctx.runQuery(internal.products.getInternal, { id: item.productId as Id<"products"> });
         } catch {
             if (required) {
                 errors.push(`${item.name} could not be verified for CJ fulfillment.`);
@@ -221,7 +221,7 @@ const resolveCheckoutFulfillmentItems = async (ctx: ActionCtx, checkoutItems: Ch
                     limit: 1,
                     source: "checkout",
                 });
-                product = await ctx.runQuery(api.products.get, { id: item.productId as Id<"products"> });
+                product = await ctx.runQuery(internal.products.getInternal, { id: item.productId as Id<"products"> });
                 if (!product) {
                     errors.push(`${item.name} could not be verified for CJ fulfillment.`);
                     unavailableItems.push({

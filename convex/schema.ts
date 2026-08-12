@@ -67,6 +67,7 @@ export default defineSchema({
         cjInventoryStatus: v.optional(cjInventoryStatusValidator),
         cjInventoryTotal: v.optional(v.number()),
         cjInventoryLastCheckedAt: v.optional(v.string()),
+        cjInventoryNextCheckAt: v.optional(v.number()),
         cjInventoryError: v.optional(v.string()),
         cjInventoryNeedsReview: v.optional(v.boolean()),
         cjInventoryReviewReason: v.optional(v.union(
@@ -164,10 +165,14 @@ export default defineSchema({
             productType: v.string(),
             collection: v.string(),
         })),
+        searchText: v.optional(v.string()),
     }).index("by_cj_sourcing_status", ["cjSourcingStatus"])
         .index("by_storefront_status", ["storefrontStatus"])
         .index("by_cj_sourcing_id", ["cjSourcingId"])
-        .index("by_batch_import_item", ["batchImportItemId"]),
+        .index("by_batch_import_item", ["batchImportItemId"])
+        .index("by_inventory_next_check", ["cjInventoryNextCheckAt"])
+        .index("by_search_text", ["searchText"])
+        .searchIndex("search_storefront", { searchField: "searchText" }),
 
     descriptionAudits: defineTable({
         productId: v.optional(v.id("products")),
@@ -199,10 +204,13 @@ export default defineSchema({
         createdBy: v.optional(v.string()),
         createdAt: v.number(),
         updatedAt: v.number(),
+        debugExpiresAt: v.optional(v.number()),
+        compactedAt: v.optional(v.number()),
     })
         .index("by_product", ["productId"])
         .index("by_import_session", ["importSessionId"])
-        .index("by_createdAt", ["createdAt"]),
+        .index("by_createdAt", ["createdAt"])
+        .index("by_debug_expiry", ["debugExpiresAt"]),
 
     pricingAudits: defineTable({
         productId: v.id("products"),
@@ -248,7 +256,7 @@ export default defineSchema({
         image: v.string(),
         category: v.string(),
         status: v.union(v.literal("published"), v.literal("draft")),
-    }),
+    }).index("by_status", ["status"]),
 
     // Site content - single document for nav, home, story, collections
     siteContent: defineTable({
@@ -521,8 +529,10 @@ export default defineSchema({
         reviewBatchSize: v.number(),
         createdAt: v.number(),
         updatedAt: v.number(),
+        expiresAt: v.optional(v.number()),
     }).index("by_updated_at", ["updatedAt"])
-        .index("by_status", ["status", "updatedAt"]),
+        .index("by_status", ["status", "updatedAt"])
+        .index("by_expiry", ["expiresAt"]),
 
     batchImportItems: defineTable({
         jobId: v.id("batchImportJobs"),
@@ -544,8 +554,26 @@ export default defineSchema({
         attempts: v.number(),
         createdAt: v.number(),
         updatedAt: v.number(),
+        resultVersion: v.optional(v.number()),
+        resultBytes: v.optional(v.number()),
+        expiresAt: v.optional(v.number()),
     }).index("by_job", ["jobId"])
-        .index("by_job_status", ["jobId", "status"]),
+        .index("by_job_status", ["jobId", "status"])
+        .index("by_expiry", ["expiresAt"]),
+
+    // Compact review payloads are separated from hot item status records so a
+    // progress subscription does not repeatedly read/send provider-sized data.
+    batchImportPayloads: defineTable({
+        itemId: v.id("batchImportItems"),
+        jobId: v.id("batchImportJobs"),
+        version: v.number(),
+        byteLength: v.number(),
+        result: v.any(),
+        createdAt: v.number(),
+        expiresAt: v.number(),
+    }).index("by_item", ["itemId"])
+        .index("by_job", ["jobId"])
+        .index("by_expiry", ["expiresAt"]),
 
     // CJ Webhook Log - tracks processed messageIds to prevent duplicate processing
     cjWebhookLog: defineTable({
@@ -563,7 +591,37 @@ export default defineSchema({
         completedAt: v.optional(v.string()),
         lastError: v.optional(v.string()),
         attempts: v.optional(v.number()),
-    }).index("by_message_id", ["messageId"]),
+        expiresAt: v.optional(v.number()),
+    }).index("by_message_id", ["messageId"])
+        .index("by_expiry", ["expiresAt"]),
+
+    cjInventoryPollRuns: defineTable({
+        source: v.union(v.literal("manual"), v.literal("checkout"), v.literal("cron"), v.literal("webhook")),
+        eligible: v.number(),
+        deferredFresh: v.number(),
+        checked: v.number(),
+        updated: v.number(),
+        errors: v.number(),
+        providerTokenRequested: v.boolean(),
+        durationMs: v.number(),
+        createdAt: v.number(),
+        expiresAt: v.number(),
+    }).index("by_created_at", ["createdAt"])
+        .index("by_expiry", ["expiresAt"]),
+
+    // Short-lived anonymous storefront AI quota/deduplication records. The
+    // client token is random browser state, not customer identity or content.
+    aiRequestUsage: defineTable({
+        clientToken: v.string(),
+        requestHash: v.string(),
+        operation: v.string(),
+        status: v.union(v.literal("claimed"), v.literal("completed"), v.literal("failed")),
+        response: v.optional(v.string()),
+        createdAt: v.number(),
+        expiresAt: v.number(),
+    }).index("by_client_created", ["clientToken", "createdAt"])
+        .index("by_request_hash", ["requestHash"])
+        .index("by_expiry", ["expiresAt"]),
 
     // CJ API Tokens - stores access and refresh tokens persistently
     // Matches CJ API response structure from /authentication/getAccessToken

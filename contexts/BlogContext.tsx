@@ -42,9 +42,17 @@ interface SiteContextType {
 const SiteContext = createContext<SiteContextType | undefined>(undefined);
 
 export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // --- Auth State (using Convex Auth) ---
+  const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
+  const { signIn: authSignIn, signOut: authSignOut } = useAuthActions();
+
   // --- Convex Queries ---
-  const convexPosts = useQuery(api.blogPosts.list);
-  const convexProducts = useQuery(api.products.list);
+  const adminPosts = useQuery(api.blogPosts.listAdmin, isAuthenticated ? {} : 'skip');
+  const publicPosts = useQuery(api.blogPosts.list, isAuthenticated ? 'skip' : {});
+  const convexPosts = isAuthenticated ? adminPosts : publicPosts;
+  const adminProducts = useQuery(api.products.list, isAuthenticated ? {} : 'skip');
+  const storefrontProducts = useQuery(api.products.listForStorefront, isAuthenticated ? 'skip' : {});
+  const convexProducts = isAuthenticated ? adminProducts : storefrontProducts;
   const convexSiteContent = useQuery(api.siteContent.get);
   const convexCustomPages = useQuery(api.customPages.list);
 
@@ -63,10 +71,6 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const createCustomPage = useMutation(api.customPages.create);
   const updateCustomPageMutation = useMutation(api.customPages.update);
   const removeCustomPage = useMutation(api.customPages.remove);
-
-  // --- Auth State (using Convex Auth) ---
-  const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
-  const { signIn: authSignIn, signOut: authSignOut } = useAuthActions();
 
   // --- Seed initial data if Convex is empty ---
   useEffect(() => {
@@ -110,7 +114,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const products: Product[] = (convexProducts ?? []).map(p => ({
     ...p,
     id: p._id,
-  }));
+  } as Product));
 
   const customPages: CustomPage[] = (convexCustomPages ?? []).map(p => ({
     ...p,

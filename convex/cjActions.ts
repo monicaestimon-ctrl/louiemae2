@@ -3,46 +3,19 @@
 import { action, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
-import { auth } from "./auth";
 import { getCjAutomationConfig, type CjAutomationConfig } from "../lib/cjAutomation";
 import { buildCjRetryOrderPayload } from "../lib/cjOrderRetry";
 import { getCjFulfillmentReentryBlock } from "../lib/cjFulfillmentWorkflow";
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PUBLIC CJ ACTIONS
-// These actions can be called from the frontend for manual operations
+// ADMIN CJ ACTIONS
+// These actions can be called from authenticated admin tools.
 // ═══════════════════════════════════════════════════════════════════════════
 
 const CJ_API_BASE = "https://developers.cjdropshipping.com/api2.0/v1";
 
-const parseAdminEmails = (rawEmails: string | undefined): Set<string> =>
-    new Set((rawEmails || "")
-        .split(/[,\s]+/)
-        .map(email => email.trim().toLowerCase())
-        .filter(Boolean));
-
-const getAdminEmailAllowlist = () =>
-    parseAdminEmails(process.env.CJ_ADMIN_EMAILS || process.env.ADMIN_EMAILS);
-
 const requireAdminIdentity = async (ctx: ActionCtx) => {
-    const userId = await auth.getUserId(ctx).catch(() => null);
-    const identity = await ctx.auth.getUserIdentity().catch(() => null);
-    const email = typeof identity?.email === "string" ? identity.email.trim().toLowerCase() : "";
-
-    if (!userId) {
-        throw new Error("You must be logged in to manage CJ automation.");
-    }
-    if (!email) {
-        throw new Error("Your account is missing an email address required for CJ admin access.");
-    }
-
-    const adminEmails = getAdminEmailAllowlist();
-    if (adminEmails.size === 0) {
-        throw new Error("CJ admin access is not configured. Set CJ_ADMIN_EMAILS in Convex environment variables.");
-    }
-    if (!adminEmails.has(email)) {
-        throw new Error("You do not have permission to manage CJ automation.");
-    }
+    await ctx.runQuery(internal.cjAdminAccess.verifyCjAdminIdentity, {});
 };
 
 /**
@@ -182,6 +155,7 @@ export const refreshInventory = action({
 export const testConnection = action({
     args: {},
     handler: async (ctx): Promise<{ success: boolean; message: string }> => {
+        await requireAdminIdentity(ctx);
         try {
             const token = await ctx.runAction(internal.cjDropshipping.getAccessToken, {});
             if (token) {
@@ -201,6 +175,7 @@ export const testConnection = action({
 export const configureWebhooks = action({
     args: {},
     handler: async (ctx): Promise<{ success: boolean; message: string }> => {
+        await requireAdminIdentity(ctx);
         try {
             // Get access token first
             const token = await ctx.runAction(internal.cjDropshipping.getAccessToken, {});
@@ -267,6 +242,7 @@ export const configureWebhooks = action({
 export const checkSourcingStatus = action({
     args: {},
     handler: async (ctx): Promise<{ checked: number; approved: number; rejected: number }> => {
+        await requireAdminIdentity(ctx);
         const result = await ctx.runAction(internal.cjDropshipping.checkSourcingStatus, {});
         return result;
     },
@@ -298,6 +274,7 @@ export const diagnosePending = action({
         }>;
         summary: string;
     }> => {
+        await requireAdminIdentity(ctx);
         const result = await ctx.runAction(internal.cjDropshipping.diagnosePendingProducts, {
             productId: args.productId,
         });
@@ -320,6 +297,7 @@ export const submitProductForSourcing = action({
         targetPrice: v.optional(v.number()),
     },
     handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
+        await requireAdminIdentity(ctx);
         const result = await ctx.runAction(internal.cjDropshipping.submitForSourcing, {
             productId: args.productId,
             productUrl: args.productUrl,
@@ -342,6 +320,7 @@ export const cancelAndDeleteProduct = action({
         cjSourcingId: v.optional(v.string()),
     },
     handler: async (ctx, args): Promise<{ success: boolean; cjCancelled: boolean; error?: string }> => {
+        await requireAdminIdentity(ctx);
         const result = await ctx.runAction(internal.cjDropshipping.cancelSourcingAndDelete, {
             productId: args.productId,
             cjSourcingId: args.cjSourcingId,
@@ -359,6 +338,7 @@ export const resubmitProduct = action({
         productId: v.id("products"),
     },
     handler: async (ctx, args): Promise<{ success: boolean; message: string; cjSourcingId?: string }> => {
+        await requireAdminIdentity(ctx);
         try {
             // Get product details
             const product = await ctx.runQuery(internal.cjHelpers.getProductById, {
@@ -425,6 +405,7 @@ export const getTokenStatus = action({
         automation: CjAutomationConfig;
         message: string;
     }> => {
+        await requireAdminIdentity(ctx);
         const automation = getCjAutomationConfig(process.env);
 
         try {
@@ -486,6 +467,7 @@ export const fetchProductBySpu = action({
         variants?: any[];
         error?: string;
     }> => {
+        await requireAdminIdentity(ctx);
         try {
             const token = await ctx.runAction(internal.cjDropshipping.getAccessToken, {});
             if (!token) {
@@ -566,6 +548,7 @@ export const fetchProductDetails = action({
         success: boolean;
         results: any;
     }> => {
+        await requireAdminIdentity(ctx);
         try {
             const token = await ctx.runAction(internal.cjDropshipping.getAccessToken, {});
             if (!token) {

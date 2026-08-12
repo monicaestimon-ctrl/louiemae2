@@ -554,6 +554,8 @@ export const refreshProductInventory = internalAction({
         )),
     },
     handler: async (ctx, args): Promise<{
+        eligible: number;
+        deferredFresh: number;
         checked: number;
         updated: number;
         errors: number;
@@ -565,16 +567,44 @@ export const refreshProductInventory = internalAction({
             error?: string;
         }>;
     }> => {
-        const accessToken = await ctx.runAction(internal.cjDropshipping.getAccessToken, {});
-        if (!accessToken) {
-            return { checked: 0, updated: 0, errors: 1, products: [] };
-        }
-
-        const products = await ctx.runQuery(internal.cjHelpers.getProductsForInventoryRefresh, {
+        const startedAt = Date.now();
+        const source = args.source ?? "manual";
+        const plan = await ctx.runQuery(internal.cjHelpers.getProductsForInventoryRefresh, {
             productId: args.productId,
             variantId: args.variantId,
             limit: args.limit,
+            source,
         });
+        const products = plan.products;
+        if (products.length === 0) {
+            await ctx.runMutation(internal.cjHelpers.recordInventoryPollRun, {
+                source,
+                eligible: plan.eligible,
+                deferredFresh: plan.deferredFresh,
+                checked: 0,
+                updated: 0,
+                errors: 0,
+                providerTokenRequested: false,
+                durationMs: Date.now() - startedAt,
+            });
+            console.log("[CJ Inventory Poll]", JSON.stringify({ source, ...plan, products: undefined, checked: 0, empty: true }));
+            return { eligible: plan.eligible, deferredFresh: plan.deferredFresh, checked: 0, updated: 0, errors: 0, products: [] };
+        }
+
+        const accessToken = await ctx.runAction(internal.cjDropshipping.getAccessToken, {});
+        if (!accessToken) {
+            await ctx.runMutation(internal.cjHelpers.recordInventoryPollRun, {
+                source,
+                eligible: plan.eligible,
+                deferredFresh: plan.deferredFresh,
+                checked: 0,
+                updated: 0,
+                errors: 1,
+                providerTokenRequested: true,
+                durationMs: Date.now() - startedAt,
+            });
+            return { eligible: plan.eligible, deferredFresh: plan.deferredFresh, checked: 0, updated: 0, errors: 1, products: [] };
+        }
         const lowStockThreshold = getInventoryLowStockThreshold();
         const results: Array<{
             productId: string;
@@ -697,7 +727,26 @@ export const refreshProductInventory = internalAction({
             });
         }
 
-        return { checked: products.length, updated, errors, products: results };
+        await ctx.runMutation(internal.cjHelpers.recordInventoryPollRun, {
+            source,
+            eligible: plan.eligible,
+            deferredFresh: plan.deferredFresh,
+            checked: products.length,
+            updated,
+            errors,
+            providerTokenRequested: true,
+            durationMs: Date.now() - startedAt,
+        });
+        console.log("[CJ Inventory Poll]", JSON.stringify({
+            source,
+            eligible: plan.eligible,
+            deferredFresh: plan.deferredFresh,
+            checked: products.length,
+            updated,
+            errors,
+            durationMs: Date.now() - startedAt,
+        }));
+        return { eligible: plan.eligible, deferredFresh: plan.deferredFresh, checked: products.length, updated, errors, products: results };
     },
 });
 

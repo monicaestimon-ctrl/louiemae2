@@ -1,9 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquare, X, Send, Loader2 } from 'lucide-react';
-import { generateConciergeResponse } from '../services/geminiService';
+import { useAction } from 'convex/react';
+import { api } from '../convex/_generated/api';
 import { ChatMessage } from '../types';
 
 export const AiConcierge: React.FC = () => {
+  const generateConciergeResponse = useAction(api.ai.generateConciergeResponse);
+  const clientTokenRef = useRef<string>('');
+  if (!clientTokenRef.current) {
+    const storageKey = 'louie-mae-concierge-token';
+    const existing = sessionStorage.getItem(storageKey);
+    const generated = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    clientTokenRef.current = existing || generated;
+    if (!existing) sessionStorage.setItem(storageKey, generated);
+  }
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -26,10 +38,22 @@ export const AiConcierge: React.FC = () => {
     setMessages(prev => [...prev, { role: 'user', text: userText }]);
     setIsLoading(true);
 
-    const reply = await generateConciergeResponse(userText, messages);
-
-    setMessages(prev => [...prev, { role: 'model', text: reply }]);
-    setIsLoading(false);
+    try {
+      const reply = await generateConciergeResponse({
+        userMessage: userText,
+        history: messages.map(({ role, text }) => ({ role, text })),
+        clientToken: clientTokenRef.current,
+      });
+      setMessages(prev => [...prev, { role: 'model', text: reply }]);
+    } catch (error) {
+      console.error('Concierge request failed:', error);
+      setMessages(prev => [...prev, {
+        role: 'model',
+        text: 'I am currently assisting other clients. Please try again in a moment.',
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (

@@ -3,7 +3,6 @@ import { Search, Loader2, Check, X, DollarSign, Wand2, Package, ChevronDown, Ale
 import { toast, Toaster } from 'sonner';
 import { aliexpressService } from '../services/aliexpressService';
 import { CollectionType, Product, CollectionConfig } from '../types';
-import { translateVariantNames } from '../services/geminiService';
 import { translateProductFields, detectChinese } from '../services/translateService';
 import { extractOtapiSourceProperties, cleanOtapiDescription, isPlaceholderSourceDescription } from '../lib/otapiHelpers';
 import { FadeIn } from './FadeIn';
@@ -178,6 +177,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
     const generateSmartName = useAction(api.smartNames.generateSmartName);
     const cacheImageUrls = useAction(api.productImages.cacheImageUrls);
+    const translateVariantNames = useAction(api.ai.translateVariantNames);
     const createBatchImport = useMutation(api.batchImports.create);
     const retryBatchItem = useMutation(api.batchImports.retry);
     const cancelBatchImport = useMutation(api.batchImports.cancel);
@@ -2484,7 +2484,10 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             if (importableProduct.variants && importableProduct.variants.length > 0) {
                 try {
                     const variantNames = importableProduct.variants.map((v: any) => v.name);
-                    const translations = await translateVariantNames(variantNames);
+                    const translatedNames = await translateVariantNames({ variantNames });
+                    const translations = new Map(
+                        translatedNames.map(({ original, translated }) => [original, translated]),
+                    );
                     importableProduct.variants = importableProduct.variants.map((v: any) => ({
                         ...v,
                         name: translations.get(v.name) || v.name,

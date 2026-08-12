@@ -51,6 +51,16 @@ export const generateSmartName = action({
                 error: "Authentication required",
             };
         }
+        try {
+            await ctx.runQuery(internal.cjAdminAccess.verifyCjAdminIdentity, {});
+        } catch {
+            return {
+                ok: false,
+                warnings: [],
+                fallbackUsed: false,
+                error: "Admin permission required",
+            };
+        }
         if (process.env.SMART_NAME_ENABLED === "false") {
             return {
                 ok: false,

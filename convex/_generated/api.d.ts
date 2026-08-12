@@ -9,6 +9,8 @@
  */
 
 import type * as aliexpress from "../aliexpress.js";
+import type * as ai from "../ai.js";
+import type * as aiUsage from "../aiUsage.js";
 import type * as auth from "../auth.js";
 import type * as batchImports from "../batchImports.js";
 import type * as blogPosts from "../blogPosts.js";
@@ -53,6 +55,8 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   aliexpress: typeof aliexpress;
+  ai: typeof ai;
+  aiUsage: typeof aiUsage;
   auth: typeof auth;
   batchImports: typeof batchImports;
   blogPosts: typeof blogPosts;

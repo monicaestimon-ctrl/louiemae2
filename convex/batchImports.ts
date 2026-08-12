@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from "convex/server";
 import { api, internal } from "./_generated/api";
 import { internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
@@ -9,9 +10,16 @@ import {
     MAX_BATCH_IMPORT_ATTEMPTS,
 } from "../lib/batchImportRetry";
 import { isObsoleteBatchImportError } from "../lib/batchImportObsolete";
+import {
+    BATCH_IMPORT_PAYLOAD_VERSION,
+    assertBatchImportPayloadSize,
+    compactBatchImportResult,
+} from "../lib/batchImportPayload";
 
 const FETCH_CONCURRENCY = 3;
 const REVIEW_BATCH_SIZE = 12;
+const BATCH_SUMMARY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const BATCH_PAYLOAD_RETENTION_MS = 72 * 60 * 60 * 1000;
 
 const normalizeUrl = (value: string): string => {
     const trimmed = value.trim();
@@ -46,6 +54,7 @@ export const create = mutation({
             reviewBatchSize: REVIEW_BATCH_SIZE,
             createdAt: now,
             updatedAt: now,
+            expiresAt: now + BATCH_SUMMARY_RETENTION_MS,
         });
 
         const itemIds: Id<"batchImportItems">[] = [];
@@ -60,6 +69,7 @@ export const create = mutation({
                 attempts: position < FETCH_CONCURRENCY ? 1 : 0,
                 createdAt: now,
                 updatedAt: now,
+                expiresAt: now + BATCH_SUMMARY_RETENTION_MS,
             }));
         }
 
@@ -79,16 +89,36 @@ export const getItems = query({
     args: { jobId: v.id("batchImportJobs") },
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
-        const items = await ctx.db.query("batchImportItems").withIndex("by_job", q => q.eq("jobId", args.jobId)).collect();
+        const items = await ctx.db.query("batchImportItems").withIndex("by_job", q => q.eq("jobId", args.jobId)).take(200);
         let readyResultsIncluded = 0;
-        return items.sort((a, b) => a.position - b.position).map((item) => {
+        const response = [];
+        for (const item of items.sort((a, b) => a.position - b.position)) {
+            const { result: legacyResult, ...summary } = item;
             if (item.status !== "ready" || readyResultsIncluded >= REVIEW_BATCH_SIZE) {
-                const { result, ...summary } = item;
-                return summary;
+                response.push(summary);
+                continue;
             }
             readyResultsIncluded += 1;
-            return item;
-        });
+            const payload = await ctx.db.query("batchImportPayloads")
+                .withIndex("by_item", q => q.eq("itemId", item._id))
+                .unique();
+            response.push({ ...summary, result: payload?.result ?? legacyResult });
+        }
+        return response;
+    },
+});
+
+export const getItemDetail = query({
+    args: { itemId: v.id("batchImportItems") },
+    handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
+        const item = await ctx.db.get(args.itemId);
+        if (!item) return null;
+        const payload = await ctx.db.query("batchImportPayloads")
+            .withIndex("by_item", q => q.eq("itemId", args.itemId))
+            .unique();
+        const { result: legacyResult, ...summary } = item;
+        return { ...summary, result: payload?.result ?? legacyResult };
     },
 });
 
@@ -119,6 +149,10 @@ const clearBatchJob = async (ctx: any, jobId: Id<"batchImportJobs">) => {
             error: undefined,
             updatedAt: now,
         });
+        const payload = await ctx.db.query("batchImportPayloads")
+            .withIndex("by_item", (q: any) => q.eq("itemId", item._id))
+            .unique();
+        if (payload) await ctx.db.delete(payload._id);
         cleared += 1;
     }
     await ctx.db.patch(jobId, { status: "cancelled", updatedAt: now });
@@ -183,6 +217,23 @@ export const finishItem = internalMutation({
         const job = await ctx.db.get(item.jobId);
         if (job?.status === "cancelled") return;
         const now = Date.now();
+        if (!args.error && args.result) {
+            const existingPayload = await ctx.db.query("batchImportPayloads")
+                .withIndex("by_item", q => q.eq("itemId", args.itemId))
+                .unique();
+            const byteLength = assertBatchImportPayloadSize(args.result);
+            const payload = {
+                itemId: args.itemId,
+                jobId: item.jobId,
+                version: BATCH_IMPORT_PAYLOAD_VERSION,
+                byteLength,
+                result: args.result,
+                createdAt: now,
+                expiresAt: now + BATCH_PAYLOAD_RETENTION_MS,
+            };
+            if (existingPayload) await ctx.db.replace(existingPayload._id, payload);
+            else await ctx.db.insert("batchImportPayloads", payload);
+        }
         await ctx.db.patch(args.itemId, args.error ? {
             status: "error",
             stage: "Needs attention",
@@ -191,7 +242,9 @@ export const finishItem = internalMutation({
         } : {
             status: "ready",
             stage: "Ready to review",
-            result: args.result,
+            result: undefined,
+            resultVersion: BATCH_IMPORT_PAYLOAD_VERSION,
+            resultBytes: args.result ? assertBatchImportPayloadSize(args.result) : 0,
             resolvedUrl: args.resolvedUrl,
             error: undefined,
             updatedAt: now,
@@ -231,9 +284,11 @@ export const processItem = internalAction({
         try {
             await ctx.runMutation(internal.batchImports.setStage, { itemId: args.itemId, stage: "Extracting product details" });
             const result: any = await ctx.runAction(api.scraper.scrapeProduct, { url: item.normalizedUrl });
+            const compactResult = compactBatchImportResult(result);
+            assertBatchImportPayloadSize(compactResult);
             await ctx.runMutation(internal.batchImports.finishItem, {
                 itemId: args.itemId,
-                result,
+                result: compactResult,
                 resolvedUrl: result?.resolvedUrl,
             });
         } catch (error) {
@@ -308,11 +363,77 @@ export const markImported = mutation({
         for (const itemId of args.itemIds) {
             const item = await ctx.db.get(itemId);
             if (item) jobIds.add(item.jobId);
-            if (item?.status === "ready") await ctx.db.patch(itemId, { status: "imported", stage: "Imported", updatedAt: now });
+            if (item?.status === "ready") {
+                const payload = await ctx.db.query("batchImportPayloads")
+                    .withIndex("by_item", q => q.eq("itemId", itemId))
+                    .unique();
+                if (payload) await ctx.db.delete(payload._id);
+                await ctx.db.patch(itemId, {
+                    status: "imported",
+                    stage: "Imported",
+                    result: undefined,
+                    resultBytes: 0,
+                    updatedAt: now,
+                });
+            }
         }
         for (const jobId of jobIds) {
             await refreshJobCompletion(ctx, jobId, now);
         }
+    },
+});
+
+/**
+ * Safe dual-read migration for legacy inline payloads. Dry-run is the default;
+ * execute in small batches after the compact review flow has been verified.
+ */
+export const migrateLegacyPayloads = mutation({
+    args: { dryRun: v.boolean(), paginationOpts: paginationOptsValidator },
+    handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
+        const numItems = Math.min(Math.max(args.paginationOpts.numItems, 1), 25);
+        const page = await ctx.db.query("batchImportItems").paginate({
+            numItems,
+            cursor: args.paginationOpts.cursor,
+        });
+        const candidates = page.page.filter(item => item.result !== undefined);
+        let bytesBefore = 0;
+        let bytesAfter = 0;
+        for (const item of candidates) {
+            const compact = compactBatchImportResult(item.result);
+            const compactBytes = assertBatchImportPayloadSize(compact);
+            bytesBefore += new TextEncoder().encode(JSON.stringify(item.result)).byteLength;
+            bytesAfter += compactBytes;
+            if (args.dryRun) continue;
+            const existing = await ctx.db.query("batchImportPayloads")
+                .withIndex("by_item", q => q.eq("itemId", item._id))
+                .unique();
+            const payload = {
+                itemId: item._id,
+                jobId: item.jobId,
+                version: BATCH_IMPORT_PAYLOAD_VERSION,
+                byteLength: compactBytes,
+                result: compact,
+                createdAt: Date.now(),
+                expiresAt: Date.now() + BATCH_PAYLOAD_RETENTION_MS,
+            };
+            if (existing) await ctx.db.replace(existing._id, payload);
+            else await ctx.db.insert("batchImportPayloads", payload);
+            await ctx.db.patch(item._id, {
+                result: undefined,
+                resultVersion: BATCH_IMPORT_PAYLOAD_VERSION,
+                resultBytes: compactBytes,
+            });
+        }
+        return {
+            dryRun: args.dryRun,
+            scanned: page.page.length,
+            candidates: candidates.length,
+            bytesBefore,
+            bytesAfter,
+            continueCursor: page.continueCursor,
+            isDone: page.isDone,
+        };
     },
 });
 

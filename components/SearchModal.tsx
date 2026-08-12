@@ -13,18 +13,13 @@ interface SearchModalProps {
 export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onProductClick }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
-    const products = useQuery(api.products.listForStorefront) || [];
-
-    // Filter products based on search term
-    const filteredProducts = products.filter(product => {
-        const term = searchTerm.toLowerCase();
-        return (
-            product.name.toLowerCase().includes(term) ||
-            product.description.toLowerCase().includes(term) ||
-            product.category.toLowerCase().includes(term) ||
-            product.collection.toLowerCase().includes(term)
-        );
-    });
+    const normalizedSearchTerm = searchTerm.trim();
+    const filteredProducts = useQuery(
+        api.products.searchStorefront,
+        isOpen && normalizedSearchTerm.length >= 2
+            ? { term: normalizedSearchTerm, limit: 20 }
+            : 'skip',
+    ) || [];
 
     const handleClose = () => {
         setSearchTerm('');
@@ -111,9 +106,9 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
             {/* Results */}
             <div className="flex-1 overflow-y-auto px-6 md:px-12 pb-12 relative z-10">
                 <div className="max-w-5xl mx-auto">
-                    {searchTerm.length === 0 ? (
+                    {normalizedSearchTerm.length < 2 ? (
                         <div className="text-center py-16">
-                            <p className="text-cream/50 text-sm font-light tracking-wide">Start typing to search products...</p>
+                            <p className="text-cream/50 text-sm font-light tracking-wide">Type at least two characters to search products...</p>
                         </div>
                     ) : filteredProducts.length === 0 ? (
                         <div className="text-center py-16">

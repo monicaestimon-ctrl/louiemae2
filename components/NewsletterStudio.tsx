@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, Wand2, Send, ChevronRight, Layout, Type, Image as ImageIcon, CheckCircle, Clock, AlertCircle, ArrowLeft, Eye, Smartphone, Monitor, Loader2, Grid } from 'lucide-react';
 import { EmailCampaign } from '../types';
-import { generateEmailSubject, generateEmailBody, personalizeTemplate } from '../services/geminiService';
+import { useAction } from 'convex/react';
+import { api } from '../convex/_generated/api';
 import { EMAIL_TEMPLATES, EmailTemplate } from '../constants/emailTemplates';
 import { FadeIn } from './FadeIn';
 
@@ -157,13 +158,14 @@ const StudioStepIndicator: React.FC<{ currentStep: StudioStep }> = ({ currentSte
 };
 
 const StrategyStep: React.FC<{ campaign: Partial<EmailCampaign>, onChange: (c: any) => void, onNext: () => void }> = ({ campaign, onChange, onNext }) => {
+    const generateEmailSubject = useAction(api.ai.generateEmailSubject);
     const [isGenerating, setIsGenerating] = useState(false);
     const [suggestions, setSuggestions] = useState<string[]>([]);
 
     const handleGenerateSubjects = async () => {
         if (!campaign.subject) return;
         setIsGenerating(true);
-        const results = await generateEmailSubject(campaign.subject);
+        const results = await generateEmailSubject({ topic: campaign.subject });
         setSuggestions(results);
         setIsGenerating(false);
     };
@@ -245,6 +247,7 @@ const StrategyStep: React.FC<{ campaign: Partial<EmailCampaign>, onChange: (c: a
 };
 
 const TemplateStep: React.FC<{ campaign: Partial<EmailCampaign>, onChange: (c: any) => void, onBack: () => void, onNext: () => void }> = ({ campaign, onChange, onBack, onNext }) => {
+    const personalizeTemplate = useAction(api.ai.personalizeTemplate);
     const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
     const [isPersonalizing, setIsPersonalizing] = useState(false);
 
@@ -260,7 +263,11 @@ const TemplateStep: React.FC<{ campaign: Partial<EmailCampaign>, onChange: (c: a
 
         // Smart fill with AI
         if (campaign.subject) {
-            const aiContent = await personalizeTemplate(templateId, campaign.subject, campaign.type || 'newsletter');
+            const aiContent = await personalizeTemplate({
+                templateId,
+                topic: campaign.subject,
+                objective: campaign.type || 'newsletter',
+            });
 
             // simple find and replace for placeholders
             Object.keys(aiContent).forEach(key => {
