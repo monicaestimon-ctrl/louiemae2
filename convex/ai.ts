@@ -1,6 +1,7 @@
 "use node";
 
 import { GoogleGenAI } from "@google/genai";
+import { createHash } from "node:crypto";
 import { v } from "convex/values";
 import { action, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -31,14 +32,8 @@ const fallbackTemplate = {
 
 const clamp = (value: string, max: number) => value.trim().slice(0, max);
 
-const hashRequest = (value: string) => {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
-};
+const hashRequest = (value: string) =>
+  createHash("sha256").update(value).digest("hex");
 
 const parseJson = <T>(value: string | undefined): T => {
   const cleaned = (value || "")

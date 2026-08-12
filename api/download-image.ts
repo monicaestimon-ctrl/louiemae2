@@ -9,11 +9,20 @@ import { pipeline } from 'node:stream/promises';
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
 
-const isBlockedHost = (hostname: string) => {
-    const host = hostname.toLowerCase();
+export const isBlockedHost = (hostname: string) => {
+    const host = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+    if (host === 'localhost' || host.endsWith('.localhost')) return true;
+
+    const family = isIP(host);
+    if (family === 0) return false;
+    if (family === 6) {
+        if (host === '::' || host === '::1') return true;
+        if (host.startsWith('fc') || host.startsWith('fd') || /^fe[89ab]/.test(host)) return true;
+        if (host.startsWith('::ffff:')) return isBlockedHost(host.slice('::ffff:'.length));
+        return false;
+    }
+
     return (
-        host === 'localhost' ||
-        host.endsWith('.localhost') ||
         host === '0.0.0.0' ||
         host === '127.0.0.1' ||
         host.startsWith('127.') ||
@@ -23,15 +32,7 @@ const isBlockedHost = (hostname: string) => {
         host.startsWith('100.64.') ||
         host.startsWith('198.18.') ||
         host.startsWith('198.19.') ||
-        /^172\.(1[6-9]|2\d|3[0-1])\./.test(host) ||
-        host === '::1' ||
-        host === '[::1]' ||
-        host.startsWith('fc') ||
-        host.startsWith('fd') ||
-        host.startsWith('fe8') ||
-        host.startsWith('fe9') ||
-        host.startsWith('fea') ||
-        host.startsWith('feb')
+        /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
     );
 };
 
