@@ -2,7 +2,20 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 const root = process.cwd();
-const sourceTargets = ['components', 'contexts', 'services', 'App.tsx', 'index.tsx', 'index.html', 'vite.config.ts'];
+const sourceTargets = [
+  'components',
+  'constants',
+  'contexts',
+  'lib',
+  'services',
+  'App.tsx',
+  'constants.ts',
+  'index.tsx',
+  'index.html',
+  'types.ts',
+  'vite-env.d.ts',
+  'vite.config.ts',
+];
 const sourceForbidden = [
   ['browser Gemini SDK import', /@google\/genai/],
   ['public Gemini environment variable', /VITE_GEMINI_API_KEY/],
@@ -14,7 +27,7 @@ const bundleForbidden = [
 ];
 
 async function filesAt(target) {
-  const absolute = path.join(root, target);
+  const absolute = path.isAbsolute(target) ? target : path.join(root, target);
   let info;
   try {
     info = await stat(absolute);
@@ -26,16 +39,16 @@ async function filesAt(target) {
   for (const entry of await readdir(absolute, { withFileTypes: true })) {
     if (entry.name === 'node_modules' || entry.name === 'dist') continue;
     const child = path.join(absolute, entry.name);
-    files.push(...(entry.isDirectory() ? await filesAt(path.relative(root, child)) : [child]));
+    files.push(...(entry.isDirectory() ? await filesAt(child) : [child]));
   }
   return files;
 }
 
-async function scan(targets, rules) {
+async function scan(targets, rules, extensions) {
   const findings = [];
   for (const target of targets) {
     for (const filename of await filesAt(target)) {
-      if (!/\.(?:[cm]?[jt]sx?|html)$/i.test(filename)) continue;
+      if (!extensions.test(filename)) continue;
       const text = await readFile(filename, 'utf8');
       for (const [label, pattern] of rules) {
         if (pattern.test(text)) findings.push(`${path.relative(root, filename)}: ${label}`);
@@ -46,8 +59,8 @@ async function scan(targets, rules) {
 }
 
 const findings = [
-  ...await scan(sourceTargets, sourceForbidden),
-  ...await scan(['dist'], bundleForbidden),
+  ...await scan(sourceTargets, sourceForbidden, /\.(?:[cm]?[jt]sx?|html)$/i),
+  ...await scan(['dist'], bundleForbidden, /\.(?:[cm]?[jt]sx?|css|html|json|map)$/i),
 ];
 
 if (findings.length > 0) {

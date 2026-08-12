@@ -8,7 +8,9 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Preserve a production run once it starts so a later push cannot cancel a
+  # validated main build before its Convex deployment finishes.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   lint-test-build:

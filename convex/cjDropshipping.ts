@@ -576,16 +576,24 @@ export const refreshProductInventory = internalAction({
             source,
         });
         const products = plan.products;
+        const recordRun = async (counts: {
+            checked: number;
+            updated: number;
+            errors: number;
+            providerTokenRequested: boolean;
+        }) => ctx.runMutation(internal.cjHelpers.recordInventoryPollRun, {
+            source,
+            eligible: plan.eligible,
+            deferredFresh: plan.deferredFresh,
+            ...counts,
+            durationMs: Date.now() - startedAt,
+        });
         if (products.length === 0) {
-            await ctx.runMutation(internal.cjHelpers.recordInventoryPollRun, {
-                source,
-                eligible: plan.eligible,
-                deferredFresh: plan.deferredFresh,
+            await recordRun({
                 checked: 0,
                 updated: 0,
                 errors: 0,
                 providerTokenRequested: false,
-                durationMs: Date.now() - startedAt,
             });
             console.log("[CJ Inventory Poll]", JSON.stringify({ source, ...plan, products: undefined, checked: 0, empty: true }));
             return { eligible: plan.eligible, deferredFresh: plan.deferredFresh, checked: 0, updated: 0, errors: 0, products: [] };
@@ -593,15 +601,11 @@ export const refreshProductInventory = internalAction({
 
         const accessToken = await ctx.runAction(internal.cjDropshipping.getAccessToken, {});
         if (!accessToken) {
-            await ctx.runMutation(internal.cjHelpers.recordInventoryPollRun, {
-                source,
-                eligible: plan.eligible,
-                deferredFresh: plan.deferredFresh,
+            await recordRun({
                 checked: 0,
                 updated: 0,
                 errors: 1,
                 providerTokenRequested: true,
-                durationMs: Date.now() - startedAt,
             });
             return { eligible: plan.eligible, deferredFresh: plan.deferredFresh, checked: 0, updated: 0, errors: 1, products: [] };
         }
@@ -616,7 +620,8 @@ export const refreshProductInventory = internalAction({
         let updated = 0;
         let errors = 0;
 
-        for (const product of products) {
+        try {
+          for (const product of products) {
             const checkedAt = new Date().toISOString();
             const snapshots: CjInventorySnapshot[] = [];
             const targets = getProductInventoryTargets(product, {
@@ -725,28 +730,37 @@ export const refreshProductInventory = internalAction({
                 totalInventoryNum,
                 error: firstError,
             });
-        }
+          }
 
-        await ctx.runMutation(internal.cjHelpers.recordInventoryPollRun, {
-            source,
-            eligible: plan.eligible,
-            deferredFresh: plan.deferredFresh,
+          await recordRun({
             checked: products.length,
             updated,
             errors,
             providerTokenRequested: true,
-            durationMs: Date.now() - startedAt,
-        });
-        console.log("[CJ Inventory Poll]", JSON.stringify({
-            source,
-            eligible: plan.eligible,
-            deferredFresh: plan.deferredFresh,
-            checked: products.length,
-            updated,
-            errors,
-            durationMs: Date.now() - startedAt,
-        }));
-        return { eligible: plan.eligible, deferredFresh: plan.deferredFresh, checked: products.length, updated, errors, products: results };
+          });
+          console.log("[CJ Inventory Poll]", JSON.stringify({
+              source,
+              eligible: plan.eligible,
+              deferredFresh: plan.deferredFresh,
+              checked: products.length,
+              updated,
+              errors,
+              durationMs: Date.now() - startedAt,
+          }));
+          return { eligible: plan.eligible, deferredFresh: plan.deferredFresh, checked: products.length, updated, errors, products: results };
+        } catch (error) {
+          try {
+            await recordRun({
+              checked: results.length,
+              updated,
+              errors: errors + 1,
+              providerTokenRequested: true,
+            });
+          } catch (metricsError) {
+            console.error("[CJ Inventory Poll] Failed to record error metrics", metricsError);
+          }
+          throw error;
+        }
     },
 });
 

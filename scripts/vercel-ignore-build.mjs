@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
 
 let changedFiles;
+const previousSha = process.env.VERCEL_GIT_PREVIOUS_SHA?.trim() || 'HEAD^';
 try {
-  changedFiles = execFileSync('git', ['diff', '--name-only', 'HEAD^', 'HEAD'], {
+  changedFiles = execFileSync('git', ['diff', '--name-only', previousSha, 'HEAD'], {
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'ignore'],
   }).split(/\r?\n/).map((file) => file.trim()).filter(Boolean);
@@ -15,7 +16,7 @@ const hasRuntimeChange = changedFiles.some((file) =>
   !file.endsWith('.md') &&
   !file.startsWith('docs/') &&
   !file.startsWith('.github/') &&
-  file !== '.prettierrc',
+  !file.startsWith('.prettierrc'),
 );
 
 if (hasRuntimeChange) {

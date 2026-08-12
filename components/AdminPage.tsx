@@ -183,7 +183,7 @@ const ImageUploader: React.FC<{
 
 export const AdminPage: React.FC = () => {
    const { isAuthenticated, isAuthLoading, signIn, logout, posts, addPost, updatePost, deletePost, siteContent, updateSiteContent, addCustomPage, updateCustomPage, deleteCustomPage, products, addProduct, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
-   const { subscribers, campaigns, createCampaign, updateCampaign, sendCampaign, deleteCampaign, stats } = useNewsletterAdmin();
+   const { subscribers, subscriberListTruncated, campaigns, createCampaign, updateCampaign, sendCampaign, deleteCampaign, stats } = useNewsletterAdmin();
    const linkDescriptionAuditToProduct = useMutation(api.descriptionAudits.linkAuditToProduct);
    const launchNextProducts = useMutation(api.products.launchNextProducts);
    const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
@@ -580,7 +580,10 @@ export const AdminPage: React.FC = () => {
             id: Date.now().toString(),
             slug: generatorPrompt.title.toLowerCase().replace(/\s+/g, '-'),
             title: generatedContent.title,
-            sections: generatedContent.sections as unknown as PageSection[]
+            sections: (generatedContent.sections as unknown as PageSection[]).map((section, index) => ({
+               ...section,
+               id: section.id || `${Date.now()}-${index}`,
+            })),
          };
 
          addCustomPage(newPage);
@@ -1112,7 +1115,7 @@ export const AdminPage: React.FC = () => {
                         <div className="bg-white/5 backdrop-blur-3xl p-8 border border-white/10 rounded-3xl shadow-[0_15px_30px_rgba(0,0,0,0.3)] hover:-translate-y-1 transition-transform overflow-hidden relative group">
                            <div className="absolute top-0 right-0 w-32 h-32 bg-bronze/10 rounded-full blur-2xl -mr-10 -mt-10 group-hover:scale-150 transition-transform pointer-events-none" />
                            <Users className="w-8 h-8 text-bronze mb-6 drop-shadow-[0_0_8px_rgba(139,90,43,0.5)]" />
-                           <h3 className="font-serif text-4xl text-cream mb-2 drop-shadow-sm">{stats.totalSubscribers}</h3>
+                           <h3 className="font-serif text-4xl text-cream mb-2 drop-shadow-sm">{stats.totalSubscribers}{subscriberListTruncated ? '+' : ''}</h3>
                            <p className="text-xs uppercase tracking-widest text-cream/50 relative z-10">Total Subscribers</p>
                         </div>
                         <div className="bg-white/5 backdrop-blur-3xl p-8 border border-white/10 rounded-3xl shadow-[0_15px_30px_rgba(0,0,0,0.3)] hover:-translate-y-1 transition-transform overflow-hidden relative group">
@@ -1133,6 +1136,11 @@ export const AdminPage: React.FC = () => {
                   {/* NEWSLETTER: SUBSCRIBERS */}
                   {newsletterSubTab === 'subscribers' && (
                      <div className="overflow-x-auto bg-white border border-earth/5">
+                        {subscriberListTruncated && (
+                           <p role="status" className="px-6 py-3 text-xs text-amber-800 bg-amber-50 border-b border-amber-100">
+                              Showing the newest 500 subscribers. Use an export or paginated view for the complete list.
+                           </p>
+                        )}
                         <table className="w-full text-left text-sm text-earth/70 min-w-[500px]">
                            <thead className="bg-cream/50 text-xs uppercase tracking-widest text-earth/40">
                               <tr>

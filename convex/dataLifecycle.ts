@@ -58,7 +58,9 @@ export const report = query({
             ctx.db.query("cjInventoryPollRuns").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
             ctx.db.query("aiRequestUsage").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
         ]);
-        const terminalJobs = jobs.filter(job => job.status === "completed" || job.status === "cancelled");
+        const terminalJobs = jobs.filter(job =>
+            job.status === "ready" || job.status === "completed" || job.status === "cancelled",
+        );
         return {
             generatedAt: now,
             limit,
@@ -104,7 +106,9 @@ export const cleanup = mutation({
         ]);
         const terminalLogs = webhookLogs.filter(log => isTerminalWebhook(log.status));
         const auditsToCompact = audits.filter(audit => !audit.compactedAt);
-        const terminalJobs = jobs.filter(job => job.status === "completed" || job.status === "cancelled");
+        const terminalJobs = jobs.filter(job =>
+            job.status === "ready" || job.status === "completed" || job.status === "cancelled",
+        );
         let batchItems = 0;
         let batchJobsDeleted = 0;
         let batchJobsDeferred = 0;

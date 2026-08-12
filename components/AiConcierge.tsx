@@ -6,16 +6,15 @@ import { ChatMessage } from '../types';
 
 export const AiConcierge: React.FC = () => {
   const generateConciergeResponse = useAction(api.ai.generateConciergeResponse);
-  const clientTokenRef = useRef<string>('');
-  if (!clientTokenRef.current) {
+  const [clientToken] = useState(() => {
     const storageKey = 'louie-mae-concierge-token';
-    const existing = sessionStorage.getItem(storageKey);
-    const generated = typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
+    const existing = window.sessionStorage.getItem(storageKey);
+    const generated = typeof window.crypto.randomUUID === 'function'
+      ? window.crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    clientTokenRef.current = existing || generated;
-    if (!existing) sessionStorage.setItem(storageKey, generated);
-  }
+    if (!existing) window.sessionStorage.setItem(storageKey, generated);
+    return existing || generated;
+  });
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -42,7 +41,7 @@ export const AiConcierge: React.FC = () => {
       const reply = await generateConciergeResponse({
         userMessage: userText,
         history: messages.map(({ role, text }) => ({ role, text })),
-        clientToken: clientTokenRef.current,
+        clientToken,
       });
       setMessages(prev => [...prev, { role: 'model', text: reply }]);
     } catch (error) {

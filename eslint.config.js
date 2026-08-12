@@ -7,6 +7,17 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 export default [
     js.configs.recommended,
     {
+        files: ['scripts/**/*.mjs'],
+        languageOptions: {
+            ecmaVersion: 'latest',
+            sourceType: 'module',
+            globals: {
+                console: 'readonly',
+                process: 'readonly',
+            },
+        },
+    },
+    {
         files: ['**/*.{ts,tsx}'],
         languageOptions: {
             parser: tsParser,

@@ -6,7 +6,11 @@ export const list = query({
     args: {},
     handler: async (ctx) => {
         await requireCjAdminIdentity(ctx);
-        return await ctx.db.query("subscribers").take(500);
+        const rows = await ctx.db.query("subscribers").order("desc").take(501);
+        return {
+            subscribers: rows.slice(0, 500),
+            truncated: rows.length > 500,
+        };
     },
 });
 

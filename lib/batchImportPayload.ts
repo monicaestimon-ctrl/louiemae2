@@ -115,7 +115,7 @@ export const compactBatchImportResult = (result: any) => {
 };
 
 export const getSerializedByteLength = (value: unknown): number =>
-    new TextEncoder().encode(JSON.stringify(value)).byteLength;
+    new globalThis.TextEncoder().encode(JSON.stringify(value)).byteLength;
 
 export const assertBatchImportPayloadSize = (value: unknown): number => {
     const bytes = getSerializedByteLength(value);

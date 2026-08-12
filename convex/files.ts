@@ -2,6 +2,15 @@ import { mutation, query } from "./_generated/server";
 import { v } from "convex/values";
 import { requireCjAdminIdentity } from "./cjAdminAccess";
 
+const extractUrls = (value: unknown): string[] => {
+    if (typeof value === "string") {
+        return value.match(/https?:\/\/[^\s"'<>)]*/g) ?? [];
+    }
+    if (Array.isArray(value)) return value.flatMap(extractUrls);
+    if (value && typeof value === "object") return Object.values(value).flatMap(extractUrls);
+    return [];
+};
+
 // Generate an upload URL for client-side uploads
 export const generateUploadUrl = mutation({
     args: {},
@@ -62,7 +71,17 @@ export const reportStorage = query({
             ctx.db.query("customPages").take(250),
             ctx.db.query("siteContent").first(),
         ]);
-        const references = JSON.stringify({ products, posts, pages, siteContent });
+        const references = JSON.stringify({
+            products: products.map(product => ({
+                images: product.images,
+                descriptionImages: product.descriptionImages,
+                sourceUrl: product.sourceUrl,
+                variantImages: product.variants?.map(variant => variant.image),
+            })),
+            posts: posts.map(post => ({ image: post.image, contentUrls: extractUrls(post.content) })),
+            pages: pages.map(page => ({ sectionUrls: extractUrls(page.sections) })),
+            siteContentUrls: extractUrls(siteContent),
+        });
         const rows = files.map(file => ({
             storageId: file._id,
             contentType: file.contentType,

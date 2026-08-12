@@ -53,12 +53,15 @@ export const generateSmartName = action({
         }
         try {
             await ctx.runQuery(internal.cjAdminAccess.verifyCjAdminIdentity, {});
-        } catch {
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error("[SmartName] Admin verification failed", { message });
+            const permissionDenied = /logged in|missing an email|admin access|permission/i.test(message);
             return {
                 ok: false,
                 warnings: [],
                 fallbackUsed: false,
-                error: "Admin permission required",
+                error: permissionDenied ? "Admin permission required" : "Unable to verify admin access",
             };
         }
         if (process.env.SMART_NAME_ENABLED === "false") {

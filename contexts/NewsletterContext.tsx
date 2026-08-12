@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, ReactNode, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
@@ -12,6 +12,7 @@ interface NewsletterContextType {
 
 interface NewsletterAdminContextType {
   subscribers: Subscriber[];
+  subscriberListTruncated: boolean;
   campaigns: EmailCampaign[];
   deleteSubscriber: (id: string) => void;
   createCampaign: (campaign: Omit<EmailCampaign, 'id' | 'stats' | 'status'>) => void;
@@ -94,7 +95,8 @@ export const useNewsletter = () => {
 
 export const useNewsletterAdmin = (): NewsletterAdminContextType => {
   const { isAuthenticated } = useConvexAuth();
-  const convexSubscribers = useQuery(api.subscribers.list, isAuthenticated ? {} : 'skip');
+  const subscriberResult = useQuery(api.subscribers.list, isAuthenticated ? {} : 'skip');
+  const convexSubscribers = subscriberResult?.subscribers;
   const convexCampaigns = useQuery(api.campaigns.list, isAuthenticated ? {} : 'skip');
   const removeSubscriber = useMutation(api.subscribers.remove);
   const seedSubscribers = useMutation(api.subscribers.seed);
@@ -103,16 +105,22 @@ export const useNewsletterAdmin = (): NewsletterAdminContextType => {
   const sendCampaignMutation = useMutation(api.campaigns.send);
   const removeCampaign = useMutation(api.campaigns.remove);
   const seedCampaigns = useMutation(api.campaigns.seed);
+  const subscriberSeedStarted = useRef(false);
+  const campaignSeedStarted = useRef(false);
 
   useEffect(() => {
-    if (isAuthenticated && convexSubscribers?.length === 0) {
-      void seedSubscribers({ subscribers: INITIAL_SUBSCRIBERS });
+    if (isAuthenticated && convexSubscribers?.length === 0 && !subscriberSeedStarted.current) {
+      subscriberSeedStarted.current = true;
+      void seedSubscribers({ subscribers: INITIAL_SUBSCRIBERS })
+        .catch(error => console.error('Subscriber seeding failed:', error));
     }
   }, [isAuthenticated, convexSubscribers, seedSubscribers]);
 
   useEffect(() => {
-    if (isAuthenticated && convexCampaigns?.length === 0) {
-      void seedCampaigns({ campaigns: INITIAL_CAMPAIGNS });
+    if (isAuthenticated && convexCampaigns?.length === 0 && !campaignSeedStarted.current) {
+      campaignSeedStarted.current = true;
+      void seedCampaigns({ campaigns: INITIAL_CAMPAIGNS })
+        .catch(error => console.error('Campaign seeding failed:', error));
     }
   }, [isAuthenticated, convexCampaigns, seedCampaigns]);
 
@@ -127,6 +135,7 @@ export const useNewsletterAdmin = (): NewsletterAdminContextType => {
 
   return {
     subscribers,
+    subscriberListTruncated: subscriberResult?.truncated ?? false,
     campaigns,
     deleteSubscriber: (id) => { void removeSubscriber({ id: id as Id<"subscribers"> }); },
     createCampaign: (campaign) => { void createCampaignMutation(campaign); },

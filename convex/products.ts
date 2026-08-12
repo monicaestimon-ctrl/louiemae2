@@ -113,7 +113,7 @@ export const list = query({
     args: {},
     handler: async (ctx) => {
         await requireCjAdminIdentity(ctx);
-        return await ctx.db.query("products").collect();
+        return await ctx.db.query("products").take(500);
     },
 });
 
@@ -428,9 +428,23 @@ export const searchStorefront = query({
         if (term.length < 2) return [];
         const limit = Math.min(Math.max(args.limit ?? 20, 1), 20);
         const terms = term.split(" ").filter(Boolean);
-        const products = await ctx.db.query("products")
-            .withSearchIndex("search_storefront", q => q.search("searchText", term))
-            .take(Math.min(limit * 4, 80));
+        const searchLimit = Math.min(limit * 4, 80);
+        const [publishedProducts, legacyPublishedProducts] = await Promise.all([
+            ctx.db.query("products")
+                .withSearchIndex("search_storefront", q =>
+                    q.search("searchText", term).eq("storefrontStatus", "published"),
+                )
+                .take(searchLimit),
+            ctx.db.query("products")
+                .withSearchIndex("search_storefront", q =>
+                    q.search("searchText", term).eq("storefrontStatus", undefined),
+                )
+                .take(searchLimit),
+        ]);
+        const products = [...publishedProducts, ...legacyPublishedProducts]
+            .filter((product, index, all) =>
+                all.findIndex(candidate => candidate._id === product._id) === index,
+            );
 
         return products
             .filter(isProductVisibleOnStorefront)

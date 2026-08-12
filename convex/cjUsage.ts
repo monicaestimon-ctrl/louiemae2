@@ -10,11 +10,13 @@ export const getInventoryPollSummary = query({
         const since = Date.now() - hours * 60 * 60 * 1000;
         const runs = await ctx.db.query("cjInventoryPollRuns")
             .withIndex("by_created_at", q => q.gte("createdAt", since))
+            .order("desc")
             .take(1_500);
         const cronRuns = runs.filter(run => run.source === "cron");
         return {
             hours,
             runs: runs.length,
+            truncated: runs.length === 1_500,
             cronRuns: cronRuns.length,
             emptyCronRuns: cronRuns.filter(run => run.checked === 0).length,
             providerTokenRequests: runs.filter(run => run.providerTokenRequested).length,

@@ -139,7 +139,7 @@ export const generateConciergeResponse = action({
         },
       );
       await ctx.runMutation(internal.aiUsage.completePublicRequest, {
-        usageId: claim.usageId as any,
+        usageId: claim.usageId,
         response: reply,
         success: true,
         now: Date.now(),
@@ -147,7 +147,7 @@ export const generateConciergeResponse = action({
       return reply;
     } catch {
       await ctx.runMutation(internal.aiUsage.completePublicRequest, {
-        usageId: claim.usageId as any,
+        usageId: claim.usageId,
         success: false,
         now: Date.now(),
       });

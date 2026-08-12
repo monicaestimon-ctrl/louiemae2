@@ -84,6 +84,20 @@ Production rollout order:
    solely because the bounded app scan says “possibly unreferenced”; verify
    external/legacy references manually.
 
+For description-audit retention metadata, call
+`dataLifecycle:backfillRetentionMetadata` with
+`{"kind":"descriptionAudits","dryRun":true,"limit":100}` and record the
+candidate count. After approval, call it with the same arguments and
+`"dryRun":false`. Repeat the write call until the returned `hasMore` is
+`false`; each successful pass removes those rows from the missing-expiry index,
+so rerunning is safe. Finish with another dry run and confirm zero candidates.
+
+For product search metadata, call `products:backfillSearchText` with
+`{"dryRun":true,"limit":100}` and record the candidate count. After approval,
+call it with `{"dryRun":false,"limit":100}` repeatedly until `hasMore` is
+`false`. Finish with the dry-run form and confirm zero candidates before
+relying on indexed storefront search.
+
 Retention defaults are intentionally conservative: batch review payloads 72
 hours, terminal batch metadata 30 days, description audit debug payloads 30
 days (the audit identity/final result remains), CJ webhook idempotency logs 90

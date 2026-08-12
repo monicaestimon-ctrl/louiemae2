@@ -172,7 +172,10 @@ export default defineSchema({
         .index("by_batch_import_item", ["batchImportItemId"])
         .index("by_inventory_next_check", ["cjInventoryNextCheckAt"])
         .index("by_search_text", ["searchText"])
-        .searchIndex("search_storefront", { searchField: "searchText" }),
+        .searchIndex("search_storefront", {
+            searchField: "searchText",
+            filterFields: ["storefrontStatus"],
+        }),
 
     descriptionAudits: defineTable({
         productId: v.optional(v.id("products")),
@@ -620,6 +623,7 @@ export default defineSchema({
         createdAt: v.number(),
         expiresAt: v.number(),
     }).index("by_client_created", ["clientToken", "createdAt"])
+        .index("by_operation_created", ["operation", "createdAt"])
         .index("by_request_hash", ["requestHash"])
         .index("by_expiry", ["expiresAt"]),
 

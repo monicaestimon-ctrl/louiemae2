@@ -14,6 +14,7 @@ import {
     BATCH_IMPORT_PAYLOAD_VERSION,
     assertBatchImportPayloadSize,
     compactBatchImportResult,
+    getSerializedByteLength,
 } from "../lib/batchImportPayload";
 
 const FETCH_CONCURRENCY = 3;
@@ -402,7 +403,7 @@ export const migrateLegacyPayloads = mutation({
         for (const item of candidates) {
             const compact = compactBatchImportResult(item.result);
             const compactBytes = assertBatchImportPayloadSize(compact);
-            bytesBefore += new TextEncoder().encode(JSON.stringify(item.result)).byteLength;
+            bytesBefore += getSerializedByteLength(item.result);
             bytesAfter += compactBytes;
             if (args.dryRun) continue;
             const existing = await ctx.db.query("batchImportPayloads")
