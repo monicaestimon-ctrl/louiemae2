@@ -1,6 +1,8 @@
 import { internalMutation, internalQuery, query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { auth } from "./auth";
+import { requireCjAdminIdentity } from "./cjAdminAccess";
+
+const DESCRIPTION_AUDIT_DEBUG_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export const createDescriptionAudit = internalMutation({
     args: {
@@ -38,6 +40,7 @@ export const createDescriptionAudit = internalMutation({
             ...args,
             createdAt: now,
             updatedAt: now,
+            debugExpiresAt: now + DESCRIPTION_AUDIT_DEBUG_RETENTION_MS,
         });
     },
 });
@@ -48,8 +51,7 @@ export const linkAuditToProduct = mutation({
         productId: v.id("products"),
     },
     handler: async (ctx, args) => {
-        const userId = await auth.getUserId(ctx);
-        if (!userId) throw new Error("You must be logged in to update description audits");
+        await requireCjAdminIdentity(ctx);
         await ctx.db.patch(args.auditId, {
             productId: args.productId,
             updatedAt: Date.now(),
@@ -60,8 +62,7 @@ export const linkAuditToProduct = mutation({
 export const getByProduct = query({
     args: { productId: v.id("products") },
     handler: async (ctx, args) => {
-        const userId = await auth.getUserId(ctx);
-        if (!userId) throw new Error("You must be logged in to view description audits");
+        await requireCjAdminIdentity(ctx);
         return await ctx.db
             .query("descriptionAudits")
             .withIndex("by_product", q => q.eq("productId", args.productId))

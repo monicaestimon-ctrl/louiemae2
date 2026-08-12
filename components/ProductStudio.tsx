@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Wand2, Send, ChevronRight, Type, Image as ImageIcon, CheckCircle, ArrowLeft, Eye, Loader2, Upload, Trash2, Box, DollarSign, Download, ExternalLink } from 'lucide-react';
 import { Product, SiteContent } from '../types';
-import { suggestProductCategory } from '../services/geminiService';
 import { FadeIn } from './FadeIn';
 import { useAction } from 'convex/react';
 import { api } from '../convex/_generated/api';
@@ -227,6 +226,7 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
     const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
     const generateSmartName = useAction(api.smartNames.generateSmartName);
     const cacheImageUrls = useAction(api.productImages.cacheImageUrls);
+    const suggestProductCategory = useAction(api.ai.suggestProductCategory);
 
     if (!isOpen) return null;
 
@@ -330,6 +330,7 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
                             scrapeProduct={scrapeProduct}
                             generateSmartDescription={generateSmartDescription}
                             generateSmartName={generateSmartName}
+                            suggestProductCategory={suggestProductCategory}
                         />
                     )}
 
@@ -417,7 +418,8 @@ const EssenceStep: React.FC<{
     scrapeProduct: any;
     generateSmartDescription: any;
     generateSmartName: any;
-}> = ({ product, onChange, priceDraft, onPriceDraftChange, onNext, collections, scrapeProduct, generateSmartDescription, generateSmartName }) => {
+    suggestProductCategory: any;
+}> = ({ product, onChange, priceDraft, onPriceDraftChange, onNext, collections, scrapeProduct, generateSmartDescription, generateSmartName, suggestProductCategory }) => {
     const [isGeneratingName, setIsGeneratingName] = useState(false);
     const [nameSuggestions, setNameSuggestions] = useState<string[]>([]);
     const [isCategorizing, setIsCategorizing] = useState(false);
@@ -627,7 +629,10 @@ const EssenceStep: React.FC<{
         if (!product.name) return;
         setIsCategorizing(true);
         try {
-            const category = await suggestProductCategory(product.name, product.description || '');
+            const category = await suggestProductCategory({
+                productName: product.name,
+                productDescription: product.description || '',
+            });
             if (category) {
                 onChange({ ...product, category });
             }

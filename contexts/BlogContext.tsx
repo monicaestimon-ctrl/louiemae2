@@ -1,5 +1,5 @@
 
-import React, { createContext, useContext, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, ReactNode, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
@@ -42,9 +42,17 @@ interface SiteContextType {
 const SiteContext = createContext<SiteContextType | undefined>(undefined);
 
 export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // --- Auth State (using Convex Auth) ---
+  const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
+  const { signIn: authSignIn, signOut: authSignOut } = useAuthActions();
+
   // --- Convex Queries ---
-  const convexPosts = useQuery(api.blogPosts.list);
-  const convexProducts = useQuery(api.products.list);
+  const adminPosts = useQuery(api.blogPosts.listAdmin, isAuthenticated ? {} : 'skip');
+  const publicPosts = useQuery(api.blogPosts.list, isAuthenticated ? 'skip' : {});
+  const convexPosts = isAuthenticated ? adminPosts : publicPosts;
+  const adminProducts = useQuery(api.products.list, isAuthenticated ? {} : 'skip');
+  const storefrontProducts = useQuery(api.products.listForStorefront, isAuthenticated ? 'skip' : {});
+  const convexProducts = isAuthenticated ? adminProducts : storefrontProducts;
   const convexSiteContent = useQuery(api.siteContent.get);
   const convexCustomPages = useQuery(api.customPages.list);
 
@@ -63,43 +71,42 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const createCustomPage = useMutation(api.customPages.create);
   const updateCustomPageMutation = useMutation(api.customPages.update);
   const removeCustomPage = useMutation(api.customPages.remove);
-
-  // --- Auth State (using Convex Auth) ---
-  const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
-  const { signIn: authSignIn, signOut: authSignOut } = useAuthActions();
+  const siteContentSeedStarted = useRef(false);
+  const productSeedStarted = useRef(false);
+  const postSeedStarted = useRef(false);
 
   // --- Seed initial data if Convex is empty ---
   useEffect(() => {
-    if (convexSiteContent === null) {
-      // No site content exists, seed it
-      seedSiteContent({
+    if (isAuthenticated && convexSiteContent === null && !siteContentSeedStarted.current) {
+      siteContentSeedStarted.current = true;
+      void seedSiteContent({
         navLinks: INITIAL_SITE_CONTENT.navLinks,
         collections: INITIAL_SITE_CONTENT.collections,
         home: INITIAL_SITE_CONTENT.home,
         story: INITIAL_SITE_CONTENT.story,
-      });
+      }).catch(error => console.error('Site content seeding failed:', error));
     }
-  }, [convexSiteContent, seedSiteContent]);
+  }, [isAuthenticated, convexSiteContent, seedSiteContent]);
 
   useEffect(() => {
-    if (convexProducts !== undefined && convexProducts.length === 0) {
-      // Seed initial products
-      INITIAL_PRODUCTS.forEach(product => {
+    if (isAuthenticated && adminProducts?.length === 0 && !productSeedStarted.current) {
+      productSeedStarted.current = true;
+      void Promise.all(INITIAL_PRODUCTS.map(product => {
         const { id, ...productData } = product;
-        createProduct(productData);
-      });
+        return createProduct(productData);
+      })).catch(error => console.error('Product seeding failed:', error));
     }
-  }, [convexProducts, createProduct]);
+  }, [isAuthenticated, adminProducts, createProduct]);
 
   useEffect(() => {
-    if (convexPosts !== undefined && convexPosts.length === 0) {
-      // Seed initial posts
-      INITIAL_POSTS.forEach(post => {
+    if (isAuthenticated && adminPosts?.length === 0 && !postSeedStarted.current) {
+      postSeedStarted.current = true;
+      void Promise.all(INITIAL_POSTS.map(post => {
         const { id, date, ...postData } = post;
-        createPost(postData);
-      });
+        return createPost(postData);
+      })).catch(error => console.error('Blog post seeding failed:', error));
     }
-  }, [convexPosts, createPost]);
+  }, [isAuthenticated, adminPosts, createPost]);
 
   // --- Transform Convex data to match existing types ---
   const posts: BlogPost[] = (convexPosts ?? []).map(p => ({
@@ -107,7 +114,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     id: p._id,
   }));
 
-  const products: Product[] = (convexProducts ?? []).map(p => ({
+  const products: Product[] = (convexProducts ?? []).map((p): Product => ({
     ...p,
     id: p._id,
   }));

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, Wand2, Send, ChevronRight, Layout, Type, Image as ImageIcon, CheckCircle, Clock, AlertCircle, ArrowLeft, Eye, Smartphone, Monitor, Loader2, Grid } from 'lucide-react';
 import { EmailCampaign } from '../types';
-import { generateEmailSubject, generateEmailBody, personalizeTemplate } from '../services/geminiService';
+import { useAction } from 'convex/react';
+import { api } from '../convex/_generated/api';
 import { EMAIL_TEMPLATES, EmailTemplate } from '../constants/emailTemplates';
 import { FadeIn } from './FadeIn';
 
@@ -157,15 +158,24 @@ const StudioStepIndicator: React.FC<{ currentStep: StudioStep }> = ({ currentSte
 };
 
 const StrategyStep: React.FC<{ campaign: Partial<EmailCampaign>, onChange: (c: any) => void, onNext: () => void }> = ({ campaign, onChange, onNext }) => {
+    const generateEmailSubject = useAction(api.ai.generateEmailSubject);
     const [isGenerating, setIsGenerating] = useState(false);
     const [suggestions, setSuggestions] = useState<string[]>([]);
+    const [generationError, setGenerationError] = useState<string | null>(null);
 
     const handleGenerateSubjects = async () => {
         if (!campaign.subject) return;
         setIsGenerating(true);
-        const results = await generateEmailSubject(campaign.subject);
-        setSuggestions(results);
-        setIsGenerating(false);
+        setGenerationError(null);
+        try {
+            const results = await generateEmailSubject({ topic: campaign.subject });
+            setSuggestions(results);
+        } catch (error) {
+            console.error('Subject generation failed:', error);
+            setGenerationError('Subject suggestions could not be generated. Please try again.');
+        } finally {
+            setIsGenerating(false);
+        }
     };
 
     return (
@@ -232,6 +242,9 @@ const StrategyStep: React.FC<{ campaign: Partial<EmailCampaign>, onChange: (c: a
                                     </div>
                                 </div>
                             )}
+                            {generationError && (
+                                <p role="alert" className="text-sm text-red-700">{generationError}</p>
+                            )}
                         </div>
                     </div>
 
@@ -245,34 +258,41 @@ const StrategyStep: React.FC<{ campaign: Partial<EmailCampaign>, onChange: (c: a
 };
 
 const TemplateStep: React.FC<{ campaign: Partial<EmailCampaign>, onChange: (c: any) => void, onBack: () => void, onNext: () => void }> = ({ campaign, onChange, onBack, onNext }) => {
+    const personalizeTemplate = useAction(api.ai.personalizeTemplate);
     const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
     const [isPersonalizing, setIsPersonalizing] = useState(false);
+    const [personalizationError, setPersonalizationError] = useState<string | null>(null);
 
     const handleSelectTemplate = async (templateId: string) => {
         setSelectedTemplate(templateId);
         setIsPersonalizing(true);
+        setPersonalizationError(null);
+        try {
+            const template = EMAIL_TEMPLATES.find(t => t.id === templateId);
+            if (!template) {
+                setPersonalizationError('That template is no longer available. Please select another.');
+                return;
+            }
 
-        // Find template base content
-        const template = EMAIL_TEMPLATES.find(t => t.id === templateId);
-        if (!template) return;
-
-        let finalContent = template.baseContent;
-
-        // Smart fill with AI
-        if (campaign.subject) {
-            const aiContent = await personalizeTemplate(templateId, campaign.subject, campaign.type || 'newsletter');
-
-            // simple find and replace for placeholders
-            Object.keys(aiContent).forEach(key => {
-                finalContent = finalContent.replace(new RegExp(`{{${key}}}`, 'g'), aiContent[key]);
-            });
+            let finalContent = template.baseContent;
+            if (campaign.subject) {
+                const aiContent = await personalizeTemplate({
+                    templateId,
+                    topic: campaign.subject,
+                    objective: campaign.type || 'newsletter',
+                });
+                Object.keys(aiContent).forEach(key => {
+                    finalContent = finalContent.replace(new RegExp(`{{${key}}}`, 'g'), aiContent[key]);
+                });
+            }
+            finalContent = finalContent.replace(/{{\w+}}/g, '');
+            onChange({ ...campaign, content: finalContent });
+        } catch (error) {
+            console.error('Template personalization failed:', error);
+            setPersonalizationError('This template could not be personalized. Please try again.');
+        } finally {
+            setIsPersonalizing(false);
         }
-
-        // Clean up any remaining placeholders
-        finalContent = finalContent.replace(/{{\w+}}/g, '');
-
-        onChange({ ...campaign, content: finalContent });
-        setIsPersonalizing(false);
     };
 
     return (
@@ -324,6 +344,9 @@ const TemplateStep: React.FC<{ campaign: Partial<EmailCampaign>, onChange: (c: a
                             </button>
                         ))}
                     </div>
+                    {personalizationError && (
+                        <p role="alert" className="text-sm text-red-700">{personalizationError}</p>
+                    )}
 
                     {selectedTemplate && !isPersonalizing && (
                         <div className="flex justify-center pt-8 animate-fade-in">

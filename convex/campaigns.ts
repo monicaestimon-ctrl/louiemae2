@@ -1,12 +1,13 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { auth } from "./auth";
+import { requireCjAdminIdentity } from "./cjAdminAccess";
 
-// Public query - for admin list view
+// Authenticated query for the admin list view.
 export const list = query({
     args: {},
     handler: async (ctx) => {
-        return await ctx.db.query("campaigns").collect();
+        await requireCjAdminIdentity(ctx);
+        return await ctx.db.query("campaigns").take(500);
     },
 });
 
@@ -19,10 +20,7 @@ export const create = mutation({
         type: v.union(v.literal("newsletter"), v.literal("promotion"), v.literal("automation")),
     },
     handler: async (ctx, args) => {
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to create campaigns");
-        }
+        await requireCjAdminIdentity(ctx);
         return await ctx.db.insert("campaigns", {
             ...args,
             status: "draft",
@@ -47,10 +45,7 @@ export const update = mutation({
         })),
     },
     handler: async (ctx, args) => {
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to update campaigns");
-        }
+        await requireCjAdminIdentity(ctx);
         const { id, ...updates } = args;
         const filteredUpdates = Object.fromEntries(
             Object.entries(updates).filter(([_, v]) => v !== undefined)
@@ -62,10 +57,7 @@ export const update = mutation({
 export const send = mutation({
     args: { id: v.id("campaigns") },
     handler: async (ctx, args) => {
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to send campaigns");
-        }
+        await requireCjAdminIdentity(ctx);
         const subscribers = await ctx.db.query("subscribers").collect();
         const activeCount = subscribers.filter(s => s.status === "active").length;
 
@@ -80,15 +72,12 @@ export const send = mutation({
 export const remove = mutation({
     args: { id: v.id("campaigns") },
     handler: async (ctx, args) => {
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to delete campaigns");
-        }
+        await requireCjAdminIdentity(ctx);
         await ctx.db.delete(args.id);
     },
 });
 
-// Seed initial campaigns - allow without auth for initial setup
+// Seed initial campaigns only from the authenticated admin application.
 export const seed = mutation({
     args: {
         campaigns: v.array(v.object({
@@ -106,6 +95,7 @@ export const seed = mutation({
         })),
     },
     handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("campaigns").first();
         if (existing) return; // Already seeded
 

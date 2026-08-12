@@ -81,6 +81,30 @@ export const generateSmartDescription = action({
                 error: "Authentication required",
             };
         }
+        try {
+            await ctx.runQuery(internal.cjAdminAccess.verifyCjAdminIdentity, {});
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error("[SmartDescription] Admin verification failed", { message });
+            const permissionDenied = /logged in|missing an email|admin access|permission/i.test(message);
+            return {
+                ok: false,
+                warnings: [],
+                validation: {
+                    passed: false,
+                    errors: [{
+                        code: "GENERIC_COPY",
+                        message: permissionDenied ? "Admin permission required." : "Admin verification is unavailable.",
+                        severity: "error",
+                    }],
+                    warnings: [],
+                    claimChecks: [],
+                    repaired: false,
+                },
+                fallbackUsed: false,
+                error: permissionDenied ? "Admin permission required" : "Unable to verify admin access",
+            };
+        }
         if (process.env.SMART_DESCRIPTION_ENABLED === "false") {
             return {
                 ok: false,

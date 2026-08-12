@@ -1,6 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { auth } from "./auth";
+import { requireCjAdminIdentity } from "./cjAdminAccess";
 
 // Public query - anyone can read site content
 export const get = query({
@@ -15,6 +15,7 @@ export const get = query({
 export const clearForReseed = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (existing) {
             await ctx.db.delete(existing._id);
@@ -28,6 +29,7 @@ export const clearForReseed = mutation({
 export const fixDecorImage = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (existing) {
             const updatedHome = {
@@ -48,6 +50,7 @@ export const fixDecorImage = mutation({
 export const fixFurnitureImage = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (existing) {
             const updatedHome = {
@@ -73,11 +76,7 @@ export const update = mutation({
         story: v.optional(v.any()),
     },
     handler: async (ctx, args) => {
-        // Require authentication
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to update site content");
-        }
+        await requireCjAdminIdentity(ctx);
 
         const existing = await ctx.db.query("siteContent").first();
 
@@ -104,8 +103,7 @@ export const seed = mutation({
         story: v.any(),
     },
     handler: async (ctx, args) => {
-        // Allow seeding without auth for initial setup
-        // But only if no content exists
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (existing) {
             // Already seeded
@@ -121,11 +119,7 @@ export const updateHeroImage = mutation({
         imageUrl: v.string(),
     },
     handler: async (ctx, args) => {
-        // Require authentication
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to update hero image");
-        }
+        await requireCjAdminIdentity(ctx);
 
         const existing = await ctx.db.query("siteContent").first();
         if (existing) {
@@ -148,12 +142,7 @@ export const updateHeroImage = mutation({
 export const migrateToNewMenuStructure = mutation({
     args: {},
     handler: async (ctx) => {
-        // Require authentication
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to run migrations");
-        }
-
+        await requireCjAdminIdentity(ctx);
         // New navigation structure with nested dropdowns
         const newNavLinks = [
             { label: 'Home', href: '#', children: [{ label: 'Our Story', href: '#story' }] },
@@ -545,13 +534,7 @@ export const migrateToNewMenuStructure = mutation({
 export const migrateAllCollectionsHierarchy = mutation({
     args: {},
     handler: async (ctx) => {
-        // Require authentication
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to run migrations");
-        }
-
-
+        await requireCjAdminIdentity(ctx);
         // --- 1. Fashion Collection ---
         const fashionCollection = {
             id: 'fashion',
@@ -707,6 +690,7 @@ export const migrateAllCollectionsHierarchy = mutation({
 export const fixHomeDecorCollection = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) {
             return { success: false, message: "No siteContent found" };
@@ -746,6 +730,7 @@ export const fixHomeDecorCollection = mutation({
 export const fixKidsCollection = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) {
             return { success: false, message: "No siteContent found" };
@@ -808,6 +793,7 @@ export const fixKidsCollection = mutation({
 export const updateCategoryImages = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) {
             return { success: false, message: "No siteContent found" };
@@ -852,6 +838,7 @@ export const updateCategoryImages = mutation({
 export const fixHeroImage = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (existing) {
             const updatedHome = {
@@ -876,6 +863,7 @@ export const fixHeroImage = mutation({
 export const updateGirlsImage = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) return { success: false, message: "No siteContent found" };
 
@@ -901,6 +889,7 @@ export const updateGirlsImage = mutation({
 export const updatePlayroomImage = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) return { success: false, message: "No siteContent found" };
 
@@ -926,6 +915,7 @@ export const updatePlayroomImage = mutation({
 export const updateBlogTopsBottomsImages = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) return { success: false, message: "No siteContent found" };
 
@@ -964,6 +954,7 @@ export const updateBlogTopsBottomsImages = mutation({
 export const updateDressesSetsAndFashionImages = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) return { success: false, message: "No siteContent found" };
 
@@ -1003,6 +994,7 @@ export const updateDressesSetsAndFashionImages = mutation({
 export const flattenDecorForCarousel = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) return { success: false, message: "No siteContent found" };
 
@@ -1034,6 +1026,7 @@ export const flattenDecorForCarousel = mutation({
 export const updateFurnitureImages = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) return { success: false, message: "No siteContent found" };
 
@@ -1072,6 +1065,7 @@ export const updateFurnitureImages = mutation({
 export const updateDecorImages = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) return { success: false, message: "No siteContent found" };
 
@@ -1106,6 +1100,7 @@ export const updateDecorImages = mutation({
 export const updateFashionImages = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) return { success: false, message: "No siteContent found" };
 
@@ -1137,6 +1132,7 @@ export const updateFashionImages = mutation({
 export const updateMaeCollectiveHomeImage = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) return { success: false, message: "No siteContent found" };
 
@@ -1157,6 +1153,7 @@ export const updateMaeCollectiveHomeImage = mutation({
 export const updateShopHeaderImage = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) return { success: false, message: "No siteContent found" };
 
@@ -1177,6 +1174,7 @@ export const updateShopHeaderImage = mutation({
 export const updateMaeCollectiveToMaev2 = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) return { success: false, message: "No siteContent found" };
 
@@ -1197,6 +1195,7 @@ export const updateMaeCollectiveToMaev2 = mutation({
 export const updateStoryHeroImage = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) return { success: false, message: "No siteContent found" };
 
@@ -1217,6 +1216,7 @@ export const updateStoryHeroImage = mutation({
 export const updateStoryChapters = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) return { success: false, message: "No siteContent found" };
 
@@ -1244,6 +1244,7 @@ export const updateStoryChapters = mutation({
 export const fixBottomsSubcategories = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         const existing = await ctx.db.query("siteContent").first();
         if (!existing) return { success: false, message: "No siteContent found" };
 

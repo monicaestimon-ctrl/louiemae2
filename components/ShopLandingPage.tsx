@@ -30,6 +30,8 @@ export const ShopLandingPage: React.FC = () => {
                   <img
                      src={home.shop?.headerImage || "/images/brand/DINNERTABLE.png"}
                      alt="Louie Mae Signature"
+                     fetchPriority="high"
+                     decoding="async"
                      className="w-full h-[300px] md:h-[450px] object-cover"
                   />
                   {/* Subtle edge highlight */}

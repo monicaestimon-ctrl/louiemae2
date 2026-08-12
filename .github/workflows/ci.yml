@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Preserve a production run once it starts so a later push cannot cancel a
+  # validated main build before its Convex deployment finishes.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   lint-test-build:
     runs-on: ubuntu-latest
@@ -21,7 +27,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Run linter
         run: npm run lint
@@ -53,9 +59,11 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Deploy to Convex
-        run: npx convex deploy --cmd 'npm run build'
+        # Frontend quality/build already ran in lint-test-build, and Vercel builds
+        # the frontend deployment. Do not spend a second build here.
+        run: npx convex deploy
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}

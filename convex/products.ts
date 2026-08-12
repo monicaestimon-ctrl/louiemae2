@@ -1,7 +1,7 @@
 import { query, mutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
-import { auth } from "./auth";
 import { evaluateProductCjReadiness } from "../lib/cjFulfillmentReadiness";
+import { requireCjAdminIdentity } from "./cjAdminAccess";
 
 const smartDescriptionValidator = v.object({
     description: v.string(),
@@ -92,19 +92,76 @@ const isProductVisibleOnStorefront = (product: {
     return visibilityReady && fulfillmentReady && inventoryReady;
 };
 
-// Public queries - no auth required
+const buildProductSearchText = (product: {
+    name?: string;
+    description?: string;
+    category?: string;
+    collection?: string;
+    subcategory?: string;
+}) => normalizeName([
+    product.name,
+    product.description,
+    product.category,
+    product.collection,
+    product.subcategory,
+].filter(Boolean).join(" ")).slice(0, 8_000);
+
+// Full product documents contain sourcing, pricing, provider, and audit fields.
+// They are intentionally restricted to the signed-in admin. Storefront queries
+// below return a customer-visible projection only.
 export const list = query({
     args: {},
     handler: async (ctx) => {
-        return await ctx.db.query("products").collect();
+        await requireCjAdminIdentity(ctx);
+        return await ctx.db.query("products").take(500);
     },
+});
+
+export const getAdmin = query({
+    args: { id: v.id("products") },
+    handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
+        return await ctx.db.get(args.id);
+    },
+});
+
+export const getInternal = internalQuery({
+    args: { id: v.id("products") },
+    handler: (ctx, args) => ctx.db.get(args.id),
 });
 
 export const get = query({
     args: { id: v.id("products") },
     handler: async (ctx, args) => {
-        return await ctx.db.get(args.id);
+        const product = await ctx.db.get(args.id);
+        if (!product || !isProductVisibleOnStorefront(product)) return null;
+        return toStorefrontProduct(product);
     },
+});
+
+const toStorefrontProduct = (product: any) => ({
+    _id: product._id,
+    _creationTime: product._creationTime,
+    name: product.name,
+    price: product.price,
+    description: product.description,
+    images: Array.isArray(product.images) ? product.images.slice(0, 24) : [],
+    category: product.category,
+    collection: product.collection,
+    subcategory: product.subcategory,
+    isNew: product.isNew,
+    inStock: product.inStock,
+    publishedAt: product.publishedAt,
+    storefrontStatus: product.storefrontStatus,
+    variants: Array.isArray(product.variants)
+        ? product.variants.slice(0, 100).map((variant: any) => ({
+            id: variant.id,
+            name: variant.name,
+            image: variant.image,
+            priceAdjustment: variant.priceAdjustment,
+            inStock: variant.inStock,
+        }))
+        : undefined,
 });
 
 function normalizeName(value = ""): string {
@@ -205,11 +262,7 @@ export const create = mutation({
         descriptionFingerprint: v.optional(descriptionFingerprintValidator),
     },
     handler: async (ctx, args) => {
-        // Require authentication
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to create products");
-        }
+        await requireCjAdminIdentity(ctx);
         if (args.batchImportItemId) {
             const existing = await ctx.db.query("products")
                 .withIndex("by_batch_import_item", q => q.eq("batchImportItemId", args.batchImportItemId))
@@ -219,6 +272,7 @@ export const create = mutation({
         return await ctx.db.insert("products", {
             ...args,
             publishedAt: args.publishedAt || new Date().toISOString(),
+            searchText: buildProductSearchText(args),
         });
     },
 });
@@ -252,6 +306,7 @@ export const update = mutation({
         cjInventoryStatus: v.optional(cjInventoryStatusValidator),
         cjInventoryTotal: v.optional(v.number()),
         cjInventoryLastCheckedAt: v.optional(v.string()),
+        cjInventoryNextCheckAt: v.optional(v.number()),
         cjInventoryError: v.optional(v.string()),
         cjInventoryNeedsReview: v.optional(v.boolean()),
         cjInventoryReviewReason: v.optional(v.union(
@@ -308,44 +363,40 @@ export const update = mutation({
         }))),
     },
     handler: async (ctx, args) => {
-        // Require authentication
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to update products");
-        }
+        await requireCjAdminIdentity(ctx);
         const { id, ...updates } = args;
         // Filter out undefined values
         const filteredUpdates = Object.fromEntries(
             Object.entries(updates).filter(([_, v]) => v !== undefined)
         );
-        await ctx.db.patch(id, filteredUpdates);
+        const existing = await ctx.db.get(id);
+        const searchFieldsChanged = ["name", "description", "category", "collection", "subcategory"]
+            .some(field => Object.prototype.hasOwnProperty.call(filteredUpdates, field));
+        await ctx.db.patch(id, {
+            ...filteredUpdates,
+            ...(existing && searchFieldsChanged
+                ? { searchText: buildProductSearchText({ ...existing, ...filteredUpdates }) }
+                : {}),
+        });
     },
 });
 
 export const remove = mutation({
     args: { id: v.id("products") },
     handler: async (ctx, args) => {
-        // Require authentication
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to delete products");
-        }
+        await requireCjAdminIdentity(ctx);
         await ctx.db.delete(args.id);
     },
 });
 
 /**
  * Admin-only remove - simpler version for CJ Settings panel
- * TODO: Enforce admin role/claim check here when role system is implemented.
- * Currently a single-owner app, so auth-only guard is sufficient.
+ * Requires the configured admin allowlist.
  */
 export const adminRemove = mutation({
     args: { id: v.id("products") },
     handler: async (ctx, args) => {
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to delete products");
-        }
+        await requireCjAdminIdentity(ctx);
         await ctx.db.delete(args.id);
     },
 });
@@ -362,19 +413,71 @@ export const adminRemove = mutation({
 export const listForStorefront = query({
     args: {},
     handler: async (ctx) => {
-        const allProducts = await ctx.db.query("products").collect();
+        // Bounded for safety. The storefront currently has far fewer products;
+        // introduce pagination before the catalog approaches this ceiling.
+        const allProducts = await ctx.db.query("products").take(500);
 
-        return allProducts.filter(isProductVisibleOnStorefront);
+        return allProducts.filter(isProductVisibleOnStorefront).map(toStorefrontProduct);
+    },
+});
+
+export const searchStorefront = query({
+    args: { term: v.string(), limit: v.optional(v.number()) },
+    handler: async (ctx, args) => {
+        const term = normalizeName(args.term).slice(0, 80);
+        if (term.length < 2) return [];
+        const limit = Math.min(Math.max(args.limit ?? 20, 1), 20);
+        const terms = term.split(" ").filter(Boolean);
+        const searchLimit = Math.min(limit * 4, 80);
+        const [publishedProducts, legacyPublishedProducts] = await Promise.all([
+            ctx.db.query("products")
+                .withSearchIndex("search_storefront", q =>
+                    q.search("searchText", term).eq("storefrontStatus", "published"),
+                )
+                .take(searchLimit),
+            ctx.db.query("products")
+                .withSearchIndex("search_storefront", q =>
+                    q.search("searchText", term).eq("storefrontStatus", undefined),
+                )
+                .take(searchLimit),
+        ]);
+        const products = [...publishedProducts, ...legacyPublishedProducts]
+            .filter((product, index, all) =>
+                all.findIndex(candidate => candidate._id === product._id) === index,
+            );
+
+        return products
+            .filter(isProductVisibleOnStorefront)
+            .filter((product) => {
+                const haystack = product.searchText || buildProductSearchText(product);
+                return terms.every((searchTerm) => haystack.includes(searchTerm));
+            })
+            .slice(0, limit)
+            .map(toStorefrontProduct);
+    },
+});
+
+export const backfillSearchText = mutation({
+    args: { dryRun: v.boolean(), limit: v.optional(v.number()) },
+    handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
+        const limit = Math.min(Math.max(args.limit ?? 25, 1), 100);
+        const products = await ctx.db.query("products")
+            .withIndex("by_search_text", q => q.eq("searchText", undefined))
+            .take(limit);
+        if (!args.dryRun) {
+            for (const product of products) {
+                await ctx.db.patch(product._id, { searchText: buildProductSearchText(product) });
+            }
+        }
+        return { dryRun: args.dryRun, candidates: products.length, hasMore: products.length === limit };
     },
 });
 
 export const launchNextProducts = mutation({
     args: {},
     handler: async (ctx) => {
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to launch products");
-        }
+        await requireCjAdminIdentity(ctx);
 
         const now = new Date().toISOString();
         const launchBatchId = `launch-${Date.now()}`;
@@ -464,10 +567,7 @@ export const linkCjVariant = mutation({
         cjSku: v.optional(v.string()),   // CJ sku to link
     },
     handler: async (ctx, args) => {
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to manage variants");
-        }
+        await requireCjAdminIdentity(ctx);
 
         const product = await ctx.db.get(args.productId);
         if (!product) {
@@ -505,10 +605,7 @@ export const unlinkCjVariant = mutation({
         customerVariantId: v.string(),
     },
     handler: async (ctx, args) => {
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to manage variants");
-        }
+        await requireCjAdminIdentity(ctx);
 
         const product = await ctx.db.get(args.productId);
         if (!product || !product.variants) {
@@ -536,10 +633,7 @@ export const removeCustomerVariant = mutation({
         customerVariantId: v.string(),
     },
     handler: async (ctx, args) => {
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to manage variants");
-        }
+        await requireCjAdminIdentity(ctx);
 
         const product = await ctx.db.get(args.productId);
         if (!product || !product.variants) {
@@ -665,10 +759,7 @@ export const fixAstridDenimSet = mutation({
         cjSku: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to fix product data");
-        }
+        await requireCjAdminIdentity(ctx);
 
         const products = await ctx.db.query("products").collect();
         const matches = products.filter(p =>
@@ -748,10 +839,7 @@ export const approveProductWithCjData = mutation({
         newImages: v.optional(v.array(v.string())),
     },
     handler: async (ctx, args) => {
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to approve products");
-        }
+        await requireCjAdminIdentity(ctx);
 
         const product = await ctx.db.get(args.productId);
         if (!product) {
@@ -802,10 +890,7 @@ export const approveProductWithCjData = mutation({
 export const auditProductHealth = query({
     args: {},
     handler: async (ctx) => {
-        const userId = await auth.getUserId(ctx);
-        if (!userId) {
-            throw new Error("You must be logged in to audit product health");
-        }
+        await requireCjAdminIdentity(ctx);
 
         const allProducts = await ctx.db.query("products").collect();
 

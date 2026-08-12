@@ -5,6 +5,7 @@ import { calculatePricingBreakdown, ESTIMATED_CJ_COST_MULTIPLIER } from "../lib/
 import { getCjFulfillmentReentryBlock } from "../lib/cjFulfillmentWorkflow";
 import { resolveMonotonicCjStatus } from "../lib/cjWebhookIdempotency";
 import { mergePricingRefreshFailureWarning } from "../lib/cjPricingRefreshFailure";
+import { requireCjAdminIdentity } from "./cjAdminAccess";
 
 const hasFiniteNumber = (value: unknown): boolean => typeof value === "number" && Number.isFinite(value);
 const CJ_RESERVATION_TTL_MS = 10 * 60 * 1000;
@@ -136,29 +137,89 @@ export const getProductsForInventoryRefresh = internalQuery({
         productId: v.optional(v.id("products")),
         variantId: v.optional(v.string()),
         limit: v.optional(v.number()),
+        source: v.optional(v.union(
+            v.literal("manual"),
+            v.literal("checkout"),
+            v.literal("cron"),
+            v.literal("webhook")
+        )),
     },
     handler: async (ctx, args) => {
         if (args.productId) {
             const product = await ctx.db.get(args.productId);
-            return product ? [product] : [];
+            return { products: product ? [product] : [], eligible: product ? 1 : 0, deferredFresh: 0 };
         }
 
-        const products = await ctx.db
-            .query("products")
-            .withIndex("by_cj_sourcing_status", (q) => q.eq("cjSourcingStatus", "approved"))
-            .collect();
-
         const limit = Math.min(Math.max(args.limit ?? 25, 1), 100);
-        return products
+        const now = Date.now();
+        const indexedCandidates = args.source === "cron"
+            ? await ctx.db.query("products")
+                .withIndex("by_inventory_next_check", q =>
+                    q.gte("cjInventoryNextCheckAt", 0).lte("cjInventoryNextCheckAt", now),
+                )
+                .take(Math.min(limit * 4, 100))
+            : await ctx.db.query("products")
+                .withIndex("by_cj_sourcing_status", q => q.eq("cjSourcingStatus", "approved"))
+                .take(Math.min(limit * 4, 100));
+        const legacyCandidates = args.source === "cron"
+            ? await ctx.db.query("products")
+                .withIndex("by_inventory_next_check", q => q.eq("cjInventoryNextCheckAt", undefined))
+                .take(limit)
+            : [];
+        const products = [...indexedCandidates, ...legacyCandidates]
+            .filter((product, index, all) => all.findIndex(candidate => candidate._id === product._id) === index)
+            .filter(product => product.cjSourcingStatus === "approved");
+        const linked = products
             .filter((product) =>
                 Boolean(product.cjProductId || product.cjVariantId || product.cjSku || (product.cjVariants?.length ?? 0) > 0)
-            )
+            );
+        const eligible = linked.filter((product) => {
+            if (args.source !== "cron") return true;
+            if (product.cjInventoryNextCheckAt !== undefined) {
+                return product.cjInventoryNextCheckAt <= now;
+            }
+            const lastCheckedAt = product.cjInventoryLastCheckedAt
+                ? Date.parse(product.cjInventoryLastCheckedAt)
+                : 0;
+            const isVisible = (!product.storefrontStatus || product.storefrontStatus === "published")
+                && product.inStock !== false
+                && product.cjInventoryStatus !== "out_of_stock";
+            // Preserve active storefront freshness while checking hidden/out-of-
+            // stock products daily so restocks still recover automatically.
+            const staleAfterMs = isVisible ? 6 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+            return !Number.isFinite(lastCheckedAt) || now - lastCheckedAt >= staleAfterMs;
+        });
+        const selected = eligible
             .sort((a, b) => {
-                const aChecked = a.cjInventoryLastCheckedAt ? Date.parse(a.cjInventoryLastCheckedAt) : 0;
-                const bChecked = b.cjInventoryLastCheckedAt ? Date.parse(b.cjInventoryLastCheckedAt) : 0;
+                const parsedA = a.cjInventoryLastCheckedAt ? Date.parse(a.cjInventoryLastCheckedAt) : 0;
+                const parsedB = b.cjInventoryLastCheckedAt ? Date.parse(b.cjInventoryLastCheckedAt) : 0;
+                const aChecked = Number.isFinite(parsedA) ? parsedA : 0;
+                const bChecked = Number.isFinite(parsedB) ? parsedB : 0;
                 return aChecked - bChecked;
             })
             .slice(0, limit);
+        return { products: selected, eligible: eligible.length, deferredFresh: linked.length - eligible.length };
+    },
+});
+
+export const recordInventoryPollRun = internalMutation({
+    args: {
+        source: v.union(v.literal("manual"), v.literal("checkout"), v.literal("cron"), v.literal("webhook")),
+        eligible: v.number(),
+        deferredFresh: v.number(),
+        checked: v.number(),
+        updated: v.number(),
+        errors: v.number(),
+        providerTokenRequested: v.boolean(),
+        durationMs: v.number(),
+    },
+    handler: (ctx, args) => {
+        const now = Date.now();
+        return ctx.db.insert("cjInventoryPollRuns", {
+            ...args,
+            createdAt: now,
+            expiresAt: now + 90 * 24 * 60 * 60 * 1000,
+        });
     },
 });
 
@@ -280,7 +341,49 @@ export const updateProductInventorySnapshot = internalMutation({
             patch.cjInventoryRestockedAt = now;
         }
 
+        const willBeVisible = (patch.storefrontStatus ?? product.storefrontStatus ?? "published") === "published"
+            && (patch.inStock ?? product.inStock) !== false
+            && effectiveStatus !== "out_of_stock";
+        const parsedCheckedAt = Date.parse(args.checkedAt);
+        patch.cjInventoryNextCheckAt = (Number.isFinite(parsedCheckedAt) ? parsedCheckedAt : Date.now())
+            + (willBeVisible ? 6 : 24) * 60 * 60 * 1000;
+
         await ctx.db.patch(args.productId, patch);
+    },
+});
+
+export const backfillInventoryNextCheck = mutation({
+    args: { dryRun: v.boolean(), limit: v.optional(v.number()), cursor: v.optional(v.string()) },
+    handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
+        const limit = Math.min(Math.max(args.limit ?? 50, 1), 100);
+        const page = await ctx.db.query("products")
+            .withIndex("by_inventory_next_check", q => q.eq("cjInventoryNextCheckAt", undefined))
+            .paginate({ cursor: args.cursor ?? null, numItems: limit });
+        let patched = 0;
+        for (const product of page.page) {
+            if (product.cjSourcingStatus !== "approved") continue;
+            const parsedLastChecked = product.cjInventoryLastCheckedAt ? Date.parse(product.cjInventoryLastCheckedAt) : 0;
+            const lastChecked = Number.isFinite(parsedLastChecked) ? parsedLastChecked : 0;
+            const visible = (!product.storefrontStatus || product.storefrontStatus === "published")
+                && product.inStock !== false
+                && product.cjInventoryStatus !== "out_of_stock";
+            if (!args.dryRun) {
+                await ctx.db.patch(product._id, {
+                    cjInventoryNextCheckAt: lastChecked
+                        ? lastChecked + (visible ? 6 : 24) * 60 * 60 * 1000
+                        : 0,
+                });
+            }
+            patched += 1;
+        }
+        return {
+            dryRun: args.dryRun,
+            scanned: page.page.length,
+            patched,
+            hasMore: !page.isDone,
+            continueCursor: page.continueCursor,
+        };
     },
 });
 
@@ -1348,6 +1451,7 @@ export const claimWebhookProcessing = internalMutation({
     },
     handler: async (ctx, args) => {
         const now = new Date().toISOString();
+        const expiresAt = Date.now() + 90 * 24 * 60 * 60 * 1000;
         const claimToken = createWebhookClaimToken();
         const existing = await ctx.db
             .query("cjWebhookLog")
@@ -1375,6 +1479,7 @@ export const claimWebhookProcessing = internalMutation({
                 lastError: "",
                 completedAt: undefined,
                 attempts: (existing.attempts || 1) + 1,
+                expiresAt,
             });
             return { claimed: true, status: "processing", claimToken };
         }
@@ -1387,6 +1492,7 @@ export const claimWebhookProcessing = internalMutation({
             claimedAt: now,
             claimToken,
             attempts: 1,
+            expiresAt,
         });
         return { claimed: true, status: "processing", claimToken };
     },

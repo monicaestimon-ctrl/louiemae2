@@ -12,22 +12,26 @@ interface SearchModalProps {
 
 export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onProductClick }) => {
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
-    const products = useQuery(api.products.listForStorefront) || [];
-
-    // Filter products based on search term
-    const filteredProducts = products.filter(product => {
-        const term = searchTerm.toLowerCase();
-        return (
-            product.name.toLowerCase().includes(term) ||
-            product.description.toLowerCase().includes(term) ||
-            product.category.toLowerCase().includes(term) ||
-            product.collection.toLowerCase().includes(term)
-        );
-    });
+    const normalizedSearchTerm = searchTerm.trim();
+    useEffect(() => {
+        const timer = window.setTimeout(() => setDebouncedSearchTerm(normalizedSearchTerm), 250);
+        return () => window.clearTimeout(timer);
+    }, [normalizedSearchTerm]);
+    const filteredProducts = useQuery(
+        api.products.searchStorefront,
+        isOpen && debouncedSearchTerm.length >= 2
+            ? { term: debouncedSearchTerm, limit: 20 }
+            : 'skip',
+    );
+    const isSearching = normalizedSearchTerm.length >= 2
+        && (debouncedSearchTerm !== normalizedSearchTerm || filteredProducts === undefined);
+    const results = filteredProducts ?? [];
 
     const handleClose = () => {
         setSearchTerm('');
+        setDebouncedSearchTerm('');
         onClose();
     };
 
@@ -111,21 +115,25 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
             {/* Results */}
             <div className="flex-1 overflow-y-auto px-6 md:px-12 pb-12 relative z-10">
                 <div className="max-w-5xl mx-auto">
-                    {searchTerm.length === 0 ? (
+                    {normalizedSearchTerm.length < 2 ? (
                         <div className="text-center py-16">
-                            <p className="text-cream/50 text-sm font-light tracking-wide">Start typing to search products...</p>
+                            <p className="text-cream/50 text-sm font-light tracking-wide">Type at least two characters to search products...</p>
                         </div>
-                    ) : filteredProducts.length === 0 ? (
+                    ) : isSearching ? (
+                        <div className="text-center py-16">
+                            <p className="text-cream/50 text-sm font-light tracking-wide">Searching...</p>
+                        </div>
+                    ) : results.length === 0 ? (
                         <div className="text-center py-16">
                             <p className="text-cream/50 text-sm font-light tracking-wide">No products found for "{searchTerm}"</p>
                         </div>
                     ) : (
                         <>
                             <p className="text-[0.65rem] uppercase tracking-[0.2em] text-cream/50 mb-6">
-                                {filteredProducts.length} result{filteredProducts.length !== 1 ? 's' : ''} found
+                                {results.length} result{results.length !== 1 ? 's' : ''} found
                             </p>
                             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
-                                {filteredProducts.map(product => (
+                                {results.map(product => (
                                     <button
                                         key={product._id}
                                         onClick={() => handleProductClick(product._id)}

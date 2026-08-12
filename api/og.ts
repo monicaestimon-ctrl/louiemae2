@@ -87,6 +87,9 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
 </html>`;
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Cache-Control', 's-maxage=3600, stale-while-revalidate');
+    // Metadata is static in source. Keep it fresh for a day while allowing the
+    // CDN to serve the last known-good copy during revalidation.
+    res.setHeader('Cache-Control', 'public, s-maxage=86400, stale-while-revalidate=604800');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.status(200).send(html);
 }
