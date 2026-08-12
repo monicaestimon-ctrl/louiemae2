@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isBlockedHost } from './download-image';
+import { isBlockedHost } from '../api/download-image';
 
 describe('download-image network boundary', () => {
     it.each([
