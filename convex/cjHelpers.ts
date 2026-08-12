@@ -5,6 +5,7 @@ import { calculatePricingBreakdown, ESTIMATED_CJ_COST_MULTIPLIER } from "../lib/
 import { getCjFulfillmentReentryBlock } from "../lib/cjFulfillmentWorkflow";
 import { resolveMonotonicCjStatus } from "../lib/cjWebhookIdempotency";
 import { mergePricingRefreshFailureWarning } from "../lib/cjPricingRefreshFailure";
+import { requireCjAdminIdentity } from "./cjAdminAccess";
 
 const hasFiniteNumber = (value: unknown): boolean => typeof value === "number" && Number.isFinite(value);
 const CJ_RESERVATION_TTL_MS = 10 * 60 * 1000;
@@ -346,9 +347,10 @@ export const updateProductInventorySnapshot = internalMutation({
     },
 });
 
-export const backfillInventoryNextCheck = internalMutation({
-    args: { limit: v.optional(v.number()) },
+export const backfillInventoryNextCheck = mutation({
+    args: { dryRun: v.boolean(), limit: v.optional(v.number()) },
     handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
         const limit = Math.min(Math.max(args.limit ?? 50, 1), 100);
         const products = await ctx.db.query("products")
             .withIndex("by_inventory_next_check", q => q.eq("cjInventoryNextCheckAt", undefined))
@@ -359,13 +361,15 @@ export const backfillInventoryNextCheck = internalMutation({
             const visible = (!product.storefrontStatus || product.storefrontStatus === "published")
                 && product.inStock !== false
                 && product.cjInventoryStatus !== "out_of_stock";
-            await ctx.db.patch(product._id, {
-                cjInventoryNextCheckAt: lastChecked
-                    ? lastChecked + (visible ? 6 : 24) * 60 * 60 * 1000
-                    : 0,
-            });
+            if (!args.dryRun) {
+                await ctx.db.patch(product._id, {
+                    cjInventoryNextCheckAt: lastChecked
+                        ? lastChecked + (visible ? 6 : 24) * 60 * 60 * 1000
+                        : 0,
+                });
+            }
         }
-        return { scanned: products.length, hasMore: products.length === limit };
+        return { dryRun: args.dryRun, scanned: products.length, hasMore: products.length === limit };
     },
 });
 

@@ -93,7 +93,8 @@ human reviews the first production dry-run.
 CJ inventory polling uses `cjInventoryNextCheckAt`: visible products remain on
 a six-hour freshness target, while hidden/out-of-stock products are checked
 daily for restocks. A 30-minute cron selects only due records. Run the bounded
-`cjHelpers:backfillInventoryNextCheck` migration after deployment, then inspect
+`cjHelpers:backfillInventoryNextCheck` first with `dryRun: true`, then in
+approved bounded write batches after deployment. Inspect
 `cjUsage:getInventoryPollSummary` for empty runs, provider token requests,
 updates, and errors before changing the schedule.
 
