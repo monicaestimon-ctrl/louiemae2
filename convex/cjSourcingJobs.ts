@@ -770,12 +770,13 @@ export const applyWebhookEvidence = internalMutation({
             .withIndex("by_sourcing_id", (q) => q.eq("currentSourcingId", sourcingId))
             .take(2);
         if (directJobs.length > 1) return { handled: true, code: "DUPLICATE_SOURCING_ID" };
-        let job = directJobs[0];
+        let job: Doc<"cjSourcingJobs"> | null | undefined = directJobs[0];
 
         if (!job && args.thirdProductId) {
+            const thirdProductId = args.thirdProductId;
             const attempts = await ctx.db
                 .query("cjSourcingAttempts")
-                .withIndex("by_third_product_id", (q) => q.eq("thirdProductId", args.thirdProductId))
+                .withIndex("by_third_product_id", (q) => q.eq("thirdProductId", thirdProductId))
                 .take(2);
             if (attempts.length > 1) return { handled: true, code: "DUPLICATE_CORRELATION_KEY" };
             if (attempts[0]) job = await ctx.db.get(attempts[0].jobId) ?? undefined;
