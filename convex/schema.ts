@@ -629,7 +629,7 @@ export default defineSchema({
         payload: v.optional(v.any()),
         expiresAt: v.optional(v.number()),
     }).index("by_message_id", ["messageId"])
-        .index("by_status_claimed_at", { fields: ["status", "claimedAt"], staged: true })
+        .index("by_status_claimed_at", ["status", "claimedAt"])
         .index("by_expiry", ["expiresAt"]),
 
     cjSourcingJobs: defineTable({
