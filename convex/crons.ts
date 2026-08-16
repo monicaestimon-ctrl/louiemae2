@@ -12,12 +12,20 @@ crons.interval(
     {}
 );
 
-// Check CJ product sourcing status every 2 hours
-// This checks if pending products have been approved by CJ
+// Backfill legacy pending products into the durable sourcing queue in bounded pages.
 crons.interval(
-    "check-cj-sourcing",
-    { hours: 2 },
-    internal.cjDropshipping.checkSourcingStatus,
+    "backfill-cj-sourcing-jobs",
+    { minutes: 1 },
+    internal.cjSourcingJobs.backfillLegacyPendingJobs,
+    { limit: 25 }
+);
+
+// Lease and schedule a bounded set of due sourcing jobs. Provider I/O runs in
+// independent actions so one slow product cannot time out or starve the queue.
+crons.interval(
+    "dispatch-cj-sourcing-jobs",
+    { minutes: 1 },
+    internal.cjSourcingJobs.dispatchDueJobs,
     {}
 );
 

@@ -111,3 +111,18 @@ export const canApproveCjSourcing = (input: {
   catalogVerified: boolean;
   cjProductId?: string | null;
 }) => input.catalogVerified && Boolean(input.cjProductId?.trim());
+
+const canonicalPayloadJson = (payload: CjSourcingPayload) => JSON.stringify({
+  productImage: payload.productImage,
+  productName: payload.productName,
+  productUrl: payload.productUrl,
+  remark: payload.remark ?? null,
+  price: payload.price ?? null,
+  thirdProductId: payload.thirdProductId,
+});
+
+export const hashCjSourcingPayload = async (payload: CjSourcingPayload): Promise<string> => {
+  const bytes = new globalThis.TextEncoder().encode(canonicalPayloadJson(payload));
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+};

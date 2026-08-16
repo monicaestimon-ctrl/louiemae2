@@ -2,6 +2,7 @@ import { query, mutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
 import { evaluateProductCjReadiness } from "../lib/cjFulfillmentReadiness";
 import { requireCjAdminIdentity } from "./cjAdminAccess";
+import { internal } from "./_generated/api";
 
 const smartDescriptionValidator = v.object({
     description: v.string(),
@@ -81,13 +82,15 @@ const cjVariantValidator = v.object({
 const isProductVisibleOnStorefront = (product: {
     storefrontStatus?: "published" | "hidden" | "next_launch";
     cjSourcingStatus?: "pending" | "approved" | "rejected" | "none";
+    cjSourcingState?: string;
+    cjFulfillmentReadiness?: "not_required" | "not_ready" | "mapping_required" | "ready" | "blocked";
     inStock?: boolean;
     cjInventoryStatus?: string;
 }) => {
     const visibilityReady = !product.storefrontStatus || product.storefrontStatus === "published";
-    const fulfillmentReady = !product.cjSourcingStatus
-        || product.cjSourcingStatus === "none"
-        || product.cjSourcingStatus === "approved";
+    const fulfillmentReady = product.cjSourcingState
+        ? product.cjFulfillmentReadiness === "ready" || product.cjFulfillmentReadiness === "not_required"
+        : !product.cjSourcingStatus || product.cjSourcingStatus === "none" || product.cjSourcingStatus === "approved";
     const inventoryReady = product.inStock !== false && product.cjInventoryStatus !== "out_of_stock";
     return visibilityReady && fulfillmentReady && inventoryReady;
 };
@@ -269,11 +272,18 @@ export const create = mutation({
                 .unique();
             if (existing) return existing._id;
         }
-        return await ctx.db.insert("products", {
+        const productId = await ctx.db.insert("products", {
             ...args,
             publishedAt: args.publishedAt || new Date().toISOString(),
             searchText: buildProductSearchText(args),
         });
+        if (args.cjSourcingStatus === "pending" && args.sourceUrl) {
+            await ctx.scheduler.runAfter(0, internal.cjSourcingJobs.ensureJobForProduct, {
+                productId,
+                source: "import",
+            });
+        }
+        return productId;
     },
 });
 

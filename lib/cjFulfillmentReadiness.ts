@@ -12,6 +12,8 @@ export type CjReadinessProduct = {
   name?: string;
   inStock?: boolean;
   cjSourcingStatus?: string;
+  cjSourcingState?: string;
+  cjFulfillmentReadiness?: string;
   cjProductId?: string;
   cjVariantId?: string;
   cjSku?: string;
@@ -129,6 +131,9 @@ export const evaluateProductCjReadiness = (product: CjReadinessProduct): CjReadi
   if (product.cjSourcingStatus && product.cjSourcingStatus !== "approved") {
     errors.push(`${productLabel} is not approved by CJ.`);
   }
+  if (product.cjSourcingState && product.cjFulfillmentReadiness !== "ready") {
+    errors.push(`${productLabel} is not fulfillment-ready in the CJ sourcing workflow.`);
+  }
   if (!hasValue(product.cjProductId)) {
     errors.push(`${productLabel} is missing a CJ product ID.`);
   }
@@ -174,6 +179,9 @@ export const evaluateCheckoutItemCjReadiness = (
   }
   if (product.cjSourcingStatus && product.cjSourcingStatus !== "approved") {
     errors.push(`${productLabel} is not approved by CJ.`);
+  }
+  if (product.cjSourcingState && product.cjFulfillmentReadiness !== "ready") {
+    errors.push(`${productLabel} is not fulfillment-ready in the CJ sourcing workflow.`);
   }
   if (!hasValue(product.cjProductId)) {
     errors.push(`${productLabel} is missing a CJ product ID.`);
