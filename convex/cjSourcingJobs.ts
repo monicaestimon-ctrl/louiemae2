@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import {
     internalMutation,
     internalQuery,
+    query,
     type MutationCtx,
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -13,6 +14,7 @@ import {
     hasCjProcessingDeadlineExpired,
     shouldDeadLetterCjWork,
 } from "../lib/cjSourcingPolicy";
+import { requireCjAdminIdentity } from "./cjAdminAccess";
 
 const DISPATCH_BATCH_SIZE = 20;
 const JOB_LEASE_MS = 5 * 60 * 1000;
@@ -57,6 +59,7 @@ const projectJobToProduct = async (
     job: Pick<Doc<"cjSourcingJobs">, "_id" | "state" | "currentSourcingId" | "cjProductId" | "lastErrorMessage">,
     productId: Id<"products">,
 ) => {
+    if (!await ctx.db.get(productId)) return;
     const projection = projectionForState(job.state);
     await ctx.db.patch(productId, {
         cjSourcingJobId: job._id,
@@ -1087,5 +1090,119 @@ export const getQueueSummary = internalQuery({
                 .take(1_000)).length;
         }
         return counts;
+    },
+});
+
+/** Admin-only operational read model. Never exposes credentials or lease tokens. */
+export const getAdminOperations = query({
+    args: { limit: v.optional(v.number()) },
+    handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
+        const limit = Math.min(Math.max(Math.floor(args.limit ?? 50), 10), 100);
+        const states: JobState[] = [
+            "needs_input", "queued", "submitting", "submitted", "processing", "awaiting_catalog",
+            "sourced", "mapping_required", "fulfillment_ready", "retry_wait",
+            "reconciliation_required", "rejected", "dead_letter", "canceled",
+        ];
+        const stateCounts: Record<string, number> = {};
+        const truncatedStates: string[] = [];
+        for (const state of states) {
+            const rows = await ctx.db
+                .query("cjSourcingJobs")
+                .withIndex("by_state_next_attempt", (q) => q.eq("state", state))
+                .take(501);
+            stateCounts[state] = Math.min(rows.length, 500);
+            if (rows.length > 500) truncatedStates.push(state);
+        }
+
+        const recentJobs = await ctx.db
+            .query("cjSourcingJobs")
+            .withIndex("by_updated_at")
+            .order("desc")
+            .take(limit);
+        const jobs = await Promise.all(recentJobs.map(async (job) => {
+            const [product, activeAttempt] = await Promise.all([
+                ctx.db.get(job.productId),
+                job.activeAttemptId ? ctx.db.get(job.activeAttemptId) : Promise.resolve(null),
+            ]);
+            return {
+                id: job._id,
+                productId: job.productId,
+                productName: product?.name ?? "Deleted product",
+                productImage: product?.images?.[0],
+                sourceUrl: product?.sourceUrl,
+                state: job.state,
+                generation: job.generation,
+                currentSourcingId: job.currentSourcingId,
+                cjProductId: job.cjProductId,
+                providerSourceStatus: job.providerSourceStatus,
+                attemptCount: job.attemptCount,
+                transientFailureCount: job.transientFailureCount,
+                nextAttemptAt: job.nextAttemptAt,
+                submittedAt: job.submittedAt,
+                updatedAt: job.updatedAt,
+                lastErrorCode: job.lastErrorCode,
+                lastErrorMessage: job.lastErrorMessage,
+                manualReviewReason: job.manualReviewReason,
+                activeAttempt: activeAttempt ? {
+                    state: activeAttempt.state,
+                    createdAt: activeAttempt.createdAt,
+                    updatedAt: activeAttempt.updatedAt,
+                    errorCode: activeAttempt.errorCode,
+                    errorMessage: activeAttempt.errorMessage,
+                } : null,
+            };
+        }));
+
+        const [control, workerRuns, webhookRows] = await Promise.all([
+            ctx.db.query("cjApiControl").withIndex("by_key", (q) => q.eq("key", "primary")).unique(),
+            ctx.db.query("cjWorkerRuns").withIndex("by_created_at").order("desc").take(20),
+            ctx.db.query("cjWebhookLog").order("desc").take(100),
+        ]);
+        const webhookCounts: Record<string, number> = { processing: 0, processed: 0, retryable: 0, failed: 0 };
+        let oldestProcessingAt: number | undefined;
+        for (const row of webhookRows) {
+            const status = row.status ?? "processed";
+            webhookCounts[status] = (webhookCounts[status] ?? 0) + 1;
+            if (status === "processing" && row.claimedAt) {
+                const claimedAt = Date.parse(row.claimedAt);
+                if (Number.isFinite(claimedAt)) oldestProcessingAt = Math.min(oldestProcessingAt ?? claimedAt, claimedAt);
+            }
+        }
+
+        const migrationRemaining: Record<string, number> = {};
+        let migrationTruncated = false;
+        for (const status of ["pending", "approved", "rejected"] as const) {
+            const rows = await ctx.db
+                .query("products")
+                .withIndex("by_cj_sourcing_status_job", (q) =>
+                    q.eq("cjSourcingStatus", status).eq("cjSourcingJobId", undefined))
+                .take(501);
+            migrationRemaining[status] = Math.min(rows.length, 500);
+            migrationTruncated ||= rows.length > 500;
+        }
+
+        return {
+            generatedAt: Date.now(),
+            stateCounts,
+            truncatedStates,
+            jobs,
+            control: control ? {
+                circuitState: control.circuitState,
+                circuitOpenedAt: control.circuitOpenedAt,
+                consecutiveFailures: control.consecutiveFailures,
+                sourceQuotaBlockedUntil: control.sourceQuotaBlockedUntil,
+                sourceQuotaReason: control.sourceQuotaReason,
+                nextRequestSlotAt: control.nextRequestSlotAt,
+                updatedAt: control.updatedAt,
+            } : null,
+            workerRuns,
+            webhook: {
+                sampled: webhookRows.length,
+                counts: webhookCounts,
+                oldestProcessingAt,
+            },
+            migration: { remaining: migrationRemaining, truncated: migrationTruncated },
+        };
     },
 });

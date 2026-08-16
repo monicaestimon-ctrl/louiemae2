@@ -36,6 +36,7 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
     const recentlyApproved = useQuery(api.products.getRecentlyApproved) || [];
     const rejectedProducts = useQuery(api.products.getRejectedProducts) || [];
     const productHealth = useQuery(api.products.auditProductHealth);
+    const operations = useQuery(api.cjSourcingJobs.getAdminOperations, { limit: 50 });
     const approvedMissingCjVariantIssues = productHealth?.issues?.filter(issue =>
         issue.problems.some(problem => problem.includes("Approved but no CJ variants"))
     ) || [];
@@ -79,7 +80,7 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
         getTokenStatus({}).then(setTokenStatus).catch(() => null);
     }, [getTokenStatus]);
 
-    // Use the admin products.adminRemove mutation for deleting (no auth required)
+    // Admin removal is protected by the same configured CJ admin allowlist.
     const deleteProduct = useMutation(api.products.adminRemove);
 
     /** Extracts a human-readable message from an unknown caught error. */
@@ -220,10 +221,9 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
         try {
             const res = await diagnosePending(productId ? { productId } : {});
             setDiagnosticResults(res.results);
-            const approvedCount = res.results.filter((diagnosticResult: CjDiagnosticResult) => diagnosticResult.autoApproved).length;
             setResult({
                 success: true,
-                message: approvedCount > 0 ? res.summary : `${res.summary} No resubmission was made automatically.`,
+                message: res.summary,
             });
         } catch (error: unknown) {
             setResult({ success: false, message: getErrorMessage(error, 'Diagnosis failed') });
@@ -285,6 +285,17 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
             : [];
     }) ?? [];
     const readinessClear = productHealth !== undefined && fulfillmentIssues.length === 0;
+    const operationalCounts = operations?.stateCounts ?? {};
+    const activeQueueCount = ["queued", "submitting", "submitted", "processing", "awaiting_catalog", "retry_wait"]
+        .reduce((total, state) => total + (operationalCounts[state] ?? 0), 0);
+    const attentionCount = ["needs_input", "mapping_required", "reconciliation_required", "rejected", "dead_letter"]
+        .reduce((total, state) => total + (operationalCounts[state] ?? 0), 0);
+    const migrationRemaining = operations
+        ? Object.values(operations.migration.remaining).reduce((total, count) => total + count, 0)
+        : 0;
+    const formatOperationalTime = (timestamp?: number) => timestamp
+        ? new Date(timestamp).toLocaleString()
+        : "Not scheduled";
 
     return (
         <div className="relative min-h-screen overflow-hidden p-4 md:p-8">
@@ -322,6 +333,78 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
                     </div>
                 </FadeIn>
             )}
+
+            <FadeIn className="mb-8 relative z-10">
+                <section className="backdrop-blur-2xl bg-black/40 border border-white/10 rounded-[2rem] p-5 md:p-7 shadow-[0_15px_30px_rgba(0,0,0,0.3)]">
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 mb-5">
+                        <div>
+                            <h2 className="font-serif text-2xl text-cream">CJ Operations</h2>
+                            <p className="text-xs text-cream/45 mt-1">Durable queue, provider controls, migration, and webhook health</p>
+                        </div>
+                        <span className="text-[10px] uppercase tracking-widest text-cream/35">
+                            {operations ? `Updated ${new Date(operations.generatedAt).toLocaleTimeString()}` : "Loading live state"}
+                        </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
+                        {[
+                            ["Active", activeQueueCount, "text-amber-300"],
+                            ["Attention", attentionCount, attentionCount > 0 ? "text-red-300" : "text-green-300"],
+                            ["Ready", operationalCounts.fulfillment_ready ?? 0, "text-green-300"],
+                            ["Circuit", operations?.control?.circuitState ?? "closed", operations?.control?.circuitState === "open" ? "text-red-300" : "text-green-300"],
+                            ["Migration", migrationRemaining, migrationRemaining > 0 ? "text-amber-300" : "text-green-300"],
+                            ["Webhook errors", (operations?.webhook.counts.failed ?? 0) + (operations?.webhook.counts.retryable ?? 0), "text-amber-300"],
+                        ].map(([label, value, color]) => (
+                            <div key={label} className="bg-white/5 border border-white/10 rounded-xl p-3 shadow-inner">
+                                <div className="text-[9px] uppercase tracking-widest text-cream/40 mb-1">{label}</div>
+                                <div className={`font-mono text-lg ${color}`}>{value}</div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {operations && (operations.control?.sourceQuotaBlockedUntil ?? 0) > Date.now() && (
+                        <div className="mb-4 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-xs text-amber-100/80">
+                            CJ source submissions are paused until {formatOperationalTime(operations.control?.sourceQuotaBlockedUntil)}. Status and catalog checks remain enabled.
+                        </div>
+                    )}
+
+                    <div className="space-y-2 max-h-80 overflow-y-auto pr-1 custom-scrollbar">
+                        {operations?.jobs.length === 0 && (
+                            <div className="text-sm text-cream/40 py-6 text-center">No durable sourcing jobs yet.</div>
+                        )}
+                        {operations?.jobs.map((job) => {
+                            const needsAttention = ["needs_input", "mapping_required", "reconciliation_required", "rejected", "dead_letter"].includes(job.state);
+                            return (
+                                <div key={job.id} className="grid grid-cols-1 md:grid-cols-[minmax(0,1.5fr)_auto_minmax(0,2fr)_auto] gap-3 md:items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+                                    <div className="min-w-0">
+                                        <div className="text-sm text-cream truncate">{job.productName}</div>
+                                        <div className="text-[10px] text-cream/35 font-mono truncate">{job.currentSourcingId ?? job.cjProductId ?? "CJ ID pending"}</div>
+                                    </div>
+                                    <span className={`w-fit text-[9px] uppercase tracking-widest px-2 py-1 rounded-full border ${needsAttention ? "text-red-300 border-red-500/25 bg-red-500/10" : "text-amber-200 border-amber-500/20 bg-amber-500/10"}`}>
+                                        {job.state.replace(/_/g, " ")}
+                                    </span>
+                                    <div className="min-w-0 text-[11px] text-cream/45">
+                                        <div className="truncate">{job.lastErrorMessage ?? job.manualReviewReason ?? `Attempts ${job.attemptCount}; failures ${job.transientFailureCount}`}</div>
+                                        <div className="text-[9px] mt-0.5">Updated {formatOperationalTime(job.updatedAt)}{job.nextAttemptAt ? ` · next ${formatOperationalTime(job.nextAttemptAt)}` : ""}</div>
+                                    </div>
+                                    {needsAttention && (
+                                        <button
+                                            onClick={() => handleResubmit(job.productId)}
+                                            disabled={resubmittingId === job.productId}
+                                            className="text-[9px] uppercase tracking-widest px-3 py-2 rounded-lg border border-amber-500/25 bg-amber-500/10 text-amber-300 disabled:opacity-50"
+                                        >
+                                            {resubmittingId === job.productId ? "Queuing" : "Reconcile"}
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                    {operations?.truncatedStates.length ? (
+                        <p className="mt-3 text-[10px] text-amber-200/60">Some state totals are capped at 500 for dashboard safety.</p>
+                    ) : null}
+                </section>
+            </FadeIn>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 relative z-10">
 
@@ -536,21 +619,21 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
                                             onClick={handleDiagnose}
                                             disabled={diagnosing || diagnosingProductId !== null}
                                             className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 active:bg-emerald-500/30 border border-emerald-500/30 rounded-xl transition-all disabled:opacity-50 shadow-inner"
-                                            title="Deep-verify all diagnostic candidates slowly against CJ's 1 request/second limit"
+                                            title="Queue all candidates for durable reconciliation"
                                         >
                                             {diagnosing ? (
                                                 <Loader2 className="w-3.5 h-3.5 animate-spin drop-shadow-[0_0_3px_currentColor]" />
                                             ) : (
                                                 <Search className="w-3.5 h-3.5 drop-shadow-[0_0_3px_currentColor]" />
                                             )}
-                                            {diagnosing ? 'Verifying...' : 'Diagnose All'}
+                                            {diagnosing ? 'Queuing...' : 'Reconcile All'}
                                         </button>
                                     )}
                                 </div>
 
                                 {hasDiagnosticCandidates && (
                                     <div className="relative z-10 mb-4 rounded-xl border border-emerald-500/15 bg-emerald-500/5 px-3 py-2 text-[10px] leading-relaxed text-cream/50">
-                                        CJ allows about 1 API request per second. Diagnose All runs slowly on purpose across pending products and approved items missing CJ variants.
+                                        Reconciliation uses the durable queue, preserves provider request spacing, and never auto-approves without catalog and variant verification.
                                     </div>
                                 )}
 
@@ -562,7 +645,7 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
                                         </p>
                                         {approvedMissingCjVariantIssues.length > 0 && (
                                             <p className="mt-2 text-xs text-cream/40 text-center max-w-xs">
-                                                {approvedMissingCjVariantIssues.length} approved item(s) need CJ variant verification. Use Diagnose All.
+                                                {approvedMissingCjVariantIssues.length} approved item(s) need CJ variant verification. Use Reconcile All.
                                             </p>
                                         )}
                                     </div>
@@ -656,7 +739,7 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
                                                             ) : (
                                                                 <Search className="w-3.5 h-3.5 drop-shadow-[0_0_3px_currentColor]" />
                                                             )}
-                                                            Diagnose
+                                                            Queue Check
                                                         </button>
 
                                                         {/* Resubmit */}

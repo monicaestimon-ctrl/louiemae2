@@ -1315,6 +1315,30 @@ export const deleteProduct = internalMutation({
         productId: v.id("products"),
     },
     handler: async (ctx, args) => {
+        const job = await ctx.db
+            .query("cjSourcingJobs")
+            .withIndex("by_product_id", (q) => q.eq("productId", args.productId))
+            .unique();
+        if (job && job.state !== "canceled") {
+            const now = Date.now();
+            await ctx.db.patch(job._id, {
+                state: "canceled",
+                completedAt: now,
+                nextAttemptAt: undefined,
+                leaseToken: undefined,
+                leaseExpiresAt: undefined,
+                lastErrorCode: "ADMIN_REMOVED",
+                lastErrorMessage: "Product removed by an administrator.",
+                updatedAt: now,
+                version: job.version + 1,
+            });
+            if (job.activeAttemptId) {
+                const attempt = await ctx.db.get(job.activeAttemptId);
+                if (attempt && !["completed", "superseded", "failed_terminal"].includes(attempt.state)) {
+                    await ctx.db.patch(attempt._id, { state: "superseded", updatedAt: now });
+                }
+            }
+        }
         await ctx.db.delete(args.productId);
     },
 });

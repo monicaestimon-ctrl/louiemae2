@@ -289,10 +289,19 @@ export const diagnosePending = action({
         summary: string;
     }> => {
         await requireAdminIdentity(ctx);
-        const result = await ctx.runAction(internal.cjDropshipping.diagnosePendingProducts, {
-            productId: args.productId,
-        });
-        return result;
+        if (args.productId) {
+            const queued = await ctx.runMutation(internal.cjSourcingJobs.requestAdminReconciliation, {
+                productId: args.productId,
+                reason: "Admin requested durable CJ diagnosis",
+            });
+            return { results: [], summary: queued.message };
+        }
+        const migration = await ctx.runMutation(internal.cjSourcingJobs.backfillLegacyPendingJobs, { limit: 50 });
+        const dispatch = await ctx.runMutation(internal.cjSourcingJobs.dispatchDueJobs, {});
+        return {
+            results: [],
+            summary: `Queued durable CJ checks for ${dispatch.claimed} item(s); migrated ${migration.created} legacy item(s).`,
+        };
     },
 });
 
@@ -312,15 +321,11 @@ export const submitProductForSourcing = action({
     },
     handler: async (ctx, args): Promise<{ success: boolean; error?: string }> => {
         await requireAdminIdentity(ctx);
-        const result = await ctx.runAction(internal.cjDropshipping.submitForSourcing, {
+        const result = await ctx.runMutation(internal.cjSourcingJobs.requestAdminReconciliation, {
             productId: args.productId,
-            productUrl: args.productUrl,
-            productName: args.productName,
-            productImage: args.productImage,
-            productDescription: args.productDescription,
-            targetPrice: args.targetPrice,
+            reason: "Admin requested CJ sourcing submission",
         });
-        return result;
+        return result.ok ? { success: true } : { success: false, error: result.message };
     },
 });
 
@@ -335,11 +340,10 @@ export const cancelAndDeleteProduct = action({
     },
     handler: async (ctx, args): Promise<{ success: boolean; cjCancelled: boolean; error?: string }> => {
         await requireAdminIdentity(ctx);
-        const result = await ctx.runAction(internal.cjDropshipping.cancelSourcingAndDelete, {
+        await ctx.runMutation(internal.cjHelpers.deleteProduct, {
             productId: args.productId,
-            cjSourcingId: args.cjSourcingId,
         });
-        return result;
+        return { success: true, cjCancelled: false };
     },
 });
 
