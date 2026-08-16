@@ -8,9 +8,9 @@
  * @module
  */
 
-import type * as aliexpress from "../aliexpress.js";
 import type * as ai from "../ai.js";
 import type * as aiUsage from "../aiUsage.js";
+import type * as aliexpress from "../aliexpress.js";
 import type * as auth from "../auth.js";
 import type * as batchImports from "../batchImports.js";
 import type * as blogPosts from "../blogPosts.js";
@@ -24,8 +24,12 @@ import type * as cjDropshipping from "../cjDropshipping.js";
 import type * as cjFulfillmentAudits from "../cjFulfillmentAudits.js";
 import type * as cjHelpers from "../cjHelpers.js";
 import type * as cjRiskMonitor from "../cjRiskMonitor.js";
+import type * as cjSourcingJobs from "../cjSourcingJobs.js";
+import type * as cjSourcingWorkers from "../cjSourcingWorkers.js";
+import type * as cjUsage from "../cjUsage.js";
 import type * as crons from "../crons.js";
 import type * as customPages from "../customPages.js";
+import type * as dataLifecycle from "../dataLifecycle.js";
 import type * as descriptionAudits from "../descriptionAudits.js";
 import type * as descriptionValidators from "../descriptionValidators.js";
 import type * as emails from "../emails.js";
@@ -54,9 +58,9 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  aliexpress: typeof aliexpress;
   ai: typeof ai;
   aiUsage: typeof aiUsage;
+  aliexpress: typeof aliexpress;
   auth: typeof auth;
   batchImports: typeof batchImports;
   blogPosts: typeof blogPosts;
@@ -70,8 +74,12 @@ declare const fullApi: ApiFromModules<{
   cjFulfillmentAudits: typeof cjFulfillmentAudits;
   cjHelpers: typeof cjHelpers;
   cjRiskMonitor: typeof cjRiskMonitor;
+  cjSourcingJobs: typeof cjSourcingJobs;
+  cjSourcingWorkers: typeof cjSourcingWorkers;
+  cjUsage: typeof cjUsage;
   crons: typeof crons;
   customPages: typeof customPages;
+  dataLifecycle: typeof dataLifecycle;
   descriptionAudits: typeof descriptionAudits;
   descriptionValidators: typeof descriptionValidators;
   emails: typeof emails;

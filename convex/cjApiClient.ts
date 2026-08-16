@@ -388,6 +388,31 @@ export type CjCreateSourcingData = {
     id?: string | number;
 };
 
+export type CjSourcingStatusRow = {
+    sourceStatus?: string | number;
+    sourceStatusStr?: string;
+    cjProductId?: string;
+    productId?: string;
+    cjVariantSku?: string;
+    cjSourcingId?: string;
+    thirdProductId?: string;
+    [key: string]: unknown;
+};
+
+export type CjCatalogProduct = {
+    pid?: string;
+    productNameEn?: string;
+    variants?: Array<{
+        vid?: string;
+        variantSku?: string;
+        variantNameEn?: string;
+        variantSellPrice?: string | number;
+        variantImage?: string;
+        [key: string]: unknown;
+    }>;
+    [key: string]: unknown;
+};
+
 export const createSourcing = (
     accessToken: string,
     payload: {
@@ -404,6 +429,29 @@ export const createSourcing = (
     path: "product/sourcing/create",
     method: "POST",
     body: payload,
+    ...options,
+});
+
+export const querySourcing = (
+    accessToken: string,
+    sourcingId: string,
+    options?: CjApiCallOptions,
+) => cjApiRequest<CjSourcingStatusRow[] | CjSourcingStatusRow, { sourceIds: string[] }>({
+    accessToken,
+    path: "product/sourcing/query",
+    method: "POST",
+    body: { sourceIds: [sourcingId] },
+    ...options,
+});
+
+export const queryCatalogProduct = (
+    accessToken: string,
+    cjProductId: string,
+    options?: CjApiCallOptions,
+) => cjApiRequest<CjCatalogProduct>({
+    accessToken,
+    path: "product/query",
+    query: { pid: cjProductId },
     ...options,
 });
 

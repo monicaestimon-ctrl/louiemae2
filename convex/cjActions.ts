@@ -241,10 +241,17 @@ export const configureWebhooks = action({
  */
 export const checkSourcingStatus = action({
     args: {},
-    handler: async (ctx): Promise<{ checked: number; approved: number; rejected: number }> => {
+    handler: async (ctx): Promise<{ checked: number; approved: number; rejected: number; submitted: number; stalePendingResubmitted: number }> => {
         await requireAdminIdentity(ctx);
-        const result = await ctx.runAction(internal.cjDropshipping.checkSourcingStatus, {});
-        return result;
+        await ctx.runMutation(internal.cjSourcingJobs.backfillLegacyPendingJobs, { limit: 25 });
+        const result = await ctx.runMutation(internal.cjSourcingJobs.dispatchDueJobs, {});
+        return {
+            checked: result.claimed,
+            approved: 0,
+            rejected: 0,
+            submitted: 0,
+            stalePendingResubmitted: 0,
+        };
     },
 });
 
@@ -357,33 +364,18 @@ export const resubmitProduct = action({
                 return { success: false, message: "Product has no images - CJ requires at least one image" };
             }
 
-            // Clear previous sourcing status
-            await ctx.runMutation(internal.cjHelpers.clearSourcingStatus, {
+            // Preserve any remote identifier and route work through the durable
+            // queue. Blind clearing can duplicate a request already accepted by CJ.
+            const queued = await ctx.runMutation(internal.cjSourcingJobs.requestAdminReconciliation, {
                 productId: args.productId,
+                reason: "Admin requested sourcing reconciliation or retry.",
             });
-
-            // Resubmit to CJ
-            const result = await ctx.runAction(internal.cjDropshipping.submitForSourcing, {
-                productId: args.productId,
-                productUrl: product.sourceUrl,
-                productName: product.name,
-                productImage: product.images[0],
-                productDescription: product.description?.slice(0, 200),
-                targetPrice: product.price,
-            });
-
-            if (result.success && result.sourcingId) {
-                return {
-                    success: true,
-                    message: `Resubmitted successfully! CJ Sourcing ID: ${result.sourcingId}`,
-                    cjSourcingId: result.sourcingId
-                };
-            } else {
-                return {
-                    success: false,
-                    message: result.error || "Failed to resubmit to CJ"
-                };
-            }
+            if (!queued.ok) return { success: false, message: queued.message };
+            return {
+                success: true,
+                message: queued.message,
+                cjSourcingId: product.cjSourcingId,
+            };
         } catch (error: any) {
             return { success: false, message: error.message || "Resubmit failed" };
         }

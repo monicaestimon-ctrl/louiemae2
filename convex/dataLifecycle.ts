@@ -50,12 +50,13 @@ export const report = query({
         await requireCjAdminIdentity(ctx);
         const now = args.now ?? Date.now();
         const limit = clampLimit(args.limit);
-        const [payloads, audits, webhookLogs, jobs, pollRuns, aiRequestUsage] = await Promise.all([
+        const [payloads, audits, webhookLogs, jobs, pollRuns, sourcingRuns, aiRequestUsage] = await Promise.all([
             ctx.db.query("batchImportPayloads").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
             ctx.db.query("descriptionAudits").withIndex("by_debug_expiry", q => q.lt("debugExpiresAt", now)).take(limit),
             ctx.db.query("cjWebhookLog").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
             ctx.db.query("batchImportJobs").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
             ctx.db.query("cjInventoryPollRuns").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
+            ctx.db.query("cjWorkerRuns").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
             ctx.db.query("aiRequestUsage").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
         ]);
         const terminalJobs = jobs.filter(job =>
@@ -70,6 +71,7 @@ export const report = query({
                 terminalWebhookLogs: webhookLogs.filter(log => isTerminalWebhook(log.status)).length,
                 terminalBatchJobs: terminalJobs.length,
                 inventoryPollRuns: pollRuns.length,
+                sourcingWorkerRuns: sourcingRuns.length,
                 aiRequestUsage: aiRequestUsage.length,
             },
             oldest: {
@@ -96,12 +98,13 @@ export const cleanup = mutation({
         await requireCjAdminIdentity(ctx);
         const now = args.now ?? Date.now();
         const limit = clampLimit(args.limit);
-        const [payloads, audits, webhookLogs, jobs, pollRuns, aiRequestUsage] = await Promise.all([
+        const [payloads, audits, webhookLogs, jobs, pollRuns, sourcingRuns, aiRequestUsage] = await Promise.all([
             ctx.db.query("batchImportPayloads").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
             ctx.db.query("descriptionAudits").withIndex("by_debug_expiry", q => q.lt("debugExpiresAt", now)).take(limit),
             ctx.db.query("cjWebhookLog").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
             ctx.db.query("batchImportJobs").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(Math.min(limit, 10)),
             ctx.db.query("cjInventoryPollRuns").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
+            ctx.db.query("cjWorkerRuns").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
             ctx.db.query("aiRequestUsage").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
         ]);
         const terminalLogs = webhookLogs.filter(log => isTerminalWebhook(log.status));
@@ -130,6 +133,7 @@ export const cleanup = mutation({
             }
             for (const log of terminalLogs) await ctx.db.delete(log._id);
             for (const run of pollRuns) await ctx.db.delete(run._id);
+            for (const run of sourcingRuns) await ctx.db.delete(run._id);
             for (const usage of aiRequestUsage) await ctx.db.delete(usage._id);
             for (const job of terminalJobs) {
                 const items = await ctx.db.query("batchImportItems")
@@ -174,6 +178,7 @@ export const cleanup = mutation({
                 terminalBatchJobsDeferred: batchJobsDeferred,
                 terminalBatchItems: batchItems,
                 inventoryPollRuns: pollRuns.length,
+                sourcingWorkerRuns: sourcingRuns.length,
                 aiRequestUsage: aiRequestUsage.length,
             },
         };

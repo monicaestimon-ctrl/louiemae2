@@ -3,6 +3,7 @@ import {
   buildCjSourcingPayload,
   canApproveCjSourcing,
   classifyCjSourcingStatus,
+  hashCjSourcingPayload,
 } from "./cjSourcing";
 
 const validInput = {
@@ -52,5 +53,14 @@ describe("CJ sourcing evidence", () => {
     expect(canApproveCjSourcing({ catalogVerified: false, cjProductId: "pid-1" })).toBe(false);
     expect(canApproveCjSourcing({ catalogVerified: true, cjProductId: "pid-1" })).toBe(true);
     expect(canApproveCjSourcing({ catalogVerified: true })).toBe(false);
+  });
+
+  it("hashes canonical payloads deterministically", async () => {
+    const first = buildCjSourcingPayload(validInput);
+    const second = buildCjSourcingPayload({ ...validInput });
+    if (!first.ok || !second.ok) throw new Error("valid fixture was rejected");
+    await expect(hashCjSourcingPayload(first.payload)).resolves.toBe(
+      await hashCjSourcingPayload(second.payload),
+    );
   });
 });

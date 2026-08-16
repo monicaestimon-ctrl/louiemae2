@@ -17,6 +17,31 @@ const productStorefrontStatusValidator = v.union(
     v.literal("next_launch")
 );
 
+const cjSourcingStateValidator = v.union(
+    v.literal("needs_input"),
+    v.literal("queued"),
+    v.literal("submitting"),
+    v.literal("submitted"),
+    v.literal("processing"),
+    v.literal("awaiting_catalog"),
+    v.literal("sourced"),
+    v.literal("mapping_required"),
+    v.literal("fulfillment_ready"),
+    v.literal("retry_wait"),
+    v.literal("reconciliation_required"),
+    v.literal("rejected"),
+    v.literal("dead_letter"),
+    v.literal("canceled"),
+);
+
+const cjFulfillmentReadinessValidator = v.union(
+    v.literal("not_required"),
+    v.literal("not_ready"),
+    v.literal("mapping_required"),
+    v.literal("ready"),
+    v.literal("blocked"),
+);
+
 export default defineSchema({
     // Convex Auth tables (users, sessions, accounts, etc.)
     ...authTables,
@@ -65,6 +90,11 @@ export default defineSchema({
         cjSubmittedAt: v.optional(v.string()),   // When product was submitted to CJ
         cjLastCheckedAt: v.optional(v.string()), // Last time we checked CJ for status
         cjRejectedAt: v.optional(v.string()),    // Immutable timestamp for terminal rejection age
+        cjSourcingState: v.optional(cjSourcingStateValidator),
+        cjFulfillmentReadiness: v.optional(cjFulfillmentReadinessValidator),
+        cjSourcingJobId: v.optional(v.id("cjSourcingJobs")),
+        cjReadinessReasons: v.optional(v.array(v.string())),
+        cjProjectionUpdatedAt: v.optional(v.number()),
         cjInventoryStatus: v.optional(cjInventoryStatusValidator),
         cjInventoryTotal: v.optional(v.number()),
         cjInventoryLastCheckedAt: v.optional(v.string()),
@@ -168,6 +198,7 @@ export default defineSchema({
         })),
         searchText: v.optional(v.string()),
     }).index("by_cj_sourcing_status", ["cjSourcingStatus"])
+        .index("by_cj_sourcing_status_job", ["cjSourcingStatus", "cjSourcingJobId"])
         .index("by_storefront_status", ["storefrontStatus"])
         .index("by_cj_sourcing_id", ["cjSourcingId"])
         .index("by_batch_import_item", ["batchImportItemId"])
@@ -597,6 +628,124 @@ export default defineSchema({
         attempts: v.optional(v.number()),
         expiresAt: v.optional(v.number()),
     }).index("by_message_id", ["messageId"])
+        .index("by_expiry", ["expiresAt"]),
+
+    cjSourcingJobs: defineTable({
+        productId: v.id("products"),
+        state: cjSourcingStateValidator,
+        generation: v.number(),
+        activeAttemptId: v.optional(v.id("cjSourcingAttempts")),
+        currentSourcingId: v.optional(v.string()),
+        cjProductId: v.optional(v.string()),
+        providerSourceStatus: v.optional(v.string()),
+        providerStatusText: v.optional(v.string()),
+        sourceSnapshot: v.object({
+            productName: v.string(),
+            productImage: v.optional(v.string()),
+            productUrl: v.string(),
+            remark: v.optional(v.string()),
+            price: v.optional(v.number()),
+        }),
+        sourceSnapshotHash: v.string(),
+        attemptCount: v.number(),
+        transientFailureCount: v.number(),
+        nextAttemptAt: v.optional(v.number()),
+        leaseToken: v.optional(v.string()),
+        leaseExpiresAt: v.optional(v.number()),
+        lastPolledAt: v.optional(v.number()),
+        submittedAt: v.optional(v.number()),
+        sourcedAt: v.optional(v.number()),
+        rejectedAt: v.optional(v.number()),
+        completedAt: v.optional(v.number()),
+        lastErrorCode: v.optional(v.string()),
+        lastErrorMessage: v.optional(v.string()),
+        manualReviewReason: v.optional(v.string()),
+        createdAt: v.number(),
+        updatedAt: v.number(),
+        version: v.number(),
+    }).index("by_product_id", ["productId"])
+        .index("by_state_next_attempt", ["state", "nextAttemptAt"])
+        .index("by_state_lease_expiry", ["state", "leaseExpiresAt"])
+        .index("by_sourcing_id", ["currentSourcingId"])
+        .index("by_cj_product_id", ["cjProductId"])
+        .index("by_updated_at", ["updatedAt"]),
+
+    cjSourcingAttempts: defineTable({
+        jobId: v.id("cjSourcingJobs"),
+        productId: v.id("products"),
+        generation: v.number(),
+        attemptKey: v.string(),
+        thirdProductId: v.string(),
+        state: v.union(
+            v.literal("prepared"),
+            v.literal("sending"),
+            v.literal("accepted"),
+            v.literal("ambiguous"),
+            v.literal("failed_terminal"),
+            v.literal("superseded"),
+            v.literal("completed"),
+        ),
+        payloadHash: v.string(),
+        payloadSnapshot: v.object({
+            productName: v.string(),
+            productImage: v.string(),
+            productUrl: v.string(),
+            remark: v.optional(v.string()),
+            price: v.optional(v.string()),
+            thirdProductId: v.string(),
+        }),
+        cjSourcingId: v.optional(v.string()),
+        requestStartedAt: v.optional(v.number()),
+        responseReceivedAt: v.optional(v.number()),
+        acceptedAt: v.optional(v.number()),
+        httpStatus: v.optional(v.number()),
+        cjCode: v.optional(v.string()),
+        providerRequestId: v.optional(v.string()),
+        errorCode: v.optional(v.string()),
+        errorMessage: v.optional(v.string()),
+        reconciliationDeadlineAt: v.optional(v.number()),
+        createdBy: v.union(v.literal("import"), v.literal("cron"), v.literal("admin"), v.literal("migration")),
+        adminUserId: v.optional(v.string()),
+        createdAt: v.number(),
+        updatedAt: v.number(),
+    }).index("by_job_generation", ["jobId", "generation"])
+        .index("by_attempt_key", ["attemptKey"])
+        .index("by_third_product_id", ["thirdProductId"])
+        .index("by_sourcing_id", ["cjSourcingId"])
+        .index("by_state_reconciliation_deadline", ["state", "reconciliationDeadlineAt"]),
+
+    cjApiControl: defineTable({
+        key: v.string(),
+        nextRequestSlotAt: v.number(),
+        sourceQuotaBlockedUntil: v.optional(v.number()),
+        sourceQuotaReason: v.optional(v.string()),
+        circuitState: v.union(v.literal("closed"), v.literal("open"), v.literal("half_open")),
+        circuitOpenedAt: v.optional(v.number()),
+        consecutiveFailures: v.number(),
+        tokenRefreshLeaseToken: v.optional(v.string()),
+        tokenRefreshLeaseExpiresAt: v.optional(v.number()),
+        updatedAt: v.number(),
+    }).index("by_key", ["key"]),
+
+    cjWorkerRuns: defineTable({
+        runId: v.string(),
+        type: v.string(),
+        startedAt: v.number(),
+        completedAt: v.optional(v.number()),
+        status: v.union(v.literal("running"), v.literal("completed"), v.literal("failed")),
+        claimed: v.number(),
+        processed: v.number(),
+        succeeded: v.number(),
+        deferred: v.number(),
+        failed: v.number(),
+        deadLettered: v.number(),
+        remaining: v.optional(v.number()),
+        stoppedReason: v.optional(v.string()),
+        oldestQueueAgeMs: v.optional(v.number()),
+        durationMs: v.optional(v.number()),
+        buildRevision: v.optional(v.string()),
+        expiresAt: v.number(),
+    }).index("by_created_at", ["startedAt"])
         .index("by_expiry", ["expiresAt"]),
 
     cjInventoryPollRuns: defineTable({

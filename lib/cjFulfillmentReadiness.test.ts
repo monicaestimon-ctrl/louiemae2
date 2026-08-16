@@ -35,6 +35,21 @@ describe("CJ fulfillment readiness", () => {
     });
   });
 
+  it("fails closed when the durable sourcing job is not fulfillment-ready", () => {
+    const result = evaluateProductCjReadiness({
+      name: "Mapped later",
+      cjSourcingStatus: "approved",
+      cjSourcingState: "mapping_required",
+      cjFulfillmentReadiness: "mapping_required",
+      cjProductId: "pid",
+      cjVariantId: "vid",
+      cjSku: "sku",
+    });
+
+    expect(result.ready).toBe(false);
+    expect(result.errors).toContain("Mapped later is not fulfillment-ready in the CJ sourcing workflow.");
+  });
+
   it("requires CJ product, variant, and SKU mappings", () => {
     const result = evaluateProductCjReadiness({
       name: "Mae Dress",
