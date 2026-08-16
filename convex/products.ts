@@ -1,6 +1,6 @@
 import { query, mutation, internalQuery, type MutationCtx } from "./_generated/server";
 import { v } from "convex/values";
-import { evaluateProductCjReadiness } from "../lib/cjFulfillmentReadiness";
+import { evaluateProductCjReadiness, isCjProductStorefrontReady } from "../lib/cjFulfillmentReadiness";
 import { requireCjAdminIdentity } from "./cjAdminAccess";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
@@ -56,6 +56,10 @@ const cancelSourcingForDeletedProduct = async (ctx: MutationCtx, productId: Id<"
     }
 };
 
+const rejectLegacyCjApproval = (message: string): void => {
+    throw new Error(message);
+};
+
 const descriptionFingerprintValidator = v.object({
     normalizedOpening: v.string(),
     topPhrases: v.array(v.string()),
@@ -109,15 +113,17 @@ const cjVariantValidator = v.object({
 const isProductVisibleOnStorefront = (product: {
     storefrontStatus?: "published" | "hidden" | "next_launch";
     cjSourcingStatus?: "pending" | "approved" | "rejected" | "none";
+    cjSourcingJobId?: Id<"cjSourcingJobs">;
     cjSourcingState?: string;
     cjFulfillmentReadiness?: "not_required" | "not_ready" | "mapping_required" | "ready" | "blocked";
     inStock?: boolean;
     cjInventoryStatus?: string;
+    cjProductId?: string;
+    cjVariantId?: string;
+    cjSku?: string;
 }) => {
     const visibilityReady = !product.storefrontStatus || product.storefrontStatus === "published";
-    const fulfillmentReady = product.cjSourcingState
-        ? product.cjFulfillmentReadiness === "ready" || product.cjFulfillmentReadiness === "not_required"
-        : !product.cjSourcingStatus || product.cjSourcingStatus === "none" || product.cjSourcingStatus === "approved";
+    const fulfillmentReady = isCjProductStorefrontReady(product);
     const inventoryReady = product.inStock !== false && product.cjInventoryStatus !== "out_of_stock";
     return visibilityReady && fulfillmentReady && inventoryReady;
 };
@@ -736,13 +742,16 @@ export const fixBrokenImages = mutation({
 export const fixBerrySweetCardigan = mutation({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
+        rejectLegacyCjApproval("This legacy approval shortcut is retired. Use durable CJ reconciliation.");
+        /* c8 ignore start -- retained temporarily for migration history */
         const products = await ctx.db.query("products").collect();
         const berry = products.find(p => p.name === "Berry Sweet Cardigan Set");
         if (!berry) {
             return { success: false, message: "Berry Sweet Cardigan Set not found" };
         }
 
-        await ctx.db.patch(berry._id, {
+        await ctx.db.patch(berry!._id, {
             cjSourcingStatus: "approved",
             cjProductId: "2602080412251614300",
             cjVariantId: "2602080412251614700", // Default variant (66cm)
@@ -772,6 +781,7 @@ export const fixBerrySweetCardigan = mutation({
             cjProductId: "2602080412251614300",
             variantCount: 4,
         };
+        /* c8 ignore stop */
     },
 });
 
@@ -799,6 +809,8 @@ export const fixAstridDenimSet = mutation({
     },
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
+        rejectLegacyCjApproval("This legacy approval shortcut is retired. Use durable CJ reconciliation.");
+        /* c8 ignore start -- retained temporarily for migration history */
 
         const products = await ctx.db.query("products").collect();
         const matches = products.filter(p =>
@@ -853,6 +865,7 @@ export const fixAstridDenimSet = mutation({
             productId: astrid._id,
             cjProductId,
         };
+        /* c8 ignore stop */
     },
 });
 
@@ -879,17 +892,19 @@ export const approveProductWithCjData = mutation({
     },
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
+        rejectLegacyCjApproval("Manual approval is retired. Queue durable CJ catalog reconciliation instead.");
+        /* c8 ignore start -- retained temporarily for migration history */
 
         const product = await ctx.db.get(args.productId);
         if (!product) {
             throw new Error(`Product ${args.productId} not found`);
         }
 
-        const hasCustomerVariants = (product.variants?.length ?? 0) > 0;
-        const effectiveCjVariants = args.cjVariants ?? product.cjVariants;
-        const effectiveCjVariantId = args.cjVariantId ?? product.cjVariantId;
+        const hasCustomerVariants = (product!.variants?.length ?? 0) > 0;
+        const effectiveCjVariants = args.cjVariants ?? product!.cjVariants;
+        const effectiveCjVariantId = args.cjVariantId ?? product!.cjVariantId;
 
-        if (hasCustomerVariants && (!effectiveCjVariants || effectiveCjVariants.length === 0)) {
+        if (hasCustomerVariants && (!effectiveCjVariants || effectiveCjVariants!.length === 0)) {
             throw new Error("Approved products with customer variants must include cjVariants");
         }
         if (!hasCustomerVariants && !effectiveCjVariantId) {
@@ -903,6 +918,7 @@ export const approveProductWithCjData = mutation({
             cjApprovedAt: new Date().toISOString(),
             inStock: true,
         };
+        /* c8 ignore stop */
 
         if (args.cjVariantId) updateData.cjVariantId = args.cjVariantId;
         if (args.cjSku) updateData.cjSku = args.cjSku;
@@ -913,7 +929,7 @@ export const approveProductWithCjData = mutation({
 
         return {
             success: true,
-            message: `"${product.name}" manually approved`,
+            message: `"${product!.name}" manually approved`,
             productId: args.productId,
             cjProductId: args.cjProductId,
             variantCount: args.cjVariants?.length || 0,

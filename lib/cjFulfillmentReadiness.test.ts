@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { evaluateCheckoutItemCjReadiness, evaluateProductCjReadiness } from "./cjFulfillmentReadiness";
+import { evaluateCheckoutItemCjReadiness, evaluateProductCjReadiness, isCjProductStorefrontReady } from "./cjFulfillmentReadiness";
 
 describe("CJ fulfillment readiness", () => {
   const readyProduct = {
     name: "Mae Dress",
     inStock: true,
     cjSourcingStatus: "approved",
+    cjSourcingJobId: "job-1",
+    cjSourcingState: "fulfillment_ready",
+    cjFulfillmentReadiness: "ready",
     cjProductId: "pid-1",
     cjInventoryByVariant: [
       {
@@ -27,6 +30,12 @@ describe("CJ fulfillment readiness", () => {
       },
     ],
   };
+
+  it("only exposes CJ-managed products after durable fulfillment verification", () => {
+    expect(isCjProductStorefrontReady({ cjSourcingStatus: "approved", cjProductId: "legacy-pid" })).toBe(false);
+    expect(isCjProductStorefrontReady(readyProduct)).toBe(true);
+    expect(isCjProductStorefrontReady({ cjSourcingStatus: "none" })).toBe(true);
+  });
 
   it("accepts an approved product with mapped sellable variants", () => {
     expect(evaluateProductCjReadiness(readyProduct)).toMatchObject({
@@ -50,6 +59,19 @@ describe("CJ fulfillment readiness", () => {
     expect(result.errors).toContain("Mapped later is not fulfillment-ready in the CJ sourcing workflow.");
   });
 
+  it("fails closed when a legacy approval has no durable sourcing job", () => {
+    const result = evaluateProductCjReadiness({
+      name: "Legacy approved item",
+      cjSourcingStatus: "approved",
+      cjProductId: "pid",
+      cjVariantId: "vid",
+      cjSku: "sku",
+    });
+
+    expect(result.ready).toBe(false);
+    expect(result.errors).toContain("Legacy approved item is not fulfillment-ready in the CJ sourcing workflow.");
+  });
+
   it("requires CJ product, variant, and SKU mappings", () => {
     const result = evaluateProductCjReadiness({
       name: "Mae Dress",
@@ -59,6 +81,7 @@ describe("CJ fulfillment readiness", () => {
 
     expect(result.ready).toBe(false);
     expect(result.errors).toEqual([
+      "Mae Dress is not fulfillment-ready in the CJ sourcing workflow.",
       "Mae Dress is missing a CJ product ID.",
       "Mae Dress / 2T is missing a CJ variant ID.",
       "Mae Dress / 2T is missing a CJ SKU.",
@@ -129,6 +152,9 @@ describe("CJ fulfillment readiness", () => {
       {
         name: "Mae Blanket",
         cjSourcingStatus: "approved",
+        cjSourcingJobId: "job-blanket",
+        cjSourcingState: "fulfillment_ready",
+        cjFulfillmentReadiness: "ready",
         cjProductId: "pid-blanket",
         cjVariantId: "vid-blanket",
         cjSku: "sku-blanket",
