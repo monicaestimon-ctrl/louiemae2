@@ -12,6 +12,7 @@ export type CjReadinessProduct = {
   name?: string;
   inStock?: boolean;
   cjSourcingStatus?: string;
+  cjSourcingJobId?: string;
   cjSourcingState?: string;
   cjFulfillmentReadiness?: string;
   cjProductId?: string;
@@ -39,6 +40,25 @@ export type CjReadinessResult = {
 
 export type CjReadinessOptions = {
   strictInventory?: boolean;
+};
+
+export const isCjProductStorefrontReady = (product: Pick<CjReadinessProduct,
+  "cjSourcingStatus" | "cjSourcingJobId" | "cjSourcingState" | "cjFulfillmentReadiness" |
+  "cjProductId" | "cjVariantId" | "cjSku"
+>): boolean => {
+  const isCjManaged = Boolean(
+    hasValue(product.cjSourcingJobId) ||
+    hasValue(product.cjSourcingState) ||
+    (hasValue(product.cjSourcingStatus) && product.cjSourcingStatus !== "none") ||
+    hasValue(product.cjProductId) ||
+    hasValue(product.cjVariantId) ||
+    hasValue(product.cjSku)
+  );
+  return !isCjManaged || Boolean(
+    hasValue(product.cjSourcingJobId) &&
+    product.cjSourcingState === "fulfillment_ready" &&
+    product.cjFulfillmentReadiness === "ready"
+  );
 };
 
 const hasValue = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
@@ -131,7 +151,7 @@ export const evaluateProductCjReadiness = (product: CjReadinessProduct): CjReadi
   if (product.cjSourcingStatus && product.cjSourcingStatus !== "approved") {
     errors.push(`${productLabel} is not approved by CJ.`);
   }
-  if (product.cjSourcingState && product.cjFulfillmentReadiness !== "ready") {
+  if (!hasValue(product.cjSourcingJobId) || product.cjSourcingState !== "fulfillment_ready" || product.cjFulfillmentReadiness !== "ready") {
     errors.push(`${productLabel} is not fulfillment-ready in the CJ sourcing workflow.`);
   }
   if (!hasValue(product.cjProductId)) {
@@ -180,7 +200,7 @@ export const evaluateCheckoutItemCjReadiness = (
   if (product.cjSourcingStatus && product.cjSourcingStatus !== "approved") {
     errors.push(`${productLabel} is not approved by CJ.`);
   }
-  if (product.cjSourcingState && product.cjFulfillmentReadiness !== "ready") {
+  if (!hasValue(product.cjSourcingJobId) || product.cjSourcingState !== "fulfillment_ready" || product.cjFulfillmentReadiness !== "ready") {
     errors.push(`${productLabel} is not fulfillment-ready in the CJ sourcing workflow.`);
   }
   if (!hasValue(product.cjProductId)) {
