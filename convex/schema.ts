@@ -626,8 +626,10 @@ export default defineSchema({
         completedAt: v.optional(v.string()),
         lastError: v.optional(v.string()),
         attempts: v.optional(v.number()),
+        payload: v.optional(v.any()),
         expiresAt: v.optional(v.number()),
     }).index("by_message_id", ["messageId"])
+        .index("by_status_claimed_at", ["status", "claimedAt"])
         .index("by_expiry", ["expiresAt"]),
 
     cjSourcingJobs: defineTable({

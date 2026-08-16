@@ -317,6 +317,56 @@ export const blockSourceQuota = internalMutation({
     },
 });
 
+export const acquireTokenRefreshLease = internalMutation({
+    args: { leaseToken: v.string(), ttlMs: v.number() },
+    handler: async (ctx, args) => {
+        const now = Date.now();
+        const existing = await ctx.db
+            .query("cjApiControl")
+            .withIndex("by_key", (q) => q.eq("key", "primary"))
+            .unique();
+        if (existing?.tokenRefreshLeaseToken && (existing.tokenRefreshLeaseExpiresAt ?? 0) > now) {
+            return { acquired: false, expiresAt: existing.tokenRefreshLeaseExpiresAt };
+        }
+        const expiresAt = now + Math.min(Math.max(args.ttlMs, 5_000), 60_000);
+        if (existing) {
+            await ctx.db.patch(existing._id, {
+                tokenRefreshLeaseToken: args.leaseToken,
+                tokenRefreshLeaseExpiresAt: expiresAt,
+                updatedAt: now,
+            });
+        } else {
+            await ctx.db.insert("cjApiControl", {
+                key: "primary",
+                nextRequestSlotAt: now,
+                circuitState: "closed",
+                consecutiveFailures: 0,
+                tokenRefreshLeaseToken: args.leaseToken,
+                tokenRefreshLeaseExpiresAt: expiresAt,
+                updatedAt: now,
+            });
+        }
+        return { acquired: true, expiresAt };
+    },
+});
+
+export const releaseTokenRefreshLease = internalMutation({
+    args: { leaseToken: v.string() },
+    handler: async (ctx, args) => {
+        const existing = await ctx.db
+            .query("cjApiControl")
+            .withIndex("by_key", (q) => q.eq("key", "primary"))
+            .unique();
+        if (!existing || existing.tokenRefreshLeaseToken !== args.leaseToken) return false;
+        await ctx.db.patch(existing._id, {
+            tokenRefreshLeaseToken: undefined,
+            tokenRefreshLeaseExpiresAt: undefined,
+            updatedAt: Date.now(),
+        });
+        return true;
+    },
+});
+
 const createPreparedAttempt = async (
     ctx: MutationCtx,
     job: Doc<"cjSourcingJobs">,
@@ -698,6 +748,110 @@ export const applyPollEvidence = internalMutation({
         const updated = await ctx.db.get(job._id);
         if (updated) await projectJobToProduct(ctx, updated, job.productId);
         return true;
+    },
+});
+
+export const applyWebhookEvidence = internalMutation({
+    args: {
+        sourcingId: v.string(),
+        thirdProductId: v.optional(v.string()),
+        evidence: v.union(v.literal("completed"), v.literal("failed"), v.literal("unknown")),
+        cjProductId: v.optional(v.string()),
+        cjVariantId: v.optional(v.string()),
+        cjSku: v.optional(v.string()),
+        statusText: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const sourcingId = args.sourcingId.trim();
+        if (!sourcingId) return { handled: false, code: "MISSING_SOURCING_ID" };
+
+        const directJobs = await ctx.db
+            .query("cjSourcingJobs")
+            .withIndex("by_sourcing_id", (q) => q.eq("currentSourcingId", sourcingId))
+            .take(2);
+        if (directJobs.length > 1) return { handled: true, code: "DUPLICATE_SOURCING_ID" };
+        let job = directJobs[0];
+
+        if (!job && args.thirdProductId) {
+            const attempts = await ctx.db
+                .query("cjSourcingAttempts")
+                .withIndex("by_third_product_id", (q) => q.eq("thirdProductId", args.thirdProductId))
+                .take(2);
+            if (attempts.length > 1) return { handled: true, code: "DUPLICATE_CORRELATION_KEY" };
+            if (attempts[0]) job = await ctx.db.get(attempts[0].jobId) ?? undefined;
+        }
+
+        if (!job) {
+            const products = await ctx.db
+                .query("products")
+                .withIndex("by_cj_sourcing_id", (q) => q.eq("cjSourcingId", sourcingId))
+                .take(2);
+            if (products.length > 1) return { handled: true, code: "DUPLICATE_LEGACY_SOURCING_ID" };
+            if (products[0]) {
+                const jobId = await ensureJobRecord(ctx, products[0]._id, "migration");
+                if (jobId) job = await ctx.db.get(jobId) ?? undefined;
+            }
+        }
+
+        if (!job) return { handled: false, code: "UNMATCHED_WEBHOOK" };
+        if (job.currentSourcingId && job.currentSourcingId !== sourcingId) {
+            return { handled: true, code: "CONFLICTING_SOURCING_ID" };
+        }
+
+        const now = Date.now();
+        const state: JobState = args.evidence === "failed"
+            ? "rejected"
+            : args.evidence === "completed" && args.cjProductId
+                ? "awaiting_catalog"
+                : "processing";
+        const nextAttemptAt = state === "rejected" ? undefined : now;
+        await ctx.db.patch(job._id, {
+            state,
+            currentSourcingId: sourcingId,
+            cjProductId: args.cjProductId ?? job.cjProductId,
+            providerSourceStatus: args.evidence,
+            providerStatusText: args.statusText?.slice(0, 500),
+            nextAttemptAt,
+            lastPolledAt: now,
+            rejectedAt: state === "rejected" ? (job.rejectedAt ?? now) : job.rejectedAt,
+            lastErrorCode: state === "rejected" ? "CJ_TERMINAL_REJECTION" : undefined,
+            lastErrorMessage: state === "rejected"
+                ? (args.statusText?.slice(0, 500) || "CJ sourcing was rejected.")
+                : undefined,
+            manualReviewReason: undefined,
+            leaseToken: undefined,
+            leaseExpiresAt: undefined,
+            updatedAt: now,
+            version: job.version + 1,
+        });
+
+        if (job.activeAttemptId) {
+            const attempt = await ctx.db.get(job.activeAttemptId);
+            if (attempt && attempt.jobId === job._id) {
+                await ctx.db.patch(attempt._id, {
+                    state: state === "rejected" ? "failed_terminal" : "accepted",
+                    cjSourcingId: sourcingId,
+                    responseReceivedAt: attempt.responseReceivedAt ?? now,
+                    acceptedAt: state === "rejected" ? attempt.acceptedAt : (attempt.acceptedAt ?? now),
+                    errorCode: state === "rejected" ? "CJ_TERMINAL_REJECTION" : undefined,
+                    errorMessage: state === "rejected" ? args.statusText?.slice(0, 500) : undefined,
+                    updatedAt: now,
+                });
+            }
+        }
+
+        await ctx.db.patch(job.productId, {
+            cjSourcingId: sourcingId,
+            ...(args.cjProductId ? { cjProductId: args.cjProductId } : {}),
+            ...(args.cjVariantId ? { cjVariantId: args.cjVariantId } : {}),
+            ...(args.cjSku ? { cjSku: args.cjSku } : {}),
+        });
+        const updated = await ctx.db.get(job._id);
+        if (updated) await projectJobToProduct(ctx, updated, job.productId);
+        if (nextAttemptAt !== undefined) {
+            await ctx.scheduler.runAfter(0, internal.cjSourcingJobs.dispatchDueJobs, {});
+        }
+        return { handled: true, code: state === "rejected" ? "REJECTED" : "CATALOG_VERIFICATION_QUEUED" };
     },
 });
 

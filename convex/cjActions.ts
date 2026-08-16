@@ -189,39 +189,46 @@ export const configureWebhooks = action({
                 return { success: false, message: "CJ_WEBHOOK_URL is not configured. Set it in Convex dashboard → Settings → Environment Variables." };
             }
 
-            // Configure webhooks for order and logistics updates
-            const response = await fetch(`${CJ_API_BASE}/webhook/set`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "CJ-Access-Token": token,
-                },
-                body: JSON.stringify({
-                    product: {
-                        type: "ENABLE",
-                        callbackUrls: [webhookUrl],
+            let parsedWebhookUrl: URL;
+            try {
+                parsedWebhookUrl = new URL(webhookUrl);
+            } catch {
+                return { success: false, message: "CJ_WEBHOOK_URL must be a valid absolute URL." };
+            }
+            if (parsedWebhookUrl.protocol !== "https:") {
+                return { success: false, message: "CJ_WEBHOOK_URL must use HTTPS." };
+            }
+
+            // CJ requires sourcing result callbacks under the `makeup` topic.
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 15_000);
+            let response: Response;
+            try {
+                response = await fetch(`${CJ_API_BASE}/webhook/set`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "CJ-Access-Token": token,
                     },
-                    stock: {
-                        type: "ENABLE",
-                        callbackUrls: [webhookUrl],
-                    },
-                    order: {
-                        type: "ENABLE",
-                        callbackUrls: [webhookUrl],
-                    },
-                    logistics: {
-                        type: "ENABLE",
-                        callbackUrls: [webhookUrl],
-                    },
-                }),
-            });
+                    body: JSON.stringify({
+                        product: { type: "ENABLE", callbackUrls: [webhookUrl] },
+                        stock: { type: "ENABLE", callbackUrls: [webhookUrl] },
+                        order: { type: "ENABLE", callbackUrls: [webhookUrl] },
+                        logistics: { type: "ENABLE", callbackUrls: [webhookUrl] },
+                        makeup: { type: "ENABLE", callbackUrls: [webhookUrl] },
+                    }),
+                    signal: controller.signal,
+                });
+            } finally {
+                clearTimeout(timeout);
+            }
 
             const data = await response.json();
 
             if (data.result === true) {
                 return {
                     success: true,
-                    message: "Webhooks configured! You'll now receive real-time product, stock, order, and tracking updates."
+                    message: "Webhooks configured! You'll now receive sourcing, product, stock, order, and tracking updates."
                 };
             } else {
                 return {

@@ -1452,6 +1452,7 @@ export const claimWebhookProcessing = internalMutation({
     args: {
         messageId: v.string(),
         type: v.string(),
+        payload: v.optional(v.any()),
     },
     handler: async (ctx, args) => {
         const now = new Date().toISOString();
@@ -1484,6 +1485,7 @@ export const claimWebhookProcessing = internalMutation({
                 lastError: "",
                 completedAt: undefined,
                 attempts: (existing.attempts || 1) + 1,
+                payload: args.payload ?? existing.payload,
                 expiresAt,
             });
             return { claimed: true, status: "processing", claimToken };
@@ -1497,10 +1499,19 @@ export const claimWebhookProcessing = internalMutation({
             claimedAt: now,
             claimToken,
             attempts: 1,
+            payload: args.payload,
             expiresAt,
         });
         return { claimed: true, status: "processing", claimToken };
     },
+});
+
+export const getWebhookProcessingRecord = internalQuery({
+    args: { messageId: v.string() },
+    handler: async (ctx, args) => ctx.db
+        .query("cjWebhookLog")
+        .withIndex("by_message_id", (q) => q.eq("messageId", args.messageId))
+        .first(),
 });
 
 /**
@@ -1609,6 +1620,39 @@ export const markWebhookFailed = internalMutation({
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+export const recoverStaleWebhookProcessing = internalMutation({
+    args: { limit: v.optional(v.number()) },
+    handler: async (ctx, args) => {
+        const limit = Math.min(Math.max(args.limit ?? 20, 1), 50);
+        const cutoff = new Date(Date.now() - CJ_WEBHOOK_PROCESSING_TIMEOUT_MS).toISOString();
+        const stale = await ctx.db
+            .query("cjWebhookLog")
+            .withIndex("by_status_claimed_at", (q) => q.eq("status", "processing").lt("claimedAt", cutoff))
+            .take(limit);
+        let recovered = 0;
+        for (const record of stale) {
+            if (!record.payload || (record.attempts ?? 1) >= 8) {
+                await ctx.db.patch(record._id, {
+                    status: "failed",
+                    completedAt: new Date().toISOString(),
+                    lastError: "Webhook processing lease expired without a recoverable payload.",
+                });
+                continue;
+            }
+            await ctx.db.patch(record._id, {
+                status: "retryable",
+                lastError: "Webhook processing lease expired and was recovered.",
+            });
+            await ctx.scheduler.runAfter(0, internal.http.retryCjWebhook, {
+                messageId: record.messageId,
+                type: record.type,
+            });
+            recovered++;
+        }
+        return { scanned: stale.length, recovered };
+    },
+});
+
 // CJ TOKEN STORAGE HELPERS
 // Persist tokens in database to avoid rate limiting from frequent token requests
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1639,22 +1683,12 @@ export const saveCjTokens = internalMutation({
         createDate: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
-        // Delete any existing tokens
-        const existingTokens = await ctx.db.query("cjTokens").collect();
-        for (const token of existingTokens) {
-            await ctx.db.delete(token._id);
-        }
-
-        // Insert new tokens with CJ's expiry dates
-        await ctx.db.insert("cjTokens", {
-            openId: args.openId,
-            accessToken: args.accessToken,
-            accessTokenExpiryDate: args.accessTokenExpiryDate,
-            refreshToken: args.refreshToken,
-            refreshTokenExpiryDate: args.refreshTokenExpiryDate,
-            createDate: args.createDate,
-            updatedAt: new Date().toISOString(),
-        });
+        const existingTokens = await ctx.db.query("cjTokens").order("desc").take(10);
+        const [current, ...duplicates] = existingTokens;
+        const values = { ...args, updatedAt: new Date().toISOString() };
+        if (current) await ctx.db.patch(current._id, values);
+        else await ctx.db.insert("cjTokens", values);
+        for (const duplicate of duplicates) await ctx.db.delete(duplicate._id);
     },
 });
 
@@ -1692,6 +1726,7 @@ export const seedCjTokens = mutation({
         createDate: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
         // Delete any existing tokens
         const existingTokens = await ctx.db.query("cjTokens").collect();
         for (const token of existingTokens) {
