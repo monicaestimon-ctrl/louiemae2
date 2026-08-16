@@ -833,7 +833,7 @@ http.route({
         const signature = await verifyIncomingCjWebhook(ctx, request, rawBody);
         if (!signature.ok) return cjJsonResponse({ success: false, error: signature.error }, signature.status);
         const parsed = parseCjWebhookPayload(rawBody);
-        if (!parsed.ok) return cjJsonResponse({ success: false, error: parsed.error }, parsed.status);
+        if (parsed.ok === false) return cjJsonResponse({ success: false, error: parsed.error }, parsed.status);
         const payload = parsed.payload;
         const claim = await ctx.runMutation(internal.cjHelpers.claimWebhookProcessing, {
             messageId: payload.messageId,
@@ -1003,7 +1003,7 @@ function getCjTrackingStatusLabel(trackingStatus: unknown): string | undefined {
 // ═══════════════════════════════════════════════════════════════════════════
 async function handleCjSourcingCreateWebhookV2(ctx: any, params: any): Promise<boolean> {
     const parsed = parseCjSourcingWebhookEvidence(params);
-    if (!parsed.ok) {
+    if (parsed.ok === false) {
         console.error(parsed.error);
         return false;
     }
