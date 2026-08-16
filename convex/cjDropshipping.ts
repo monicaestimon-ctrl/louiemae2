@@ -64,8 +64,11 @@ const CJ_PRICING_REFRESH_RETRY_DELAY_MS = 60_000;
 // provider ID and blindly resubmitting can create duplicate CJ sourcing tickets.
 const STALE_PENDING_HOURS = 48;
 
-// Token expiration buffer (refresh tokens 1 day before they expire)
-const ACCESS_TOKEN_BUFFER_MS = 24 * 60 * 60 * 1000; // 1 day
+// Refresh shortly before expiration. A one-day access-token buffer caused
+// unnecessary refresh traffic and amplified concurrent token stampedes.
+const ACCESS_TOKEN_BUFFER_MS = 5 * 60 * 1000;
+const TOKEN_REFRESH_LEASE_MS = 30_000;
+const CJ_AUTH_TIMEOUT_MS = 15_000;
 
 type CjFreightQuote = {
     shippingCost?: number;
@@ -190,7 +193,7 @@ const quoteCjFreightForProducts = async (
         clearTimeout(timeout);
     }
 };
-const REFRESH_TOKEN_BUFFER_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const REFRESH_TOKEN_BUFFER_MS = 5 * 60 * 1000;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AUTHENTICATION
@@ -209,44 +212,72 @@ export const getAccessToken = internalAction({
     handler: async (ctx): Promise<string | null> => {
         const apiKey = process.env.CJ_API_KEY;
 
-        if (!apiKey) {
-            console.error("CJ API Key not configured. Set CJ_API_KEY in Convex environment variables.");
-            return null;
-        }
-
+        const leaseToken = globalThis.crypto.randomUUID();
         try {
-            // Step 1: Check database for existing tokens
-            const storedTokens = await ctx.runQuery(internal.cjHelpers.getCjTokens, {});
-
-            if (storedTokens) {
-                const now = Date.now();
-
-                // Parse CJ's expiry date strings to timestamps
-                const accessExpiry = new Date(storedTokens.accessTokenExpiryDate).getTime();
-                const refreshExpiry = new Date(storedTokens.refreshTokenExpiryDate).getTime();
-
-                // If access token is still valid (with 1 day buffer), use it
-                if (accessExpiry - ACCESS_TOKEN_BUFFER_MS > now) {
-                    console.log("CJ: Using stored access token (valid until " + storedTokens.accessTokenExpiryDate + ")");
-                    return storedTokens.accessToken;
-                }
-
-                // If access token expired but refresh token is valid, use refresh token
-                if (refreshExpiry - REFRESH_TOKEN_BUFFER_MS > now) {
-                    console.log("CJ: Access token expired, using refresh token...");
-                    const refreshedToken = await refreshAccessToken(ctx, storedTokens);
-                    if (refreshedToken) {
-                        return refreshedToken;
-                    }
-                    // If refresh failed, fall through to new token request
-                    console.log("CJ: Refresh failed, requesting new token...");
-                }
+            let storedTokens = await ctx.runQuery(internal.cjHelpers.getCjTokens, {});
+            const now = Date.now();
+            const accessExpiry = storedTokens ? Date.parse(storedTokens.accessTokenExpiryDate) : Number.NaN;
+            if (storedTokens && Number.isFinite(accessExpiry) && accessExpiry - ACCESS_TOKEN_BUFFER_MS > now) {
+                return storedTokens.accessToken;
             }
 
-            // Step 2: No valid tokens - request new tokens with API key
-            console.log("CJ: Requesting new access token with API key...");
-            return await requestNewTokens(ctx, apiKey);
+            const lease = await ctx.runMutation(internal.cjSourcingJobs.acquireTokenRefreshLease, {
+                leaseToken,
+                ttlMs: TOKEN_REFRESH_LEASE_MS,
+            });
+            if (!lease.acquired) {
+                // The old token remains safe to use until its real expiry while
+                // another worker performs the proactive refresh.
+                if (storedTokens && Number.isFinite(accessExpiry) && accessExpiry - 60_000 > now) {
+                    return storedTokens.accessToken;
+                }
+                for (let attempt = 0; attempt < 10; attempt++) {
+                    await new Promise((resolve) => setTimeout(resolve, 500));
+                    const refreshed = await ctx.runQuery(internal.cjHelpers.getCjTokens, {});
+                    const refreshedExpiry = refreshed ? Date.parse(refreshed.accessTokenExpiryDate) : Number.NaN;
+                    if (refreshed && Number.isFinite(refreshedExpiry) && refreshedExpiry - 60_000 > Date.now()) {
+                        return refreshed.accessToken;
+                    }
+                }
+                console.error("CJ authentication refresh is already in progress and no usable token became available.");
+                return null;
+            }
 
+            try {
+                // Re-read after acquiring the lease in case the previous owner
+                // completed between our initial read and the atomic claim.
+                storedTokens = await ctx.runQuery(internal.cjHelpers.getCjTokens, {});
+                const currentTime = Date.now();
+                const currentAccessExpiry = storedTokens ? Date.parse(storedTokens.accessTokenExpiryDate) : Number.NaN;
+                if (storedTokens && Number.isFinite(currentAccessExpiry) && currentAccessExpiry - ACCESS_TOKEN_BUFFER_MS > currentTime) {
+                    return storedTokens.accessToken;
+                }
+                const refreshExpiry = storedTokens ? Date.parse(storedTokens.refreshTokenExpiryDate) : Number.NaN;
+                if (storedTokens && Number.isFinite(refreshExpiry) && refreshExpiry - REFRESH_TOKEN_BUFFER_MS > currentTime) {
+                    const refreshedToken = await refreshAccessToken(ctx, storedTokens);
+                    if (refreshedToken) return refreshedToken;
+                    if (Number.isFinite(currentAccessExpiry) && currentAccessExpiry - 60_000 > currentTime) {
+                        return storedTokens.accessToken;
+                    }
+                    return null;
+                }
+                if (!apiKey) {
+                    console.error("CJ API Key not configured and no usable stored token is available.");
+                    return null;
+                }
+                return await requestNewTokens(ctx, apiKey);
+            } finally {
+                try {
+                    await ctx.runMutation(internal.cjSourcingJobs.releaseTokenRefreshLease, { leaseToken });
+                } catch (releaseError: unknown) {
+                    // Releasing a short lease must never mask a successfully
+                    // refreshed token. The lease expires automatically.
+                    console.error(
+                        "Failed to release CJ token refresh lease:",
+                        releaseError instanceof Error ? releaseError.message : releaseError,
+                    );
+                }
+            }
         } catch (error: any) {
             console.error("CJ Auth error:", error.message);
             return null;
@@ -259,16 +290,29 @@ export const getAccessToken = internalAction({
  * CJ returns a new token object. Persist the provider's authoritative tokens
  * and expiry dates; never extend the old token locally.
  */
+const fetchCjAuth = async (path: string, body: Record<string, string>) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), CJ_AUTH_TIMEOUT_MS);
+    try {
+        return await fetch(`${CJ_API_BASE}${path}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+        });
+    } finally {
+        clearTimeout(timeout);
+    }
+};
+
 async function refreshAccessToken(ctx: any, storedTokens: {
     openId?: string;
     refreshToken: string;
     refreshTokenExpiryDate: string;
 }): Promise<string | null> {
     try {
-        const response = await fetch(`${CJ_API_BASE}/authentication/refreshAccessToken`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ refreshToken: storedTokens.refreshToken }),
+        const response = await fetchCjAuth("/authentication/refreshAccessToken", {
+            refreshToken: storedTokens.refreshToken,
         });
 
         const data = await response.json();
@@ -303,26 +347,23 @@ async function refreshAccessToken(ctx: any, storedTokens: {
  */
 async function requestNewTokens(ctx: any, apiKey: string): Promise<string | null> {
     try {
-        const response = await fetch(`${CJ_API_BASE}/authentication/getAccessToken`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ apiKey }),
-        });
+        const response = await fetchCjAuth("/authentication/getAccessToken", { apiKey });
 
         const data = await response.json();
-        if (!data.result || !data.data?.accessToken) {
-            console.error("CJ Auth failed:", data.message || "Unknown error");
+        const parsed = parseCjTokenResponse(data);
+        if (!response.ok || !parsed.ok) {
+            const parseMessage = "message" in parsed ? parsed.message : undefined;
+            console.error("CJ Auth failed:", data?.message || parseMessage || `HTTP ${response.status}`);
             return null;
         }
 
-        // Save tokens to database using CJ's actual expiry dates
-        const tokenData = data.data;
+        const tokenData = parsed.tokens;
         await ctx.runMutation(internal.cjHelpers.saveCjTokens, {
-            openId: tokenData.openId?.toString(),
+            openId: tokenData.openId,
             accessToken: tokenData.accessToken,
-            accessTokenExpiryDate: tokenData.accessTokenExpiryDate || new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(),
-            refreshToken: tokenData.refreshToken || tokenData.accessToken,
-            refreshTokenExpiryDate: tokenData.refreshTokenExpiryDate || new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString(),
+            accessTokenExpiryDate: tokenData.accessTokenExpiryDate,
+            refreshToken: tokenData.refreshToken,
+            refreshTokenExpiryDate: tokenData.refreshTokenExpiryDate,
             createDate: tokenData.createDate,
         });
 

@@ -1,5 +1,6 @@
 import { httpRouter } from "convex/server";
-import { httpAction, type ActionCtx } from "./_generated/server";
+import { v } from "convex/values";
+import { httpAction, internalAction, type ActionCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
@@ -13,8 +14,9 @@ import {
     type CjInventorySnapshot,
 } from "../lib/cjInventory";
 import { verifyCjWebhookSignature } from "../lib/cjWebhookSignature";
-import { handleCjWebhookHttpRequest } from "../lib/cjWebhookHttp";
-import type { ParsedCjWebhookPayload } from "../lib/cjWebhookRequest";
+import { cjJsonResponse } from "../lib/cjWebhookHttp";
+import { parseCjWebhookPayload, type ParsedCjWebhookPayload } from "../lib/cjWebhookRequest";
+import { parseCjSourcingWebhookEvidence } from "../lib/cjSourcingWebhook";
 import { getStripeWebhookVerificationError, shouldAllowUnsignedStripeWebhook } from "../lib/stripeWebhook";
 
 const http = httpRouter();
@@ -611,7 +613,7 @@ async function dispatchCjWebhookPayload(ctx: any, payload: ParsedCjWebhookPayloa
             // This is CJ's primary notification when a sourcing request completes.
             // Contains: cjProductId, cjVariantId, cjVariantSku, cjSourcingId, status, failReason
             console.log(`CJ SOURCINGCREATE:`, JSON.stringify(params));
-            return await handleCjSourcingCreateWebhook(ctx, params);
+            return await handleCjSourcingCreateWebhookV2(ctx, params);
 
         case "PRODUCT":
             // Per CJ docs: Product catalog update (description, price, image, status changes)
@@ -768,31 +770,85 @@ async function handleCjStockWebhook(ctx: any, params: unknown) {
     }
 }
 
+export const processClaimedCjWebhook = internalAction({
+    args: { messageId: v.string(), type: v.string(), claimToken: v.string() },
+    handler: async (ctx, args) => {
+        const record = await ctx.runQuery(internal.cjHelpers.getWebhookProcessingRecord, {
+            messageId: args.messageId,
+        });
+        if (!record || record.status !== "processing" || record.claimToken !== args.claimToken || !record.payload) return;
+        let failureMessage = `${args.type} handler could not correlate the webhook`;
+        try {
+            const handled = await dispatchCjWebhookPayload(ctx, record.payload as ParsedCjWebhookPayload);
+            if (handled) {
+                await ctx.runMutation(internal.cjHelpers.markWebhookProcessed, args);
+                return;
+            }
+        } catch (error: unknown) {
+            failureMessage = error instanceof Error ? error.message : "Webhook processing failed";
+        }
+        if ((record.attempts ?? 1) < 8) {
+            await ctx.runMutation(internal.cjHelpers.markWebhookRetryable, {
+                ...args,
+                error: failureMessage.slice(0, 500),
+            });
+            const delayMs = Math.min(30 * 60 * 1000, 30_000 * 2 ** Math.max(0, (record.attempts ?? 1) - 1));
+            await ctx.scheduler.runAfter(delayMs, internal.http.retryCjWebhook, {
+                messageId: args.messageId,
+                type: args.type,
+            });
+        } else {
+            await ctx.runMutation(internal.cjHelpers.markWebhookFailed, args);
+        }
+    },
+});
+
+export const retryCjWebhook = internalAction({
+    args: { messageId: v.string(), type: v.string() },
+    handler: async (ctx, args) => {
+        const record = await ctx.runQuery(internal.cjHelpers.getWebhookProcessingRecord, {
+            messageId: args.messageId,
+        });
+        if (!record?.payload || (record.attempts ?? 1) >= 8 || record.status === "processed") return;
+        const claim = await ctx.runMutation(internal.cjHelpers.claimWebhookProcessing, {
+            ...args,
+            payload: record.payload,
+        });
+        if (!claim.claimed || !claim.claimToken) return;
+        await ctx.scheduler.runAfter(0, internal.http.processClaimedCjWebhook, {
+            ...args,
+            claimToken: claim.claimToken,
+        });
+    },
+});
+
 http.route({
     path: "/cj/webhook",
     method: "POST",
     handler: httpAction(async (ctx, request) => {
-        return await handleCjWebhookHttpRequest(request, {
-            verifySignature: (incomingRequest, rawBody) => verifyIncomingCjWebhook(ctx, incomingRequest, rawBody),
-            claimWebhook: (messageId, type) => ctx.runMutation(internal.cjHelpers.claimWebhookProcessing, {
-                messageId,
-                type,
-            }),
-            handleWebhookTopic: (payload) => dispatchCjWebhookPayload(ctx, payload),
-            markProcessed: async (claim) => {
-                await ctx.runMutation(internal.cjHelpers.markWebhookProcessed, claim);
-            },
-            markRetryable: async (claim, error) => {
-                await ctx.runMutation(internal.cjHelpers.markWebhookRetryable, {
-                    ...claim,
-                    error,
-                });
-            },
-            markFailed: async (claim) => {
-                await ctx.runMutation(internal.cjHelpers.markWebhookFailed, claim);
-            },
+        const rawBody = await request.text();
+        if (rawBody.length > 256_000) {
+            return cjJsonResponse({ success: false, error: "Webhook payload is too large" }, 413);
+        }
+        const signature = await verifyIncomingCjWebhook(ctx, request, rawBody);
+        if (!signature.ok) return cjJsonResponse({ success: false, error: signature.error }, signature.status);
+        const parsed = parseCjWebhookPayload(rawBody);
+        if (!parsed.ok) return cjJsonResponse({ success: false, error: parsed.error }, parsed.status);
+        const payload = parsed.payload;
+        const claim = await ctx.runMutation(internal.cjHelpers.claimWebhookProcessing, {
+            messageId: payload.messageId,
+            type: payload.type,
+            payload,
         });
-
+        if (!claim.claimed || !claim.claimToken) {
+            return cjJsonResponse({ success: true, skipped: true, status: claim.status });
+        }
+        await ctx.scheduler.runAfter(0, internal.http.processClaimedCjWebhook, {
+            messageId: payload.messageId,
+            type: payload.type,
+            claimToken: claim.claimToken,
+        });
+        return cjJsonResponse({ success: true, accepted: true }, 200);
     }),
 });
 
@@ -945,6 +1001,23 @@ function getCjTrackingStatusLabel(trackingStatus: unknown): string | undefined {
 // Per CJ docs: This is sent when a sourcing request is completed or failed.
 // Payload: { cjProductId, cjVariantId, cjVariantSku, cjSourcingId, status, failReason, createDate }
 // ═══════════════════════════════════════════════════════════════════════════
+async function handleCjSourcingCreateWebhookV2(ctx: any, params: any): Promise<boolean> {
+    const parsed = parseCjSourcingWebhookEvidence(params);
+    if (!parsed.ok) {
+        console.error(parsed.error);
+        return false;
+    }
+    const result = await ctx.runMutation(internal.cjSourcingJobs.applyWebhookEvidence, parsed.evidence);
+    if (!result.handled) {
+        console.error(`CJ SOURCINGCREATE webhook could not be correlated: sourcingId=${parsed.evidence.sourcingId} code=${result.code}`);
+        return false;
+    }
+    if (result.code.includes("DUPLICATE") || result.code.includes("CONFLICTING")) {
+        console.error(`CJ SOURCINGCREATE data integrity error: sourcingId=${parsed.evidence.sourcingId} code=${result.code}`);
+    }
+    return true;
+}
+
 async function handleCjSourcingCreateWebhook(ctx: any, params: any): Promise<boolean> {
     const {
         cjProductId,
