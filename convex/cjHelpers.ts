@@ -1007,6 +1007,7 @@ export const updateProductSourcingStatus = internalMutation({
 
         if (args.sourcingId) {
             updateData.cjSourcingId = args.sourcingId;
+            updateData.cjSourcingError = undefined;
         }
         if (args.cjProductId) {
             updateData.cjProductId = args.cjProductId;
@@ -1025,6 +1026,9 @@ export const updateProductSourcingStatus = internalMutation({
             // Clear any stale rejection metadata from a prior rejected state.
             // Without this, a re-approved product retains the old error string.
             updateData.cjSourcingError = undefined;
+            updateData.cjRejectedAt = undefined;
+        } else if (args.status === "rejected" && !product.cjRejectedAt) {
+            updateData.cjRejectedAt = new Date().toISOString();
         }
 
         // Stage 2 pricing: recalculate selling price from confirmed CJ cost
@@ -1464,7 +1468,8 @@ export const claimWebhookProcessing = internalMutation({
                 existing.status === "processing" &&
                 Number.isFinite(claimedAtMs) &&
                 Date.now() - claimedAtMs > CJ_WEBHOOK_PROCESSING_TIMEOUT_MS;
-            const retryableStatus = existing.status === "retryable" || staleProcessing;
+            const retryableFailure = existing.status === "failed" && (existing.attempts || 1) < 8;
+            const retryableStatus = existing.status === "retryable" || retryableFailure || staleProcessing;
 
             if (!retryableStatus) {
                 return { claimed: false, status: existing.status || "processed" };

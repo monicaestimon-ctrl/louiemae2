@@ -21,6 +21,26 @@ function createFetch(response: Response): typeof fetch {
 }
 
 describe('CJ API client', () => {
+  it('rejects a non-200 CJ code even when HTTP and result look successful', async () => {
+    const result = await cjApiRequest({
+      accessToken: 'token',
+      path: 'product/sourcing/create',
+      method: 'POST',
+      body: { productName: 'Example' },
+      fetchFn: createFetch(jsonResponse({
+        code: 1603001,
+        result: true,
+        message: 'Provider rejected the request',
+        data: null,
+      })),
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: 1603001, message: 'Provider rejected the request' },
+    });
+  });
+
   it('sends authenticated JSON requests and unwraps successful CJ responses', async () => {
     const fetchFn = createFetch(jsonResponse({
       code: 200,

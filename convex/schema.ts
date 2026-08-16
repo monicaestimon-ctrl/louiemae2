@@ -64,6 +64,7 @@ export default defineSchema({
         cjApprovedAt: v.optional(v.string()),    // When CJ approved the product
         cjSubmittedAt: v.optional(v.string()),   // When product was submitted to CJ
         cjLastCheckedAt: v.optional(v.string()), // Last time we checked CJ for status
+        cjRejectedAt: v.optional(v.string()),    // Immutable timestamp for terminal rejection age
         cjInventoryStatus: v.optional(cjInventoryStatusValidator),
         cjInventoryTotal: v.optional(v.number()),
         cjInventoryLastCheckedAt: v.optional(v.string()),
