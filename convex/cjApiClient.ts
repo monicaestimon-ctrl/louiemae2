@@ -201,6 +201,20 @@ export const cjApiRequest = async <TData = unknown, TBody = unknown>(
             };
         }
 
+        if (envelope.code !== undefined && envelope.code !== 200) {
+            return {
+                ok: false,
+                httpStatus: response.status,
+                raw,
+                error: {
+                    message: envelope.message || "CJ API returned a non-success code",
+                    code: envelope.code,
+                    requestId: envelope.requestId,
+                    httpStatus: response.status,
+                },
+            };
+        }
+
         return {
             ok: true,
             data: envelope.data,
@@ -367,6 +381,31 @@ export type CjTrackingInfoRow = {
     trackingUrl?: string;
     [key: string]: unknown;
 };
+
+export type CjCreateSourcingData = {
+    cjSourcingId?: string | number;
+    sourcingId?: string | number;
+    id?: string | number;
+};
+
+export const createSourcing = (
+    accessToken: string,
+    payload: {
+        productName: string;
+        productImage: string;
+        productUrl: string;
+        remark?: string;
+        price?: string;
+        thirdProductId: string;
+    },
+    options?: CjApiCallOptions,
+) => cjApiRequest<CjCreateSourcingData | string, typeof payload>({
+    accessToken,
+    path: "product/sourcing/create",
+    method: "POST",
+    body: payload,
+    ...options,
+});
 
 export const createOrderV2 = (
     accessToken: string,
