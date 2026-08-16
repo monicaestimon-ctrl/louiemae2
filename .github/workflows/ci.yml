@@ -31,10 +31,12 @@ jobs:
 
       - name: Run linter
         run: npm run lint
-        continue-on-error: true  # Allow lint warnings initially
 
       - name: Type check
         run: npm run type-check
+
+      - name: Strict Convex type check
+        run: npx tsc -p convex/tsconfig.json
 
       - name: Run tests
         run: npm run test:run
