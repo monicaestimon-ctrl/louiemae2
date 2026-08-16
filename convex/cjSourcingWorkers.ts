@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalAction, type ActionCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import {
     createSourcing,
     formatCjApiError,
@@ -10,6 +11,7 @@ import {
     querySourcing,
 } from "./cjApiClient";
 import { classifyCjSourcingStatus } from "../lib/cjSourcing";
+import { isCjDailySourcingLimit, isCjProviderAvailabilityFailure } from "../lib/cjSourcingPolicy";
 
 const CJ_REQUEST_TIMEOUT_MS = 15_000;
 const MAX_SLOT_WAIT_MS = 30_000;
@@ -21,11 +23,34 @@ const retryAtForFailure = (failureCount: number) => {
 
 const waitForRequestSlot = async (ctx: ActionCtx, operation: string) => {
     const reservation = await ctx.runMutation(internal.cjSourcingJobs.reserveApiRequestSlot, { operation });
+    if (!reservation.admitted || reservation.reservedAt === undefined) return reservation;
     const waitMs = Math.max(0, reservation.reservedAt - Date.now());
     if (waitMs > MAX_SLOT_WAIT_MS) {
         throw new Error(`CJ request admission wait exceeded ${MAX_SLOT_WAIT_MS}ms`);
     }
     if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+    return reservation;
+};
+
+const recordCircuitOutcome = async (
+    ctx: ActionCtx,
+    success: boolean,
+    code?: string,
+) => ctx.runMutation(internal.cjSourcingJobs.recordApiOutcome, { success, code });
+
+const deferForOpenCircuit = async (
+    ctx: ActionCtx,
+    args: { jobId: Id<"cjSourcingJobs">; leaseToken: string },
+    retryAt: number,
+) => {
+    await ctx.runMutation(internal.cjSourcingJobs.releaseWorkerForRetry, {
+        jobId: args.jobId,
+        leaseToken: args.leaseToken,
+        code: "CJ_CIRCUIT_OPEN",
+        message: "CJ requests are paused briefly after repeated provider failures.",
+        retryAt,
+        countFailure: false,
+    });
 };
 
 const normalizedSourcingId = (data: unknown): string | null => {
@@ -67,7 +92,11 @@ export const processSourcingJob = internalAction({
             if (!context.attempt || context.attempt.state !== "prepared") {
                 return { ok: false, outcome: "attempt_not_prepared" };
             }
-            await waitForRequestSlot(ctx, "sourcing.create");
+            const admission = await waitForRequestSlot(ctx, "sourcing.create");
+            if (!admission.admitted) {
+                await deferForOpenCircuit(ctx, args, admission.retryAt ?? Date.now() + 30_000);
+                return { ok: false, outcome: "circuit_open" };
+            }
             const markedSending = await ctx.runMutation(internal.cjSourcingJobs.markAttemptSending, {
                 jobId: args.jobId,
                 leaseToken: args.leaseToken,
@@ -79,6 +108,7 @@ export const processSourcingJob = internalAction({
             });
             const sourcingId = result.ok ? normalizedSourcingId(result.data) : null;
             if (result.ok && sourcingId) {
+                await recordCircuitOutcome(ctx, true);
                 await ctx.runMutation(internal.cjSourcingJobs.applySubmissionAccepted, {
                     jobId: args.jobId,
                     leaseToken: args.leaseToken,
@@ -95,8 +125,9 @@ export const processSourcingJob = internalAction({
                 : { message: "CJ accepted the request but returned no sourcing ID." };
             const message = formatCjApiError(error);
             const providerResponded = error.httpStatus !== undefined;
-            const dailyLimit = message.toLowerCase().includes("daily") && message.toLowerCase().includes("limit");
+            const dailyLimit = isCjDailySourcingLimit(message);
             const transient = error.httpStatus === 429 || (error.httpStatus !== undefined && error.httpStatus >= 500);
+            await recordCircuitOutcome(ctx, dailyLimit || !isCjProviderAvailabilityFailure(error.httpStatus), dailyLimit ? "SOURCE_DAILY_LIMIT" : String(error.code ?? error.httpStatus ?? "network"));
             if (dailyLimit) {
                 await ctx.runMutation(internal.cjSourcingJobs.blockSourceQuota, {
                     reason: message,
@@ -122,11 +153,16 @@ export const processSourcingJob = internalAction({
         if (args.kind === "poll") {
             if (!context.job.currentSourcingId) return { ok: false, outcome: "missing_sourcing_id" };
             try {
-                await waitForRequestSlot(ctx, "sourcing.query");
+                const admission = await waitForRequestSlot(ctx, "sourcing.query");
+                if (!admission.admitted) {
+                    await deferForOpenCircuit(ctx, args, admission.retryAt ?? Date.now() + 30_000);
+                    return { ok: false, outcome: "circuit_open" };
+                }
                 const result = await querySourcing(token, context.job.currentSourcingId, {
                     timeoutMs: CJ_REQUEST_TIMEOUT_MS,
                 });
                 if ("error" in result) {
+                    await recordCircuitOutcome(ctx, !isCjProviderAvailabilityFailure(result.error.httpStatus), String(result.error.code ?? result.error.httpStatus ?? "network"));
                     await ctx.runMutation(internal.cjSourcingJobs.releaseWorkerForRetry, {
                         jobId: args.jobId,
                         leaseToken: args.leaseToken,
@@ -136,6 +172,7 @@ export const processSourcingJob = internalAction({
                     });
                     return { ok: false, outcome: "poll_retry" };
                 }
+                await recordCircuitOutcome(ctx, true);
                 const row = Array.isArray(result.data) ? result.data[0] : result.data;
                 if (!row) {
                     await ctx.runMutation(internal.cjSourcingJobs.releaseWorkerForRetry, {
@@ -160,6 +197,7 @@ export const processSourcingJob = internalAction({
                 return { ok: true, outcome: evidence };
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
+                await recordCircuitOutcome(ctx, false, "CJ_POLL_EXCEPTION");
                 await ctx.runMutation(internal.cjSourcingJobs.releaseWorkerForRetry, {
                     jobId: args.jobId,
                     leaseToken: args.leaseToken,
@@ -173,11 +211,16 @@ export const processSourcingJob = internalAction({
 
         if (!context.job.cjProductId) return { ok: false, outcome: "missing_product_id" };
         try {
-            await waitForRequestSlot(ctx, "product.query");
+            const admission = await waitForRequestSlot(ctx, "product.query");
+            if (!admission.admitted) {
+                await deferForOpenCircuit(ctx, args, admission.retryAt ?? Date.now() + 30_000);
+                return { ok: false, outcome: "circuit_open" };
+            }
             const result = await queryCatalogProduct(token, context.job.cjProductId, {
                 timeoutMs: CJ_REQUEST_TIMEOUT_MS,
             });
             if ("error" in result) {
+                await recordCircuitOutcome(ctx, !isCjProviderAvailabilityFailure(result.error.httpStatus), String(result.error.code ?? result.error.httpStatus ?? "network"));
                 await ctx.runMutation(internal.cjSourcingJobs.applyCatalogResult, {
                     jobId: args.jobId,
                     leaseToken: args.leaseToken,
@@ -191,6 +234,7 @@ export const processSourcingJob = internalAction({
                 });
                 return { ok: false, outcome: "catalog_retry" };
             }
+            await recordCircuitOutcome(ctx, true);
             const variants = (result.data.variants ?? []).flatMap((variant) => {
                 const vid = normalizedString(variant.vid);
                 const sku = normalizedString(variant.variantSku);
@@ -218,6 +262,7 @@ export const processSourcingJob = internalAction({
             return { ok: variants.length > 0, outcome: variants.length > 0 ? "catalog_verified" : "catalog_empty" };
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            await recordCircuitOutcome(ctx, false, "CJ_CATALOG_EXCEPTION");
             await ctx.runMutation(internal.cjSourcingJobs.releaseWorkerForRetry, {
                 jobId: args.jobId,
                 leaseToken: args.leaseToken,

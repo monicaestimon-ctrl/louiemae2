@@ -7,11 +7,21 @@ import {
 } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { buildCjSourcingPayload, hashCjSourcingPayload } from "../lib/cjSourcing";
+import {
+    CJ_MAX_TRANSIENT_FAILURES,
+    getLegacyCjInitialJobState,
+    hasCjProcessingDeadlineExpired,
+    shouldDeadLetterCjWork,
+} from "../lib/cjSourcingPolicy";
 
 const DISPATCH_BATCH_SIZE = 20;
 const JOB_LEASE_MS = 5 * 60 * 1000;
 const REQUEST_INTERVAL_MS = 1_100;
 const WORKER_RUN_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+const CIRCUIT_FAILURE_THRESHOLD = 5;
+const CIRCUIT_OPEN_MS = 5 * 60 * 1000;
+const CIRCUIT_PROBE_LEASE_MS = 60_000;
+const MAX_ADMISSION_QUEUE_MS = 30_000;
 
 type JobState = Doc<"cjSourcingJobs">["state"];
 type JobSource = "import" | "migration";
@@ -92,14 +102,16 @@ const ensureJobRecord = async (
         remark: product.description?.trim().slice(0, 200) || undefined,
         price: Number.isFinite(product.price) ? product.price : undefined,
     };
-    const state: JobState = "code" in payloadResult
-        ? "needs_input"
-        : product.cjSourcingId
-            ? "submitted"
-            : "queued";
+    const state: JobState = getLegacyCjInitialJobState({
+        status: product.cjSourcingStatus,
+        sourcingId: product.cjSourcingId,
+        cjProductId: product.cjProductId,
+        payloadValid: !("code" in payloadResult),
+    });
     const sourceSnapshotHash = "code" in payloadResult
         ? `invalid:${payloadResult.code}`
         : await hashCjSourcingPayload(payloadResult.payload);
+    const parsedSubmittedAt = product.cjSubmittedAt ? Date.parse(product.cjSubmittedAt) : Number.NaN;
 
     const jobId = await ctx.db.insert("cjSourcingJobs", {
         productId,
@@ -111,11 +123,18 @@ const ensureJobRecord = async (
         sourceSnapshotHash,
         attemptCount: 0,
         transientFailureCount: 0,
-        nextAttemptAt: state === "needs_input" ? undefined : now,
-        submittedAt: product.cjSubmittedAt ? Date.parse(product.cjSubmittedAt) : undefined,
-        lastErrorCode: "code" in payloadResult ? payloadResult.code : undefined,
-        lastErrorMessage: "code" in payloadResult ? payloadResult.message : undefined,
-        manualReviewReason: "code" in payloadResult ? payloadResult.message : undefined,
+        nextAttemptAt: ["queued", "submitted", "awaiting_catalog"].includes(state) ? now : undefined,
+        submittedAt: Number.isFinite(parsedSubmittedAt) ? parsedSubmittedAt : undefined,
+        rejectedAt: state === "rejected" ? now : undefined,
+        lastErrorCode: state === "reconciliation_required"
+            ? "LEGACY_APPROVAL_UNCORRELATED"
+            : "code" in payloadResult && state === "needs_input" ? payloadResult.code : undefined,
+        lastErrorMessage: state === "reconciliation_required"
+            ? "Legacy CJ approval has no product or sourcing ID and must be reconciled."
+            : "code" in payloadResult && state === "needs_input" ? payloadResult.message : undefined,
+        manualReviewReason: state === "reconciliation_required"
+            ? "Confirm the CJ product or sourcing ticket before retrying."
+            : "code" in payloadResult && state === "needs_input" ? payloadResult.message : undefined,
         createdAt: now,
         updatedAt: now,
         version: 1,
@@ -123,7 +142,7 @@ const ensureJobRecord = async (
     const job = await ctx.db.get(jobId);
     if (job) await projectJobToProduct(ctx, job, productId);
 
-    if (state !== "needs_input") {
+    if (["queued", "submitted", "awaiting_catalog"].includes(state)) {
         await ctx.scheduler.runAfter(0, internal.cjSourcingJobs.dispatchDueJobs, {});
     }
     console.log(`CJ sourcing job created: productId=${productId} jobId=${jobId} state=${state} source=${source}`);
@@ -248,11 +267,16 @@ export const backfillLegacyPendingJobs = internalMutation({
     args: { limit: v.optional(v.number()) },
     handler: async (ctx, args) => {
         const limit = Math.min(Math.max(args.limit ?? 25, 1), 50);
-        const products = await ctx.db
-            .query("products")
-            .withIndex("by_cj_sourcing_status_job", (q) =>
-                q.eq("cjSourcingStatus", "pending").eq("cjSourcingJobId", undefined))
-            .take(limit);
+        const products = [];
+        for (const status of ["pending", "approved", "rejected"] as const) {
+            if (products.length >= limit) break;
+            const rows = await ctx.db
+                .query("products")
+                .withIndex("by_cj_sourcing_status_job", (q) =>
+                    q.eq("cjSourcingStatus", status).eq("cjSourcingJobId", undefined))
+                .take(limit - products.length);
+            products.push(...rows);
+        }
         let created = 0;
         for (const product of products) {
             if (await ensureJobRecord(ctx, product._id, "migration")) created++;
@@ -269,7 +293,34 @@ export const reserveApiRequestSlot = internalMutation({
             .query("cjApiControl")
             .withIndex("by_key", (q) => q.eq("key", "primary"))
             .unique();
+        if (existing?.circuitState === "open") {
+            const retryAt = (existing.circuitOpenedAt ?? now) + CIRCUIT_OPEN_MS;
+            if (retryAt > now) return { admitted: false, retryAt, operation: args.operation };
+            const reservedAt = Math.max(now, existing.nextRequestSlotAt);
+            await ctx.db.patch(existing._id, {
+                circuitState: "half_open",
+                circuitOpenedAt: now,
+                nextRequestSlotAt: reservedAt + REQUEST_INTERVAL_MS,
+                updatedAt: now,
+            });
+            return { admitted: true, reservedAt, operation: args.operation };
+        }
+        if (existing?.circuitState === "half_open") {
+            if ((existing.circuitOpenedAt ?? now) + CIRCUIT_PROBE_LEASE_MS <= now) {
+                const reservedAt = Math.max(now, existing.nextRequestSlotAt);
+                await ctx.db.patch(existing._id, {
+                    circuitOpenedAt: now,
+                    nextRequestSlotAt: reservedAt + REQUEST_INTERVAL_MS,
+                    updatedAt: now,
+                });
+                return { admitted: true, reservedAt, operation: args.operation };
+            }
+            return { admitted: false, retryAt: now + 30_000, operation: args.operation };
+        }
         const reservedAt = Math.max(now, existing?.nextRequestSlotAt ?? now);
+        if (reservedAt - now > MAX_ADMISSION_QUEUE_MS) {
+            return { admitted: false, retryAt: reservedAt, operation: args.operation };
+        }
         const nextRequestSlotAt = reservedAt + REQUEST_INTERVAL_MS;
         if (existing) {
             await ctx.db.patch(existing._id, { nextRequestSlotAt, updatedAt: now });
@@ -282,7 +333,40 @@ export const reserveApiRequestSlot = internalMutation({
                 updatedAt: now,
             });
         }
-        return { reservedAt, operation: args.operation };
+        return { admitted: true, reservedAt, operation: args.operation };
+    },
+});
+
+export const recordApiOutcome = internalMutation({
+    args: {
+        success: v.boolean(),
+        code: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const now = Date.now();
+        const existing = await ctx.db
+            .query("cjApiControl")
+            .withIndex("by_key", (q) => q.eq("key", "primary"))
+            .unique();
+        if (!existing) return;
+        if (args.success) {
+            await ctx.db.patch(existing._id, {
+                circuitState: "closed",
+                circuitOpenedAt: undefined,
+                consecutiveFailures: 0,
+                updatedAt: now,
+            });
+            return;
+        }
+        const consecutiveFailures = existing.consecutiveFailures + 1;
+        const open = existing.circuitState === "half_open" || consecutiveFailures >= CIRCUIT_FAILURE_THRESHOLD;
+        await ctx.db.patch(existing._id, {
+            circuitState: open ? "open" : existing.circuitState,
+            circuitOpenedAt: open ? now : existing.circuitOpenedAt,
+            consecutiveFailures,
+            updatedAt: now,
+        });
+        if (open) console.error(`CJ API circuit opened after ${consecutiveFailures} failures (${args.code ?? "unknown"}).`);
     },
 });
 
@@ -707,7 +791,11 @@ export const applyPollEvidence = internalMutation({
         const now = Date.now();
         let state: JobState;
         let nextAttemptAt: number | undefined;
-        if ((args.evidence === "success" || args.evidence === "failure") && args.cjProductId) {
+        const processingExpired = hasCjProcessingDeadlineExpired(job.submittedAt, now);
+        if (processingExpired && args.evidence !== "success" && !args.cjProductId) {
+            state = "reconciliation_required";
+            nextAttemptAt = undefined;
+        } else if ((args.evidence === "success" || args.evidence === "failure") && args.cjProductId) {
             state = "awaiting_catalog";
             nextAttemptAt = now;
         } else if (args.evidence === "failure") {
@@ -732,8 +820,15 @@ export const applyPollEvidence = internalMutation({
                 ? job.transientFailureCount + 1
                 : 0,
             rejectedAt: state === "rejected" ? (job.rejectedAt ?? now) : job.rejectedAt,
-            lastErrorCode: state === "rejected" ? "CJ_TERMINAL_REJECTION" : undefined,
-            lastErrorMessage: state === "rejected" ? (args.statusText || "CJ sourcing was rejected.") : undefined,
+            lastErrorCode: state === "rejected"
+                ? "CJ_TERMINAL_REJECTION"
+                : state === "reconciliation_required" ? "CJ_PROCESSING_DEADLINE_EXCEEDED" : undefined,
+            lastErrorMessage: state === "rejected"
+                ? (args.statusText || "CJ sourcing was rejected.")
+                : state === "reconciliation_required" ? "CJ did not reach a verifiable terminal state within 14 days." : undefined,
+            manualReviewReason: state === "reconciliation_required"
+                ? "Review the saved CJ sourcing ticket before creating any replacement request."
+                : undefined,
             leaseToken: undefined,
             leaseExpiresAt: undefined,
             updatedAt: now,
@@ -944,22 +1039,34 @@ export const releaseWorkerForRetry = internalMutation({
         code: v.string(),
         message: v.string(),
         retryAt: v.number(),
+        countFailure: v.optional(v.boolean()),
     },
     handler: async (ctx, args) => {
         const job = await ctx.db.get(args.jobId);
         if (!job || job.leaseToken !== args.leaseToken) return false;
-        const nextState: JobState = job.currentSourcingId ? job.state : "retry_wait";
+        const failureCount = job.transientFailureCount + (args.countFailure === false ? 0 : 1);
+        const deadLettered = shouldDeadLetterCjWork(failureCount);
+        const nextState: JobState = deadLettered
+            ? "dead_letter"
+            : job.currentSourcingId ? job.state : "retry_wait";
         await ctx.db.patch(job._id, {
             state: nextState,
-            nextAttemptAt: args.retryAt,
+            nextAttemptAt: deadLettered ? undefined : args.retryAt,
             leaseToken: undefined,
             leaseExpiresAt: undefined,
-            transientFailureCount: job.transientFailureCount + 1,
-            lastErrorCode: args.code,
-            lastErrorMessage: args.message.slice(0, 500),
+            transientFailureCount: failureCount,
+            lastErrorCode: deadLettered ? "MAX_TRANSIENT_FAILURES" : args.code,
+            lastErrorMessage: deadLettered
+                ? `CJ work stopped after ${CJ_MAX_TRANSIENT_FAILURES} transient failures: ${args.message}`.slice(0, 500)
+                : args.message.slice(0, 500),
+            manualReviewReason: deadLettered
+                ? "Review authentication, provider health, and the saved ticket before an admin retry."
+                : job.manualReviewReason,
             updatedAt: Date.now(),
             version: job.version + 1,
         });
+        const updated = await ctx.db.get(job._id);
+        if (updated) await projectJobToProduct(ctx, updated, job.productId);
         return true;
     },
 });
