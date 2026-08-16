@@ -29,6 +29,14 @@ crons.interval(
     {}
 );
 
+// Recover webhook claims abandoned by an action timeout or platform restart.
+crons.interval(
+    "recover-stale-cj-webhooks",
+    { minutes: 5 },
+    internal.cjHelpers.recoverStaleWebhookProcessing,
+    { limit: 20 }
+);
+
 // Refresh CJ inventory in small batches so free/low-tier CJ API limits are respected.
 crons.interval(
     "sync-cj-inventory",

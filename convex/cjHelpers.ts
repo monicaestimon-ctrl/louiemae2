@@ -1644,6 +1644,39 @@ export const markWebhookFailed = internalMutation({
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
+export const recoverStaleWebhookProcessing = internalMutation({
+    args: { limit: v.optional(v.number()) },
+    handler: async (ctx, args) => {
+        const limit = Math.min(Math.max(args.limit ?? 20, 1), 50);
+        const cutoff = new Date(Date.now() - CJ_WEBHOOK_PROCESSING_TIMEOUT_MS).toISOString();
+        const stale = await ctx.db
+            .query("cjWebhookLog")
+            .withIndex("by_status_claimed_at", (q) => q.eq("status", "processing").lt("claimedAt", cutoff))
+            .take(limit);
+        let recovered = 0;
+        for (const record of stale) {
+            if (!record.payload || (record.attempts ?? 1) >= 8) {
+                await ctx.db.patch(record._id, {
+                    status: "failed",
+                    completedAt: new Date().toISOString(),
+                    lastError: "Webhook processing lease expired without a recoverable payload.",
+                });
+                continue;
+            }
+            await ctx.db.patch(record._id, {
+                status: "retryable",
+                lastError: "Webhook processing lease expired and was recovered.",
+            });
+            await ctx.scheduler.runAfter(0, internal.http.retryCjWebhook, {
+                messageId: record.messageId,
+                type: record.type,
+            });
+            recovered++;
+        }
+        return { scanned: stale.length, recovered };
+    },
+});
+
 // CJ TOKEN STORAGE HELPERS
 // Persist tokens in database to avoid rate limiting from frequent token requests
 // ═══════════════════════════════════════════════════════════════════════════
