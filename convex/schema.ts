@@ -714,6 +714,7 @@ export default defineSchema({
         .index("by_attempt_key", ["attemptKey"])
         .index("by_third_product_id", ["thirdProductId"])
         .index("by_sourcing_id", ["cjSourcingId"])
+        .index("by_accepted_at", ["acceptedAt"])
         .index("by_state_reconciliation_deadline", ["state", "reconciliationDeadlineAt"]),
 
     cjApiControl: defineTable({

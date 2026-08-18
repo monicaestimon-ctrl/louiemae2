@@ -9,7 +9,11 @@ import {
 import type { Doc, Id } from "./_generated/dataModel";
 import { buildCjSourcingPayload, hashCjSourcingPayload } from "../lib/cjSourcing";
 import {
+    CJ_DAILY_SOURCE_TARGET,
     CJ_MAX_TRANSIENT_FAILURES,
+    getCjDailySourceCapacity,
+    getCjQuotaDayStart,
+    getCjQuotaResetAt,
     getLegacyCjInitialJobState,
     hasCjProcessingDeadlineExpired,
     shouldDeadLetterCjWork,
@@ -17,6 +21,7 @@ import {
 import { requireCjAdminIdentity } from "./cjAdminAccess";
 
 const DISPATCH_BATCH_SIZE = 20;
+const MAX_READ_JOBS_PER_DISPATCH = 10;
 const JOB_LEASE_MS = 5 * 60 * 1000;
 const REQUEST_INTERVAL_MS = 1_100;
 const WORKER_RUN_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
@@ -509,8 +514,11 @@ export const dispatchDueJobs = internalMutation({
             .query("cjApiControl")
             .withIndex("by_key", (q) => q.eq("key", "primary"))
             .unique();
+        // Provider quota errors used to pause submissions for a drifting 24-hour
+        // window. Bound legacy blocks to the next UTC reset so yesterday's lower
+        // plan cannot suppress a newly available daily allowance indefinitely.
         const sourceQuotaBlockedUntil = (apiControl?.sourceQuotaBlockedUntil ?? 0) > now
-            ? apiControl?.sourceQuotaBlockedUntil
+            ? Math.min(apiControl!.sourceQuotaBlockedUntil!, getCjQuotaResetAt(now))
             : undefined;
 
         const expiredSubmitting = await ctx.db
@@ -554,15 +562,57 @@ export const dispatchDueJobs = internalMutation({
             }
         }
 
-        const due: Doc<"cjSourcingJobs">[] = [];
-        for (const state of ["submitted", "processing", "awaiting_catalog", "retry_wait", "queued"] as const) {
-            if (due.length >= DISPATCH_BATCH_SIZE) break;
+        const acceptedToday = await ctx.db
+            .query("cjSourcingAttempts")
+            .withIndex("by_accepted_at", (q) => q.gte("acceptedAt", getCjQuotaDayStart(now)))
+            .take(CJ_DAILY_SOURCE_TARGET);
+        const activeSubmissions = await ctx.db
+            .query("cjSourcingJobs")
+            .withIndex("by_state_lease_expiry", (q) => q.eq("state", "submitting").gt("leaseExpiresAt", now))
+            .take(CJ_DAILY_SOURCE_TARGET);
+        const dailySourceCapacity = getCjDailySourceCapacity(
+            acceptedToday.length,
+            activeSubmissions.length,
+        );
+
+        // Keep polling existing CJ tickets while reserving at least half of each
+        // dispatcher pass for new sourcing work. The previous shared batch could
+        // let polling rows consume all 20 slots and starve newly imported products.
+        const readDue: Doc<"cjSourcingJobs">[] = [];
+        for (const state of ["submitted", "processing", "awaiting_catalog"] as const) {
+            if (readDue.length >= MAX_READ_JOBS_PER_DISPATCH) break;
             const rows = await ctx.db
                 .query("cjSourcingJobs")
                 .withIndex("by_state_next_attempt", (q) => q.eq("state", state).lte("nextAttemptAt", now))
-                .take(DISPATCH_BATCH_SIZE - due.length);
-            due.push(...rows);
+                .take(MAX_READ_JOBS_PER_DISPATCH - readDue.length);
+            readDue.push(...rows);
         }
+
+        const retryDue = await ctx.db
+            .query("cjSourcingJobs")
+            .withIndex("by_state_next_attempt", (q) => q.eq("state", "retry_wait").lte("nextAttemptAt", now))
+            .take(DISPATCH_BATCH_SIZE);
+        for (const job of retryDue) {
+            if (readDue.length >= MAX_READ_JOBS_PER_DISPATCH) break;
+            if (job.currentSourcingId) readDue.push(job);
+        }
+
+        const availableSourceDispatchSlots = DISPATCH_BATCH_SIZE - readDue.length;
+        const quotaDeferred = Boolean(sourceQuotaBlockedUntil) || dailySourceCapacity === 0;
+        const sourceCandidateLimit = quotaDeferred
+            ? availableSourceDispatchSlots
+            : Math.min(availableSourceDispatchSlots, dailySourceCapacity);
+        const sourceDue = retryDue
+            .filter((job) => !job.currentSourcingId)
+            .slice(0, sourceCandidateLimit);
+        if (sourceDue.length < sourceCandidateLimit) {
+            const queued = await ctx.db
+                .query("cjSourcingJobs")
+                .withIndex("by_state_next_attempt", (q) => q.eq("state", "queued").lte("nextAttemptAt", now))
+                .take(sourceCandidateLimit - sourceDue.length);
+            sourceDue.push(...queued);
+        }
+        const due = [...readDue, ...sourceDue];
 
         let claimed = 0;
         for (const job of due) {
@@ -570,11 +620,15 @@ export const dispatchDueJobs = internalMutation({
             let kind: WorkKind;
             let attemptId = job.activeAttemptId;
             if ((job.state === "queued" || job.state === "retry_wait") && !job.currentSourcingId) {
-                if (sourceQuotaBlockedUntil) {
+                const dailyTargetResetAt = dailySourceCapacity === 0 ? getCjQuotaResetAt(now) : undefined;
+                const submitBlockedUntil = sourceQuotaBlockedUntil ?? dailyTargetResetAt;
+                if (submitBlockedUntil) {
                     await ctx.db.patch(job._id, {
-                        nextAttemptAt: sourceQuotaBlockedUntil,
-                        lastErrorCode: "SOURCE_DAILY_LIMIT",
-                        lastErrorMessage: apiControl?.sourceQuotaReason || "CJ daily sourcing allowance is temporarily exhausted.",
+                        nextAttemptAt: submitBlockedUntil,
+                        lastErrorCode: sourceQuotaBlockedUntil ? "SOURCE_DAILY_LIMIT" : "DAILY_SOURCE_TARGET_REACHED",
+                        lastErrorMessage: sourceQuotaBlockedUntil
+                            ? apiControl?.sourceQuotaReason || "CJ daily sourcing allowance is temporarily exhausted."
+                            : `The daily target of ${CJ_DAILY_SOURCE_TARGET} accepted CJ sourcing requests has been reached.`,
                         updatedAt: now,
                         version: job.version + 1,
                     });
@@ -637,7 +691,15 @@ export const dispatchDueJobs = internalMutation({
             claimed,
             remaining: Math.max(0, due.length - claimed),
         });
-        return { runId, claimed, recovered: expiredSubmitting.length + recoveredReadLeases };
+        return {
+            runId,
+            claimed,
+            recovered: expiredSubmitting.length + recoveredReadLeases,
+            dailySourceTarget: CJ_DAILY_SOURCE_TARGET,
+            acceptedToday: acceptedToday.length,
+            activeSubmissions: activeSubmissions.length,
+            dailySourceCapacity,
+        };
     },
 });
 

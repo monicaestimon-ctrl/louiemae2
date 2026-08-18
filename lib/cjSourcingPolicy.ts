@@ -1,5 +1,20 @@
 export const CJ_MAX_PROVIDER_PROCESSING_MS = 14 * 24 * 60 * 60 * 1000;
 export const CJ_MAX_TRANSIENT_FAILURES = 10;
+export const CJ_DAILY_SOURCE_TARGET = 20;
+
+export const getCjQuotaDayStart = (now: number): number => {
+  const date = new Date(now);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+};
+
+export const getCjQuotaResetAt = (now: number): number =>
+  getCjQuotaDayStart(now) + 24 * 60 * 60 * 1000;
+
+export const getCjDailySourceCapacity = (
+  acceptedToday: number,
+  activeSubmissions: number,
+  target = CJ_DAILY_SOURCE_TARGET,
+): number => Math.max(0, target - acceptedToday - activeSubmissions);
 
 export type CjInitialJobState =
   | "needs_input"

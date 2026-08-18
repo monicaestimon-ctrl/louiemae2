@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   CJ_MAX_PROVIDER_PROCESSING_MS,
+  CJ_DAILY_SOURCE_TARGET,
+  getCjDailySourceCapacity,
+  getCjQuotaDayStart,
+  getCjQuotaResetAt,
   getLegacyCjInitialJobState,
   hasCjProcessingDeadlineExpired,
   isCjProviderAvailabilityFailure,
@@ -51,5 +55,19 @@ describe("CJ sourcing durability policy", () => {
     ["Product URL is unsupported", false],
   ])("classifies daily source quota message %s", (message, expected) => {
     expect(isCjDailySourcingLimit(message)).toBe(expected);
+  });
+
+  it("budgets twenty accepted or in-flight sourcing submissions per UTC day", () => {
+    expect(CJ_DAILY_SOURCE_TARGET).toBe(20);
+    expect(getCjDailySourceCapacity(0, 0)).toBe(20);
+    expect(getCjDailySourceCapacity(7, 3)).toBe(10);
+    expect(getCjDailySourceCapacity(20, 0)).toBe(0);
+    expect(getCjDailySourceCapacity(21, 2)).toBe(0);
+  });
+
+  it("uses a stable UTC quota window instead of a drifting 24-hour block", () => {
+    const now = Date.parse("2026-08-17T22:15:00.000Z");
+    expect(getCjQuotaDayStart(now)).toBe(Date.parse("2026-08-17T00:00:00.000Z"));
+    expect(getCjQuotaResetAt(now)).toBe(Date.parse("2026-08-18T00:00:00.000Z"));
   });
 });
