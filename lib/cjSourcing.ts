@@ -98,12 +98,23 @@ export const buildCjSourcingPayload = (
 
 export type CjSourcingEvidence = "pending" | "processing" | "success" | "failure" | "unknown";
 
-export const classifyCjSourcingStatus = (status: unknown): CjSourcingEvidence => {
+export const classifyCjSourcingStatus = (
+  status: unknown,
+  statusText?: unknown,
+): CjSourcingEvidence => {
+  const normalizedText = String(statusText ?? "").trim().toLowerCase();
+  // CJ currently returns newer numeric codes alongside authoritative text.
+  // Prefer that text when it resolves legacy/new-code ambiguity (notably code 3).
+  if (/succeed|success|complete/.test(normalizedText)) return "success";
+  if (/fail|reject|could not/.test(normalizedText)) return "failure";
+  if (/pending|waiting/.test(normalizedText)) return "pending";
+  if (/processing|in progress|sourcing/.test(normalizedText)) return "processing";
+
   const normalized = String(status ?? "").trim();
-  if (normalized === "1") return "pending";
+  if (normalized === "1" || normalized === "115") return "pending";
   if (normalized === "2") return "processing";
-  if (normalized === "3" || normalized === "9") return "success";
-  if (normalized === "4" || normalized === "5") return "failure";
+  if (normalized === "3" || normalized === "9" || normalized === "116") return "success";
+  if (normalized === "4" || normalized === "5" || normalized === "118") return "failure";
   return "unknown";
 };
 

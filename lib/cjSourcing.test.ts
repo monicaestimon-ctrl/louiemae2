@@ -44,9 +44,20 @@ describe("CJ sourcing evidence", () => {
     ["9", "success"],
     [4, "failure"],
     ["5", "failure"],
+    [115, "pending"],
+    ["116", "success"],
+    [118, "failure"],
     [7, "unknown"],
   ])("classifies status %s as %s", (status, evidence) => {
     expect(classifyCjSourcingStatus(status)).toBe(evidence);
+  });
+
+  it.each([
+    [3, "Pending", "pending"],
+    [116, "Sourcing Succeeded", "success"],
+    [118, "Sourcing Failed", "failure"],
+  ])("prefers CJ status text when code %s is ambiguous", (status, statusText, evidence) => {
+    expect(classifyCjSourcingStatus(status, statusText)).toBe(evidence);
   });
 
   it("never treats a product ID without catalog verification as approval", () => {

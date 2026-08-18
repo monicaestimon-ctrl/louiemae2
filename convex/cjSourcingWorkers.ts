@@ -188,7 +188,7 @@ export const processSourcingJob = internalAction({
                     });
                     return { ok: false, outcome: "empty_poll" };
                 }
-                const evidence = classifyCjSourcingStatus(row.sourceStatus);
+                const evidence = classifyCjSourcingStatus(row.sourceStatus, row.sourceStatusStr);
                 await ctx.runMutation(internal.cjSourcingJobs.applyPollEvidence, {
                     jobId: args.jobId,
                     leaseToken: args.leaseToken,
