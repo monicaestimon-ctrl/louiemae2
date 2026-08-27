@@ -1,6 +1,6 @@
 export const CJ_MAX_PROVIDER_PROCESSING_MS = 14 * 24 * 60 * 60 * 1000;
 export const CJ_MAX_TRANSIENT_FAILURES = 10;
-export const CJ_DAILY_SOURCE_TARGET = 20;
+export const CJ_DAILY_SOURCE_TARGET = 25;
 
 export const getCjQuotaDayStart = (now: number): number => {
   const date = new Date(now);

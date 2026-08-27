@@ -57,12 +57,16 @@ describe("CJ sourcing durability policy", () => {
     expect(isCjDailySourcingLimit(message)).toBe(expected);
   });
 
-  it("budgets twenty accepted or in-flight sourcing submissions per UTC day", () => {
-    expect(CJ_DAILY_SOURCE_TARGET).toBe(20);
-    expect(getCjDailySourceCapacity(0, 0)).toBe(20);
-    expect(getCjDailySourceCapacity(7, 3)).toBe(10);
-    expect(getCjDailySourceCapacity(20, 0)).toBe(0);
-    expect(getCjDailySourceCapacity(21, 2)).toBe(0);
+  it("budgets twenty-five accepted or in-flight sourcing submissions per UTC day", () => {
+    expect(CJ_DAILY_SOURCE_TARGET).toBe(25);
+    expect(getCjDailySourceCapacity(0, 0)).toBe(25);
+    expect(getCjDailySourceCapacity(7, 3)).toBe(15);
+    expect(getCjDailySourceCapacity(20, 0)).toBe(5);
+    expect(getCjDailySourceCapacity(21, 2)).toBe(2);
+    expect(getCjDailySourceCapacity(24, 0)).toBe(1);
+    expect(getCjDailySourceCapacity(24, 1)).toBe(0);
+    expect(getCjDailySourceCapacity(25, 0)).toBe(0);
+    expect(getCjDailySourceCapacity(26, 2)).toBe(0);
   });
 
   it("uses a stable UTC quota window instead of a drifting 24-hour block", () => {
