@@ -22,7 +22,7 @@ import {
 } from "./cjApiClient";
 import { getCjAutomationConfig } from "../lib/cjAutomation";
 import { parseCjTokenResponse } from "../lib/cjAuth";
-import { buildCjSourcingPayload } from "../lib/cjSourcing";
+import { buildCjSourcingPayload, classifyCjSourcingStatus } from "../lib/cjSourcing";
 import {
     createCjInventoryErrorSnapshot,
     mergeCjInventoryStatuses,
@@ -1875,14 +1875,12 @@ export const checkSourcingStatus = internalAction({
                     if (sourcing) {
                         // Per CJ docs: sourceStatus is the status field
                         // Status values: 1=pending, 2=processing, 3=success, 4=failed, 5=search failed, 9=sourcing succeeded
-                        const statusIsSuccess = sourcing.sourceStatus === "3" ||
-                            sourcing.sourceStatus === 3 ||
-                            sourcing.sourceStatus === "9" ||
-                            sourcing.sourceStatus === 9;
-                        const statusIsFailed = sourcing.sourceStatus === "4" ||
-                            sourcing.sourceStatus === "5" ||
-                            sourcing.sourceStatus === 4 ||
-                            sourcing.sourceStatus === 5;
+                        const sourcingEvidence = classifyCjSourcingStatus(
+                            sourcing.sourceStatus,
+                            sourcing.sourceStatusStr,
+                        );
+                        const statusIsSuccess = sourcingEvidence === "success";
+                        const statusIsFailed = sourcingEvidence === "failure";
 
                         if (statusIsSuccess || statusIsFailed) {
                             // Provider status and product IDs are evidence, not approval.

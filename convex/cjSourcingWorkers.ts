@@ -11,7 +11,11 @@ import {
     querySourcing,
 } from "./cjApiClient";
 import { classifyCjSourcingStatus } from "../lib/cjSourcing";
-import { isCjDailySourcingLimit, isCjProviderAvailabilityFailure } from "../lib/cjSourcingPolicy";
+import {
+    getCjQuotaResetAt,
+    isCjDailySourcingLimit,
+    isCjProviderAvailabilityFailure,
+} from "../lib/cjSourcingPolicy";
 
 const CJ_REQUEST_TIMEOUT_MS = 15_000;
 const MAX_SLOT_WAIT_MS = 30_000;
@@ -131,7 +135,7 @@ export const processSourcingJob = internalAction({
             if (dailyLimit) {
                 await ctx.runMutation(internal.cjSourcingJobs.blockSourceQuota, {
                     reason: message,
-                    blockedUntil: Date.now() + 24 * 60 * 60 * 1000,
+                    blockedUntil: getCjQuotaResetAt(Date.now()),
                 });
             }
             await ctx.runMutation(internal.cjSourcingJobs.applySubmissionFailure, {
@@ -184,7 +188,7 @@ export const processSourcingJob = internalAction({
                     });
                     return { ok: false, outcome: "empty_poll" };
                 }
-                const evidence = classifyCjSourcingStatus(row.sourceStatus);
+                const evidence = classifyCjSourcingStatus(row.sourceStatus, row.sourceStatusStr);
                 await ctx.runMutation(internal.cjSourcingJobs.applyPollEvidence, {
                     jobId: args.jobId,
                     leaseToken: args.leaseToken,
