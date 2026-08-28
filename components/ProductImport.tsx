@@ -39,6 +39,7 @@ const DEFAULT_PRICING_RULE: PricingRule = {
 };
 
 const REVIEW_BATCH_SIZE = 12;
+const VARIANT_REVIEW_PAGE_SIZE = 12;
 const SEARCH_PAGE_SIZE = 24;
 const MAX_RESTORED_PRODUCTS = 60;
 const MAX_RESTORED_DRAFT_BYTES = 1_500_000;
@@ -198,6 +199,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const [openImagePicker, setOpenImagePicker] = useState<string | null>(null);
     const [previewImageIdx, setPreviewImageIdx] = useState<number | null>(null);
     const [isTranslating, setIsTranslating] = useState(false);
+    const [variantReviewPage, setVariantReviewPage] = useState(0);
     const [isImporting, setIsImporting] = useState(false);
     const [reviewGalleryIdx, setReviewGalleryIdx] = useState<Record<string, number>>({});
     /** Draft text for price override inputs — keyed by variantId. Stored as raw string to avoid coercing transient values (e.g. "0.", ".5"). */
@@ -713,6 +715,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
 
     // Reset preview and stamp/drag state when switching products or entering review mode
     useEffect(() => {
+        setVariantReviewPage(0);
         setPreviewImageIdx(null);
         setActiveStampImage(null);
         setLastUsedImage(null);
@@ -999,6 +1002,8 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
         const allSelectedProducts = searchResults.filter(p => p.selected);
         const selectedProducts = getReviewBatch(allSelectedProducts);
         const currentProduct = selectedProducts[reviewIndex];
+        const variantPageCount = Math.max(1, Math.ceil((currentProduct?.variants?.length ?? 0) / VARIANT_REVIEW_PAGE_SIZE));
+        const visibleVariantPage = Math.min(variantReviewPage, variantPageCount - 1);
         const progress = ((reviewIndex + 1) / selectedProducts.length) * 100;
 
         if (!currentProduct) return <div>Error: Product not found</div>;
@@ -1081,7 +1086,14 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                         }
                                                         return { ...p, ...updates };
                                                     }));
-                                                    toast.success('Translation complete');
+                                                    const untranslatedLabels = result.variantNames.filter(detectChinese).length;
+                                                    if (untranslatedLabels > 0) {
+                                                        toast.warning('Some variant labels still need translation', {
+                                                            description: `${untranslatedLabels} labels retain Chinese text. Review them or retry translation; successful translations were saved.`,
+                                                        });
+                                                    } else {
+                                                        toast.success('Translation complete');
+                                                    }
                                                 } catch (err) {
                                                     console.error('Translation failed:', err);
                                                     toast.error('Translation failed');
@@ -1841,8 +1853,25 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                             );
                                         })()}
 
+                                        {variantPageCount > 1 && (
+                                            <nav aria-label="Variant review pages" className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-earth/10 bg-white/50 px-3 py-2">
+                                                <button type="button" aria-label="Previous variant page" disabled={visibleVariantPage === 0}
+                                                    onClick={() => { setVariantReviewPage(visibleVariantPage - 1); setOpenImagePicker(null); }}
+                                                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-earth/10 bg-white text-earth disabled:opacity-30">
+                                                    <ChevronLeft className="h-4 w-4" />
+                                                </button>
+                                                <span aria-live="polite" className="text-center text-[10px] font-bold uppercase tracking-widest text-earth/60">
+                                                    Variants {visibleVariantPage * VARIANT_REVIEW_PAGE_SIZE + 1}-{Math.min((visibleVariantPage + 1) * VARIANT_REVIEW_PAGE_SIZE, currentProduct.variants.length)} of {currentProduct.variants.length}
+                                                </span>
+                                                <button type="button" aria-label="Next variant page" disabled={visibleVariantPage === variantPageCount - 1}
+                                                    onClick={() => { setVariantReviewPage(visibleVariantPage + 1); setOpenImagePicker(null); }}
+                                                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-earth/10 bg-white text-earth disabled:opacity-30">
+                                                    <ChevronRight className="h-4 w-4" />
+                                                </button>
+                                            </nav>
+                                        )}
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
-                                            {currentProduct.variants.map((variant) => {
+                                            {currentProduct.variants.slice(visibleVariantPage * VARIANT_REVIEW_PAGE_SIZE, (visibleVariantPage + 1) * VARIANT_REVIEW_PAGE_SIZE).map((variant) => {
                                                 const isSelected = currentProduct.selectedVariants ? currentProduct.selectedVariants.includes(variant.id) : true;
                                                 const originalName = currentProduct.originalVariants?.find(ov => ov.id === variant.id)?.name;
                                                 const nameWasEdited = originalName && variant.name !== originalName;
