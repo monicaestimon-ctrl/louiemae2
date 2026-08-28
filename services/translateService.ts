@@ -108,13 +108,15 @@ async function runWithConcurrency<T>(
  * @param text - The text to translate
  * @param from - Source language code (default: 'zh-CN')
  * @param to - Target language code (default: 'en')
+ * @param chunkConcurrency - Per-text chunk parallelism, capped at three; batches use one.
  * @returns Translated text, or the original if no Chinese detected
  * @throws Error if the translation API fails
  */
 export async function translateText(
     text: string,
     from = 'zh-CN',
-    to = 'en'
+    to = 'en',
+    chunkConcurrency = MAX_CONCURRENCY
 ): Promise<string> {
     if (!text.trim()) return text;
     if (!detectChinese(text)) return text;
@@ -149,20 +151,20 @@ export async function translateText(
     // Translate chunks with concurrency limit
     const translated = await runWithConcurrency(
         chunks.map(chunk => () => translateChunk(chunk, from, to)),
-        MAX_CONCURRENCY
+        Math.max(1, Math.min(MAX_CONCURRENCY, Math.floor(chunkConcurrency) || 1))
     );
     return translated.join('');
 }
 
 /**
- * Translates all text fields of a product sequentially.
- * Each `translateText` call may fan out into multiple concurrent chunk requests
- * (limited by MAX_CONCURRENCY), so we run fields one-at-a-time to avoid
- * exceeding the rate limit.
+ * Translates long fields sequentially, then unique variant labels in a bounded
+ * pool. Each label translates its chunks sequentially so even unusually long
+ * labels cannot multiply the existing three-request concurrency limit.
+ * Failed labels retain their original text for review or retry.
  *
  * @param fields - Object containing name, description, and variantNames
  * @returns Object with translated name, description, and variantNames
- * @throws Error if any translation request fails
+ * @throws Error if name or description translation fails
  */
 export async function translateProductFields(fields: {
     name: string;
@@ -176,10 +178,19 @@ export async function translateProductFields(fields: {
     // Run sequentially to keep total concurrency within MAX_CONCURRENCY
     const name = await translateText(fields.name);
     const description = await translateText(fields.description);
-    const variantNames: string[] = [];
-    for (const vn of fields.variantNames) {
-        variantNames.push(await translateText(vn));
-    }
+    const uniqueLabels = [...new Set(fields.variantNames.filter(detectChinese))];
+    const translatedEntries = await runWithConcurrency(
+        uniqueLabels.map(original => async (): Promise<[string, string]> => {
+            try {
+                return [original, await translateText(original, 'zh-CN', 'en', 1)];
+            } catch {
+                return [original, original];
+            }
+        }),
+        MAX_CONCURRENCY
+    );
+    const translatedLabels = new Map(translatedEntries);
+    const variantNames = fields.variantNames.map(original => translatedLabels.get(original) ?? original);
 
     return { name, description, variantNames };
 }
