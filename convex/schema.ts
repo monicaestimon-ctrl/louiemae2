@@ -49,6 +49,8 @@ export default defineSchema({
     // Products table
     products: defineTable({
         name: v.string(),
+        nameKey: v.optional(v.string()),
+        activeNameClaimId: v.optional(v.id("productNameClaims")),
         price: v.number(),
         description: v.string(),
         images: v.array(v.string()),
@@ -167,6 +169,8 @@ export default defineSchema({
         )),
         // Multi-category support
         subcategory: v.optional(v.string()),         // e.g., "Skirts" (parent category auto-derived)
+        subcategoryIds: v.optional(v.array(v.string())),
+        primarySubcategoryId: v.optional(v.string()),
         smartDescription: v.optional(v.object({
             description: v.string(),
             auditId: v.id("descriptionAudits"),
@@ -197,7 +201,8 @@ export default defineSchema({
             collection: v.string(),
         })),
         searchText: v.optional(v.string()),
-    }).index("by_cj_sourcing_status", ["cjSourcingStatus"])
+    }).index("by_name_key", ["nameKey"])
+        .index("by_cj_sourcing_status", ["cjSourcingStatus"])
         .index("by_cj_sourcing_status_job", ["cjSourcingStatus", "cjSourcingJobId"])
         .index("by_storefront_status", ["storefrontStatus"])
         .index("by_cj_sourcing_id", ["cjSourcingId"])
@@ -208,6 +213,41 @@ export default defineSchema({
             searchField: "searchText",
             filterFields: ["storefrontStatus"],
         }),
+
+    // Permanent global ledger. A normalized name is inserted once and never deleted.
+    productNameClaims: defineTable({
+        normalizedName: v.string(),
+        displayName: v.string(),
+        normalizationVersion: v.number(),
+        status: v.union(v.literal("suggested"), v.literal("active"), v.literal("retired")),
+        ownerKey: v.string(),
+        productId: v.optional(v.id("products")),
+        source: v.union(v.literal("ai"), v.literal("manual"), v.literal("migration")),
+        requestId: v.optional(v.string()),
+        createdAt: v.number(),
+        updatedAt: v.number(),
+        retiredAt: v.optional(v.number()),
+    })
+        .index("by_normalized_name", ["normalizedName"])
+        .index("by_product", ["productId"])
+        .index("by_owner", ["ownerKey"])
+        .index("by_updated_at", ["updatedAt"]),
+
+    productNameEvents: defineTable({
+        claimId: v.id("productNameClaims"),
+        normalizedName: v.string(),
+        displayName: v.string(),
+        eventType: v.union(v.literal("suggested"), v.literal("activated"), v.literal("retired")),
+        ownerKey: v.string(),
+        productId: v.optional(v.id("products")),
+        source: v.union(v.literal("ai"), v.literal("manual"), v.literal("migration")),
+        requestId: v.optional(v.string()),
+        previousDisplayName: v.optional(v.string()),
+        createdAt: v.number(),
+    })
+        .index("by_claim", ["claimId"])
+        .index("by_product", ["productId"])
+        .index("by_created_at", ["createdAt"]),
 
     descriptionAudits: defineTable({
         productId: v.optional(v.id("products")),

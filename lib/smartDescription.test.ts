@@ -434,4 +434,21 @@ describe('grounded facts and validators', () => {
     expect(second.name).not.toBe(first.name);
     expect(validateSmartNameDraft(second, facts, [first.name])).toEqual([]);
   });
+
+  it('continues producing unique safe names after the curated pool is exhausted', () => {
+    const facts = extractNormalizedProductFacts({
+      importedAt: Date.now(),
+      rawTitle: 'Classic children pants',
+      images: [{ url: 'https://example.com/pants.jpg', role: 'primary' }],
+      categoryHints: { selectedCollection: 'kids' },
+    });
+    const names: string[] = [];
+    for (let index = 0; index < 160; index += 1) {
+      const candidate = buildSafeNameFallback(facts, names);
+      expect(names).not.toContain(candidate.name);
+      expect(validateSmartNameDraft(candidate, facts, names)).toEqual([]);
+      names.push(candidate.name);
+    }
+    expect(new Set(names).size).toBe(160);
+  });
 });

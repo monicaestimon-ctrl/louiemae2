@@ -1,6 +1,33 @@
 import { query, mutation } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { requireCjAdminIdentity } from "./cjAdminAccess";
+import type { CollectionConfig } from "../types";
+import { getEffectiveSubcategoryIds, validateCollectionTaxonomy } from "../lib/productCategories";
+
+async function validateCollectionsForSave(ctx: any, collections: CollectionConfig[]) {
+    const errors = validateCollectionTaxonomy(collections);
+    if (errors.length > 0) {
+        throw new ConvexError({ code: "CATEGORY_TAXONOMY_INVALID", message: errors.join(" ") });
+    }
+    const [products, currentSiteContent] = await Promise.all([
+        ctx.db.query("products").collect(),
+        ctx.db.query("siteContent").first(),
+    ]);
+    const currentCollections = (currentSiteContent?.collections || []) as CollectionConfig[];
+    for (const product of products) {
+        const currentCollection = currentCollections.find((candidate) => candidate.id === product.collection);
+        const assignedIds = getEffectiveSubcategoryIds(product, currentCollection);
+        if (assignedIds.length === 0) continue;
+        const collection = collections.find((candidate) => candidate.id === product.collection);
+        const availableIds = new Set(collection?.subcategories.map((category) => category.id) || []);
+        if (assignedIds.some((id: string) => !availableIds.has(id))) {
+            throw new ConvexError({
+                code: "CATEGORY_IN_USE",
+                message: `A category assigned to “${product.name}” cannot be removed or have its ID changed. Reassign the product first.`,
+            });
+        }
+    }
+}
 
 // Public query - anyone can read site content
 export const get = query({
@@ -77,6 +104,7 @@ export const update = mutation({
     },
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
+        if (args.collections) await validateCollectionsForSave(ctx, args.collections as CollectionConfig[]);
 
         const existing = await ctx.db.query("siteContent").first();
 
@@ -104,6 +132,7 @@ export const seed = mutation({
     },
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
+        await validateCollectionsForSave(ctx, args.collections as CollectionConfig[]);
         const existing = await ctx.db.query("siteContent").first();
         if (existing) {
             // Already seeded

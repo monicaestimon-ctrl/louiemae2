@@ -19,6 +19,8 @@ import { CJRiskCheck } from './CJRiskCheck';
 import { buildSourceProductSnapshot } from '../lib/smartDescription';
 import { SafeImage } from './SafeImage';
 import { productStorefrontStatusLabel } from '../lib/productVisibility';
+import { getEffectiveSubcategoryIds, productMatchesCategory } from '../lib/productCategories';
+import { getUserFacingErrorMessage } from '../lib/errorMessages';
 
 type SmartDescriptionActionResult = {
    ok: boolean;
@@ -182,7 +184,7 @@ const ImageUploader: React.FC<{
 };
 
 export const AdminPage: React.FC = () => {
-   const { isAuthenticated, isAuthLoading, signIn, logout, posts, addPost, updatePost, deletePost, siteContent, updateSiteContent, addCustomPage, updateCustomPage, deleteCustomPage, products, addProduct, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
+   const { isAuthenticated, isAuthLoading, signIn, logout, posts, addPost, updatePost, deletePost, siteContent, updateSiteContent, addCustomPage, updateCustomPage, deleteCustomPage, products, addProduct, addProducts, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
    const { subscribers, subscriberListTruncated, campaigns, createCampaign, updateCampaign, sendCampaign, deleteCampaign, stats } = useNewsletterAdmin();
    const linkDescriptionAuditToProduct = useMutation(api.descriptionAudits.linkAuditToProduct);
    const launchNextProducts = useMutation(api.products.launchNextProducts);
@@ -251,6 +253,7 @@ export const AdminPage: React.FC = () => {
 
    // Structure/Collection Editor State
    const [editingCollection, setEditingCollection] = useState<Partial<CollectionConfig> | null>(null);
+   const [editingCollectionOriginalId, setEditingCollectionOriginalId] = useState<string | null>(null);
 
 
    // Newsletter Editor State
@@ -369,15 +372,21 @@ export const AdminPage: React.FC = () => {
       // Default to first collection if any
       const defaultCollection = siteContent.collections.length > 0 ? siteContent.collections[0].id : 'furniture';
 
+      const collectionId = filterCollection === 'all' ? defaultCollection : filterCollection;
+      const collectionConfig = siteContent.collections.find(collection => collection.id === collectionId);
+      const selectedCategory = collectionConfig?.subcategories.find(category => category.title === filterCategory || category.id === filterCategory);
       setEditingProduct({
          name: '',
          price: 0,
          description: '',
          images: ['https://images.unsplash.com/photo-1595428774223-ef52624120d2?q=80&w=800'],
          // Auto-select collection based on current view
-         collection: filterCollection === 'all' ? defaultCollection : filterCollection,
+         collection: collectionId,
          // Auto-select category if we are in a specific filter
-         category: filterCategory || '',
+         category: selectedCategory?.title || filterCategory || '',
+         subcategory: selectedCategory?.title,
+         subcategoryIds: selectedCategory ? [selectedCategory.id] : [],
+         primarySubcategoryId: selectedCategory?.id,
          isNew: false,
          inStock: true,
          storefrontStatus: 'hidden'
@@ -535,6 +544,7 @@ export const AdminPage: React.FC = () => {
 
    // --- STRUCTURE HANDLERS ---
    const handleCreateCollection = () => {
+      setEditingCollectionOriginalId(null);
       setEditingCollection({
          id: '',
          title: '',
@@ -544,19 +554,23 @@ export const AdminPage: React.FC = () => {
       });
    };
 
-   const handleSaveCollection = () => {
+   const handleSaveCollection = async () => {
       if (!editingCollection?.id || !editingCollection?.title) {
          alert('ID and Title are required');
          return;
       }
 
-      const exists = siteContent.collections.find(c => c.id === editingCollection.id);
-      if (exists) {
-         updateCollection(editingCollection.id, editingCollection);
-      } else {
-         addCollection(editingCollection as CollectionConfig);
+      try {
+         if (editingCollectionOriginalId) {
+            await updateCollection(editingCollectionOriginalId, editingCollection);
+         } else {
+            await addCollection(editingCollection as CollectionConfig);
+         }
+         setEditingCollection(null);
+         setEditingCollectionOriginalId(null);
+      } catch (error) {
+         alert(getUserFacingErrorMessage(error, 'This collection could not be saved. Check its category IDs and hierarchy.'));
       }
-      setEditingCollection(null);
    };
 
    const handleDeleteCollection = (id: string) => {
@@ -615,7 +629,8 @@ export const AdminPage: React.FC = () => {
 
    const filteredProducts = products.filter(p => {
       const matchCollection = filterCollection === 'all' ? true : p.collection === filterCollection;
-      const matchCategory = filterCategory ? p.category === filterCategory : true;
+      const collectionConfig = siteContent.collections.find(collection => collection.id === p.collection);
+      const matchCategory = filterCategory ? productMatchesCategory(p, filterCategory, collectionConfig) : true;
       const term = inventorySearch.trim().toLowerCase();
       const searchable = [
          p.name,
@@ -1039,30 +1054,21 @@ export const AdminPage: React.FC = () => {
                   <ProductImport
                      collections={siteContent.collections}
                      onImportProducts={async (productsToImport) => {
-                        // Import each product and submit for CJ sourcing
-                        const results = await Promise.all(
-                           productsToImport.map(async (product) => {
-                              const productId = await addProduct(product);
-                              if (productId && product.smartDescription?.auditId) {
-                                 try {
-                                    await linkDescriptionAuditToProduct({
-                                       auditId: product.smartDescription.auditId as any,
-                                       productId: productId as any,
-                                    });
-                                 } catch (err) {
-                                    console.warn('Failed to link smart description audit:', err);
-                                 }
-                              }
-                              // If product has source URL and was created successfully, submit for CJ sourcing
-                              if (productId && product.sourceUrl && product.cjSourcingStatus === 'pending') {
-                                 // CJ sourcing will be triggered by the cron job or manual check
-                                 // The product is already marked as pending in the database
-                                 return { id: productId, pending: true };
-                              }
-                              return { id: productId, pending: false };
-                           })
-                        );
-                        const pendingCount = results.filter(r => r.pending).length;
+                        // Name claims and product rows are committed as one all-or-nothing batch.
+                        const productIds = await addProducts(productsToImport);
+                        await Promise.all(productsToImport.map(async (product, index) => {
+                           const productId = productIds[index];
+                           if (!productId || !product.smartDescription?.auditId) return;
+                           try {
+                              await linkDescriptionAuditToProduct({
+                                 auditId: product.smartDescription.auditId as any,
+                                 productId: productId as any,
+                              });
+                           } catch (err) {
+                              console.warn('Failed to link smart description audit:', err);
+                           }
+                        }));
+                        const pendingCount = productsToImport.filter(product => product.sourceUrl && product.cjSourcingStatus === 'pending').length;
                         const successMessage = pendingCount > 0
                            ? `Successfully imported ${productsToImport.length} products as hidden inventory. ${pendingCount} products were queued for CJ sourcing. Publish them or add them to Next Launch when ready.`
                            : `Successfully imported ${productsToImport.length} products as hidden inventory. Publish them or add them to Next Launch when ready.`;
@@ -1248,7 +1254,7 @@ export const AdminPage: React.FC = () => {
                                     <p className="text-[10px] uppercase tracking-widest text-cream/40">{col.subcategories.length} Subcategories</p>
                                  </div>
                                  <div className="flex gap-2 opacity-50 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-                                    <button onClick={() => setEditingCollection(col)} aria-label={`Edit ${col.title}`} className="p-2 hover:bg-white/20 rounded-full text-cream"><Edit3 className="w-4 h-4" /></button>
+                                    <button onClick={() => { setEditingCollectionOriginalId(col.id); setEditingCollection(col); }} aria-label={`Edit ${col.title}`} className="p-2 hover:bg-white/20 rounded-full text-cream"><Edit3 className="w-4 h-4" /></button>
                                     <button onClick={() => handleDeleteCollection(col.id)} aria-label={`Delete ${col.title}`} className="p-2 hover:bg-red-500/20 text-red-400 rounded-full"><Trash2 className="w-4 h-4" /></button>
                                  </div>
                               </div>
@@ -1281,14 +1287,15 @@ export const AdminPage: React.FC = () => {
                   {editingCollection && (
                      <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm">
                         <div className="bg-white w-full max-w-2xl max-h-[90vh] overflow-y-auto p-8 rounded-2xl shadow-2xl relative animate-fade-in-up">
-                           <button onClick={() => setEditingCollection(null)} className="absolute top-4 right-4 text-earth/30 hover:text-earth"><X className="w-5 h-5" /></button>
+                           <button onClick={() => { setEditingCollection(null); setEditingCollectionOriginalId(null); }} className="absolute top-4 right-4 text-earth/30 hover:text-earth"><X className="w-5 h-5" /></button>
                            <h2 className="font-serif text-3xl text-earth mb-8">{editingCollection.id ? 'Edit Collection' : 'New Collection'}</h2>
 
                            <div className="space-y-6">
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                                  <div>
                                     <label className="block text-[10px] uppercase tracking-widest text-earth/40 mb-2">ID (URL Slug)</label>
-                                    <input type="text" value={editingCollection.id} onChange={(e) => setEditingCollection({ ...editingCollection, id: e.target.value })} className="w-full bg-cream/30 p-3 border border-earth/10 font-mono text-sm" placeholder="e.g. furniture" />
+                                    <input type="text" value={editingCollection.id} disabled={Boolean(editingCollectionOriginalId)} onChange={(e) => setEditingCollection({ ...editingCollection, id: e.target.value })} className="w-full bg-cream/30 p-3 border border-earth/10 font-mono text-sm disabled:opacity-60" placeholder="e.g. furniture" />
+                                    {editingCollectionOriginalId && <p className="mt-1 text-[10px] text-earth/45">Stable IDs cannot be changed after creation.</p>}
                                  </div>
                                  <div>
                                     <label className="block text-[10px] uppercase tracking-widest text-earth/40 mb-2">Title</label>
@@ -1315,9 +1322,29 @@ export const AdminPage: React.FC = () => {
                                           <div className="flex-1 space-y-2">
                                              <input value={sub.title} onChange={(e) => {
                                                 const newSubs = [...(editingCollection.subcategories || [])];
-                                                newSubs[idx] = { ...newSubs[idx], title: e.target.value, id: e.target.value.toLowerCase().replace(/\s+/g, '-') };
+                                                newSubs[idx] = { ...newSubs[idx], title: e.target.value };
                                                 setEditingCollection({ ...editingCollection, subcategories: newSubs });
                                              }} className="w-full bg-white p-1 border border-earth/10 text-xs font-bold" placeholder="Title" />
+                                             <input value={sub.id} disabled={Boolean(editingCollectionOriginalId && siteContent.collections.find(collection => collection.id === editingCollectionOriginalId)?.subcategories.some(category => category.id === sub.id))} onChange={(e) => {
+                                                const newSubs = [...(editingCollection.subcategories || [])];
+                                                newSubs[idx] = { ...newSubs[idx], id: e.target.value };
+                                                setEditingCollection({ ...editingCollection, subcategories: newSubs });
+                                             }} className="w-full bg-white p-1 border border-earth/10 text-[11px] font-mono disabled:bg-earth/5 disabled:text-earth/50" placeholder="stable-category-id" />
+                                             <select value={sub.parentCategoryId || ''} onChange={(e) => {
+                                                const newSubs = [...(editingCollection.subcategories || [])];
+                                                const parent = newSubs.find(candidate => candidate.id === e.target.value);
+                                                newSubs[idx] = {
+                                                   ...newSubs[idx],
+                                                   parentCategoryId: parent?.id || undefined,
+                                                   parentCategory: parent?.title || undefined,
+                                                };
+                                                setEditingCollection({ ...editingCollection, subcategories: newSubs });
+                                             }} className="w-full bg-white p-1 border border-earth/10 text-xs">
+                                                <option value="">No parent (top level)</option>
+                                                {(editingCollection.subcategories || []).filter(candidate => candidate.id !== sub.id).map(candidate => (
+                                                   <option key={candidate.id} value={candidate.id}>{candidate.title}</option>
+                                                ))}
+                                             </select>
                                              <input value={sub.caption || ''} onChange={(e) => {
                                                 const newSubs = [...(editingCollection.subcategories || [])];
                                                 newSubs[idx] = { ...newSubs[idx], caption: e.target.value };
@@ -1332,7 +1359,7 @@ export const AdminPage: React.FC = () => {
                                     ))}
                                     <button onClick={() => setEditingCollection({
                                        ...editingCollection,
-                                       subcategories: [...(editingCollection.subcategories || []), { id: 'new', title: 'New Category', image: 'https://images.unsplash.com/photo-1595428774223-ef52624120d2?q=80&w=800', caption: 'Description' }]
+                                       subcategories: [...(editingCollection.subcategories || []), { id: `new-${Date.now()}`, title: 'New Category', image: 'https://images.unsplash.com/photo-1595428774223-ef52624120d2?q=80&w=800', caption: 'Description' }]
                                     })} className="text-[10px] uppercase text-bronze hover:underline">+ Add Subcategory</button>
                                  </div>
                               </div>
@@ -1506,7 +1533,12 @@ export const AdminPage: React.FC = () => {
                                        <div className="min-w-0">
                                           <h4 className="font-serif text-lg text-cream drop-shadow-sm group-hover:text-white transition-colors">{product.name}</h4>
                                           <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] uppercase tracking-widest text-cream/50 mt-1">
-                                             <span>{product.category || 'No category'}</span>
+                                             <span>{(() => {
+                                                const collection = siteContent.collections.find(item => item.id === product.collection);
+                                                const ids = getEffectiveSubcategoryIds(product, collection);
+                                                const titles = ids.map(id => collection?.subcategories.find(category => category.id === id)?.title).filter(Boolean);
+                                                return titles.length > 0 ? titles.join(' · ') : (product.category || 'No category');
+                                             })()}</span>
                                              <span className="text-bronze font-medium">${product.price}</span>
                                              <span className={product.inStock ? 'text-green-400 drop-shadow-[0_0_5px_rgba(74,222,128,0.5)]' : 'text-red-400'}>{product.inStock ? 'In Stock' : 'Out of Stock'}</span>
                                           </div>

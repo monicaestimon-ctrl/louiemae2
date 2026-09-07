@@ -22,6 +22,10 @@ export interface CjInventorySnapshot {
 export interface Product {
   id: string;
   name: string;
+  nameKey?: string;
+  activeNameClaimId?: Id<'productNameClaims'>;
+  pendingNameClaimId?: Id<'productNameClaims'>;
+  nameOwnerKey?: string;
   price: number;
   description: string;
   images: string[];
@@ -85,6 +89,8 @@ export interface Product {
   descriptionImages?: string[];     // Source detail/marketing images for smart descriptions
   // Multi-category
   subcategory?: string;           // Specific subcategory (e.g., "Skirts")
+  subcategoryIds?: string[];      // Stable IDs for every selected leaf category
+  primarySubcategoryId?: string;  // Selected category used for legacy fields and summaries
   smartDescription?: {
     description: string;
     auditId: Id<'descriptionAudits'>;
@@ -117,6 +123,7 @@ export interface Category {
   collection?: CollectionType;
   redirect?: string; // For cross-linking (e.g. Decor > Accent Chairs -> Furniture)
   parentCategory?: string;    // Parent category title for hierarchy (e.g., "Girls" for "Girls Dresses")
+  parentCategoryId?: string;  // Stable parent reference; title remains during migration
   isMainCategory?: boolean;   // True for top-level categories like "Girls", "Boys"
 }
 

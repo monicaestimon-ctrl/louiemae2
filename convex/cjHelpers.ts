@@ -6,6 +6,7 @@ import { getCjFulfillmentReentryBlock } from "../lib/cjFulfillmentWorkflow";
 import { resolveMonotonicCjStatus } from "../lib/cjWebhookIdempotency";
 import { mergePricingRefreshFailureWarning } from "../lib/cjPricingRefreshFailure";
 import { requireCjAdminIdentity } from "./cjAdminAccess";
+import { retireProductName } from "./productNameRegistry";
 
 const hasFiniteNumber = (value: unknown): boolean => typeof value === "number" && Number.isFinite(value);
 const CJ_RESERVATION_TTL_MS = 10 * 60 * 1000;
@@ -1315,6 +1316,7 @@ export const deleteProduct = internalMutation({
         productId: v.id("products"),
     },
     handler: async (ctx, args) => {
+        const product = await ctx.db.get(args.productId);
         const job = await ctx.db
             .query("cjSourcingJobs")
             .withIndex("by_product_id", (q) => q.eq("productId", args.productId))
@@ -1339,6 +1341,7 @@ export const deleteProduct = internalMutation({
                 }
             }
         }
+        if (product) await retireProductName(ctx, product._id, product.activeNameClaimId);
         await ctx.db.delete(args.productId);
     },
 });

@@ -12,6 +12,7 @@ import { CurvedCategoryCarousel } from './ui/CurvedCategoryCarousel';
 import { GlassButton } from './ui/GlassButton';
 import { useNewsletter } from '../contexts/NewsletterContext';
 import { SafeImage } from './SafeImage';
+import { getCategoryParentId, productMatchesCategory } from '../lib/productCategories';
 
 /** Sentinel for variants with no assigned image */
 const NO_IMAGE_KEY = '__no_image__';
@@ -207,7 +208,9 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
     if (selectedCategory === 'All' && mainCategoriesForRedirect.length === 1) {
       const singleMain = mainCategoriesForRedirect[0];
       // Only redirect if this category has children (would show swimlanes)
-      const hasChildren = config.subcategories.some(sub => sub.parentCategory === singleMain.title);
+      const hasChildren = config.subcategories.some(sub =>
+        getCategoryParentId(sub, config) === singleMain.id || sub.parentCategory === singleMain.title,
+      );
       if (hasChildren) {
         const newHash = `#collection/${collection}?cat=${encodeURIComponent(singleMain.title)}`;
         window.location.hash = newHash;
@@ -227,8 +230,9 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
     }
 
     // Any category with children should show the CATEGORY view (hero slider + swimlanes)
-    const hasChildren = config.subcategories.some(
-      sub => sub.parentCategory === selectedCategory
+    const selected = config.subcategories.find(category => category.id === selectedCategory || category.title === selectedCategory);
+    const hasChildren = config.subcategories.some(sub =>
+      (selected && getCategoryParentId(sub, config) === selected.id) || sub.parentCategory === selectedCategory,
     );
 
     if (hasChildren) {
@@ -248,7 +252,10 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
   // Get child categories of the selected main category (for CATEGORY view)
   const childCategories = useMemo(() => {
     if (viewLevel !== 'CATEGORY') return [];
-    return config.subcategories.filter(sub => sub.parentCategory === selectedCategory);
+    const selected = config.subcategories.find(category => category.id === selectedCategory || category.title === selectedCategory);
+    return config.subcategories.filter(sub =>
+      (selected && getCategoryParentId(sub, config) === selected.id) || sub.parentCategory === selectedCategory,
+    );
   }, [config.subcategories, selectedCategory, viewLevel]);
 
   // Filter products by collection
@@ -265,10 +272,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
 
   // Get products for a specific category (for previews and product grid)
   const getProductsForCategory = (categoryTitle: string, limit?: number) => {
-    const filtered = collectionProducts.filter(p =>
-      p.category === categoryTitle ||
-      p.category.startsWith(categoryTitle + ' ')
-    );
+    const filtered = collectionProducts.filter(p => productMatchesCategory(p, categoryTitle, config));
     return limit ? filtered.slice(0, limit) : filtered;
   };
 
@@ -277,11 +281,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
     let result = collectionProducts;
 
     if (selectedCategory !== 'All') {
-      // Improved partial matching: "Girls" matches "Girls Tops"
-      result = result.filter(p =>
-        p.category === selectedCategory ||
-        p.category.startsWith(selectedCategory + ' ')
-      );
+      result = result.filter(p => productMatchesCategory(p, selectedCategory, config));
     }
 
     return result.sort((a, b) => {
@@ -289,7 +289,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
       if (sortOption === 'price-desc') return b.price - a.price;
       return b.id.localeCompare(a.id);
     });
-  }, [collectionProducts, selectedCategory, sortOption]);
+  }, [collectionProducts, selectedCategory, sortOption, config]);
 
   // Get unique categories for display in filter bar
   const categories = useMemo(() => {
@@ -328,12 +328,14 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
   const getBackDestination = () => {
     if (viewLevel === 'CATEGORY') {
       // Navigate back to the parent category, or root if no parent
-      const parentCat = config.subcategories.find(sub => sub.title === selectedCategory)?.parentCategory;
-      return parentCat || 'All';
+      const selected = config.subcategories.find(sub => sub.title === selectedCategory || sub.id === selectedCategory);
+      const parentId = selected ? getCategoryParentId(selected, config) : undefined;
+      return config.subcategories.find(sub => sub.id === parentId)?.title || selected?.parentCategory || 'All';
     }
     // For PRODUCT view, check if we came from a main category
-    const parentCat = config.subcategories.find(sub => sub.title === selectedCategory)?.parentCategory;
-    return parentCat || 'All';
+    const selected = config.subcategories.find(sub => sub.title === selectedCategory || sub.id === selectedCategory);
+    const parentId = selected ? getCategoryParentId(selected, config) : undefined;
+    return config.subcategories.find(sub => sub.id === parentId)?.title || selected?.parentCategory || 'All';
   };
 
   // Render a product card (reusable for both preview and full grid)

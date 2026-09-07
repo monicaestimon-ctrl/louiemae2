@@ -1,9 +1,16 @@
 import { query, mutation, internalQuery, type MutationCtx } from "./_generated/server";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { evaluateProductCjReadiness, isCjProductStorefrontReady } from "../lib/cjFulfillmentReadiness";
 import { requireCjAdminIdentity } from "./cjAdminAccess";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { normalizeProductName } from "../lib/productNames";
+import {
+    attachNameClaimToProduct,
+    claimProductName,
+    retireProductName,
+} from "./productNameRegistry";
+import { resolveProductCategoryAssignment } from "./productCategoryAssignments";
 
 const smartDescriptionValidator = v.object({
     description: v.string(),
@@ -134,12 +141,14 @@ const buildProductSearchText = (product: {
     category?: string;
     collection?: string;
     subcategory?: string;
+    subcategoryIds?: string[];
 }) => normalizeName([
     product.name,
     product.description,
     product.category,
     product.collection,
     product.subcategory,
+    ...(product.subcategoryIds || []),
 ].filter(Boolean).join(" ")).slice(0, 8_000);
 
 // Full product documents contain sourcing, pricing, provider, and audit fields.
@@ -185,6 +194,8 @@ const toStorefrontProduct = (product: any) => ({
     category: product.category,
     collection: product.collection,
     subcategory: product.subcategory,
+    subcategoryIds: product.subcategoryIds,
+    primarySubcategoryId: product.primarySubcategoryId,
     isNew: product.isNew,
     inStock: product.inStock,
     publishedAt: product.publishedAt,
@@ -229,10 +240,61 @@ export const findExistingSmartNames = internalQuery({
     },
 });
 
+async function createProductDocument(ctx: MutationCtx, args: any): Promise<Id<"products">> {
+    if (args.batchImportItemId) {
+        const existing = await ctx.db.query("products")
+            .withIndex("by_batch_import_item", q => q.eq("batchImportItemId", args.batchImportItemId))
+            .unique();
+        if (existing) return existing._id;
+    }
+    const {
+        pendingNameClaimId,
+        nameOwnerKey,
+        subcategoryIds,
+        primarySubcategoryId,
+        ...productFields
+    } = args;
+    const ownerKey = nameOwnerKey?.trim()
+        || (args.batchImportItemId ? `batch:${args.batchImportItemId}` : `manual:${normalizeProductName(args.name)}:${Date.now()}`);
+    const categoryAssignment = await resolveProductCategoryAssignment(ctx, {
+        collection: args.collection,
+        category: args.category,
+        subcategory: args.subcategory,
+        subcategoryIds,
+        primarySubcategoryId,
+        storefrontStatus: args.storefrontStatus ?? "published",
+    });
+    const nameClaim = await claimProductName(ctx, {
+        displayName: args.name,
+        ownerKey,
+        source: pendingNameClaimId ? "ai" : "manual",
+        pendingClaimId: pendingNameClaimId,
+    });
+    const productId = await ctx.db.insert("products", {
+        ...productFields,
+        ...categoryAssignment,
+        name: args.name.trim(),
+        nameKey: nameClaim.normalizedName,
+        activeNameClaimId: nameClaim.claimId,
+        publishedAt: args.publishedAt || new Date().toISOString(),
+        searchText: buildProductSearchText({ ...productFields, ...categoryAssignment, name: args.name.trim() }),
+    });
+    await attachNameClaimToProduct(ctx, nameClaim.claimId, productId);
+    if (args.cjSourcingStatus === "pending" && args.sourceUrl) {
+        await ctx.scheduler.runAfter(0, internal.cjSourcingJobs.ensureJobForProduct, {
+            productId,
+            source: "import",
+        });
+    }
+    return productId;
+}
+
 // Protected mutations - require authentication
 export const create = mutation({
     args: {
         name: v.string(),
+        pendingNameClaimId: v.optional(v.id("productNameClaims")),
+        nameOwnerKey: v.optional(v.string()),
         price: v.number(),
         description: v.string(),
         images: v.array(v.string()),
@@ -293,30 +355,64 @@ export const create = mutation({
         )),
         // Multi-category support
         subcategory: v.optional(v.string()),
+        subcategoryIds: v.optional(v.array(v.string())),
+        primarySubcategoryId: v.optional(v.string()),
         smartDescription: v.optional(smartDescriptionValidator),
         descriptionSource: v.optional(descriptionSourceValidator),
         descriptionFingerprint: v.optional(descriptionFingerprintValidator),
     },
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
-        if (args.batchImportItemId) {
-            const existing = await ctx.db.query("products")
-                .withIndex("by_batch_import_item", q => q.eq("batchImportItemId", args.batchImportItemId))
-                .unique();
-            if (existing) return existing._id;
+        return createProductDocument(ctx, args);
+    },
+});
+
+const batchCreateAllowedFields = new Set([
+    "name", "pendingNameClaimId", "nameOwnerKey", "price", "description", "images", "category", "collection",
+    "isNew", "inStock", "publishedAt", "storefrontStatus", "launchBatchId", "launchAddedAt", "launchedAt", "variants",
+    "sourceUrl", "batchImportItemId", "cjSourcingStatus", "sourcePriceCny", "rawSourceDescription", "rawHtmlDescription",
+    "descriptionImages", "estimatedCjCost", "estimatedShipping", "estimatedCjProductCost", "estimatedCjShippingCost",
+    "estimatedCjServiceFee", "estimatedLandedCost", "confirmedCjProductCost", "confirmedCjShippingCost", "confirmedCjServiceFee",
+    "confirmedCjTaxesFee", "confirmedCjClearanceFee", "confirmedCjRemoteFee", "confirmedCjLogisticsName", "confirmedLandedCost",
+    "suggestedRetailPrice", "adminPriceLocked", "pricingSource", "pricingUpdatedAt", "pricingWarnings", "pricingStage",
+    "subcategory", "subcategoryIds", "primarySubcategoryId", "smartDescription", "descriptionSource", "descriptionFingerprint",
+]);
+
+export const createBatch = mutation({
+    args: { products: v.array(v.any()) },
+    handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
+        if (args.products.length === 0 || args.products.length > 12) {
+            throw new ConvexError({ code: "IMPORT_BATCH_SIZE_INVALID", message: "Import between 1 and 12 products at a time." });
         }
-        const productId = await ctx.db.insert("products", {
-            ...args,
-            publishedAt: args.publishedAt || new Date().toISOString(),
-            searchText: buildProductSearchText(args),
+        const sanitizedProducts = args.products.map((rawProduct, index) => {
+            if (!rawProduct || typeof rawProduct !== "object" || Array.isArray(rawProduct)) {
+                throw new ConvexError({ code: "IMPORT_PRODUCT_INVALID", message: `Product ${index + 1} is invalid.` });
+            }
+            const product = Object.fromEntries(
+                Object.entries(rawProduct).filter(([key]) => batchCreateAllowedFields.has(key)),
+            ) as any;
+            if (
+                typeof product.name !== "string"
+                || typeof product.price !== "number"
+                || typeof product.description !== "string"
+                || !Array.isArray(product.images)
+                || typeof product.category !== "string"
+                || typeof product.collection !== "string"
+            ) {
+                throw new ConvexError({ code: "IMPORT_PRODUCT_INVALID", message: `Product ${index + 1} is missing required fields.` });
+            }
+            return product;
         });
-        if (args.cjSourcingStatus === "pending" && args.sourceUrl) {
-            await ctx.scheduler.runAfter(0, internal.cjSourcingJobs.ensureJobForProduct, {
-                productId,
-                source: "import",
-            });
+
+        const normalizedNames = sanitizedProducts.map((product) => normalizeProductName(product.name));
+        if (new Set(normalizedNames).size !== normalizedNames.length) {
+            throw new ConvexError({ code: "NAME_ALREADY_USED", message: "Every product in an import batch must have a different name." });
         }
-        return productId;
+
+        const productIds: Id<"products">[] = [];
+        for (const product of sanitizedProducts) productIds.push(await createProductDocument(ctx, product));
+        return productIds;
     },
 });
 
@@ -324,6 +420,8 @@ export const update = mutation({
     args: {
         id: v.id("products"),
         name: v.optional(v.string()),
+        pendingNameClaimId: v.optional(v.id("productNameClaims")),
+        nameOwnerKey: v.optional(v.string()),
         price: v.optional(v.number()),
         description: v.optional(v.string()),
         images: v.optional(v.array(v.string())),
@@ -392,6 +490,8 @@ export const update = mutation({
             v.literal("confirmed")
         )),
         subcategory: v.optional(v.string()),
+        subcategoryIds: v.optional(v.array(v.string())),
+        primarySubcategoryId: v.optional(v.string()),
         smartDescription: v.optional(smartDescriptionValidator),
         descriptionSource: v.optional(descriptionSourceValidator),
         descriptionFingerprint: v.optional(descriptionFingerprintValidator),
@@ -407,13 +507,47 @@ export const update = mutation({
     },
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
-        const { id, ...updates } = args;
+        const { id, pendingNameClaimId, nameOwnerKey, ...updates } = args;
         // Filter out undefined values
         const filteredUpdates = Object.fromEntries(
             Object.entries(updates).filter(([_, v]) => v !== undefined)
         );
         const existing = await ctx.db.get(id);
-        const searchFieldsChanged = ["name", "description", "category", "collection", "subcategory"]
+        if (!existing) throw new ConvexError({ code: "PRODUCT_NOT_FOUND", message: "Product not found." });
+
+        const categoryFieldsChanged = ["category", "collection", "subcategory", "subcategoryIds", "primarySubcategoryId", "storefrontStatus"]
+            .some(field => Object.prototype.hasOwnProperty.call(filteredUpdates, field));
+        if (categoryFieldsChanged) {
+            const merged = { ...existing, ...filteredUpdates };
+            const categoryAssignment = await resolveProductCategoryAssignment(ctx, {
+                collection: merged.collection,
+                category: merged.category,
+                subcategory: merged.subcategory,
+                subcategoryIds: merged.subcategoryIds,
+                primarySubcategoryId: merged.primarySubcategoryId,
+                storefrontStatus: merged.storefrontStatus ?? "published",
+            });
+            Object.assign(filteredUpdates, categoryAssignment);
+        }
+
+        let newNameClaim: Awaited<ReturnType<typeof claimProductName>> | undefined;
+        if (typeof filteredUpdates.name === "string") {
+            if (normalizeProductName(existing.name) !== normalizeProductName(filteredUpdates.name)) {
+                await retireProductName(ctx, id, existing.activeNameClaimId);
+            }
+            newNameClaim = await claimProductName(ctx, {
+                displayName: filteredUpdates.name,
+                ownerKey: nameOwnerKey?.trim() || `product:${id}`,
+                source: pendingNameClaimId ? "ai" : "manual",
+                pendingClaimId: pendingNameClaimId,
+                productId: id,
+            });
+            filteredUpdates.name = filteredUpdates.name.trim();
+            filteredUpdates.nameKey = newNameClaim.normalizedName;
+            filteredUpdates.activeNameClaimId = newNameClaim.claimId;
+        }
+
+        const searchFieldsChanged = ["name", "description", "category", "collection", "subcategory", "subcategoryIds"]
             .some(field => Object.prototype.hasOwnProperty.call(filteredUpdates, field));
         await ctx.db.patch(id, {
             ...filteredUpdates,
@@ -421,6 +555,9 @@ export const update = mutation({
                 ? { searchText: buildProductSearchText({ ...existing, ...filteredUpdates }) }
                 : {}),
         });
+        if (newNameClaim) {
+            await attachNameClaimToProduct(ctx, newNameClaim.claimId, id);
+        }
     },
 });
 
@@ -429,6 +566,8 @@ export const remove = mutation({
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
         await cancelSourcingForDeletedProduct(ctx, args.id);
+        const product = await ctx.db.get(args.id);
+        if (product) await retireProductName(ctx, args.id, product.activeNameClaimId);
         await ctx.db.delete(args.id);
     },
 });
@@ -442,6 +581,8 @@ export const adminRemove = mutation({
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
         await cancelSourcingForDeletedProduct(ctx, args.id);
+        const product = await ctx.db.get(args.id);
+        if (product) await retireProductName(ctx, args.id, product.activeNameClaimId);
         await ctx.db.delete(args.id);
     },
 });

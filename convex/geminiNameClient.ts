@@ -5,6 +5,7 @@ import {
     GeneratedSmartNameDraft,
     NormalizedProductFacts,
 } from '../lib/smartDescription';
+import { normalizeProductName } from '../lib/productNames';
 
 type GeminiResult<T> = {
     value?: T;
@@ -197,12 +198,8 @@ function seededIndex(seed: string, size: number): number {
     return Math.abs(hash) % Math.max(size, 1);
 }
 
-function normalizeNameKey(name = ''): string {
-    return name.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
 function existingNameKeys(existingNames: string[] = []): Set<string> {
-    return new Set(existingNames.map(normalizeNameKey).filter(Boolean));
+    return new Set(existingNames.map(normalizeProductName).filter(Boolean));
 }
 
 export function buildSafeNameFallback(facts: NormalizedProductFacts, existingNames: string[] = []): GeneratedSmartNameDraft {
@@ -223,10 +220,29 @@ export function buildSafeNameFallback(facts: NormalizedProductFacts, existingNam
         for (const modifier of modifiers) {
             const name = [firstName, modifier.modifier, productType].filter(Boolean).join(' ');
             selected = { firstName, modifier, name };
-            if (!used.has(normalizeNameKey(name))) {
+            if (!used.has(normalizeProductName(name))) {
                 nameOffset = pool.length;
                 break;
             }
+        }
+    }
+
+    if (used.has(normalizeProductName(selected.name))) {
+        const secondary = ['Rue', 'June', 'Belle', 'Sage', 'Faye', 'Wren', 'Pearl', 'Skye'];
+        let sequence = used.size + 1;
+        while (used.has(normalizeProductName(selected.name))) {
+            const firstName = pool[sequence % pool.length];
+            const secondName = secondary[Math.floor(sequence / pool.length) % secondary.length];
+            const cycle = Math.floor(sequence / (pool.length * secondary.length));
+            const modifier = { factIds: [] as string[] };
+            selected = {
+                firstName,
+                modifier,
+                name: [firstName, secondName, productType, cycle > 0 ? cycle + 1 : undefined]
+                    .filter(Boolean)
+                    .join(' '),
+            };
+            sequence += 1;
         }
     }
 
@@ -276,7 +292,7 @@ export function validateSmartNameDraft(draft: GeneratedSmartNameDraft, facts: No
     if (words.length < 2 || words.length > 4) errors.push('Name must be 2-4 words.');
     if (/^the\s/i.test(name)) errors.push('Name must not start with "The".');
     if (name.toLowerCase() === (facts.titleFacts.originalTitle || '').toLowerCase()) errors.push('Name cannot repeat the source title.');
-    if (existingNameKeys(existingNames).has(normalizeNameKey(name))) errors.push(`Name is already used in inventory: ${name}.`);
+    if (existingNameKeys(existingNames).has(normalizeProductName(name))) errors.push(`Name is already used in inventory: ${name}.`);
     const productType = normalizedNameProductType(facts).toLowerCase();
     if (!containsToken(name.toLowerCase(), productType)) errors.push(`Name must include the product type "${productType}".`);
 

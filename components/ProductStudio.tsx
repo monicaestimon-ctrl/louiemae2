@@ -11,6 +11,10 @@ import { getUserFacingErrorMessage } from '../lib/errorMessages';
 import { normalizeImageUrl, shouldCacheImageUrl } from '../lib/imageUrls';
 import { SafeImage } from './SafeImage';
 import { normalizeProductImportUrl } from '../lib/importUrl';
+import { ProductSubcategorySelector } from './ProductSubcategorySelector';
+import { ProductNameAvailability } from './ProductNameAvailability';
+import { createDraftNameOwnerKey } from '../lib/productNames';
+import { getEffectiveSubcategoryIds } from '../lib/productCategories';
 
 interface ProductStudioProps {
     isOpen: boolean;
@@ -27,6 +31,10 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
     const [isSaving, setIsSaving] = useState(false);
     const saveSessionRef = useRef(0);
     const [priceDraft, setPriceDraft] = useState('');
+    const draftOwnerKeyRef = useRef<string | null>(null);
+    if (!draftOwnerKeyRef.current) {
+        draftOwnerKeyRef.current = initialProduct?.id ? `product:${initialProduct.id}` : createDraftNameOwnerKey();
+    }
     const [product, setProduct] = useState<Partial<Product>>({
         name: '',
         price: 0,
@@ -37,6 +45,7 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
         isNew: true,
         inStock: true,
         storefrontStatus: initialProduct?.id ? initialProduct.storefrontStatus : 'hidden',
+        nameOwnerKey: initialProduct?.nameOwnerKey || draftOwnerKeyRef.current,
         ...initialProduct
     });
 
@@ -45,6 +54,9 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
     const previousFocusRef = useRef<HTMLElement | null>(null);
     useEffect(() => {
         if (isOpen && !wasOpenRef.current) {
+            const ownerKey = initialProduct?.nameOwnerKey
+                || (initialProduct?.id ? `product:${initialProduct.id}` : createDraftNameOwnerKey());
+            draftOwnerKeyRef.current = ownerKey;
             setProduct({
                 name: '',
                 price: 0,
@@ -55,6 +67,7 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
                 isNew: true,
                 inStock: true,
                 storefrontStatus: initialProduct?.id ? initialProduct.storefrontStatus : 'hidden',
+                nameOwnerKey: ownerKey,
                 ...initialProduct
             });
             setStep('essence');
@@ -209,7 +222,9 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
             await Promise.resolve(onSave(productWithCachedImages));
         } catch (err) {
             console.error('Product save failed:', err);
-            toast.error('Failed to save product');
+            toast.error('Product not saved', {
+                description: getUserFacingErrorMessage(err, 'Check the name and subcategories, then try again.'),
+            });
         } finally {
             // Only clear if this is still the active session
             if (saveSessionRef.current === session) {
@@ -421,7 +436,7 @@ const EssenceStep: React.FC<{
     suggestProductCategory: any;
 }> = ({ product, onChange, priceDraft, onPriceDraftChange, onNext, collections, scrapeProduct, generateSmartDescription, generateSmartName, suggestProductCategory }) => {
     const [isGeneratingName, setIsGeneratingName] = useState(false);
-    const [nameSuggestions, setNameSuggestions] = useState<string[]>([]);
+    const [nameSuggestions, setNameSuggestions] = useState<Array<{ name: string; claimId: string; ownerKey: string }>>([]);
     const [isCategorizing, setIsCategorizing] = useState(false);
 
     // Import Logic
@@ -480,6 +495,7 @@ const EssenceStep: React.FC<{
                 ...scrapedData,
                 // Only overwrite if scraped data exists
                 name: scrapedData.name ?? product.name,
+                pendingNameClaimId: undefined,
                 price: Number.isFinite(parsedPrice) ? parsedPrice : product.price,
                 description: scrapedData.description ?? product.description,
                 images: scrapedImages.length > 0 ? scrapedImages : product.images
@@ -508,6 +524,8 @@ const EssenceStep: React.FC<{
                     const [smartName, smartDescription] = await Promise.all([
                         generateSmartName({
                             request: {
+                                productId: updatedProduct.id,
+                                ownerKey: updatedProduct.nameOwnerKey,
                                 sourceSnapshot,
                                 adminContext: {
                                     selectedCategory: updatedProduct.category,
@@ -541,6 +559,8 @@ const EssenceStep: React.FC<{
                     const smartNameResult = smartName as any;
                     if (smartNameResult?.ok && smartNameResult.name) {
                         updatedProduct.name = smartNameResult.name;
+                        updatedProduct.pendingNameClaimId = smartNameResult.claimId;
+                        updatedProduct.nameOwnerKey = smartNameResult.ownerKey;
                         didEnhance = true;
                     }
                     const smartDescriptionResult = smartDescription as any;
@@ -600,6 +620,8 @@ const EssenceStep: React.FC<{
             });
             const result = await generateSmartName({
                 request: {
+                    productId: product.id,
+                    ownerKey: product.nameOwnerKey,
                     sourceSnapshot,
                     adminContext: {
                         selectedCategory: product.category || '',
@@ -616,7 +638,7 @@ const EssenceStep: React.FC<{
                 throw new Error((result as any)?.error || 'Smart name failed');
             }
             const name = (result as any).name;
-            setNameSuggestions([name]);
+            setNameSuggestions([{ name, claimId: (result as any).claimId, ownerKey: (result as any).ownerKey }]);
         } catch (err) {
             console.error('Name generation failed:', err);
             toast.error('Failed to generate name suggestions');
@@ -634,7 +656,17 @@ const EssenceStep: React.FC<{
                 productDescription: product.description || '',
             });
             if (category) {
-                onChange({ ...product, category });
+                const collection = collections.find(c => c.id === product.collection);
+                const match = collection?.subcategories.find((candidate: any) =>
+                    candidate.id === category || candidate.title === category,
+                );
+                onChange({
+                    ...product,
+                    category: match?.title || category,
+                    subcategory: match?.title || category,
+                    subcategoryIds: match ? [match.id] : product.subcategoryIds,
+                    primarySubcategoryId: match?.id || product.primarySubcategoryId,
+                });
             }
         } catch (err) {
             console.error('Auto-categorize failed:', err);
@@ -757,7 +789,7 @@ const EssenceStep: React.FC<{
                                 {collections.map(c => (
                                     <button
                                         key={c.id}
-                                        onClick={() => onChange({ ...product, collection: c.id })}
+                                        onClick={() => onChange({ ...product, collection: c.id, category: '', subcategory: '', subcategoryIds: [], primarySubcategoryId: '' })}
                                         aria-pressed={product.collection === c.id}
                                         className={`px-4 py-2 text-sm rounded-full border transition-all ${product.collection === c.id
                                             ? 'border-bronze/50 bg-gradient-to-r from-bronze/20 to-bronze/5 text-amber-400 shadow-[0_0_15px_rgba(193,154,107,0.3)]'
@@ -785,24 +817,39 @@ const EssenceStep: React.FC<{
                                 id="product-name"
                                 type="text"
                                 value={product.name}
-                                onChange={(e) => onChange({ ...product, name: e.target.value })}
+                                onChange={(e) => onChange({ ...product, name: e.target.value, pendingNameClaimId: undefined })}
                                 placeholder="e.g. The Velocity Chair"
                                 className="w-full text-3xl font-serif text-cream border-b border-white/10 py-2 focus:outline-none focus:border-bronze bg-transparent placeholder:text-cream/10 transition-colors drop-shadow-sm"
                             />
                             {/* Suggestions */}
                             {nameSuggestions.length > 0 && (
                                 <div className="flex flex-wrap gap-2 animate-fade-in">
-                                    {nameSuggestions.map((name, i) => (
+                                    {nameSuggestions.map((suggestion, i) => (
                                         <button
                                             key={i}
-                                            onClick={() => { onChange({ ...product, name }); setNameSuggestions([]); }}
+                                            onClick={() => {
+                                                onChange({
+                                                    ...product,
+                                                    name: suggestion.name,
+                                                    pendingNameClaimId: suggestion.claimId as any,
+                                                    nameOwnerKey: suggestion.ownerKey,
+                                                });
+                                                setNameSuggestions([]);
+                                            }}
                                             className="px-3 py-1.5 bg-black/40 text-cream/80 text-xs rounded-full hover:bg-bronze/20 hover:text-amber-400 border border-white/5 transition-colors"
                                         >
-                                            {name}
+                                            {suggestion.name}
                                         </button>
                                     ))}
                                 </div>
                             )}
+                            <ProductNameAvailability
+                                dark
+                                name={product.name || ''}
+                                productId={product.id}
+                                pendingClaimId={product.pendingNameClaimId as string | undefined}
+                                ownerKey={product.nameOwnerKey}
+                            />
                         </div>
                     </div>
 
@@ -810,7 +857,7 @@ const EssenceStep: React.FC<{
                     <div className="space-y-8 bg-white/5 backdrop-blur-2xl p-8 rounded-[2rem] border border-white/10 shadow-[0_15px_30px_rgba(0,0,0,0.2)]">
                         <div className="space-y-4">
                             <div className="flex justify-between items-center">
-                                <label htmlFor="product-category" className="text-xs uppercase tracking-widest text-cream/40 glow-text">Category</label>
+                                <span className="text-xs uppercase tracking-widest text-cream/40 glow-text">Category</span>
                                 <button
                                     onClick={handleAutoCategorize}
                                     disabled={isCategorizing || !product.name}
@@ -820,21 +867,31 @@ const EssenceStep: React.FC<{
                                     Auto-Detect
                                 </button>
                             </div>
-                            <select
-                                id="product-category"
-                                value={product.category || ''}
-                                onChange={(e) => onChange({ ...product, category: e.target.value })}
-                                className="w-full text-lg text-cream/80 border-b border-white/10 py-3 focus:outline-none focus:border-bronze bg-transparent transition-colors cursor-pointer appearance-none"
-                                style={{ WebkitAppearance: 'none' }}
-                            >
-                                <option value="" className="bg-[#120D09]">Select a category...</option>
-                                {collections.find(c => c.id === product.collection)?.subcategories?.map((cat: any) => (
-                                    <option key={cat.id} value={cat.title} className="bg-[#120D09]">
-                                        {cat.title.replace(collections.find(c => c.id === product.collection)?.title + ' ', '')}
-                                    </option>
-                                ))}
-                                <option value="Other" className="bg-[#120D09]">Other / Custom</option>
-                            </select>
+                            <ProductSubcategorySelector
+                                dark
+                                collection={collections.find(c => c.id === product.collection)}
+                                selectedIds={getEffectiveSubcategoryIds(
+                                    {
+                                        category: product.category || '',
+                                        subcategory: product.subcategory,
+                                        subcategoryIds: product.subcategoryIds,
+                                        primarySubcategoryId: product.primarySubcategoryId,
+                                    },
+                                    collections.find(c => c.id === product.collection),
+                                )}
+                                primaryId={product.primarySubcategoryId}
+                                onChange={(subcategoryIds, primarySubcategoryId) => {
+                                    const selectedCollection = collections.find(c => c.id === product.collection);
+                                    const primary = selectedCollection?.subcategories.find(c => c.id === primarySubcategoryId);
+                                    onChange({
+                                        ...product,
+                                        subcategoryIds,
+                                        primarySubcategoryId: primarySubcategoryId || '',
+                                        category: primary?.title || '',
+                                        subcategory: primary?.title || '',
+                                    });
+                                }}
+                            />
                         </div>
 
                         <div className="space-y-4">
