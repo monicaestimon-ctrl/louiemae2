@@ -23,7 +23,8 @@ interface SiteContextType {
   getPost: (id: string) => BlogPost | undefined;
   // Product Actions
   addProduct: (product: Omit<Product, 'id'>) => Promise<string | null>;
-  updateProduct: (id: string, product: Partial<Product>) => void;
+  addProducts: (products: Omit<Product, 'id'>[]) => Promise<string[]>;
+  updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => void;
   // Site Content Actions
   updateSiteContent: (section: keyof SiteContent, data: Partial<SiteContent[keyof SiteContent]>) => void;
@@ -34,9 +35,9 @@ interface SiteContextType {
   getCustomPage: (slug: string) => CustomPage | undefined;
   // Navigation & Collection Actions
   updateNavigation: (navLinks: NavLink[]) => void;
-  addCollection: (collection: CollectionConfig) => void;
-  updateCollection: (id: string, collection: Partial<CollectionConfig>) => void;
-  deleteCollection: (id: string) => void;
+  addCollection: (collection: CollectionConfig) => Promise<void>;
+  updateCollection: (id: string, collection: Partial<CollectionConfig>) => Promise<void>;
+  deleteCollection: (id: string) => Promise<void>;
 }
 
 const SiteContext = createContext<SiteContextType | undefined>(undefined);
@@ -62,6 +63,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const removePost = useMutation(api.blogPosts.remove);
 
   const createProduct = useMutation(api.products.create);
+  const createProductBatch = useMutation(api.products.createBatch);
   const updateProductMutation = useMutation(api.products.update);
   const removeProduct = useMutation(api.products.remove);
 
@@ -200,16 +202,16 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // --- Product Actions ---
   const addProduct = async (newProductData: Omit<Product, 'id'>): Promise<string | null> => {
-    try {
-      const productId = await createProduct(newProductData);
-      return productId as string;
-    } catch (error) {
-      console.error('Failed to create product:', error);
-      return null;
-    }
+    const productId = await createProduct(newProductData as any);
+    return productId as string;
   };
 
-  const updateProduct = (id: string, updatedData: Partial<Product>) => {
+  const addProducts = async (newProducts: Omit<Product, 'id'>[]): Promise<string[]> => {
+    const productIds = await createProductBatch({ products: newProducts } as any);
+    return productIds as string[];
+  };
+
+  const updateProduct = async (id: string, updatedData: Partial<Product>): Promise<void> => {
     const allowedFields = [
       'name',
       'price',
@@ -240,6 +242,10 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       'estimatedShipping',
       'pricingStage',
       'subcategory',
+      'subcategoryIds',
+      'primarySubcategoryId',
+      'pendingNameClaimId',
+      'nameOwnerKey',
       'smartDescription',
       'descriptionSource',
       'descriptionFingerprint',
@@ -250,7 +256,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         .map((field) => [field, (updatedData as any)[field]])
         .filter(([, value]) => value !== undefined)
     );
-    updateProductMutation({ id: id as Id<"products">, ...updates });
+    await updateProductMutation({ id: id as Id<"products">, ...updates } as any);
   };
 
   const deleteProduct = (id: string) => {
@@ -312,21 +318,21 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     updateSiteContentMutation({ navLinks });
   };
 
-  const addCollection = (collection: CollectionConfig) => {
+  const addCollection = async (collection: CollectionConfig): Promise<void> => {
     const newCollections = [...siteContent.collections, collection];
-    updateSiteContentMutation({ collections: newCollections });
+    await updateSiteContentMutation({ collections: newCollections });
   };
 
-  const updateCollection = (id: string, collectionData: Partial<CollectionConfig>) => {
+  const updateCollection = async (id: string, collectionData: Partial<CollectionConfig>): Promise<void> => {
     const updatedCollections = siteContent.collections.map(c =>
       c.id === id ? { ...c, ...collectionData } : c
     );
-    updateSiteContentMutation({ collections: updatedCollections });
+    await updateSiteContentMutation({ collections: updatedCollections });
   };
 
-  const deleteCollection = (id: string) => {
+  const deleteCollection = async (id: string): Promise<void> => {
     const filteredCollections = siteContent.collections.filter(c => c.id !== id);
-    updateSiteContentMutation({ collections: filteredCollections });
+    await updateSiteContentMutation({ collections: filteredCollections });
   };
 
   return (
@@ -344,6 +350,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       deletePost,
       getPost,
       addProduct,
+      addProducts,
       updateProduct,
       deleteProduct,
       updateSiteContent: updateSiteContentAction,

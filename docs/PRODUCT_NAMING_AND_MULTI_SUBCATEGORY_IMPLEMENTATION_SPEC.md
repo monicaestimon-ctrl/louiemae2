@@ -1,8 +1,8 @@
 # Louie Mae Product Naming and Multi-Subcategory Implementation Specification
 
-Status: Proposed  
-Scope: Product import, manual product creation, AI naming, product persistence, taxonomy assignment and storefront category discovery  
-Primary: Louie Mae engineering/product  
+Status: Implemented
+Scope: Product import, manual product creation, AI naming, product persistence, taxonomy assignment and storefront category discovery
+Primary: Louie Mae engineering/product
 Last updated: 2026-09-07
 
 ## 1. Executive summary

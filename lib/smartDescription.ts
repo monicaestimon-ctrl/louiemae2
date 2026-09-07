@@ -233,7 +233,8 @@ export type GeneratedSmartNameDraft = {
 };
 
 export type SmartNameRequest = {
-    productId?: string;
+  productId?: string;
+  ownerKey?: string;
     sourceSnapshot: SourceProductSnapshot;
     adminContext?: {
         selectedCategory?: string;
@@ -256,8 +257,12 @@ export type SmartNameResponse = {
     facts?: NormalizedProductFacts;
     warnings: string[];
     fallbackUsed: boolean;
-    fallbackReason?: string;
-    error?: string;
+  fallbackReason?: string;
+  claimId?: string;
+  ownerKey?: string;
+  requestId?: string;
+  errorCode?: string;
+  error?: string;
 };
 
 export const DESCRIPTION_SEPARATOR = ' · ';

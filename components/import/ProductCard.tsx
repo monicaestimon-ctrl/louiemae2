@@ -13,6 +13,10 @@ export interface ImportableProduct extends AliExpressProduct {
     customDescription?: string;
     targetCollection?: CollectionType;
     targetSubcategory?: string;
+    targetSubcategoryIds?: string[];
+    primarySubcategoryId?: string;
+    nameClaimId?: string;
+    nameOwnerKey?: string;
     isEnhancing?: boolean;
     selectedImages?: number[]; // Indices of selected images for import
     imageOrder?: number[]; // Custom ordering of selectedImages — position 0 = main listing image

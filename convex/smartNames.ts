@@ -4,7 +4,8 @@ import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { auth } from "./auth";
-import {
+import type {
+    GeneratedSmartNameDraft,
     SmartNameRequest,
     SmartNameResponse,
     SourceProductSnapshot,
@@ -19,6 +20,9 @@ import {
     getSmartNameModel,
     validateSmartNameDraft,
 } from "./geminiNameClient";
+
+const MAX_MODEL_ATTEMPTS = 5;
+const MAX_FALLBACK_ATTEMPTS = 80;
 
 function attachVisualFacts(snapshot: SourceProductSnapshot, facts: any[]): SourceProductSnapshot {
     if (!facts.length) return snapshot;
@@ -44,12 +48,7 @@ export const generateSmartName = action({
     handler: async (ctx, { request }): Promise<SmartNameResponse> => {
         const userId = await auth.getUserId(ctx);
         if (!userId) {
-            return {
-                ok: false,
-                warnings: [],
-                fallbackUsed: false,
-                error: "Authentication required",
-            };
+            return { ok: false, warnings: [], fallbackUsed: false, errorCode: "AUTH_REQUIRED", error: "Authentication required" };
         }
         try {
             await ctx.runQuery(internal.cjAdminAccess.verifyCjAdminIdentity, {});
@@ -61,36 +60,23 @@ export const generateSmartName = action({
                 ok: false,
                 warnings: [],
                 fallbackUsed: false,
+                errorCode: permissionDenied ? "ADMIN_REQUIRED" : "ADMIN_CHECK_FAILED",
                 error: permissionDenied ? "Admin permission required" : "Unable to verify admin access",
             };
         }
         if (process.env.SMART_NAME_ENABLED === "false") {
-            return {
-                ok: false,
-                warnings: [],
-                fallbackUsed: false,
-                error: "Smart names are disabled",
-            };
+            return { ok: false, warnings: [], fallbackUsed: false, errorCode: "DISABLED", error: "Smart names are disabled" };
         }
 
         const typedRequest = request as SmartNameRequest;
         const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const ownerKey = typedRequest.ownerKey?.trim()
+            || (typedRequest.productId ? `product:${typedRequest.productId}` : `generation:${requestId}`);
         const warnings: string[] = [];
-        let existingNames: string[] = [];
-        console.log("[SmartName] started", {
-            requestId,
-            generationMode: typedRequest.generationMode,
-            sourceDomain: typedRequest.sourceSnapshot?.sourceDomain,
-            imageCount: typedRequest.sourceSnapshot?.images?.length || 0,
-            hasAttributes: !!typedRequest.sourceSnapshot?.attributes?.length,
-            hasVariants: !!typedRequest.sourceSnapshot?.variants?.length,
-            selectedCollection: typedRequest.adminContext?.selectedCollection,
-        });
 
         try {
             let sourceSnapshot = normalizeSourceProduct(typedRequest.sourceSnapshot || {});
             warnings.push(...(sourceSnapshot.warnings || []));
-
             if (typedRequest.options?.allowImageAnalysis) {
                 const visual = await analyzeProductImages(sourceSnapshot);
                 warnings.push(...visual.warnings);
@@ -98,86 +84,121 @@ export const generateSmartName = action({
             }
 
             const facts = extractNormalizedProductFacts(sourceSnapshot);
-            try {
-                existingNames = await ctx.runQuery(internal.products.findExistingSmartNames, {
-                    collection: facts.collection.value,
-                    productType: facts.productType.value,
-                    limit: 40,
+            let existingNames = await ctx.runQuery(internal.productNameRegistry.listNamesForGeneration, { limit: 240 });
+            console.log("[SmartName] started", {
+                requestId,
+                ownerKey,
+                generationMode: typedRequest.generationMode,
+                sourceDomain: sourceSnapshot.sourceDomain,
+                selectedCollection: typedRequest.adminContext?.selectedCollection,
+                globalExcludedNameCount: existingNames.length,
+            });
+
+            for (let attempt = 0; attempt < MAX_MODEL_ATTEMPTS; attempt += 1) {
+                let draft: GeneratedSmartNameDraft | undefined;
+                let fallbackUsed = false;
+                let fallbackReason: string | undefined;
+                try {
+                    const generated = await generateSmartNameWithGemini({
+                        facts,
+                        adminContext: typedRequest.adminContext || {},
+                        existingNames,
+                    });
+                    warnings.push(...generated.warnings);
+                    draft = coerceSmartNameDraft(generated.value);
+                } catch (error) {
+                    warnings.push(error instanceof Error ? error.message : String(error));
+                }
+
+                if (!draft) {
+                    fallbackUsed = true;
+                    fallbackReason = "MALFORMED_OR_UNAVAILABLE_MODEL_OUTPUT";
+                    draft = buildSafeNameFallback(facts, existingNames);
+                }
+                const validationErrors = validateSmartNameDraft(draft, facts, existingNames);
+                if (validationErrors.length > 0) {
+                    warnings.push(...validationErrors);
+                    fallbackUsed = true;
+                    fallbackReason = validationErrors.join(" ");
+                    draft = buildSafeNameFallback(facts, existingNames);
+                }
+
+                const reservation = await ctx.runMutation(internal.productNameRegistry.reserveSuggestion, {
+                    displayName: draft.name,
+                    ownerKey,
+                    requestId,
                 });
-            } catch (lookupError: any) {
-                warnings.push(`Existing name lookup failed; duplicate avoidance may be limited: ${lookupError?.message || 'unknown error'}.`);
-            }
-            console.log("[SmartName] facts extracted", {
-                requestId,
-                sourceQualityScore: facts.sourceQuality.score,
-                productType: facts.productType.value,
-                collection: facts.collection.value,
-                designFacts: facts.designDetails.length,
-            });
-
-            const generated = await generateSmartNameWithGemini({
-                facts,
-                adminContext: typedRequest.adminContext || {},
-                existingNames,
-            });
-            warnings.push(...generated.warnings);
-
-            let finalDraft = coerceSmartNameDraft(generated.value);
-            let fallbackUsed = false;
-            let fallbackReason: string | undefined;
-
-            if (!finalDraft) {
-                fallbackUsed = true;
-                fallbackReason = "MALFORMED_MODEL_OUTPUT";
-                finalDraft = buildSafeNameFallback(facts, existingNames);
+                if (reservation.reserved) {
+                    console.log("[SmartName] reserved", {
+                        requestId,
+                        model: getSmartNameModel(),
+                        name: draft.name,
+                        fallbackUsed,
+                        attempt: attempt + 1,
+                    });
+                    return {
+                        ok: true,
+                        name: draft.name,
+                        structured: draft,
+                        facts,
+                        claimId: reservation.claimId,
+                        ownerKey,
+                        requestId,
+                        warnings: [...new Set(warnings)],
+                        fallbackUsed,
+                        fallbackReason,
+                    };
+                }
+                existingNames = [...existingNames, draft.name];
+                warnings.push(`A generated name was already reserved; generating a fresh option (attempt ${attempt + 1}).`);
             }
 
-            const validationErrors = validateSmartNameDraft(finalDraft, facts, existingNames);
-            if (validationErrors.length > 0) {
-                fallbackUsed = true;
-                fallbackReason = validationErrors.join(" ");
-                warnings.push(...validationErrors);
-                finalDraft = buildSafeNameFallback(facts, existingNames);
+            // The deterministic fallback includes an unbounded sequence once the curated pool is used.
+            for (let attempt = 0; attempt < MAX_FALLBACK_ATTEMPTS; attempt += 1) {
+                const draft = buildSafeNameFallback(facts, existingNames);
+                const reservation = await ctx.runMutation(internal.productNameRegistry.reserveSuggestion, {
+                    displayName: draft.name,
+                    ownerKey,
+                    requestId,
+                });
+                if (reservation.reserved) {
+                    return {
+                        ok: true,
+                        name: draft.name,
+                        structured: draft,
+                        facts,
+                        claimId: reservation.claimId,
+                        ownerKey,
+                        requestId,
+                        warnings: [...new Set(warnings)],
+                        fallbackUsed: true,
+                        fallbackReason: "COLLISION_RETRY_FALLBACK",
+                    };
+                }
+                existingNames = [...existingNames, draft.name];
             }
-
-            console.log("[SmartName] generated", {
-                requestId,
-                model: getSmartNameModel(),
-                name: finalDraft.name,
-                fallbackUsed,
-            });
 
             return {
-                ok: true,
-                name: finalDraft.name,
-                structured: finalDraft,
+                ok: false,
                 facts,
                 warnings: [...new Set(warnings)],
-                fallbackUsed,
-                fallbackReason,
+                fallbackUsed: false,
+                errorCode: "NAME_RESERVATION_EXHAUSTED",
+                error: "A unique name could not be reserved. Please try again.",
+                ownerKey,
+                requestId,
             };
-        } catch (error: any) {
-            const facts = extractNormalizedProductFacts(normalizeSourceProduct(typedRequest.sourceSnapshot || {}));
-            if (existingNames.length === 0) {
-                try {
-                    existingNames = await ctx.runQuery(internal.products.findExistingSmartNames, {
-                        collection: facts.collection.value,
-                        productType: facts.productType.value,
-                        limit: 40,
-                    });
-                } catch {
-                    // Continue with the safest available local fallback.
-                }
-            }
-            const fallback = buildSafeNameFallback(facts, existingNames);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            console.error("[SmartName] failed", { requestId, message });
             return {
-                ok: true,
-                name: fallback.name,
-                structured: fallback,
-                facts,
-                warnings: [...new Set([...warnings, error?.message || "Smart name generation failed; safe fallback was used."])],
-                fallbackUsed: true,
-                fallbackReason: error?.message || "SMART_NAME_FAILED",
+                ok: false,
+                warnings: [...new Set([...warnings, message])],
+                fallbackUsed: false,
+                errorCode: "SMART_NAME_FAILED",
+                error: "A unique name could not be generated right now. Please try again.",
+                ownerKey,
+                requestId,
             };
         }
     },
