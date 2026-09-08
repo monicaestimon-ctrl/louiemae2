@@ -21,7 +21,10 @@ type CjDiagnosticResult = {
     diagnosis: string;
 };
 
-export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProductId }) => {
+export const CJSettings: React.FC<{
+    targetProductId?: string;
+    onEditProduct?: (productId: string) => void;
+}> = ({ targetProductId, onEditProduct }) => {
     const testConnection = useAction(api.cjActions.testConnection);
     const configureWebhooks = useAction(api.cjActions.configureWebhooks);
     const syncTracking = useAction(api.cjActions.syncTracking);
@@ -1039,7 +1042,7 @@ export const CJSettings: React.FC<{ targetProductId?: string }> = ({ targetProdu
                 </FadeIn>
                 <div className="w-full">
                     {/* The CJVariantManager creates its own dark-glass wrapper internally if needed, but we provide it full width and context */}
-                    <CJVariantManager targetProductId={targetProductId} />
+                    <CJVariantManager targetProductId={targetProductId} onEditProduct={onEditProduct} />
                 </div>
             </div>
 

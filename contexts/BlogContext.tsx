@@ -214,6 +214,8 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const updateProduct = async (id: string, updatedData: Partial<Product>): Promise<void> => {
     const allowedFields = [
       'name',
+      'audience',
+      'canonicalProductType',
       'price',
       'description',
       'images',
@@ -240,7 +242,28 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       'sourcePriceCny',
       'estimatedCjCost',
       'estimatedShipping',
+      'confirmedCjCost',
+      'estimatedCjProductCost',
+      'estimatedCjShippingCost',
+      'estimatedCjServiceFee',
+      'estimatedLandedCost',
+      'confirmedCjProductCost',
+      'confirmedCjShippingCost',
+      'confirmedCjServiceFee',
+      'confirmedCjTaxesFee',
+      'confirmedCjClearanceFee',
+      'confirmedCjRemoteFee',
+      'confirmedCjLogisticsName',
+      'confirmedLandedCost',
+      'suggestedRetailPrice',
+      'adminPriceLocked',
+      'pricingSource',
+      'pricingUpdatedAt',
+      'pricingWarnings',
       'pricingStage',
+      'rawSourceDescription',
+      'rawHtmlDescription',
+      'descriptionImages',
       'subcategory',
       'subcategoryIds',
       'primarySubcategoryId',
@@ -256,7 +279,11 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         .map((field) => [field, (updatedData as any)[field]])
         .filter(([, value]) => value !== undefined)
     );
-    await updateProductMutation({ id: id as Id<"products">, ...updates } as any);
+    await updateProductMutation({
+      id: id as Id<"products">,
+      expectedRevision: updatedData.productRevision,
+      ...updates,
+    } as any);
   };
 
   const deleteProduct = (id: string) => {

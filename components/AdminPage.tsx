@@ -11,7 +11,6 @@ import { Plus, Edit3, Trash2, LogOut, X, Image as ImageIcon, Layout, ArrowLeft, 
 import { BlogPost, CustomPage, PageSection, Product, CollectionType, CollectionConfig, EmailCampaign } from '../types';
 import { AdminOrders } from './AdminOrders';
 import { NewsletterStudio } from './NewsletterStudio';
-import { ProductStudio } from './ProductStudio';
 import { ProductImport } from './ProductImport';
 import { CJSettings } from './CJSettings';
 import { CJControlRoom } from './CJControlRoom';
@@ -1081,7 +1080,13 @@ export const AdminPage: React.FC = () => {
             {/* CJ SETTINGS TAB */}
             {activeTab === 'cj-settings' && (
                <FadeIn>
-                  <CJSettings targetProductId={cjNavContext.productId} />
+                   <CJSettings
+                      targetProductId={cjNavContext.productId}
+                      onEditProduct={(productId) => {
+                         const product = products.find((candidate) => candidate.id === productId);
+                         if (product) handleEditProduct(product);
+                      }}
+                   />
                </FadeIn>
             )}
 
@@ -2220,54 +2225,53 @@ export const AdminPage: React.FC = () => {
             }}
          />
 
-         {/* PRODUCT STUDIO — rendered outside <main> for full viewport centering */}
-         <ProductStudio
-            isOpen={isEditingProduct}
-            onClose={() => { setIsEditingProduct(false); setEditingProduct(null); }}
-            initialProduct={editingProduct}
-            onSave={async (prod) => {
-               if (prod.id) {
-                  // Updating existing product - just update
-                  await updateProduct(prod.id, prod);
-                  if (prod.smartDescription?.auditId) {
-                     try {
-                        await linkDescriptionAuditToProduct({
-                           auditId: prod.smartDescription.auditId as any,
-                           productId: prod.id as any,
-                        });
-                     } catch (err) {
-                        console.warn('Failed to link smart description audit:', err);
+         {/* Add and Edit use the exact same curation studio as Import Product. */}
+         {isEditingProduct && (
+            <div className="fixed inset-0 z-[100] overflow-y-auto bg-gradient-to-br from-cream via-[#f7f1e7] to-[#eadfce] p-3 md:p-8">
+               <ProductImport
+                  key={editingProduct?.id || 'new-product'}
+                  mode={editingProduct?.id ? 'edit' : 'create'}
+                  initialProduct={editingProduct}
+                  collections={siteContent.collections}
+                  onImportProducts={() => undefined}
+                  onClose={() => { setIsEditingProduct(false); setEditingProduct(null); }}
+                  onSaveProduct={async (prod) => {
+                     if (prod.id) {
+                        await updateProduct(prod.id, prod);
+                        if (prod.smartDescription?.auditId) {
+                           try {
+                              await linkDescriptionAuditToProduct({
+                                 auditId: prod.smartDescription.auditId as any,
+                                 productId: prod.id as any,
+                              });
+                           } catch (err) {
+                              console.warn('Failed to link smart description audit:', err);
+                           }
+                        }
+                     } else {
+                        const productWithSourcing = {
+                           ...prod,
+                           cjSourcingStatus: prod.sourceUrl ? 'pending' as const : 'none' as const,
+                        };
+                        const productId = await addProduct(productWithSourcing as Omit<Product, 'id'>);
+                        if (productId && prod.smartDescription?.auditId) {
+                           try {
+                              await linkDescriptionAuditToProduct({
+                                 auditId: prod.smartDescription.auditId as any,
+                                 productId: productId as any,
+                              });
+                           } catch (err) {
+                              console.warn('Failed to link smart description audit:', err);
+                           }
+                        }
+                        if (prod.sourceUrl) {
+                           alert('Product saved! It is queued for CJ sourcing and will stay hidden until you publish it or add it to a launch.');
+                        }
                      }
-                  }
-               } else {
-                  // New product - set CJ sourcing status if it has a source URL
-                  const productWithSourcing = {
-                     ...prod,
-                     // Mark for CJ sourcing if product has a source URL (from AliExpress etc)
-                     cjSourcingStatus: prod.sourceUrl ? 'pending' as const : 'none' as const,
-                  };
-                  const productId = await addProduct(productWithSourcing as Omit<Product, 'id'>);
-                  if (productId && prod.smartDescription?.auditId) {
-                     try {
-                        await linkDescriptionAuditToProduct({
-                           auditId: prod.smartDescription.auditId as any,
-                           productId: productId as any,
-                        });
-                     } catch (err) {
-                        console.warn('Failed to link smart description audit:', err);
-                     }
-                  }
-
-                  // If marked as pending, the CJ cron job will handle submission
-                  if (prod.sourceUrl) {
-                     alert('Product saved! It is queued for CJ sourcing and will stay hidden until you publish it or add it to a launch.');
-                  }
-               }
-               setIsEditingProduct(false);
-               setEditingProduct(null);
-            }}
-            siteContent={siteContent}
-         />
+                  }}
+               />
+            </div>
+         )}
 
          {/* POST EDITOR MODAL — rendered outside <main> to avoid z-10 stacking context clipping */}
          {isEditingPost && editingPost && (

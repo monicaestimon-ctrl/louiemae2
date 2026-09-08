@@ -71,3 +71,36 @@ describe('variant review pagination', () => {
         expect(screen.getByDisplayValue('蓝色')).toBeInTheDocument();
     });
 });
+
+describe('unified add and edit studio modes', () => {
+    it('loads an existing product directly into the same curation workflow used by imports', () => {
+        render(
+            <ProductImport
+                mode="edit"
+                initialProduct={{
+                    id: 'saved-product',
+                    name: 'Rowan Onesie',
+                    description: 'Soft cotton one-piece.',
+                    price: 28,
+                    images: [],
+                    category: 'One-Pieces',
+                    collection: 'kids',
+                    variants: [{ id: 'size_2t', name: '2T', priceAdjustment: 0, inStock: true }],
+                    subcategoryIds: ['boys-onesies'],
+                    primarySubcategoryId: 'boys-onesies',
+                    productRevision: 3,
+                }}
+                collections={[]}
+                onImportProducts={vi.fn()}
+                onSaveProduct={vi.fn()}
+                onClose={vi.fn()}
+            />
+        );
+
+        expect(screen.getByText('Product Operations Studio · Edit Product')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('Rowan Onesie')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('2T')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /add variant/i }));
+        expect(screen.getByDisplayValue('Variant 2')).toBeInTheDocument();
+    });
+});
