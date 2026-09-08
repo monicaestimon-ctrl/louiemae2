@@ -3,7 +3,7 @@ import { ConvexError, v } from "convex/values";
 import { evaluateProductCjReadiness, isCjProductStorefrontReady } from "../lib/cjFulfillmentReadiness";
 import { requireCjAdminIdentity } from "./cjAdminAccess";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { normalizeProductName } from "../lib/productNames";
 import {
     attachNameClaimToProduct,
@@ -117,6 +117,16 @@ const cjVariantValidator = v.object({
     name: v.string(),
     price: v.optional(v.number()),
     image: v.optional(v.string()),
+});
+
+const customerVariantValidator = v.object({
+    id: v.string(),
+    name: v.string(),
+    image: v.optional(v.string()),
+    priceAdjustment: v.number(),
+    inStock: v.boolean(),
+    cjVariantId: v.optional(v.string()),
+    cjSku: v.optional(v.string()),
 });
 
 const isProductVisibleOnStorefront = (product: {
@@ -242,7 +252,7 @@ export const findExistingSmartNames = internalQuery({
     },
 });
 
-async function createProductDocument(ctx: MutationCtx, args: any): Promise<Id<"products">> {
+async function createProductDocument(ctx: MutationCtx, args: any, actorEmail?: string): Promise<Id<"products">> {
     if (args.batchImportItemId) {
         const existing = await ctx.db.query("products")
             .withIndex("by_batch_import_item", q => q.eq("batchImportItemId", args.batchImportItemId))
@@ -280,6 +290,9 @@ async function createProductDocument(ctx: MutationCtx, args: any): Promise<Id<"p
         name: args.name.trim(),
         nameKey: nameClaim.normalizedName,
         activeNameClaimId: nameClaim.claimId,
+        productRevision: 1,
+        productEditedAt: Date.now(),
+        productEditedBy: actorEmail,
         publishedAt: args.publishedAt || new Date().toISOString(),
         searchText: buildProductSearchText({ ...productFields, ...categoryAssignment, name: args.name.trim() }),
     });
@@ -343,6 +356,7 @@ export const create = mutation({
         estimatedCjServiceFee: v.optional(v.number()),
         estimatedLandedCost: v.optional(v.number()),
         confirmedCjProductCost: v.optional(v.number()),
+        confirmedCjCost: v.optional(v.number()),
         confirmedCjShippingCost: v.optional(v.number()),
         confirmedCjServiceFee: v.optional(v.number()),
         confirmedCjTaxesFee: v.optional(v.number()),
@@ -368,8 +382,8 @@ export const create = mutation({
         descriptionFingerprint: v.optional(descriptionFingerprintValidator),
     },
     handler: async (ctx, args) => {
-        await requireCjAdminIdentity(ctx);
-        return createProductDocument(ctx, args);
+        const identity = await requireCjAdminIdentity(ctx);
+        return createProductDocument(ctx, args, identity.email);
     },
 });
 
@@ -378,7 +392,7 @@ const batchCreateAllowedFields = new Set([
     "isNew", "inStock", "publishedAt", "storefrontStatus", "launchBatchId", "launchAddedAt", "launchedAt", "variants",
     "sourceUrl", "batchImportItemId", "cjSourcingStatus", "sourcePriceCny", "rawSourceDescription", "rawHtmlDescription",
     "descriptionImages", "estimatedCjCost", "estimatedShipping", "estimatedCjProductCost", "estimatedCjShippingCost",
-    "estimatedCjServiceFee", "estimatedLandedCost", "confirmedCjProductCost", "confirmedCjShippingCost", "confirmedCjServiceFee",
+    "estimatedCjServiceFee", "estimatedLandedCost", "confirmedCjProductCost", "confirmedCjCost", "confirmedCjShippingCost", "confirmedCjServiceFee",
     "confirmedCjTaxesFee", "confirmedCjClearanceFee", "confirmedCjRemoteFee", "confirmedCjLogisticsName", "confirmedLandedCost",
     "suggestedRetailPrice", "adminPriceLocked", "pricingSource", "pricingUpdatedAt", "pricingWarnings", "pricingStage",
     "subcategory", "subcategoryIds", "primarySubcategoryId", "smartDescription", "descriptionSource", "descriptionFingerprint",
@@ -387,7 +401,7 @@ const batchCreateAllowedFields = new Set([
 export const createBatch = mutation({
     args: { products: v.array(v.any()) },
     handler: async (ctx, args) => {
-        await requireCjAdminIdentity(ctx);
+        const identity = await requireCjAdminIdentity(ctx);
         if (args.products.length === 0 || args.products.length > 12) {
             throw new ConvexError({ code: "IMPORT_BATCH_SIZE_INVALID", message: "Import between 1 and 12 products at a time." });
         }
@@ -417,7 +431,7 @@ export const createBatch = mutation({
         }
 
         const productIds: Id<"products">[] = [];
-        for (const product of sanitizedProducts) productIds.push(await createProductDocument(ctx, product));
+        for (const product of sanitizedProducts) productIds.push(await createProductDocument(ctx, product, identity.email));
         return productIds;
     },
 });
@@ -425,6 +439,7 @@ export const createBatch = mutation({
 export const update = mutation({
     args: {
         id: v.id("products"),
+        expectedRevision: v.optional(v.number()),
         name: v.optional(v.string()),
         pendingNameClaimId: v.optional(v.id("productNameClaims")),
         nameOwnerKey: v.optional(v.string()),
@@ -481,6 +496,7 @@ export const update = mutation({
         estimatedCjServiceFee: v.optional(v.number()),
         estimatedLandedCost: v.optional(v.number()),
         confirmedCjProductCost: v.optional(v.number()),
+        confirmedCjCost: v.optional(v.number()),
         confirmedCjShippingCost: v.optional(v.number()),
         confirmedCjServiceFee: v.optional(v.number()),
         confirmedCjTaxesFee: v.optional(v.number()),
@@ -514,14 +530,22 @@ export const update = mutation({
         }))),
     },
     handler: async (ctx, args) => {
-        await requireCjAdminIdentity(ctx);
-        const { id, pendingNameClaimId, nameOwnerKey, ...updates } = args;
+        const identity = await requireCjAdminIdentity(ctx);
+        const { id, expectedRevision, pendingNameClaimId, nameOwnerKey, ...updates } = args;
         // Filter out undefined values
         const filteredUpdates = Object.fromEntries(
             Object.entries(updates).filter(([_, v]) => v !== undefined)
         );
         const existing = await ctx.db.get(id);
         if (!existing) throw new ConvexError({ code: "PRODUCT_NOT_FOUND", message: "Product not found." });
+        const currentRevision = existing.productRevision ?? 0;
+        if (expectedRevision !== undefined && expectedRevision !== currentRevision) {
+            throw new ConvexError({
+                code: "PRODUCT_REVISION_CONFLICT",
+                message: "This product changed after you opened it. Reload the latest version before saving.",
+                currentRevision,
+            });
+        }
 
         const categoryFieldsChanged = ["category", "collection", "subcategory", "subcategoryIds", "primarySubcategoryId", "storefrontStatus"]
             .some(field => Object.prototype.hasOwnProperty.call(filteredUpdates, field));
@@ -562,6 +586,9 @@ export const update = mutation({
             .some(field => Object.prototype.hasOwnProperty.call(filteredUpdates, field));
         await ctx.db.patch(id, {
             ...filteredUpdates,
+            productRevision: currentRevision + 1,
+            productEditedAt: Date.now(),
+            productEditedBy: identity.email,
             ...(existing && searchFieldsChanged
                 ? { searchText: buildProductSearchText({ ...existing, ...filteredUpdates }) }
                 : {}),
@@ -707,6 +734,7 @@ export const launchNextProducts = mutation({
 export const getPendingSourcing = query({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         return await ctx.db
             .query("products")
             .withIndex("by_cj_sourcing_status", (q) => q.eq("cjSourcingStatus", "pending"))
@@ -720,6 +748,7 @@ export const getPendingSourcing = query({
 export const getRecentlyApproved = query({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         // Get products approved in the last 7 days
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -741,6 +770,7 @@ export const getRecentlyApproved = query({
 export const getRejectedProducts = query({
     args: {},
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         return await ctx.db
             .query("products")
             .withIndex("by_cj_sourcing_status", (q) => q.eq("cjSourcingStatus", "rejected"))
@@ -752,9 +782,193 @@ export const getRejectedProducts = query({
 // CJ VARIANT MANAGEMENT (Admin)
 // ═══════════════════════════════════════════════════════════════════════════
 
+type CustomerVariantInput = {
+    id: string;
+    name: string;
+    image?: string;
+    priceAdjustment: number;
+    inStock: boolean;
+    cjVariantId?: string;
+    cjSku?: string;
+};
+
+const normalizeVariantIdentity = (value: string): string =>
+    value.toLowerCase().normalize("NFKC").replace(/[^a-z0-9]+/g, " ").trim();
+
+const countMappedVariants = (variants: CustomerVariantInput[]): number =>
+    variants.filter((variant) => Boolean(variant.cjVariantId && variant.cjSku)).length;
+
+const validateVariantWorkspace = (
+    product: Doc<"products">,
+    variants: CustomerVariantInput[],
+): CustomerVariantInput[] => {
+    const ids = new Set<string>();
+    const names = new Set<string>();
+    const usedCjVariants = new Set<string>();
+    const cjVariantsById = new Map((product.cjVariants ?? []).map((variant) => [variant.vid, variant]));
+
+    return variants.map((variant, index) => {
+        const id = variant.id.trim();
+        const name = variant.name.trim();
+        const normalizedName = normalizeVariantIdentity(name);
+        if (!id) {
+            throw new ConvexError({ code: "VARIANT_ID_REQUIRED", message: "Every customer variant needs a stable ID.", path: "variants." + index + ".id" });
+        }
+        if (!name) {
+            throw new ConvexError({ code: "VARIANT_NAME_REQUIRED", message: "Every customer variant needs a label.", path: "variants." + index + ".name" });
+        }
+        if (ids.has(id)) {
+            throw new ConvexError({ code: "VARIANT_ID_DUPLICATE", message: "Customer variant IDs must be unique.", path: "variants." + index + ".id" });
+        }
+        if (names.has(normalizedName)) {
+            throw new ConvexError({ code: "VARIANT_NAME_DUPLICATE", message: "Customer variant labels must be unique on this product.", path: "variants." + index + ".name" });
+        }
+        ids.add(id);
+        names.add(normalizedName);
+
+        const cjVariantId = variant.cjVariantId?.trim();
+        const cjSku = variant.cjSku?.trim();
+        if (Boolean(cjVariantId) !== Boolean(cjSku)) {
+            throw new ConvexError({ code: "CJ_MAPPING_PAIR_REQUIRED", message: "A CJ mapping must include both the CJ variant ID and SKU.", path: "variants." + index });
+        }
+        if (cjVariantId && cjSku) {
+            const providerVariant = cjVariantsById.get(cjVariantId);
+            if (!providerVariant) {
+                throw new ConvexError({ code: "CJ_VARIANT_NOT_ON_PRODUCT", message: "The selected CJ variant is not part of this product's latest CJ catalog.", path: "variants." + index + ".cjVariantId" });
+            }
+            if (providerVariant.sku !== cjSku) {
+                throw new ConvexError({ code: "CJ_SKU_MISMATCH", message: "The selected CJ SKU does not match the selected CJ variant.", path: "variants." + index + ".cjSku" });
+            }
+            if (usedCjVariants.has(cjVariantId)) {
+                throw new ConvexError({ code: "CJ_VARIANT_ALREADY_MAPPED", message: "A CJ variant can only be assigned to one active customer variant.", path: "variants." + index + ".cjVariantId" });
+            }
+            usedCjVariants.add(cjVariantId);
+        }
+
+        return {
+            ...variant,
+            id,
+            name,
+            image: variant.image?.trim() || undefined,
+            cjVariantId: cjVariantId || undefined,
+            cjSku: cjSku || undefined,
+        };
+    });
+};
+
+const saveVariantWorkspaceForProduct = async (
+    ctx: MutationCtx,
+    product: Doc<"products">,
+    variantsInput: CustomerVariantInput[],
+    actorEmail: string,
+    actionType: Doc<"productVariantAudits">["actionType"],
+    summary: string,
+    expectedRevision?: number,
+) => {
+    const currentRevision = product.productRevision ?? 0;
+    if (expectedRevision !== undefined && expectedRevision !== currentRevision) {
+        throw new ConvexError({
+            code: "PRODUCT_REVISION_CONFLICT",
+            message: "This product changed after you opened it. Reload the latest version before saving.",
+            currentRevision,
+        });
+    }
+
+    const variants = validateVariantWorkspace(product, variantsInput);
+    const beforeVariants = product.variants ?? [];
+    const beforeMappedCount = countMappedVariants(beforeVariants);
+    const afterMappedCount = countMappedVariants(variants);
+    const providerVariants = product.cjVariants ?? [];
+    const sellableVariants = variants.filter((variant) => variant.inStock !== false);
+    const mappingComplete = variants.length > 0
+        ? sellableVariants.length > 0 && sellableVariants.every((variant) => Boolean(variant.cjVariantId && variant.cjSku))
+        : providerVariants.length === 1;
+    const now = Date.now();
+    const nextRevision = currentRevision + 1;
+    const job = product.cjSourcingJobId
+        ? await ctx.db.get(product.cjSourcingJobId)
+        : await ctx.db.query("cjSourcingJobs").withIndex("by_product_id", (q) => q.eq("productId", product._id)).unique();
+    const mayResolveJob = Boolean(job && ["sourced", "mapping_required", "fulfillment_ready"].includes(job.state));
+
+    if (job && mayResolveJob) {
+        const nextState = mappingComplete ? "fulfillment_ready" as const : "mapping_required" as const;
+        await ctx.db.patch(job._id, {
+            state: nextState,
+            completedAt: mappingComplete ? now : undefined,
+            nextAttemptAt: undefined,
+            lastErrorCode: mappingComplete ? undefined : "CJ_VARIANT_MAPPING_INCOMPLETE",
+            lastErrorMessage: mappingComplete ? undefined : "CJ catalog exists but customer variants are not completely mapped.",
+            manualReviewReason: mappingComplete ? undefined : "Map every sellable customer variant to one CJ variant.",
+            updatedAt: now,
+            version: job.version + 1,
+        });
+    }
+
+    await ctx.db.patch(product._id, {
+        variants,
+        productRevision: nextRevision,
+        productEditedAt: now,
+        productEditedBy: actorEmail,
+        ...(mayResolveJob ? {
+            cjSourcingState: mappingComplete ? "fulfillment_ready" as const : "mapping_required" as const,
+            cjFulfillmentReadiness: mappingComplete ? "ready" as const : "mapping_required" as const,
+            cjReadinessReasons: mappingComplete ? [] : ["CJ_VARIANT_MAPPING_INCOMPLETE"],
+            cjProjectionUpdatedAt: now,
+            cjSourcingError: mappingComplete ? undefined : "CJ variant mapping is incomplete.",
+        } : {}),
+        ...(variants.length === 0 ? { inStock: false } : {}),
+    });
+
+    await ctx.db.insert("productVariantAudits", {
+        productId: product._id,
+        actorEmail,
+        actionType,
+        productRevision: nextRevision,
+        beforeVariantCount: beforeVariants.length,
+        afterVariantCount: variants.length,
+        beforeMappedCount,
+        afterMappedCount,
+        summary: summary.slice(0, 500),
+        createdAt: now,
+    });
+
+    return {
+        revision: nextRevision,
+        mappedCount: afterMappedCount,
+        totalVariants: variants.length,
+        mappingComplete,
+    };
+};
+
 /**
- * Link a CJ variant to a customer-facing variant (size option)
- * Used by admin UI to map CJ variants to sizes for correct fulfillment
+ * Save every customer-variant edit and CJ mapping in one validated transaction.
+ */
+export const saveVariantWorkspace = mutation({
+    args: {
+        productId: v.id("products"),
+        expectedRevision: v.optional(v.number()),
+        variants: v.array(customerVariantValidator),
+    },
+    handler: async (ctx, args) => {
+        const identity = await requireCjAdminIdentity(ctx);
+        const product = await ctx.db.get(args.productId);
+        if (!product) {
+            throw new ConvexError({ code: "PRODUCT_NOT_FOUND", message: "Product not found." });
+        }
+        return saveVariantWorkspaceForProduct(
+            ctx,
+            product,
+            args.variants,
+            identity.email,
+            "variant_workspace_saved",
+            "Saved customer variants and CJ mappings from the product operations studio.",
+            args.expectedRevision,
+        );
+    },
+});
+
+/**
+ * Legacy one-link endpoint retained during the studio rollout.
  */
 export const linkCjVariant = mutation({
     args: {
@@ -764,32 +978,33 @@ export const linkCjVariant = mutation({
         cjSku: v.optional(v.string()),   // CJ sku to link
     },
     handler: async (ctx, args) => {
-        await requireCjAdminIdentity(ctx);
+        const identity = await requireCjAdminIdentity(ctx);
 
         const product = await ctx.db.get(args.productId);
-        if (!product) {
-            throw new Error("Product not found");
+        if (!product) throw new ConvexError({ code: "PRODUCT_NOT_FOUND", message: "Product not found." });
+        if (!product.variants) throw new ConvexError({ code: "PRODUCT_VARIANTS_MISSING", message: "Product has no customer variants to link." });
+        if (!product.variants.some((variant) => variant.id === args.customerVariantId)) {
+            throw new ConvexError({ code: "VARIANT_NOT_FOUND", message: "Customer variant not found." });
         }
-
-        if (!product.variants) {
-            throw new Error("Product has no variants to link");
+        const providerVariant = (product.cjVariants ?? []).find((variant) => variant.vid === args.cjVariantId);
+        if (!providerVariant) {
+            throw new ConvexError({ code: "CJ_VARIANT_NOT_ON_PRODUCT", message: "The selected CJ variant is not part of this product." });
         }
-
-        // Find and update the customer variant
+        if (args.cjSku && args.cjSku !== providerVariant.sku) {
+            throw new ConvexError({ code: "CJ_SKU_MISMATCH", message: "The selected CJ SKU does not match the selected CJ variant." });
+        }
         const updatedVariants = product.variants.map(v => {
             if (v.id === args.customerVariantId) {
                 return {
                     ...v,
                     cjVariantId: args.cjVariantId,
-                    cjSku: args.cjSku,
+                    cjSku: providerVariant.sku,
                 };
             }
             return v;
         });
 
-        await ctx.db.patch(args.productId, {
-            variants: updatedVariants,
-        });
+        return saveVariantWorkspaceForProduct(ctx, product, updatedVariants, identity.email, "legacy_variant_linked", "Linked a customer variant to a CJ variant.");
     },
 });
 
@@ -802,11 +1017,12 @@ export const unlinkCjVariant = mutation({
         customerVariantId: v.string(),
     },
     handler: async (ctx, args) => {
-        await requireCjAdminIdentity(ctx);
+        const identity = await requireCjAdminIdentity(ctx);
 
         const product = await ctx.db.get(args.productId);
-        if (!product || !product.variants) {
-            throw new Error("Product or variants not found");
+        if (!product) throw new ConvexError({ code: "PRODUCT_NOT_FOUND", message: "Product not found." });
+        if (!product.variants || !product.variants.some((variant) => variant.id === args.customerVariantId)) {
+            throw new ConvexError({ code: "VARIANT_NOT_FOUND", message: "Customer variant not found." });
         }
 
         const updatedVariants = product.variants.map(v => {
@@ -818,9 +1034,7 @@ export const unlinkCjVariant = mutation({
             return v;
         });
 
-        await ctx.db.patch(args.productId, {
-            variants: updatedVariants,
-        });
+        return saveVariantWorkspaceForProduct(ctx, product, updatedVariants, identity.email, "legacy_variant_unlinked", "Removed a customer variant's CJ mapping.");
     },
 });
 
@@ -830,34 +1044,77 @@ export const removeCustomerVariant = mutation({
         customerVariantId: v.string(),
     },
     handler: async (ctx, args) => {
-        await requireCjAdminIdentity(ctx);
+        const identity = await requireCjAdminIdentity(ctx);
 
         const product = await ctx.db.get(args.productId);
-        if (!product || !product.variants) {
-            throw new Error("Product or variants not found");
+        if (!product) throw new ConvexError({ code: "PRODUCT_NOT_FOUND", message: "Product not found." });
+        if (!product.variants || !product.variants.some((variant) => variant.id === args.customerVariantId)) {
+            throw new ConvexError({ code: "VARIANT_NOT_FOUND", message: "Customer variant not found." });
         }
 
         const updatedVariants = product.variants.filter(variant => variant.id !== args.customerVariantId);
-        await ctx.db.patch(args.productId, {
-            variants: updatedVariants,
-            inStock: updatedVariants.length === 0 ? false : product.inStock,
-        });
+        return saveVariantWorkspaceForProduct(ctx, product, updatedVariants, identity.email, "legacy_variant_removed", "Removed a customer variant.");
     },
 });
 
 /**
- * Get products with CJ variants for admin variant management
+ * Inclusive admin work queue for products that have any CJ footprint.
  */
 export const getProductsWithCjVariants = query({
     args: {},
     handler: async (ctx) => {
-        const products = await ctx.db
-            .query("products")
-            .withIndex("by_cj_sourcing_status", (q) => q.eq("cjSourcingStatus", "approved"))
-            .collect();
-
-        // Only return products that have CJ variants to manage
-        return products.filter(p => p.cjVariants && p.cjVariants.length > 0);
+        await requireCjAdminIdentity(ctx);
+        const products = await ctx.db.query("products").take(500);
+        return products
+            .filter((product) => Boolean(
+                (product.cjSourcingStatus && product.cjSourcingStatus !== "none")
+                || product.cjSourcingJobId
+                || product.cjProductId
+                || product.cjVariantId
+                || product.cjSku
+                || (product.cjVariants?.length ?? 0) > 0
+            ))
+            .map((product) => {
+                const customerVariants = product.variants ?? [];
+                const providerVariants = product.cjVariants ?? [];
+                const providerById = new Map(providerVariants.map((variant) => [variant.vid, variant]));
+                const mappedVariants = customerVariants.filter((variant) => variant.cjVariantId && variant.cjSku);
+                const unmappedVariants = customerVariants.filter((variant) => variant.inStock !== false && (!variant.cjVariantId || !variant.cjSku));
+                const invalidMappings = mappedVariants.filter((variant) => {
+                    const provider = providerById.get(variant.cjVariantId!);
+                    return !provider || provider.sku !== variant.cjSku;
+                });
+                const mappedIds = mappedVariants.map((variant) => variant.cjVariantId!);
+                const duplicateMappingCount = mappedIds.length - new Set(mappedIds).size;
+                const issueCodes: string[] = [];
+                if (product.cjSourcingStatus === "approved" && !product.cjProductId) issueCodes.push("MISSING_CJ_PRODUCT_ID");
+                if (product.cjSourcingStatus === "approved" && providerVariants.length === 0) issueCodes.push("MISSING_CJ_VARIANTS");
+                if (providerVariants.length > 1 && customerVariants.length === 0) issueCodes.push("MISSING_CUSTOMER_VARIANTS");
+                if (unmappedVariants.length > 0) issueCodes.push("UNMAPPED_CUSTOMER_VARIANTS");
+                if (invalidMappings.length > 0) issueCodes.push("INVALID_CJ_MAPPINGS");
+                if (duplicateMappingCount > 0) issueCodes.push("DUPLICATE_CJ_MAPPINGS");
+                if (product.cjSourcingState === "reconciliation_required") issueCodes.push("RECONCILIATION_REQUIRED");
+                if (product.cjSourcingState === "needs_input") issueCodes.push("NEEDS_INPUT");
+                if (issueCodes.length === 0 && product.cjFulfillmentReadiness === "ready") issueCodes.push("READY");
+                return {
+                    ...product,
+                    mappingSummary: {
+                        issueCodes,
+                        customerVariantCount: customerVariants.length,
+                        mappedVariantCount: mappedVariants.length,
+                        unmappedVariantCount: unmappedVariants.length,
+                        cjVariantCount: providerVariants.length,
+                        unmatchedCjVariantCount: Math.max(0, providerVariants.length - new Set(mappedIds).size),
+                        invalidMappingCount: invalidMappings.length + duplicateMappingCount,
+                    },
+                };
+            })
+            .sort((left, right) => {
+                const leftReady = left.mappingSummary.issueCodes.includes("READY") ? 1 : 0;
+                const rightReady = right.mappingSummary.issueCodes.includes("READY") ? 1 : 0;
+                if (leftReady !== rightReady) return leftReady - rightReady;
+                return right.mappingSummary.unmappedVariantCount - left.mappingSummary.unmappedVariantCount;
+            });
     },
 });
 

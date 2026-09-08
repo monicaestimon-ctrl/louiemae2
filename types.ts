@@ -115,6 +115,10 @@ export interface Product {
     productType: string;
     collection: string;
   };
+  /** Optimistic concurrency revision for administrator product-studio saves. */
+  productRevision?: number;
+  productEditedAt?: number;
+  productEditedBy?: string;
 }
 
 export interface Category {

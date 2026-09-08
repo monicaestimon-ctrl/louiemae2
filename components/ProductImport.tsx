@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Loader2, Check, X, DollarSign, Wand2, Package, ChevronDown, AlertCircle, Link, ChevronLeft, ChevronRight, Globe, Filter, Upload, Image as ImageIcon, RotateCcw, Clock3, RefreshCw, ListChecks } from 'lucide-react';
+import { Search, Loader2, Check, X, DollarSign, Wand2, Package, ChevronDown, AlertCircle, Link, ChevronLeft, ChevronRight, Globe, Filter, Upload, Image as ImageIcon, RotateCcw, Clock3, RefreshCw, ListChecks, Plus } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
 import { aliexpressService } from '../services/aliexpressService';
 import { CollectionType, Product, CollectionConfig } from '../types';
@@ -26,7 +26,61 @@ import { inferBoutiqueIdentity, normalizeProductName } from '../lib/productNames
 interface ProductImportProps {
     collections: CollectionConfig[];
     onImportProducts: (products: Omit<Product, 'id'>[]) => Promise<void> | void;
+    mode?: 'import' | 'create' | 'edit';
+    initialProduct?: Partial<Product> | null;
+    onSaveProduct?: (product: Partial<Product>) => Promise<void> | void;
+    onClose?: () => void;
 }
+
+const createStudioImportableProduct = (product: Partial<Product>): ImportableProduct => {
+    const images = product.images ?? [];
+    const variants = product.variants ?? [];
+    const draftId = product.id || ('product_draft_' + Date.now());
+    return {
+        ...product,
+        id: draftId,
+        name: product.name || '',
+        price: product.price ?? 0,
+        description: product.description || '',
+        images,
+        category: product.category || '',
+        collection: (product.collection || '') as CollectionType,
+        variants,
+        sourceId: product.id || draftId,
+        originalPrice: product.price ?? 0,
+        salePrice: product.price ?? 0,
+        shippingInfo: { freeShipping: true, estimatedDays: '', cost: 0 },
+        seller: { id: '', name: 'Manual product', rating: 0, feedbackScore: 0 },
+        reviewCount: 0,
+        averageRating: 0,
+        productUrl: product.sourceUrl || '',
+        source: 'generic',
+        selected: true,
+        customName: product.name || '',
+        customPrice: product.price ?? 0,
+        customDescription: product.description || '',
+        targetCollection: product.collection,
+        targetSubcategory: product.subcategory,
+        targetSubcategoryIds: product.subcategoryIds,
+        primarySubcategoryId: product.primarySubcategoryId,
+        audience: product.audience,
+        canonicalProductType: product.canonicalProductType,
+        selectedImages: images.map((_, index) => index),
+        imageOrder: images.map((_, index) => index),
+        selectedVariants: variants.map((variant) => variant.id),
+        originalVariants: variants.map((variant) => ({
+            id: variant.id,
+            name: variant.name,
+            image: variant.image,
+        })),
+        descriptionImages: product.descriptionImages,
+        rawSourceDescription: product.rawSourceDescription,
+        rawHtmlDescription: product.rawHtmlDescription,
+        sourcePriceCny: product.sourcePriceCny,
+        descriptionAuditId: product.smartDescription?.auditId,
+        smartDescriptionAdminEdited: product.smartDescription?.adminEdited,
+    };
+};
 
 // Pricing rules configuration
 interface PricingRule {
@@ -131,23 +185,32 @@ const convertToUsd = (price: number, currency: string): { usd: number; rate: num
     throw new Error(`Unsupported currency "${code}". Only ${Object.keys(CURRENCY_RATES_TO_USD).filter(c => c !== 'RMB').join(', ')} are supported.`);
 };
 
-export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImportProducts }) => {
+export const ProductImport: React.FC<ProductImportProps> = ({
+    collections,
+    onImportProducts,
+    mode = 'import',
+    initialProduct,
+    onSaveProduct,
+    onClose,
+}) => {
+    const isStandaloneStudio = mode !== 'import';
     // Search state
     const [searchQuery, setSearchQuery] = useState('');
     const [isSearching, setIsSearching] = useState(false);
     const [searchResults, setSearchResultsRaw] = useState<ImportableProduct[]>(() => {
+        if (isStandaloneStudio) return [createStudioImportableProduct(initialProduct || {})];
         return getStoredImportDraft();
     });
     const setSearchResults = (resultsOrUpdater: ImportableProduct[] | ((prev: ImportableProduct[]) => ImportableProduct[])) => {
         if (typeof resultsOrUpdater === 'function') {
             setSearchResultsRaw(prev => {
                 const next = resultsOrUpdater(prev);
-                persistImportSessionResults(next);
+                if (!isStandaloneStudio) persistImportSessionResults(next);
                 return next;
             });
         } else {
             setSearchResultsRaw(resultsOrUpdater);
-            persistImportSessionResults(resultsOrUpdater);
+            if (!isStandaloneStudio) persistImportSessionResults(resultsOrUpdater);
         }
     };
 
@@ -706,6 +769,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
 
     // Import Multi-Step Workflow State
     const [importStep, setImportStepRaw] = useState<'search' | 'review' | 'final-review'>(() => {
+        if (isStandaloneStudio) return 'review';
         try {
             const savedStep = sessionStorage.getItem('import-step') || localStorage.getItem('import-draft-step');
             if (savedStep === 'review' || savedStep === 'final-review') {
@@ -717,6 +781,10 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
         return 'search';
     });
     const setImportStep = (step: 'search' | 'review' | 'final-review') => {
+        if (isStandaloneStudio && step === 'search') {
+            onClose?.();
+            return;
+        }
         setImportStepRaw(step);
         if (step !== 'final-review') setPriceDrafts({});
         try {
@@ -764,6 +832,10 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     };
 
     const handleSaveImportDraft = () => {
+        if (isStandaloneStudio) {
+            toast.info('Your edits remain available while this studio is open. Use Save Product to commit them.');
+            return;
+        }
         try {
             const serializedResults = JSON.stringify(searchResults.slice(0, MAX_RESTORED_PRODUCTS));
             if (serializedResults.length > MAX_RESTORED_DRAFT_BYTES) {
@@ -867,9 +939,18 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             const ids = product.targetSubcategoryIds?.length ? product.targetSubcategoryIds : [product.targetSubcategory || targetSubcategory].filter(Boolean);
             return !(product.targetCollection || targetCollection) || ids.length === 0;
         });
-        if (uncategorized) { toast.error('Choose a collection and at least one subcategory for every product before importing.'); setIsImporting(false); return; }
+        if (uncategorized) {
+            toast.error(isStandaloneStudio
+                ? 'Choose a collection and at least one subcategory before saving.'
+                : 'Choose a collection and at least one subcategory for every product before importing.');
+            setIsImporting(false);
+            return;
+        }
 
         const productsToImport: Omit<Product, 'id'>[] = selectedProducts.map(p => {
+            const existingProductFields = mode === 'edit' && initialProduct
+                ? Object.fromEntries(Object.entries(initialProduct).filter(([key]) => key !== 'id'))
+                : {};
             const productCollection = p.targetCollection || targetCollection;
             const selectedSubcategoryIds = p.targetSubcategoryIds?.length
                 ? p.targetSubcategoryIds
@@ -895,6 +976,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             });
 
             return {
+                ...existingProductFields,
                 // Always prefer user edits over originals
                 name: p.customName || p.name,
                 pendingNameClaimId: p.nameClaimId as Id<'productNameClaims'> | undefined,
@@ -906,9 +988,11 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                 collection: productCollection as CollectionType,
                 audience: p.audience,
                 canonicalProductType: p.canonicalProductType,
-                isNew: true,
+                isNew: mode === 'edit' ? initialProduct?.isNew : true,
                 inStock: p.inStock,
-                storefrontStatus: 'hidden' as const,
+                storefrontStatus: mode === 'edit'
+                    ? (initialProduct?.storefrontStatus || 'hidden')
+                    : 'hidden' as const,
                 // Filter variants: undefined = all, [] = none, [...ids] = only those
                 // Normalize variant prices so they round-trip correctly after import
                 variants: (() => {
@@ -916,6 +1000,17 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                         ? p.variants
                         : p.variants?.filter(v => p.selectedVariants!.includes(v.id));
                     if (!raw) return raw;
+                    if (mode === 'edit') {
+                        return raw.map((variant) => {
+                            if (typeof variant.sellingPriceOverride === 'number' && Number.isFinite(variant.sellingPriceOverride)) {
+                                const { sellingPriceOverride, ...rest } = variant;
+                                return { ...rest, priceAdjustment: sellingPriceOverride - (p.customPrice ?? p.price) };
+                            }
+                            const rest = { ...variant };
+                            delete rest.sellingPriceOverride;
+                            return rest;
+                        });
+                    }
                     const finalPrice = (typeof p.customPrice === 'number' && Number.isFinite(p.customPrice))
                         ? p.customPrice
                         : calculateProductPrice(p);
@@ -937,7 +1032,9 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                 })(),
                 sourceUrl: p.productUrl || '',
                 batchImportItemId: p.batchItemId as Id<'batchImportItems'> | undefined,
-                cjSourcingStatus: p.productUrl ? 'pending' as const : 'none' as const,
+                cjSourcingStatus: mode === 'edit'
+                    ? initialProduct?.cjSourcingStatus
+                    : p.productUrl ? 'pending' as const : 'none' as const,
                 smartDescription: p.descriptionAuditId && (p.customDescription || p.description)
                     ? {
                         description: p.customDescription || p.description || '',
@@ -949,12 +1046,14 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                         adminEdited: Boolean(p.smartDescriptionAdminEdited),
                         status: p.smartDescriptionFallbackUsed ? 'fallback' as const : 'generated' as const,
                     }
-                    : undefined,
+                    : initialProduct?.smartDescription,
                 descriptionSource: p.descriptionAuditId
                     ? (p.smartDescriptionAdminEdited
                         ? 'ai_generated_admin_edited' as const
                         : 'ai_generated' as const)
-                    : (p.description ? 'source_original' as const : 'safe_fallback' as const),
+                    : (mode === 'edit' && initialProduct?.descriptionSource
+                        ? initialProduct.descriptionSource
+                        : p.description ? 'source_original' as const : 'safe_fallback' as const),
                 // Two-stage pricing metadata — use upstream CNY if available (from sourcePriceCny on the product)
                 sourcePriceCny: p.sourcePriceCny || undefined,
                 rawSourceDescription: p.rawSourceDescription || undefined,
@@ -1006,6 +1105,18 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                 };
             }
             toast.dismiss('cache-product-images');
+            if (isStandaloneStudio) {
+                const productToSave: Partial<Product> = {
+                    ...productsToImport[0],
+                    ...(mode === 'edit' && initialProduct?.id ? { id: initialProduct.id } : {}),
+                    ...(mode === 'edit' ? { productRevision: initialProduct?.productRevision } : {}),
+                };
+                if (!onSaveProduct) throw new Error('The product studio save handler is unavailable.');
+                await Promise.resolve(onSaveProduct(productToSave));
+                toast.success(mode === 'edit' ? 'Product changes saved.' : 'Product created.');
+                onClose?.();
+                return;
+            }
             await Promise.resolve(onImportProducts(productsToImport));
             const importedBatchItemIds = selectedProducts
                 .map(product => product.batchItemId)
@@ -1033,8 +1144,13 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             }
         } catch (error) {
             console.error('Product import failed:', error);
-            toast.error('Import stopped', {
-                description: getUserFacingErrorMessage(error, 'No products were imported. Check each name and category, then try again.'),
+            toast.error(isStandaloneStudio ? 'Product save stopped' : 'Import stopped', {
+                description: getUserFacingErrorMessage(
+                    error,
+                    isStandaloneStudio
+                        ? 'No changes were saved. Check the product name, categories, and variants, then try again.'
+                        : 'No products were imported. Check each name and category, then try again.'
+                ),
                 duration: 8000,
             });
         } finally {
@@ -1077,7 +1193,11 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                     <ChevronLeft className="w-4 h-4" /> Back
                                 </button>
                                 <div className="h-4 w-px bg-earth/10"></div>
-                                <span className="text-base font-serif text-earth">Review batch {reviewBatchNumber} · {reviewIndex + 1} of {selectedProducts.length} <span className="text-xs text-earth/50">({allSelectedProducts.length} in pipeline)</span></span>
+                                <span className="text-base font-serif text-earth">
+                                    {isStandaloneStudio
+                                        ? (mode === 'edit' ? 'Product Operations Studio · Edit Product' : 'Product Operations Studio · Add Product')
+                                        : <>Review batch {reviewBatchNumber} · {reviewIndex + 1} of {selectedProducts.length} <span className="text-xs text-earth/50">({allSelectedProducts.length} in pipeline)</span></>}
+                                </span>
                             </div>
                             {/* Translate button */}
                             <div className="relative z-10 flex items-center gap-2 mr-auto md:mr-0">
@@ -1166,12 +1286,14 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                 })()}
                             </div>
                             <div className="relative z-10 flex flex-wrap gap-2 md:gap-4">
-                                <button
-                                    onClick={handleSaveImportDraft}
-                                    className="px-4 py-2 rounded-full border border-bronze/30 bg-white/20 backdrop-blur-md hover:bg-white/40 transition-all text-[10px] uppercase tracking-widest font-bold text-bronze"
-                                >
-                                    Save Draft
-                                </button>
+                                {!isStandaloneStudio && (
+                                    <button
+                                        onClick={handleSaveImportDraft}
+                                        className="px-4 py-2 rounded-full border border-bronze/30 bg-white/20 backdrop-blur-md hover:bg-white/40 transition-all text-[10px] uppercase tracking-widest font-bold text-bronze"
+                                    >
+                                        Save Draft
+                                    </button>
+                                )}
                                 <button
                                     onClick={() => setReviewIndex(prev => Math.max(0, prev - 1))}
                                     disabled={reviewIndex === 0}
@@ -1191,7 +1313,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                         onClick={() => setImportStep('final-review')}
                                         className="px-5 py-2 rounded-full bg-green-600 border border-green-500/50 text-white hover:bg-green-500 transition-all text-[10px] uppercase tracking-widest font-bold shadow-[0_8px_20px_rgba(34,197,94,0.25)] hover:-translate-y-0.5"
                                     >
-                                        Review this batch → ({selectedProducts.length})
+                                        {isStandaloneStudio ? 'Review Product →' : <>Review this batch → ({selectedProducts.length})</>}
                                     </button>
                                 )}
                             </div>
@@ -1818,31 +1940,64 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                 </div>
                             
                             {/* SECTION 3: VARIANTS */}
-                            {currentProduct.variants && currentProduct.variants.length > 0 && (
+                            {(
                                 <div className="w-full p-4 md:p-6 mt-3">
                                     <div className="text-center mb-6">
                                         <h3 className="font-serif text-lg text-earth">Step 3: Variants</h3>
-                                        <p className="text-earth/60 font-light mt-1 max-w-md mx-auto text-xs">Manage styles, sizes, stock status, and assign images.</p>
+                                        <p className="text-earth/60 font-light mt-1 max-w-md mx-auto text-xs">Add and manage customer-facing styles, sizes, colors, stock, and images.</p>
                                     </div>
                                     
                                     <div className="w-full bg-white/40 backdrop-blur-md p-4 md:p-6 rounded-xl border border-white/40 shadow-lg overflow-hidden">
                                         <div className="flex items-center justify-between mb-4 pb-3 border-b border-earth/10">
                                             <h4 className="text-xs uppercase tracking-[0.2em] text-earth font-bold">
-                                                Active Variants ({currentProduct.selectedVariants?.length ?? currentProduct.variants.length}/{currentProduct.variants.length})
+                                                Active Variants ({currentProduct.selectedVariants?.length ?? currentProduct.variants?.length ?? 0}/{currentProduct.variants?.length ?? 0})
                                             </h4>
-                                            <button
-                                                onClick={() => {
-                                                    const allIds = currentProduct.variants!.map(v => v.id);
-                                                    const currentSelected = currentProduct.selectedVariants;
-                                                    const allCurrentlySelected = currentSelected === undefined || currentSelected.length === allIds.length;
-                                                    const newSelected = allCurrentlySelected ? [] : undefined;
-                                                    updateReviewProduct('selectedVariants', newSelected);
-                                                }}
-                                                className="text-xs text-bronze hover:underline font-bold tracking-widest uppercase bg-bronze/10 px-4 py-2 rounded-full transition-all"
-                                            >
-                                                {(currentProduct.selectedVariants?.length ?? currentProduct.variants.length) === currentProduct.variants.length ? 'Deselect All' : 'Select All'}
-                                            </button>
+                                            <div className="flex flex-wrap gap-2">
+                                                {(currentProduct.variants?.length ?? 0) > 0 && (
+                                                    <button
+                                                        onClick={() => {
+                                                            const allIds = currentProduct.variants!.map(v => v.id);
+                                                            const currentSelected = currentProduct.selectedVariants;
+                                                            const allCurrentlySelected = currentSelected === undefined || currentSelected.length === allIds.length;
+                                                            const newSelected = allCurrentlySelected ? [] : undefined;
+                                                            updateReviewProduct('selectedVariants', newSelected);
+                                                        }}
+                                                        className="text-xs text-bronze hover:underline font-bold tracking-widest uppercase bg-bronze/10 px-4 py-2 rounded-full transition-all"
+                                                    >
+                                                        {(currentProduct.selectedVariants?.length ?? currentProduct.variants?.length ?? 0) === (currentProduct.variants?.length ?? 0) ? 'Deselect All' : 'Select All'}
+                                                    </button>
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const nextNumber = (currentProduct.variants?.length ?? 0) + 1;
+                                                        const id = typeof globalThis.crypto !== 'undefined' && 'randomUUID' in globalThis.crypto
+                                                            ? 'variant_' + globalThis.crypto.randomUUID()
+                                                            : 'variant_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+                                                        const nextVariant = {
+                                                            id,
+                                                            name: 'Variant ' + nextNumber,
+                                                            image: currentProduct.images?.[0],
+                                                            priceAdjustment: 0,
+                                                            inStock: true,
+                                                        };
+                                                        updateReviewProduct('variants', [...(currentProduct.variants || []), nextVariant]);
+                                                        if (currentProduct.selectedVariants) {
+                                                            updateReviewProduct('selectedVariants', [...currentProduct.selectedVariants, id]);
+                                                        }
+                                                    }}
+                                                    className="inline-flex items-center gap-1.5 rounded-full bg-earth px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-cream hover:bg-bronze"
+                                                >
+                                                    <Plus className="h-3.5 w-3.5" /> Add Variant
+                                                </button>
+                                            </div>
                                         </div>
+
+                                        {(currentProduct.variants?.length ?? 0) === 0 && (
+                                            <div className="rounded-xl border border-dashed border-earth/15 bg-white/30 p-8 text-center text-sm text-earth/50">
+                                                This product has no variants. Add a size, color, style, set, or other customer option when needed.
+                                            </div>
+                                        )}
 
                                         {/* ── STAMP MODE: Image Gallery for batch variant assignment ── */}
                                         {(() => {
@@ -1935,7 +2090,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                             </nav>
                                         )}
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
-                                            {currentProduct.variants.slice(visibleVariantPage * VARIANT_REVIEW_PAGE_SIZE, (visibleVariantPage + 1) * VARIANT_REVIEW_PAGE_SIZE).map((variant) => {
+                                            {(currentProduct.variants || []).slice(visibleVariantPage * VARIANT_REVIEW_PAGE_SIZE, (visibleVariantPage + 1) * VARIANT_REVIEW_PAGE_SIZE).map((variant) => {
                                                 const isSelected = currentProduct.selectedVariants ? currentProduct.selectedVariants.includes(variant.id) : true;
                                                 const originalName = currentProduct.originalVariants?.find(ov => ov.id === variant.id)?.name;
                                                 const nameWasEdited = originalName && variant.name !== originalName;
@@ -1954,8 +2109,9 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                                 ? 'bg-white border-green-500 shadow-lg'
                                                                 : 'bg-white/30 border-white/40 opacity-60 hover:opacity-100 hover:border-earth/20'}`}
                                                     >
-                                                        <button
-                                                            type="button"
+                                                        <div
+                                                            role="button"
+                                                            tabIndex={0}
                                                             onClick={() => {
                                                                 // STAMP MODE: assign the active stamp image to this variant
                                                                 if (isStampMode) {
@@ -1969,6 +2125,16 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                                 const currentSelectedVars = currentProduct.selectedVariants || allIds;
                                                                 const newSelected = isSelected ? currentSelectedVars.filter(id => id !== variant.id) : [...currentSelectedVars, variant.id];
                                                                 updateReviewProduct('selectedVariants', newSelected);
+                                                            }}
+                                                            onKeyDown={(event) => {
+                                                                if (event.key !== 'Enter' && event.key !== ' ') return;
+                                                                event.preventDefault();
+                                                                const allIds = currentProduct.variants!.map(v => v.id);
+                                                                const currentSelectedVars = currentProduct.selectedVariants || allIds;
+                                                                const nextSelected = isSelected
+                                                                    ? currentSelectedVars.filter(id => id !== variant.id)
+                                                                    : [...currentSelectedVars, variant.id];
+                                                                updateReviewProduct('selectedVariants', nextSelected);
                                                             }}
                                                             className="flex items-center gap-4 p-4 md:p-5 cursor-pointer w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-bronze/50"
                                                         >
@@ -2030,6 +2196,22 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                                             <RotateCcw className="w-3.5 h-3.5" />
                                                                         </button>
                                                                     )}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(event) => {
+                                                                            event.stopPropagation();
+                                                                            if (variant.cjVariantId && !confirm('Remove this mapped variant from the product?')) return;
+                                                                            updateReviewProduct('variants', (currentProduct.variants || []).filter(item => item.id !== variant.id));
+                                                                            if (currentProduct.selectedVariants) {
+                                                                                updateReviewProduct('selectedVariants', currentProduct.selectedVariants.filter(id => id !== variant.id));
+                                                                            }
+                                                                        }}
+                                                                        className="rounded-full bg-red-50 p-1.5 text-red-500 transition-colors hover:bg-red-100 hover:text-red-700"
+                                                                        aria-label={'Remove ' + variant.name}
+                                                                        title="Remove variant"
+                                                                    >
+                                                                        <X className="h-3.5 w-3.5" />
+                                                                    </button>
                                                                 </div>
                                                                 {originalName && nameWasEdited && <p className="text-[10px] text-earth/40 ml-1 mb-2 truncate">Ref: {originalName}</p>}
                                                                 
@@ -2049,7 +2231,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                                 ${isSelected ? 'bg-green-500 text-white scale-100' : 'bg-white border-2 border-earth/20 text-transparent scale-90'}`}>
                                                                 <Check className="w-5 h-5" />
                                                             </div>
-                                                        </button>
+                                                        </div>
                                                         
                                                         {openImagePicker === `${currentProduct.id}:${variant.id}` && (
                                                             <div className="border-t-2 border-earth/5 p-4 bg-white/95">
@@ -2190,21 +2372,27 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                     <ChevronLeft className="w-4 h-4" /> Back to Review
                                 </button>
                                 <div className="h-4 w-px bg-earth/10"></div>
-                                <span className="text-xl font-serif text-earth">Final Preview — {selectedProducts.length} Product{selectedProducts.length !== 1 ? 's' : ''}</span>
+                                <span className="text-xl font-serif text-earth">
+                                    {isStandaloneStudio
+                                        ? (mode === 'edit' ? 'Review Product Changes' : 'Review New Product')
+                                        : <>Final Preview — {selectedProducts.length} Product{selectedProducts.length !== 1 ? 's' : ''}</>}
+                                </span>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                                <button
-                                    onClick={handleSaveImportDraft}
-                                    className="px-5 py-3 rounded-full border border-bronze/30 bg-white/50 text-bronze hover:bg-white transition-all text-xs uppercase tracking-widest font-bold"
-                                >
-                                    Save Draft
-                                </button>
+                                {!isStandaloneStudio && (
+                                    <button
+                                        onClick={handleSaveImportDraft}
+                                        className="px-5 py-3 rounded-full border border-bronze/30 bg-white/50 text-bronze hover:bg-white transition-all text-xs uppercase tracking-widest font-bold"
+                                    >
+                                        Save Draft
+                                    </button>
+                                )}
                                 <button
                                     onClick={confirmImport}
                                     disabled={isImporting}
                                     className="px-8 py-3 rounded-full bg-green-700 text-white hover:bg-green-600 transition-all text-xs uppercase tracking-widest font-bold shadow-lg shadow-green-900/20 flex items-center gap-2 disabled:opacity-50"
                                 >
-                                    <Check className="w-4 h-4" /> Confirm & Import ({selectedProducts.length})
+                                    <Check className="w-4 h-4" /> {isStandaloneStudio ? (mode === 'edit' ? 'Save Product Changes' : 'Create Product') : 'Confirm & Import (' + selectedProducts.length + ')'}
                                 </button>
                             </div>
                         </div>
@@ -2368,7 +2556,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                 disabled={isImporting}
                                 className="px-10 py-3 rounded-full bg-green-700 text-white hover:bg-green-600 transition-all text-xs uppercase tracking-widest font-bold shadow-lg shadow-green-900/20 flex items-center gap-2 disabled:opacity-50"
                             >
-                                <Check className="w-4 h-4" /> Confirm & Import All ({selectedProducts.length})
+                                <Check className="w-4 h-4" /> {isStandaloneStudio ? (mode === 'edit' ? 'Save Product Changes' : 'Create Product') : 'Confirm & Import All (' + selectedProducts.length + ')'}
                             </button>
                         </div>
                     </div>

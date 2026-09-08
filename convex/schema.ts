@@ -207,6 +207,11 @@ export default defineSchema({
             productType: v.string(),
             collection: v.string(),
         })),
+        // Optimistic concurrency for administrator product-studio saves.
+        // Legacy records start at revision 0 until their first studio save.
+        productRevision: v.optional(v.number()),
+        productEditedAt: v.optional(v.number()),
+        productEditedBy: v.optional(v.string()),
         searchText: v.optional(v.string()),
     }).index("by_name_key", ["nameKey"])
         .index("by_cj_sourcing_status", ["cjSourcingStatus"])
@@ -574,6 +579,26 @@ export default defineSchema({
         .index("by_product", ["productId"])
         .index("by_risk_key", ["riskKey"])
         .index("by_action_type", ["actionType"])
+        .index("by_created_at", ["createdAt"]),
+
+    // Immutable audit trail for customer-variant and CJ-mapping changes.
+    productVariantAudits: defineTable({
+        productId: v.id("products"),
+        actorEmail: v.string(),
+        actionType: v.union(
+            v.literal("variant_workspace_saved"),
+            v.literal("legacy_variant_linked"),
+            v.literal("legacy_variant_unlinked"),
+            v.literal("legacy_variant_removed")
+        ),
+        productRevision: v.number(),
+        beforeVariantCount: v.number(),
+        afterVariantCount: v.number(),
+        beforeMappedCount: v.number(),
+        afterMappedCount: v.number(),
+        summary: v.optional(v.string()),
+        createdAt: v.number(),
+    }).index("by_product", ["productId"])
         .index("by_created_at", ["createdAt"]),
 
     // AliExpress product cache - stores fetched products for faster access
