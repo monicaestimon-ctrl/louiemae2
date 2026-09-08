@@ -400,6 +400,21 @@ describe('grounded facts and validators', () => {
     expect(validateSmartNameDraft(fallback, facts)).toEqual([]);
   });
 
+  it('uses a masculine identity and Onesie for boys romper-like products', () => {
+    const facts = extractNormalizedProductFacts({ importedAt: Date.now(), rawTitle: 'Boys baby romper with snap closure', images: [{ url: 'https://example.com/boys-onesie.jpg', role: 'primary' }], categoryHints: { selectedCollection: 'kids', selectedCategory: 'Boys', selectedSubcategory: 'Boys Rompers', selectedSubcategoryIds: ['boys-rompers'] } });
+    const fallback = buildSafeNameFallback(facts);
+    expect(facts.audience.value).toBe('boys');
+    expect(normalizedNameProductType(facts)).toBe('Onesie');
+    expect(fallback.productType).toBe('Onesie');
+    expect(fallback.name).toMatch(/\bOnesie\b/);
+    expect(['Poppy', 'Rosie', 'Daisy', 'Lottie']).not.toContain(fallback.firstName);
+  });
+
+  it('treats separate girls and boys category assignments as unisex context', () => {
+    const facts = extractNormalizedProductFacts({ importedAt: Date.now(), rawTitle: 'Toddler pull-on pants', images: [], categoryHints: { selectedCollection: 'kids', selectedSubcategoryIds: ['girls-pants', 'boys-pants'] } });
+    expect(facts.audience.value).toBe('unisex');
+  });
+
   it('rejects smart names with unsupported high-risk terms', () => {
     const facts = extractNormalizedProductFacts({
       importedAt: Date.now(),
@@ -429,10 +444,11 @@ describe('grounded facts and validators', () => {
       categoryHints: { selectedCollection: 'kids' },
     });
     const first = buildSafeNameFallback(facts);
-    const second = buildSafeNameFallback(facts, [first.name]);
+    const second = buildSafeNameFallback(facts, [first.name], [first.firstName]);
 
     expect(second.name).not.toBe(first.name);
-    expect(validateSmartNameDraft(second, facts, [first.name])).toEqual([]);
+    expect(second.firstName).not.toBe(first.firstName);
+    expect(validateSmartNameDraft(second, facts, [first.name], [first.firstName])).toEqual([]);
   });
 
   it('continues producing unique safe names after the curated pool is exhausted', () => {

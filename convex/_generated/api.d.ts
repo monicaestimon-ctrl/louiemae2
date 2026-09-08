@@ -53,6 +53,8 @@ import type * as smartDescriptions from "../smartDescriptions.js";
 import type * as smartNames from "../smartNames.js";
 import type * as sourceProductNormalizer from "../sourceProductNormalizer.js";
 import type * as subscribers from "../subscribers.js";
+import type * as translations from "../translations.js";
+import type * as visualFactCache from "../visualFactCache.js";
 
 import type {
   ApiFromModules,
@@ -106,6 +108,8 @@ declare const fullApi: ApiFromModules<{
   smartNames: typeof smartNames;
   sourceProductNormalizer: typeof sourceProductNormalizer;
   subscribers: typeof subscribers;
+  translations: typeof translations;
+  visualFactCache: typeof visualFactCache;
 }>;
 
 /**

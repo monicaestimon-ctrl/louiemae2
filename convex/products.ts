@@ -10,6 +10,8 @@ import {
     claimProductName,
     retireProductName,
 } from "./productNameRegistry";
+
+const productAudienceValidator = v.union(v.literal('girls'), v.literal('boys'), v.literal('unisex'), v.literal('adult'), v.literal('home'), v.literal('unknown'));
 import { resolveProductCategoryAssignment } from "./productCategoryAssignments";
 
 const smartDescriptionValidator = v.object({
@@ -269,6 +271,8 @@ async function createProductDocument(ctx: MutationCtx, args: any): Promise<Id<"p
         ownerKey,
         source: pendingNameClaimId ? "ai" : "manual",
         pendingClaimId: pendingNameClaimId,
+        audience: args.audience,
+        productTypeKey: args.canonicalProductType,
     });
     const productId = await ctx.db.insert("products", {
         ...productFields,
@@ -295,6 +299,8 @@ export const create = mutation({
         name: v.string(),
         pendingNameClaimId: v.optional(v.id("productNameClaims")),
         nameOwnerKey: v.optional(v.string()),
+        audience: v.optional(productAudienceValidator),
+        canonicalProductType: v.optional(v.string()),
         price: v.number(),
         description: v.string(),
         images: v.array(v.string()),
@@ -368,7 +374,7 @@ export const create = mutation({
 });
 
 const batchCreateAllowedFields = new Set([
-    "name", "pendingNameClaimId", "nameOwnerKey", "price", "description", "images", "category", "collection",
+    "name", "pendingNameClaimId", "nameOwnerKey", "audience", "canonicalProductType", "price", "description", "images", "category", "collection",
     "isNew", "inStock", "publishedAt", "storefrontStatus", "launchBatchId", "launchAddedAt", "launchedAt", "variants",
     "sourceUrl", "batchImportItemId", "cjSourcingStatus", "sourcePriceCny", "rawSourceDescription", "rawHtmlDescription",
     "descriptionImages", "estimatedCjCost", "estimatedShipping", "estimatedCjProductCost", "estimatedCjShippingCost",
@@ -422,6 +428,8 @@ export const update = mutation({
         name: v.optional(v.string()),
         pendingNameClaimId: v.optional(v.id("productNameClaims")),
         nameOwnerKey: v.optional(v.string()),
+        audience: v.optional(productAudienceValidator),
+        canonicalProductType: v.optional(v.string()),
         price: v.optional(v.number()),
         description: v.optional(v.string()),
         images: v.optional(v.array(v.string())),
@@ -532,19 +540,22 @@ export const update = mutation({
 
         let newNameClaim: Awaited<ReturnType<typeof claimProductName>> | undefined;
         if (typeof filteredUpdates.name === "string") {
-            if (normalizeProductName(existing.name) !== normalizeProductName(filteredUpdates.name)) {
-                await retireProductName(ctx, id, existing.activeNameClaimId);
-            }
+            const nameChanged = normalizeProductName(existing.name) !== normalizeProductName(filteredUpdates.name);
             newNameClaim = await claimProductName(ctx, {
                 displayName: filteredUpdates.name,
                 ownerKey: nameOwnerKey?.trim() || `product:${id}`,
                 source: pendingNameClaimId ? "ai" : "manual",
                 pendingClaimId: pendingNameClaimId,
                 productId: id,
+                audience: (filteredUpdates.audience || existing.audience) as any,
+                productTypeKey: (filteredUpdates.canonicalProductType || existing.canonicalProductType) as any,
             });
             filteredUpdates.name = filteredUpdates.name.trim();
             filteredUpdates.nameKey = newNameClaim.normalizedName;
             filteredUpdates.activeNameClaimId = newNameClaim.claimId;
+            if (nameChanged && existing.activeNameClaimId && existing.activeNameClaimId !== newNameClaim.claimId) {
+                await retireProductName(ctx, id, existing.activeNameClaimId);
+            }
         }
 
         const searchFieldsChanged = ["name", "description", "category", "collection", "subcategory", "subcategoryIds"]

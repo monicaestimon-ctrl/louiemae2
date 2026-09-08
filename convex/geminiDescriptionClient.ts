@@ -48,6 +48,7 @@ function factsForPrompt(facts: NormalizedProductFacts) {
     return {
         productType: facts.productType,
         collection: facts.collection,
+        audience: facts.audience,
         titleFacts: facts.titleFacts,
         sourceQuality: facts.sourceQuality,
         designDetails: facts.designDetails,

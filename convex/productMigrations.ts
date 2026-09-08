@@ -2,7 +2,7 @@ import { internalMutation, internalQuery } from './_generated/server';
 import { v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
 import type { CollectionConfig } from '../types';
-import { PRODUCT_NAME_NORMALIZATION_VERSION, normalizeProductName } from '../lib/productNames';
+import { PRODUCT_NAME_IDENTITY_VERSION, PRODUCT_NAME_NORMALIZATION_VERSION, inferBoutiqueIdentity, normalizeProductName } from '../lib/productNames';
 import { getEffectiveSubcategoryIds, normalizeCategoryAssignment } from '../lib/productCategories';
 import {
   attachNameClaimToProduct,
@@ -103,6 +103,7 @@ async function buildAudit(ctx: any) {
       .map((product: any) => ({ productId: product._id, name: product.name })),
     missingNameKeys: products.filter((product: any) => !product.nameKey).length,
     missingNameClaims: products.filter((product: any) => !claimKeys.has(normalizeProductName(product.name))).length,
+    missingIdentityMigrations: claims.filter((claim: any) => claim.identityVersion !== PRODUCT_NAME_IDENTITY_VERSION).length,
     categoryIssues,
     parentIdIssues,
     readyForNameBackfill: duplicateNames.length === 0,
@@ -321,6 +322,31 @@ export const backfillProductCategories = internalMutation({
   },
 });
 
+export const backfillBoutiqueIdentities = internalMutation({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(500, Math.floor(args.limit ?? 250)));
+    const claims = (await ctx.db.query('productNameClaims').collect())
+      .sort((left, right) => left.createdAt - right.createdAt || left._creationTime - right._creationTime);
+    const alreadyOwned = new Set(claims.map(claim => claim.boutiqueIdentity).filter((value): value is string => Boolean(value)));
+    const pending = claims.filter(claim => claim.identityVersion !== PRODUCT_NAME_IDENTITY_VERSION).slice(0, limit);
+    let boutique = 0; let descriptive = 0; let collisions = 0;
+    for (const claim of pending) {
+      const identity = inferBoutiqueIdentity(claim.displayName);
+      if (identity && !alreadyOwned.has(identity)) {
+        alreadyOwned.add(identity);
+        await ctx.db.patch(claim._id, { boutiqueIdentity: identity, identityVersion: PRODUCT_NAME_IDENTITY_VERSION, namingMode: 'boutique_identity', identityBackfillNote: 'legacy-canonical' });
+        boutique += 1;
+      } else {
+        await ctx.db.patch(claim._id, { boutiqueIdentity: undefined, identityVersion: PRODUCT_NAME_IDENTITY_VERSION, namingMode: 'descriptive', identityBackfillNote: identity ? `legacy-duplicate:${identity}` : 'legacy-descriptive' });
+        descriptive += 1;
+        if (identity) collisions += 1;
+      }
+    }
+    return { processed: pending.length, boutique, descriptive, collisions, remaining: Math.max(0, claims.filter(claim => claim.identityVersion !== PRODUCT_NAME_IDENTITY_VERSION).length - pending.length) };
+  },
+});
+
 export const assignLegacyCategories = internalMutation({
   args: {
     assignments: v.array(v.object({
@@ -361,6 +387,7 @@ export const readiness = internalQuery({
         && audit.invalidNormalizedNames.length === 0
         && audit.missingNameKeys === 0
         && audit.missingNameClaims === 0
+        && audit.missingIdentityMigrations === 0
         && audit.categoryIssues.length === 0
         && audit.parentIdIssues.length === 0,
       ...audit,
@@ -381,7 +408,7 @@ export const runInvariantSmokeTest = internalMutation({
     }
 
     const nonce = `${Date.now()}`;
-    const name = `Mae Verification Pants ${nonce}`;
+    const name = `Verify${nonce} Pants`;
     const ownerKey = `smoke:${nonce}`;
     const assignment = normalizeCategoryAssignment({
       subcategoryIds: [girlsPants.id, boysPants.id],

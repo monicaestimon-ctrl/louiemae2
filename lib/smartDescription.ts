@@ -1,5 +1,6 @@
 export type SourcePlatform = '1688' | 'taobao' | 'alibaba' | 'shopify' | 'generic' | 'manual';
 export type ProductCollection = 'kids' | 'fashion' | 'furniture' | 'decor' | 'home' | 'other';
+export type ProductAudience = 'girls' | 'boys' | 'unisex' | 'adult' | 'home' | 'unknown';
 
 export type VisualFact = {
     factType:
@@ -64,7 +65,11 @@ export type SourceProductSnapshot = {
         sourceCategory?: string;
         selectedCategory?: string;
         selectedSubcategory?: string;
+        selectedSubcategories?: string[];
+        selectedSubcategoryIds?: string[];
         selectedCollection?: ProductCollection;
+        selectionSource?: 'admin' | 'ai' | 'source' | 'placeholder' | 'unknown';
+        audience?: ProductAudience;
     };
     seller?: {
         name?: string;
@@ -108,6 +113,11 @@ export type NormalizedProductFacts = {
     };
     collection: {
         value: ProductCollection;
+        confidence: number;
+        evidence: EvidenceRef[];
+    };
+    audience: {
+        value: ProductAudience;
         confidence: number;
         evidence: EvidenceRef[];
     };
@@ -194,7 +204,10 @@ export type SmartDescriptionRequest = {
     adminContext?: {
         selectedCategory?: string;
         selectedSubcategory?: string;
+        selectedSubcategories?: string[];
+        selectedSubcategoryIds?: string[];
         selectedCollection?: string;
+        audience?: ProductAudience;
         desiredTone?: 'default' | 'softer' | 'more_elevated' | 'more_minimal' | 'more_playful';
         requiredKeywords?: string[];
         bannedWords?: string[];
@@ -239,7 +252,10 @@ export type SmartNameRequest = {
     adminContext?: {
         selectedCategory?: string;
         selectedSubcategory?: string;
+        selectedSubcategories?: string[];
+        selectedSubcategoryIds?: string[];
         selectedCollection?: string;
+        audience?: ProductAudience;
         desiredTone?: 'default' | 'softer' | 'more_elevated' | 'more_minimal' | 'more_playful';
         notes?: string;
     };
@@ -262,6 +278,7 @@ export type SmartNameResponse = {
   ownerKey?: string;
   requestId?: string;
   errorCode?: string;
+  retryable?: boolean;
   error?: string;
 };
 
@@ -513,7 +530,11 @@ export function buildSourceProductSnapshot(input: {
     categoryHints?: {
         selectedCategory?: string;
         selectedSubcategory?: string;
+        selectedSubcategories?: string[];
+        selectedSubcategoryIds?: string[];
         selectedCollection?: string;
+        selectionSource?: 'admin' | 'ai' | 'source' | 'placeholder' | 'unknown';
+        audience?: ProductAudience;
     };
     sellerName?: string;
     sellerRating?: number;
@@ -557,7 +578,11 @@ export function buildSourceProductSnapshot(input: {
         categoryHints: {
             selectedCategory: input.categoryHints?.selectedCategory || input.category,
             selectedSubcategory: input.categoryHints?.selectedSubcategory || input.subcategory,
+            selectedSubcategories: input.categoryHints?.selectedSubcategories,
+            selectedSubcategoryIds: input.categoryHints?.selectedSubcategoryIds,
             selectedCollection: normalizeCollection(input.categoryHints?.selectedCollection || input.collection),
+            selectionSource: input.categoryHints?.selectionSource || 'unknown',
+            audience: input.categoryHints?.audience,
         },
         seller: {
             name: input.sellerName,

@@ -33,6 +33,8 @@ export const createDescriptionAudit = internalMutation({
         adminEditDistance: v.optional(v.number()),
         warnings: v.array(v.string()),
         createdBy: v.optional(v.string()),
+        providerErrorCode: v.optional(v.string()),
+        providerRetryable: v.optional(v.boolean()),
     },
     handler: async (ctx, args) => {
         const now = Date.now();

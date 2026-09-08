@@ -2,6 +2,7 @@
 
 import { action } from "./_generated/server";
 import { v } from "convex/values";
+import { createHash } from "crypto";
 import { internal } from "./_generated/api";
 import { auth } from "./auth";
 import type {
@@ -11,7 +12,7 @@ import type {
     SourceProductSnapshot,
 } from "../lib/smartDescription";
 import { extractNormalizedProductFacts } from "./productFacts";
-import { analyzeProductImages } from "./geminiDescriptionClient";
+import { analyzeProductImages, getSmartDescriptionModel } from "./geminiDescriptionClient";
 import { normalizeSourceProduct } from "./sourceProductNormalizer";
 import {
     buildSafeNameFallback,
@@ -21,7 +22,7 @@ import {
     validateSmartNameDraft,
 } from "./geminiNameClient";
 
-const MAX_MODEL_ATTEMPTS = 5;
+const MAX_MODEL_ATTEMPTS = 2;
 const MAX_FALLBACK_ATTEMPTS = 80;
 
 function attachVisualFacts(snapshot: SourceProductSnapshot, facts: any[]): SourceProductSnapshot {
@@ -78,13 +79,24 @@ export const generateSmartName = action({
             let sourceSnapshot = normalizeSourceProduct(typedRequest.sourceSnapshot || {});
             warnings.push(...(sourceSnapshot.warnings || []));
             if (typedRequest.options?.allowImageAnalysis) {
-                const visual = await analyzeProductImages(sourceSnapshot);
+                const imageUrls = [...sourceSnapshot.images, ...(sourceSnapshot.descriptionImages || [])].map(image => image.url);
+                const visualCacheKey = createHash('sha256').update(JSON.stringify({ imageUrls, model: getSmartDescriptionModel(), prompt: 'visual-facts-v1' })).digest('hex');
+                const cached = await ctx.runQuery(internal.visualFactCache.get, { cacheKey: visualCacheKey });
+                const visual = cached || await analyzeProductImages(sourceSnapshot);
+                if (!cached) await ctx.runMutation(internal.visualFactCache.put, {
+                    cacheKey: visualCacheKey,
+                    sourceSnapshotHash: createHash('sha256').update(JSON.stringify(sourceSnapshot)).digest('hex'),
+                    model: getSmartDescriptionModel(), promptVersion: 'visual-facts-v1', visualFacts: visual.facts, warnings: visual.warnings,
+                    ttlMs: visual.facts.length ? undefined : 5 * 60 * 1000,
+                });
                 warnings.push(...visual.warnings);
                 sourceSnapshot = attachVisualFacts(sourceSnapshot, visual.facts) as any;
             }
 
             const facts = extractNormalizedProductFacts(sourceSnapshot);
-            let existingNames = await ctx.runQuery(internal.productNameRegistry.listNamesForGeneration, { limit: 240 });
+            const registry = await ctx.runQuery(internal.productNameRegistry.listNamesForGeneration, { limit: 240, ownerKey });
+            let existingNames = registry.names;
+            let existingIdentities = registry.identities;
             console.log("[SmartName] started", {
                 requestId,
                 ownerKey,
@@ -92,6 +104,9 @@ export const generateSmartName = action({
                 sourceDomain: sourceSnapshot.sourceDomain,
                 selectedCollection: typedRequest.adminContext?.selectedCollection,
                 globalExcludedNameCount: existingNames.length,
+                globalExcludedIdentityCount: existingIdentities.length,
+                resolvedAudience: facts.audience.value,
+                resolvedProductType: facts.productType.value,
             });
 
             for (let attempt = 0; attempt < MAX_MODEL_ATTEMPTS; attempt += 1) {
@@ -103,30 +118,36 @@ export const generateSmartName = action({
                         facts,
                         adminContext: typedRequest.adminContext || {},
                         existingNames,
+                        existingIdentities,
                     });
                     warnings.push(...generated.warnings);
                     draft = coerceSmartNameDraft(generated.value);
                 } catch (error) {
-                    warnings.push(error instanceof Error ? error.message : String(error));
+                    const message = error instanceof Error ? error.message : String(error);
+                    warnings.push(message);
+                    if (/429|resource_exhausted|quota/i.test(message)) attempt = MAX_MODEL_ATTEMPTS;
                 }
 
                 if (!draft) {
                     fallbackUsed = true;
                     fallbackReason = "MALFORMED_OR_UNAVAILABLE_MODEL_OUTPUT";
-                    draft = buildSafeNameFallback(facts, existingNames);
+                    draft = buildSafeNameFallback(facts, existingNames, existingIdentities);
                 }
-                const validationErrors = validateSmartNameDraft(draft, facts, existingNames);
+                const validationErrors = validateSmartNameDraft(draft, facts, existingNames, existingIdentities);
                 if (validationErrors.length > 0) {
                     warnings.push(...validationErrors);
                     fallbackUsed = true;
                     fallbackReason = validationErrors.join(" ");
-                    draft = buildSafeNameFallback(facts, existingNames);
+                    draft = buildSafeNameFallback(facts, existingNames, existingIdentities);
                 }
 
                 const reservation = await ctx.runMutation(internal.productNameRegistry.reserveSuggestion, {
                     displayName: draft.name,
                     ownerKey,
                     requestId,
+                    boutiqueIdentity: draft.firstName,
+                    audience: facts.audience.value,
+                    productTypeKey: draft.productType.toLowerCase(),
                 });
                 if (reservation.reserved) {
                     console.log("[SmartName] reserved", {
@@ -150,16 +171,20 @@ export const generateSmartName = action({
                     };
                 }
                 existingNames = [...existingNames, draft.name];
+                existingIdentities = [...existingIdentities, draft.firstName.toLowerCase()];
                 warnings.push(`A generated name was already reserved; generating a fresh option (attempt ${attempt + 1}).`);
             }
 
             // The deterministic fallback includes an unbounded sequence once the curated pool is used.
             for (let attempt = 0; attempt < MAX_FALLBACK_ATTEMPTS; attempt += 1) {
-                const draft = buildSafeNameFallback(facts, existingNames);
+                const draft = buildSafeNameFallback(facts, existingNames, existingIdentities);
                 const reservation = await ctx.runMutation(internal.productNameRegistry.reserveSuggestion, {
                     displayName: draft.name,
                     ownerKey,
                     requestId,
+                    boutiqueIdentity: draft.firstName,
+                    audience: facts.audience.value,
+                    productTypeKey: draft.productType.toLowerCase(),
                 });
                 if (reservation.reserved) {
                     return {
@@ -176,6 +201,7 @@ export const generateSmartName = action({
                     };
                 }
                 existingNames = [...existingNames, draft.name];
+                existingIdentities = [...existingIdentities, draft.firstName.toLowerCase()];
             }
 
             return {
@@ -196,6 +222,7 @@ export const generateSmartName = action({
                 warnings: [...new Set([...warnings, message])],
                 fallbackUsed: false,
                 errorCode: "SMART_NAME_FAILED",
+                retryable: !/NAME_POOL_EXHAUSTED/i.test(message),
                 error: "A unique name could not be generated right now. Please try again.",
                 ownerKey,
                 requestId,

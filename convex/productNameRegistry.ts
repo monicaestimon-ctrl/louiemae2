@@ -4,6 +4,9 @@ import type { Id } from './_generated/dataModel';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import {
   PRODUCT_NAME_NORMALIZATION_VERSION,
+  PRODUCT_NAME_IDENTITY_VERSION,
+  inferBoutiqueIdentity,
+  normalizeBoutiqueIdentity,
   normalizeProductName,
   validateProductDisplayName,
 } from '../lib/productNames';
@@ -14,6 +17,7 @@ type ClaimSource = 'ai' | 'manual' | 'migration';
 export type ProductNameErrorCode =
   | 'NAME_INVALID'
   | 'NAME_ALREADY_USED'
+  | 'NAME_IDENTITY_ALREADY_USED'
   | 'NAME_CLAIM_INVALID'
   | 'NAME_CLAIM_OWNER_MISMATCH';
 
@@ -26,6 +30,10 @@ export async function findNameClaim(ctx: ReadCtx, normalizedName: string) {
     .query('productNameClaims')
     .withIndex('by_normalized_name', (q) => q.eq('normalizedName', normalizedName))
     .unique();
+}
+
+export async function findBoutiqueIdentityClaim(ctx: ReadCtx, boutiqueIdentity: string) {
+  return ctx.db.query('productNameClaims').withIndex('by_boutique_identity', q => q.eq('boutiqueIdentity', boutiqueIdentity)).first();
 }
 
 async function findProductNameConflict(ctx: ReadCtx, normalizedName: string, exceptProductId?: Id<'products'>) {
@@ -57,6 +65,7 @@ async function writeNameEvent(
     source: ClaimSource;
     requestId?: string;
     createdAt: number;
+    boutiqueIdentity?: string;
   },
 ) {
   await ctx.db.insert('productNameEvents', args);
@@ -71,6 +80,9 @@ export async function claimProductName(
     pendingClaimId?: Id<'productNameClaims'>;
     productId?: Id<'products'>;
     requestId?: string;
+    boutiqueIdentity?: string;
+    audience?: 'girls' | 'boys' | 'unisex' | 'adult' | 'home' | 'unknown';
+    productTypeKey?: string;
   },
 ): Promise<{ claimId: Id<'productNameClaims'>; normalizedName: string }> {
   const displayName = args.displayName.trim();
@@ -84,6 +96,11 @@ export async function claimProductName(
   if (!args.ownerKey.trim()) fail('NAME_CLAIM_INVALID', 'A name owner is required. Please reopen the editor and try again.');
 
   const claim = existingClaim;
+  const boutiqueIdentity = normalizeBoutiqueIdentity(args.boutiqueIdentity || existingClaim?.boutiqueIdentity || inferBoutiqueIdentity(displayName) || '') || undefined;
+  const identityClaim = boutiqueIdentity ? await findBoutiqueIdentityClaim(ctx, boutiqueIdentity) : null;
+  if (identityClaim && identityClaim._id !== claim?._id && identityClaim.productId !== args.productId) {
+    fail('NAME_IDENTITY_ALREADY_USED', 'That boutique name identity has already been suggested or used. Choose a completely different name.');
+  }
   const productConflict = await findProductNameConflict(ctx, normalizedName, args.productId);
   if (productConflict) {
     fail('NAME_ALREADY_USED', 'That product name is already in the catalog or its history. Choose a different name.');
@@ -107,6 +124,11 @@ export async function claimProductName(
       status: 'active',
       productId: args.productId,
       updatedAt: now,
+      boutiqueIdentity,
+      identityVersion: PRODUCT_NAME_IDENTITY_VERSION,
+      namingMode: boutiqueIdentity ? 'boutique_identity' : 'descriptive',
+      audience: args.audience,
+      productTypeKey: args.productTypeKey,
     });
     if (args.productId) {
       await writeNameEvent(ctx, {
@@ -119,6 +141,7 @@ export async function claimProductName(
         source: args.source,
         requestId: args.requestId,
         createdAt: now,
+        boutiqueIdentity,
       });
     }
     return { claimId: claim._id, normalizedName };
@@ -130,6 +153,11 @@ export async function claimProductName(
     normalizedName,
     displayName,
     normalizationVersion: PRODUCT_NAME_NORMALIZATION_VERSION,
+    boutiqueIdentity,
+    identityVersion: PRODUCT_NAME_IDENTITY_VERSION,
+    namingMode: boutiqueIdentity ? 'boutique_identity' : 'descriptive',
+    audience: args.audience,
+    productTypeKey: args.productTypeKey,
     status: 'active',
     ownerKey: args.ownerKey,
     productId: args.productId,
@@ -149,6 +177,7 @@ export async function claimProductName(
       source: args.source,
       requestId: args.requestId,
       createdAt: now,
+      boutiqueIdentity,
     });
   }
   return { claimId, normalizedName };
@@ -177,6 +206,7 @@ export async function attachNameClaimToProduct(
     source: claim.source,
     requestId: claim.requestId,
     createdAt: now,
+    boutiqueIdentity: claim.boutiqueIdentity,
   });
 }
 
@@ -197,6 +227,9 @@ export async function retireProductName(ctx: MutationCtx, productId: Id<'product
         normalizedName,
         displayName: product.name.trim(),
         normalizationVersion: PRODUCT_NAME_NORMALIZATION_VERSION,
+        boutiqueIdentity: inferBoutiqueIdentity(product.name),
+        identityVersion: PRODUCT_NAME_IDENTITY_VERSION,
+        namingMode: inferBoutiqueIdentity(product.name) ? 'boutique_identity' : 'descriptive',
         status: 'retired',
         ownerKey,
         productId,
@@ -214,6 +247,7 @@ export async function retireProductName(ctx: MutationCtx, productId: Id<'product
         productId,
         source: 'migration',
         createdAt: now,
+        boutiqueIdentity: inferBoutiqueIdentity(product.name),
       });
       return;
     }
@@ -231,6 +265,7 @@ export async function retireProductName(ctx: MutationCtx, productId: Id<'product
     source: claim.source,
     requestId: claim.requestId,
     createdAt: now,
+    boutiqueIdentity: claim.boutiqueIdentity,
   });
 }
 
@@ -239,6 +274,9 @@ export const reserveSuggestion = internalMutation({
     displayName: v.string(),
     ownerKey: v.string(),
     requestId: v.string(),
+    boutiqueIdentity: v.string(),
+    audience: v.optional(v.union(v.literal('girls'), v.literal('boys'), v.literal('unisex'), v.literal('adult'), v.literal('home'), v.literal('unknown'))),
+    productTypeKey: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const displayName = args.displayName.trim();
@@ -246,17 +284,25 @@ export const reserveSuggestion = internalMutation({
       return { reserved: false as const, reason: 'invalid' as const };
     }
     const normalizedName = normalizeProductName(displayName);
-    const [existingClaim, productConflict] = await Promise.all([
+    const boutiqueIdentity = normalizeBoutiqueIdentity(args.boutiqueIdentity);
+    if (!boutiqueIdentity) return { reserved: false as const, reason: 'invalid' as const };
+    const [existingClaim, identityClaim, productConflict] = await Promise.all([
       findNameClaim(ctx, normalizedName),
+      findBoutiqueIdentityClaim(ctx, boutiqueIdentity),
       findProductNameConflict(ctx, normalizedName),
     ]);
-    if (existingClaim || productConflict) return { reserved: false as const, reason: 'collision' as const };
+    if (existingClaim || identityClaim || productConflict) return { reserved: false as const, reason: 'collision' as const };
 
     const now = Date.now();
     const claimId = await ctx.db.insert('productNameClaims', {
       normalizedName,
       displayName,
       normalizationVersion: PRODUCT_NAME_NORMALIZATION_VERSION,
+      boutiqueIdentity,
+      identityVersion: PRODUCT_NAME_IDENTITY_VERSION,
+      namingMode: 'boutique_identity',
+      audience: args.audience,
+      productTypeKey: args.productTypeKey,
       status: 'suggested',
       ownerKey: args.ownerKey,
       source: 'ai',
@@ -273,13 +319,14 @@ export const reserveSuggestion = internalMutation({
       source: 'ai',
       requestId: args.requestId,
       createdAt: now,
+      boutiqueIdentity,
     });
     return { reserved: true as const, claimId, normalizedName };
   },
 });
 
 export const listNamesForGeneration = internalQuery({
-  args: { limit: v.optional(v.number()) },
+  args: { limit: v.optional(v.number()), ownerKey: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const limit = Math.min(Math.max(args.limit || 120, 1), 240);
     const claims = await ctx.db.query('productNameClaims').withIndex('by_updated_at').order('desc').take(limit);
@@ -287,8 +334,13 @@ export const listNamesForGeneration = internalQuery({
       .query('products')
       .withIndex('by_name_key', (q) => q.eq('nameKey', undefined))
       .take(limit);
-    return [...new Set([...claims.map((claim) => claim.displayName), ...legacyProducts.map((product) => product.name)])]
-      .slice(0, limit);
+    const allClaims = await ctx.db.query('productNameClaims').collect();
+    return {
+      names: [...new Set([...claims.map(claim => claim.displayName), ...legacyProducts.map(product => product.name)])].slice(0, limit),
+      identities: [...new Set(allClaims.map(claim => claim.boutiqueIdentity).filter((value): value is string => Boolean(value)))],
+      ownerNames: allClaims.filter(claim => claim.ownerKey === args.ownerKey).map(claim => claim.displayName),
+      ownerIdentities: allClaims.filter(claim => claim.ownerKey === args.ownerKey).map(claim => claim.boutiqueIdentity).filter((value): value is string => Boolean(value)),
+    };
   },
 });
 
@@ -304,6 +356,11 @@ export const checkAvailability = query({
     if (validationErrors.length > 0) return { available: false, code: 'NAME_INVALID', message: validationErrors.join(' ') };
     const productConflict = await findProductNameConflict(ctx, normalizedName, args.productId);
     if (productConflict) return { available: false, code: 'NAME_ALREADY_USED', message: 'This name is already in the catalog.' };
+    const boutiqueIdentity = inferBoutiqueIdentity(args.displayName);
+    const identityClaim = boutiqueIdentity ? await findBoutiqueIdentityClaim(ctx, boutiqueIdentity) : null;
+    if (identityClaim && identityClaim._id !== claim?._id && identityClaim.productId !== args.productId) {
+      return { available: false, code: 'NAME_IDENTITY_ALREADY_USED', message: 'This boutique name identity has already been suggested or used.' };
+    }
     if (!claim) return { available: true, code: 'AVAILABLE', message: 'This name is available.' };
     const ownsSuggestion = claim._id === args.pendingClaimId && claim.ownerKey === args.ownerKey && claim.status === 'suggested';
     return ownsSuggestion

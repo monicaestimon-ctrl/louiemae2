@@ -40,7 +40,7 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
         price: 0,
         description: '',
         images: [],
-        collection: siteContent.collections[0]?.id || 'furniture',
+        collection: initialProduct?.collection || '',
         category: '',
         isNew: true,
         inStock: true,
@@ -62,7 +62,7 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
                 price: 0,
                 description: '',
                 images: [],
-                collection: siteContent.collections[0]?.id || 'furniture',
+                collection: initialProduct?.collection || '',
                 category: '',
                 isNew: true,
                 inStock: true,
@@ -183,6 +183,9 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
         setIsSaving(true);
         try {
             const draft = { ...product, ...override };
+            if (!draft.collection || !draft.subcategoryIds?.length || !draft.primarySubcategoryId) {
+                throw new Error('Choose a collection and at least one subcategory before saving this product.');
+            }
             // Normalize price draft before save
             const normalizedPrice = priceDraft === '' ? 0 : Number(priceDraft);
             const normalizedProductPrice = Number.isFinite(normalizedPrice) ? normalizedPrice : 0;
@@ -241,7 +244,7 @@ export const ProductStudio: React.FC<ProductStudioProps> = ({ isOpen, onClose, i
     const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
     const generateSmartName = useAction(api.smartNames.generateSmartName);
     const cacheImageUrls = useAction(api.productImages.cacheImageUrls);
-    const suggestProductCategory = useAction(api.ai.suggestProductCategory);
+    const suggestProductCategory = useAction(api.ai.suggestProductCategories);
 
     if (!isOpen) return null;
 
@@ -436,7 +439,7 @@ const EssenceStep: React.FC<{
     suggestProductCategory: any;
 }> = ({ product, onChange, priceDraft, onPriceDraftChange, onNext, collections, scrapeProduct, generateSmartDescription, generateSmartName, suggestProductCategory }) => {
     const [isGeneratingName, setIsGeneratingName] = useState(false);
-    const [nameSuggestions, setNameSuggestions] = useState<Array<{ name: string; claimId: string; ownerKey: string }>>([]);
+    const [nameSuggestions, setNameSuggestions] = useState<Array<{ name: string; claimId: string; ownerKey: string; audience?: Product['audience']; productType?: string }>>([]);
     const [isCategorizing, setIsCategorizing] = useState(false);
 
     // Import Logic
@@ -505,6 +508,17 @@ const EssenceStep: React.FC<{
             if (autoEnhance) {
                 // Try AI enhancement
                 try {
+                    if (!updatedProduct.collection || !updatedProduct.subcategoryIds?.length) {
+                        const categoryResult = await suggestProductCategory({ productName: updatedProduct.name || '', productDescription: updatedProduct.description || '', collections });
+                        if (categoryResult?.collectionId && categoryResult.subcategoryIds?.length) {
+                            const matchedCollection = collections.find(collection => collection.id === categoryResult.collectionId);
+                            const primary = matchedCollection?.subcategories.find((subcategory: any) => subcategory.id === categoryResult.primarySubcategoryId);
+                            updatedProduct.collection = categoryResult.collectionId; updatedProduct.subcategoryIds = categoryResult.subcategoryIds;
+                            updatedProduct.primarySubcategoryId = categoryResult.primarySubcategoryId;
+                            updatedProduct.category = primary?.parentCategory || primary?.title || ''; updatedProduct.subcategory = primary?.title || '';
+                            updatedProduct.audience = categoryResult.audience;
+                        }
+                    }
                     const sourceSnapshot = buildSourceProductSnapshot({
                         sourceUrl: normalizedUrl,
                         name: updatedProduct.name,
@@ -518,18 +532,22 @@ const EssenceStep: React.FC<{
                         variants: updatedProduct.variants || [],
                         category: updatedProduct.category,
                         collection: updatedProduct.collection,
+                        categoryHints: { selectedCategory: updatedProduct.category || '', selectedSubcategory: updatedProduct.subcategory || '', selectedSubcategories: updatedProduct.subcategoryIds || [], selectedSubcategoryIds: updatedProduct.subcategoryIds || [], selectedCollection: updatedProduct.collection || '', selectionSource: updatedProduct.collection ? 'admin' : 'unknown', audience: updatedProduct.audience },
                         sourceMetadata: scrapedData.sourceMetadata || {},
                     });
 
-                    const [smartName, smartDescription] = await Promise.all([
-                        generateSmartName({
+                    const smartName = await generateSmartName({
                             request: {
                                 productId: updatedProduct.id,
                                 ownerKey: updatedProduct.nameOwnerKey,
                                 sourceSnapshot,
                                 adminContext: {
                                     selectedCategory: updatedProduct.category,
+                                    selectedSubcategory: updatedProduct.subcategory,
+                                    selectedSubcategories: updatedProduct.subcategoryIds || [],
+                                    selectedSubcategoryIds: updatedProduct.subcategoryIds || [],
                                     selectedCollection: updatedProduct.collection,
+                                    audience: updatedProduct.audience,
                                 },
                                 generationMode: 'manual_generate',
                                 options: {
@@ -537,13 +555,17 @@ const EssenceStep: React.FC<{
                                     forceFreshVariation: true,
                                 },
                             },
-                        } as any).catch(() => null),
-                        generateSmartDescription({
+                        } as any).catch(() => null);
+                    const smartDescription = await generateSmartDescription({
                             request: {
                                 sourceSnapshot,
                                 adminContext: {
                                     selectedCategory: updatedProduct.category,
+                                    selectedSubcategory: updatedProduct.subcategory,
+                                    selectedSubcategories: updatedProduct.subcategoryIds || [],
+                                    selectedSubcategoryIds: updatedProduct.subcategoryIds || [],
                                     selectedCollection: updatedProduct.collection,
+                                    audience: updatedProduct.audience,
                                 },
                                 generationMode: 'manual_generate',
                                 options: {
@@ -552,8 +574,7 @@ const EssenceStep: React.FC<{
                                     forceFreshVariation: true,
                                 },
                             },
-                        } as any).catch(() => null)
-                    ]);
+                        } as any).catch(() => null);
 
                     let didEnhance = false;
                     const smartNameResult = smartName as any;
@@ -561,6 +582,8 @@ const EssenceStep: React.FC<{
                         updatedProduct.name = smartNameResult.name;
                         updatedProduct.pendingNameClaimId = smartNameResult.claimId;
                         updatedProduct.nameOwnerKey = smartNameResult.ownerKey;
+                        updatedProduct.audience = smartNameResult.facts?.audience?.value;
+                        updatedProduct.canonicalProductType = smartNameResult.facts?.productType?.value;
                         didEnhance = true;
                     }
                     const smartDescriptionResult = smartDescription as any;
@@ -603,7 +626,7 @@ const EssenceStep: React.FC<{
         setIsGeneratingName(true);
         setNameSuggestions([]);
         try {
-            const collectionName = collections.find(c => c.id === product.collection)?.title || product.collection || 'Furniture';
+            const collectionName = collections.find(c => c.id === product.collection)?.title || product.collection || '';
             const sourceSnapshot = buildSourceProductSnapshot({
                 sourceUrl: product.sourceUrl,
                 name: product.name || '',
@@ -617,6 +640,7 @@ const EssenceStep: React.FC<{
                 variants: product.variants || [],
                 category: product.category || '',
                 collection: product.collection || collectionName,
+                categoryHints: { selectedCategory: product.category || '', selectedSubcategory: product.subcategory || '', selectedSubcategories: product.subcategoryIds || [], selectedSubcategoryIds: product.subcategoryIds || [], selectedCollection: product.collection || collectionName, selectionSource: product.collection ? 'admin' : 'unknown', audience: product.audience },
             });
             const result = await generateSmartName({
                 request: {
@@ -625,7 +649,11 @@ const EssenceStep: React.FC<{
                     sourceSnapshot,
                     adminContext: {
                         selectedCategory: product.category || '',
+                        selectedSubcategory: product.subcategory || '',
+                        selectedSubcategories: product.subcategoryIds || [],
+                        selectedSubcategoryIds: product.subcategoryIds || [],
                         selectedCollection: product.collection || collectionName,
+                        audience: product.audience,
                     },
                     generationMode: 'manual_generate',
                     options: {
@@ -638,7 +666,7 @@ const EssenceStep: React.FC<{
                 throw new Error((result as any)?.error || 'Smart name failed');
             }
             const name = (result as any).name;
-            setNameSuggestions([{ name, claimId: (result as any).claimId, ownerKey: (result as any).ownerKey }]);
+            setNameSuggestions([{ name, claimId: (result as any).claimId, ownerKey: (result as any).ownerKey, audience: (result as any).facts?.audience?.value, productType: (result as any).facts?.productType?.value }]);
         } catch (err) {
             console.error('Name generation failed:', err);
             toast.error('Failed to generate name suggestions');
@@ -654,19 +682,18 @@ const EssenceStep: React.FC<{
             const category = await suggestProductCategory({
                 productName: product.name,
                 productDescription: product.description || '',
+                collections,
             });
-            if (category) {
-                const collection = collections.find(c => c.id === product.collection);
-                const match = collection?.subcategories.find((candidate: any) =>
-                    candidate.id === category || candidate.title === category,
-                );
+            if (category?.collectionId && category.subcategoryIds?.length) {
+                const collection = collections.find(c => c.id === category.collectionId);
+                const match = collection?.subcategories.find((candidate: any) => candidate.id === category.primarySubcategoryId);
                 onChange({
                     ...product,
-                    category: match?.title || category,
-                    subcategory: match?.title || category,
-                    subcategoryIds: match ? [match.id] : product.subcategoryIds,
-                    primarySubcategoryId: match?.id || product.primarySubcategoryId,
+                    collection: category.collectionId, category: match?.parentCategory || match?.title || '', subcategory: match?.title || '',
+                    subcategoryIds: category.subcategoryIds, primarySubcategoryId: category.primarySubcategoryId, audience: category.audience,
                 });
+            } else {
+                toast.info('Choose a collection and subcategories', { description: category?.reason || 'The product details were not specific enough to categorize safely.' });
             }
         } catch (err) {
             console.error('Auto-categorize failed:', err);
@@ -818,7 +845,7 @@ const EssenceStep: React.FC<{
                                 type="text"
                                 value={product.name}
                                 onChange={(e) => onChange({ ...product, name: e.target.value, pendingNameClaimId: undefined })}
-                                placeholder="e.g. The Velocity Chair"
+                                placeholder="e.g. Elma Curved Chair"
                                 className="w-full text-3xl font-serif text-cream border-b border-white/10 py-2 focus:outline-none focus:border-bronze bg-transparent placeholder:text-cream/10 transition-colors drop-shadow-sm"
                             />
                             {/* Suggestions */}
@@ -833,6 +860,8 @@ const EssenceStep: React.FC<{
                                                     name: suggestion.name,
                                                     pendingNameClaimId: suggestion.claimId as any,
                                                     nameOwnerKey: suggestion.ownerKey,
+                                                    audience: suggestion.audience,
+                                                    canonicalProductType: suggestion.productType,
                                                 });
                                                 setNameSuggestions([]);
                                             }}
@@ -1297,7 +1326,7 @@ const StoryStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => voi
     const handleGenerateDescription = async () => {
         setIsGenerating(true);
         try {
-            const collectionName = siteContent.collections.find(c => c.id === product.collection)?.title || product.collection || 'Furniture';
+            const collectionName = siteContent.collections.find(c => c.id === product.collection)?.title || product.collection || '';
             const sourceSnapshot = buildSourceProductSnapshot({
                 sourceUrl: product.sourceUrl,
                 name: product.name || 'this item',
@@ -1309,8 +1338,9 @@ const StoryStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => voi
                 images: product.images || [],
                 descriptionImages: (product as any).descriptionImages || [],
                 variants: product.variants || [],
-                category: product.category || 'home decor',
+                category: product.category || '',
                 collection: product.collection || collectionName,
+                categoryHints: { selectedCategory: product.category || '', selectedSubcategory: product.subcategory || '', selectedSubcategories: product.subcategoryIds || [], selectedSubcategoryIds: product.subcategoryIds || [], selectedCollection: product.collection || collectionName, selectionSource: product.collection ? 'admin' : 'unknown', audience: product.audience },
                 sourceMetadata: {
                     existingProductId: product.id,
                     descriptionSource: product.descriptionSource,
@@ -1322,8 +1352,12 @@ const StoryStep: React.FC<{ product: Partial<Product>; onChange: (p: any) => voi
                     productId: product.id,
                     sourceSnapshot,
                     adminContext: {
-                        selectedCategory: product.category || 'home decor',
+                        selectedCategory: product.category || '',
+                        selectedSubcategory: product.subcategory || '',
+                        selectedSubcategories: product.subcategoryIds || [],
+                        selectedSubcategoryIds: product.subcategoryIds || [],
                         selectedCollection: product.collection || collectionName,
+                        audience: product.audience,
                     },
                     generationMode: product.smartDescription?.auditId ? 'manual_regenerate' : 'manual_generate',
                     options: {

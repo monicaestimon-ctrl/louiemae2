@@ -3,11 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ProductImport } from '../ProductImport';
 
-const mocks = vi.hoisted(() => ({ action: vi.fn(), warning: vi.fn(), success: vi.fn(), translate: vi.fn() }));
+const mocks = vi.hoisted(() => ({ action: vi.fn(), warning: vi.fn(), success: vi.fn() }));
 vi.mock('convex/react', () => ({ useMutation: () => mocks.action, useAction: () => mocks.action, useQuery: () => undefined }));
 vi.mock('../FadeIn', () => ({ FadeIn: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 vi.mock('sonner', () => ({ Toaster: () => null, toast: { success: mocks.success, warning: mocks.warning, error: vi.fn() } }));
-vi.mock('../../services/translateService', () => ({ detectChinese: (text: string) => /[\u4e00-\u9fff]/.test(text), translateProductFields: mocks.translate }));
+vi.mock('../../services/translateService', () => ({ detectChinese: (text: string) => /[\u4e00-\u9fff]/.test(text) }));
 
 const product = (id: string, count: number) => ({
     id, name: `Product ${id}`, description: 'Draft description', price: 10, salePrice: 10,
@@ -62,7 +62,7 @@ describe('variant review pagination', () => {
     it('warns when a translated batch still contains Chinese labels', async () => {
         const draft = product('A', 1);
         draft.variants[0].name = '蓝色';
-        mocks.translate.mockResolvedValue({ name: draft.name, description: draft.description, variantNames: ['蓝色'] });
+        mocks.action.mockResolvedValue({ ok: false, partial: true, name: draft.name, description: draft.description, variantNames: ['蓝色'], remainingChinese: 1 });
         sessionStorage.setItem('import-search-results', JSON.stringify([draft]));
         render(<ProductImport collections={[]} onImportProducts={vi.fn()} />);
         fireEvent.click(screen.getByRole('button', { name: /translate/i }));

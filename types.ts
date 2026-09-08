@@ -26,6 +26,8 @@ export interface Product {
   activeNameClaimId?: Id<'productNameClaims'>;
   pendingNameClaimId?: Id<'productNameClaims'>;
   nameOwnerKey?: string;
+  audience?: 'girls' | 'boys' | 'unisex' | 'adult' | 'home' | 'unknown';
+  canonicalProductType?: string;
   price: number;
   description: string;
   images: string[];

@@ -214,6 +214,41 @@ export const suggestProductCategory = action({
   },
 });
 
+export const suggestProductCategories = action({
+  args: { productName: v.string(), productDescription: v.string(), collections: v.any() },
+  handler: async (ctx, args): Promise<{ collectionId?: string; subcategoryIds: string[]; primarySubcategoryId?: string; audience: string; confidence: number; reason: string }> => {
+    await requireAdmin(ctx);
+    const collections = Array.isArray(args.collections) ? args.collections : [];
+    const text = `${clamp(args.productName, 300)} ${clamp(args.productDescription, 3_000)}`.toLowerCase();
+    const hasBoys = /\b(boy|boys|male|son)\b/.test(text); const hasGirls = /\b(girl|girls|female|daughter)\b/.test(text);
+    const audience = hasBoys && hasGirls ? 'unisex' : hasBoys ? 'boys' : hasGirls ? 'girls' : /baby|toddler|child|kid/.test(text) ? 'unisex' : 'unknown';
+    const aliases: Array<[RegExp, string[]]> = [
+      [/romper|onesie|bodysuit/, ['romper', 'onesie', 'bodysuit']],
+      [/\bsets?\b|\boutfits?\b|two[- ]?piece|2[- ]?piece|matching|co[- ]?ord/, ['set', 'outfit']],
+      [/pants|trouser|jeans|bottom/, ['pants', 'bottom']], [/shorts?/, ['short']], [/dress/, ['dress']],
+      [/top|shirt|tee|blouse/, ['top', 'shirt']], [/shoe|sandal|boot|sneaker/, ['footwear', 'shoe']],
+      [/chair|stool|seat/, ['chair', 'stool', 'furniture']], [/cabinet|sideboard|dresser|storage/, ['cabinet', 'storage', 'furniture']],
+      [/table|desk|console/, ['table', 'desk', 'console', 'furniture']], [/lamp|light/, ['lamp', 'lighting']],
+      [/rug|carpet/, ['rug']], [/vase|planter|decor/, ['vase', 'planter', 'decor']],
+    ];
+    const typeTerms = aliases.find(([pattern]) => pattern.test(text))?.[1] || [];
+    const scored = collections.flatMap((collection: any) => (collection.subcategories || []).map((subcategory: any) => {
+      const label = `${subcategory.id} ${subcategory.title} ${subcategory.parentCategory || ''}`.toLowerCase();
+      let score = typeTerms.reduce((total, term) => total + (label.includes(term) ? 5 : 0), 0);
+      if (audience === 'boys' && /\bboys?\b/.test(label)) score += 6;
+      if (audience === 'girls' && /\bgirls?\b/.test(label)) score += 6;
+      if (audience === 'unisex' && (/\bboys?\b/.test(label) || /\bgirls?\b/.test(label))) score += 4;
+      if (audience === 'boys' && /\bgirls?\b/.test(label)) score -= 8;
+      if (audience === 'girls' && /\bboys?\b/.test(label)) score -= 8;
+      return { collectionId: collection.id, subcategoryId: subcategory.id, score };
+    })).filter((candidate: any) => candidate.score > 0).sort((a: any, b: any) => b.score - a.score);
+    if (!scored.length) return { subcategoryIds: [], audience, confidence: 0, reason: 'No confident category match; choose categories before generating.' };
+    const collectionId = scored[0].collectionId; const sameCollection = scored.filter((candidate: any) => candidate.collectionId === collectionId); const bestScore = sameCollection[0].score;
+    const subcategoryIds = sameCollection.filter((candidate: any) => candidate.score >= bestScore - 1).slice(0, audience === 'unisex' ? 2 : 1).map((candidate: any) => candidate.subcategoryId);
+    return { collectionId, subcategoryIds, primarySubcategoryId: subcategoryIds[0], audience, confidence: Math.min(0.98, 0.5 + bestScore / 20), reason: subcategoryIds.length > 1 ? 'Matched this product to multiple applicable audience categories.' : 'Matched product wording and audience to the catalog taxonomy.' };
+  },
+});
+
 export const translateVariantNames = action({
   args: { variantNames: v.array(v.string()) },
   handler: async (ctx, args): Promise<Array<{ original: string; translated: string }>> => {
