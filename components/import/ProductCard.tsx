@@ -17,6 +17,8 @@ export interface ImportableProduct extends AliExpressProduct {
     primarySubcategoryId?: string;
     nameClaimId?: string;
     nameOwnerKey?: string;
+    audience?: 'girls' | 'boys' | 'unisex' | 'adult' | 'home' | 'unknown';
+    canonicalProductType?: string;
     isEnhancing?: boolean;
     selectedImages?: number[]; // Indices of selected images for import
     imageOrder?: number[]; // Custom ordering of selectedImages — position 0 = main listing image

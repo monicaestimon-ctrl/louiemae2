@@ -17,6 +17,11 @@ const productStorefrontStatusValidator = v.union(
     v.literal("next_launch")
 );
 
+const productAudienceValidator = v.union(
+    v.literal("girls"), v.literal("boys"), v.literal("unisex"),
+    v.literal("adult"), v.literal("home"), v.literal("unknown"),
+);
+
 const cjSourcingStateValidator = v.union(
     v.literal("needs_input"),
     v.literal("queued"),
@@ -51,6 +56,8 @@ export default defineSchema({
         name: v.string(),
         nameKey: v.optional(v.string()),
         activeNameClaimId: v.optional(v.id("productNameClaims")),
+        audience: v.optional(productAudienceValidator),
+        canonicalProductType: v.optional(v.string()),
         price: v.number(),
         description: v.string(),
         images: v.array(v.string()),
@@ -219,6 +226,12 @@ export default defineSchema({
         normalizedName: v.string(),
         displayName: v.string(),
         normalizationVersion: v.number(),
+        boutiqueIdentity: v.optional(v.string()),
+        identityVersion: v.optional(v.number()),
+        namingMode: v.optional(v.union(v.literal("boutique_identity"), v.literal("descriptive"))),
+        audience: v.optional(productAudienceValidator),
+        productTypeKey: v.optional(v.string()),
+        identityBackfillNote: v.optional(v.string()),
         status: v.union(v.literal("suggested"), v.literal("active"), v.literal("retired")),
         ownerKey: v.string(),
         productId: v.optional(v.id("products")),
@@ -229,6 +242,7 @@ export default defineSchema({
         retiredAt: v.optional(v.number()),
     })
         .index("by_normalized_name", ["normalizedName"])
+        .index("by_boutique_identity", ["boutiqueIdentity"])
         .index("by_product", ["productId"])
         .index("by_owner", ["ownerKey"])
         .index("by_updated_at", ["updatedAt"]),
@@ -237,6 +251,7 @@ export default defineSchema({
         claimId: v.id("productNameClaims"),
         normalizedName: v.string(),
         displayName: v.string(),
+        boutiqueIdentity: v.optional(v.string()),
         eventType: v.union(v.literal("suggested"), v.literal("activated"), v.literal("retired")),
         ownerKey: v.string(),
         productId: v.optional(v.id("products")),
@@ -281,11 +296,26 @@ export default defineSchema({
         updatedAt: v.number(),
         debugExpiresAt: v.optional(v.number()),
         compactedAt: v.optional(v.number()),
+        providerErrorCode: v.optional(v.string()),
+        providerRetryable: v.optional(v.boolean()),
     })
         .index("by_product", ["productId"])
         .index("by_import_session", ["importSessionId"])
         .index("by_createdAt", ["createdAt"])
         .index("by_debug_expiry", ["debugExpiresAt"]),
+
+    productAiFactCache: defineTable({
+        cacheKey: v.string(),
+        sourceSnapshotHash: v.string(),
+        model: v.string(),
+        promptVersion: v.string(),
+        visualFacts: v.array(v.any()),
+        warnings: v.array(v.string()),
+        createdAt: v.number(),
+        expiresAt: v.number(),
+    })
+        .index("by_cache_key", ["cacheKey"])
+        .index("by_expiry", ["expiresAt"]),
 
     pricingAudits: defineTable({
         productId: v.id("products"),

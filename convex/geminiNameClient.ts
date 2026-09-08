@@ -5,7 +5,7 @@ import {
     GeneratedSmartNameDraft,
     NormalizedProductFacts,
 } from '../lib/smartDescription';
-import { normalizeProductName } from '../lib/productNames';
+import { normalizeBoutiqueIdentity, normalizeProductName } from '../lib/productNames';
 
 type GeminiResult<T> = {
     value?: T;
@@ -14,6 +14,9 @@ type GeminiResult<T> = {
 };
 
 const NAME_POOLS: Record<string, string[]> = {
+    girls: ['Poppy', 'Birdie', 'Rosie', 'Clementine', 'Meadow', 'Elsie', 'Daisy', 'Lottie', 'Millie', 'Nellie', 'Flora', 'Mabel', 'Tilly', 'Maisie', 'Posie', 'Sylvie', 'Della', 'Winnie', 'Calla', 'Blythe'],
+    boys: ['Theo', 'Milo', 'Archie', 'Jasper', 'Felix', 'Hugo', 'Otis', 'Ellis', 'Arlo', 'Luca', 'Finn', 'Remy', 'August', 'Rowan', 'Beckett', 'Rhys', 'Silas', 'Nico', 'Miles', 'Leo'],
+    unisex: ['Rowan', 'Ellis', 'Remy', 'Avery', 'Emery', 'Sage', 'River', 'Robin', 'Quinn', 'Rory', 'Scout', 'Parker', 'Jamie', 'Morgan', 'Reese', 'Skyler', 'Taylor', 'Casey', 'Blair', 'Lane'],
     kids: ['Poppy', 'Birdie', 'Rosie', 'Clementine', 'Meadow', 'Elsie', 'Daisy', 'Lottie'],
     fashion: ['Sienna', 'Willow', 'Maeve', 'Ivy', 'Wren', 'Clara', 'Elodie', 'Maren'],
     furniture: ['Astrid', 'Linnea', 'Freya', 'Clara', 'Nora', 'Elma', 'Ingrid', 'Anika'],
@@ -103,8 +106,8 @@ function titleText(facts: NormalizedProductFacts): string {
 export function normalizedNameProductType(facts: NormalizedProductFacts): string {
     const text = titleText(facts);
     const pairs: Array<[RegExp, string]> = [
-        [/\bsets?\b|2[-\s]?piece|two[-\s]?piece|matching|co[-\s]?ord|coordinat(?:ed|ing)/, 'Sets'],
-        [/romper|onesie|bodysuit/, 'Romper'],
+        [/\bsets?\b|\boutfits?\b|2[-\s]?piece|two[-\s]?piece|matching|co[-\s]?ord|coordinat(?:ed|ing)/, 'Sets'],
+        [/romper|onesie|bodysuit|jumpsuit/, facts.audience.value === 'boys' || facts.audience.value === 'unisex' ? 'Onesie' : 'Romper'],
         [/dress/, 'Dress'],
         [/blouse/, 'Blouse'],
         [/\btop\b|shirt|tee/, 'Top'],
@@ -202,12 +205,28 @@ function existingNameKeys(existingNames: string[] = []): Set<string> {
     return new Set(existingNames.map(normalizeProductName).filter(Boolean));
 }
 
-export function buildSafeNameFallback(facts: NormalizedProductFacts, existingNames: string[] = []): GeneratedSmartNameDraft {
+function poolForFacts(facts: NormalizedProductFacts): string[] {
+    if (facts.audience.value === 'unknown' && facts.collection.value === 'kids') return NAME_POOLS.unisex;
+    return NAME_POOLS[facts.audience.value] || NAME_POOLS[facts.collection.value] || NAME_POOLS.other;
+}
+
+function generateIdentityCandidate(seed: number, used: Set<string>): string {
+    const starts = ['Al', 'Bel', 'Cal', 'Del', 'El', 'Fin', 'Hal', 'Iver', 'Jo', 'Kel', 'Lor', 'Mar', 'Nor', 'Or', 'Per', 'Sol', 'Tor', 'Val', 'Wil', 'Zel'];
+    const ends = ['den', 'ley', 'ren', 'son', 'ton', 'ver', 'well', 'lan', 'ric', 'wyn', 'ford', 'sen', 'low', 'mere', 'field', 'mont', 'rose', 'vale', 'lin', 'mar'];
+    for (let offset = 0; offset < starts.length * ends.length; offset++) {
+        const value = `${starts[(seed + offset) % starts.length]}${ends[Math.floor((seed + offset) / starts.length) % ends.length]}`;
+        if (!used.has(normalizeBoutiqueIdentity(value))) return value;
+    }
+    throw new Error('NAME_POOL_EXHAUSTED');
+}
+
+export function buildSafeNameFallback(facts: NormalizedProductFacts, existingNames: string[] = [], existingIdentities: string[] = []): GeneratedSmartNameDraft {
     const collection = facts.collection.value;
-    const pool = NAME_POOLS[collection] || NAME_POOLS.other;
+    const pool = poolForFacts(facts);
     const productType = normalizedNameProductType(facts);
     const modifiers = [...groundedModifiers(facts), { factIds: [] }];
     const used = existingNameKeys(existingNames);
+    const usedIdentities = new Set([...existingIdentities, ...existingNames.map(name => name.split(/\s+/)[0] || '')].map(normalizeBoutiqueIdentity).filter(Boolean));
     const seed = seededIndex(`${facts.titleFacts.cleanedTitle || ''}:${productType}:${modifiers[0]?.modifier || ''}`, pool.length);
     let selected = {
         firstName: pool[seed],
@@ -217,6 +236,7 @@ export function buildSafeNameFallback(facts: NormalizedProductFacts, existingNam
 
     for (let nameOffset = 0; nameOffset < pool.length; nameOffset++) {
         const firstName = pool[(seed + nameOffset) % pool.length];
+        if (usedIdentities.has(normalizeBoutiqueIdentity(firstName))) continue;
         for (const modifier of modifiers) {
             const name = [firstName, modifier.modifier, productType].filter(Boolean).join(' ');
             selected = { firstName, modifier, name };
@@ -227,23 +247,9 @@ export function buildSafeNameFallback(facts: NormalizedProductFacts, existingNam
         }
     }
 
-    if (used.has(normalizeProductName(selected.name))) {
-        const secondary = ['Rue', 'June', 'Belle', 'Sage', 'Faye', 'Wren', 'Pearl', 'Skye'];
-        let sequence = used.size + 1;
-        while (used.has(normalizeProductName(selected.name))) {
-            const firstName = pool[sequence % pool.length];
-            const secondName = secondary[Math.floor(sequence / pool.length) % secondary.length];
-            const cycle = Math.floor(sequence / (pool.length * secondary.length));
-            const modifier = { factIds: [] as string[] };
-            selected = {
-                firstName,
-                modifier,
-                name: [firstName, secondName, productType, cycle > 0 ? cycle + 1 : undefined]
-                    .filter(Boolean)
-                    .join(' '),
-            };
-            sequence += 1;
-        }
+    if (used.has(normalizeProductName(selected.name)) || usedIdentities.has(normalizeBoutiqueIdentity(selected.firstName))) {
+        const firstName = generateIdentityCandidate(used.size + seed, usedIdentities);
+        selected = { firstName, modifier: modifiers[0], name: [firstName, modifiers[0]?.modifier, productType].filter(Boolean).join(' ') };
     }
 
     return {
@@ -285,16 +291,26 @@ export function coerceSmartNameDraft(value: unknown): GeneratedSmartNameDraft | 
     };
 }
 
-export function validateSmartNameDraft(draft: GeneratedSmartNameDraft, facts: NormalizedProductFacts, existingNames: string[] = []): string[] {
+export function validateSmartNameDraft(draft: GeneratedSmartNameDraft, facts: NormalizedProductFacts, existingNames: string[] = [], existingIdentities: string[] = []): string[] {
     const errors: string[] = [];
     const name = draft.name.trim();
     const words = name.split(/\s+/).filter(Boolean);
     if (words.length < 2 || words.length > 4) errors.push('Name must be 2-4 words.');
     if (/^the\s/i.test(name)) errors.push('Name must not start with "The".');
+    if (normalizeBoutiqueIdentity(name) !== normalizeBoutiqueIdentity(draft.firstName)) errors.push('The firstName must match the first word of the product name.');
     if (name.toLowerCase() === (facts.titleFacts.originalTitle || '').toLowerCase()) errors.push('Name cannot repeat the source title.');
     if (existingNameKeys(existingNames).has(normalizeProductName(name))) errors.push(`Name is already used in inventory: ${name}.`);
+    if (new Set(existingIdentities.map(normalizeBoutiqueIdentity)).has(normalizeBoutiqueIdentity(draft.firstName))) errors.push(`Boutique identity is already used: ${draft.firstName}.`);
     const productType = normalizedNameProductType(facts).toLowerCase();
     if (!containsToken(name.toLowerCase(), productType)) errors.push(`Name must include the product type "${productType}".`);
+    if (facts.audience.value === 'boys') {
+        const allowed = new Set([...NAME_POOLS.boys, ...NAME_POOLS.unisex].map(normalizeBoutiqueIdentity));
+        if (!allowed.has(normalizeBoutiqueIdentity(draft.firstName))) errors.push('Boys products require a masculine or neutral boutique identity.');
+    }
+    if (facts.audience.value === 'unisex') {
+        const allowed = new Set(NAME_POOLS.unisex.map(normalizeBoutiqueIdentity));
+        if (!allowed.has(normalizeBoutiqueIdentity(draft.firstName))) errors.push('Unisex products require a neutral boutique identity.');
+    }
 
     const directFactText = allFactValues(facts)
         .filter(fact => ['source_structured', 'source_text', 'source_title', 'source_variant', 'admin_input'].includes(fact.evidenceLevel))
@@ -313,20 +329,21 @@ export async function generateSmartNameWithGemini(args: {
     facts: NormalizedProductFacts;
     adminContext?: Record<string, unknown>;
     existingNames?: string[];
+    existingIdentities?: string[];
 }): Promise<GeminiResult<GeneratedSmartNameDraft>> {
     const ai = getAI();
     const model = getModel();
     const productType = normalizedNameProductType(args.facts);
-    const fallback = buildSafeNameFallback(args.facts, args.existingNames || []);
+    const fallback = buildSafeNameFallback(args.facts, args.existingNames || [], args.existingIdentities || []);
     const collection = args.facts.collection.value;
-    const firstNamePool = NAME_POOLS[collection] || NAME_POOLS.other;
+    const firstNamePool = poolForFacts(args.facts).filter(name => !(args.existingIdentities || []).includes(normalizeBoutiqueIdentity(name)));
     const systemInstruction = `
 You name Louie Mae products using grounded source facts.
 Return JSON only. Do not return Markdown or prose outside JSON.
 
 Goal: a short boutique name that feels personal and specific, while keeping Louie Mae's format.
-Preferred format: Feminine first name + grounded modifier + product type.
-Acceptable fallback format: Feminine first name + product type.
+Preferred format: audience-appropriate boutique identity + grounded modifier + product type.
+Acceptable fallback format: audience-appropriate boutique identity + product type.
 Examples: "Poppy Ruffle Romper", "Willow Floral Dress", "Sienna Matching Sets", "Elma Curved Chair", "Linnea Storage Cabinet".
 
 Strict rules:
@@ -335,8 +352,11 @@ Strict rules:
 - Do not start with "The".
 - Do not repeat the marketplace/source title.
 - Product type must be exactly or very close to: ${productType}.
+- Resolved audience is ${args.facts.audience.value}. Boys products must use masculine or neutral identities; never feminine identities. Unisex products must use neutral identities.
+- Boys and unisex romper-like garments must be called "Onesie", never "Romper". Girls romper-like garments may use "Romper".
 - If the product is a matching/coordinated outfit, two-piece item, or source/category says sets, the final name must include "Sets".
 - Do not reuse any exact name from AVOID_EXISTING_NAMES.
+- Do not reuse any first-name identity from AVOID_EXISTING_IDENTITIES. This prohibition is permanent even when the modifier or product type differs.
 - If a similar product already uses the same first name + product type, choose a different first name from the pool.
 - Use a modifier only when grounded in visible/source facts, such as ruffle, floral, bow, scallop, smocked, ribbed, curved, lowline, storage, stripe, lace.
 - Do not use material, certification, care, safety, handmade, solid wood, organic, FSC, OEKO-TEX, or washable claims unless directly present in verified source facts.
@@ -360,6 +380,7 @@ JSON shape:
             targetProductType: productType,
             safeFallbackExample: fallback,
             avoidExistingNames: (args.existingNames || []).slice(0, 40),
+            avoidExistingIdentities: args.existingIdentities || [],
             adminContext: args.adminContext || {},
         }),
         config: {

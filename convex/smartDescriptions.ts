@@ -139,7 +139,15 @@ export const generateSmartDescription = action({
             warnings.push(...(sourceSnapshot.warnings || []));
 
             if (typedRequest.options?.allowImageAnalysis) {
-                const visual = await analyzeProductImages(sourceSnapshot);
+                const imageUrls = [...sourceSnapshot.images, ...(sourceSnapshot.descriptionImages || [])].map(image => image.url);
+                const visualCacheKey = createHash('sha256').update(JSON.stringify({ imageUrls, model: getSmartDescriptionModel(), prompt: 'visual-facts-v1' })).digest('hex');
+                const cached = await ctx.runQuery(internal.visualFactCache.get, { cacheKey: visualCacheKey });
+                const visual = cached || await analyzeProductImages(sourceSnapshot);
+                if (!cached) await ctx.runMutation(internal.visualFactCache.put, {
+                    cacheKey: visualCacheKey, sourceSnapshotHash: hashSnapshot(sourceSnapshot), model: getSmartDescriptionModel(),
+                    promptVersion: 'visual-facts-v1', visualFacts: visual.facts, warnings: visual.warnings,
+                    ttlMs: visual.facts.length ? undefined : 5 * 60 * 1000,
+                });
                 warnings.push(...visual.warnings);
                 sourceSnapshot = attachVisualFacts(sourceSnapshot, visual.facts) as any;
             }
@@ -165,12 +173,17 @@ export const generateSmartDescription = action({
                 limit: 10,
             });
 
-            const generated = await generateDescriptionDraftWithGemini({
-                facts,
-                brandVoice: LOUIE_MAE_BRAND_VOICE,
-                similarDescriptions,
-                adminContext: typedRequest.adminContext || {},
-            });
+            let providerErrorCode: string | undefined;
+            let providerRetryable: boolean | undefined;
+            let generated: Awaited<ReturnType<typeof generateDescriptionDraftWithGemini>> = { warnings: [] };
+            try {
+                generated = await generateDescriptionDraftWithGemini({ facts, brandVoice: LOUIE_MAE_BRAND_VOICE, similarDescriptions, adminContext: typedRequest.adminContext || {} });
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                providerErrorCode = /429|resource_exhausted|quota/i.test(message) ? 'PROVIDER_QUOTA_EXHAUSTED' : /timeout|abort/i.test(message) ? 'PROVIDER_TIMEOUT' : 'PROVIDER_UNAVAILABLE';
+                providerRetryable = providerErrorCode !== 'PROVIDER_QUOTA_EXHAUSTED';
+                warnings.push(`AI provider unavailable (${providerErrorCode}); safe product copy was created from verified facts.`);
+            }
             warnings.push(...generated.warnings);
             let finalDraft = coerceGeneratedDescriptionDraft(generated.value);
             let repaired = false;
@@ -181,7 +194,7 @@ export const generateSmartDescription = action({
 
             if (!finalDraft) {
                 fallbackUsed = true;
-                fallbackReason = "MALFORMED_MODEL_OUTPUT";
+                fallbackReason = providerErrorCode || "MALFORMED_MODEL_OUTPUT";
                 warnings.push("Smart description model returned malformed output; safe fallback copy was used.");
                 console.log("[SmartDescription] fallback used", { requestId, fallbackReason });
                 finalDraft = buildSafeFallbackDescription(facts, sourceSnapshot);
@@ -205,12 +218,12 @@ export const generateSmartDescription = action({
                     requestId,
                     issueCodes: validation.errors.map(issue => issue.code),
                 });
-                const repairedResult = await repairDescriptionDraftWithGemini({
-                    draft: finalDraft,
-                    validation,
-                    facts,
-                    brandVoice: LOUIE_MAE_BRAND_VOICE,
-                });
+                let repairedResult: Awaited<ReturnType<typeof repairDescriptionDraftWithGemini>> = { warnings: [] };
+                try {
+                    repairedResult = await repairDescriptionDraftWithGemini({ draft: finalDraft, validation, facts, brandVoice: LOUIE_MAE_BRAND_VOICE });
+                } catch (error) {
+                    warnings.push(`AI repair was unavailable; safe fallback copy was used. ${error instanceof Error ? error.message : String(error)}`);
+                }
                 warnings.push(...repairedResult.warnings);
                 const repairedDraft = coerceGeneratedDescriptionDraft(repairedResult.value);
                 if (repairedDraft) {
@@ -264,6 +277,8 @@ export const generateSmartDescription = action({
                 adminEdited: false,
                 warnings: [...new Set([...warnings, ...validation.warnings.map(issue => issue.message)])],
                 createdBy: userId,
+                providerErrorCode,
+                providerRetryable,
             });
 
             console.log("[SmartDescription] generated", {

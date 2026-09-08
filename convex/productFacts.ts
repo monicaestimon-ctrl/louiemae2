@@ -3,6 +3,7 @@ import {
     FactValue,
     NormalizedProductFacts,
     ProductCollection,
+    ProductAudience,
     SourceAttribute,
     SourceProductSnapshot,
     VisualFact,
@@ -48,10 +49,44 @@ function fact(
     };
 }
 
-function detectProductType(snapshot: SourceProductSnapshot): { value: string; confidence: number; evidence: EvidenceRef[] } {
-    const text = [snapshot.rawTitle, snapshot.rawDescription, snapshot.categoryHints?.selectedCategory].filter(Boolean).join(' ').toLowerCase();
+function classificationText(snapshot: SourceProductSnapshot): string {
+    return [snapshot.rawTitle, snapshot.translatedTitle, snapshot.rawDescription, snapshot.translatedDescription,
+        snapshot.categoryHints?.sourceCategory, snapshot.categoryHints?.selectedCategory, snapshot.categoryHints?.selectedSubcategory,
+        ...(snapshot.categoryHints?.selectedSubcategories || []), ...(snapshot.categoryHints?.selectedSubcategoryIds || []),
+        ...(snapshot.attributes || []).map(item => `${item.key} ${item.value}`),
+        ...(snapshot.variants || []).flatMap(item => [item.name, ...item.values]),
+    ].filter(Boolean).join(' ').toLowerCase();
+}
+
+export function resolveProductAudience(snapshot: SourceProductSnapshot): { value: ProductAudience; confidence: number; evidence: EvidenceRef[] } {
+    const explicit = snapshot.categoryHints?.audience;
+    if (explicit && explicit !== 'unknown') return { value: explicit, confidence: 0.99, evidence: [evidence('admin_input', explicit, 'audience')] };
+    const selectedContext = [snapshot.categoryHints?.selectedCategory, snapshot.categoryHints?.selectedSubcategory,
+        ...(snapshot.categoryHints?.selectedSubcategories || []), ...(snapshot.categoryHints?.selectedSubcategoryIds || []),
+    ].filter(Boolean).join(' ').toLowerCase();
+    const selectedGirls = /\b(girls?|female)\b/.test(selectedContext) || /(^|[-_])girls?([-_]|$)/.test(selectedContext);
+    const selectedBoys = /\b(boys?|male)\b/.test(selectedContext) || /(^|[-_])boys?([-_]|$)/.test(selectedContext);
+    if (selectedGirls && selectedBoys) return { value: 'unisex', confidence: 0.99, evidence: [evidence('admin_input', selectedContext, 'selectedCategories')] };
+    if (selectedBoys) return { value: 'boys', confidence: 0.99, evidence: [evidence('admin_input', selectedContext, 'selectedCategories')] };
+    if (selectedGirls) return { value: 'girls', confidence: 0.99, evidence: [evidence('admin_input', selectedContext, 'selectedCategories')] };
+    const text = classificationText(snapshot);
+    const hasGirls = /\b(girls?|female|daughter|princess)\b/.test(text) || /(^|[-_])girls?([-_]|$)/.test(text);
+    const hasBoys = /\b(boys?|male|son)\b/.test(text) || /(^|[-_])boys?([-_]|$)/.test(text);
+    if (hasGirls && hasBoys) return { value: 'unisex', confidence: 0.96, evidence: [evidence('admin_input', text.slice(0, 180), 'category_context')] };
+    if (hasBoys) return { value: 'boys', confidence: 0.9, evidence: [evidence('title', text.slice(0, 180), 'combined_text')] };
+    if (hasGirls) return { value: 'girls', confidence: 0.9, evidence: [evidence('title', text.slice(0, 180), 'combined_text')] };
+    if (/\b(unisex|gender[- ]?neutral)\b/.test(text)) return { value: 'unisex', confidence: 0.88, evidence: [evidence('title', text.slice(0, 180), 'combined_text')] };
+    const collection = normalizeCollection(snapshot.categoryHints?.selectedCollection);
+    if (['furniture', 'decor', 'home'].includes(collection)) return { value: 'home', confidence: 0.98, evidence: [evidence('admin_input', collection, 'selectedCollection')] };
+    if (collection === 'fashion') return { value: 'adult', confidence: 0.7, evidence: [evidence('admin_input', collection, 'selectedCollection')] };
+    return { value: 'unknown', confidence: 0.35, evidence: [] };
+}
+
+function detectProductType(snapshot: SourceProductSnapshot, audience: ProductAudience): { value: string; confidence: number; evidence: EvidenceRef[] } {
+    const text = classificationText(snapshot);
     const pairs: Array<[RegExp, string]> = [
-        [/romper|onesie|bodysuit/, 'romper'],
+        [/\bsets?\b|\boutfits?\b|2[-\s]?piece|two[-\s]?piece|matching|co[-\s]?ord|coordinat(?:ed|ing)/, 'set'],
+        [/romper|onesie|bodysuit|jumpsuit/, audience === 'boys' || audience === 'unisex' ? 'onesie' : 'romper'],
         [/dress/, 'dress'],
         [/cardigan|sweater|knit/, 'knitwear'],
         [/blouse|top|shirt/, 'top'],
@@ -74,10 +109,10 @@ function detectProductType(snapshot: SourceProductSnapshot): { value: string; co
 
 function detectCollection(snapshot: SourceProductSnapshot): { value: ProductCollection; confidence: number; evidence: EvidenceRef[] } {
     const collection = normalizeCollection(snapshot.categoryHints?.selectedCollection);
-    if (collection !== 'other') {
+    if (collection !== 'other' && snapshot.categoryHints?.selectionSource !== 'placeholder') {
         return { value: collection, confidence: 0.95, evidence: [evidence('admin_input', collection, 'selectedCollection')] };
     }
-    const text = [snapshot.rawTitle, snapshot.rawDescription, snapshot.categoryHints?.selectedCategory].filter(Boolean).join(' ').toLowerCase();
+    const text = classificationText(snapshot);
     if (/baby|toddler|kid|girl|boy|child/.test(text)) return { value: 'kids', confidence: 0.65, evidence: [evidence('title', text.slice(0, 160))] };
     if (/dress|blouse|shirt|top|pants|skirt|cardigan/.test(text)) return { value: 'fashion', confidence: 0.6, evidence: [evidence('title', text.slice(0, 160))] };
     if (/chair|table|cabinet|stool|sofa|sideboard/.test(text)) return { value: 'furniture', confidence: 0.6, evidence: [evidence('title', text.slice(0, 160))] };
@@ -201,7 +236,8 @@ export function extractNormalizedProductFacts(snapshot: SourceProductSnapshot & 
     const combinedText = [snapshot.rawTitle, snapshot.rawDescription, snapshot.rawHtmlDescription]
         .filter(Boolean)
         .join(' ');
-    const productType = detectProductType(snapshot);
+    const audience = resolveProductAudience(snapshot);
+    const productType = detectProductType(snapshot, audience.value);
     const collection = detectCollection(snapshot);
     const sourceQuality = calculateSourceQuality(snapshot);
     const attrs = snapshot.attributes || [];
@@ -248,6 +284,7 @@ export function extractNormalizedProductFacts(snapshot: SourceProductSnapshot & 
     return {
         productType,
         collection,
+        audience,
         titleFacts: {
             originalTitle: snapshot.rawTitle,
             cleanedTitle: snapshot.translatedTitle || snapshot.rawTitle,

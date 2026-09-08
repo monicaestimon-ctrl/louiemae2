@@ -3,7 +3,7 @@ import { Search, Loader2, Check, X, DollarSign, Wand2, Package, ChevronDown, Ale
 import { toast, Toaster } from 'sonner';
 import { aliexpressService } from '../services/aliexpressService';
 import { CollectionType, Product, CollectionConfig } from '../types';
-import { translateProductFields, detectChinese } from '../services/translateService';
+import { detectChinese } from '../services/translateService';
 import { extractOtapiSourceProperties, cleanOtapiDescription, isPlaceholderSourceDescription } from '../lib/otapiHelpers';
 import { FadeIn } from './FadeIn';
 import { ProductImageGallery } from './ProductImageGallery';
@@ -21,7 +21,7 @@ import { buildBatchImportProduct } from '../lib/batchImportProduct';
 import { isObsoleteBatchImportError } from '../lib/batchImportObsolete';
 import { ProductSubcategorySelector } from './ProductSubcategorySelector';
 import { ProductNameAvailability } from './ProductNameAvailability';
-import { normalizeProductName } from '../lib/productNames';
+import { inferBoutiqueIdentity, normalizeProductName } from '../lib/productNames';
 
 interface ProductImportProps {
     collections: CollectionConfig[];
@@ -172,7 +172,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const [sortBy, setSortBy] = useState<'default' | 'price_asc' | 'price_desc' | 'orders'>('default');
 
     // Import settings
-    const [targetCollection, setTargetCollection] = useState<string>(collections[0]?.id || 'furniture');
+    const [targetCollection, setTargetCollection] = useState<string>('');
     const [targetSubcategory, setTargetSubcategory] = useState<string>('');
     const pricingRule = DEFAULT_PRICING_RULE;
 
@@ -181,7 +181,8 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
     const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
     const generateSmartName = useAction(api.smartNames.generateSmartName);
     const cacheImageUrls = useAction(api.productImages.cacheImageUrls);
-    const translateVariantNames = useAction(api.ai.translateVariantNames);
+    const translateProductFields = useAction(api.translations.translateProductFields);
+    const suggestProductCategories = useAction(api.ai.suggestProductCategories);
     const createBatchImport = useMutation(api.batchImports.create);
     const retryBatchItem = useMutation(api.batchImports.retry);
     const cancelBatchImport = useMutation(api.batchImports.cancel);
@@ -243,6 +244,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             category: product.category || product.targetSubcategory || '',
             subcategory: product.targetSubcategory || '',
             collection: product.targetCollection || targetCollection,
+            categoryHints: { selectedCategory: product.category || '', selectedSubcategory: product.targetSubcategory || '', selectedSubcategories: product.targetSubcategoryIds || [], selectedSubcategoryIds: product.targetSubcategoryIds || [], selectedCollection: product.targetCollection || targetCollection, selectionSource: (product.targetCollection || targetCollection) ? 'admin' : 'unknown' },
             sellerName: product.seller?.name,
             sellerRating: product.seller?.rating,
             salesCount: product.reviewCount,
@@ -529,14 +531,15 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
 
         try {
             const sourceSnapshot = buildSnapshotForImportProduct(product);
-            const [smartNameSettled, smartDescriptionSettled] = await Promise.allSettled([
-                generateSmartName({
+            const smartNameSettled = await Promise.resolve(generateSmartName({
                     request: {
                         ownerKey: getNameOwnerKey(product),
                         sourceSnapshot,
                         adminContext: {
                             selectedCategory: product.category || '',
                             selectedSubcategory: product.targetSubcategory || targetSubcategory,
+                            selectedSubcategories: product.targetSubcategoryIds || [],
+                            selectedSubcategoryIds: product.targetSubcategoryIds || [],
                             selectedCollection: product.targetCollection || targetCollection,
                         },
                         generationMode: 'manual_generate',
@@ -545,13 +548,15 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                             forceFreshVariation: true,
                         },
                     },
-                } as any),
-                generateSmartDescription({
+                } as any)).then(value => ({ status: 'fulfilled' as const, value }), reason => ({ status: 'rejected' as const, reason }));
+            const smartDescriptionSettled = await Promise.resolve(generateSmartDescription({
                     request: {
                         sourceSnapshot,
                         adminContext: {
                             selectedCategory: product.category || '',
                             selectedSubcategory: product.targetSubcategory || targetSubcategory,
+                            selectedSubcategories: product.targetSubcategoryIds || [],
+                            selectedSubcategoryIds: product.targetSubcategoryIds || [],
                             selectedCollection: product.targetCollection || targetCollection,
                         },
                         generationMode: 'manual_generate',
@@ -561,8 +566,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                             forceFreshVariation: true,
                         },
                     },
-                } as any),
-            ]);
+                } as any)).then(value => ({ status: 'fulfilled' as const, value }), reason => ({ status: 'rejected' as const, reason }));
             const smartName = smartNameSettled.status === 'fulfilled' ? smartNameSettled.value as any : null;
             const smartDescription = smartDescriptionSettled.status === 'fulfilled' ? smartDescriptionSettled.value as any : null;
             const enhancedName = smartName?.ok && smartName.name
@@ -573,6 +577,8 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                 updateProductField(productId, 'customName', enhancedName);
                 updateProductField(productId, 'nameClaimId', smartName.claimId);
                 updateProductField(productId, 'nameOwnerKey', smartName.ownerKey);
+                updateProductField(productId, 'audience', smartName.facts?.audience?.value);
+                updateProductField(productId, 'canonicalProductType', smartName.facts?.productType?.value);
             }
             if (smartDescription?.ok && smartDescription.description) {
                 updateProductField(productId, 'customDescription', smartDescription.description);
@@ -614,6 +620,8 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                     adminContext: {
                         selectedCategory: product.category || '',
                         selectedSubcategory: product.targetSubcategory || targetSubcategory,
+                        selectedSubcategories: product.targetSubcategoryIds || [],
+                        selectedSubcategoryIds: product.targetSubcategoryIds || [],
                         selectedCollection: product.targetCollection || targetCollection,
                     },
                     generationMode: 'manual_generate',
@@ -630,6 +638,8 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             updateProductField(productId, 'customName', enhancedName);
             updateProductField(productId, 'nameClaimId', (smartName as any).claimId);
             updateProductField(productId, 'nameOwnerKey', (smartName as any).ownerKey);
+            updateProductField(productId, 'audience', (smartName as any).facts?.audience?.value);
+            updateProductField(productId, 'canonicalProductType', (smartName as any).facts?.productType?.value);
 
             toast.success('Name enhanced', {
                 description: `"${enhancedName}"`
@@ -853,6 +863,11 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
         if (isImporting) return;
         setIsImporting(true);
         const selectedProducts = getReviewBatch();
+        const uncategorized = selectedProducts.find(product => {
+            const ids = product.targetSubcategoryIds?.length ? product.targetSubcategoryIds : [product.targetSubcategory || targetSubcategory].filter(Boolean);
+            return !(product.targetCollection || targetCollection) || ids.length === 0;
+        });
+        if (uncategorized) { toast.error('Choose a collection and at least one subcategory for every product before importing.'); setIsImporting(false); return; }
 
         const productsToImport: Omit<Product, 'id'>[] = selectedProducts.map(p => {
             const productCollection = p.targetCollection || targetCollection;
@@ -861,7 +876,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                 : [p.targetSubcategory || targetSubcategory].filter(Boolean);
             const productSubcategory = p.primarySubcategoryId || selectedSubcategoryIds[0];
             const subcategories = getSubcategoriesForCollection(productCollection);
-            const subcategoryTitle = subcategories.find(s => s.id === productSubcategory)?.title || productSubcategory || p.category || 'General';
+            const subcategoryTitle = subcategories.find(s => s.id === productSubcategory)?.title || productSubcategory || p.category;
 
             const finalImages = getOrderedImages(p);
 
@@ -889,6 +904,8 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                 images: finalImages,
                 category: subcategoryTitle,
                 collection: productCollection as CollectionType,
+                audience: p.audience,
+                canonicalProductType: p.canonicalProductType,
                 isNew: true,
                 inStock: p.inStock,
                 storefrontStatus: 'hidden' as const,
@@ -970,6 +987,8 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             if (duplicateName) {
                 throw new Error('Two selected products have the same name. Generate or enter a unique name for each product.');
             }
+            const identities = productsToImport.map(product => inferBoutiqueIdentity(product.name)).filter(Boolean);
+            if (identities.some((identity, index) => identities.indexOf(identity) !== index)) throw new Error('Two selected products reuse the same boutique name identity. Generate a completely unique name for each product.');
             toast.loading('Securing product images...', { id: 'cache-product-images' });
             for (let index = 0; index < productsToImport.length; index++) {
                 const sourceProduct = selectedProducts[index];
@@ -1081,6 +1100,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                         description: descAtRequest,
                                                         variantNames: variantsAtStart.map(v => v.name),
                                                     });
+                                                    if (!(result as any).ok && !(result as any).partial) throw new Error((result as any).error || 'Translation could not be completed.');
                                                     // Merge all translated fields via functional updater
                                                     // Only overwrite name/description if the user hasn't edited them while translating
                                                     const translatedMap = new Map<string, { requested: string; translated: string }>();
@@ -1121,9 +1141,10 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                                         return { ...p, ...updates };
                                                     }));
                                                     const untranslatedLabels = result.variantNames.filter(detectChinese).length;
-                                                    if (untranslatedLabels > 0) {
+                                                    const remainingChinese = (result as any).remainingChinese ?? untranslatedLabels;
+                                                    if (remainingChinese > 0) {
                                                         toast.warning('Some variant labels still need translation', {
-                                                            description: `${untranslatedLabels} labels retain Chinese text. Review them or retry translation; successful translations were saved.`,
+                                                            description: `${remainingChinese} field${remainingChinese === 1 ? '' : 's'} retain Chinese text. Successful translations were saved; retry the remaining fields.`,
                                                         });
                                                     } else {
                                                         toast.success('Translation complete');
@@ -2556,13 +2577,10 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             if (importableProduct.variants && importableProduct.variants.length > 0) {
                 try {
                     const variantNames = importableProduct.variants.map((v: any) => v.name);
-                    const translatedNames = await translateVariantNames({ variantNames });
-                    const translations = new Map(
-                        translatedNames.map(({ original, translated }) => [original, translated]),
-                    );
-                    importableProduct.variants = importableProduct.variants.map((v: any) => ({
+                    const translated = await translateProductFields({ name: '', description: '', variantNames });
+                    importableProduct.variants = importableProduct.variants.map((v: any, index: number) => ({
                         ...v,
-                        name: translations.get(v.name) || v.name,
+                        name: translated.variantNames[index] || v.name,
                     }));
                     console.log('[URL Import] Translated variant names');
                 } catch (err) {
@@ -2583,6 +2601,16 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
             if (autoEnhanceAi) {
                 try {
                     toast.loading('Enhancing with AI...', { id: 'ai-enhance' });
+                    if (!importableProduct.targetCollection || !importableProduct.targetSubcategoryIds?.length) {
+                        const categoryResult = await suggestProductCategories({ productName: importableProduct.name || '', productDescription: importableProduct.description || '', collections }) as any;
+                        if (categoryResult?.collectionId && categoryResult.subcategoryIds?.length) {
+                            const matchedCollection = collections.find(collection => collection.id === categoryResult.collectionId);
+                            const primary = matchedCollection?.subcategories.find(subcategory => subcategory.id === categoryResult.primarySubcategoryId);
+                            importableProduct.targetCollection = categoryResult.collectionId; importableProduct.targetSubcategoryIds = categoryResult.subcategoryIds;
+                            importableProduct.primarySubcategoryId = categoryResult.primarySubcategoryId; importableProduct.targetSubcategory = primary?.id;
+                            importableProduct.category = primary?.title || importableProduct.category; importableProduct.audience = categoryResult.audience;
+                        }
+                    }
                     const sourceSnapshot = buildSnapshotForImportProduct(importableProduct);
 
                     // Run name generation and server-side smart description in parallel.
@@ -2593,7 +2621,10 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                 sourceSnapshot,
                                 adminContext: {
                                     selectedCategory: importableProduct.category,
-                                    selectedCollection: importableProduct.collection,
+                                    selectedSubcategory: importableProduct.targetSubcategory,
+                                    selectedSubcategories: importableProduct.targetSubcategoryIds || [],
+                                    selectedSubcategoryIds: importableProduct.targetSubcategoryIds || [],
+                                    selectedCollection: importableProduct.targetCollection || targetCollection,
                                 },
                                 generationMode: 'import_auto',
                                 options: {
@@ -2607,7 +2638,10 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                 sourceSnapshot,
                                 adminContext: {
                                     selectedCategory: importableProduct.category,
-                                    selectedCollection: importableProduct.collection,
+                                    selectedSubcategory: importableProduct.targetSubcategory,
+                                    selectedSubcategories: importableProduct.targetSubcategoryIds || [],
+                                    selectedSubcategoryIds: importableProduct.targetSubcategoryIds || [],
+                                    selectedCollection: importableProduct.targetCollection || targetCollection,
                                 },
                                 generationMode: 'import_auto',
                                 options: {
@@ -2635,6 +2669,8 @@ export const ProductImport: React.FC<ProductImportProps> = ({ collections, onImp
                                 ? {
                                     nameClaimId: smartNameResult.claimId,
                                     nameOwnerKey: smartNameResult.ownerKey,
+                                    audience: smartNameResult.facts?.audience?.value,
+                                    canonicalProductType: smartNameResult.facts?.productType?.value,
                                 }
                                 : {}),
                             customDescription: isValidAiDesc ? smartDescriptionResult.description : importableProduct.description,
