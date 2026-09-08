@@ -36,6 +36,21 @@ export async function findBoutiqueIdentityClaim(ctx: ReadCtx, boutiqueIdentity: 
   return ctx.db.query('productNameClaims').withIndex('by_boutique_identity', q => q.eq('boutiqueIdentity', boutiqueIdentity)).first();
 }
 
+function resolveClaimBoutiqueIdentity(
+  displayName: string,
+  explicitIdentity: string | undefined,
+  existingClaim: any,
+): string | undefined {
+  // Legacy duplicate identities are deliberately grandfathered as descriptive
+  // claims. Preserve that classification when the owning product is edited
+  // without a rename instead of turning an ordinary save into a collision.
+  const inferred = existingClaim?.identityVersion === PRODUCT_NAME_IDENTITY_VERSION
+    && existingClaim?.namingMode === 'descriptive'
+    ? undefined
+    : inferBoutiqueIdentity(displayName);
+  return normalizeBoutiqueIdentity(explicitIdentity || existingClaim?.boutiqueIdentity || inferred || '') || undefined;
+}
+
 async function findProductNameConflict(ctx: ReadCtx, normalizedName: string, exceptProductId?: Id<'products'>) {
   const indexed = await ctx.db
     .query('products')
@@ -96,7 +111,7 @@ export async function claimProductName(
   if (!args.ownerKey.trim()) fail('NAME_CLAIM_INVALID', 'A name owner is required. Please reopen the editor and try again.');
 
   const claim = existingClaim;
-  const boutiqueIdentity = normalizeBoutiqueIdentity(args.boutiqueIdentity || existingClaim?.boutiqueIdentity || inferBoutiqueIdentity(displayName) || '') || undefined;
+  const boutiqueIdentity = resolveClaimBoutiqueIdentity(displayName, args.boutiqueIdentity, existingClaim);
   const identityClaim = boutiqueIdentity ? await findBoutiqueIdentityClaim(ctx, boutiqueIdentity) : null;
   if (identityClaim && identityClaim._id !== claim?._id && identityClaim.productId !== args.productId) {
     fail('NAME_IDENTITY_ALREADY_USED', 'That boutique name identity has already been suggested or used. Choose a completely different name.');
@@ -356,7 +371,7 @@ export const checkAvailability = query({
     if (validationErrors.length > 0) return { available: false, code: 'NAME_INVALID', message: validationErrors.join(' ') };
     const productConflict = await findProductNameConflict(ctx, normalizedName, args.productId);
     if (productConflict) return { available: false, code: 'NAME_ALREADY_USED', message: 'This name is already in the catalog.' };
-    const boutiqueIdentity = inferBoutiqueIdentity(args.displayName);
+    const boutiqueIdentity = resolveClaimBoutiqueIdentity(args.displayName, undefined, claim);
     const identityClaim = boutiqueIdentity ? await findBoutiqueIdentityClaim(ctx, boutiqueIdentity) : null;
     if (identityClaim && identityClaim._id !== claim?._id && identityClaim.productId !== args.productId) {
       return { available: false, code: 'NAME_IDENTITY_ALREADY_USED', message: 'This boutique name identity has already been suggested or used.' };
