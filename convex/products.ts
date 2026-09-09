@@ -40,6 +40,12 @@ const descriptionSourceValidator = v.union(
     v.literal("safe_fallback")
 );
 
+const listingReviewValidator = v.object({
+    name: v.string(), description: v.string(), images: v.array(v.string()),
+    pendingNameClaimId: v.optional(v.id('productNameClaims')), nameOwnerKey: v.optional(v.string()),
+    smartDescription: v.optional(smartDescriptionValidator), descriptionSource: v.optional(descriptionSourceValidator),
+});
+
 const cancelSourcingForDeletedProduct = async (ctx: MutationCtx, productId: Id<"products">) => {
     const job = await ctx.db
         .query("cjSourcingJobs")
@@ -310,7 +316,9 @@ async function createProductDocument(ctx: MutationCtx, args: any, actorEmail?: s
 // Protected mutations - require authentication
 export const splitCjProduct = mutation({
     args: { productId: v.id('products'), selectedVariantIds: v.array(v.string()), name: v.string(), expectedRevision: v.number(),
-        customerLinks: v.optional(v.array(v.object({ cjVariantId: v.string(), customerVariantId: v.string() }))) },
+        customerLinks: v.optional(v.array(v.object({ cjVariantId: v.string(), customerVariantId: v.string() }))),
+        listing: v.optional(listingReviewValidator),
+        variantImages: v.optional(v.array(v.object({ cjVariantId: v.string(), image: v.string() }))) },
     handler: async (ctx, args) => {
         const identity = await requireCjAdminIdentity(ctx);
         const product = await ctx.db.get(args.productId);
@@ -320,9 +328,9 @@ export const splitCjProduct = mutation({
         if ((product.productRevision ?? 0) !== args.expectedRevision) {
             throw new Error('This product changed after you opened it. Reload before separating variants.');
         }
-        const { newProduct, sourcePatch } = buildCjProductSplit(product, args.selectedVariantIds, args.name, args.customerLinks);
+        const { newProduct, sourcePatch } = buildCjProductSplit(product, args.selectedVariantIds, args.name, args.customerLinks, args.variantImages);
         validateVariantWorkspace({ ...product, ...newProduct }, newProduct.variants);
-        const productId = await createProductDocument(ctx, newProduct, identity.email);
+        const productId = await createProductDocument(ctx, { ...newProduct, ...args.listing }, identity.email);
         // Give the child its own catalog-verification job, never a new supplier sourcing request.
         await ctx.runMutation(internal.cjSourcingJobs.ensureJobForProduct, { productId, source: 'import' });
         await ctx.db.patch(product._id, sourcePatch);
@@ -978,6 +986,7 @@ export const saveVariantWorkspace = mutation({
         productId: v.id("products"),
         expectedRevision: v.optional(v.number()),
         variants: v.array(customerVariantValidator),
+        listing: v.optional(listingReviewValidator),
     },
     handler: async (ctx, args) => {
         const identity = await requireCjAdminIdentity(ctx);
@@ -985,7 +994,7 @@ export const saveVariantWorkspace = mutation({
         if (!product) {
             throw new ConvexError({ code: "PRODUCT_NOT_FOUND", message: "Product not found." });
         }
-        return saveVariantWorkspaceForProduct(
+        const result = await saveVariantWorkspaceForProduct(
             ctx,
             product,
             args.variants,
@@ -994,6 +1003,23 @@ export const saveVariantWorkspace = mutation({
             "Saved customer variants and CJ mappings from the product operations studio.",
             args.expectedRevision,
         );
+        if (args.listing) {
+            const { pendingNameClaimId, nameOwnerKey, ...listing } = args.listing;
+            const claim = await claimProductName(ctx, {
+                displayName: listing.name, ownerKey: nameOwnerKey?.trim() || `product:${product._id}`,
+                source: pendingNameClaimId ? 'ai' : 'manual', pendingClaimId: pendingNameClaimId,
+                productId: product._id, audience: product.audience, productTypeKey: product.canonicalProductType,
+            });
+            if (product.activeNameClaimId && product.activeNameClaimId !== claim.claimId) {
+                await retireProductName(ctx, product._id, product.activeNameClaimId);
+            }
+            await ctx.db.patch(product._id, {
+                ...listing, name: listing.name.trim(), nameKey: claim.normalizedName, activeNameClaimId: claim.claimId,
+                searchText: buildProductSearchText({ ...product, ...listing }),
+            });
+            await attachNameClaimToProduct(ctx, claim.claimId, product._id);
+        }
+        return result;
     },
 });
 

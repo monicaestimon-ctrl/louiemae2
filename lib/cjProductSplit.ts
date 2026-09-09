@@ -1,7 +1,8 @@
 import type { Doc } from '../convex/_generated/dataModel';
 
 export function buildCjProductSplit(product: Doc<'products'>, selectedIds: string[], name: string,
-    customerLinks: { cjVariantId: string; customerVariantId: string }[] = []) {
+    customerLinks: { cjVariantId: string; customerVariantId: string }[] = [],
+    variantImages: { cjVariantId: string; image: string }[] = []) {
     const selected = new Set(selectedIds);
     const catalog = product.cjVariants ?? [];
     if (!name.trim()) throw new Error('Enter a name for the new listing.');
@@ -12,6 +13,9 @@ export function buildCjProductSplit(product: Doc<'products'>, selectedIds: strin
     if (selected.size >= catalog.length) throw new Error('Leave at least one CJ variant in the original listing.');
     const moved = catalog.filter(v => selected.has(v.vid));
     const remaining = catalog.filter(v => !selected.has(v.vid));
+    if (new Set(variantImages.map(v => v.cjVariantId)).size !== variantImages.length || variantImages.some(v => !selected.has(v.cjVariantId))) {
+        throw new Error('Photo assignments must belong to the selected variants.');
+    }
     const linkedCustomerIds = new Set<string>();
     const linkedCjIds = new Set<string>();
     for (const link of customerLinks) {
@@ -27,8 +31,9 @@ export function buildCjProductSplit(product: Doc<'products'>, selectedIds: strin
     const variants = moved.map(v => {
         const link = customerLinks.find(link => link.cjVariantId === v.vid);
         const existing = product.variants?.find(option => link ? option.id === link.customerVariantId : option.cjVariantId === v.vid);
-        return existing ? { ...existing, cjVariantId: v.vid, cjSku: v.sku } : {
-            id: `cj_${v.vid}`, name: v.name, ...(v.image ? { image: v.image } : {}),
+        const image = variantImages.find(option => option.cjVariantId === v.vid)?.image || existing?.image || v.image;
+        return existing ? { ...existing, ...(variantImages.some(option => option.cjVariantId === v.vid) ? { image } : {}), cjVariantId: v.vid, cjSku: v.sku } : {
+            id: `cj_${v.vid}`, name: v.name, ...(image ? { image } : {}),
             priceAdjustment: 0, inStock: false, cjVariantId: v.vid, cjSku: v.sku,
         };
     });

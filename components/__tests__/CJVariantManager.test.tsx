@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('convex/react', () => ({
     useQuery: () => mocks.products,
+    useAction: () => vi.fn(),
     useMutation: () => mocks.save,
 }));
 

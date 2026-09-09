@@ -21,6 +21,12 @@ const product = {
 } as unknown as Doc<'products'>;
 
 describe('splitting a mixed CJ listing', () => {
+    it('moves the reviewed photo with the exact variant and rejects assignments outside the split', () => {
+        const { newProduct, sourcePatch } = buildCjProductSplit(product, ['green-90'], 'Green', [], [{ cjVariantId: 'green-90', image: 'selected-import.jpg' }]);
+        expect(newProduct.variants[0]).toMatchObject({ image: 'selected-import.jpg', cjVariantId: 'green-90', cjSku: 'G90', priceAdjustment: 2 });
+        expect(sourcePatch.variants).not.toContainEqual(expect.objectContaining({ image: 'selected-import.jpg' }));
+        expect(() => buildCjProductSplit(product, ['green-90'], 'Green', [], [{ cjVariantId: 'pink-90', image: 'wrong.jpg' }])).toThrow('Photo assignments');
+    });
     it('moves one dress with mapped pricing and creates mappings for its other sizes', () => {
         const result = buildCjProductSplit(product, ['green-90', 'green-100'], ' Green Lace Dress ');
         expect(result.newProduct).toMatchObject({

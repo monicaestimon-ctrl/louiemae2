@@ -47,6 +47,7 @@ export interface Product {
   cjVariantId?: string;
   cjSku?: string;
   cjProductId?: string;
+  cjVariants?: { vid: string; sku: string; name: string; image?: string; price?: number }[];
   cjInventoryStatus?: CjInventoryStatus;
   cjInventoryTotal?: number;
   cjInventoryLastCheckedAt?: string;
