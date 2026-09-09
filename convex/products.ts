@@ -309,7 +309,8 @@ async function createProductDocument(ctx: MutationCtx, args: any, actorEmail?: s
 
 // Protected mutations - require authentication
 export const splitCjProduct = mutation({
-    args: { productId: v.id('products'), selectedVariantIds: v.array(v.string()), name: v.string(), expectedRevision: v.number() },
+    args: { productId: v.id('products'), selectedVariantIds: v.array(v.string()), name: v.string(), expectedRevision: v.number(),
+        customerLinks: v.optional(v.array(v.object({ cjVariantId: v.string(), customerVariantId: v.string() }))) },
     handler: async (ctx, args) => {
         const identity = await requireCjAdminIdentity(ctx);
         const product = await ctx.db.get(args.productId);
@@ -319,7 +320,7 @@ export const splitCjProduct = mutation({
         if ((product.productRevision ?? 0) !== args.expectedRevision) {
             throw new Error('This product changed after you opened it. Reload before separating variants.');
         }
-        const { newProduct, sourcePatch } = buildCjProductSplit(product, args.selectedVariantIds, args.name);
+        const { newProduct, sourcePatch } = buildCjProductSplit(product, args.selectedVariantIds, args.name, args.customerLinks);
         validateVariantWorkspace({ ...product, ...newProduct }, newProduct.variants);
         const productId = await createProductDocument(ctx, newProduct, identity.email);
         // Give the child its own catalog-verification job, never a new supplier sourcing request.

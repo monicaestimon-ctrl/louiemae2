@@ -28,7 +28,7 @@ describe('CJ product split selection', () => {
         fireEvent.change(screen.getByLabelText('Find a dress or style'), { target: { value: 'Green Lace' } });
         fireEvent.click(screen.getByRole('button', { name: 'Select all shown (2)' }));
         fireEvent.click(screen.getByRole('button', { name: 'Move selected variants to new product' }));
-        await waitFor(() => expect(split).toHaveBeenCalledWith({ productId: 'product-1', name: 'Green Lace Dress', selectedVariantIds: ['g90', 'g100'], expectedRevision: 0 }));
+        await waitFor(() => expect(split).toHaveBeenCalledWith({ productId: 'product-1', name: 'Green Lace Dress', selectedVariantIds: ['g90', 'g100'], expectedRevision: 0, customerLinks: [] }));
         expect(await screen.findByRole('status')).toHaveTextContent('Created “Green Lace Dress” with 2 variants');
     });
 

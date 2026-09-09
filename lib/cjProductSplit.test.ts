@@ -44,6 +44,15 @@ describe('splitting a mixed CJ listing', () => {
         expect(() => buildCjProductSplit(remaining, ['green-90'], 'Again')).toThrow('changed');
     });
 
+    it('moves explicitly matched unmapped customer labels without leaving duplicate options behind', () => {
+        const links = [{ cjVariantId: 'green-100', customerVariantId: 'unmapped' }];
+        const result = buildCjProductSplit(product, ['green-100'], 'Green', links);
+        expect(result.newProduct.variants[0]).toMatchObject({ id: 'unmapped', cjVariantId: 'green-100', cjSku: 'G100' });
+        expect(result.sourcePatch.variants.some(v => v.id === 'unmapped')).toBe(false);
+        expect(() => buildCjProductSplit(product, ['green-100'], 'Green', [{ cjVariantId: 'green-100', customerVariantId: 'size-pink' }])).toThrow('different customer option');
+        expect(() => buildCjProductSplit(product, ['green-100', 'pink-90'], 'Green', [...links, { cjVariantId: 'pink-90', customerVariantId: 'unmapped' }])).toThrow('different customer option');
+    });
+
     it('rejects empty names, empty selections, duplicates, unknown IDs and moving everything', () => {
         expect(() => buildCjProductSplit(product, ['green-90'], ' ')).toThrow('name');
         expect(() => buildCjProductSplit(product, [], 'Green')).toThrow('Select');

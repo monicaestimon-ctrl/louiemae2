@@ -11,6 +11,7 @@ interface Props {
         name: string;
         productRevision?: number;
         cjVariants?: { vid: string; sku: string; name: string; image?: string }[];
+        variants?: { id: string; name: string; cjVariantId?: string }[];
     };
     disabled?: boolean;
     onBusyChange?: (busy: boolean) => void;
@@ -22,6 +23,7 @@ export function CJProductSplit({ product, disabled = false, onBusyChange }: Prop
     const [filter, setFilter] = useState('');
     const [name, setName] = useState('');
     const [selected, setSelected] = useState<string[]>([]);
+    const [customerLinks, setCustomerLinks] = useState<Record<string, string>>({});
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
@@ -35,9 +37,11 @@ export function CJProductSplit({ product, disabled = false, onBusyChange }: Prop
         setError('');
         setSuccess('');
         try {
-            await split({ productId: product._id, selectedVariantIds: selected, name, expectedRevision: product.productRevision ?? 0 });
+            await split({ productId: product._id, selectedVariantIds: selected, name, expectedRevision: product.productRevision ?? 0,
+                customerLinks: selected.flatMap(cjVariantId => customerLinks[cjVariantId] ? [{ cjVariantId, customerVariantId: customerLinks[cjVariantId] }] : []) });
             setSuccess(`Created “${name.trim()}” with ${selected.length} variants. Find it in Products to review photos, description, and pricing before publishing.`);
             setSelected([]);
+            setCustomerLinks({});
             setName('');
             setOpen(false);
         } catch (err) {
@@ -78,7 +82,19 @@ export function CJProductSplit({ product, disabled = false, onBusyChange }: Prop
             </div>
             {selectedVariants.length > 0 && <div className="rounded-lg bg-black/30 p-3 text-sm">
                 <p className="font-medium">Moving to {name.trim() || 'the new listing'}:</p>
-                <ul className="mt-2 max-h-32 list-disc overflow-y-auto pl-5 text-cream/70">{selectedVariants.map(v => <li key={v.vid}>{v.name}</li>)}</ul>
+                <p className="mt-2 text-cream/60">If customer labels differ from CJ, choose the matching existing option so it moves with its photo and price. Already mapped options move automatically.</p>
+                <div className="mt-2 max-h-80 space-y-3 overflow-y-auto">{selectedVariants.map(v => {
+                    const mapped = product.variants?.find(option => option.cjVariantId === v.vid);
+                    return <div key={v.vid}>
+                        {mapped ? <p>{v.name} — moves “{mapped.name}”</p> : <label className="block">Existing customer option for {v.name}
+                            <select value={customerLinks[v.vid] ?? ''} onChange={e => setCustomerLinks(links => ({ ...links, [v.vid]: e.target.value }))} className="mt-1 w-full rounded-lg border border-white/20 bg-black p-3 text-cream">
+                                <option value="">Create a new linked option</option>
+                                {(product.variants ?? []).filter(option => !option.cjVariantId).map(option => <option key={option.id} value={option.id}
+                                    disabled={selected.some(id => id !== v.vid && customerLinks[id] === option.id)}>{option.name}</option>)}
+                            </select>
+                        </label>}
+                    </div>;
+                })}</div>
             </div>}
             <p className="text-sm text-cream/60">{selectedVariants.length} variants will move; {variants.length - selectedVariants.length} will remain. Mapped size options move with them. Unmapped CJ options become linked options in the new listing. Leave at least one variant in the original.</p>
             <p className="text-sm text-cream/60">The new listing starts hidden, with selected variant photos and the original base price and description. Review these before publishing. CJ stock will refresh separately.</p>
