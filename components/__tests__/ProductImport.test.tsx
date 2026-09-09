@@ -73,6 +73,15 @@ describe('variant review pagination', () => {
 });
 
 describe('unified add and edit studio modes', () => {
+    it('offers later CJ photos without selecting them over the saved import gallery', () => {
+        render(<ProductImport mode="edit" initialProduct={{ id: 'saved', name: 'Green Dress', images: ['import.jpg'],
+            cjVariants: [{ vid: 'g90', sku: 'G90', name: 'Green 90cm', image: 'cj.jpg' }] }}
+            collections={[]} onImportProducts={vi.fn()} onSaveProduct={vi.fn()} />);
+        expect(screen.getByAltText('Product image 1')).toHaveAttribute('src', 'import.jpg');
+        expect(screen.getByAltText('Product image 1').closest('[role="button"]')).toHaveAttribute('aria-pressed', 'true');
+        expect(screen.getByAltText('Product image 2')).toHaveAttribute('src', 'cj.jpg');
+        expect(screen.getByAltText('Product image 2').closest('[role="button"]')).toHaveAttribute('aria-pressed', 'false');
+    });
     it('loads an existing product directly into the same curation workflow used by imports', () => {
         render(
             <ProductImport

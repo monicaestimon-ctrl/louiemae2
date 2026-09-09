@@ -498,6 +498,16 @@ export function normalizeVariants(variants: unknown): SourceVariant[] {
     for (const variant of raw) {
         const name = String((variant as any)?.name || '').trim();
         if (!name) continue;
+        // Smart tools receive snapshots that may already contain grouped options.
+        // Preserve those values when the server normalizes the snapshot again.
+        const groupedValues = (variant as { values?: unknown }).values;
+        if (Array.isArray(groupedValues)) {
+            if (!groups.has(name)) groups.set(name, new Set());
+            for (const value of groupedValues) {
+                if (typeof value === 'string' && value.trim()) groups.get(name)!.add(value.trim());
+            }
+            continue;
+        }
         const parts = name.split('/').map(part => part.trim()).filter(Boolean);
         for (const part of parts.length ? parts : [name]) {
             const [keyRaw, valueRaw] = part.includes(':') ? part.split(/:(.+)/) : ['Option', part];
