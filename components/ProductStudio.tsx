@@ -1,3 +1,4 @@
+import { VariantImagePicker } from './VariantImagePicker';
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Wand2, Send, ChevronRight, Type, Image as ImageIcon, CheckCircle, ArrowLeft, Eye, Loader2, Upload, Trash2, Box, DollarSign, Download, ExternalLink } from 'lucide-react';
 import { Product, SiteContent } from '../types';
@@ -1086,6 +1087,10 @@ const EssenceStep: React.FC<{
                         <div className="space-y-3">
                             {(product.variants || []).map(variant => (
                                 <div key={variant.id} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                                    <VariantImagePicker label={variant.name} value={variant.image}
+                                        images={[...(product.images ?? []), ...(product.variants ?? []).flatMap(v => v.image ? [v.image] : []), ...(product.cjVariants ?? []).flatMap(v => v.image ? [v.image] : [])]}
+                                        recommended={product.cjVariants?.find(v => v.vid === variant.cjVariantId)?.image}
+                                        onChange={image => updateVariant(variant.id, { image })} />
                                     <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_110px_auto] gap-3 items-end">
                                         <div>
                                             <label className="block text-[9px] uppercase tracking-widest text-cream/35 mb-2">Customer Variant</label>

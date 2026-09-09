@@ -24,6 +24,8 @@ import type { Id } from '../convex/_generated/dataModel';
 import { getUserFacingErrorMessage } from '../lib/errorMessages';
 import { FadeIn } from './FadeIn';
 import { SafeImage } from './SafeImage';
+import { CJListingReview, type ListingDetails, type ListingContext } from './CJListingReview';
+import { VariantImagePicker } from './VariantImagePicker';
 import { CJProductSplit } from './CJProductSplit';
 
 interface CjVariant {
@@ -61,7 +63,10 @@ interface MappingSummary {
     invalidMappingCount: number;
 }
 
-interface ProductWithVariants {
+interface ProductWithVariants extends ListingContext {
+    description?: string;
+    smartDescription?: ListingDetails['smartDescription'];
+    descriptionSource?: ListingDetails['descriptionSource'];
     _id: Id<'products'>;
     name: string;
     images: string[];
@@ -139,8 +144,11 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
     const products = useQuery(api.products.getProductsWithCjVariants, {}) as ProductWithVariants[] | undefined;
     const saveVariantWorkspace = useMutation(api.products.saveVariantWorkspace);
     const productRefs = useRef<Map<string, HTMLElement>>(new Map());
+    const draftRevisions = useRef<Map<string, number>>(new Map());
     const [expandedProduct, setExpandedProduct] = useState<Id<'products'> | null>(null);
     const [drafts, setDrafts] = useState<Record<string, CustomerVariant[]>>({});
+    const [listingDrafts, setListingDrafts] = useState<Record<string, ListingDetails>>({});
+    const [generatingProduct, setGeneratingProduct] = useState<string | null>(null);
     const [dirtyProducts, setDirtyProducts] = useState<Set<string>>(new Set());
     const [filter, setFilter] = useState<QueueFilter>('needs_attention');
     const [search, setSearch] = useState('');
@@ -202,6 +210,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
     }, [filter, products, search, targetProductId]);
 
     const updateDraft = (productId: string, updater: (variants: CustomerVariant[]) => CustomerVariant[]) => {
+        if (!draftRevisions.current.has(productId)) draftRevisions.current.set(productId, products?.find(p => p._id === productId)?.productRevision ?? 0);
         setDrafts((current) => ({
             ...current,
             [productId]: updater(cloneVariants(current[productId])),
@@ -265,9 +274,12 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
         try {
             const result = await saveVariantWorkspace({
                 productId: product._id,
-                expectedRevision: product.productRevision ?? 0,
+                expectedRevision: draftRevisions.current.get(product._id) ?? product.productRevision ?? 0,
                 variants: drafts[product._id] ?? [],
+                listing: listingDrafts[product._id],
             });
+            setListingDrafts(current => { const next = { ...current }; delete next[product._id]; return next; });
+            draftRevisions.current.delete(product._id);
             setDirtyProducts((current) => {
                 const next = new Set(current);
                 next.delete(product._id);
@@ -452,7 +464,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
                                     </button>
 
                                     {isExpanded && (
-                                        <fieldset disabled={splittingProduct === product._id} className="min-w-0 border-t border-white/10 bg-black/20 p-4 md:p-6">
+                                        <fieldset disabled={splittingProduct === product._id || savingProduct === product._id || generatingProduct === product._id} className="min-w-0 border-t border-white/10 bg-black/20 p-4 md:p-6">
                                             {(product.cjVariants?.length ?? 0) > 1 && <CJProductSplit product={product}
                                                 disabled={isDirty || savingProduct === product._id}
                                                 onBusyChange={busy => setSplittingProduct(busy ? product._id : null)} />}
@@ -480,6 +492,15 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
                                                     </button>
                                                 </div>
                                             </div>
+
+                                            <CJListingReview value={listingDrafts[product._id] ?? { name: product.name, description: product.description ?? '', images: product.images,
+                                                smartDescription: product.smartDescription, descriptionSource: product.descriptionSource }} context={product} productId={product._id}
+                                                variants={variants} availableImages={[...product.images, ...variants.flatMap(v => v.image ? [v.image] : []), ...providerVariants.flatMap(v => v.image ? [v.image] : [])]}
+                                                onBusyChange={busy => setGeneratingProduct(busy ? product._id : null)}
+                                                onChange={value => {
+                                                    if (!draftRevisions.current.has(product._id)) draftRevisions.current.set(product._id, product.productRevision ?? 0);
+                                                    setListingDrafts(current => ({ ...current, [product._id]: value })); setDirtyProducts(current => new Set(current).add(product._id));
+                                                }} />
 
                                             {providerVariants.length === 0 && (
                                                 <div className="mb-5 rounded-xl border border-amber-400/25 bg-amber-500/10 p-4 text-sm text-amber-100">
@@ -565,6 +586,9 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
                                                                     </button>
                                                                 </label>
                                                             </div>
+                                                            <VariantImagePicker label={variant.name} value={variant.image} recommended={mappedProvider?.image}
+                                                                images={[...product.images, ...(listingDrafts[product._id]?.images ?? []), ...variants.flatMap(v => v.image ? [v.image] : []), ...providerVariants.flatMap(v => v.image ? [v.image] : [])]}
+                                                                onChange={image => updateDraft(product._id, current => current.map(item => item.id === variant.id ? { ...item, image } : item))} />
                                                             <div className="mt-3 grid grid-cols-1 items-end gap-3 lg:grid-cols-[1fr_auto]">
                                                                 <label className="block">
                                                                     <span className="mb-1.5 block text-[9px] uppercase tracking-widest text-cream/35">CJ fulfillment variant</span>
