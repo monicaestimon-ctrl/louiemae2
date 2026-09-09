@@ -33,7 +33,9 @@ interface ProductImportProps {
 }
 
 const createStudioImportableProduct = (product: Partial<Product>): ImportableProduct => {
-    const images = product.images ?? [];
+    // Keep the saved gallery selected while offering photos returned later by CJ.
+    const savedImages = product.images ?? [];
+    const images = [...new Set([...savedImages, ...(product.cjVariants ?? []).flatMap(variant => variant.image ? [variant.image] : [])])];
     const variants = product.variants ?? [];
     const draftId = product.id || ('product_draft_' + Date.now());
     return {
@@ -65,8 +67,8 @@ const createStudioImportableProduct = (product: Partial<Product>): ImportablePro
         primarySubcategoryId: product.primarySubcategoryId,
         audience: product.audience,
         canonicalProductType: product.canonicalProductType,
-        selectedImages: images.map((_, index) => index),
-        imageOrder: images.map((_, index) => index),
+        selectedImages: savedImages.map(image => images.indexOf(image)),
+        imageOrder: savedImages.map(image => images.indexOf(image)),
         selectedVariants: variants.map((variant) => variant.id),
         originalVariants: variants.map((variant) => ({
             id: variant.id,
