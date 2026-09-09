@@ -1039,7 +1039,10 @@ export const applyCatalogResult = internalMutation({
         if (!product) return false;
         const now = Date.now();
 
-        if (!args.found || args.variants.length === 0) {
+        const scopedVariants = product.cjVariantScope
+            ? args.variants.filter(variant => product.cjVariantScope!.includes(variant.vid))
+            : args.variants;
+        if (!args.found || scopedVariants.length === 0) {
             await ctx.db.patch(job._id, {
                 state: args.retryAt ? "awaiting_catalog" : "reconciliation_required",
                 nextAttemptAt: args.retryAt,
@@ -1056,13 +1059,13 @@ export const applyCatalogResult = internalMutation({
             const customerVariants = product.variants ?? [];
             const sellableCustomerVariants = customerVariants.filter((variant) => variant.inStock !== false);
             const mappedCustomerVariants = sellableCustomerVariants.filter((variant) =>
-                variant.cjVariantId && variant.cjSku && args.variants.some((cjVariant) =>
+                variant.cjVariantId && variant.cjSku && scopedVariants.some((cjVariant) =>
                     cjVariant.vid === variant.cjVariantId && cjVariant.sku === variant.cjSku));
             const mappingComplete = customerVariants.length > 0
                 ? sellableCustomerVariants.length > 0 && mappedCustomerVariants.length === sellableCustomerVariants.length
-                : args.variants.length === 1;
+                : scopedVariants.length === 1;
             const state: JobState = mappingComplete ? "fulfillment_ready" : "mapping_required";
-            const soleVariant = args.variants.length === 1 ? args.variants[0] : undefined;
+            const soleVariant = scopedVariants.length === 1 ? scopedVariants[0] : undefined;
             await ctx.db.patch(job._id, {
                 state,
                 cjProductId: args.cjProductId,
@@ -1079,7 +1082,7 @@ export const applyCatalogResult = internalMutation({
             });
             await ctx.db.patch(job.productId, {
                 cjProductId: args.cjProductId,
-                cjVariants: args.variants,
+                cjVariants: scopedVariants,
                 ...(soleVariant ? { cjVariantId: soleVariant.vid, cjSku: soleVariant.sku } : {}),
                 cjApprovedAt: new Date(now).toISOString(),
                 cjSourcingError: mappingComplete ? undefined : "CJ variant mapping is incomplete.",

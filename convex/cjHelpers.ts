@@ -282,6 +282,13 @@ export const updateProductInventorySnapshot = internalMutation({
         if (!product) return;
 
         const previousStatus = product.cjInventoryStatus;
+        // Discard a poll started before the split; refresh the assigned variants.
+        if (product.cjVariantScope && args.snapshots.some(snapshot => snapshot.vid
+            ? !product.cjVariantScope!.includes(snapshot.vid)
+            : !product.cjVariants?.some(variant => variant.sku === snapshot.sku))) {
+            await ctx.db.patch(product._id, { cjInventoryNextCheckAt: 0 });
+            return;
+        }
         const wasOutOfStock = previousStatus === "out_of_stock";
         const autoHiddenBefore = Boolean(product.cjInventoryAutoHiddenAt);
         const now = args.checkedAt;
@@ -971,6 +978,11 @@ export const updateProductSourcingStatus = internalMutation({
             return;
         }
 
+        if (product.cjVariantScope && (
+            (args.cjVariantId && !product.cjVariantScope.includes(args.cjVariantId)) ||
+            (args.cjSku && !product.cjVariants?.some(variant => variant.sku === args.cjSku))
+        )) return;
+
         // CAS guard: if the caller specified an expected status and the product has
         // since been updated (e.g., by a concurrent webhook), bail out to avoid
         // overwriting with stale data.
@@ -1372,6 +1384,8 @@ export const appendCjVariant = internalMutation({
             return;
         }
 
+        if (product.cjVariantScope && !product.cjVariantScope.includes(args.cjVariant.vid)) return;
+
         // Get existing CJ variants or initialize empty array
         const existingVariants = product.cjVariants || [];
 
@@ -1414,6 +1428,9 @@ export const linkCjVariantToSize = internalMutation({
 
         if (!product.variants) {
             throw new Error("Product has no variants to link");
+        }
+        if (product.cjVariantScope && !product.cjVariantScope.includes(args.cjVariantId)) {
+            throw new Error('This CJ variant belongs to a separate listing.');
         }
 
         // Find and update the customer variant

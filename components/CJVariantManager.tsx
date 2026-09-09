@@ -24,6 +24,7 @@ import type { Id } from '../convex/_generated/dataModel';
 import { getUserFacingErrorMessage } from '../lib/errorMessages';
 import { FadeIn } from './FadeIn';
 import { SafeImage } from './SafeImage';
+import { CJProductSplit } from './CJProductSplit';
 
 interface CjVariant {
     vid: string;
@@ -144,6 +145,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
     const [filter, setFilter] = useState<QueueFilter>('needs_attention');
     const [search, setSearch] = useState('');
     const [savingProduct, setSavingProduct] = useState<string | null>(null);
+    const [splittingProduct, setSplittingProduct] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
 
@@ -450,7 +452,10 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
                                     </button>
 
                                     {isExpanded && (
-                                        <div className="border-t border-white/10 bg-black/20 p-4 md:p-6">
+                                        <fieldset disabled={splittingProduct === product._id} className="min-w-0 border-t border-white/10 bg-black/20 p-4 md:p-6">
+                                            {(product.cjVariants?.length ?? 0) > 1 && <CJProductSplit product={product}
+                                                disabled={isDirty || savingProduct === product._id}
+                                                onBusyChange={busy => setSplittingProduct(busy ? product._id : null)} />}
                                             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                                                 <div>
                                                     <p className="text-[10px] uppercase tracking-[0.18em] text-cream/35">Quick Fix Workspace</p>
@@ -646,7 +651,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
                                                     Save variants & mappings
                                                 </button>
                                             </div>
-                                        </div>
+                                        </fieldset>
                                     )}
                                 </article>
                             );

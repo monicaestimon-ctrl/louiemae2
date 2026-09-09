@@ -92,6 +92,7 @@ export default defineSchema({
         cjVariantId: v.optional(v.string()),     // CJ vid (default/legacy)
         cjSku: v.optional(v.string()),           // CJ SKU (default/legacy)
         cjProductId: v.optional(v.string()),     // CJ product ID
+        cjVariantScope: v.optional(v.array(v.string())), // Assigned variants after splitting a mixed listing
         cjSourcingError: v.optional(v.string()), // Rejection reason
         sourceUrl: v.optional(v.string()),       // Original AliExpress/source URL
         batchImportItemId: v.optional(v.id("batchImportItems")), // Idempotency key for batch imports

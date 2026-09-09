@@ -5,6 +5,7 @@ import { requireCjAdminIdentity } from "./cjAdminAccess";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { normalizeProductName } from "../lib/productNames";
+import { buildCjProductSplit } from '../lib/cjProductSplit';
 import {
     attachNameClaimToProduct,
     claimProductName,
@@ -307,6 +308,29 @@ async function createProductDocument(ctx: MutationCtx, args: any, actorEmail?: s
 }
 
 // Protected mutations - require authentication
+export const splitCjProduct = mutation({
+    args: { productId: v.id('products'), selectedVariantIds: v.array(v.string()), name: v.string(), expectedRevision: v.number() },
+    handler: async (ctx, args) => {
+        const identity = await requireCjAdminIdentity(ctx);
+        const product = await ctx.db.get(args.productId);
+        if (!product || product.cjSourcingStatus !== 'approved' || !product.cjProductId) {
+            throw new Error('An approved CJ product with a supplier product ID is required.');
+        }
+        if ((product.productRevision ?? 0) !== args.expectedRevision) {
+            throw new Error('This product changed after you opened it. Reload before separating variants.');
+        }
+        const { newProduct, sourcePatch } = buildCjProductSplit(product, args.selectedVariantIds, args.name);
+        validateVariantWorkspace({ ...product, ...newProduct }, newProduct.variants);
+        const productId = await createProductDocument(ctx, newProduct, identity.email);
+        // Give the child its own catalog-verification job, never a new supplier sourcing request.
+        await ctx.runMutation(internal.cjSourcingJobs.ensureJobForProduct, { productId, source: 'import' });
+        await ctx.db.patch(product._id, sourcePatch);
+        await saveVariantWorkspaceForProduct(ctx, { ...product, ...sourcePatch }, sourcePatch.variants,
+            identity.email, 'variant_workspace_saved', `Moved ${args.selectedVariantIds.length} CJ variants to ${productId} (${newProduct.name}).`, args.expectedRevision);
+        return { productId };
+    },
+});
+
 export const create = mutation({
     args: {
         name: v.string(),
@@ -538,6 +562,11 @@ export const update = mutation({
         );
         const existing = await ctx.db.get(id);
         if (!existing) throw new ConvexError({ code: "PRODUCT_NOT_FOUND", message: "Product not found." });
+        if (existing.cjVariantScope && (
+            updates.cjVariants?.some(variant => !existing.cjVariantScope!.includes(variant.vid)) ||
+            updates.variants?.some(variant => variant.cjVariantId && !existing.cjVariantScope!.includes(variant.cjVariantId)) ||
+            (updates.cjVariantId && !existing.cjVariantScope.includes(updates.cjVariantId))
+        )) throw new Error('These CJ variants belong to a separate listing.');
         const currentRevision = existing.productRevision ?? 0;
         if (expectedRevision !== undefined && expectedRevision !== currentRevision) {
             throw new ConvexError({
