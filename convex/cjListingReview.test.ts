@@ -21,6 +21,13 @@ describe('saving the final listing review', () => {
         expect(attachNameClaimToProduct).toHaveBeenCalledWith(ctx, 'new', 'product');
         expect(retireProductName).toHaveBeenCalledWith(ctx, 'product', 'old');
     });
+    it('rejects a newly accepted description for different variants', async () => {
+        const ctx = context();
+        ctx.db.get.mockImplementation(async (id: string) => id === 'audit' ? { _id: 'audit', model: 'model', promptVersion: 'v1', sourceSnapshotHash: 'hash', selectedCjVariantIds: ['other'] } as any : product);
+        await expect(handler(ctx, { productId: 'product', expectedRevision: 2, variants: [variant], listing: { name: 'Celia', description: 'Generated', images: [], smartDescription: {
+            auditId: 'audit', model: 'model', promptVersion: 'v1', sourceSnapshotHash: 'hash', description: 'Generated', generatedAt: 1, adminEdited: false, status: 'generated',
+        } } })).rejects.toThrow('selected variants changed');
+    });
     it('rejects a stale review before changing metadata or mapping', async () => {
         const ctx = context();
         await expect(handler(ctx, { productId: 'product', expectedRevision: 1, variants: [variant], listing: { name: 'Stale', description: '', images: [] } })).rejects.toThrow('changed');

@@ -267,7 +267,7 @@ export const findExistingSmartNames = internalQuery({
     },
 });
 
-async function validateSourceAndAudit(ctx: MutationCtx, fields: any, productId?: Id<'products'>) {
+async function validateSourceAndAudit(ctx: MutationCtx, fields: any, productId?: Id<'products'>, previousAuditId?: Id<'descriptionAudits'>) {
     if (fields.sourceSnapshotId) {
         const source = await ctx.db.get(fields.sourceSnapshotId as Id<'productSourceSnapshots'>);
         if (!source || !fields.sourceUrl || source.sourceKey !== sourceIdentity(fields.sourceUrl)) throw new Error('Supplier details do not match this product source.');
@@ -277,7 +277,7 @@ async function validateSourceAndAudit(ctx: MutationCtx, fields: any, productId?:
         const audit = await ctx.db.get(fields.smartDescription.auditId as Id<'descriptionAudits'>);
         if (!audit || (audit.productId && audit.productId !== productId) || audit.sourceSnapshotHash !== fields.smartDescription.sourceSnapshotHash
             || audit.model !== fields.smartDescription.model || audit.promptVersion !== fields.smartDescription.promptVersion) throw new Error('Description evidence changed. Generate a fresh draft before saving.');
-        if (audit.selectedCjVariantIds?.length) {
+        if (audit._id !== previousAuditId && audit.selectedCjVariantIds?.length) {
             const selected = [...new Set((fields.variants ?? []).flatMap((v: { cjVariantId?: string }) => v.cjVariantId ? [v.cjVariantId] : []))].sort();
             if (JSON.stringify(selected) !== JSON.stringify([...new Set(audit.selectedCjVariantIds)].sort())) throw new Error('The selected variants changed after description generation. Generate a fresh draft for this selection.');
         }
@@ -650,7 +650,7 @@ export const update = mutation({
             }
         }
 
-        await validateSourceAndAudit(ctx, { ...existing, ...filteredUpdates }, id);
+        await validateSourceAndAudit(ctx, { ...existing, ...filteredUpdates }, id, existing.smartDescription?.auditId);
         const searchFieldsChanged = ["name", "description", "category", "collection", "subcategory", "subcategoryIds"]
             .some(field => Object.prototype.hasOwnProperty.call(filteredUpdates, field));
         await ctx.db.patch(id, {
@@ -1035,7 +1035,7 @@ export const saveVariantWorkspace = mutation({
             args.expectedRevision,
         );
         if (args.listing) {
-            await validateSourceAndAudit(ctx, { ...product, ...args.listing }, product._id);
+            await validateSourceAndAudit(ctx, { ...product, ...args.listing, variants: args.variants }, product._id, product.smartDescription?.auditId);
             const { pendingNameClaimId, nameOwnerKey, ...listing } = args.listing;
             const claim = await claimProductName(ctx, {
                 displayName: listing.name, ownerKey: nameOwnerKey?.trim() || `product:${product._id}`,
