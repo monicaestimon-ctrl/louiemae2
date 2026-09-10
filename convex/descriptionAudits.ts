@@ -7,6 +7,8 @@ const DESCRIPTION_AUDIT_DEBUG_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export const createDescriptionAudit = internalMutation({
     args: {
         productId: v.optional(v.id("products")),
+        selectedCjVariantIds: v.optional(v.array(v.string())),
+        sourceSnapshotId: v.optional(v.id('productSourceSnapshots')),
         importSessionId: v.optional(v.string()),
         sourceUrl: v.optional(v.string()),
         sourceDomain: v.optional(v.string()),

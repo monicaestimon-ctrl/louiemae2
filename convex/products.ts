@@ -5,6 +5,7 @@ import { requireCjAdminIdentity } from "./cjAdminAccess";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { normalizeProductName } from "../lib/productNames";
+import { sourceIdentity } from '../lib/productGeneration';
 import { buildCjProductSplit } from '../lib/cjProductSplit';
 import {
     attachNameClaimToProduct,
@@ -40,7 +41,14 @@ const descriptionSourceValidator = v.union(
     v.literal("safe_fallback")
 );
 
+const sourceFields = {
+    sourceSnapshotId: v.optional(v.id('productSourceSnapshots')),
+    sourceScopeStatus: v.optional(v.union(v.literal('whole_listing'), v.literal('confirmed_subset'), v.literal('needs_confirmation'))),
+    sourceEvidenceOverrides: v.optional(v.object({ facts: v.optional(v.string()), attributeKeys: v.optional(v.array(v.string())), useDescription: v.optional(v.boolean()) })),
+    sourceProperties: v.optional(v.record(v.string(), v.string())),
+};
 const listingReviewValidator = v.object({
+    ...sourceFields,
     name: v.string(), description: v.string(), images: v.array(v.string()),
     pendingNameClaimId: v.optional(v.id('productNameClaims')), nameOwnerKey: v.optional(v.string()),
     smartDescription: v.optional(smartDescriptionValidator), descriptionSource: v.optional(descriptionSourceValidator),
@@ -259,6 +267,24 @@ export const findExistingSmartNames = internalQuery({
     },
 });
 
+async function validateSourceAndAudit(ctx: MutationCtx, fields: any, productId?: Id<'products'>) {
+    if (fields.sourceSnapshotId) {
+        const source = await ctx.db.get(fields.sourceSnapshotId as Id<'productSourceSnapshots'>);
+        if (!source || !fields.sourceUrl || source.sourceKey !== sourceIdentity(fields.sourceUrl)) throw new Error('Supplier details do not match this product source.');
+    }
+    if (fields.sourceEvidenceOverrides?.facts?.length > 6000) throw new Error('Confirmed details must be at most 6,000 characters.');
+    if (fields.smartDescription?.sourceSnapshotHash && fields.smartDescription.sourceSnapshotHash !== 'pending-link') {
+        const audit = await ctx.db.get(fields.smartDescription.auditId as Id<'descriptionAudits'>);
+        if (!audit || (audit.productId && audit.productId !== productId) || audit.sourceSnapshotHash !== fields.smartDescription.sourceSnapshotHash
+            || audit.model !== fields.smartDescription.model || audit.promptVersion !== fields.smartDescription.promptVersion) throw new Error('Description evidence changed. Generate a fresh draft before saving.');
+        if (audit.selectedCjVariantIds?.length) {
+            const selected = [...new Set((fields.variants ?? []).flatMap((v: { cjVariantId?: string }) => v.cjVariantId ? [v.cjVariantId] : []))].sort();
+            if (JSON.stringify(selected) !== JSON.stringify([...new Set(audit.selectedCjVariantIds)].sort())) throw new Error('The selected variants changed after description generation. Generate a fresh draft for this selection.');
+        }
+        if (productId) await ctx.db.patch(audit._id, { productId, updatedAt: Date.now() });
+    }
+}
+
 async function createProductDocument(ctx: MutationCtx, args: any, actorEmail?: string): Promise<Id<"products">> {
     if (args.batchImportItemId) {
         const existing = await ctx.db.query("products")
@@ -266,6 +292,7 @@ async function createProductDocument(ctx: MutationCtx, args: any, actorEmail?: s
             .unique();
         if (existing) return existing._id;
     }
+    await validateSourceAndAudit(ctx, args);
     const {
         pendingNameClaimId,
         nameOwnerKey,
@@ -303,6 +330,7 @@ async function createProductDocument(ctx: MutationCtx, args: any, actorEmail?: s
         publishedAt: args.publishedAt || new Date().toISOString(),
         searchText: buildProductSearchText({ ...productFields, ...categoryAssignment, name: args.name.trim() }),
     });
+    await validateSourceAndAudit(ctx, args, productId);
     await attachNameClaimToProduct(ctx, nameClaim.claimId, productId);
     if (args.cjSourcingStatus === "pending" && args.sourceUrl) {
         await ctx.scheduler.runAfter(0, internal.cjSourcingJobs.ensureJobForProduct, {
@@ -379,6 +407,7 @@ export const create = mutation({
         )),
         // Two-stage pricing metadata
         sourcePriceCny: v.optional(v.number()),
+        ...sourceFields,
         rawSourceDescription: v.optional(v.string()),
         rawHtmlDescription: v.optional(v.string()),
         descriptionImages: v.optional(v.array(v.string())),
@@ -423,7 +452,7 @@ export const create = mutation({
 const batchCreateAllowedFields = new Set([
     "name", "pendingNameClaimId", "nameOwnerKey", "audience", "canonicalProductType", "price", "description", "images", "category", "collection",
     "isNew", "inStock", "publishedAt", "storefrontStatus", "launchBatchId", "launchAddedAt", "launchedAt", "variants",
-    "sourceUrl", "batchImportItemId", "cjSourcingStatus", "sourcePriceCny", "rawSourceDescription", "rawHtmlDescription",
+    "sourceSnapshotId", "sourceScopeStatus", "sourceEvidenceOverrides", "sourceProperties", "sourceUrl", "batchImportItemId", "cjSourcingStatus", "sourcePriceCny", "rawSourceDescription", "rawHtmlDescription",
     "descriptionImages", "estimatedCjCost", "estimatedShipping", "estimatedCjProductCost", "estimatedCjShippingCost",
     "estimatedCjServiceFee", "estimatedLandedCost", "confirmedCjProductCost", "confirmedCjCost", "confirmedCjShippingCost", "confirmedCjServiceFee",
     "confirmedCjTaxesFee", "confirmedCjClearanceFee", "confirmedCjRemoteFee", "confirmedCjLogisticsName", "confirmedLandedCost",
@@ -519,6 +548,7 @@ export const update = mutation({
         cjInventoryByVariant: v.optional(v.array(cjInventorySnapshotValidator)),
         cjVariants: v.optional(v.array(cjVariantValidator)),
         sourcePriceCny: v.optional(v.number()),
+        ...sourceFields,
         rawSourceDescription: v.optional(v.string()),
         rawHtmlDescription: v.optional(v.string()),
         descriptionImages: v.optional(v.array(v.string())),
@@ -620,6 +650,7 @@ export const update = mutation({
             }
         }
 
+        await validateSourceAndAudit(ctx, { ...existing, ...filteredUpdates }, id);
         const searchFieldsChanged = ["name", "description", "category", "collection", "subcategory", "subcategoryIds"]
             .some(field => Object.prototype.hasOwnProperty.call(filteredUpdates, field));
         await ctx.db.patch(id, {
@@ -1004,6 +1035,7 @@ export const saveVariantWorkspace = mutation({
             args.expectedRevision,
         );
         if (args.listing) {
+            await validateSourceAndAudit(ctx, { ...product, ...args.listing }, product._id);
             const { pendingNameClaimId, nameOwnerKey, ...listing } = args.listing;
             const claim = await claimProductName(ctx, {
                 displayName: listing.name, ownerKey: nameOwnerKey?.trim() || `product:${product._id}`,

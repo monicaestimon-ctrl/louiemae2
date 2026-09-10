@@ -76,7 +76,9 @@ export const generateSmartName = action({
         const warnings: string[] = [];
 
         try {
-            let sourceSnapshot = normalizeSourceProduct(typedRequest.sourceSnapshot || {});
+            const prepared = await ctx.runAction(internal.productSourceActions.prepare, { request: typedRequest });
+            let sourceSnapshot = normalizeSourceProduct(prepared.sourceSnapshot);
+            warnings.push(...prepared.warnings);
             warnings.push(...(sourceSnapshot.warnings || []));
             if (typedRequest.options?.allowImageAnalysis) {
                 const imageUrls = [...sourceSnapshot.images, ...(sourceSnapshot.descriptionImages || [])].map(image => image.url);
@@ -159,6 +161,7 @@ export const generateSmartName = action({
                     });
                     return {
                         ok: true,
+                        sourceSnapshotId: prepared.sourceSnapshotId,
                         name: draft.name,
                         structured: draft,
                         facts,
@@ -189,6 +192,7 @@ export const generateSmartName = action({
                 if (reservation.reserved) {
                     return {
                         ok: true,
+                        sourceSnapshotId: prepared.sourceSnapshotId,
                         name: draft.name,
                         structured: draft,
                         facts,

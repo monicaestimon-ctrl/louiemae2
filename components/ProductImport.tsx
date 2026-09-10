@@ -1,3 +1,5 @@
+import { descriptionMetadata, DetailsAndStory } from './product/DetailsAndStory';
+import { buildImportGenerationInput } from '../lib/productGeneration';
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Loader2, Check, X, DollarSign, Wand2, Package, ChevronDown, AlertCircle, Link, ChevronLeft, ChevronRight, Globe, Filter, Upload, Image as ImageIcon, RotateCcw, Clock3, RefreshCw, ListChecks, Plus } from 'lucide-react';
 import { toast, Toaster } from 'sonner';
@@ -12,7 +14,7 @@ import { SafeImage } from './SafeImage';
 import { useMutation, useAction, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
-import { buildSourceProductSnapshot, SourceAttribute } from '../lib/smartDescription';
+import { buildSourceProductSnapshot } from '../lib/smartDescription';
 import { calculatePricingBreakdown, getEstimatedShipping } from '../lib/pricing';
 import { getUserFacingErrorMessage } from '../lib/errorMessages';
 import { normalizeImageUrl, shouldCacheImageUrl } from '../lib/imageUrls';
@@ -76,6 +78,7 @@ const createStudioImportableProduct = (product: Partial<Product>): ImportablePro
             image: variant.image,
         })),
         descriptionImages: product.descriptionImages,
+        sourceScopeStatus: product.sourceScopeStatus ?? (product.cjVariantScope ? 'needs_confirmation' : 'whole_listing'),
         rawSourceDescription: product.rawSourceDescription,
         rawHtmlDescription: product.rawHtmlDescription,
         sourcePriceCny: product.sourcePriceCny,
@@ -242,7 +245,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({
     const pricingRule = DEFAULT_PRICING_RULE;
 
     // Actions
-    const scrapeProduct = useAction(api.scraper.scrapeProduct);
+    const scrapeProduct = useAction(api.productSourceActions.fetchForImport);
     const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
     const generateSmartName = useAction(api.smartNames.generateSmartName);
     const cacheImageUrls = useAction(api.productImages.cacheImageUrls);
@@ -285,42 +288,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({
     const [dragIdx, setDragIdx] = useState<number | null>(null);
     const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
-    const buildSnapshotForImportProduct = (product: ImportableProduct) => {
-        const attributes: SourceAttribute[] = Object.entries(product.sourceProperties || {}).map(([key, value]) => ({
-            key,
-            value: String(value),
-            source: 'otapi_property',
-            confidence: 0.9,
-        }));
-        return buildSourceProductSnapshot({
-            sourceUrl: product.productUrl,
-            name: product.name,
-            description: isPlaceholderSourceDescription(product.description)
-                ? (product.rawSourceDescription || '')
-                : (product.description || ''),
-            rawDescription: product.rawSourceDescription || product.description || '',
-            htmlDescription: product.rawHtmlDescription || '',
-            price: product.salePrice || product.price,
-            currency: product.sourceCurrency || 'USD',
-            images: product.images || [],
-            descriptionImages: product.descriptionImages || [],
-            variants: product.variants || [],
-            attributes,
-            category: product.category || product.targetSubcategory || '',
-            subcategory: product.targetSubcategory || '',
-            collection: product.targetCollection || targetCollection,
-            categoryHints: { selectedCategory: product.category || '', selectedSubcategory: product.targetSubcategory || '', selectedSubcategories: product.targetSubcategoryIds || [], selectedSubcategoryIds: product.targetSubcategoryIds || [], selectedCollection: product.targetCollection || targetCollection, selectionSource: (product.targetCollection || targetCollection) ? 'admin' : 'unknown' },
-            sellerName: product.seller?.name,
-            sellerRating: product.seller?.rating,
-            salesCount: product.reviewCount,
-            sourceMetadata: {
-                sourceId: product.sourceId,
-                originalPrice: product.originalPrice,
-                sourcePriceCny: product.sourcePriceCny,
-                source: product.source,
-            },
-        });
-    };
+
 
     // Handle image upload for current review product
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -595,11 +563,11 @@ export const ProductImport: React.FC<ProductImportProps> = ({
         updateProductField(productId, 'isEnhancing', true);
 
         try {
-            const sourceSnapshot = buildSnapshotForImportProduct(product);
+            const generationInput = buildImportGenerationInput(product);
             const smartNameSettled = await Promise.resolve(generateSmartName({
                     request: {
                         ownerKey: getNameOwnerKey(product),
-                        sourceSnapshot,
+                        ...generationInput,
                         adminContext: {
                             selectedCategory: product.category || '',
                             selectedSubcategory: product.targetSubcategory || targetSubcategory,
@@ -616,7 +584,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({
                 } as any)).then(value => ({ status: 'fulfilled' as const, value }), reason => ({ status: 'rejected' as const, reason }));
             const smartDescriptionSettled = await Promise.resolve(generateSmartDescription({
                     request: {
-                        sourceSnapshot,
+                        ...generationInput,
                         adminContext: {
                             selectedCategory: product.category || '',
                             selectedSubcategory: product.targetSubcategory || targetSubcategory,
@@ -645,7 +613,14 @@ export const ProductImport: React.FC<ProductImportProps> = ({
                 updateProductField(productId, 'audience', smartName.facts?.audience?.value);
                 updateProductField(productId, 'canonicalProductType', smartName.facts?.productType?.value);
             }
+            if (smartDescription?.ok && (smartDescription.fallbackUsed || !smartDescription.validation?.passed)) {
+                updateProductField(productId, 'smartDescriptionSuggestion', smartDescription);
+                toast.warning('Limited draft available in Details & Story. Your description was kept.');
+                return;
+            }
             if (smartDescription?.ok && smartDescription.description) {
+                updateProductField(productId, 'smartDescription', descriptionMetadata(smartDescription));
+                updateProductField(productId, 'sourceSnapshotId', smartDescription.sourceSnapshotId);
                 updateProductField(productId, 'customDescription', smartDescription.description);
                 updateProductField(productId, 'descriptionAuditId', smartDescription.auditId);
                 updateProductField(productId, 'smartDescriptionAdminEdited', false);
@@ -681,7 +656,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({
             const smartName = await generateSmartName({
                 request: {
                     ownerKey: getNameOwnerKey(product),
-                    sourceSnapshot: buildSnapshotForImportProduct(product),
+                    ...buildImportGenerationInput(product),
                     adminContext: {
                         selectedCategory: product.category || '',
                         selectedSubcategory: product.targetSubcategory || targetSubcategory,
@@ -727,7 +702,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({
         try {
             const smartDescription = await generateSmartDescription({
                 request: {
-                    sourceSnapshot: buildSnapshotForImportProduct(product),
+                    ...buildImportGenerationInput(product),
                     adminContext: {
                         selectedCategory: product.category || '',
                         selectedSubcategory: product.targetSubcategory || targetSubcategory,
@@ -741,7 +716,14 @@ export const ProductImport: React.FC<ProductImportProps> = ({
                     },
                 },
             } as any);
+            if (smartDescription?.ok && (smartDescription.fallbackUsed || !smartDescription.validation?.passed)) {
+                updateProductField(productId, 'smartDescriptionSuggestion', smartDescription);
+                toast.warning('Limited draft available in Details & Story. Your description was kept.');
+                return;
+            }
             if ((smartDescription as any)?.ok && (smartDescription as any).description) {
+                updateProductField(productId, 'smartDescription', descriptionMetadata(smartDescription));
+                updateProductField(productId, 'sourceSnapshotId', smartDescription.sourceSnapshotId);
                 updateProductField(productId, 'customDescription', (smartDescription as any).description);
                 updateProductField(productId, 'descriptionAuditId', (smartDescription as any).auditId);
                 updateProductField(productId, 'smartDescriptionAdminEdited', false);
@@ -1037,19 +1019,8 @@ export const ProductImport: React.FC<ProductImportProps> = ({
                 cjSourcingStatus: mode === 'edit'
                     ? initialProduct?.cjSourcingStatus
                     : p.productUrl ? 'pending' as const : 'none' as const,
-                smartDescription: p.descriptionAuditId && (p.customDescription || p.description)
-                    ? {
-                        description: p.customDescription || p.description || '',
-                        auditId: p.descriptionAuditId as any,
-                        generatedAt: Date.now(),
-                        model: 'server-configured',
-                        promptVersion: 'smart-description-v2.0.0',
-                        sourceSnapshotHash: 'pending-link',
-                        adminEdited: Boolean(p.smartDescriptionAdminEdited),
-                        status: p.smartDescriptionFallbackUsed ? 'fallback' as const : 'generated' as const,
-                    }
-                    : initialProduct?.smartDescription,
-                descriptionSource: p.descriptionAuditId
+                smartDescription: p.smartDescription ?? initialProduct?.smartDescription,
+                descriptionSource: p.smartDescription?.status === 'fallback' ? 'safe_fallback' : p.descriptionAuditId
                     ? (p.smartDescriptionAdminEdited
                         ? 'ai_generated_admin_edited' as const
                         : 'ai_generated' as const)
@@ -1058,6 +1029,10 @@ export const ProductImport: React.FC<ProductImportProps> = ({
                         : p.description ? 'source_original' as const : 'safe_fallback' as const),
                 // Two-stage pricing metadata — use upstream CNY if available (from sourcePriceCny on the product)
                 sourcePriceCny: p.sourcePriceCny || undefined,
+                sourceSnapshotId: p.sourceSnapshotId,
+                sourceScopeStatus: p.sourceScopeStatus,
+                sourceEvidenceOverrides: p.sourceEvidenceOverrides,
+                sourceProperties: p.sourceProperties,
                 rawSourceDescription: p.rawSourceDescription || undefined,
                 rawHtmlDescription: p.rawHtmlDescription || undefined,
                 descriptionImages: p.descriptionImages || undefined,
@@ -1765,34 +1740,28 @@ export const ProductImport: React.FC<ProductImportProps> = ({
                                 </div>
                                 
                                 <div className="space-y-6">
-                                        {/* Product Name */}
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between">
-                                                <label className="text-[10px] uppercase tracking-widest text-earth/50 font-bold">Product Name</label>
-                                                <button
-                                                    onClick={() => enhanceNameWithAI(currentProduct.id)}
-                                                    disabled={currentProduct.isEnhancing}
-                                                    className="text-[10px] uppercase tracking-widest text-purple-600 flex items-center gap-1 hover:text-purple-700 font-bold disabled:opacity-50"
-                                                >
-                                                    <Wand2 className="w-3 h-3" /> Smart Name
-                                                </button>
-                                            </div>
-                                            <input
-                                                type="text"
-                                                value={currentProduct.customName || currentProduct.name}
-                                                onChange={(e) => {
-                                                    updateReviewProduct('customName', e.target.value);
-                                                    updateReviewProduct('nameClaimId', undefined);
-                                                }}
-                                                className="w-full p-3 bg-white/60 backdrop-blur-sm border border-white/40 rounded-lg font-serif text-sm text-earth focus:bg-white/80 focus:ring-2 ring-bronze/30 focus:border-bronze transition-all shadow-sm placeholder-earth/40"
-                                            />
-                                            <ProductNameAvailability
-                                                name={currentProduct.customName || currentProduct.name}
-                                                pendingClaimId={currentProduct.nameClaimId}
-                                                ownerKey={getNameOwnerKey(currentProduct)}
-                                            />
-                                        </div>
-
+                                        <DetailsAndStory key={currentProduct.id} initialSuggestion={currentProduct.smartDescriptionSuggestion}
+                                            onAvailableImages={urls => setSearchResults(current => current.map(item => {
+                                                if (item.id !== currentProduct.id) return item;
+                                                const oldImages = [...item.images, ...(item.descriptionImages ?? [])];
+                                                const images = [...new Set([...oldImages, ...urls])];
+                                                if (images.length === oldImages.length) return item;
+                                                const selected = (item.selectedImages ?? oldImages.map((_, i) => i)).map(i => oldImages[i]);
+                                                const ordered = (item.imageOrder ?? item.selectedImages ?? oldImages.map((_, i) => i)).map(i => oldImages[i]);
+                                                return { ...item, images, descriptionImages: [], selectedImages: selected.map(url => images.indexOf(url)), imageOrder: ordered.map(url => images.indexOf(url)) };
+                                            }))}
+                                            value={{ name: currentProduct.customName ?? currentProduct.name, description: currentProduct.customDescription ?? currentProduct.description,
+                                                pendingNameClaimId: currentProduct.nameClaimId as Id<'productNameClaims'>, nameOwnerKey: getNameOwnerKey(currentProduct),
+                                                smartDescription: currentProduct.smartDescription, sourceSnapshotId: currentProduct.sourceSnapshotId,
+                                                sourceEvidenceOverrides: currentProduct.sourceEvidenceOverrides, sourceScopeStatus: currentProduct.sourceScopeStatus }}
+                                            context={buildImportGenerationInput(currentProduct).context} selection={buildImportGenerationInput(currentProduct).selection}
+                                            productId={mode === 'edit' ? initialProduct?.id as Id<'products'> : undefined} revision={initialProduct?.productRevision}
+                                            onChange={copy => setSearchResults(current => current.map(item => item.id !== currentProduct.id ? item : { ...item,
+                                                customName: copy.name, customDescription: copy.description, nameClaimId: copy.pendingNameClaimId, nameOwnerKey: copy.nameOwnerKey,
+                                                sourceSnapshotId: copy.sourceSnapshotId, sourceScopeStatus: copy.sourceScopeStatus, sourceEvidenceOverrides: copy.sourceEvidenceOverrides,
+                                                smartDescription: copy.smartDescription, descriptionAuditId: copy.smartDescription?.auditId,
+                                                smartDescriptionAdminEdited: copy.smartDescription?.adminEdited, smartDescriptionFallbackUsed: copy.smartDescription?.status === 'fallback' }))}
+                                            onBusyChange={busy => updateReviewProduct('isEnhancing', busy)}>
                                         {/* Categorization */}
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="space-y-2">
@@ -1896,48 +1865,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({
                                             );
                                         })()}
 
-                                        {/* Description */}
-                                        <div className="space-y-2 flex-1">
-                                            <div className="flex justify-between">
-                                                <label className="text-[10px] uppercase tracking-widest text-earth/50 font-bold">Description</label>
-                                                <button
-                                                    onClick={() => enhanceDescriptionWithAI(currentProduct.id)}
-                                                    disabled={currentProduct.isEnhancing}
-                                                    className="text-[10px] uppercase tracking-widest text-purple-600 flex items-center gap-1 hover:text-purple-700 font-bold disabled:opacity-50"
-                                                >
-                                                    <Wand2 className="w-3 h-3" /> Smart Description
-                                                </button>
-                                            </div>
-                                            <textarea
-                                                rows={4}
-                                                value={currentProduct.customDescription || currentProduct.description || ''}
-                                                onChange={(e) => {
-                                                    updateReviewProduct('customDescription', e.target.value);
-                                                    if (currentProduct.descriptionAuditId) {
-                                                        updateReviewProduct('smartDescriptionAdminEdited', true);
-                                                    }
-                                                }}
-                                                className="w-full p-3 bg-white/60 backdrop-blur-sm border border-white/40 rounded-lg text-xs text-earth/90 focus:bg-white/80 focus:ring-2 ring-bronze/30 shadow-sm resize-none transition-all"
-                                            />
-                                            {(currentProduct.descriptionAuditId || currentProduct.smartDescriptionSourceQuality !== undefined || (currentProduct.smartDescriptionWarnings?.length ?? 0) > 0) && (
-                                                <div className="mt-2 rounded-lg border border-purple-100 bg-purple-50/70 p-2 text-[10px] text-earth/60 space-y-1">
-                                                    <div className="flex flex-wrap gap-x-3 gap-y-1">
-                                                        {currentProduct.smartDescriptionSourceQuality !== undefined && (
-                                                            <span>Source quality: {currentProduct.smartDescriptionSourceQuality}/100</span>
-                                                        )}
-                                                        {currentProduct.descriptionAuditId && (
-                                                            <span>Audit: {String(currentProduct.descriptionAuditId).slice(0, 10)}...</span>
-                                                        )}
-                                                        {currentProduct.smartDescriptionFallbackUsed && (
-                                                            <span className="text-amber-700">Fallback used</span>
-                                                        )}
-                                                    </div>
-                                                    {currentProduct.smartDescriptionWarnings?.map((warning, index) => (
-                                                        <p key={`${warning}-${index}`} className="text-amber-700">{warning}</p>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
+                                        </DetailsAndStory>
                                     </div>
                                 </div>
                             
@@ -2592,174 +2520,8 @@ export const ProductImport: React.FC<ProductImportProps> = ({
 
             let importableProduct: ImportableProduct;
 
-            if (result.source === '1688') {
-                console.log('[URL Import] Processing as 1688 product');
-
-                // OTAPI BatchGetItemFullInfo response: Result contains item data
-                const item = result.data?.Result ?? result.data;
-                if (!item || typeof item !== 'object') {
-                    throw new Error('1688 payload missing item data');
-                }
-
-                // Extract basic info
-                const productName = item.Title || item.OriginalTitle || 'Unknown Product';
-                const productId = item.Id || `1688_${Date.now()}`;
-
-                // Extract USD price from OTAPI price structure
-                const getUsdPrice = (priceObj: any): number => {
-                    return priceObj?.ConvertedPriceList?.Internal?.Price || priceObj?.OriginalPrice || 0;
-                };
-                // Extract raw CNY price (upstream, not reverse-converted)
-                const getCnyPrice = (priceObj: any): number => {
-                    return priceObj?.OriginalPrice || priceObj?.ConvertedPriceList?.Original?.Price || 0;
-                };
-                const promoPrice = getUsdPrice(item.PromotionPrice);
-                const regularPrice = getUsdPrice(item.Price);
-                const salePrice = promoPrice > 0 ? promoPrice : regularPrice;
-                const origPrice = regularPrice > promoPrice && promoPrice > 0 ? regularPrice : salePrice;
-                const rawCnyPrice = getCnyPrice(item.PromotionPrice) || getCnyPrice(item.Price);
-
-                // Extract images from Pictures array
-                const images: string[] = [];
-                if (Array.isArray(item.Pictures)) {
-                    item.Pictures.forEach((pic: any) => {
-                        const url = pic?.Large?.Url || pic?.Medium?.Url || pic?.Url;
-                        if (url && typeof url === 'string') images.push(url);
-                    });
-                }
-                // Also extract variant/property images (PropertyPictures)
-                if (Array.isArray(item.PropertyPictures)) {
-                    item.PropertyPictures.forEach((pic: any) => {
-                        const url = pic?.Large?.Url || pic?.Medium?.Url || pic?.Url || pic?.Original?.Url;
-                        if (url && typeof url === 'string' && !images.includes(url)) images.push(url);
-                    });
-                }
-                // Also extract from ItemImages if present
-                if (Array.isArray(item.ItemImages)) {
-                    item.ItemImages.forEach((img: any) => {
-                        const url = typeof img === 'string' ? img : img?.Url || img?.Large?.Url;
-                        if (url && typeof url === 'string' && !images.includes(url)) images.push(url);
-                    });
-                }
-                if (images.length === 0 && item.MainPictureUrl) {
-                    images.push(item.MainPictureUrl);
-                }
-
-                // Extract featured values (e.g. sales count)
-                const getFeaturedValue = (name: string): string | undefined => {
-                    if (!Array.isArray(item.FeaturedValues)) return undefined;
-                    return item.FeaturedValues.find((v: any) => v.Name === name)?.Value;
-                };
-
-                // Extract structured product attributes using shared helper
-                const urlSourceProperties = extractOtapiSourceProperties(item);
-
-                // Preserve source detail text/HTML for grounded smart descriptions.
-                const rawSourceDescription = typeof (result as any).rawDescription === 'string'
-                    ? (result as any).rawDescription
-                    : '';
-                const rawHtmlDescription = typeof (result as any).rawHtmlDescription === 'string'
-                    ? (result as any).rawHtmlDescription
-                    : '';
-                const cleanDescription = cleanOtapiDescription(item) || rawSourceDescription;
-
-                // Extract variants from ConfiguredItems
-                const variants: any[] = [];
-                if (Array.isArray(item.ConfiguredItems) && item.ConfiguredItems.length > 0) {
-                    item.ConfiguredItems.forEach((cfg: any, idx: number) => {
-                        const cfgPrice = getUsdPrice(cfg.Price);
-                        const cfgImage = cfg.Pictures?.[0]?.Large?.Url || cfg.Pictures?.[0]?.Medium?.Url || cfg.Pictures?.[0]?.Url;
-                        // Build variant name from Configurators with Pid/Vid fallback
-                        const configuratorLabel = Array.isArray(cfg.Configurators)
-                            ? cfg.Configurators
-                                .map((c: any) => `${c?.PropertyName ?? c?.Pid ?? '?'}: ${c?.Value ?? c?.Vid ?? '?'}`)
-                                .join(' / ')
-                            : '';
-                        variants.push({
-                            id: cfg.Id || `cfg_${idx}`,
-                            name: cfg.Title || configuratorLabel || `Option ${idx + 1}`,
-                            image: cfgImage || undefined,
-                            priceAdjustment: cfgPrice ? cfgPrice - salePrice : 0,
-                            inStock: (cfg.Quantity ?? cfg.MasterQuantity ?? 0) > 0,
-                        });
-                    });
-                }
-
-                importableProduct = {
-                    id: String(productId),
-                    name: productName,
-                    price: salePrice || origPrice,
-                    description: cleanDescription || '',
-                    images: images,
-                    category: '',
-                    sourcePriceCny: rawCnyPrice || undefined,
-                    collection: targetCollection as CollectionType,
-                    variants: variants,
-                    sourceId: String(productId),
-                    originalPrice: origPrice,
-                    salePrice: salePrice || origPrice,
-                    shippingInfo: { freeShipping: true, estimatedDays: '7-15', cost: 0 },
-                    seller: {
-                        id: item.VendorId || '',
-                        name: item.VendorDisplayName || item.VendorName || 'Unknown',
-                        rating: 0,
-                        feedbackScore: 0,
-                    },
-                    reviewCount: parseInt(getFeaturedValue('SalesInLast30Days') || '0', 10),
-                    averageRating: 0,
-                    productUrl: (result as any).resolvedUrl || originalSourceUrl,
-                    source: '1688',
-                    selected: true,
-                    targetCollection: targetCollection as CollectionType,
-                    customPrice: calculateFinalPrice(salePrice || origPrice),
-                    // Marketing/description images from GetItemDescription
-                    descriptionImages: ('descriptionImages' in result ? (result as any).descriptionImages : []) || [],
-                    rawSourceDescription,
-                    rawHtmlDescription,
-                    // Structured product attributes for AI description generation
-                    sourceProperties: Object.keys(urlSourceProperties).length > 0 ? urlSourceProperties : undefined,
-                } as any;
-            } else {
-                // Generic source (handles AliExpress, Amazon, and any other URLs)
-                console.log('[URL Import] Processing as generic product:', result.data);
-                const data = result.data;
-                const genId = `gen_${Date.now()}`;
-                // Convert non-USD prices to approximate USD
-                let importPrice = data.price || 0;
-                const rawCurrencyCode = data.currency ? String(data.currency).toUpperCase().trim() : 'USD';
-                const rawPriceOriginal = importPrice;
-                if (rawCurrencyCode !== 'USD') {
-                    const { usd, rate } = convertToUsd(importPrice, rawCurrencyCode);
-                    importPrice = usd;
-                    console.log(`[URL Import] Converted ${rawPriceOriginal} ${rawCurrencyCode} → $${importPrice} USD (rate: ${rate})`);
-                    toast.info(`Price converted: ${rawPriceOriginal} ${rawCurrencyCode} → $${importPrice} USD`);
-                }
-                importableProduct = {
-                    id: genId,
-                    name: data.title || 'Unknown',
-                    price: importPrice,
-                    description: data.description || '',
-                    images: (data.images && data.images.length > 0) ? data.images : (data.image ? [data.image] : []),
-                    category: '',
-                    collection: targetCollection as CollectionType,
-                    variants: [],
-                    sourceId: genId,
-                    originalPrice: importPrice,
-                    salePrice: importPrice,
-                    shippingInfo: { freeShipping: false, estimatedDays: 'Unknown', cost: 0 },
-                    seller: { id: '', name: 'Unknown', rating: 0, feedbackScore: 0 },
-                    reviewCount: 0,
-                    averageRating: 0,
-                    productUrl: (result as any).resolvedUrl || originalSourceUrl,
-                    source: 'generic',
-                    selected: true,
-                    targetCollection: targetCollection as CollectionType,
-                    customPrice: calculateFinalPrice(importPrice),
-                    // Always populate audit fields for downstream visibility
-                    sourceCurrency: rawCurrencyCode,
-                    sourcePriceOriginal: rawPriceOriginal,
-                } as any;
-            }
+            importableProduct = buildBatchImportProduct({ _id: `url_${Date.now()}`, normalizedUrl: originalSourceUrl, result }, targetCollection, calculateFinalPrice);
+            importableProduct.batchItemId = undefined;
 
             console.log('[URL Import] Created importable product:', importableProduct.name, 'images:', importableProduct.images?.length, 'variants:', importableProduct.variants?.length);
 
@@ -2801,14 +2563,14 @@ export const ProductImport: React.FC<ProductImportProps> = ({
                             importableProduct.category = primary?.title || importableProduct.category; importableProduct.audience = categoryResult.audience;
                         }
                     }
-                    const sourceSnapshot = buildSnapshotForImportProduct(importableProduct);
+                    const generationInput = buildImportGenerationInput(importableProduct);
 
                     // Run name generation and server-side smart description in parallel.
                     const [smartNameSettled, smartDescriptionSettled] = await Promise.allSettled([
                         generateSmartName({
                             request: {
                                 ownerKey: getNameOwnerKey(importableProduct),
-                                sourceSnapshot,
+                                ...generationInput,
                                 adminContext: {
                                     selectedCategory: importableProduct.category,
                                     selectedSubcategory: importableProduct.targetSubcategory,
@@ -2825,7 +2587,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({
                         } as any),
                         generateSmartDescription({
                             request: {
-                                sourceSnapshot,
+                                ...generationInput,
                                 adminContext: {
                                     selectedCategory: importableProduct.category,
                                     selectedSubcategory: importableProduct.targetSubcategory,
@@ -2849,8 +2611,9 @@ export const ProductImport: React.FC<ProductImportProps> = ({
                     const enhancedName = smartNameResult?.ok && smartNameResult.name ? smartNameResult.name : '';
                     const isValidAiName = Boolean(enhancedName);
                     const smartDescriptionResult = smartDescriptionSettled.status === 'fulfilled' ? smartDescriptionSettled.value as any : null;
-                    const isValidAiDesc = smartDescriptionResult?.ok && smartDescriptionResult.description && smartDescriptionResult.description.length > 80;
+                    const isValidAiDesc = smartDescriptionResult?.ok && !smartDescriptionResult.fallbackUsed && smartDescriptionResult.validation?.passed && smartDescriptionResult.description && smartDescriptionResult.description.length > 80;
 
+                    if (smartDescriptionResult?.ok && !isValidAiDesc) importableProduct.smartDescriptionSuggestion = smartDescriptionResult;
                     if (isValidAiName || isValidAiDesc) {
                         importableProduct = {
                             ...importableProduct,
@@ -2866,6 +2629,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({
                             customDescription: isValidAiDesc ? smartDescriptionResult.description : importableProduct.description,
                             ...(isValidAiDesc
                                 ? {
+                                    smartDescription: descriptionMetadata(smartDescriptionResult),
                                     descriptionAuditId: smartDescriptionResult.auditId,
                                     smartDescriptionAdminEdited: false,
                                     smartDescriptionWarnings: smartDescriptionResult.warnings || [],

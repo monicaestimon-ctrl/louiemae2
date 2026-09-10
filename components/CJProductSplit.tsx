@@ -10,6 +10,7 @@ import { getUserFacingErrorMessage } from '../lib/errorMessages';
 interface Props {
     product: ListingContext & {
         images?: string[];
+        sourceSnapshotId?: Id<'productSourceSnapshots'>;
         _id: Id<'products'>;
         name: string;
         productRevision?: number;
@@ -24,7 +25,7 @@ export function CJProductSplit({ product, disabled = false, onBusyChange }: Prop
     const split = useMutation(api.products.splitCjProduct);
     const [open, setOpen] = useState(false);
     const [filter, setFilter] = useState('');
-    const [details, setDetails] = useState<ListingDetails>({ name: '', description: '', images: [] });
+    const [details, setDetails] = useState<ListingDetails>({ name: '', description: '', images: [], sourceSnapshotId: product.sourceSnapshotId, sourceScopeStatus: 'needs_confirmation' });
     const name = details.name;
     const [photoOverrides, setPhotoOverrides] = useState<Record<string, string>>({});
     const [generating, setGenerating] = useState(false);
@@ -38,7 +39,7 @@ export function CJProductSplit({ product, disabled = false, onBusyChange }: Prop
     const visible = variants.filter(v => `${v.name} ${v.sku}`.toLowerCase().includes(filter.trim().toLowerCase()));
     const selectedVariants = variants.filter(v => selected.includes(v.vid));
     const optionFor = (vid: string) => product.variants?.find(option => customerLinks[vid] ? option.id === customerLinks[vid] : option.cjVariantId === vid);
-    const reviewVariants = selectedVariants.map(v => ({ name: optionFor(v.vid)?.name || v.name, image: photoOverrides[v.vid] || optionFor(v.vid)?.image || v.image }));
+    const reviewVariants = selectedVariants.map(v => ({ id: v.vid, cjVariantId: v.vid, supplierName: v.name, name: optionFor(v.vid)?.name || v.name, image: photoOverrides[v.vid] || optionFor(v.vid)?.image || v.image }));
     const reviewDetails = { ...details, images: galleryEdited ? details.images : [...new Set(reviewVariants.flatMap(v => v.image ? [v.image] : []))] };
     const availableImages = [...new Set([...(product.images ?? []), ...variants.map(v => v.image), ...(product.variants ?? []).map(v => v.image)].filter((url): url is string => Boolean(url)))];
 
@@ -54,7 +55,7 @@ export function CJProductSplit({ product, disabled = false, onBusyChange }: Prop
             setSuccess(`Created “${name.trim()}” with ${selected.length} variants. Find it in Products to review photos, description, and pricing before publishing.`);
             setSelected([]);
             setCustomerLinks({});
-            setDetails({ name: '', description: '', images: [] });
+            setDetails({ name: '', description: '', images: [], sourceSnapshotId: product.sourceSnapshotId, sourceScopeStatus: 'needs_confirmation' });
             setPhotoOverrides({});
             setGalleryEdited(false);
             setOpen(false);
@@ -104,12 +105,12 @@ export function CJProductSplit({ product, disabled = false, onBusyChange }: Prop
                                     disabled={selected.some(id => id !== v.vid && customerLinks[id] === option.id)}>{option.name}</option>)}
                             </select>
                         </label>}
-                        <VariantImagePicker label={v.name} value={photoOverrides[v.vid] || optionFor(v.vid)?.image || v.image} images={availableImages} recommended={v.image}
+                        <VariantImagePicker label={v.name} value={photoOverrides[v.vid] || optionFor(v.vid)?.image || v.image} images={[...availableImages, ...reviewDetails.images]} recommended={v.image}
                             onChange={image => setPhotoOverrides(current => ({ ...current, [v.vid]: image }))} />
                     </div>;
                 })}</div>
             </div>}
-            <CJListingReview value={reviewDetails} context={product} variants={reviewVariants} availableImages={[...reviewVariants.flatMap(v => v.image ? [v.image] : []), ...availableImages]}
+            <CJListingReview revision={product.productRevision} value={reviewDetails} context={product} variants={reviewVariants} availableImages={[...reviewVariants.flatMap(v => v.image ? [v.image] : []), ...availableImages]}
                 onChange={value => { if (value.images !== reviewDetails.images) setGalleryEdited(true); setDetails(value); }} newListing onBusyChange={setGenerating} />
             <p className="text-sm text-cream/60">{selectedVariants.length} variants will move; {variants.length - selectedVariants.length} will remain. Mapped size options move with them. Unmapped CJ options become linked options in the new listing. Leave at least one variant in the original.</p>
             <p className="text-sm text-cream/60">The new listing starts hidden and keeps the original base price. Choose its photos and write or generate its own description here. CJ stock will refresh separately.</p>

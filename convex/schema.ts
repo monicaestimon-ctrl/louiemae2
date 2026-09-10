@@ -51,6 +51,13 @@ export default defineSchema({
     // Convex Auth tables (users, sessions, accounts, etc.)
     ...authTables,
 
+    productSourceSnapshots: defineTable({
+        sourceKey: v.string(), schemaVersion: v.number(), adapterVersion: v.number(), fetchedAt: v.number(), contentHash: v.string(),
+        snapshot: v.any(), status: v.union(v.literal('complete'), v.literal('partial')), warnings: v.array(v.string()),
+    }).index('by_source', ['sourceKey']).index('by_hash', ['contentHash']),
+    productSourceCache: defineTable({ sourceKey: v.string(), snapshotId: v.optional(v.id('productSourceSnapshots')),
+        leaseToken: v.optional(v.string()), leaseUntil: v.optional(v.number()), lastError: v.optional(v.string()), attemptedAt: v.number(),
+    }).index('by_source', ['sourceKey']),
     // Products table
     products: defineTable({
         name: v.string(),
@@ -142,6 +149,12 @@ export default defineSchema({
         }))),
         // Two-stage pricing fields
         sourcePriceCny: v.optional(v.number()),      // Original 1688 factory price (CNY)
+        sourceSnapshotId: v.optional(v.id('productSourceSnapshots')),
+        sourceParentProductId: v.optional(v.id('products')),
+        sourceScopeStatus: v.optional(v.union(v.literal('whole_listing'), v.literal('confirmed_subset'), v.literal('needs_confirmation'))),
+        sourceVariantScope: v.optional(v.array(v.string())),
+        sourceEvidenceOverrides: v.optional(v.object({ facts: v.optional(v.string()), attributeKeys: v.optional(v.array(v.string())), useDescription: v.optional(v.boolean()) })),
+        sourceProperties: v.optional(v.record(v.string(), v.string())),
         rawSourceDescription: v.optional(v.string()), // Cleaned source detail text for smart descriptions
         rawHtmlDescription: v.optional(v.string()),   // Raw source detail HTML for smart descriptions
         descriptionImages: v.optional(v.array(v.string())), // Source detail/marketing images for smart descriptions
@@ -272,6 +285,8 @@ export default defineSchema({
 
     descriptionAudits: defineTable({
         productId: v.optional(v.id("products")),
+        selectedCjVariantIds: v.optional(v.array(v.string())),
+        sourceSnapshotId: v.optional(v.id('productSourceSnapshots')),
         importSessionId: v.optional(v.string()),
         sourceUrl: v.optional(v.string()),
         sourceDomain: v.optional(v.string()),

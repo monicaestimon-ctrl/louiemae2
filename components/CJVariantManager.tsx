@@ -64,6 +64,8 @@ interface MappingSummary {
 }
 
 interface ProductWithVariants extends ListingContext {
+    sourceSnapshotId?: Id<'productSourceSnapshots'>;
+    sourceEvidenceOverrides?: ListingDetails['sourceEvidenceOverrides'];
     description?: string;
     smartDescription?: ListingDetails['smartDescription'];
     descriptionSource?: ListingDetails['descriptionSource'];
@@ -494,7 +496,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
                                             </div>
 
                                             <CJListingReview value={listingDrafts[product._id] ?? { name: product.name, description: product.description ?? '', images: product.images,
-                                                smartDescription: product.smartDescription, descriptionSource: product.descriptionSource }} context={product} productId={product._id}
+                                                smartDescription: product.smartDescription, descriptionSource: product.descriptionSource, sourceSnapshotId: product.sourceSnapshotId, sourceEvidenceOverrides: product.sourceEvidenceOverrides, sourceScopeStatus: product.sourceScopeStatus ?? (product.cjVariants?.length ? 'needs_confirmation' : 'whole_listing') }} context={product} productId={product._id} revision={product.productRevision}
                                                 variants={variants} availableImages={[...product.images, ...variants.flatMap(v => v.image ? [v.image] : []), ...providerVariants.flatMap(v => v.image ? [v.image] : [])]}
                                                 onBusyChange={busy => setGeneratingProduct(busy ? product._id : null)}
                                                 onChange={value => {

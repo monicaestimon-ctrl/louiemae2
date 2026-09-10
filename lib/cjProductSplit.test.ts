@@ -3,7 +3,7 @@ import type { Doc } from '../convex/_generated/dataModel';
 import { buildCjProductSplit } from './cjProductSplit';
 
 const product = {
-    _id: 'source', _creationTime: 1, name: 'Mixed dresses', price: 35,
+    sourceSnapshotId: 'snapshot', _id: 'source', _creationTime: 1, name: 'Mixed dresses', price: 35,
     description: 'Original description', images: ['mixed.jpg'], category: 'Dresses', collection: 'Kids',
     cjSourcingStatus: 'approved', cjProductId: 'supplier-product', cjVariantId: 'green-90', cjSku: 'G90',
     batchImportItemId: 'batch', cjSourcingId: 'request', storefrontStatus: 'published',
@@ -30,7 +30,7 @@ describe('splitting a mixed CJ listing', () => {
     it('moves one dress with mapped pricing and creates mappings for its other sizes', () => {
         const result = buildCjProductSplit(product, ['green-90', 'green-100'], ' Green Lace Dress ');
         expect(result.newProduct).toMatchObject({
-            name: 'Green Lace Dress', storefrontStatus: 'hidden', price: 35,
+            name: 'Green Lace Dress', storefrontStatus: 'hidden', price: 35, sourceSnapshotId: 'snapshot', sourceParentProductId: 'source', sourceScopeStatus: 'needs_confirmation',
             images: ['green.jpg'], cjProductId: 'supplier-product', cjVariantScope: ['green-90', 'green-100'],
         });
         expect(result.newProduct.variants[0]).toEqual(product.variants![0]);

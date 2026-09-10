@@ -202,23 +202,20 @@ export function isRepairableValidationIssue(issue: DescriptionValidationIssue): 
 export function buildSafeFallbackDescription(facts: NormalizedProductFacts, _snapshot: SourceProductSnapshot): GeneratedDescriptionDraft {
     const detailLines: GeneratedDescriptionDraft['detailLines'] = [];
     const safeFacts = [
-        ...facts.designDetails,
-        ...facts.colors,
-        ...facts.patternOrFinish,
-        ...facts.fitOrSilhouette,
-        ...facts.functionalDetails,
-        ...facts.variants,
-        ...facts.roomOrUseCase,
-    ].filter(fact => fact.evidenceLevel !== 'inferred_low_confidence');
-    for (const factValue of safeFacts.slice(0, 4)) {
+        ...facts.designDetails, ...facts.materials, ...facts.patternOrFinish, ...facts.fitOrSilhouette,
+        ...facts.functionalDetails, ...facts.variants, ...facts.roomOrUseCase,
+    ].filter(fact => fact.evidenceLevel !== 'inferred_low_confidence' && !/^(option[\s:]*|unknown|n\/a)$/i.test(fact.value.trim()));
+    const colors = [...new Set(facts.colors.filter(fact => fact.evidenceLevel !== 'inferred_low_confidence').map(fact => fact.value))];
+    const seen = new Set<string>();
+    for (const factValue of safeFacts) {
+        if (seen.has(factValue.value.toLowerCase())) continue;
+        seen.add(factValue.value.toLowerCase());
         const label = VALID_LABELS.has(factValue.label) ? factValue.label : 'Details';
-        detailLines.push({
-            label,
-            detail: factValue.value,
-            supportedByFactIds: [factValue.id],
-            riskLevel: factValue.evidenceLevel === 'source_image' ? 'low' : 'medium',
-        });
+        detailLines.push({ label, detail: `Features ${factValue.value.replace(/[.!?]+$/, '')}.`, supportedByFactIds: [factValue.id],
+            riskLevel: factValue.evidenceLevel === 'source_image' ? 'low' : 'medium' });
+        if (detailLines.length >= 3) break;
     }
+    if (colors.length) detailLines.push({ label: 'Details', detail: `Selected colors include ${colors.join(', ')}.`, supportedByFactIds: facts.colors.map(fact => fact.id), riskLevel: 'low' });
     if (detailLines.length === 0) {
         detailLines.push({
             label: 'Design',
@@ -227,37 +224,9 @@ export function buildSafeFallbackDescription(facts: NormalizedProductFacts, _sna
             riskLevel: 'low',
         });
     }
-    const neutralLines: GeneratedDescriptionDraft['detailLines'] = [
-        {
-            label: facts.collection.value === 'furniture' ? 'Placement' : 'Styling',
-            detail: facts.collection.value === 'furniture'
-                ? 'A simple silhouette for pairing with layered home textures and collected pieces.'
-                : 'Easy styling keeps the piece ready to mix into a curated everyday wardrobe.',
-            supportedByFactIds: [],
-            riskLevel: 'low',
-        },
-        {
-            label: 'Details',
-            detail: 'Clean visual lines keep the look understated, polished, and easy to style.',
-            supportedByFactIds: [],
-            riskLevel: 'low',
-        },
-    ];
-    for (const neutralLine of neutralLines) {
-        if (detailLines.length >= 3) break;
-        detailLines.push(neutralLine);
-    }
-    while (detailLines.length < 3) {
-        detailLines.push({
-            label: 'Details',
-            detail: 'Understated proportions keep the piece simple, refined, and easy to place.',
-            supportedByFactIds: [],
-            riskLevel: 'low',
-        });
-    }
 
     return {
-        openingSentence: `A clean, easy-to-style ${facts.productType.value} with understated detail and a polished Louie Mae feel.`,
+        openingSentence: `Supplier details for this ${facts.productType.value}:`,
         detailLines: detailLines.slice(0, 4),
         seoKeywordsUsed: [],
         avoidedClaims: facts.missingImportantFacts,

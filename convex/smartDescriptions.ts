@@ -135,7 +135,9 @@ export const generateSmartDescription = action({
         });
 
         try {
-            let sourceSnapshot = normalizeSourceProduct(typedRequest.sourceSnapshot || {});
+            const prepared = await ctx.runAction(internal.productSourceActions.prepare, { request: typedRequest });
+            let sourceSnapshot = normalizeSourceProduct(prepared.sourceSnapshot);
+            warnings.push(...prepared.warnings);
             warnings.push(...(sourceSnapshot.warnings || []));
 
             if (typedRequest.options?.allowImageAnalysis) {
@@ -241,7 +243,7 @@ export const generateSmartDescription = action({
 
             if (!validation.passed) {
                 fallbackUsed = true;
-                fallbackReason = validation.errors.map(issue => issue.code).join(", ");
+                fallbackReason = fallbackReason || validation.errors.map(issue => issue.code).join(", ");
                 repaired = false;
                 console.log("[SmartDescription] fallback used", { requestId, fallbackReason });
                 finalDraft = buildSafeFallbackDescription(facts, sourceSnapshot);
@@ -255,7 +257,7 @@ export const generateSmartDescription = action({
 
             validation = { ...validation, repaired };
             const description = formatDescription(finalDraft);
-            const sourceSnapshotHash = hashSnapshot(sourceSnapshot);
+            const sourceSnapshotHash = prepared.sourceHash;
             const auditId = await ctx.runMutation(internal.descriptionAudits.createDescriptionAudit, {
                 productId: typedRequest.productId as any,
                 importSessionId: typedRequest.importSessionId,
@@ -266,6 +268,8 @@ export const generateSmartDescription = action({
                 promptVersion: SMART_DESCRIPTION_PROMPT_VERSION,
                 brandVoiceVersion: BRAND_VOICE_VERSION,
                 sourceSnapshotHash,
+                sourceSnapshotId: prepared.sourceSnapshotId,
+                selectedCjVariantIds: typedRequest.selection?.variants.flatMap(v => v.cjVariantId ? [v.cjVariantId] : []),
                 sourceSnapshot,
                 normalizedFacts: facts,
                 generatedDraft: finalDraft,
@@ -289,9 +293,15 @@ export const generateSmartDescription = action({
                 detailLineCount: finalDraft.detailLines.length,
             });
 
+            const insufficientEvidence = fallbackUsed && facts.designDetails.length + facts.materials.length + facts.patternOrFinish.length
+                + facts.fitOrSilhouette.length + facts.functionalDetails.length + facts.dimensions.length === 0;
             return {
-                ok: true,
+                ok: !insufficientEvidence,
+                error: insufficientEvidence ? 'There are not enough verified product details to write a description. Confirm supplier facts or select clearer photos, then try again.' : undefined,
                 description,
+                sourceSnapshotId: prepared.sourceSnapshotId,
+                model: getSmartDescriptionModel(), promptVersion: SMART_DESCRIPTION_PROMPT_VERSION, sourceSnapshotHash,
+                providerErrorCode, providerRetryable,
                 structured: finalDraft,
                 facts,
                 auditId,
