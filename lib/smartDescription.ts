@@ -200,6 +200,9 @@ export type DescriptionValidationResult = {
 export type SmartDescriptionRequest = {
     productId?: string;
     importSessionId?: string;
+    sourceSnapshotId?: string;
+    selection?: import('./productGeneration').GenerationSelection;
+    context?: import('./productGeneration').SourceContext;
     sourceSnapshot: SourceProductSnapshot;
     adminContext?: {
         selectedCategory?: string;
@@ -223,6 +226,12 @@ export type SmartDescriptionRequest = {
 };
 
 export type SmartDescriptionResponse = {
+    sourceSnapshotId?: string;
+    model?: string;
+    promptVersion?: string;
+    sourceSnapshotHash?: string;
+    providerErrorCode?: string;
+    providerRetryable?: boolean;
     ok: boolean;
     description?: string;
     structured?: GeneratedDescriptionDraft;
@@ -246,6 +255,9 @@ export type GeneratedSmartNameDraft = {
 };
 
 export type SmartNameRequest = {
+    sourceSnapshotId?: string;
+    selection?: import('./productGeneration').GenerationSelection;
+    context?: import('./productGeneration').SourceContext;
   productId?: string;
   ownerKey?: string;
     sourceSnapshot: SourceProductSnapshot;
@@ -267,6 +279,7 @@ export type SmartNameRequest = {
 };
 
 export type SmartNameResponse = {
+    sourceSnapshotId?: string;
     ok: boolean;
     name?: string;
     structured?: GeneratedSmartNameDraft;
@@ -517,7 +530,7 @@ export function normalizeVariants(variants: unknown): SourceVariant[] {
             groups.get(key)!.add(value);
         }
     }
-    return [...groups.entries()].map(([name, values]) => ({ name, values: [...values].slice(0, 30) }));
+    return [...groups.entries()].map(([name, values]) => ({ name, values: [...values].slice(0, 500) }));
 }
 
 export function buildSourceProductSnapshot(input: {

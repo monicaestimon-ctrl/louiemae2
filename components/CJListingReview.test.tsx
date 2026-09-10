@@ -2,7 +2,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const { generate } = vi.hoisted(() => ({ generate: vi.fn() }));
-vi.mock('convex/react', () => ({ useAction: () => generate }));
+vi.mock('convex/react', () => ({ useQuery: () => null, useAction: () => generate }));
 import { CJListingReview } from './CJListingReview';
 import { VariantImagePicker } from './VariantImagePicker';
 
@@ -13,7 +13,7 @@ afterEach(cleanup);
 
 describe('CJ final listing review', () => {
     it('generates for only the selected style and carries the reserved name to saving', async () => {
-        generate.mockResolvedValue({ ok: true, name: 'Celia Lace Dress', claimId: 'claim', ownerKey: 'owner' });
+        generate.mockResolvedValue({ ok: true, name: 'Celia Lace Dress', claimId: 'claim', ownerKey: 'owner', warnings: [] });
         const change = vi.fn();
         render(<CJListingReview value={value} context={{ category: 'Dresses', collection: 'kids' }} variants={variants} availableImages={['https://example.com/pink.jpg']} onChange={change} newListing />);
         fireEvent.click(screen.getByRole('button', { name: 'Smart Name' }));
@@ -38,11 +38,24 @@ describe('CJ final listing review', () => {
     });
 
     it('keeps generated description audit metadata with the draft', async () => {
-        generate.mockResolvedValue({ ok: true, description: 'A green embroidered dress.', auditId: 'audit', fallbackUsed: true });
+        generate.mockResolvedValue({ ok: true, description: 'A green embroidered dress.', auditId: 'audit', fallbackUsed: true, warnings: [], validation: { passed: false }, model: 'actual-model', promptVersion: 'v1', sourceSnapshotHash: 'hash' });
         const change = vi.fn();
         render(<CJListingReview value={value} context={{}} variants={variants} availableImages={[]} onChange={change} />);
         fireEvent.click(screen.getByRole('button', { name: 'Smart Description' }));
-        await waitFor(() => expect(change).toHaveBeenCalledWith(expect.objectContaining({ description: 'A green embroidered dress.', descriptionSource: 'ai_generated', smartDescription: expect.objectContaining({ auditId: 'audit', status: 'fallback' }) })));
+        await screen.findByRole('button', { name: 'Use this draft' });
+        expect(change).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Use this draft' }));
+        await waitFor(() => expect(change).toHaveBeenCalledWith(expect.objectContaining({ description: 'A green embroidered dress.', descriptionSource: 'safe_fallback', smartDescription: expect.objectContaining({ auditId: 'audit', status: 'fallback' }) })));
+    });
+
+    it('preserves existing text when generation fails', async () => {
+        generate.mockResolvedValue({ ok: false, warnings: [], error: 'Not enough verified facts', validation: { passed: false } });
+        const change = vi.fn();
+        render(<CJListingReview value={{ ...value, description: 'Existing detailed story' }} context={{}} variants={variants} availableImages={[]} onChange={change} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Smart Description' }));
+        await screen.findByRole('alert');
+        expect(change).not.toHaveBeenCalled();
+        expect(screen.getByLabelText('Product description')).toHaveValue('Existing detailed story');
     });
 
     it('shows both saved and CJ photos and links the selected image explicitly', () => {

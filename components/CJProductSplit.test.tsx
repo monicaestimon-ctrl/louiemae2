@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Id } from '../convex/_generated/dataModel';
 
 const { split } = vi.hoisted(() => ({ split: vi.fn() }));
-vi.mock('convex/react', () => ({ useMutation: () => split, useAction: () => vi.fn() }));
+vi.mock('convex/react', () => ({ useQuery: () => null, useMutation: () => split, useAction: () => vi.fn() }));
 vi.mock('./SafeImage', () => ({ SafeImage: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} /> }));
 import { CJProductSplit } from './CJProductSplit';
 
@@ -28,7 +28,7 @@ describe('CJ product split selection', () => {
         fireEvent.change(screen.getByLabelText('Find a dress or style'), { target: { value: 'Green Lace' } });
         fireEvent.click(screen.getByRole('button', { name: 'Select all shown (2)' }));
         fireEvent.click(screen.getByRole('button', { name: 'Move selected variants to new product' }));
-        await waitFor(() => expect(split).toHaveBeenCalledWith({ productId: 'product-1', name: 'Green Lace Dress', selectedVariantIds: ['g90', 'g100'], expectedRevision: 0, customerLinks: [], listing: { name: 'Green Lace Dress', description: '', images: [] }, variantImages: [] }));
+        await waitFor(() => expect(split).toHaveBeenCalledWith({ productId: 'product-1', name: 'Green Lace Dress', selectedVariantIds: ['g90', 'g100'], expectedRevision: 0, customerLinks: [], listing: expect.objectContaining({ name: 'Green Lace Dress', description: '', images: [], sourceScopeStatus: 'needs_confirmation' }), variantImages: [] }));
         expect(await screen.findByRole('status')).toHaveTextContent('Created “Green Lace Dress” with 2 variants');
     });
 

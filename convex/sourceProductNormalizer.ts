@@ -158,6 +158,7 @@ export function normalizeSourceProduct(input: SourceProductSnapshot | any): Sour
         category: input.categoryHints?.selectedCategory ?? input.category,
         subcategory: input.categoryHints?.selectedSubcategory ?? input.subcategory,
         collection: input.categoryHints?.selectedCollection ?? input.collection,
+        categoryHints: input.categoryHints,
         sellerName: input.seller?.name ?? jsonLd.seller?.name,
         sellerRating: input.seller?.rating ?? jsonLd.seller?.rating,
         salesCount: input.seller?.salesCount ?? jsonLd.seller?.salesCount,

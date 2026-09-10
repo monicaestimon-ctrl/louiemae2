@@ -46,6 +46,8 @@ import type * as productImageRecords from "../productImageRecords.js";
 import type * as productImages from "../productImages.js";
 import type * as productMigrations from "../productMigrations.js";
 import type * as productNameRegistry from "../productNameRegistry.js";
+import type * as productSources from "../productSources.js";
+import type * as productSourceActions from "../productSourceActions.js";
 import type * as products from "../products.js";
 import type * as scraper from "../scraper.js";
 import type * as siteContent from "../siteContent.js";
@@ -101,6 +103,8 @@ declare const fullApi: ApiFromModules<{
   productImages: typeof productImages;
   productMigrations: typeof productMigrations;
   productNameRegistry: typeof productNameRegistry;
+  productSources: typeof productSources;
+  productSourceActions: typeof productSourceActions;
   products: typeof products;
   scraper: typeof scraper;
   siteContent: typeof siteContent;

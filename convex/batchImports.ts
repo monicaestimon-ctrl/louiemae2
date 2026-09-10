@@ -285,7 +285,8 @@ export const processItem = internalAction({
         try {
             await ctx.runMutation(internal.batchImports.setStage, { itemId: args.itemId, stage: "Extracting product details" });
             const result: any = await ctx.runAction(api.scraper.scrapeProduct, { url: item.normalizedUrl });
-            const compactResult = compactBatchImportResult(result);
+            const sourceSnapshotId = await ctx.runAction(internal.productSourceActions.rememberImport, { result, url: result?.resolvedUrl || item.normalizedUrl });
+            const compactResult = { ...compactBatchImportResult(result), sourceSnapshotId };
             assertBatchImportPayloadSize(compactResult);
             await ctx.runMutation(internal.batchImports.finishItem, {
                 itemId: args.itemId,

@@ -41,7 +41,7 @@ export function buildCjProductSplit(product: Doc<'products'>, selectedIds: strin
     const images = [...new Set([...moved.map(v => v.image), ...variants.map(v => v.image)].filter((url): url is string => Boolean(url)))];
     const remainingImages = new Set([...remaining.map(v => v.image), ...remainingOptions.map(v => v.image)]);
     const newProduct = {
-        name: name.trim(), price: product.price, description: product.description,
+        name: name.trim(), price: product.price, description: '',
         category: product.category, collection: product.collection,
         audience: product.audience, canonicalProductType: product.canonicalProductType,
         subcategoryIds: product.subcategoryIds, primarySubcategoryId: product.primarySubcategoryId,
@@ -49,6 +49,8 @@ export function buildCjProductSplit(product: Doc<'products'>, selectedIds: strin
         images, variants, storefrontStatus: 'hidden' as const, inStock: variants.some(v => v.inStock),
         cjSourcingStatus: product.cjSourcingStatus,
         cjProductId: product.cjProductId, sourceUrl: product.sourceUrl,
+        sourceSnapshotId: product.sourceSnapshotId, sourceParentProductId: product._id,
+        sourceScopeStatus: 'needs_confirmation' as const, sourceVariantScope: moved.map(v => v.vid),
         cjVariantId: moved[0].vid, cjSku: moved[0].sku,
         cjVariants: moved, cjVariantScope: moved.map(v => v.vid),
         cjInventoryStatus: 'unknown' as const, cjInventoryNextCheckAt: 0,
@@ -57,6 +59,8 @@ export function buildCjProductSplit(product: Doc<'products'>, selectedIds: strin
     return {
         newProduct,
         sourcePatch: {
+            sourceScopeStatus: 'needs_confirmation' as const, sourceVariantScope: remaining.map(v => v.vid),
+            sourceEvidenceOverrides: undefined,
             images: product.images.filter(image => !images.includes(image) || remainingImages.has(image)),
             cjVariants: remaining, cjVariantScope: remaining.map(v => v.vid), variants: remainingOptions,
             cjVariantId: remaining.some(v => v.vid === product.cjVariantId) ? product.cjVariantId : remaining[0].vid,

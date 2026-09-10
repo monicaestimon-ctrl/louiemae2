@@ -1,4 +1,4 @@
-import type { ImportableProduct } from '../components/import/ProductCard';
+import type { ImportableProduct } from './importableProduct';
 import type { CollectionType } from '../types';
 import { cleanOtapiDescription, extractOtapiSourceProperties } from './otapiHelpers';
 
@@ -19,6 +19,7 @@ export const buildBatchImportProduct = (
     row: BatchImportItemSource,
     collection: string,
     calculatePrice: (price: number) => number,
+    options: { evidenceOnly?: boolean } = {},
 ): ImportableProduct => {
     const result = row.result;
     if (!result) throw new Error('Batch item is missing source data.');
@@ -39,7 +40,7 @@ export const buildBatchImportProduct = (
         const regular = getUsd(item.Price);
         const salePrice = promo > 0 ? promo : regular;
         const originalPrice = regular > promo && promo > 0 ? regular : salePrice;
-        if (salePrice <= 0 && originalPrice <= 0) throw new Error('1688 payload is missing a valid product price.');
+        if (!options.evidenceOnly && salePrice <= 0 && originalPrice <= 0) throw new Error('1688 payload is missing a valid product price.');
         const images: string[] = [];
         const addImage = (url?: string) => { if (url && !images.includes(url)) images.push(url); };
         (item.Pictures || []).forEach((pic: any) => addImage(pic?.Large?.Url || pic?.Medium?.Url || pic?.Url));
@@ -66,6 +67,7 @@ export const buildBatchImportProduct = (
         return {
             id: `batch_${row._id}`,
             batchItemId: row._id,
+            sourceSnapshotId: result.sourceSnapshotId,
             name: item.Title || item.OriginalTitle || 'Unknown Product',
             price: salePrice || originalPrice,
             description: cleanOtapiDescription(item) || result.rawDescription || '',
@@ -103,6 +105,7 @@ export const buildBatchImportProduct = (
     return {
         id: `batch_${row._id}`,
         batchItemId: row._id,
+            sourceSnapshotId: result.sourceSnapshotId,
         name: data.title || 'Unknown Product',
         price,
         description: data.description || '',

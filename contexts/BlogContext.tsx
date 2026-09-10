@@ -261,6 +261,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       'pricingUpdatedAt',
       'pricingWarnings',
       'pricingStage',
+      'sourceSnapshotId', 'sourceScopeStatus', 'sourceEvidenceOverrides', 'sourceProperties',
       'rawSourceDescription',
       'rawHtmlDescription',
       'descriptionImages',

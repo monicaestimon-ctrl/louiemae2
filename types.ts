@@ -87,6 +87,13 @@ export interface Product {
   // Currency conversion metadata
   sourceCurrency?: string;          // Original currency code (e.g. 'GBP', 'CNY')
   sourcePriceOriginal?: number;     // Original price in source currency
+  sourceSnapshotId?: Id<'productSourceSnapshots'>;
+  sourceParentProductId?: Id<'products'>;
+  cjVariantScope?: string[];
+  sourceScopeStatus?: 'whole_listing' | 'confirmed_subset' | 'needs_confirmation';
+  sourceVariantScope?: string[];
+  sourceEvidenceOverrides?: { facts?: string; attributeKeys?: string[]; useDescription?: boolean };
+  sourceProperties?: Record<string, string>;
   rawSourceDescription?: string;    // Cleaned source detail text for smart descriptions
   rawHtmlDescription?: string;      // Raw source detail HTML for smart descriptions
   descriptionImages?: string[];     // Source detail/marketing images for smart descriptions
