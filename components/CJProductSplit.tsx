@@ -25,6 +25,7 @@ export function CJProductSplit({ product, disabled = false, onBusyChange }: Prop
     const split = useMutation(api.products.splitCjProduct);
     const [open, setOpen] = useState(false);
     const [filter, setFilter] = useState('');
+    const [supplierImages, setSupplierImages] = useState<string[]>([]);
     const [details, setDetails] = useState<ListingDetails>({ name: '', description: '', images: [], sourceSnapshotId: product.sourceSnapshotId, sourceScopeStatus: 'needs_confirmation' });
     const name = details.name;
     const [photoOverrides, setPhotoOverrides] = useState<Record<string, string>>({});
@@ -41,7 +42,7 @@ export function CJProductSplit({ product, disabled = false, onBusyChange }: Prop
     const optionFor = (vid: string) => product.variants?.find(option => customerLinks[vid] ? option.id === customerLinks[vid] : option.cjVariantId === vid);
     const reviewVariants = selectedVariants.map(v => ({ id: v.vid, cjVariantId: v.vid, supplierName: v.name, name: optionFor(v.vid)?.name || v.name, image: photoOverrides[v.vid] || optionFor(v.vid)?.image || v.image }));
     const reviewDetails = { ...details, images: galleryEdited ? details.images : [...new Set(reviewVariants.flatMap(v => v.image ? [v.image] : []))] };
-    const availableImages = [...new Set([...(product.images ?? []), ...variants.map(v => v.image), ...(product.variants ?? []).map(v => v.image)].filter((url): url is string => Boolean(url)))];
+    const availableImages = [...new Set([...supplierImages, ...(product.images ?? []), ...variants.map(v => v.image), ...(product.variants ?? []).map(v => v.image)].filter((url): url is string => Boolean(url)))];
 
     async function createListing() {
         setBusy(true);
@@ -110,7 +111,7 @@ export function CJProductSplit({ product, disabled = false, onBusyChange }: Prop
                     </div>;
                 })}</div>
             </div>}
-            <CJListingReview revision={product.productRevision} value={reviewDetails} context={product} variants={reviewVariants} availableImages={[...reviewVariants.flatMap(v => v.image ? [v.image] : []), ...availableImages]}
+            <CJListingReview onAvailableImages={setSupplierImages} revision={product.productRevision} value={reviewDetails} context={product} variants={reviewVariants} availableImages={[...reviewVariants.flatMap(v => v.image ? [v.image] : []), ...availableImages]}
                 onChange={value => { if (value.images !== reviewDetails.images) setGalleryEdited(true); setDetails(value); }} newListing onBusyChange={setGenerating} />
             <p className="text-sm text-cream/60">{selectedVariants.length} variants will move; {variants.length - selectedVariants.length} will remain. Mapped size options move with them. Unmapped CJ options become linked options in the new listing. Leave at least one variant in the original.</p>
             <p className="text-sm text-cream/60">The new listing starts hidden and keeps the original base price. Choose its photos and write or generate its own description here. CJ stock will refresh separately.</p>

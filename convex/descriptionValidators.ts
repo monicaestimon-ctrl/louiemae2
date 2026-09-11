@@ -211,7 +211,7 @@ export function buildSafeFallbackDescription(facts: NormalizedProductFacts, _sna
         if (seen.has(factValue.value.toLowerCase())) continue;
         seen.add(factValue.value.toLowerCase());
         const label = VALID_LABELS.has(factValue.label) ? factValue.label : 'Details';
-        detailLines.push({ label, detail: `Features ${factValue.value.replace(/[.!?]+$/, '')}.`, supportedByFactIds: [factValue.id],
+        detailLines.push({ label, detail: `Features ${factValue.value.replace(/[.!?]+$/, '')}${/^(embroidered|smocked|pleated|tiered|quilted|woven|ribbed|scalloped|ruffled|floral|striped)$/i.test(factValue.value) ? ' details' : ''}.`, supportedByFactIds: [factValue.id],
             riskLevel: factValue.evidenceLevel === 'source_image' ? 'low' : 'medium' });
         if (detailLines.length >= 3) break;
     }
