@@ -1,4 +1,5 @@
 "use node";
+import { classifyAiProviderError, sanitizeAiWarning } from '../lib/aiProviderErrors';
 
 import { action } from "./_generated/server";
 import { v } from "convex/values";
@@ -91,7 +92,7 @@ export const generateSmartName = action({
                     model: getSmartDescriptionModel(), promptVersion: 'visual-facts-v1', visualFacts: visual.facts, warnings: visual.warnings,
                     ttlMs: visual.facts.length ? undefined : 5 * 60 * 1000,
                 });
-                warnings.push(...visual.warnings);
+                warnings.push(...visual.warnings.map(sanitizeAiWarning));
                 sourceSnapshot = attachVisualFacts(sourceSnapshot, visual.facts) as any;
             }
 
@@ -125,9 +126,9 @@ export const generateSmartName = action({
                     warnings.push(...generated.warnings);
                     draft = coerceSmartNameDraft(generated.value);
                 } catch (error) {
-                    const message = error instanceof Error ? error.message : String(error);
-                    warnings.push(message);
-                    if (/429|resource_exhausted|quota/i.test(message)) attempt = MAX_MODEL_ATTEMPTS;
+                    const failure = classifyAiProviderError(error);
+                    warnings.push(failure.message);
+                    if (!failure.retryable) attempt = MAX_MODEL_ATTEMPTS;
                 }
 
                 if (!draft) {

@@ -1,3 +1,4 @@
+import { sourceEvidenceWarnings } from '../lib/productGeneration';
 import { internalQuery, internalMutation, query } from './_generated/server';
 import { v } from 'convex/values';
 import { requireCjAdminIdentity } from './cjAdminAccess';
@@ -5,7 +6,7 @@ import { requireCjAdminIdentity } from './cjAdminAccess';
 export const evidenceValidator = v.object({ facts: v.optional(v.string()), attributeKeys: v.optional(v.array(v.string())), useDescription: v.optional(v.boolean()) });
 export const get = internalQuery({ args: { id: v.id('productSourceSnapshots') }, handler: (ctx, { id }) => ctx.db.get(id) });
 export const product = internalQuery({ args: { id: v.id('products') }, handler: (ctx, { id }) => ctx.db.get(id) });
-export const preview = query({ args: { id: v.id('productSourceSnapshots') }, handler: async (ctx, { id }) => { await requireCjAdminIdentity(ctx); return ctx.db.get(id); } });
+export const preview = query({ args: { id: v.id('productSourceSnapshots') }, handler: async (ctx, { id }) => { await requireCjAdminIdentity(ctx); const record = await ctx.db.get(id); if (!record) return null; const warnings = sourceEvidenceWarnings(record.snapshot); return { ...record, warnings, status: warnings.length ? 'partial' : 'complete' }; } });
 export const acquire = internalMutation({ args: { sourceKey: v.string(), refresh: v.boolean(), token: v.string() }, handler: async (ctx, args) => {
     const entry = await ctx.db.query('productSourceCache').withIndex('by_source', q => q.eq('sourceKey', args.sourceKey)).unique();
     if (!args.refresh && entry?.snapshotId) return { snapshotId: entry.snapshotId };
@@ -21,9 +22,7 @@ export const finish = internalMutation({ args: { sourceKey: v.string(), token: v
     if (!args.snapshot) { await ctx.db.patch(entry._id, { leaseUntil: undefined, leaseToken: undefined, lastError: args.error }); return entry.snapshotId; }
     if (JSON.stringify(args.snapshot).length > 240_000) throw new Error('Supplier evidence exceeds the safe storage limit.');
     const existing = await ctx.db.query('productSourceSnapshots').withIndex('by_hash', q => q.eq('contentHash', args.contentHash!)).first();
-    const warnings = [];
-    if (!args.snapshot.rawDescription && !args.snapshot.rawHtmlDescription) warnings.push('The supplier description could not be loaded. Refresh supplier details or continue with available facts.');
-    if (!args.snapshot.attributes?.length) warnings.push('No structured supplier properties were provided.');
+    const warnings = sourceEvidenceWarnings(args.snapshot);
     const snapshotId = existing?._id ?? await ctx.db.insert('productSourceSnapshots', { sourceKey: args.sourceKey, schemaVersion: 1, adapterVersion: 1,
         fetchedAt: Date.now(), contentHash: args.contentHash!, snapshot: args.snapshot, status: warnings.length ? 'partial' : 'complete', warnings });
     await ctx.db.patch(entry._id, { snapshotId, leaseUntil: undefined, leaseToken: undefined, lastError: undefined });

@@ -1,3 +1,4 @@
+import { sanitizeAiWarning } from '../lib/aiProviderErrors';
 import { internalMutation, internalQuery, query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireCjAdminIdentity } from "./cjAdminAccess";
@@ -42,6 +43,7 @@ export const createDescriptionAudit = internalMutation({
         const now = Date.now();
         return await ctx.db.insert("descriptionAudits", {
             ...args,
+            warnings: args.warnings.map(sanitizeAiWarning),
             createdAt: now,
             updatedAt: now,
             debugExpiresAt: now + DESCRIPTION_AUDIT_DEBUG_RETENTION_MS,
@@ -67,11 +69,12 @@ export const getByProduct = query({
     args: { productId: v.id("products") },
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
-        return await ctx.db
+        const audits = await ctx.db
             .query("descriptionAudits")
             .withIndex("by_product", q => q.eq("productId", args.productId))
             .order("desc")
             .take(20);
+        return audits.map(audit => ({ ...audit, warnings: audit.warnings.map(sanitizeAiWarning) }));
     },
 });
 

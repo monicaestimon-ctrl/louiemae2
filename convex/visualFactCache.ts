@@ -1,3 +1,4 @@
+import { sanitizeAiWarning } from '../lib/aiProviderErrors';
 import { internalMutation, internalQuery } from './_generated/server';
 import { v } from 'convex/values';
 
@@ -9,7 +10,7 @@ export const get = internalQuery({
       .withIndex('by_cache_key', (q) => q.eq('cacheKey', args.cacheKey))
       .first();
     if (!cached || cached.expiresAt <= Date.now()) return null;
-    return { facts: cached.visualFacts, warnings: cached.warnings };
+    return { facts: cached.visualFacts, warnings: cached.warnings.map(sanitizeAiWarning) };
   },
 });
 
@@ -31,6 +32,7 @@ export const put = internalMutation({
     const { ttlMs, ...storedArgs } = args;
     const value = {
       ...storedArgs,
+      warnings: storedArgs.warnings.map(sanitizeAiWarning),
       createdAt: Date.now(),
       expiresAt: Date.now() + (ttlMs || 30 * 24 * 60 * 60 * 1000),
     };

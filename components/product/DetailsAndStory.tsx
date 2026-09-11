@@ -1,10 +1,11 @@
+import { sanitizeAiWarning } from '../../lib/aiProviderErrors';
 import React, { useEffect, useRef, useState } from 'react';
 import { useAction, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
 import type { Product } from '../../types';
 import { buildSourceProductSnapshot, type SmartDescriptionResponse } from '../../lib/smartDescription';
-import { semanticGenerationKey, type GenerationSelection, type SourceContext } from '../../lib/productGeneration';
+import { isProductSourceAttribute, semanticGenerationKey, type GenerationSelection, type SourceContext } from '../../lib/productGeneration';
 import { getUserFacingErrorMessage } from '../../lib/errorMessages';
 
 export type CopyDraft = Pick<Product, 'name' | 'description' | 'smartDescription' | 'descriptionSource' | 'pendingNameClaimId' | 'nameOwnerKey' | 'sourceSnapshotId' | 'sourceEvidenceOverrides' | 'sourceScopeStatus'>;
@@ -30,6 +31,7 @@ export function DetailsAndStory({ value, context, selection, onChange, productId
     const [error, setError] = useState('');
     const [warnings, setWarnings] = useState<string[]>([]);
     const [suggestion, setSuggestion] = useState<SmartDescriptionResponse | null>(initialSuggestion ?? null);
+    const [diagnostic, setDiagnostic] = useState<SmartDescriptionResponse>();
     const [quality, setQuality] = useState<number>();
     const signature = semanticGenerationKey({ value, context, selection, revision, productId });
     const latest = useRef(signature); latest.current = signature;
@@ -86,7 +88,7 @@ export function DetailsAndStory({ value, context, selection, onChange, productId
             } else {
                 const result = await descriptionAction({ request });
                 if (!valid()) return;
-                setWarnings(result.warnings ?? []); setQuality(result.facts?.sourceQuality.score);
+                setWarnings(result.warnings ?? []); setDiagnostic(result); setQuality(result.facts?.sourceQuality.score);
                 if (!result.ok || !result.description) throw new Error(result.error || 'AI generation is unavailable. Your description has been kept.');
                 if (result.fallbackUsed || !result.validation.passed) setSuggestion({ ...result, sourceSnapshotId: sourceId });
                 else applyDescription(result, sourceId);
@@ -110,7 +112,7 @@ export function DetailsAndStory({ value, context, selection, onChange, productId
                     descriptionSource: value.smartDescription ? 'ai_generated_admin_edited' : 'admin_written',
                     smartDescription: value.smartDescription ? { ...value.smartDescription, adminEdited: true, status: 'edited' } : undefined })} />
             </label>
-            <button className={buttonClass} type="button" onClick={() => generate('description')}>Smart Description</button>
+            <button className={buttonClass} disabled={diagnostic?.providerRetryable === false} type="button" onClick={() => generate('description')}>Smart Description</button>
         </div>
         <div className="rounded-lg border border-purple-300/30 p-3 text-sm">
             {context.sourceUrl && <a href={context.sourceUrl} target="_blank" rel="noreferrer" className="block truncate underline">View supplier listing</a>}
@@ -119,7 +121,7 @@ export function DetailsAndStory({ value, context, selection, onChange, productId
             {context.sourceUrl ? <button type="button" className={buttonClass} onClick={loadSource}>{value.sourceSnapshotId ? 'Refresh supplier details' : 'Load supplier details'}</button> : <p>Add a supplier URL or confirmed facts to provide more detail.</p>}
             <details className="mt-3"><summary>Review supplier facts for this product</summary>
                 {selection.subset && <p className="my-2">This supplier listing contains separate products. Confirm only facts that apply to this selection.</p>}
-                {source?.snapshot?.attributes?.map((attribute: { key: string; value: string }, index: number) => <label key={`${attribute.key}_${index}`} className="my-2 block">
+                {source?.snapshot?.attributes?.filter(isProductSourceAttribute).map((attribute: { key: string; value: string }, index: number) => <label key={`${attribute.key}_${index}`} className="my-2 block">
                     {selection.subset && <input type="checkbox" checked={evidence.attributeKeys?.includes(attribute.key) ?? false}
                         onChange={event => onChange({ ...value, sourceScopeStatus: selection.subset ? 'confirmed_subset' : value.sourceScopeStatus, sourceEvidenceOverrides: { ...evidence, attributeKeys: event.target.checked ? [...(evidence.attributeKeys ?? []), attribute.key] : evidence.attributeKeys?.filter(key => key !== attribute.key) } })} />}
                     {' '}{attribute.key}: {attribute.value}
@@ -133,7 +135,12 @@ export function DetailsAndStory({ value, context, selection, onChange, productId
         {busy && <p role="status">{busy}</p>}
         {error && <p role="alert" className={dark ? 'text-amber-200' : 'text-amber-800'}>{error}</p>}
         {quality !== undefined && <p className="text-xs">Source quality: {quality}/100</p>}
-        {[...new Set([...(source?.warnings ?? []), ...warnings])].map(warning => <p key={warning} className={`text-xs ${dark ? 'text-amber-200' : 'text-amber-800'}`}>{warning}</p>)}
+        {[...new Set([...(source?.warnings ?? []), ...warnings])].map(warning => <p key={warning} className={`text-xs ${dark ? 'text-amber-200' : 'text-amber-800'}`}>{sanitizeAiWarning(warning)}</p>)}
+        {diagnostic && <details className="text-xs"><summary>Generation details</summary>
+            <p>Model: {diagnostic.model}</p><p>Audit: {diagnostic.auditId}</p><p>Source snapshot: {diagnostic.sourceSnapshotId}</p>
+            {diagnostic.providerErrorCode && <p>Provider status: {diagnostic.providerErrorCode}</p>}
+            {diagnostic.providerRetryable === false && <p>Restore provider access, then reload this page before trying again.</p>}
+        </details>}
         {suggestion && <div className="rounded-lg border border-amber-400/40 p-3">
             <p className="font-medium">Limited draft available — your description has been kept.</p>
             <p className="my-2 whitespace-pre-wrap">{suggestion.description}</p>

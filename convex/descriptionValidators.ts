@@ -203,7 +203,7 @@ export function buildSafeFallbackDescription(facts: NormalizedProductFacts, _sna
     const detailLines: GeneratedDescriptionDraft['detailLines'] = [];
     const safeFacts = [
         ...facts.designDetails, ...facts.materials, ...facts.patternOrFinish, ...facts.fitOrSilhouette,
-        ...facts.functionalDetails, ...facts.variants, ...facts.roomOrUseCase,
+        ...facts.functionalDetails, ...facts.roomOrUseCase,
     ].filter(fact => fact.evidenceLevel !== 'inferred_low_confidence' && !/^(option[\s:]*|unknown|n\/a)$/i.test(fact.value.trim()));
     const colors = [...new Set(facts.colors.filter(fact => fact.evidenceLevel !== 'inferred_low_confidence').map(fact => fact.value))];
     const seen = new Set<string>();
