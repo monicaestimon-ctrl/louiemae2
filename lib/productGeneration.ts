@@ -20,7 +20,7 @@ export function sourceIdentity(url: string): string {
 
 export function isProductSourceAttribute(attribute: { key: string; value: string }): boolean {
     return !/^(normalizedRating|sizeInfo|encrypted_vendor_id|OriginalTitle)$/i.test(attribute.key)
-        && attribute.value.length <= 1200 && !/^\s*[\[{]/.test(attribute.value);
+        && attribute.value.length <= 1200 && !['[', '{'].some(prefix => attribute.value.trimStart().startsWith(prefix));
 }
 export function sourceEvidenceWarnings(source: SourceProductSnapshot): string[] {
     const warnings = [];
