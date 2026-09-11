@@ -149,6 +149,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
     const draftRevisions = useRef<Map<string, number>>(new Map());
     const [expandedProduct, setExpandedProduct] = useState<Id<'products'> | null>(null);
     const [drafts, setDrafts] = useState<Record<string, CustomerVariant[]>>({});
+    const [supplierImagePools, setSupplierImagePools] = useState<Record<string, string[]>>({});
     const [listingDrafts, setListingDrafts] = useState<Record<string, ListingDetails>>({});
     const [generatingProduct, setGeneratingProduct] = useState<string | null>(null);
     const [dirtyProducts, setDirtyProducts] = useState<Set<string>>(new Set());
@@ -498,6 +499,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
                                             <CJListingReview value={listingDrafts[product._id] ?? { name: product.name, description: product.description ?? '', images: product.images,
                                                 smartDescription: product.smartDescription, descriptionSource: product.descriptionSource, sourceSnapshotId: product.sourceSnapshotId, sourceEvidenceOverrides: product.sourceEvidenceOverrides, sourceScopeStatus: product.sourceScopeStatus ?? (product.cjVariants?.length ? 'needs_confirmation' : 'whole_listing') }} context={product} productId={product._id} revision={product.productRevision}
                                                 variants={variants} availableImages={[...product.images, ...variants.flatMap(v => v.image ? [v.image] : []), ...providerVariants.flatMap(v => v.image ? [v.image] : [])]}
+                                                onAvailableImages={images => setSupplierImagePools(current => ({ ...current, [product._id]: images }))}
                                                 onBusyChange={busy => setGeneratingProduct(busy ? product._id : null)}
                                                 onChange={value => {
                                                     if (!draftRevisions.current.has(product._id)) draftRevisions.current.set(product._id, product.productRevision ?? 0);
@@ -589,7 +591,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
                                                                 </label>
                                                             </div>
                                                             <VariantImagePicker label={variant.name} value={variant.image} recommended={mappedProvider?.image}
-                                                                images={[...product.images, ...(listingDrafts[product._id]?.images ?? []), ...variants.flatMap(v => v.image ? [v.image] : []), ...providerVariants.flatMap(v => v.image ? [v.image] : [])]}
+                                                                images={[...product.images, ...(supplierImagePools[product._id] ?? []), ...(listingDrafts[product._id]?.images ?? []), ...variants.flatMap(v => v.image ? [v.image] : []), ...providerVariants.flatMap(v => v.image ? [v.image] : [])]}
                                                                 onChange={image => updateDraft(product._id, current => current.map(item => item.id === variant.id ? { ...item, image } : item))} />
                                                             <div className="mt-3 grid grid-cols-1 items-end gap-3 lg:grid-cols-[1fr_auto]">
                                                                 <label className="block">

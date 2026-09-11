@@ -14,11 +14,12 @@ export function descriptionMetadata(result: SmartDescriptionResponse): Product['
     return { description: result.description, auditId: result.auditId as Id<'descriptionAudits'>, generatedAt: Date.now(), model: result.model,
         promptVersion: result.promptVersion, sourceSnapshotHash: result.sourceSnapshotHash, adminEdited: false, status: result.fallbackUsed ? 'fallback' : 'generated' };
 }
-type Props = { value: CopyDraft; context: SourceContext; selection: GenerationSelection; onChange: (value: CopyDraft) => void;
+export type DetailsAndStoryActions = { generateName: () => void; generateDescription: () => void };
+type Props = { actionsRef?: React.Ref<DetailsAndStoryActions>; value: CopyDraft; context: SourceContext; selection: GenerationSelection; onChange: (value: CopyDraft) => void;
     productId?: Id<'products'>; revision?: number; newListing?: boolean; dark?: boolean; onBusyChange?: (busy: boolean) => void; children?: React.ReactNode; initialSuggestion?: SmartDescriptionResponse; onAvailableImages?: (images: string[]) => void };
 
 /** The same import-studio controls and request lifecycle in every entry point. */
-export function DetailsAndStory({ value, context, selection, onChange, productId, revision, newListing, dark, onBusyChange, children, initialSuggestion, onAvailableImages }: Props) {
+export function DetailsAndStory({ value, context, selection, onChange, productId, revision, newListing, dark, onBusyChange, children, initialSuggestion, onAvailableImages, actionsRef }: Props) {
     const nameAction = useAction(api.smartNames.generateSmartName);
     const descriptionAction = useAction(api.smartDescriptions.generateSmartDescription);
     const sourceAction = useAction(api.productSourceActions.refresh);
@@ -59,7 +60,9 @@ export function DetailsAndStory({ value, context, selection, onChange, productId
         } catch (err) { if (valid()) setError(getUserFacingErrorMessage(err, 'Supplier details could not be loaded. Your description has been kept.')); }
         finally { finish(); }
     }
+    React.useImperativeHandle(actionsRef, () => ({ generateName: () => { void generate('name'); }, generateDescription: () => { void generate('description'); } }));
     async function generate(kind: 'name' | 'description') {
+        if (busy || diagnostic?.providerRetryable === false) return;
         start(!value.sourceSnapshotId && context.sourceUrl ? 'Loading supplier details…' : 'Generating…');
         try {
             let sourceId = value.sourceSnapshotId;

@@ -1,4 +1,4 @@
-import { descriptionMetadata, DetailsAndStory } from './product/DetailsAndStory';
+import { descriptionMetadata, DetailsAndStory, type DetailsAndStoryActions } from './product/DetailsAndStory';
 import { buildImportGenerationInput } from '../lib/productGeneration';
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Loader2, Check, X, DollarSign, Wand2, Package, ChevronDown, AlertCircle, Link, ChevronLeft, ChevronRight, Globe, Filter, Upload, Image as ImageIcon, RotateCcw, Clock3, RefreshCw, ListChecks, Plus } from 'lucide-react';
@@ -279,6 +279,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({
     const [isImporting, setIsImporting] = useState(false);
     const [reviewGalleryIdx, setReviewGalleryIdx] = useState<Record<string, number>>({});
     /** Draft text for price override inputs — keyed by variantId. Stored as raw string to avoid coercing transient values (e.g. "0.", ".5"). */
+    const reviewCopyActions = useRef<DetailsAndStoryActions>(null);
     const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
     /** Stamp mode: index of the "active stamp" image. Click a variant to assign this image. */
     const [activeStampImage, setActiveStampImage] = useState<number | null>(null);
@@ -645,105 +646,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({
         }
     };
 
-    // AI Enhancement for NAME only
-    const enhanceNameWithAI = async (productId: string) => {
-        const product = searchResults.find(p => p.id === productId);
-        if (!product) return;
 
-        updateProductField(productId, 'isEnhancing', true);
-
-        try {
-            const smartName = await generateSmartName({
-                request: {
-                    ownerKey: getNameOwnerKey(product),
-                    ...buildImportGenerationInput(product),
-                    adminContext: {
-                        selectedCategory: product.category || '',
-                        selectedSubcategory: product.targetSubcategory || targetSubcategory,
-                        selectedSubcategories: product.targetSubcategoryIds || [],
-                        selectedSubcategoryIds: product.targetSubcategoryIds || [],
-                        selectedCollection: product.targetCollection || targetCollection,
-                    },
-                    generationMode: 'manual_generate',
-                    options: {
-                        allowImageAnalysis: true,
-                        forceFreshVariation: true,
-                    },
-                },
-            } as any);
-            if (!(smartName as any)?.ok || !(smartName as any).name) {
-                throw new Error((smartName as any)?.error || 'Smart name failed');
-            }
-            const enhancedName = (smartName as any).name;
-            updateProductField(productId, 'customName', enhancedName);
-            updateProductField(productId, 'nameClaimId', (smartName as any).claimId);
-            updateProductField(productId, 'nameOwnerKey', (smartName as any).ownerKey);
-            updateProductField(productId, 'audience', (smartName as any).facts?.audience?.value);
-            updateProductField(productId, 'canonicalProductType', (smartName as any).facts?.productType?.value);
-
-            toast.success('Name enhanced', {
-                description: `"${enhancedName}"`
-            });
-        } catch (err) {
-            console.error('AI name enhancement failed:', err);
-            toast.error('Name enhancement failed');
-        } finally {
-            updateProductField(productId, 'isEnhancing', false);
-        }
-    };
-
-    // AI Enhancement for DESCRIPTION only
-    const enhanceDescriptionWithAI = async (productId: string) => {
-        const product = searchResults.find(p => p.id === productId);
-        if (!product) return;
-
-        updateProductField(productId, 'isEnhancing', true);
-
-        try {
-            const smartDescription = await generateSmartDescription({
-                request: {
-                    ...buildImportGenerationInput(product),
-                    adminContext: {
-                        selectedCategory: product.category || '',
-                        selectedSubcategory: product.targetSubcategory || targetSubcategory,
-                        selectedCollection: product.targetCollection || targetCollection,
-                    },
-                    generationMode: 'manual_generate',
-                    options: {
-                        allowImageAnalysis: true,
-                        allowSeoKeywords: true,
-                        forceFreshVariation: true,
-                    },
-                },
-            } as any);
-            if (smartDescription?.ok && (smartDescription.fallbackUsed || !smartDescription.validation?.passed)) {
-                updateProductField(productId, 'smartDescriptionSuggestion', smartDescription);
-                toast.warning('Limited draft available in Details & Story. Your description was kept.');
-                return;
-            }
-            if ((smartDescription as any)?.ok && (smartDescription as any).description) {
-                updateProductField(productId, 'smartDescription', descriptionMetadata(smartDescription));
-                updateProductField(productId, 'sourceSnapshotId', smartDescription.sourceSnapshotId);
-                updateProductField(productId, 'customDescription', (smartDescription as any).description);
-                updateProductField(productId, 'descriptionAuditId', (smartDescription as any).auditId);
-                updateProductField(productId, 'smartDescriptionAdminEdited', false);
-                updateProductField(productId, 'smartDescriptionWarnings', (smartDescription as any).warnings || []);
-                updateProductField(productId, 'smartDescriptionSourceQuality', (smartDescription as any).facts?.sourceQuality?.score);
-                updateProductField(productId, 'smartDescriptionFallbackUsed', (smartDescription as any).fallbackUsed);
-            } else {
-                throw new Error((smartDescription as any)?.error || 'Smart description failed');
-            }
-
-            toast.success('Description enhanced');
-        } catch (err) {
-            console.error('AI description enhancement failed:', err);
-            toast.error('Description enhancement failed');
-        } finally {
-            updateProductField(productId, 'isEnhancing', false);
-        }
-    };
-
-    // Enhance all selected
     const enhanceAllSelected = async () => {
         const selectedProducts = searchResults.filter(p => p.selected);
         for (const product of selectedProducts) {
@@ -1740,7 +1643,7 @@ export const ProductImport: React.FC<ProductImportProps> = ({
                                 </div>
                                 
                                 <div className="space-y-6">
-                                        <DetailsAndStory key={currentProduct.id} initialSuggestion={currentProduct.smartDescriptionSuggestion}
+                                        <DetailsAndStory actionsRef={reviewCopyActions} key={currentProduct.id} initialSuggestion={currentProduct.smartDescriptionSuggestion}
                                             onAvailableImages={urls => setSearchResults(current => current.map(item => {
                                                 if (item.id !== currentProduct.id) return item;
                                                 const oldImages = [...item.images, ...(item.descriptionImages ?? [])];
@@ -2244,10 +2147,10 @@ export const ProductImport: React.FC<ProductImportProps> = ({
                     </div>
                 </FadeIn>
                 <nav aria-label="Mobile product review actions" className="fixed inset-x-3 bottom-3 z-[70] grid grid-cols-3 gap-2 rounded-2xl border border-white/60 bg-white/85 p-2 shadow-2xl backdrop-blur-2xl md:hidden">
-                    <button type="button" onClick={() => enhanceNameWithAI(currentProduct.id)} disabled={currentProduct.isEnhancing} className="min-h-12 rounded-xl bg-purple-50 px-2 text-[9px] font-bold uppercase tracking-wider text-purple-700 disabled:opacity-50">
+                    <button type="button" onClick={() => reviewCopyActions.current?.generateName()} disabled={currentProduct.isEnhancing} className="min-h-12 rounded-xl bg-purple-50 px-2 text-[9px] font-bold uppercase tracking-wider text-purple-700 disabled:opacity-50">
                         <Wand2 className="mx-auto mb-1 h-4 w-4" />Name
                     </button>
-                    <button type="button" onClick={() => enhanceDescriptionWithAI(currentProduct.id)} disabled={currentProduct.isEnhancing} className="min-h-12 rounded-xl bg-purple-50 px-2 text-[9px] font-bold uppercase tracking-wider text-purple-700 disabled:opacity-50">
+                    <button type="button" onClick={() => reviewCopyActions.current?.generateDescription()} disabled={currentProduct.isEnhancing} className="min-h-12 rounded-xl bg-purple-50 px-2 text-[9px] font-bold uppercase tracking-wider text-purple-700 disabled:opacity-50">
                         <Wand2 className="mx-auto mb-1 h-4 w-4" />Description
                     </button>
                     {reviewIndex < selectedProducts.length - 1 ? (
