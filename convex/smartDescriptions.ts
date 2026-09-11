@@ -1,4 +1,5 @@
 "use node";
+import { classifyAiProviderError, sanitizeAiWarning } from '../lib/aiProviderErrors';
 
 import { action } from "./_generated/server";
 import { v } from "convex/values";
@@ -150,7 +151,7 @@ export const generateSmartDescription = action({
                     promptVersion: 'visual-facts-v1', visualFacts: visual.facts, warnings: visual.warnings,
                     ttlMs: visual.facts.length ? undefined : 5 * 60 * 1000,
                 });
-                warnings.push(...visual.warnings);
+                warnings.push(...visual.warnings.map(sanitizeAiWarning));
                 sourceSnapshot = attachVisualFacts(sourceSnapshot, visual.facts) as any;
             }
 
@@ -181,10 +182,10 @@ export const generateSmartDescription = action({
             try {
                 generated = await generateDescriptionDraftWithGemini({ facts, brandVoice: LOUIE_MAE_BRAND_VOICE, similarDescriptions, adminContext: typedRequest.adminContext || {} });
             } catch (error) {
-                const message = error instanceof Error ? error.message : String(error);
-                providerErrorCode = /429|resource_exhausted|quota/i.test(message) ? 'PROVIDER_QUOTA_EXHAUSTED' : /timeout|abort/i.test(message) ? 'PROVIDER_TIMEOUT' : 'PROVIDER_UNAVAILABLE';
-                providerRetryable = providerErrorCode !== 'PROVIDER_QUOTA_EXHAUSTED';
-                warnings.push(`AI provider unavailable (${providerErrorCode}); safe product copy was created from verified facts.`);
+                const failure = classifyAiProviderError(error);
+                providerErrorCode = failure.code;
+                providerRetryable = failure.retryable;
+                warnings.push(failure.message);
             }
             warnings.push(...generated.warnings);
             let finalDraft = coerceGeneratedDescriptionDraft(generated.value);
@@ -197,7 +198,7 @@ export const generateSmartDescription = action({
             if (!finalDraft) {
                 fallbackUsed = true;
                 fallbackReason = providerErrorCode || "MALFORMED_MODEL_OUTPUT";
-                warnings.push("Smart description model returned malformed output; safe fallback copy was used.");
+                if (!providerErrorCode) warnings.push("The AI response could not be used. A limited draft is available for review.");
                 console.log("[SmartDescription] fallback used", { requestId, fallbackReason });
                 finalDraft = buildSafeFallbackDescription(facts, sourceSnapshot);
                 validation = validateGeneratedDescription({
@@ -224,7 +225,7 @@ export const generateSmartDescription = action({
                 try {
                     repairedResult = await repairDescriptionDraftWithGemini({ draft: finalDraft, validation, facts, brandVoice: LOUIE_MAE_BRAND_VOICE });
                 } catch (error) {
-                    warnings.push(`AI repair was unavailable; safe fallback copy was used. ${error instanceof Error ? error.message : String(error)}`);
+                    warnings.push(classifyAiProviderError(error).message);
                 }
                 warnings.push(...repairedResult.warnings);
                 const repairedDraft = coerceGeneratedDescriptionDraft(repairedResult.value);

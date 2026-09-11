@@ -1,5 +1,6 @@
 "use node";
 
+import { classifyAiProviderError } from '../lib/aiProviderErrors';
 import { GoogleGenAI } from '@google/genai';
 import { Buffer } from 'buffer';
 import {
@@ -202,7 +203,6 @@ export async function analyzeProductImages(snapshot: SourceProductSnapshot): Pro
     ].slice(0, maxImages);
     if (images.length === 0) return { facts: [], warnings: [] };
 
-    const ai = getAI();
     const model = getModel();
     const warnings: string[] = [];
     const parts: any[] = [{
@@ -220,7 +220,7 @@ export async function analyzeProductImages(snapshot: SourceProductSnapshot): Pro
     if (parts.length === 1) return { facts: [], warnings };
 
     try {
-        const response = await ai.models.generateContent({
+        const response = await getAI().models.generateContent({
             model,
             contents: [{ role: 'user', parts }],
             config: { responseMimeType: 'application/json', temperature: 0.1 },
@@ -233,7 +233,7 @@ export async function analyzeProductImages(snapshot: SourceProductSnapshot): Pro
             warnings,
         };
     } catch (error: any) {
-        return { facts: [], warnings: [...warnings, `Image analysis failed: ${error?.message || 'unknown error'}`] };
+        return { facts: [], warnings: [...warnings, classifyAiProviderError(error).message] };
     }
 }
 

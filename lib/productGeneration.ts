@@ -18,14 +18,25 @@ export function sourceIdentity(url: string): string {
     return parsed.toString();
 }
 
+export function isProductSourceAttribute(attribute: { key: string; value: string }): boolean {
+    return !/^(normalizedRating|sizeInfo|encrypted_vendor_id|OriginalTitle)$/i.test(attribute.key)
+        && attribute.value.length <= 1200 && !['[', '{'].some(prefix => attribute.value.trimStart().startsWith(prefix));
+}
+export function sourceEvidenceWarnings(source: SourceProductSnapshot): string[] {
+    const warnings = [];
+    if ((source.rawDescription || source.rawHtmlDescription || '').trim().length < 20) warnings.push('The supplier did not provide a useful written description. Use confirmed product facts and selected photos.');
+    if (!source.attributes?.some(isProductSourceAttribute)) warnings.push('No usable structured supplier properties were provided.');
+    return warnings;
+}
+
 /** Source evidence stays separate from merchandising copy in every entry point. */
 export function buildGenerationSnapshot(source: SourceProductSnapshot, selection: GenerationSelection, context: SourceContext): SourceProductSnapshot {
     const selectedImages = [...new Set([...selection.images, ...selection.variants.flatMap(v => v.image ? [v.image] : [])])];
     const selectedSet = new Set(selectedImages);
     const evidence = selection.evidence;
     const sourceAttributes = selection.subset
-        ? (source.attributes ?? []).filter(a => evidence?.attributeKeys?.includes(a.key))
-        : source.attributes ?? [];
+        ? (source.attributes ?? []).filter(isProductSourceAttribute).filter(a => evidence?.attributeKeys?.includes(a.key))
+        : (source.attributes ?? []).filter(isProductSourceAttribute);
     const allowDescription = !selection.subset || evidence?.useDescription === true;
     const facts = sanitizeSourceText(evidence?.facts || '', 6000).text;
     const snapshot = buildSourceProductSnapshot({

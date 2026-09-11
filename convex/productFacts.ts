@@ -128,7 +128,7 @@ function attrFacts(attrs: SourceAttribute[] | undefined, keys: string[], group: 
 function textFacts(text: string, terms: string[], group: string, label: string): FactValue[] {
     const lower = text.toLowerCase();
     return terms
-        .filter(term => lower.includes(term.toLowerCase()))
+        .filter(term => new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(lower))
         .map(term => fact(group, label, term, 'source_text', 0.7, [evidence('description', term)]));
 }
 
@@ -255,7 +255,7 @@ export function extractNormalizedProductFacts(snapshot: SourceProductSnapshot & 
     const designDetails = [
         ...sourceDetailFacts(combinedText),
         ...visuals,
-        ...textFacts(combinedText, ['ruffle', 'scalloped', 'ribbed', 'quilted', 'woven', 'drawer', 'door', 'button', 'pocket'], 'design', 'Design'),
+        ...textFacts(combinedText, ['ruffle', 'ruffled', 'scalloped', 'ribbed', 'quilted', 'woven', 'lace', 'embroidered', 'smocked', 'pleated', 'tiered', 'bow', 'drawer', 'door', 'button', 'pocket'], 'design', 'Design'),
         ...attrFacts(attrs, ['style', 'design', 'feature', 'decoration', 'craft', 'shape'], 'design', 'Design'),
     ];
     const colors = colorsFromTextAndVariants(snapshot, combinedText);

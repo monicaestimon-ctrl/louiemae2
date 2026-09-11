@@ -5,7 +5,7 @@ import { action, internalAction, type ActionCtx } from './_generated/server';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { sourceFromImportPayload } from '../lib/productSourceAdapters';
-import { buildGenerationSnapshot, legacySelection, semanticGenerationKey, sourceIdentity, type GenerationSelection, type SourceContext } from '../lib/productGeneration';
+import { buildGenerationSnapshot, sourceEvidenceWarnings, legacySelection, semanticGenerationKey, sourceIdentity, type GenerationSelection, type SourceContext } from '../lib/productGeneration';
 import type { SourceProductSnapshot } from '../lib/smartDescription';
 
 export const fetchForImport = action({ args: { url: v.string() }, handler: async (ctx, { url }): Promise<any> => {
@@ -91,7 +91,7 @@ export const prepare = internalAction({ args: { request: v.any() }, handler: asy
     const sourceSnapshot = buildGenerationSnapshot(source, selection, context);
     if (selection.subset) warnings.push('Only selected variants, photos, and confirmed supplier facts are used for this listing.');
     if (!url) warnings.push('No supplier URL: generation uses only confirmed facts and selected photos.');
-    return { sourceSnapshot, sourceSnapshotId: id, warnings: [...warnings, ...(record?.warnings ?? [])], sourceHash: createHash('sha256').update(semanticGenerationKey(sourceSnapshot)).digest('hex') };
+    return { sourceSnapshot, sourceSnapshotId: id, warnings: [...warnings, ...sourceEvidenceWarnings(source)], sourceHash: createHash('sha256').update(semanticGenerationKey(sourceSnapshot)).digest('hex') };
 } });
 
 /** Explicit, bounded, resumable recovery; never changes product prose or publishes. */
