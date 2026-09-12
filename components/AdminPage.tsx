@@ -2225,9 +2225,9 @@ export const AdminPage: React.FC = () => {
             }}
          />
 
-         {/* Add and Edit use the exact same curation studio as Import Product. */}
+         {/* Full-screen curation must sit above the admin sidebar (z-200). */}
          {isEditingProduct && (
-            <div className="fixed inset-0 z-[100] overflow-y-auto bg-gradient-to-br from-cream via-[#f7f1e7] to-[#eadfce] p-3 md:p-8">
+            <div data-testid="product-studio-overlay" className="fixed inset-0 z-[300] overflow-y-auto bg-gradient-to-br from-cream via-[#f7f1e7] to-[#eadfce] p-3 md:p-8">
                <ProductImport
                   key={editingProduct?.id || 'new-product'}
                   mode={editingProduct?.id ? 'edit' : 'create'}
