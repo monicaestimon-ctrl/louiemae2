@@ -312,18 +312,21 @@ export const generateSmartDescription = action({
                 fallbackReason,
             };
         } catch (error: any) {
+            const failure = classifyAiProviderError(error);
             return {
                 ok: false,
                 warnings,
                 validation: {
                     passed: false,
-                    errors: [{ code: "GENERIC_COPY", message: error?.message || "Smart description generation failed.", severity: "error" }],
+                    errors: [{ code: "GENERIC_COPY", message: failure.message, severity: "error" }],
                     warnings: [],
                     claimChecks: [],
                     repaired: false,
                 },
                 fallbackUsed: false,
-                error: error?.message || "Smart description generation failed",
+                error: failure.message,
+                providerErrorCode: failure.code,
+                providerRetryable: failure.retryable,
             };
         }
     },
