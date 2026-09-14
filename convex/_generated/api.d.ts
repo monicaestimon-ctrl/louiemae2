@@ -46,8 +46,8 @@ import type * as productImageRecords from "../productImageRecords.js";
 import type * as productImages from "../productImages.js";
 import type * as productMigrations from "../productMigrations.js";
 import type * as productNameRegistry from "../productNameRegistry.js";
-import type * as productSources from "../productSources.js";
 import type * as productSourceActions from "../productSourceActions.js";
+import type * as productSources from "../productSources.js";
 import type * as products from "../products.js";
 import type * as scraper from "../scraper.js";
 import type * as siteContent from "../siteContent.js";
@@ -57,6 +57,7 @@ import type * as sourceProductNormalizer from "../sourceProductNormalizer.js";
 import type * as subscribers from "../subscribers.js";
 import type * as translations from "../translations.js";
 import type * as visualFactCache from "../visualFactCache.js";
+import type * as waitlist from "../waitlist.js";
 
 import type {
   ApiFromModules,
@@ -103,8 +104,8 @@ declare const fullApi: ApiFromModules<{
   productImages: typeof productImages;
   productMigrations: typeof productMigrations;
   productNameRegistry: typeof productNameRegistry;
-  productSources: typeof productSources;
   productSourceActions: typeof productSourceActions;
+  productSources: typeof productSources;
   products: typeof products;
   scraper: typeof scraper;
   siteContent: typeof siteContent;
@@ -114,6 +115,7 @@ declare const fullApi: ApiFromModules<{
   subscribers: typeof subscribers;
   translations: typeof translations;
   visualFactCache: typeof visualFactCache;
+  waitlist: typeof waitlist;
 }>;
 
 /**

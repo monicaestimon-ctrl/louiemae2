@@ -399,6 +399,20 @@ export default defineSchema({
         sections: v.array(v.any()), // PageSection[]
     }).index("by_slug", ["slug"]),
 
+    // Additive prelaunch storage; the existing storefront tables are preserved.
+    waitlistSignups: defineTable({
+        email: v.string(),
+        createdAt: v.number(),
+        consentVersion: v.string(),
+        source: v.literal("prelaunch"),
+        status: v.union(v.literal("active"), v.literal("unsubscribed")),
+    }).index("by_email", ["email"]),
+    waitlistRateLimits: defineTable({
+        key: v.string(),
+        count: v.number(),
+        expiresAt: v.number(),
+    }).index("by_key", ["key"]).index("by_expiry", ["expiresAt"]),
+
     // Newsletter subscribers
     subscribers: defineTable({
         email: v.string(),
