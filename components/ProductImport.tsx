@@ -674,6 +674,9 @@ export const ProductImport: React.FC<ProductImportProps> = ({
         }
         setImportStepRaw(step);
         if (step !== 'final-review') setPriceDrafts({});
+        // Add/edit studios share this component, but not the import draft session.
+        // Persisting their navigation would corrupt the next import review (and vice versa).
+        if (isStandaloneStudio) return;
         try {
             sessionStorage.setItem('import-step', step);
             if (step === 'search') {
@@ -686,9 +689,13 @@ export const ProductImport: React.FC<ProductImportProps> = ({
         } catch { /* ignore sessionStorage errors */ }
     };
     const [reviewIndex, setReviewIndexRaw] = useState(() => {
+        // A standalone editor always contains exactly one product. Reusing a saved
+        // multi-product import index makes that product appear to be missing.
+        if (isStandaloneStudio) return 0;
         try {
             const saved = sessionStorage.getItem('import-review-index') || localStorage.getItem('import-draft-review-index');
-            return saved ? parseInt(saved, 10) : 0;
+            const parsed = saved ? parseInt(saved, 10) : 0;
+            return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
         } catch { return 0; }
     });
     const [reviewBatchNumber, setReviewBatchNumber] = useState(1);
@@ -709,12 +716,16 @@ export const ProductImport: React.FC<ProductImportProps> = ({
         if (typeof idxOrUpdater === 'function') {
             setReviewIndexRaw(prev => {
                 const next = idxOrUpdater(prev);
-                try { sessionStorage.setItem('import-review-index', String(next)); } catch { /* ignore sessionStorage errors */ }
+                if (!isStandaloneStudio) {
+                    try { sessionStorage.setItem('import-review-index', String(next)); } catch { /* ignore sessionStorage errors */ }
+                }
                 return next;
             });
         } else {
             setReviewIndexRaw(idxOrUpdater);
-            try { sessionStorage.setItem('import-review-index', String(idxOrUpdater)); } catch { /* ignore sessionStorage errors */ }
+            if (!isStandaloneStudio) {
+                try { sessionStorage.setItem('import-review-index', String(idxOrUpdater)); } catch { /* ignore sessionStorage errors */ }
+            }
         }
     };
 
@@ -1055,7 +1066,23 @@ export const ProductImport: React.FC<ProductImportProps> = ({
         const visibleVariantPage = Math.min(variantReviewPage, variantPageCount - 1);
         const progress = ((reviewIndex + 1) / selectedProducts.length) * 100;
 
-        if (!currentProduct) return <div>Error: Product not found</div>;
+        if (!currentProduct) {
+            return (
+                <div role="alert" className="mx-auto mt-16 max-w-lg rounded-2xl border border-red-200 bg-white p-8 text-center text-earth shadow-xl">
+                    <h2 className="font-serif text-2xl">Product editor could not load this item</h2>
+                    <p className="mt-3 text-sm text-earth/70">
+                        The saved review position no longer matches an available product. Close this screen and try the item again.
+                    </p>
+                    <button
+                        type="button"
+                        onClick={() => isStandaloneStudio ? onClose?.() : setImportStep('search')}
+                        className="mt-6 rounded-full bg-earth px-6 py-3 text-xs font-bold uppercase tracking-widest text-cream"
+                    >
+                        {isStandaloneStudio ? 'Close editor' : 'Back to import'}
+                    </button>
+                </div>
+            );
+        }
 
         return (
             <div className="min-h-[80vh] flex flex-col items-center justify-start py-4 relative z-20 w-full">

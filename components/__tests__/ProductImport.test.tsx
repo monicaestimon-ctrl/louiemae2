@@ -73,6 +73,43 @@ describe('variant review pagination', () => {
 });
 
 describe('unified add and edit studio modes', () => {
+    it('ignores a saved multi-product import position when editing one product', () => {
+        sessionStorage.setItem('import-review-index', '7');
+        localStorage.setItem('import-draft-review-index', '5');
+        sessionStorage.setItem('import-step', 'review');
+
+        render(
+            <ProductImport
+                mode="edit"
+                initialProduct={{
+                    id: 'saved-product',
+                    name: 'Rowan Onesie',
+                    description: 'Soft cotton one-piece.',
+                    price: 28,
+                    images: [],
+                    category: 'One-Pieces',
+                    collection: 'kids',
+                    variants: [{ id: 'size_2t', name: '2T', priceAdjustment: 0, inStock: true }],
+                    subcategoryIds: ['boys-onesies'],
+                    primarySubcategoryId: 'boys-onesies',
+                }}
+                collections={[]}
+                onImportProducts={vi.fn()}
+                onSaveProduct={vi.fn()}
+                onClose={vi.fn()}
+            />
+        );
+
+        expect(screen.getByText('Product Operations Studio · Edit Product')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('Rowan Onesie')).toBeInTheDocument();
+        expect(screen.queryByText('Error: Product not found')).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /review product/i }));
+        expect(screen.getByText('Review Product Changes')).toBeInTheDocument();
+        expect(sessionStorage.getItem('import-review-index')).toBe('7');
+        expect(sessionStorage.getItem('import-step')).toBe('review');
+    });
+
     it('offers later CJ photos without selecting them over the saved import gallery', () => {
         render(<ProductImport mode="edit" initialProduct={{ id: 'saved', name: 'Green Dress', images: ['import.jpg'],
             cjVariants: [{ vid: 'g90', sku: 'G90', name: 'Green 90cm', image: 'cj.jpg' }] }}
