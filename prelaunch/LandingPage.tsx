@@ -1,5 +1,6 @@
 /* global HTMLDialogElement */
 import { useRef, useState, type FormEvent } from 'react';
+import { HouseIcon, Wordmark } from './Brand';
 
 const assets = '/images/prelaunch/';
 
@@ -37,16 +38,16 @@ export function LandingPage() {
   return <div className="lm-page">
     <a className="lm-skip" href="#main">Skip to content</a>
     <header className="lm-header">
-      <a className="lm-wordmark" href="/" aria-label="Louie Mae home">LOUIE MAE</a>
+      <a className="lm-wordmark" href="/" aria-label="Louie Mae home"><Wordmark /></a>
       <nav aria-label="Main navigation"><a href="#our-story">Our story</a><a href="#waitlist">Join the waitlist</a></nav>
     </header>
     <main id="main">
       <section className="lm-hero" aria-labelledby="welcome-title">
         <img className="lm-hero-image" src={`${assets}welcome.webp`} alt="Sunlit archway, olive branches, and a ceramic vase on an aged wood console" width="1536" height="1024" fetchPriority="high" />
         <div className="lm-hero-copy">
-          <img className="lm-monogram" src={`${assets}monogram.png`} alt="" width="200" height="220" />
+          <HouseIcon className="lm-monogram" />
           <p className="lm-eyebrow">Welcome to</p>
-          <h1 id="welcome-title">LOUIE MAE</h1>
+          <h1 id="welcome-title"><Wordmark /></h1>
           <span className="lm-rule" aria-hidden="true" />
           <p className="lm-motto">Live the life you love.<br className="lm-mobile-break" /> Love the life you live.</p>
           <a className="lm-button" href="#waitlist">Join the waitlist</a>
@@ -101,7 +102,7 @@ export function LandingPage() {
         </div>
       </section>
     </main>
-    <footer className="lm-footer"><a href="/" className="lm-wordmark">LOUIE MAE</a><p>Rooted in faith. Gathered around family.</p><div><span>© {new Date().getFullYear()} Louie Mae</span><a href="mailto:hello@louiemae.com">Say hello</a><button className="lm-text-button" onClick={() => privacy.current?.showModal()}>Privacy</button></div></footer>
+    <footer className="lm-footer"><a href="/" className="lm-wordmark lm-brand-lockup" aria-label="Louie Mae home"><HouseIcon /><Wordmark /></a><p>Rooted in faith. Gathered around family.</p><div><span>© {new Date().getFullYear()} Louie Mae</span><a href="mailto:hello@louiemae.com">Say hello</a><button className="lm-text-button" onClick={() => privacy.current?.showModal()}>Privacy</button></div></footer>
     <dialog className="lm-privacy" ref={privacy} aria-labelledby="privacy-title" onClick={e => { if (e.target === e.currentTarget) privacy.current?.close(); }}>
       <button className="lm-dialog-close" onClick={() => privacy.current?.close()} aria-label="Close privacy notice">×</button>
       <p className="lm-eyebrow">Louie Mae</p><h2 id="privacy-title">Your privacy matters.</h2>
