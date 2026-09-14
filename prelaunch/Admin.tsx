@@ -12,6 +12,9 @@ const client = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL);
 function OriginalAdmin() {
   const [ready, setReady] = useState(false);
   useEffect(() => {
+    if (!window.location.hash.startsWith('#admin')) window.history.replaceState(window.history.state, '', '#admin');
+    const leaveAdmin = () => { if (!window.location.hash.startsWith('#admin')) window.location.replace('/'); };
+    window.addEventListener('hashchange', leaveAdmin);
     // Reuse the original document's styling verbatim for the preserved admin.
     const head = new window.DOMParser().parseFromString(originalHtml, 'text/html').head;
     const nodes: HTMLElement[] = [];
@@ -27,7 +30,7 @@ function OriginalAdmin() {
     };
     tailwind.onerror = () => setReady(true);
     add(tailwind);
-    return () => { tailwind.onload = null; nodes.forEach(node => node.remove()); };
+    return () => { window.removeEventListener('hashchange', leaveAdmin); tailwind.onload = null; nodes.forEach(node => node.remove()); };
   }, []);
   return ready ? <><a className="lm-admin-shortcut" href="/waitlist-admin">Launch waitlist →</a><App /></> : <p>Opening your workspace…</p>;
 }
