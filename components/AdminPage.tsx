@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { useAction, useMutation } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
@@ -7,7 +7,7 @@ import { useSite } from '../contexts/BlogContext';
 import { RichTextEditor } from './RichTextEditor';
 import { useNewsletterAdmin } from '../contexts/NewsletterContext';
 import { FadeIn } from './FadeIn';
-import { Plus, Edit3, Trash2, LogOut, X, Image as ImageIcon, Layout, ArrowLeft, PenTool, BookOpen, Home, Settings, Wand2 as WandIcon, Loader2, FileText, ShoppingBag, Tag, ChevronDown, Layers, Menu, Upload, Grid, Maximize, Type, Mail, Users, Send, BarChart2, Package, Lock, ChevronLeft, ExternalLink, Search, Eye, EyeOff, Rocket, RefreshCw } from 'lucide-react';
+import { Plus, Edit3, Trash2, LogOut, X, Image as ImageIcon, Layout, ArrowLeft, PenTool, BookOpen, Home, Settings, Wand2 as WandIcon, Loader2, FileText, ShoppingBag, Tag, ChevronDown, Layers, Menu, Upload, Grid, Maximize, Type, Mail, Users, Send, BarChart2, Package, Lock, ChevronLeft, ExternalLink, Search, Eye, EyeOff, Rocket, RefreshCw, Link2 } from 'lucide-react';
 import { BlogPost, CustomPage, PageSection, Product, CollectionType, CollectionConfig, EmailCampaign } from '../types';
 import { AdminOrders } from './AdminOrders';
 import { NewsletterStudio } from './NewsletterStudio';
@@ -20,6 +20,7 @@ import { SafeImage } from './SafeImage';
 import { productStorefrontStatusLabel } from '../lib/productVisibility';
 import { getEffectiveSubcategoryIds, productMatchesCategory } from '../lib/productCategories';
 import { getUserFacingErrorMessage } from '../lib/errorMessages';
+import { getCjProductStatus, type CjProductConnectionState } from '../lib/cjProductStatus';
 
 type SmartDescriptionActionResult = {
    ok: boolean;
@@ -49,6 +50,36 @@ type CjAdminNavRequest = CjAdminNavTarget | {
    tab: CjAdminNavTarget;
    orderId?: string;
    productId?: string;
+};
+
+type InventoryCjFilter = 'all' | CjProductConnectionState;
+
+const INVENTORY_CJ_FILTERS: Array<{ key: InventoryCjFilter; label: string }> = [
+   { key: 'all', label: 'All CJ states' },
+   { key: 'ready', label: 'Synced & ready' },
+   { key: 'approved_needs_setup', label: 'Approved · setup needed' },
+   { key: 'pending', label: 'Approval pending' },
+   { key: 'not_linked', label: 'Not linked' },
+   { key: 'rejected', label: 'Rejected' },
+   { key: 'attention', label: 'Needs review' },
+];
+
+const CJ_STATUS_CLASSES: Record<CjProductConnectionState, string> = {
+   ready: 'border-green-400/25 bg-green-500/10 text-green-200',
+   approved_needs_setup: 'border-purple-400/25 bg-purple-500/10 text-purple-100',
+   pending: 'border-sky-300/25 bg-sky-500/10 text-sky-100',
+   rejected: 'border-red-400/25 bg-red-500/10 text-red-200',
+   not_linked: 'border-white/15 bg-white/5 text-cream/50',
+   attention: 'border-amber-300/25 bg-amber-500/10 text-amber-100',
+};
+
+const CJ_STATUS_TEXT_CLASSES: Record<CjProductConnectionState, string> = {
+   ready: 'text-green-300',
+   approved_needs_setup: 'text-purple-200',
+   pending: 'text-sky-200',
+   rejected: 'text-red-300',
+   not_linked: 'text-cream/35',
+   attention: 'text-amber-200',
 };
 
 // --- Image Uploader Component ---
@@ -224,6 +255,7 @@ export const AdminPage: React.FC = () => {
    const [filterCollection, setFilterCollection] = useState<CollectionType | 'all'>('all');
    const [filterCategory, setFilterCategory] = useState<string | null>(null);
    const [inventorySearch, setInventorySearch] = useState('');
+   const [inventoryCjFilter, setInventoryCjFilter] = useState<InventoryCjFilter>('all');
 
    // Expanded Menus State in Sidebar
    const [expandedCollections, setExpandedCollections] = useState<Record<string, boolean>>({});
@@ -625,11 +657,30 @@ export const AdminPage: React.FC = () => {
 
    // Filter products
    const nextLaunchCount = products.filter(product => product.storefrontStatus === 'next_launch').length;
+   const productCjStatuses = useMemo(
+      () => new Map(products.map(product => [product.id, getCjProductStatus(product)])),
+      [products],
+   );
+   const inventoryCjCounts = useMemo(() => {
+      const counts: Record<InventoryCjFilter, number> = {
+         all: products.length,
+         ready: 0,
+         approved_needs_setup: 0,
+         pending: 0,
+         not_linked: 0,
+         rejected: 0,
+         attention: 0,
+      };
+      for (const status of productCjStatuses.values()) counts[status.state] += 1;
+      return counts;
+   }, [productCjStatuses, products.length]);
 
    const filteredProducts = products.filter(p => {
       const matchCollection = filterCollection === 'all' ? true : p.collection === filterCollection;
       const collectionConfig = siteContent.collections.find(collection => collection.id === p.collection);
       const matchCategory = filterCategory ? productMatchesCategory(p, filterCategory, collectionConfig) : true;
+      const cjStatus = productCjStatuses.get(p.id) ?? getCjProductStatus(p);
+      const matchCjStatus = inventoryCjFilter === 'all' || cjStatus.state === inventoryCjFilter;
       const term = inventorySearch.trim().toLowerCase();
       const searchable = [
          p.name,
@@ -640,13 +691,15 @@ export const AdminPage: React.FC = () => {
          p.cjProductId,
          p.cjVariantId,
          p.cjSku,
+         cjStatus.label,
+         cjStatus.detail,
          ...(p.variants || []).flatMap(variant => [variant.name, variant.cjVariantId, variant.cjSku]),
       ]
          .filter(Boolean)
          .join(' ')
          .toLowerCase();
       const matchSearch = term.length === 0 || searchable.includes(term);
-      return matchCollection && matchCategory && matchSearch;
+      return matchCollection && matchCategory && matchCjStatus && matchSearch;
    });
 
    // --- LOGIN SCREEN ---
@@ -959,9 +1012,10 @@ export const AdminPage: React.FC = () => {
 
 
                    {/* Glass Metric Cards */}
-                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8 mb-10 md:mb-16">
+                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-8 mb-10 md:mb-16">
                       {[
-                         { title: 'Active Products', count: products.length, Icon: ShoppingBag, onClick: () => { setActiveTab('products'); setFilterCollection('all'); setFilterCategory(null); } },
+                         { title: 'All Inventory', count: products.length, Icon: ShoppingBag, onClick: () => { setActiveTab('products'); setFilterCollection('all'); setFilterCategory(null); setInventoryCjFilter('all'); } },
+                         { title: 'CJ Synced & Ready', count: inventoryCjCounts.ready, Icon: Link2, onClick: () => { setActiveTab('products'); setFilterCollection('all'); setFilterCategory(null); setInventoryCjFilter('ready'); } },
                          { title: 'Collections', count: siteContent.collections.length, Icon: Layers, onClick: () => setActiveTab('structure') },
                          { title: 'Content Pages', count: 2 + siteContent.customPages.length, Icon: Layout, onClick: () => setActiveTab('pages') },
                       ].map(({ title, count, Icon, onClick }) => (
@@ -1425,6 +1479,22 @@ export const AdminPage: React.FC = () => {
                            className="w-full rounded-xl border border-white/10 bg-black/20 py-3 pl-11 pr-4 text-sm text-cream placeholder:text-cream/30 focus:border-bronze focus:outline-none"
                         />
                      </div>
+                     <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Filter inventory by CJ status">
+                         {INVENTORY_CJ_FILTERS.map(option => {
+                            const active = inventoryCjFilter === option.key;
+                            return (
+                               <button
+                                  key={option.key}
+                                  type="button"
+                                  onClick={() => setInventoryCjFilter(option.key)}
+                                  aria-pressed={active}
+                                  className={`whitespace-nowrap rounded-full border px-3 py-2 text-[10px] uppercase tracking-widest transition-colors ${active ? 'border-bronze/50 bg-bronze/20 text-cream' : 'border-white/10 bg-white/5 text-cream/50 hover:bg-white/10 hover:text-cream'}`}
+                               >
+                                  {option.label} · {inventoryCjCounts[option.key]}
+                               </button>
+                            );
+                         })}
+                     </div>
                   </div>
 
                   {batchDescriptionPreviews.length > 0 && (
@@ -1503,7 +1573,6 @@ export const AdminPage: React.FC = () => {
                                  ? 'bg-amber-500/15 text-amber-200 border-amber-300/25'
                                  : 'bg-white/10 text-cream/60 border-white/15';
                            const variants = product.variants || [];
-                           const mappedVariants = variants.filter(variant => variant.cjVariantId).length;
                            const variantImageCount = variants.filter(variant => variant.image).length;
                            const imageCount = product.images?.filter(Boolean).length || 0;
                            const cjIdentifier = product.cjProductId || product.cjVariantId || 'Not linked yet';
@@ -1519,6 +1588,7 @@ export const AdminPage: React.FC = () => {
                                     ? 'text-red-300'
                                     : 'text-cream/35';
                            const isRefreshingInventory = refreshingInventoryProductId === product.id;
+                           const cjStatus = productCjStatuses.get(product.id) ?? getCjProductStatus(product);
 
                            return (
                               <div key={product.id} className="bg-white/5 backdrop-blur-xl p-4 md:p-5 border border-white/10 rounded-2xl flex flex-col md:flex-row gap-4 md:gap-6 md:items-center group hover:bg-white/10 hover:-translate-y-1 hover:shadow-[0_15px_30px_rgba(0,0,0,0.4)] transition-all overflow-hidden relative">
@@ -1548,14 +1618,19 @@ export const AdminPage: React.FC = () => {
                                              <span className={product.inStock ? 'text-green-400 drop-shadow-[0_0_5px_rgba(74,222,128,0.5)]' : 'text-red-400'}>{product.inStock ? 'In Stock' : 'Out of Stock'}</span>
                                           </div>
                                        </div>
-                                       <span className={`w-fit rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${statusClass}`}>
-                                          {productStorefrontStatusLabel(product)}
-                                       </span>
-                                       {product.cjInventoryNeedsReview && (
-                                          <span className="w-fit rounded-full border border-amber-300/30 bg-amber-500/15 px-3 py-1 text-[10px] uppercase tracking-widest text-amber-100">
-                                             {product.cjInventoryReviewReason === 'restocked' ? 'Restock review' : 'Inventory review'}
+                                       <div className="flex flex-wrap gap-2 md:justify-end">
+                                          <span className={`w-fit rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${statusClass}`}>
+                                             {productStorefrontStatusLabel(product)}
                                           </span>
-                                       )}
+                                          <span className={`w-fit rounded-full border px-3 py-1 text-[10px] uppercase tracking-widest ${CJ_STATUS_CLASSES[cjStatus.state]}`} title={cjStatus.detail}>
+                                             {cjStatus.label}
+                                          </span>
+                                          {product.cjInventoryNeedsReview && (
+                                             <span className="w-fit rounded-full border border-amber-300/30 bg-amber-500/15 px-3 py-1 text-[10px] uppercase tracking-widest text-amber-100">
+                                                {product.cjInventoryReviewReason === 'restocked' ? 'Restock review' : 'Inventory review'}
+                                             </span>
+                                          )}
+                                       </div>
                                     </div>
 
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 text-[11px] text-cream/55">
@@ -1571,14 +1646,22 @@ export const AdminPage: React.FC = () => {
                                           )}
                                        </div>
                                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
-                                          <span className="block text-[9px] uppercase tracking-widest text-cream/30">CJ ID / SKU</span>
+                                          <span className="block text-[9px] uppercase tracking-widest text-cream/30">CJ sourcing / link</span>
+                                          <span className={`block ${CJ_STATUS_TEXT_CLASSES[cjStatus.state]}`}>
+                                             {cjStatus.detail}
+                                          </span>
                                           <span className="font-mono text-cream/70">{cjIdentifier}</span>
                                           {product.cjSku && <span className="ml-2 font-mono text-cream/35">{product.cjSku}</span>}
                                        </div>
                                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
                                           <span className="block text-[9px] uppercase tracking-widest text-cream/30">Variants</span>
-                                          <span className={variants.length > 0 && mappedVariants < variants.length ? 'text-amber-200' : 'text-cream/70'}>
-                                             {mappedVariants}/{variants.length} mapped
+                                          <span className={cjStatus.isMappingComplete ? 'text-green-300' : 'text-amber-200'}>
+                                             {variants.length > 0
+                                                ? `${cjStatus.mappedVariantCount}/${cjStatus.sellableVariantCount} sellable variants mapped`
+                                                : cjStatus.isMappingComplete
+                                                   ? 'Default CJ variant linked'
+                                                   : 'No CJ variant mapping'}
+                                             {cjStatus.isApproved ? '' : ' · not approved'}
                                           </span>
                                           <span className="ml-2 text-cream/35">{variantImageCount} variant images</span>
                                        </div>
