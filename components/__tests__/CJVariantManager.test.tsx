@@ -37,6 +37,25 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('CJ product resolution queue', () => {
+    it('labels pending products and locks CJ mapping until approval', async () => {
+        mocks.products = [{
+            _id: 'product_pending',
+            name: 'Pending Romper',
+            images: [],
+            productRevision: 1,
+            cjSourcingStatus: 'pending',
+            variants: [{ id: 'size_2t', name: '2T', priceAdjustment: 0, inStock: true }],
+            cjVariants: [{ vid: 'unconfirmed-vid', sku: 'unconfirmed-sku', name: '2T' }],
+            mappingSummary: summary(['CJ_APPROVAL_PENDING', 'UNMAPPED_CUSTOMER_VARIANTS']),
+        }];
+
+        render(<CJVariantManager targetProductId="product_pending" />);
+
+        expect(await screen.findByText('Awaiting CJ approval; CJ mapping is locked.')).toBeInTheDocument();
+        expect(screen.getByLabelText('CJ fulfillment variant')).toBeDisabled();
+        expect(screen.getByRole('button', { name: /apply exact matches/i })).toBeDisabled();
+    });
+
     it('keeps a targeted product editable when CJ returned no variants', async () => {
         mocks.products = [{
             _id: 'product_missing_cj',

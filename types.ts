@@ -6,6 +6,22 @@ import type { Id } from './convex/_generated/dataModel';
 export type CjInventoryStatus = 'unknown' | 'in_stock' | 'low_stock' | 'out_of_stock' | 'partial' | 'error';
 export type CjInventoryReviewReason = 'restocked' | 'out_of_stock' | 'manual';
 export type ProductStorefrontStatus = 'published' | 'hidden' | 'next_launch';
+export type CjSourcingState =
+  | 'needs_input'
+  | 'queued'
+  | 'submitting'
+  | 'submitted'
+  | 'processing'
+  | 'awaiting_catalog'
+  | 'sourced'
+  | 'mapping_required'
+  | 'fulfillment_ready'
+  | 'retry_wait'
+  | 'reconciliation_required'
+  | 'rejected'
+  | 'dead_letter'
+  | 'canceled';
+export type CjFulfillmentReadiness = 'not_required' | 'not_ready' | 'mapping_required' | 'ready' | 'blocked';
 
 export interface CjInventorySnapshot {
   vid?: string;
@@ -44,6 +60,13 @@ export interface Product {
   sourceUrl?: string;
   batchImportItemId?: Id<'batchImportItems'>;
   cjSourcingStatus?: 'pending' | 'approved' | 'rejected' | 'none';
+  cjSourcingState?: CjSourcingState;
+  cjFulfillmentReadiness?: CjFulfillmentReadiness;
+  cjSourcingJobId?: Id<'cjSourcingJobs'>;
+  cjApprovedAt?: string;
+  cjSubmittedAt?: string;
+  cjLastCheckedAt?: string;
+  cjSourcingError?: string;
   cjVariantId?: string;
   cjSku?: string;
   cjProductId?: string;

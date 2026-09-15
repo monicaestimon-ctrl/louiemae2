@@ -84,7 +84,7 @@ interface ProductWithVariants extends ListingContext {
     mappingSummary: MappingSummary;
 }
 
-type QueueFilter = 'needs_attention' | 'unmapped' | 'missing_customer' | 'missing_cj' | 'ready' | 'all';
+type QueueFilter = 'needs_attention' | 'awaiting_approval' | 'unmapped' | 'missing_customer' | 'missing_cj' | 'ready' | 'all';
 
 type CJVariantManagerProps = {
     targetProductId?: string;
@@ -93,6 +93,7 @@ type CJVariantManagerProps = {
 
 const FILTERS: Array<{ key: QueueFilter; label: string }> = [
     { key: 'needs_attention', label: 'Needs attention' },
+    { key: 'awaiting_approval', label: 'Not CJ approved' },
     { key: 'unmapped', label: 'Needs mapping' },
     { key: 'missing_customer', label: 'Missing customer variants' },
     { key: 'missing_cj', label: 'Missing CJ variants' },
@@ -101,6 +102,9 @@ const FILTERS: Array<{ key: QueueFilter; label: string }> = [
 ];
 
 const ISSUE_LABELS: Record<string, string> = {
+    CJ_APPROVAL_PENDING: 'Awaiting CJ approval',
+    CJ_REJECTED: 'CJ sourcing rejected',
+    CJ_NOT_APPROVED: 'CJ approval not confirmed',
     MISSING_CJ_PRODUCT_ID: 'Missing CJ product ID',
     MISSING_CJ_VARIANTS: 'No CJ variants returned',
     MISSING_CUSTOMER_VARIANTS: 'Customer variants need to be created',
@@ -135,6 +139,7 @@ const matchesFilter = (product: ProductWithVariants, filter: QueueFilter): boole
     if (filter === 'all') return true;
     if (filter === 'ready') return issues.includes('READY');
     if (filter === 'needs_attention') return !issues.includes('READY');
+    if (filter === 'awaiting_approval') return issues.some((code) => ['CJ_APPROVAL_PENDING', 'CJ_REJECTED', 'CJ_NOT_APPROVED'].includes(code));
     if (filter === 'unmapped') {
         return issues.some((code) => ['UNMAPPED_CUSTOMER_VARIANTS', 'INVALID_CJ_MAPPINGS', 'DUPLICATE_CJ_MAPPINGS'].includes(code));
     }
@@ -187,6 +192,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
         return {
             all: rows.length,
             needs_attention: rows.filter((product) => matchesFilter(product, 'needs_attention')).length,
+            awaiting_approval: rows.filter((product) => matchesFilter(product, 'awaiting_approval')).length,
             unmapped: rows.filter((product) => matchesFilter(product, 'unmapped')).length,
             missing_customer: rows.filter((product) => matchesFilter(product, 'missing_customer')).length,
             missing_cj: rows.filter((product) => matchesFilter(product, 'missing_cj')).length,
@@ -409,6 +415,14 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
                                     .map((snapshot) => [snapshot.vid as string, snapshot])
                             );
                             const isDirty = dirtyProducts.has(product._id);
+                            const isCjApproved = product.cjSourcingStatus === 'approved';
+                            const approvalLabel = product.cjSourcingStatus === 'pending'
+                                ? 'Awaiting CJ approval'
+                                : product.cjSourcingStatus === 'rejected'
+                                    ? 'CJ rejected'
+                                    : isCjApproved
+                                        ? 'CJ approved'
+                                        : 'CJ not approved';
 
                             return (
                                 <article
@@ -438,12 +452,20 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
                                             <div className="flex flex-wrap items-center gap-2">
                                                 <h4 className="truncate font-serif text-base text-cream">{product.name}</h4>
                                                 {isDirty && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[9px] uppercase tracking-widest text-amber-200">Unsaved</span>}
+                                                <span className={
+                                                    'rounded-full border px-2 py-0.5 text-[9px] uppercase tracking-widest ' +
+                                                    (isCjApproved
+                                                        ? 'border-green-400/20 bg-green-500/10 text-green-200'
+                                                        : product.cjSourcingStatus === 'rejected'
+                                                            ? 'border-red-400/20 bg-red-500/10 text-red-200'
+                                                            : 'border-amber-400/20 bg-amber-500/10 text-amber-200')
+                                                }>{approvalLabel}</span>
                                             </div>
                                             <div className="mt-1 flex flex-wrap gap-2 text-[10px] uppercase tracking-widest">
                                                 <span className={mappedCount === variants.length && variants.length > 0 ? 'text-green-300' : 'text-amber-300'}>
                                                     {mappedCount}/{variants.length} customer variants mapped
                                                 </span>
-                                                <span className="text-cream/35">· {providerVariants.length} CJ variants</span>
+                                                <span className="text-cream/35">· {providerVariants.length} CJ variants{isCjApproved ? '' : ' · mapping locked'}</span>
                                             </div>
                                             <div className="mt-2 flex flex-wrap gap-1.5">
                                                 {product.mappingSummary.issueCodes.slice(0, 3).map((code) => (
@@ -468,7 +490,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
 
                                     {isExpanded && (
                                         <fieldset disabled={splittingProduct === product._id || savingProduct === product._id || generatingProduct === product._id} className="min-w-0 border-t border-white/10 bg-black/20 p-4 md:p-6">
-                                            {(product.cjVariants?.length ?? 0) > 1 && <CJProductSplit product={product}
+                                            {isCjApproved && (product.cjVariants?.length ?? 0) > 1 && <CJProductSplit product={product}
                                                 disabled={isDirty || savingProduct === product._id}
                                                 onBusyChange={busy => setSplittingProduct(busy ? product._id : null)} />}
                                             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -487,7 +509,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
                                                             <Edit3 className="h-3.5 w-3.5" /> Full product edit
                                                         </button>
                                                     )}
-                                                    <button type="button" onClick={() => applyRecommendedMappings(product)} disabled={providerVariants.length === 0} className="inline-flex items-center gap-1.5 rounded-lg border border-purple-400/25 bg-purple-500/10 px-3 py-2 text-[10px] uppercase tracking-widest text-purple-200 disabled:opacity-40">
+                                                    <button type="button" onClick={() => applyRecommendedMappings(product)} disabled={!isCjApproved || providerVariants.length === 0} className="inline-flex items-center gap-1.5 rounded-lg border border-purple-400/25 bg-purple-500/10 px-3 py-2 text-[10px] uppercase tracking-widest text-purple-200 disabled:cursor-not-allowed disabled:opacity-40">
                                                         <Sparkles className="h-3.5 w-3.5" /> Apply exact matches
                                                     </button>
                                                     <button type="button" onClick={() => addCustomerVariant(product)} className="inline-flex items-center gap-1.5 rounded-lg border border-bronze/30 bg-bronze/10 px-3 py-2 text-[10px] uppercase tracking-widest text-bronze hover:bg-bronze/20">
@@ -495,6 +517,18 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
                                                     </button>
                                                 </div>
                                             </div>
+
+                                            {!isCjApproved && (
+                                                <div className="mb-5 rounded-xl border border-amber-400/25 bg-amber-500/10 p-4 text-sm text-amber-100" role="status">
+                                                    <div className="flex items-start gap-3">
+                                                        <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
+                                                        <div>
+                                                            <strong className="font-medium">{approvalLabel}; CJ mapping is locked.</strong>
+                                                            <p className="mt-1 text-amber-100/65">You can still edit customer-facing variant details, but a CJ variant cannot be assigned until sourcing approval is confirmed.</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
 
                                             <CJListingReview value={listingDrafts[product._id] ?? { name: product.name, description: product.description ?? '', images: product.images,
                                                 smartDescription: product.smartDescription, descriptionSource: product.descriptionSource, sourceSnapshotId: product.sourceSnapshotId, sourceEvidenceOverrides: product.sourceEvidenceOverrides, sourceScopeStatus: product.sourceScopeStatus ?? (product.cjVariants?.length ? 'needs_confirmation' : 'whole_listing') }} context={product} productId={product._id} revision={product.productRevision}
@@ -598,13 +632,14 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
                                                                     <span className="mb-1.5 block text-[9px] uppercase tracking-widest text-cream/35">CJ fulfillment variant</span>
                                                                     <select
                                                                         value={variant.cjVariantId || ''}
+                                                                        disabled={!isCjApproved}
                                                                         onChange={(event) => {
                                                                             const provider = providerVariants.find((item) => item.vid === event.target.value);
                                                                             updateDraft(product._id, (current) => current.map((item) => item.id === variant.id
                                                                                 ? { ...item, cjVariantId: provider?.vid, cjSku: provider?.sku }
                                                                                 : item));
                                                                         }}
-                                                                        className="w-full rounded-lg border border-white/10 bg-[#171512] px-3 py-2.5 text-sm text-cream outline-none focus:border-purple-400/50"
+                                                                        className="w-full rounded-lg border border-white/10 bg-[#171512] px-3 py-2.5 text-sm text-cream outline-none focus:border-purple-400/50 disabled:cursor-not-allowed disabled:opacity-50"
                                                                     >
                                                                         <option value="">Not mapped</option>
                                                                         {providerVariants.map((provider) => {
@@ -634,7 +669,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
                                                 })}
                                             </div>
 
-                                            {unmatchedProviderVariants.length > 0 && (
+                                            {isCjApproved && unmatchedProviderVariants.length > 0 && (
                                                 <div className="mt-5 rounded-2xl border border-purple-400/15 bg-purple-500/5 p-4">
                                                     <div className="mb-3">
                                                         <h5 className="text-sm font-medium text-purple-100">Unmatched CJ variants</h5>
@@ -667,7 +702,9 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
 
                                             <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-5">
                                                 <p className="text-xs text-cream/40">
-                                                    Changes remain a draft until saved. Saving validates every mapping together.
+                                                    {isCjApproved
+                                                        ? 'Changes remain a draft until saved. Saving validates every mapping together.'
+                                                        : 'Customer-facing edits can be saved now. CJ mapping stays locked until approval.'}
                                                 </p>
                                                 <button
                                                     type="button"
@@ -676,7 +713,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
                                                     className="inline-flex items-center gap-2 rounded-xl bg-purple-600 px-5 py-3 text-[10px] font-semibold uppercase tracking-widest text-white shadow-lg transition-colors hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-40"
                                                 >
                                                     {savingProduct === product._id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                                                    Save variants & mappings
+                                                    {isCjApproved ? 'Save variants & mappings' : 'Save customer variants'}
                                                 </button>
                                             </div>
                                         </fieldset>
