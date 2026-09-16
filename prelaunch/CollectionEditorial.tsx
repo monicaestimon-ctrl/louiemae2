@@ -50,7 +50,7 @@ export function CollectionEditorial() {
 
     <section className="lm-pottery-story" aria-labelledby="pottery-title">
       <div className="lm-editorial-heading"><p className="lm-eyebrow">Collected for your home</p><h2 id="pottery-title">Beauty in the quiet details.</h2><p>Sculptural shapes, earthy textures, and branches gathered along the way.</p></div>
-      <img src={`${assets}ceramic-still-life.webp`} alt="Editorial still life of five textured ivory ceramic vessels on aged wood with branching stems" width="1536" height="1024" loading="lazy" decoding="async" />
+      <img src="/images/prelaunch/furniture/pottery-natural-light.webp" alt="Editorial still life of five textured ivory ceramic vessels on aged wood with branching stems in soft window light" width="1536" height="1024" loading="lazy" decoding="async" />
     </section>
   </div>;
 }
