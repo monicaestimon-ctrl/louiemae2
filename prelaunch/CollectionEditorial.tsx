@@ -1,7 +1,7 @@
 const assets = '/images/prelaunch/editorial/';
 
-export function EditorialPhoto({ file, index = 0, panels = 1, description }: { file: string; index?: number; panels?: number; description: string }) {
-  return <div className="lm-selected-photo" style={{ aspectRatio: panels === 1 ? '527 / 543' : `${3 / panels} / 2` }}>
+export function EditorialPhoto({ file, index = 0, panels = 1, description, aspectRatio }: { file: string; index?: number; panels?: number; description: string; aspectRatio?: string }) {
+  return <div className="lm-selected-photo" style={{ aspectRatio: aspectRatio ?? (panels === 1 ? '527 / 543' : `${3 / panels} / 2`) }}>
     <img src={`${assets}${file}`} alt={description} loading="lazy" decoding="async"
       style={{ width: `${panels * 100}%`, left: `${-index * 100}%` }} />
   </div>;
@@ -31,7 +31,7 @@ export function CollectionEditorial() {
       <div className="lm-photo-strip lm-selected-strip">
         <EditorialPhoto file="women-garden.webp" panels={4} index={0} description="White square-neck puff-sleeve maxi dress in a coastal garden" />
         <EditorialPhoto file="women-garden.webp" panels={4} index={1} description="Sage tie-shoulder gathered dress among olive trees" />
-        <EditorialPhoto file="beige-dining-original.png" description="Beige matching set in its original setting beside a rustic dining table and woven chairs" />
+        <EditorialPhoto file="polka-dot-courtyard.webp" aspectRatio="3 / 8" description="Ivory strapless polka-dot top and matching wide-leg trousers in a sunlit courtyard with olive branches and aged terracotta" />
         <EditorialPhoto file="women-garden.webp" panels={4} index={3} description="Ivory button-front vest and matching bubble-hem skirt" />
       </div>
       <p className="lm-editorial-caption">The Mae Collective <span>Selected looks from our upcoming collection</span></p>
