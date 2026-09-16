@@ -1,6 +1,7 @@
 /* global HTMLDialogElement */
 import { useRef, useState, type FormEvent } from 'react';
 import { HouseIcon, Wordmark } from './Brand';
+import { CollectionEditorial } from './CollectionEditorial';
 
 const assets = '/images/prelaunch/';
 
@@ -39,7 +40,7 @@ export function LandingPage() {
     <a className="lm-skip" href="#main">Skip to content</a>
     <header className="lm-header">
       <a className="lm-wordmark" href="/" aria-label="Louie Mae home"><Wordmark /></a>
-      <nav aria-label="Main navigation"><a href="#our-story">Our story</a><a href="#waitlist">Join the waitlist</a></nav>
+      <nav aria-label="Main navigation"><a href="#collection-preview">First look</a><a href="#waitlist">Join the waitlist</a></nav>
     </header>
     <main id="main">
       <section className="lm-hero" aria-labelledby="welcome-title">
@@ -76,6 +77,8 @@ export function LandingPage() {
         <figure><img src={`${assets}dress.webp`} alt="Cream button-front dress with delicate lace detailing" width="533" height="800" loading="lazy" /><figcaption><span className="lm-eyebrow">02 / The Mae Collective</span><h3>Thoughtfully dressed.</h3></figcaption></figure>
         <figure><img src={`${assets}romper.webp`} alt="Sage cotton romper laid on natural linen" width="640" height="640" loading="lazy" /><figcaption><span className="lm-eyebrow">03 / Louie Kids & Co.</span><h3>Little everyday wonders.</h3></figcaption></figure>
       </section>
+
+      <CollectionEditorial />
 
       <section className="lm-gather" aria-labelledby="gather-title">
         <div className="lm-gather-heading"><p className="lm-eyebrow">The moments that make a life</p><h2 id="gather-title">For your home. Your people. Your story.</h2></div>
