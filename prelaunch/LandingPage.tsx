@@ -2,6 +2,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { HouseIcon, Wordmark } from './Brand';
 import { CollectionEditorial, EditorialPhoto } from './CollectionEditorial';
+import { FurnitureEditorial } from './FurnitureEditorial';
 
 const assets = '/images/prelaunch/';
 
@@ -72,6 +73,7 @@ export function LandingPage() {
         <img src={`${assets}interior.webp`} alt="Louie Mae’s rustic wood coffee table surrounded by soft neutral sofas in a warmly layered living room" width="640" height="640" loading="lazy" />
         <div><p className="lm-eyebrow">A glimpse of what’s to come</p><h2 id="home-title">For the spaces<br />we call home.</h2></div>
       </section>
+      <FurnitureEditorial />
       <section className="lm-collections" aria-label="A preview of the Louie Mae collections">
         <figure><img src={`${assets}sideboard.webp`} alt="Black sideboard with natural woven cane doors" width="640" height="640" loading="lazy" /><figcaption><span className="lm-eyebrow">01 / Home</span><h3>Beautifully lived in.</h3></figcaption></figure>
         <figure><img src={`${assets}dress.webp`} alt="Cream button-front dress with delicate lace detailing" width="533" height="800" loading="lazy" /><figcaption><span className="lm-eyebrow">02 / The Mae Collective</span><h3>Thoughtfully dressed.</h3></figcaption></figure>

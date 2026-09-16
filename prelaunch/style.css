@@ -122,6 +122,20 @@ body:has(.lm-page) { margin:0; }
 .lm-pottery-story { padding:70px 3% 0; }
 .lm-pottery-story>img { height:auto; }
 .lm-selected-strip { align-items:center; }
+.lm-furniture-editorial { padding:75px 3% 40px; }
+.lm-furniture-editorial h2 em { font-weight:400; }
+.lm-room-photo { margin:0 0 30px; min-width:0; }
+.lm-page .lm-room-photo img { height:auto; aspect-ratio:3/2; object-fit:contain; }
+.lm-room-photo figcaption { font-family:'Cormorant Garamond',Georgia,serif; font-size:1.45rem; padding:13px 0 0; }
+.lm-room-pair { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px; }
+.lm-room-invitation { text-align:center; padding:15px 20px 35px; }
+.lm-room-invitation p { font-family:'Cormorant Garamond',Georgia,serif; font-size:1.6rem; margin-bottom:4px; }
+@media(max-width:700px) {
+ .lm-furniture-editorial { padding:45px 16px 15px; }
+ .lm-room-pair { grid-template-columns:1fr; gap:0; }
+ .lm-room-photo { margin-bottom:25px; }
+ .lm-room-photo figcaption { font-size:1.35rem; }
+}
 .lm-selected-photo { position:relative; overflow:hidden; width:100%; }
 .lm-page .lm-selected-photo img { position:absolute; top:0; max-width:none; height:100%; object-fit:fill; }
 .lm-collections .lm-selected-photo { width:min(100%,240px); margin:auto; }
