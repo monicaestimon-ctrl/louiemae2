@@ -121,7 +121,7 @@ body:has(.lm-page) { margin:0; }
 .lm-little-details { margin-top:24px; }
 .lm-pottery-story { padding:70px 3% 0; }
 .lm-pottery-story>img { height:auto; }
-.lm-selected-strip { align-items:center; }
+.lm-selected-strip { align-items:start; }
 .lm-furniture-editorial { padding:75px 3% 40px; }
 .lm-furniture-editorial h2 em { font-weight:400; }
 .lm-room-photo { margin:0 0 30px; min-width:0; }
@@ -138,9 +138,9 @@ body:has(.lm-page) { margin:0; }
 }
 .lm-selected-photo { position:relative; overflow:hidden; width:100%; }
 .lm-page .lm-selected-photo img { position:absolute; top:0; max-width:none; height:100%; object-fit:fill; }
-.lm-collections .lm-selected-photo { width:min(100%,240px); margin:auto; }
-@media(max-width:1050px) and (min-width:701px) { .lm-collections .lm-selected-photo { max-width:185px; } }
-@media(max-width:700px) { .lm-collections .lm-selected-photo { max-width:215px; } }
+.lm-selected-crop { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); overflow:hidden; }
+.lm-collections figure>img { height:auto; aspect-ratio:3/4; }
+.lm-collections .lm-selected-photo { width:100%; }
 @media(max-width:700px) {
  .lm-editorial-intro { padding:50px 24px; margin-top:40px; }
  .lm-beige-story { grid-template-columns:1fr; }
