@@ -1,11 +1,9 @@
 const assets = '/images/prelaunch/editorial/';
 
-function PhotoStrip({ file, descriptions, className = '' }: { file: string; descriptions: string[]; className?: string }) {
-  return <div className={`lm-photo-strip lm-photo-strip-${descriptions.length} ${className}`}>
-    {descriptions.map((description, index) => <div className="lm-photo-panel" key={description}>
-      <img src={`${assets}${file}`} alt={description} width="1536" height="1024" loading="lazy" decoding="async"
-        style={{ objectPosition: `${index * 100 / (descriptions.length - 1)}% center` }} />
-    </div>)}
+export function EditorialPhoto({ file, index = 0, panels = 1, description }: { file: string; index?: number; panels?: number; description: string }) {
+  return <div className="lm-selected-photo" style={{ aspectRatio: panels === 1 ? '527 / 543' : `${3 / panels} / 2` }}>
+    <img src={`${assets}${file}`} alt={description} loading="lazy" decoding="async"
+      style={{ width: `${panels * 100}%`, left: `${-index * 100}%` }} />
   </div>;
 }
 
@@ -29,29 +27,24 @@ export function CollectionEditorial() {
     </section>
 
     <section className="lm-editorial-chapter" aria-labelledby="women-preview-title">
-      <div className="lm-editorial-heading"><p className="lm-eyebrow">For you</p><h2 id="women-preview-title">Days with a little romance.</h2><p>Ivory, soft sage, delicate florals, and room to be yourself.</p></div>
-      <PhotoStrip file="women-garden.webp" descriptions={[
-        'Editorial preview of a white square-neck puff-sleeve maxi dress in a coastal garden',
-        'Editorial preview of a sage tie-shoulder gathered dress among olive trees',
-        'Editorial preview of a cream floral button-front dress with delicate white edging',
-        'Editorial preview of an ivory button-front vest and matching bubble-hem skirt',
-      ]} />
+      <div className="lm-editorial-heading"><p className="lm-eyebrow">For you</p><h2 id="women-preview-title">Days with a little romance.</h2><p>Ivory, soft sage, warm neutrals, and room to be yourself.</p></div>
+      <div className="lm-photo-strip lm-selected-strip">
+        <EditorialPhoto file="women-garden.webp" panels={4} index={0} description="White square-neck puff-sleeve maxi dress in a coastal garden" />
+        <EditorialPhoto file="women-garden.webp" panels={4} index={1} description="Sage tie-shoulder gathered dress among olive trees" />
+        <EditorialPhoto file="beige-dining-original.png" description="Beige matching set in its original setting beside a rustic dining table and woven chairs" />
+        <EditorialPhoto file="women-garden.webp" panels={4} index={3} description="Ivory button-front vest and matching bubble-hem skirt" />
+      </div>
       <p className="lm-editorial-caption">The Mae Collective <span>Selected looks from our upcoming collection</span></p>
     </section>
 
     <section className="lm-editorial-chapter lm-kids-chapter" aria-labelledby="kids-preview-title">
       <div className="lm-editorial-heading"><p className="lm-eyebrow">Louie Kids &amp; Co.</p><h2 id="kids-preview-title">For their little world.</h2><p>Flowers gathered. Gardens explored. Everyday moments, wonderfully theirs.</p></div>
-      <PhotoStrip file="kids-garden.webp" descriptions={[
-        'Editorial preview of a navy sailor top and white embroidered trousers with red shoes',
-        'Editorial preview of an ivory collared dress with blue bows and a ruffled hem',
-        'Editorial preview of a sage layered dress with a blue petal collar',
-        'Editorial preview of a pale yellow striped dress with a mustard cardigan',
-      ]} />
-      <PhotoStrip file="little-details.webp" className="lm-little-details" descriptions={[
-        'Editorial preview of a brown zip jacket, striped top, and oatmeal cuffed trousers on a wooden chair',
-        'Editorial preview of a blue striped shirt and light blue shorts worn in a garden',
-        'Editorial preview of blush and sage floral baby rompers with white-edged ruffles',
-      ]} />
+      <div className="lm-photo-strip lm-selected-strip">
+        <EditorialPhoto file="kids-garden.webp" panels={4} index={0} description="Navy sailor top and white embroidered trousers with red shoes" />
+        <EditorialPhoto file="kids-garden.webp" panels={4} index={3} description="Pale yellow striped dress with a mustard cardigan" />
+        <EditorialPhoto file="little-details.webp" panels={3} index={0} description="Brown zip jacket, striped top, and oatmeal cuffed trousers on a wooden chair" />
+        <EditorialPhoto file="little-details.webp" panels={3} index={1} description="Blue striped shirt and light blue shorts worn in a garden" />
+      </div>
       <p className="lm-editorial-caption">Little details. Lasting memories. <a href="#waitlist">Join the waitlist <span aria-hidden="true">↗</span></a></p>
     </section>
 

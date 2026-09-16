@@ -1,7 +1,7 @@
 /* global HTMLDialogElement */
 import { useRef, useState, type FormEvent } from 'react';
 import { HouseIcon, Wordmark } from './Brand';
-import { CollectionEditorial } from './CollectionEditorial';
+import { CollectionEditorial, EditorialPhoto } from './CollectionEditorial';
 
 const assets = '/images/prelaunch/';
 
@@ -75,7 +75,7 @@ export function LandingPage() {
       <section className="lm-collections" aria-label="A preview of the Louie Mae collections">
         <figure><img src={`${assets}sideboard.webp`} alt="Black sideboard with natural woven cane doors" width="640" height="640" loading="lazy" /><figcaption><span className="lm-eyebrow">01 / Home</span><h3>Beautifully lived in.</h3></figcaption></figure>
         <figure><img src={`${assets}dress.webp`} alt="Cream button-front dress with delicate lace detailing" width="533" height="800" loading="lazy" /><figcaption><span className="lm-eyebrow">02 / The Mae Collective</span><h3>Thoughtfully dressed.</h3></figcaption></figure>
-        <figure><img src={`${assets}romper.webp`} alt="Sage cotton romper laid on natural linen" width="640" height="640" loading="lazy" /><figcaption><span className="lm-eyebrow">03 / Louie Kids & Co.</span><h3>Little everyday wonders.</h3></figcaption></figure>
+        <figure><EditorialPhoto file="little-details.webp" panels={3} index={2} description="Blush and sage floral baby rompers with white-edged ruffles hanging from wooden pegs" /><figcaption><span className="lm-eyebrow">03 / Louie Kids & Co.</span><h3>Little everyday wonders.</h3></figcaption></figure>
       </section>
 
       <CollectionEditorial />
