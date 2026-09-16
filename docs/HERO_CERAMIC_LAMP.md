@@ -1,0 +1,7 @@
+# Hero ceramic lamp edit
+
+Built-in image generation edit using the original welcome background and the user's `Screenshot 2026-09-16 170854.png` lamp reference. Website logo and copy remain separate, unchanged HTML/SVG. Original background retained. Optimized asset: `public/images/prelaunch/welcome-ceramic-lamp.webp`. Full resolution: `output/welcome-ceramic-lamp.png`.
+
+## Prompt
+
+Use case: precise-object-edit. Image 1 is the edit target, the existing Louie Mae website hero background. Image 2 is the exact replacement product reference. Replace ONLY the ivory vase sitting on the wooden console at lower right of image 1 with the complete table lamp from image 2: dark aged brown mottled ceramic round urn base with little loop handles, short dark stem and wide warm flax woven tapered shade. Keep product silhouette, handles, patina and shade proportions faithful to reference. Place lamp on the exact same tabletop location, realistically scaled, base about the same size as existing vase, overall lamp taller with shade above. Match existing sunlight from left, contact shadows and perspective, authentic high-end camera photograph. Preserve original room, composition, archway, olive branches, console, brass tray, plaster texture, dimensions and large empty central wall for website text. Lamp and shade must stay on right side and not intrude on center text area. Output 1536x1024 landscape background only. No text, no logos, no border, no UI. Do not copy screenshot white background or caption.

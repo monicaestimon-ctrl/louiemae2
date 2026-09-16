@@ -45,7 +45,7 @@ export function LandingPage() {
     </header>
     <main id="main">
       <section className="lm-hero" aria-labelledby="welcome-title">
-        <img className="lm-hero-image" src={`${assets}welcome.webp`} alt="Sunlit archway, olive branches, and a ceramic vase on an aged wood console" width="1536" height="1024" fetchPriority="high" />
+        <img className="lm-hero-image" src={`${assets}welcome-ceramic-lamp.webp`} alt="Sunlit archway, olive branches, and an aged ceramic table lamp with a woven shade on a wood console" width="1536" height="1024" fetchPriority="high" />
         <div className="lm-hero-copy">
           <HouseIcon className="lm-monogram" />
           <p className="lm-eyebrow">Welcome to</p>
