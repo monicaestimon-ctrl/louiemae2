@@ -97,3 +97,39 @@ body:has(.lm-page) { margin:0; }
  .lm-footer { padding:50px 20px 25px; } .lm-footer>div { flex-wrap:wrap; gap:12px 20px; } .lm-privacy { padding:45px 25px 25px; }
 }
 @media(prefers-reduced-motion:no-preference) { html:has(.lm-page) { scroll-behavior:smooth; } }
+
+/* September collection lookbook. Isolated from the preserved storefront. */
+.lm-editorial { scroll-margin-top:30px; }
+.lm-editorial-intro { text-align:center; padding:70px 24px; background:#e9e8dc; }
+.lm-editorial-intro h2 em { font-weight:400; }
+.lm-editorial-intro>p:last-child { max-width:520px; margin:24px auto 0; }
+.lm-beige-story { display:grid; grid-template-columns:1fr 1fr; align-items:center; }
+.lm-beige-story>img { height:auto; object-fit:contain; }
+.lm-editorial-link { display:inline-block; font-size:.75rem; text-transform:uppercase; letter-spacing:.12em; border-bottom:1px solid; padding:12px 0; }
+.lm-editorial-link span { margin-left:18px; }
+.lm-editorial-chapter { padding:70px 3% 35px; }
+.lm-editorial-heading { text-align:center; padding:0 20px 35px; }
+.lm-editorial-heading>p:last-child { max-width:550px; margin:20px auto 0; }
+.lm-photo-strip { display:grid; gap:8px; grid-template-columns:repeat(4,minmax(0,1fr)); }
+.lm-photo-panel { overflow:hidden; aspect-ratio:3/8; }
+.lm-photo-panel img { height:100%; width:100%; object-fit:cover; }
+.lm-photo-strip-3 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.lm-photo-strip-3 .lm-photo-panel { aspect-ratio:1/2; }
+.lm-editorial-caption { display:flex; justify-content:space-between; gap:18px; margin:20px 0 0!important; font-size:.7rem; text-transform:uppercase; letter-spacing:.14em; }
+.lm-editorial-caption a { border-bottom:1px solid; }
+.lm-kids-chapter { background:#eeeee5; }
+.lm-little-details { margin-top:24px; }
+.lm-pottery-story { padding:70px 3% 0; }
+.lm-pottery-story>img { height:auto; }
+@media(max-width:700px) {
+ .lm-editorial-intro { padding:50px 24px; margin-top:40px; }
+ .lm-beige-story { grid-template-columns:1fr; }
+ .lm-beige-story .lm-copy { padding:38px 28px; }
+ .lm-editorial-chapter { padding:45px 16px 30px; }
+ .lm-editorial-heading { padding:0 6px 28px; }
+ .lm-photo-strip { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+ .lm-photo-strip-3 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+ .lm-editorial-caption { flex-direction:column; gap:8px; font-size:.65rem; }
+ .lm-editorial-caption a { align-self:flex-start; padding:10px 0; }
+ .lm-pottery-story { padding:45px 16px 0; }
+}
