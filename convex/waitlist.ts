@@ -25,7 +25,13 @@ export const register = mutation({
     const existing = await ctx.db.query('waitlistSignups').withIndex('by_email', q => q.eq('email', email)).unique();
     // Repeat submissions remain idempotent and do not reveal list membership or undo opt-outs.
     const subscriber = await ctx.db.query('subscribers').withIndex('by_email', q => q.eq('email', email)).first();
-    if (!existing) await ctx.db.insert('waitlistSignups', { email, createdAt: now, consentVersion: WAITLIST_CONSENT_VERSION, source: 'prelaunch', status: subscriber?.status ?? 'active' });
+    if (!existing) {
+      const signupId = await ctx.db.insert('waitlistSignups', { email, createdAt: now, consentVersion: WAITLIST_CONSENT_VERSION, source: 'prelaunch', status: subscriber?.status ?? 'active' });
+      if (subscriber?.status !== 'unsubscribed') {
+        await ctx.db.insert('klaviyoWaitlistJobs', { signupId, historical: false,
+          state: 'pending', attempts: 0, nextAttemptAt: now, updatedAt: now });
+      }
+    }
     if (!subscriber && !existing) await ctx.db.insert('subscribers', { email, dateSubscribed: new Date(now).toISOString().slice(0,10), status:'active', tags:['prelaunch-waitlist'], openRate:0 });
     else if (subscriber && !subscriber.tags.includes('prelaunch-waitlist')) await ctx.db.patch(subscriber._id, { tags:[...subscriber.tags,'prelaunch-waitlist'] });
     return { ok: true };
@@ -59,6 +65,10 @@ export const unsubscribe = mutation({
     await ctx.db.patch(id, { status: 'unsubscribed' });
     const subscriber = await ctx.db.query('subscribers').withIndex('by_email', q => q.eq('email', signup.email)).first();
     if (subscriber) await ctx.db.patch(subscriber._id, {status:'unsubscribed'});
+    const job = await ctx.db.query('klaviyoWaitlistJobs').withIndex('by_signup', q => q.eq('signupId', id)).unique();
+    if (job) await ctx.db.patch(job._id, { state: 'pending', nextAttemptAt: Date.now(), updatedAt: Date.now() });
+    else await ctx.db.insert('klaviyoWaitlistJobs', { signupId: id, historical: true,
+      state: 'pending', attempts: 0, nextAttemptAt: Date.now(), updatedAt: Date.now() });
   },
 });
 
@@ -69,7 +79,13 @@ export const removeTestSignup = internalMutation({
     if (!/^louie-mae-qa-[a-z0-9-]+@example\.com$/.test(email)) throw new Error('Only reserved QA addresses can be removed');
     for (const table of ['waitlistSignups', 'subscribers'] as const) {
       const rows = await ctx.db.query(table).withIndex('by_email', q => q.eq('email', email)).collect();
-      for (const row of rows) await ctx.db.delete(row._id);
+      for (const row of rows) {
+        if (table === 'waitlistSignups') {
+          const jobs = await ctx.db.query('klaviyoWaitlistJobs').withIndex('by_signup', q => q.eq('signupId', row._id as import('./_generated/dataModel').Id<'waitlistSignups'>)).collect();
+          for (const job of jobs) await ctx.db.delete(job._id);
+        }
+        await ctx.db.delete(row._id);
+      }
     }
   },
 });

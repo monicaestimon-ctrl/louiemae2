@@ -1,0 +1,68 @@
+{
+  "status": "draft — not approved or activated",
+  "senderName": "Louie Mae",
+  "suggestedSenderEmail": "withlove@louiemae.com",
+  "listName": "Louie Mae Launch Waitlist",
+  "flowName": "Louie Mae — Our First Chapter",
+  "trigger": "Added to Louie Mae Launch Waitlist; no re-entry",
+  "emails": [
+    {
+      "day": 0,
+      "subject": "You’re part of our first chapter",
+      "preview": "Welcome to Louie Mae. We’re so glad you’re here.",
+      "heading": "A little welcome, with love.",
+      "image": "welcome-vases-smaller.webp",
+      "paragraphs": [
+        "Thank you for joining the Louie Mae waitlist. You’re part of the beginning of something close to our hearts.",
+        "Rooted in faith and gathered around family, Louie Mae brings together furniture and home accents, clothing for you, and thoughtful finds for your little ones.",
+        "Over the next few days, we’ll share a little of our story and a first look at what’s coming. When our doors open, you’ll hear from us here."
+      ],
+      "cta": "Take a first look",
+      "url": "https://www.louiemae.com/#collection-preview"
+    },
+    {
+      "day": 2,
+      "subject": "The heart behind Louie Mae",
+      "preview": "Rooted in faith. Gathered around family.",
+      "heading": "For the life you’re building.",
+      "image": "faith.webp",
+      "paragraphs": [
+        "A home holds so much more than the things inside it. It holds the conversations around the table, the everyday routines, and the people we love.",
+        "Louie Mae began with a love for that kind of life. Faith, family, and the beauty of ordinary moments are at the heart of the collection we’re gathering.",
+        "We’re drawn to earthy colors, inviting textures, and pieces that feel at ease in everyday life. Thank you for being here as our next chapter takes shape."
+      ],
+      "cta": "Meet Louie Mae",
+      "url": "https://www.louiemae.com/#our-story"
+    },
+    {
+      "day": 5,
+      "subject": "A little glimpse of what’s coming",
+      "preview": "For your home, your wardrobe, and your little ones.",
+      "heading": "Thoughtfully gathered.",
+      "image": "interior-warm.webp",
+      "paragraphs": [
+        "We’re bringing three parts of Louie Mae together, each with its own place in the life you’re building.",
+        "Home — furniture and accents for spaces that feel welcoming and beautifully lived in.",
+        "The Mae Collective — clothing with easy silhouettes and romantic details.",
+        "Louie Kids & Co. — thoughtful finds for little everyday wonders.",
+        "You can explore a preview on our website while we get ready to welcome you."
+      ],
+      "cta": "Explore the first look",
+      "url": "https://www.louiemae.com/#collection-preview"
+    },
+    {
+      "day": 9,
+      "subject": "What are you looking forward to?",
+      "preview": "We’d love to hear what caught your eye.",
+      "heading": "There’s a place for you here.",
+      "image": "dress-closeup.webp",
+      "paragraphs": [
+        "Now that you’ve had a glimpse of Louie Mae, we’d love to know what you’re most excited to discover.",
+        "Something for your home? A new piece for your wardrobe? A little find for someone small? Just reply to this email and tell us.",
+        "We’ll be in touch with more news as opening day gets closer. Until then, thank you for being part of our first chapter."
+      ],
+      "cta": "Visit Louie Mae",
+      "url": "https://www.louiemae.com/"
+    }
+  ]
+}

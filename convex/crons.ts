@@ -3,6 +3,9 @@ import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 
+// Persist signups first; process/recover the bounded marketing queue separately.
+crons.interval('sync-klaviyo-waitlist', { minutes: 1 }, internal.klaviyoWaitlist.dispatch, {});
+
 // Sync CJ tracking information every 4 hours
 // This checks orders with CJ status "confirmed" or "processing" for tracking updates
 crons.interval(
