@@ -6,6 +6,10 @@ Full-resolution output: `output/welcome-three-vases.png`. Web asset: `public/ima
 
 ## Prompt
 
+Selected final version restores larger foreground vases, shifts them slightly inward, and supersedes the smaller spacing variants below:
+
+Precise composition edit. Use this supplied image's LARGE three vases and preserve their current exact size, scale, shapes, ceramic texture and staggered relationship. DO NOT shrink the vases. Move the grouping just 65 pixels LEFT, and 15 pixels DOWN/forward on the cabinet toward its front corner, leaving the small pot more breathing room from right-edge foliage. Keep all three fully visible. Tall pitcher behind medium rounded vase and small pot front, exactly like reference. Decorative branches remain abundant and natural but direct them UP and RIGHT from pitcher so they do not cross central blank wall (keep branches above y600 right of x1130). No tray. Preserve the room, lighting, wooden cabinet, perspective, frame1536x1024 and empty central space for website logo and words. No text or logo in image. CRITICAL: vase sizes must remain as LARGE as input, not the smaller later version.
+
 Final branch refinement:
 
 Edit ONLY decorative branch arrangement in this hero image. Keep all three vases and their positions and sizes exactly unchanged. Remove the branches extending LEFT of the tall pitcher's spout; redirect decorative bare branches upward and to the RIGHT, so ALL branches above the vase stay to the right of x=1140 on this1536pxwideimage. Center wall must be clear with no branches so website headline will not overlap. Preserve rest image exactly, including three vases, no tray, sunlight, room and1536x1024frame. No text or logos.
