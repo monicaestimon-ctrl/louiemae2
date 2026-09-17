@@ -4,7 +4,7 @@ import { register, list, unsubscribe } from './waitlist';
 vi.mock('./cjAdminAccess', () => ({ requireCjAdminIdentity: vi.fn(async () => {throw new Error('Unauthorized');}) }));
 
 function database() {
-  const rows: Record<string, any[]> = {waitlistSignups:[], subscribers:[], waitlistRateLimits:[]};
+  const rows: Record<string, any[]> = {waitlistSignups:[], subscribers:[], waitlistRateLimits:[], klaviyoWaitlistJobs:[]};
   let next=0;
   const ctx = {
     scheduler:{runAfter:vi.fn()},
@@ -38,6 +38,7 @@ describe('persistent waitlist intake', () => {
     expect(rows.waitlistSignups).toHaveLength(1);
     expect(rows.waitlistSignups[0]).toMatchObject({email:'mae@example.com',source:'prelaunch',status:'active',consentVersion:'2026-09-13'});
     expect(rows.subscribers).toHaveLength(1);
+    expect(rows.klaviyoWaitlistJobs).toHaveLength(1);
     expect(rows.subscribers[0].tags).toContain('prelaunch-waitlist');
     expect(ctx.scheduler.runAfter).toHaveBeenCalledOnce();
   });
@@ -47,6 +48,7 @@ describe('persistent waitlist intake', () => {
     await (register as any)._handler(ctx,args);
     expect(rows.waitlistSignups[0].status).toBe('unsubscribed');
     expect(rows.subscribers[0].status).toBe('unsubscribed');
+    expect(rows.klaviyoWaitlistJobs).toHaveLength(0);
   });
   it('rejects direct unauthenticated intake and malformed input without storing data', async () => {
     const {ctx,rows}=database();

@@ -407,6 +407,15 @@ export default defineSchema({
         source: v.literal("prelaunch"),
         status: v.union(v.literal("active"), v.literal("unsubscribed")),
     }).index("by_email", ["email"]),
+    klaviyoWaitlistJobs: defineTable({
+        signupId: v.id('waitlistSignups'),
+        historical: v.boolean(),
+        state: v.union(v.literal('pending'), v.literal('accepted'), v.literal('suppressed'), v.literal('failed')),
+        attempts: v.number(),
+        nextAttemptAt: v.optional(v.number()),
+        errorCode: v.optional(v.number()),
+        updatedAt: v.number(),
+    }).index('by_signup', ['signupId']).index('by_due', ['nextAttemptAt']),
     waitlistRateLimits: defineTable({
         key: v.string(),
         count: v.number(),

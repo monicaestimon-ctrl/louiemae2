@@ -37,6 +37,8 @@ import type * as files from "../files.js";
 import type * as geminiDescriptionClient from "../geminiDescriptionClient.js";
 import type * as geminiNameClient from "../geminiNameClient.js";
 import type * as http from "../http.js";
+import type * as klaviyoWaitlist from "../klaviyoWaitlist.js";
+import type * as klaviyoWaitlistWorker from "../klaviyoWaitlistWorker.js";
 import type * as orders from "../orders.js";
 import type * as pinnedLookup from "../pinnedLookup.js";
 import type * as pricingAudits from "../pricingAudits.js";
@@ -95,6 +97,8 @@ declare const fullApi: ApiFromModules<{
   geminiDescriptionClient: typeof geminiDescriptionClient;
   geminiNameClient: typeof geminiNameClient;
   http: typeof http;
+  klaviyoWaitlist: typeof klaviyoWaitlist;
+  klaviyoWaitlistWorker: typeof klaviyoWaitlistWorker;
   orders: typeof orders;
   pinnedLookup: typeof pinnedLookup;
   pricingAudits: typeof pricingAudits;
