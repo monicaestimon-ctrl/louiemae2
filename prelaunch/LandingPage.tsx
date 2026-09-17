@@ -70,13 +70,13 @@ export function LandingPage() {
       </section>
 
       <section className="lm-home" aria-labelledby="home-title">
-        <img src={`${assets}interior.webp`} alt="Louie Mae’s rustic wood coffee table surrounded by soft neutral sofas in a warmly layered living room" width="640" height="640" loading="lazy" />
+        <img src={`${assets}interior-warm.webp`} alt="Louie Mae’s rustic wood coffee table surrounded by soft neutral sofas in a warmly layered living room" width="640" height="640" loading="lazy" />
         <div><p className="lm-eyebrow">A glimpse of what’s to come</p><h2 id="home-title">For the spaces<br />we call home.</h2></div>
       </section>
       <FurnitureEditorial />
       <section className="lm-collections" aria-label="A preview of the Louie Mae collections">
         <figure><img src={`${assets}sideboard.webp`} alt="Black sideboard with natural woven cane doors" width="640" height="640" loading="lazy" /><figcaption><span className="lm-eyebrow">01 / Home</span><h3>Beautifully lived in.</h3></figcaption></figure>
-        <figure><img src={`${assets}dress.webp`} alt="Cream button-front dress with delicate lace detailing" width="533" height="800" loading="lazy" /><figcaption><span className="lm-eyebrow">02 / The Mae Collective</span><h3>Thoughtfully dressed.</h3></figcaption></figure>
+        <figure><img src={`${assets}dress-closeup.webp`} alt="Close-up of a cream button-front lace-trimmed dress, with the woman looking down in a sunlit meadow" width="1086" height="1448" loading="lazy" /><figcaption><span className="lm-eyebrow">02 / The Mae Collective</span><h3>Thoughtfully dressed.</h3></figcaption></figure>
         <figure><EditorialPhoto file="little-details.webp" panels={3} index={2} aspectRatio={3 / 4} description="Blush and sage floral baby rompers with white-edged ruffles hanging from wooden pegs" /><figcaption><span className="lm-eyebrow">03 / Louie Kids & Co.</span><h3>Little everyday wonders.</h3></figcaption></figure>
       </section>
 
