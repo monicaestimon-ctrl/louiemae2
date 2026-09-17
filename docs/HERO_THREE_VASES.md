@@ -1,5 +1,7 @@
 # Three-vase hero
 
+User selected the smaller, farther-back arrangement from `output/hero-comparison/vases-smaller.png` after viewing the branded preview. Live asset is now `public/images/prelaunch/welcome-vases-smaller.webp`, generated originally as `exec-2521c2e0-a9b7-4cc4-a891-51cffc67ef00.png`. Heading, logo, tagline and working waitlist button remain unchanged.
+
 Built-in image generation edit using the original welcome background and the user's three-vase photo. Replaces the lamp with all three reference vessels and branches in a staggered grouping. Logo and text remain unchanged HTML/SVG. Prior images retained.
 
 Full-resolution output: `output/welcome-three-vases.png`. Web asset: `public/images/prelaunch/welcome-three-vases.webp`.
