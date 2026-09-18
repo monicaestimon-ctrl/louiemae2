@@ -5,6 +5,7 @@ const crons = cronJobs();
 
 // Persist signups first; process/recover the bounded marketing queue separately.
 crons.interval('sync-klaviyo-waitlist', { minutes: 1 }, internal.klaviyoWaitlist.dispatch, {});
+crons.interval('reconcile-klaviyo-consent', { minutes: 15 }, internal.klaviyoWaitlistWorker.reconcileConsent, { cursor: null });
 
 // Sync CJ tracking information every 4 hours
 // This checks orders with CJ status "confirmed" or "processing" for tracking updates

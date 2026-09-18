@@ -6,8 +6,16 @@ import { requireCjAdminIdentity } from './cjAdminAccess';
 export const dispatch = internalMutation({
   args: {},
   handler: async (ctx) => {
-    if (process.env.KLAVIYO_WAITLIST_ENABLED !== 'true' || !process.env.KLAVIYO_PRIVATE_API_KEY || !process.env.KLAVIYO_WAITLIST_LIST_ID) return;
-    const jobs = await ctx.db.query('klaviyoWaitlistJobs').withIndex('by_due', q => q.gt('nextAttemptAt', 0).lte('nextAttemptAt', Date.now())).take(20);
+    if (!process.env.KLAVIYO_PRIVATE_API_KEY || !process.env.KLAVIYO_WAITLIST_LIST_ID) return;
+    const enabled = process.env.KLAVIYO_WAITLIST_ENABLED === 'true';
+    const testEmail = process.env.KLAVIYO_WAITLIST_TEST_EMAIL?.trim().toLowerCase();
+    if (!enabled && !testEmail) return;
+    // Test exactly the approved inbox without draining real subscribers' jobs.
+    const testSignup = !enabled && testEmail ? await ctx.db.query('waitlistSignups').withIndex('by_email', q => q.eq('email', testEmail)).unique() : null;
+    const testJob = testSignup ? await ctx.db.query('klaviyoWaitlistJobs').withIndex('by_signup', q => q.eq('signupId', testSignup._id)).unique() : null;
+    const jobs = enabled
+      ? await ctx.db.query('klaviyoWaitlistJobs').withIndex('by_due', q => q.gt('nextAttemptAt', 0).lte('nextAttemptAt', Date.now())).take(20)
+      : testJob?.nextAttemptAt !== undefined && testJob.nextAttemptAt <= Date.now() ? [testJob] : [];
     for (const job of jobs) {
       const attempt = job.attempts + 1;
       await ctx.db.patch(job._id, { attempts: attempt, nextAttemptAt: Date.now() + 10 * 60000 });
@@ -94,5 +102,49 @@ export const retryFailed = internalMutation({
       queued++;
     }
     return { queued, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+export const testStatus = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const email = process.env.KLAVIYO_WAITLIST_TEST_EMAIL?.trim().toLowerCase();
+    if (!email) return { configured: false };
+    const signups = await ctx.db.query('waitlistSignups').withIndex('by_email', q => q.eq('email', email)).collect();
+    const subscriber = await ctx.db.query('subscribers').withIndex('by_email', q => q.eq('email', email)).first();
+    const job = signups[0] ? await ctx.db.query('klaviyoWaitlistJobs').withIndex('by_signup', q => q.eq('signupId', signups[0]._id)).unique() : null;
+    return { configured: true, signupCount: signups.length, signupStatus: signups[0]?.status ?? null,
+      subscriberStatus: subscriber?.status ?? null, jobState: job?.state ?? null, attempts: job?.attempts ?? 0 };
+  },
+});
+
+export const consentPage = internalQuery({
+  args: { cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, { cursor }) => {
+    const page = await ctx.db.query('waitlistSignups').paginate({ cursor, numItems: 20 });
+    return { emails: page.page.filter(row => row.status === 'active').map(row => row.email),
+      cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+export const mirrorSuppressions = internalMutation({
+  args: { emails: v.array(v.string()) },
+  handler: async (ctx, { emails }) => {
+    if (emails.length > 20) throw new Error('Consent batch exceeds 20 contacts');
+    for (const email of emails) {
+      const signup = await ctx.db.query('waitlistSignups').withIndex('by_email', q => q.eq('email', email)).unique();
+      if (!signup) continue;
+      await ctx.db.patch(signup._id, { status: 'unsubscribed' });
+      const subscriber = await ctx.db.query('subscribers').withIndex('by_email', q => q.eq('email', email)).first();
+      if (subscriber) await ctx.db.patch(subscriber._id, { status: 'unsubscribed' });
+      const job = await ctx.db.query('klaviyoWaitlistJobs').withIndex('by_signup', q => q.eq('signupId', signup._id)).unique();
+      if (job) {
+        // Invalidate outstanding workers; compensate for any in-flight subscribe.
+        const inFlight = job.nextAttemptAt !== undefined;
+        await ctx.db.patch(job._id, { state: inFlight ? 'pending' : 'suppressed', attempts: job.attempts + 1,
+          nextAttemptAt: inFlight ? Date.now() + 60000 : undefined, updatedAt: Date.now() });
+      }
+    }
+    return { suppressed: emails.length };
   },
 });

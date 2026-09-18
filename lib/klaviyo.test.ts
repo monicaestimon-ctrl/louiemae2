@@ -1,9 +1,30 @@
 import { describe, expect, it, vi } from 'vitest';
-import { KlaviyoError, syncKlaviyoWaitlist } from './klaviyo';
+import { KlaviyoError, syncKlaviyoWaitlist, getKlaviyoSuppressedEmails } from './klaviyo';
 
 const input = { email: 'test@example.com', listId: 'TEST01', apiKey: 'test-key',
   unsubscribe: false, historical: false, consentedAt: Date.UTC(2026, 8, 1) };
 const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 });
+
+describe('ongoing consent reconciliation', () => {
+  it('mirrors opt-outs and delivery suppressions but never subscribes anyone', async () => {
+    const request = vi.fn().mockResolvedValue(json({ data: [
+      { attributes: { email: 'a@example.com', subscriptions: { email: { marketing: { consent: 'UNSUBSCRIBED' } } } } },
+      { attributes: { email: 'b@example.com', subscriptions: { email: { marketing: { consent: 'SUBSCRIBED', suppression: [{ reason: 'HARD_BOUNCE' }] } } } } },
+      { attributes: { email: 'c@example.com', subscriptions: { email: { marketing: { consent: 'SUBSCRIBED', suppression: [] } } } } },
+    ] }));
+    expect(await getKlaviyoSuppressedEmails('key', ['a@example.com','b@example.com','c@example.com'], request)).toEqual(['a@example.com','b@example.com']);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls[0][1].body).toBeUndefined();
+  });
+  it('does not interpret a missing profile as a subscription or opt-out', async () => {
+    expect(await getKlaviyoSuppressedEmails('key', ['a@example.com'], vi.fn().mockResolvedValue(json({ data: [] })))).toEqual([]);
+  });
+  it('fails closed for incomplete responses and excludes unexpected contacts', async () => {
+    for (const attributes of [{ email: 'a@example.com' }, { email: 'stranger@example.com', subscriptions: { email: { marketing: { consent: 'UNSUBSCRIBED' } } } }]) {
+      await expect(getKlaviyoSuppressedEmails('key', ['a@example.com'], vi.fn().mockResolvedValue(json({ data: [{ attributes }] })))).rejects.toThrow(KlaviyoError);
+    }
+  });
+});
 
 describe('Klaviyo waitlist consent', () => {
   it('subscribes new profiles to only email marketing and the configured list', async () => {
