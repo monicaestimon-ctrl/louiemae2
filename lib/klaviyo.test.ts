@@ -15,6 +15,9 @@ describe('ongoing consent reconciliation', () => {
     expect(await getKlaviyoSuppressedEmails('key', ['a@example.com','b@example.com','c@example.com'], request)).toEqual(['a@example.com','b@example.com']);
     expect(request).toHaveBeenCalledTimes(1);
     expect(request.mock.calls[0][1].body).toBeUndefined();
+    // Klaviyo's any operator requires an array, not variadic values.
+    expect(new URL(request.mock.calls[0][0]).searchParams.get('filter'))
+      .toBe('any(email,["a@example.com","b@example.com","c@example.com"])');
   });
   it('does not interpret a missing profile as a subscription or opt-out', async () => {
     expect(await getKlaviyoSuppressedEmails('key', ['a@example.com'], vi.fn().mockResolvedValue(json({ data: [] })))).toEqual([]);

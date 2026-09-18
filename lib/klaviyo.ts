@@ -14,7 +14,7 @@ export class KlaviyoError extends Error {
 export async function getKlaviyoSuppressedEmails(apiKey: string, emails: string[], request: typeof fetch = fetch): Promise<string[]> {
   if (!emails.length) return [];
   if (emails.length > 20) throw new Error('Consent batch exceeds 20 contacts');
-  const params = new URLSearchParams({ filter: `any(email,${emails.map(email => JSON.stringify(email)).join(',')})`,
+  const params = new URLSearchParams({ filter: `any(email,${JSON.stringify(emails)})`,
     'additional-fields[profile]': 'subscriptions', 'page[size]': '100' });
   const response = await request(`${BASE}/profiles?${params}`, {
     headers: { Authorization: `Klaviyo-API-Key ${apiKey}`, revision: REVISION, accept: 'application/vnd.api+json' },
