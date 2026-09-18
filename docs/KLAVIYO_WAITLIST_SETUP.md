@@ -38,3 +38,11 @@ Preview personalization, footer mailing address, unsubscribe, mobile formatting,
 - Review counts against free-plan allowances (250 active profiles / 500 monthly email sends at time of setup).
 
 References: [subscribe API](https://developers.klaviyo.com/en/reference/bulk_subscribe_profiles), [profile consent lookup](https://developers.klaviyo.com/en/reference/get_profiles), [unsubscribe API](https://developers.klaviyo.com/en/reference/bulk_unsubscribe_profiles).
+
+## Verification preparation (September 17, 2026)
+
+Four drafts now use JPEG email assets and a 600px Outlook conditional wrapper. Public storefront imagery remains unchanged. The generated HTML still needs reimporting into the four Klaviyo messages after the assets deploy.
+
+Consent reconciliation reads known local contacts in batches of 20 every 15 minutes and mirrors remote opt-outs, complaints, and other suppressions into local records. It never subscribes or restores consent. Klaviyo remains authoritative for immediate suppression of its sends. Network/rate-limit errors retry with bounded backoff; later sweeps recover incomplete checks.
+
+For owner-only QA, leave KLAVIYO_WAITLIST_ENABLED=false and temporarily set KLAVIYO_WAITLIST_TEST_EMAIL to the approved owner inbox. Only that inbox's queued job can dispatch. The worker checks this restriction independently. Use internal klaviyoWaitlist:testStatus to verify one record and job attempts without exposing contact data. Remove the test override when finished. Do not enable the full queue or activate the welcome flow before owner review.

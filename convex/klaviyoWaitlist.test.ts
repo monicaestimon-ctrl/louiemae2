@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { dispatch, finish, readJob } from './klaviyoWaitlist';
+import { dispatch, finish, readJob, mirrorSuppressions } from './klaviyoWaitlist';
 
 function fixture() {
   const signup = { _id: 'signup', email: 'test@example.com', status: 'active' };
@@ -17,6 +17,21 @@ function fixture() {
 
 afterEach(() => vi.unstubAllEnvs());
 describe('durable Klaviyo delivery', () => {
+  it('invalidates an in-flight subscription when a later remote opt-out is reconciled', async () => {
+    const { ctx, signup, subscriber, job } = fixture();
+    ctx.db.query.mockImplementation((table?: string) => ({ withIndex: () => ({
+      first: async () => subscriber, unique: async () => table === 'waitlistSignups' ? signup : job,
+    }) }) as any);
+    await (mirrorSuppressions as any)._handler(ctx, { emails: [signup.email] });
+    expect(signup.status).toBe('unsubscribed');
+    expect(subscriber.status).toBe('unsubscribed');
+    expect(job.attempts).toBe(2);
+    expect(job.state).toBe('pending');
+    expect(job.nextAttemptAt).toBeGreaterThan(Date.now());
+    ctx.db.patch.mockClear();
+    await (finish as any)._handler(ctx, { id: 'job', attempt: 1, outcome: 'accepted', unsubscribe: false });
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
   it('does nothing until explicitly enabled', async () => {
     vi.stubEnv('KLAVIYO_WAITLIST_ENABLED', 'false');
     const { ctx } = fixture();

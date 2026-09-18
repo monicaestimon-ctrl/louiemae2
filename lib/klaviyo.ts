@@ -9,6 +9,30 @@ export class KlaviyoError extends Error {
   }
 }
 
+// Read-only reconciliation, deliberately limited to known local contacts.
+// Never treat a missing profile or consent field as permission to resubscribe.
+export async function getKlaviyoSuppressedEmails(apiKey: string, emails: string[], request: typeof fetch = fetch): Promise<string[]> {
+  if (!emails.length) return [];
+  if (emails.length > 20) throw new Error('Consent batch exceeds 20 contacts');
+  const params = new URLSearchParams({ filter: `any(email,${emails.map(email => JSON.stringify(email)).join(',')})`,
+    'additional-fields[profile]': 'subscriptions', 'page[size]': '100' });
+  const response = await request(`${BASE}/profiles?${params}`, {
+    headers: { Authorization: `Klaviyo-API-Key ${apiKey}`, revision: REVISION, accept: 'application/vnd.api+json' },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) throw new KlaviyoError(response.status);
+  const body = await response.json();
+  if (!Array.isArray(body.data) || body.links?.next) throw new KlaviyoError(502);
+  const suppressed: string[] = [];
+  for (const profile of body.data) {
+    const email = profile.attributes?.email?.toLowerCase();
+    const marketing = profile.attributes?.subscriptions?.email?.marketing;
+    if (!email || !emails.includes(email) || !marketing) throw new KlaviyoError(502);
+    if (marketing.consent === 'UNSUBSCRIBED' || marketing.suppression?.length || marketing.list_suppressions?.length) suppressed.push(email);
+  }
+  return suppressed;
+}
+
 export async function syncKlaviyoWaitlist(input: {
   email: string; listId: string; apiKey: string; unsubscribe: boolean;
   historical: boolean; consentedAt: number;
