@@ -1,3 +1,6 @@
+"use node";
+
+// The provider client uses AbortSignal.timeout for bounded network requests.
 import { v } from 'convex/values';
 import { internalAction } from './_generated/server';
 import { internal } from './_generated/api';
