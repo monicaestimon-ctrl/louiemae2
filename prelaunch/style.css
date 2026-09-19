@@ -38,7 +38,7 @@ body:has(.lm-page) { margin:0; }
 .lm-coming { margin:17px 0 0!important; font-size:.75rem; letter-spacing:.1em; }
 .lm-split { display:grid; grid-template-columns:1fr 1fr; }
 .lm-split>img { height:100%; min-height:610px; max-height:760px; }
-.lm-story>img { object-position:center 62%; }
+.lm-story>img { height:auto; min-height:0; max-height:none; align-self:center; }
 .lm-copy { align-self:center; padding:clamp(45px,6.5vw,110px); }
 .lm-copy p:not(.lm-eyebrow):not(.lm-fine):not(.lm-error):not(.lm-subtitle) { max-width:490px; }
 .lm-copy h2+.lm-rule { margin:28px 0; }
@@ -89,7 +89,7 @@ body:has(.lm-page) { margin:0; }
  .lm-header { height:74px; padding:0 20px; display:flex; justify-content:space-between; } .lm-wordmark { font-size:1.6rem; } .lm-header nav { gap:0; } .lm-header nav a { font-size:.65rem; letter-spacing:.07em; } .lm-header nav a:first-child { display:none; }
  .lm-hero { min-height:660px; height:calc(100svh - 74px); max-height:800px; } .lm-hero-image { object-position:48% center; } .lm-hero-copy { margin-top:-75px; padding:25px 0; width:94%; } .lm-hero h1 { font-size:clamp(2.8rem,11vw,4.6rem); letter-spacing:.07em; } .lm-hero-copy::before { content:''; position:absolute; inset:-10px -5px; background:radial-gradient(ellipse,#f6f2ebc9 0%,#f6f2eb70 55%,transparent 74%); z-index:-1; } .lm-hero-copy { isolation:isolate; }
  .lm-page .lm-monogram { width:86px; height:90px; } .lm-motto { font-size:1.55rem; } .lm-mobile-break { display:block; }
- .lm-split { grid-template-columns:1fr; } .lm-split>img { min-height:0; height:400px; } .lm-story>img { object-position:center 64%; } .lm-copy { padding:50px 28px; } .lm-page h2 { font-size:2.8rem; }
+ .lm-split { grid-template-columns:1fr; } .lm-split>img { min-height:0; height:400px; } .lm-story>img { height:auto; } .lm-copy { padding:50px 28px; } .lm-page h2 { font-size:2.8rem; }
  .lm-home { height:510px; } .lm-home>img { object-position:34% center; } .lm-home>div { top:25px; left:auto; right:18px; padding:18px; max-width:70%; } .lm-home .lm-eyebrow { font-size:.65rem; }
  .lm-collections { grid-template-columns:1fr; padding:6px 18px 0; gap:28px; } .lm-collections img { height:430px; } .lm-collections figcaption { padding:20px 10px 5px; } .lm-collections figure:nth-child(2) img { object-position:center 50%; }
  .lm-gather { padding-top:60px; } .lm-gather-heading { padding:0 28px 32px; } .lm-gather>img { height:390px; object-position:center bottom; }
