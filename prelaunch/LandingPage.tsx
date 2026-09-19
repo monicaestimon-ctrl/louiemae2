@@ -58,7 +58,7 @@ export function LandingPage() {
       </section>
 
       <section className="lm-story lm-split" id="our-story" aria-labelledby="story-title">
-        <img src={`${assets}faith.webp`} alt="An open book, olive branch, antique brass bookmark, and velvet ribbon on soft linen" width="1024" height="1536" loading="lazy" />
+        <img src={`${assets}family-meadow.webp`} alt="A family of six gathered together in a sunlit wildflower meadow" width="1424" height="1104" loading="lazy" />
         <div className="lm-copy">
           <p className="lm-eyebrow">The heart of Louie Mae</p>
           <h2 id="story-title">Rooted in faith.<br />Gathered around family.</h2>
