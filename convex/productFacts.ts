@@ -1,3 +1,4 @@
+import { resolveProductIdentity } from '../lib/productIdentity';
 import {
     EvidenceRef,
     FactValue,
@@ -14,7 +15,7 @@ import { calculateSourceQuality } from './sourceProductNormalizer';
 const MATERIAL_TERMS = [
     'cotton', 'linen', 'silk', 'wool', 'rattan', 'oak', 'walnut', 'marble',
     'brass', 'ceramic', 'leather', 'bamboo', 'denim', 'velvet', 'polyester',
-    'wood', 'metal', 'glass', 'jute', 'wicker',
+    'wood', 'metal', 'glass', 'jute', 'wicker', 'clay',
 ];
 const CERTIFICATION_TERMS = ['organic', 'OEKO-TEX', 'GOTS', 'FSC', 'BPA-free', 'non-toxic', 'food-safe'];
 const CARE_PATTERNS = [/machine wash/i, /tumble dry/i, /wipe clean/i, /spot clean/i, /dry clean/i, /dishwasher safe/i, /outdoor safe/i];
@@ -80,31 +81,6 @@ export function resolveProductAudience(snapshot: SourceProductSnapshot): { value
     if (['furniture', 'decor', 'home'].includes(collection)) return { value: 'home', confidence: 0.98, evidence: [evidence('admin_input', collection, 'selectedCollection')] };
     if (collection === 'fashion') return { value: 'adult', confidence: 0.7, evidence: [evidence('admin_input', collection, 'selectedCollection')] };
     return { value: 'unknown', confidence: 0.35, evidence: [] };
-}
-
-function detectProductType(snapshot: SourceProductSnapshot, audience: ProductAudience): { value: string; confidence: number; evidence: EvidenceRef[] } {
-    const text = classificationText(snapshot);
-    const pairs: Array<[RegExp, string]> = [
-        [/\bsets?\b|\boutfits?\b|2[-\s]?piece|two[-\s]?piece|matching|co[-\s]?ord|coordinat(?:ed|ing)/, 'set'],
-        [/romper|onesie|bodysuit|jumpsuit/, audience === 'boys' || audience === 'unisex' ? 'onesie' : 'romper'],
-        [/dress/, 'dress'],
-        [/cardigan|sweater|knit/, 'knitwear'],
-        [/blouse|top|shirt/, 'top'],
-        [/pants|trouser|jeans/, 'pants'],
-        [/chair|seat/, 'chair'],
-        [/stool|barstool|counterstool/, 'stool'],
-        [/cabinet|buffet|sideboard|storage/, 'storage furniture'],
-        [/table|desk|console/, 'table'],
-        [/lamp|light/, 'lighting'],
-        [/vase|planter|pot/, 'vase'],
-        [/rug|carpet/, 'rug'],
-        [/basket/, 'basket'],
-    ];
-    for (const [regex, type] of pairs) {
-        if (regex.test(text)) return { value: type, confidence: 0.85, evidence: [evidence('title', text.slice(0, 180), 'combined_text')] };
-    }
-    const collection = snapshot.categoryHints?.selectedCollection || 'other';
-    return { value: collection === 'furniture' ? 'furniture piece' : collection === 'kids' ? 'kids item' : 'product', confidence: 0.45, evidence: [] };
 }
 
 function detectCollection(snapshot: SourceProductSnapshot): { value: ProductCollection; confidence: number; evidence: EvidenceRef[] } {
@@ -233,11 +209,11 @@ function colorsFromTextAndVariants(snapshot: SourceProductSnapshot, combinedText
 }
 
 export function extractNormalizedProductFacts(snapshot: SourceProductSnapshot & { visualFacts?: VisualFact[] }): NormalizedProductFacts {
-    const combinedText = [snapshot.rawTitle, snapshot.rawDescription, snapshot.rawHtmlDescription]
+    const combinedText = [snapshot.rawTitle, snapshot.translatedTitle, snapshot.rawDescription, snapshot.translatedDescription, snapshot.rawHtmlDescription]
         .filter(Boolean)
         .join(' ');
     const audience = resolveProductAudience(snapshot);
-    const productType = detectProductType(snapshot, audience.value);
+    const productType = resolveProductIdentity(snapshot, audience.value);
     const collection = detectCollection(snapshot);
     const sourceQuality = calculateSourceQuality(snapshot);
     const attrs = snapshot.attributes || [];
@@ -245,6 +221,8 @@ export function extractNormalizedProductFacts(snapshot: SourceProductSnapshot & 
     const materials = [
         ...attrFacts(attrs, ['material', 'fabric', 'composition'], 'materials', 'Material'),
         ...materialFactsFromText(combinedText),
+        ...MATERIAL_TERMS.filter(term => new RegExp(`\\b${term}\\s+(?:table |floor |desk |accent |dining )?${productType.value.replace(/^(table|floor|desk) /, '')}\\b`, 'i').test(snapshot.translatedTitle || snapshot.rawTitle || ''))
+            .map(term => fact('materials', 'Material', term, 'source_title', .85, [evidence('title', snapshot.translatedTitle || snapshot.rawTitle || '')])),
     ];
     const certifications = [
         ...attrFacts(attrs, ['certification', 'certified'], 'certifications', 'Certification'),

@@ -7,8 +7,9 @@ import {
     SourceProductSnapshot,
 } from '../lib/smartDescription';
 import { BrandVoiceConfig } from './brandVoice';
+import { buildEditorialFallback } from '../lib/editorialProductCopy';
 
-const MATERIAL_CLAIMS = ['cotton', 'linen', 'silk', 'wool', 'rattan', 'oak', 'walnut', 'marble', 'brass', 'ceramic', 'leather', 'bamboo', 'solid wood'];
+const MATERIAL_CLAIMS = ['cotton', 'linen', 'silk', 'wool', 'rattan', 'oak', 'walnut', 'marble', 'brass', 'ceramic', 'clay', 'leather', 'bamboo', 'solid wood'];
 const CERT_CLAIMS = ['organic', 'oeko-tex', 'gots', 'fsc', 'non-toxic', 'bpa-free', 'food-safe'];
 const CARE_CLAIMS = ['machine washable', 'machine wash', 'tumble dry', 'wipe clean', 'dishwasher safe', 'outdoor safe', 'spot clean', 'dry clean'];
 const SAFETY_CLAIMS = ['baby-safe', 'child-safe', 'hypoallergenic', 'flame-retardant'];
@@ -79,7 +80,8 @@ function checkClaims(text: string, facts: NormalizedProductFacts, brandVoice: Br
     const seen = new Set<string>();
     const add = (terms: string[], groups: Array<keyof NormalizedProductFacts>, issueCode: DescriptionValidationIssue['code']) => {
         for (const term of terms) {
-            if (!lower.includes(term.toLowerCase())) continue;
+            const claimText = term === 'organic' ? lower.replace(/\borganic (?:shape|shapes|form|forms|texture|textures)\b/g, '') : lower;
+            if (!new RegExp(`\\b${term}\\b`, 'i').test(claimText)) continue;
             const supported = hasDirectEvidenceFor(term, facts, groups);
             seen.add(term.toLowerCase());
             checks.push({ claim: term, supported, issueCode: supported ? undefined : issueCode });
@@ -99,6 +101,7 @@ function checkClaims(text: string, facts: NormalizedProductFacts, brandVoice: Br
     }
     for (const term of brandVoice.bannedClaimsWithoutEvidence) {
         const normalized = term.toLowerCase();
+        if (normalized === 'organic' && !/\borganic\b/.test(lower.replace(/\borganic (?:shape|shapes|form|forms|texture|textures)\b/g, ''))) continue;
         if (seen.has(normalized) || !lower.includes(normalized)) continue;
         const supported = hasDirectEvidenceFor(term, facts, ['materials', 'certifications', 'careInstructions', 'dimensions', 'functionalDetails']);
         checks.push({ claim: term, supported, issueCode: supported ? undefined : claimCodeForTerm(term) });
@@ -128,6 +131,12 @@ export function validateGeneratedDescription(args: {
     const errors: DescriptionValidationIssue[] = [];
     const warnings: DescriptionValidationIssue[] = [];
     const text = draftText(draft);
+    if (facts.productType.confidence >= .7 && !new RegExp(`\\b${facts.productType.value}(?:s)?\\b`, 'i').test(text)) {
+        errors.push(issue('GENERIC_COPY', `Description must identify the product as ${facts.productType.value}.`));
+    }
+    if (/\bsupplier details\b/i.test(text) || [draft.openingSentence, ...draft.detailLines.map(line => line.detail)].some(value => /^\s*features\b/i.test(value))) {
+        errors.push(issue('GENERIC_COPY', 'Customer copy must use an editorial voice, never supplier summaries or Features fragments.'));
+    }
 
     if (!draft.openingSentence?.trim()) errors.push(issue('MISSING_OPENING', 'Opening sentence is required.'));
     const openingWords = words(draft.openingSentence || '');
@@ -135,7 +144,7 @@ export function validateGeneratedDescription(args: {
         warnings.push(issue('OVERLY_LONG', 'Opening sentence is outside the preferred word count.', 'warning', draft.openingSentence));
     }
     if (!Array.isArray(draft.detailLines) || draft.detailLines.length < brandVoice.descriptionFormat.minDetailLines) {
-        errors.push(issue('TOO_FEW_DETAIL_LINES', 'Description needs at least three detail lines.'));
+        errors.push(issue('TOO_FEW_DETAIL_LINES', 'Description does not meet the configured detail count.'));
     }
     if (draft.detailLines?.length > brandVoice.descriptionFormat.maxDetailLines) {
         warnings.push(issue('OVERLY_LONG', 'Description has more detail lines than preferred.', 'warning'));
@@ -186,6 +195,7 @@ export function validateGeneratedDescription(args: {
 export function isRepairableValidationIssue(issue: DescriptionValidationIssue): boolean {
     return [
         'BANNED_PHRASE',
+        'TOO_FEW_DETAIL_LINES',
         'GENERIC_COPY',
         'TOO_SIMILAR',
         'MOJIBAKE_DETECTED',
@@ -200,41 +210,8 @@ export function isRepairableValidationIssue(issue: DescriptionValidationIssue): 
 }
 
 export function buildSafeFallbackDescription(facts: NormalizedProductFacts, _snapshot: SourceProductSnapshot): GeneratedDescriptionDraft {
-    const detailLines: GeneratedDescriptionDraft['detailLines'] = [];
-    const safeFacts = [
-        ...facts.designDetails, ...facts.materials, ...facts.patternOrFinish, ...facts.fitOrSilhouette,
-        ...facts.functionalDetails, ...facts.roomOrUseCase,
-    ].filter(fact => fact.evidenceLevel !== 'inferred_low_confidence' && !/^(option[\s:]*|unknown|n\/a)$/i.test(fact.value.trim()));
-    const colors = [...new Set(facts.colors.filter(fact => fact.evidenceLevel !== 'inferred_low_confidence').map(fact => fact.value))];
-    const seen = new Set<string>();
-    for (const factValue of safeFacts) {
-        if (seen.has(factValue.value.toLowerCase())) continue;
-        seen.add(factValue.value.toLowerCase());
-        const label = VALID_LABELS.has(factValue.label) ? factValue.label : 'Details';
-        detailLines.push({ label, detail: `Features ${factValue.value.replace(/[.!?]+$/, '')}${/^(embroidered|smocked|pleated|tiered|quilted|woven|ribbed|scalloped|ruffled|floral|striped)$/i.test(factValue.value) ? ' details' : ''}.`, supportedByFactIds: [factValue.id],
-            riskLevel: factValue.evidenceLevel === 'source_image' ? 'low' : 'medium' });
-        if (detailLines.length >= 3) break;
-    }
-    if (colors.length) detailLines.push({ label: 'Details', detail: `Selected colors include ${colors.join(', ')}.`, supportedByFactIds: facts.colors.map(fact => fact.id), riskLevel: 'low' });
-    if (detailLines.length === 0) {
-        detailLines.push({
-            label: 'Design',
-            detail: 'Source imagery or listing data should be reviewed before publishing.',
-            supportedByFactIds: [],
-            riskLevel: 'low',
-        });
-    }
-
-    return {
-        openingSentence: `Supplier details for this ${facts.productType.value}:`,
-        detailLines: detailLines.slice(0, 4),
-        seoKeywordsUsed: [],
-        avoidedClaims: facts.missingImportantFacts,
-        confidence: Math.min(0.55, facts.sourceQuality.score / 100),
-        notesForAdmin: facts.missingImportantFacts,
-    };
+    return buildEditorialFallback(facts);
 }
-
 export function getFactIds(facts: NormalizedProductFacts): Set<string> {
     return new Set(allFacts(facts).map(factValue => factValue.id));
 }
