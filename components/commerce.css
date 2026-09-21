@@ -1,0 +1,137 @@
+.commerce-studio {
+  background: #f7f3ed;
+  color: #382e25;
+  border: 1px solid #d6cbbb;
+  border-radius: 12px;
+  padding: clamp(18px, 3vw, 36px);
+  margin: 24px 0;
+  font-size: 15px;
+  line-height: 1.6;
+  text-align: left;
+}
+.commerce-studio h2 {
+  font-family: Georgia, serif;
+  font-size: 32px;
+  margin: 0 0 12px;
+}
+.commerce-studio h3 {
+  font-family: Georgia, serif;
+  font-size: 24px;
+  margin: 24px 0 12px;
+}
+.commerce-studio label {
+  display: block;
+  margin: 12px 0;
+}
+.commerce-studio input:not([type='checkbox']),
+.commerce-studio textarea,
+.commerce-studio select {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #b7ab9b;
+  border-radius: 5px;
+  background: #fff;
+  color: #30271f;
+  font: inherit;
+}
+.commerce-studio input[type='checkbox'] {
+  margin-right: 8px;
+}
+.commerce-studio button {
+  background: #493b2d;
+  color: #fff;
+  padding: 9px 14px;
+  border-radius: 5px;
+  margin: 6px 6px 6px 0;
+  font: inherit;
+}
+.commerce-studio button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.commerce-studio button:focus-visible,
+.commerce-studio input:focus-visible,
+.commerce-studio textarea:focus-visible {
+  outline: 3px solid #95754b;
+  outline-offset: 3px;
+}
+.commerce-studio p {
+  margin: 10px 0;
+}
+.commerce-studio [role='alert'],
+.commerce-studio [role='status'] {
+  padding: 12px;
+  border: 1px solid #987b51;
+  background: #f1e6d4;
+}
+.commerce-studio a {
+  text-decoration: underline;
+}
+.commerce-studio fieldset {
+  border: 1px solid #c5b9a8;
+  padding: 15px;
+  margin: 14px 0;
+}
+.commerce-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.commerce-gallery {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.commerce-gallery img {
+  width: 130px;
+  height: 130px;
+  object-fit: contain;
+  background: white;
+}
+.commerce-studio .commerce-library-row {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: 20px;
+  text-align: left;
+  background: #e9e1d5;
+  color: #382e25;
+}
+.commerce-studio summary {
+  cursor: pointer;
+  margin: 16px 0;
+}
+.commerce-actions {
+  position: sticky;
+  bottom: 0;
+  background: #f7f3ed;
+  padding: 8px;
+  border-top: 1px solid #d6cbbb;
+  z-index: 2;
+}
+.commerce-product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 28px;
+}
+.commerce-product-grid article {
+  padding: 16px;
+  background: #fffdf9;
+  border: 1px solid #ded4c6;
+  border-radius: 8px;
+}
+.commerce-product-hero {
+  width: 100%;
+  height: 320px;
+  object-fit: contain;
+}
+.commerce-variant-image {
+  width: 70px;
+  height: 70px;
+  object-fit: contain;
+}
+.commerce-catalog {
+  max-width: 1280px;
+  margin: 40px auto;
+}

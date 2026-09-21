@@ -10,6 +10,7 @@ import { BlogPostView } from './components/BlogPostView';
 import { AdminPage } from './components/AdminPage';
 import { DynamicPage } from './components/DynamicPage';
 import { StorePage } from './components/StorePage';
+import { CommerceCatalog } from './components/CommerceCatalog';
 import { SupportPage } from './components/SupportPage';
 import { NewArrivalsPage } from './components/NewArrivalsPage';
 import { NewCollectionPage } from './components/NewCollectionPage';
@@ -323,7 +324,7 @@ const AppContent = () => {
     const collectionExists = siteContent.collections.some(c => c.id === type);
 
     if (collectionExists) {
-      currentView = <StorePage collection={type as string} initialCategory={category || 'All'} forceProductView={viewProducts} />;
+      currentView = <><StorePage collection={type as string} initialCategory={category || 'All'} forceProductView={viewProducts} />{type === 'furniture' && <CommerceCatalog channel="retail" />}</>;
     } else {
       currentView = <HomePage />;
     }

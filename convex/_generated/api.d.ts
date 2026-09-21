@@ -9,6 +9,14 @@
  */
 
 import type * as ai from "../ai.js";
+import type * as commerceEmail from "../commerceEmail.js";
+import type * as commerce from "../commerce.js";
+import type * as commerceImport from "../commerceImport.js";
+import type * as commerceGeneration from "../commerceGeneration.js";
+import type * as commerceAI from "../commerceAI.js";
+import type * as commerceProjects from "../commerceProjects.js";
+import type * as commerceStripe from "../commerceStripe.js";
+import type * as commerceFulfillment from "../commerceFulfillment.js";
 import type * as aiUsage from "../aiUsage.js";
 import type * as aliexpress from "../aliexpress.js";
 import type * as auth from "../auth.js";
@@ -34,6 +42,10 @@ import type * as descriptionAudits from "../descriptionAudits.js";
 import type * as descriptionValidators from "../descriptionValidators.js";
 import type * as emails from "../emails.js";
 import type * as files from "../files.js";
+import type * as furniture from "../furniture.js";
+import type * as furnitureEmail from "../furnitureEmail.js";
+import type * as furnitureImport from "../furnitureImport.js";
+import type * as furnitureTables from "../furnitureTables.js";
 import type * as geminiDescriptionClient from "../geminiDescriptionClient.js";
 import type * as geminiNameClient from "../geminiNameClient.js";
 import type * as http from "../http.js";
@@ -68,6 +80,14 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  commerceEmail: typeof commerceEmail;
+  commerce: typeof commerce;
+  commerceImport: typeof commerceImport;
+  commerceGeneration: typeof commerceGeneration;
+  commerceAI: typeof commerceAI;
+  commerceProjects: typeof commerceProjects;
+  commerceStripe: typeof commerceStripe;
+  commerceFulfillment: typeof commerceFulfillment;
   ai: typeof ai;
   aiUsage: typeof aiUsage;
   aliexpress: typeof aliexpress;
@@ -94,6 +114,10 @@ declare const fullApi: ApiFromModules<{
   descriptionValidators: typeof descriptionValidators;
   emails: typeof emails;
   files: typeof files;
+  furniture: typeof furniture;
+  furnitureEmail: typeof furnitureEmail;
+  furnitureImport: typeof furnitureImport;
+  furnitureTables: typeof furnitureTables;
   geminiDescriptionClient: typeof geminiDescriptionClient;
   geminiNameClient: typeof geminiNameClient;
   http: typeof http;

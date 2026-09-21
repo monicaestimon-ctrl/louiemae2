@@ -678,7 +678,7 @@ export const handleCjWebhookUpdate = internalMutation({
         // We use the last 12 chars of stripeSessionId uppercase as orderNumber
         const allOrders = await ctx.db.query("orders").collect();
         const order = allOrders.find(o =>
-            o.stripeSessionId.slice(-12).toUpperCase() === args.orderNumber
+            (o.stripeSessionId || o.stripeInvoiceId || String(o._id)).slice(-12).toUpperCase() === args.orderNumber
         );
 
         if (!order) {

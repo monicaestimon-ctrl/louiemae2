@@ -1,6 +1,8 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { authTables } from "@convex-dev/auth/server";
+import { furnitureTables } from './furnitureTables';
+import { commerceTables } from './commerceTables';
 
 const cjInventoryStatusValidator = v.union(
     v.literal("unknown"),
@@ -50,6 +52,8 @@ const cjFulfillmentReadinessValidator = v.union(
 export default defineSchema({
     // Convex Auth tables (users, sessions, accounts, etc.)
     ...authTables,
+    ...furnitureTables,
+    ...commerceTables,
 
     productSourceSnapshots: defineTable({
         sourceKey: v.string(), schemaVersion: v.number(), adapterVersion: v.number(), fetchedAt: v.number(), contentHash: v.string(),
@@ -449,7 +453,12 @@ export default defineSchema({
 
     // Orders
     orders: defineTable({
-        stripeSessionId: v.string(),
+        stripeSessionId: v.optional(v.string()),
+        stripeInvoiceId: v.optional(v.string()),
+        commercialMaxSupplierCents: v.optional(v.number()),
+        commercialLogistics: v.optional(v.string()),
+        commercialApprovedUntil: v.optional(v.number()),
+        commercialHold: v.optional(v.string()),
         stripePaymentIntentId: v.optional(v.string()),
         customerEmail: v.string(),
         customerName: v.optional(v.string()),

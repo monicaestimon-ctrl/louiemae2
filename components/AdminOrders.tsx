@@ -242,7 +242,7 @@ export const AdminOrders: React.FC = () => {
                                         </div>
                                         <div>
                                             <p className="font-mono text-base text-cream font-medium tracking-wider drop-shadow-sm group-hover:text-amber-400 transition-colors">
-                                                #{order.stripeSessionId.slice(-8).toUpperCase()}
+                                                #{(order.stripeSessionId || order.stripeInvoiceId || String(order._id)).slice(-8).toUpperCase()}
                                             </p>
                                             <p className="text-[11px] uppercase tracking-widest text-cream/40 mt-1">{formatDate(order.createdAt)}</p>
                                         </div>

@@ -15,6 +15,8 @@ import { ProductImport } from './ProductImport';
 import { CJSettings } from './CJSettings';
 import { CJControlRoom } from './CJControlRoom';
 import { CJRiskCheck } from './CJRiskCheck';
+import { CommerceStudio } from './CommerceStudio';
+import { CommerceProjects } from './CommerceProjects';
 import { buildSourceProductSnapshot } from '../lib/smartDescription';
 import { SafeImage } from './SafeImage';
 import { productStorefrontStatusLabel } from '../lib/productVisibility';
@@ -43,6 +45,7 @@ type AdminTab =
    | 'cj-control-room'
    | 'cj-risk-check'
    | 'import'
+   | 'shared-products'
    | 'cj-settings';
 
 type CjAdminNavTarget = 'cj-settings' | 'cj-control-room' | 'cj-risk-check';
@@ -912,6 +915,7 @@ export const AdminPage: React.FC = () => {
                </button>
 
                {/* CJ Settings */}
+               <button onClick={() => switchTab('shared-products', () => setActivePageEditor(null))} className="w-full text-left px-5 py-3.5 text-xs uppercase tracking-widest text-cream mb-2 rounded-xl bg-white/5">Ashcroft & publishing destinations</button>
                <button
                   onClick={() => switchTab('cj-settings', () => setActivePageEditor(null))}
                   className={`relative group w-full text-left px-5 py-3.5 text-xs uppercase tracking-[0.15em] flex items-center gap-4 rounded-xl transition-all mb-2 overflow-hidden ${activeTab === 'cj-settings' ? 'bg-white/10 text-white shadow-lg border border-white/5' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
@@ -1132,6 +1136,7 @@ export const AdminPage: React.FC = () => {
             )}
 
             {/* CJ SETTINGS TAB */}
+            {activeTab === 'shared-products' && <><CommerceStudio entry="retail" /><CommerceProjects /></>}
             {activeTab === 'cj-settings' && (
                <FadeIn>
                    <CJSettings
