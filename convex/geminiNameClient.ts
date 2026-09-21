@@ -5,6 +5,7 @@ import {
     GeneratedSmartNameDraft,
     NormalizedProductFacts,
 } from '../lib/smartDescription';
+import { displayProductType } from '../lib/productIdentity';
 import { normalizeBoutiqueIdentity, normalizeProductName } from '../lib/productNames';
 
 type GeminiResult<T> = {
@@ -29,7 +30,7 @@ const RISKY_NAME_TERMS = [
     'organic', 'oeko', 'fsc', 'non-toxic', 'hypoallergenic', 'solid oak',
     'solid wood', 'machine washable', 'waterproof', 'handmade', 'handcrafted',
     'linen', 'cotton', 'silk', 'wool', 'leather', 'rattan', 'oak', 'walnut',
-    'marble', 'brass', 'bamboo',
+    'marble', 'brass', 'bamboo', 'ceramic', 'clay',
 ];
 
 function getModel(): string {
@@ -84,6 +85,7 @@ function factsForPrompt(facts: NormalizedProductFacts) {
         titleFacts: facts.titleFacts,
         sourceQuality: facts.sourceQuality,
         designDetails: facts.designDetails.slice(0, 12),
+        materials: facts.materials,
         colors: facts.colors.slice(0, 8),
         patternOrFinish: facts.patternOrFinish.slice(0, 8),
         fitOrSilhouette: facts.fitOrSilhouette.slice(0, 8),
@@ -93,51 +95,9 @@ function factsForPrompt(facts: NormalizedProductFacts) {
     };
 }
 
-function titleText(facts: NormalizedProductFacts): string {
-    return [
-        facts.titleFacts.cleanedTitle,
-        facts.titleFacts.originalTitle,
-        facts.productType.value,
-        ...facts.designDetails.map(f => f.value),
-        ...facts.functionalDetails.map(f => f.value),
-    ].filter(Boolean).join(' ').toLowerCase();
-}
-
 export function normalizedNameProductType(facts: NormalizedProductFacts): string {
-    const text = titleText(facts);
-    const pairs: Array<[RegExp, string]> = [
-        [/\bsets?\b|\boutfits?\b|2[-\s]?piece|two[-\s]?piece|matching|co[-\s]?ord|coordinat(?:ed|ing)/, 'Sets'],
-        [/romper|onesie|bodysuit|jumpsuit/, facts.audience.value === 'boys' || facts.audience.value === 'unisex' ? 'Onesie' : 'Romper'],
-        [/dress/, 'Dress'],
-        [/blouse/, 'Blouse'],
-        [/\btop\b|shirt|tee/, 'Top'],
-        [/cardigan|sweater|knit/, 'Cardigan'],
-        [/pants|trouser|jeans/, 'Pants'],
-        [/skirt/, 'Skirt'],
-        [/chair|seat/, 'Chair'],
-        [/stool/, 'Stool'],
-        [/sideboard|buffet|cabinet|storage/, 'Cabinet'],
-        [/console/, 'Console'],
-        [/table|desk/, 'Table'],
-        [/lamp|light/, 'Lamp'],
-        [/vase|planter|pot/, 'Vase'],
-        [/rug|carpet/, 'Rug'],
-        [/basket/, 'Basket'],
-        [/mirror/, 'Mirror'],
-        [/pillow|cushion/, 'Pillow'],
-    ];
-    for (const [regex, type] of pairs) {
-        if (regex.test(text)) return type;
-    }
-    const fallback = facts.productType.value
-        .replace(/\b(piece|product|item|furniture)\b/gi, '')
-        .trim()
-        .split(/\s+/)
-        .filter(Boolean)
-        .pop();
-    return fallback ? fallback.charAt(0).toUpperCase() + fallback.slice(1).toLowerCase() : 'Piece';
+    return displayProductType(facts.productType.value);
 }
-
 function groundedModifiers(facts: NormalizedProductFacts): Array<{ modifier?: string; factIds: string[] }> {
     const candidates = [
         ...facts.designDetails,
@@ -303,6 +263,15 @@ export function validateSmartNameDraft(draft: GeneratedSmartNameDraft, facts: No
     if (new Set(existingIdentities.map(normalizeBoutiqueIdentity)).has(normalizeBoutiqueIdentity(draft.firstName))) errors.push(`Boutique identity is already used: ${draft.firstName}.`);
     const productType = normalizedNameProductType(facts).toLowerCase();
     if (!containsToken(name.toLowerCase(), productType)) errors.push(`Name must include the product type "${productType}".`);
+    if (draft.productType.toLowerCase() !== productType) errors.push('Name product type must match the resolved product identity.');
+    const reconstructed = [draft.firstName, draft.modifier, draft.productType].filter(Boolean).join(' ');
+    if (normalizeProductName(name) !== normalizeProductName(reconstructed)) errors.push('Name must contain only its identity, supported modifier, and product type.');
+    if (draft.modifier) {
+        const supported = groundedModifiers(facts).some(item => item.modifier?.toLowerCase() === draft.modifier?.toLowerCase())
+            || allFactValues(facts).some(fact => fact.confidence >= .7 && fact.evidenceLevel !== 'inferred_low_confidence'
+                && containsToken(fact.value, draft.modifier!));
+        if (!supported) errors.push(`Unsupported name modifier: ${draft.modifier}.`);
+    }
     if (facts.audience.value === 'boys') {
         const allowed = new Set([...NAME_POOLS.boys, ...NAME_POOLS.unisex].map(normalizeBoutiqueIdentity));
         if (!allowed.has(normalizeBoutiqueIdentity(draft.firstName))) errors.push('Boys products require a masculine or neutral boutique identity.');

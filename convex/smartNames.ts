@@ -97,6 +97,10 @@ export const generateSmartName = action({
             }
 
             const facts = extractNormalizedProductFacts(sourceSnapshot);
+            if (facts.productType.confidence < .7) return {
+                ok: false, warnings, fallbackUsed: false, facts, errorCode: 'PRODUCT_TYPE_UNCLEAR',
+                error: 'The product type is unclear. Select a specific category or confirm the product type before generating a name.',
+            };
             const registry = await ctx.runQuery(internal.productNameRegistry.listNamesForGeneration, { limit: 240, ownerKey });
             let existingNames = registry.names;
             let existingIdentities = registry.identities;

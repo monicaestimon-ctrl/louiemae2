@@ -156,6 +156,11 @@ export const generateSmartDescription = action({
             }
 
             const facts = extractNormalizedProductFacts(sourceSnapshot);
+            if (facts.productType.confidence < .7) return {
+                ok: false, warnings: [...warnings, 'Confirm the product type or select a specific category before generating.'],
+                validation: { passed: false, errors: [], warnings: [], claimChecks: [], repaired: false },
+                fallbackUsed: false, facts, error: 'The product type is unclear. Your existing description has been kept.',
+            };
             warnings.push(...facts.missingImportantFacts.map(fact => `Missing source fact: ${fact}.`));
             console.log("[SmartDescription] facts extracted", {
                 requestId,
@@ -205,7 +210,6 @@ export const generateSmartDescription = action({
                     draft: finalDraft,
                     facts,
                     brandVoice: LOUIE_MAE_BRAND_VOICE,
-                    similarDescriptions,
                 });
             } else {
                 validation = validateGeneratedDescription({
@@ -225,7 +229,10 @@ export const generateSmartDescription = action({
                 try {
                     repairedResult = await repairDescriptionDraftWithGemini({ draft: finalDraft, validation, facts, brandVoice: LOUIE_MAE_BRAND_VOICE });
                 } catch (error) {
-                    warnings.push(classifyAiProviderError(error).message);
+                    const failure = classifyAiProviderError(error);
+                    providerErrorCode = failure.code;
+                    providerRetryable = failure.retryable;
+                    warnings.push(failure.message);
                 }
                 warnings.push(...repairedResult.warnings);
                 const repairedDraft = coerceGeneratedDescriptionDraft(repairedResult.value);
@@ -252,7 +259,6 @@ export const generateSmartDescription = action({
                     draft: finalDraft,
                     facts,
                     brandVoice: LOUIE_MAE_BRAND_VOICE,
-                    similarDescriptions,
                 });
             }
 
@@ -294,12 +300,11 @@ export const generateSmartDescription = action({
                 detailLineCount: finalDraft.detailLines.length,
             });
 
-            const insufficientEvidence = fallbackUsed && facts.designDetails.length + facts.materials.length + facts.patternOrFinish.length
-                + facts.fitOrSilhouette.length + facts.functionalDetails.length + facts.dimensions.length === 0;
+            const insufficientEvidence = !validation.passed;
             return {
                 ok: !insufficientEvidence,
                 error: insufficientEvidence ? 'There are not enough verified product details to write a description. Confirm supplier facts or select clearer photos, then try again.' : undefined,
-                description,
+                description: insufficientEvidence ? undefined : description,
                 sourceSnapshotId: prepared.sourceSnapshotId,
                 model: getSmartDescriptionModel(), promptVersion: SMART_DESCRIPTION_PROMPT_VERSION, sourceSnapshotHash,
                 providerErrorCode, providerRetryable,

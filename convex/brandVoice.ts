@@ -1,5 +1,7 @@
-export const SMART_DESCRIPTION_PROMPT_VERSION = 'smart-description-v2.0.0';
-export const BRAND_VOICE_VERSION = 'louie-mae-v1.0.0';
+export const SMART_DESCRIPTION_PROMPT_VERSION = 'smart-description-v2.3.0';
+export const BRAND_VOICE_VERSION = 'louie-mae-v1.3.0';
+
+export const LOUIE_MAE_HOME_VOICE_REFERENCE = 'An antique-inspired clay table lamp with a rounded vessel base and wabi-sabi character. Its earthy texture gives bedside tables and consoles a quiet, collected feel.';
 
 export type BrandVoiceConfig = {
     brandName: 'Louie Mae';
@@ -29,6 +31,13 @@ export const LOUIE_MAE_BRAND_VOICE: BrandVoiceConfig = {
         'Clean and readable for ecommerce',
         'Grounded in actual product details',
         'Soft, intentional, curated, and modern',
+        'Connect supported shape, texture, and detail to an evocative styling suggestion or sense of place.',
+        'Sparse evidence deserves one beautiful, specific sentence, not padded specifications.',
+        'Preserve rich labeled descriptions when there are meaningful details: Material, Design, Texture, Function, Fit, or Details should each carry specific, expressive copy.',
+        'Choose full, compact, or short descriptions by the depth of verified information, not by product category. The short lamp reference defines the voice, not a mandatory length.',
+        'For home pieces, favor two connected sentences: first the object, its form and aesthetic character; then how its texture or silhouette makes a space feel.',
+        'Prefer descriptive atmosphere over styling commands: "Its earthy texture gives ... a quiet, collected feel" rather than repeatedly telling shoppers "Style it" or "Pair it".',
+        'Keep precise supported language such as rounded vessel base and earthy texture instead of flattening it into rounded base and textural finish.',
     ],
     bannedPhrases: [
         'high quality',
@@ -85,7 +94,7 @@ export const LOUIE_MAE_BRAND_VOICE: BrandVoiceConfig = {
             ],
         },
         furniture: {
-            preferredWords: ['grounded', 'textured', 'warm', 'clean-lined', 'sculptural', 'natural', 'considered'],
+            preferredWords: ['grounded', 'earthy texture', 'warm', 'sculptural', 'considered', 'antique-inspired', 'quiet, collected feel'],
             avoidWords: ['cheap', 'indestructible', 'heirloom-quality'],
             toneNotes: [
                 'Interior-design language, calm and elevated.',
@@ -93,15 +102,16 @@ export const LOUIE_MAE_BRAND_VOICE: BrandVoiceConfig = {
             ],
         },
         decor: {
-            preferredWords: ['curated', 'textural', 'organic shape', 'soft', 'quietly detailed', 'warm', 'collected'],
+            preferredWords: ['antique-inspired', 'rounded vessel base', 'wabi-sabi character', 'earthy texture', 'organic shape', 'quiet', 'collected'],
             avoidWords: ['random', 'mass-produced', 'luxury'],
             toneNotes: [
                 'Home styling language.',
+                'Antique-inspired and wabi-sabi describe a supported aesthetic, not verified age, origin, or handmade construction. Use them selectively, not for every product.',
                 'Use organic only for shape or texture, not material certification, unless proven.',
             ],
         },
         home: {
-            preferredWords: ['curated', 'textural', 'warm', 'considered', 'grounded'],
+            preferredWords: ['antique-inspired', 'earthy texture', 'warm', 'considered', 'grounded', 'quiet, collected feel'],
             avoidWords: ['random', 'mass-produced', 'luxury'],
             toneNotes: ['Home styling language with practical clarity.'],
         },
@@ -113,8 +123,8 @@ export const LOUIE_MAE_BRAND_VOICE: BrandVoiceConfig = {
     },
     descriptionFormat: {
         openingSentenceMinWords: 12,
-        openingSentenceMaxWords: 28,
-        minDetailLines: 3,
+        openingSentenceMaxWords: 60,
+        minDetailLines: 0,
         maxDetailLines: 6,
         separator: ' · ',
     },
