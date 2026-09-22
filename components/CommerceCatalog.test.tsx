@@ -64,3 +64,25 @@ describe('shared customer quote flow', () => {
     expect(mocks.submit.mock.calls[0][0].token).toBe(mocks.submit.mock.calls[1][0].token);
   });
 });
+
+it('automatically crosses empty filtered pages and stops when exhausted', () => {
+  const saved = mocks.page.results;
+  mocks.page.results = [];
+  mocks.page.status = 'CanLoadMore';
+  mocks.page.loadMore.mockClear();
+  const view = render(<CommerceCatalog channel="retail" />);
+  expect(mocks.page.loadMore).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('status')).toHaveTextContent('Gathering');
+  expect(screen.queryByRole('button', { name: 'Explore more' })).not.toBeInTheDocument();
+  mocks.page.status = 'LoadingMore';
+  view.rerender(<CommerceCatalog channel="retail" />);
+  expect(mocks.page.loadMore).toHaveBeenCalledTimes(1);
+  mocks.page.status = 'CanLoadMore';
+  view.rerender(<CommerceCatalog channel="retail" />);
+  expect(mocks.page.loadMore).toHaveBeenCalledTimes(2);
+  mocks.page.status = 'Exhausted';
+  view.rerender(<CommerceCatalog channel="retail" />);
+  expect(mocks.page.loadMore).toHaveBeenCalledTimes(2);
+  expect(view.container).toBeEmptyDOMElement();
+  mocks.page.results = saved;
+});

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useMutation, usePaginatedQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
@@ -21,6 +21,11 @@ export function CommerceCatalog({ channel }: { channel: Channel }) {
     { channel, customerView: true },
     { initialNumItems: 24 }
   );
+  // Convex pagination cursors track raw rows; readiness filtering can empty a page.
+  // Continue through those pages automatically until a visible item or exhaustion.
+  useEffect(() => {
+    if (!results.length && status === 'CanLoadMore') loadMore(24);
+  }, [results.length, status, loadMore]);
   const submit = useMutation(api.commerceProjects.submit);
   const [items, setItems] = useState<Selection[]>([]);
   const [token, setToken] = useState(() => window.crypto.randomUUID());
@@ -34,7 +39,7 @@ export function CommerceCatalog({ channel }: { channel: Channel }) {
         Explore the collection and request a personal quote. Estimates exclude delivery and tax; we
         confirm availability, timing, and your final price before payment.
       </p>
-      {status === 'LoadingFirstPage' && <p role="status">Gathering the collection…</p>}
+      {!results.length && status !== 'Exhausted' && <p role="status">Gathering the collection…</p>}
       <div className="commerce-product-grid">
         {results.map((p) => (
           <article key={p.id}>
@@ -90,7 +95,7 @@ export function CommerceCatalog({ channel }: { channel: Channel }) {
           </article>
         ))}
       </div>
-      {status === 'CanLoadMore' && <button onClick={() => loadMore(24)}>Explore more</button>}
+      {results.length > 0 && status === 'CanLoadMore' && <button onClick={() => loadMore(24)}>Explore more</button>}
       {message && <p role="status">{message}</p>}
       {!!items.length && (
         <form

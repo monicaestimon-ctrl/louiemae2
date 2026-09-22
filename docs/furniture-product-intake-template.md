@@ -47,7 +47,7 @@ Planning template; no application or database changes made. Copy this record for
 - Quote date / expiration:
 - Source document:
 - FX rate, date and USD-converted cost:
-- Customer estimate formula: upper = 6 × approved USD source cost; lower = upper − 100 USD.
+- Customer estimate policy: apply the configured route and channel pricing policy to approved USD source cost. For House starting estimates, use the approved cost bands and minimum-price floors in `louiemae-commerce-master-build-spec.md`; retail pricing remains separate. Record any estimate range explicitly.
 - Manual estimate override / reason / reviewer / date:
 - Rule: block automatic publication if lower bound is nonpositive, costs are missing, or formula gives an unsuitable market price.
 

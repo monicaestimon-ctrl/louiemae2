@@ -235,7 +235,7 @@ export const AdminPage: React.FC = () => {
    // Navigation State
    const [activeTab, setActiveTabState] = useState<AdminTab>(() => {
       const saved = localStorage.getItem('admin-active-tab');
-      const validTabs = ['dashboard', 'journal', 'pages', 'products', 'structure', 'newsletter', 'orders', 'cj-control-room', 'cj-risk-check', 'import', 'cj-settings'] as const;
+      const validTabs = ['dashboard', 'journal', 'pages', 'products', 'structure', 'newsletter', 'orders', 'cj-control-room', 'cj-risk-check', 'import', 'shared-products', 'cj-settings'] as const;
       return saved && (validTabs as readonly string[]).includes(saved) ? saved as typeof validTabs[number] : 'dashboard';
    });
    const [cjNavContext, setCjNavContext] = useState<{ orderId?: string; productId?: string }>({});

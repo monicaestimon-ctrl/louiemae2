@@ -102,7 +102,7 @@ export const retryOrderFulfillment = action({
             };
         }
 
-        const retryPayload = buildCjRetryOrderPayload(order);
+        const retryPayload = buildCjRetryOrderPayload({ ...order, orderId: order._id });
         if ("error" in retryPayload) {
             return { success: false, message: retryPayload.error, error: retryPayload.error };
         }

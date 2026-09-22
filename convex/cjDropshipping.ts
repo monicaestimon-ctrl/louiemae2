@@ -901,13 +901,14 @@ export const createCjOrder = internalAction({
             return { success: true, cjOrderId: reservation.order?.cjOrderId };
         }
         const existingOrder = reservation.order;
+        const savedResumeStep = existingOrder?.cjFulfillmentStep === 'failed' ? undefined : existingOrder?.cjFulfillmentStep;
         // Persisted commercial controls apply to every retry, including the legacy control room.
         const commercialMaxSupplierCents = existingOrder?.commercialMaxSupplierCents ?? args.commercialMaxSupplierCents;
         const commercialLogistics = existingOrder?.commercialLogistics ?? args.commercialLogistics;
-        if (existingOrder?.commercialHold) { await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, existingOrder.commercialHold, existingOrder.cjOrderId); return { success: false, cjOrderId: existingOrder.cjOrderId, error: existingOrder.commercialHold }; }
+        if (existingOrder?.commercialHold) { await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, existingOrder.commercialHold, existingOrder.cjOrderId, savedResumeStep); return { success: false, cjOrderId: existingOrder.cjOrderId, error: existingOrder.commercialHold }; }
         if (existingOrder?.stripeInvoiceId && (!existingOrder.commercialApprovedUntil || existingOrder.commercialApprovedUntil < Date.now())) {
             const error = 'Commercial supplier approval expired. Reconcile the supplier order before renewing release.';
-            await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, error, existingOrder.cjOrderId);
+            await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, error, existingOrder.cjOrderId, savedResumeStep);
             return { success: false, cjOrderId: existingOrder.cjOrderId, error };
         }
 
@@ -965,7 +966,7 @@ export const createCjOrder = internalAction({
         const freightQuote = await quoteCjFreightForProducts(accessToken, args.products, countryCode);
         if (commercialMaxSupplierCents !== undefined && (!freightQuote?.logisticsName || freightQuote.logisticsName !== commercialLogistics)) {
             const error = 'Commercial delivery service must match the reviewed supplier quote. Resolve shipping before ordering.';
-            await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, error, existingOrder?.cjOrderId);
+            await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, error, existingOrder?.cjOrderId, savedResumeStep);
             return { success: false, error };
         }
         const reconciliation = calculateOrderPricingReconciliation({
@@ -1004,7 +1005,7 @@ export const createCjOrder = internalAction({
         const existingStep = existingOrder?.cjFulfillmentStep;
         if (existingOrder?.stripeInvoiceId && !cjOrderId && existingStep === 'creating_order') {
             const error = 'The previous commercial supplier creation outcome is uncertain. Reconcile by order number in CJ before another creation attempt.';
-            await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, error);
+            await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, error, undefined, 'creating_order');
             return { success: false, error };
         }
         let resumeStep: CjFulfillmentStep | undefined =
@@ -1061,7 +1062,7 @@ export const createCjOrder = internalAction({
 
             if (commercialMaxSupplierCents !== undefined && (paymentAmount === undefined || Math.round(paymentAmount * 100) > commercialMaxSupplierCents)) {
                 const error = 'Commercial supplier total is missing or exceeds the approved spend ceiling. Supplier payment is on hold.';
-                await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, error, cjOrderId, 'order_created');
+                await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, error, cjOrderId, resumeStep || 'order_created');
                 return { success: false, cjOrderId, error };
             }
             if (!automationConfig.autoFulfillmentEnabled) {
@@ -1264,12 +1265,12 @@ export const createCjOrder = internalAction({
 
             if (commercialMaxSupplierCents !== undefined && (paymentAmount === undefined || paymentAmount <= 0 || Math.round(paymentAmount * 100) > commercialMaxSupplierCents)) {
                 const error = 'Supplier payment exceeds the approved commercial ceiling or has no verified amount. Reconcile before paying.';
-                await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, error, cjOrderId);
+                await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, error, cjOrderId, 'payment_order_generated');
                 return { success: false, cjOrderId, error };
             }
             if (existingOrder?.stripeInvoiceId) {
                 const latestOrder = await ctx.runQuery(internal.cjHelpers.getOrderByIdInternal, { orderId: args.orderId });
-                if (latestOrder?.commercialHold) { await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, latestOrder.commercialHold, cjOrderId); return { success: false, cjOrderId, error: latestOrder.commercialHold }; }
+                if (latestOrder?.commercialHold) { await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, latestOrder.commercialHold, cjOrderId, 'payment_order_generated'); return { success: false, cjOrderId, error: latestOrder.commercialHold }; }
             }
             const paymentResult = await payBalanceV2(accessToken, { shipmentOrderId, payId });
             if (!paymentResult.ok) {
