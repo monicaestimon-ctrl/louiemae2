@@ -1,6 +1,8 @@
 {
   "ignoreCommand": "node scripts/vercel-ignore-build.mjs",
   "rewrites": [
+    { "source": "/furniture", "destination": "/furniture/index.html" },
+    { "source": "/furniture/admin", "destination": "/furniture/index.html" },
     {
       "source": "/story",
       "destination": "/api/og?path=story"

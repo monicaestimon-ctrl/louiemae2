@@ -1,8 +1,10 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalMutation } from "./_generated/server";
+
+import { requireCjAdminIdentity } from "./cjAdminAccess";
 
 // Create a new order
-export const createOrder = mutation({
+export const createOrder = internalMutation({
     args: {
         stripeSessionId: v.string(),
         stripePaymentIntentId: v.optional(v.string()),
@@ -38,6 +40,8 @@ export const createOrder = mutation({
         })),
     },
     handler: async (ctx, args) => {
+        const existing = await ctx.db.query("orders").withIndex("by_session", q => q.eq("stripeSessionId", args.stripeSessionId)).unique();
+        if (existing) return existing._id;
         const now = new Date().toISOString();
 
         // Check if any items have CJ product mapping
@@ -61,6 +65,7 @@ export const createOrder = mutation({
 export const getBySessionId = query({
     args: { sessionId: v.string() },
     handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
         return await ctx.db
             .query("orders")
             .withIndex("by_session", (q) => q.eq("stripeSessionId", args.sessionId))
@@ -72,6 +77,7 @@ export const getBySessionId = query({
 export const getByEmail = query({
     args: { email: v.string() },
     handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
         return await ctx.db
             .query("orders")
             .withIndex("by_email", (q) => q.eq("customerEmail", args.email))
@@ -83,6 +89,7 @@ export const getByEmail = query({
 // Get all orders (for admin)
 export const getAll = query({
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         return await ctx.db.query("orders").order("desc").collect();
     },
 });
@@ -101,6 +108,7 @@ export const updateStatus = mutation({
         ),
     },
     handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
         await ctx.db.patch(args.orderId, {
             status: args.status,
             updatedAt: new Date().toISOString(),
@@ -112,6 +120,7 @@ export const updateStatus = mutation({
 export const getById = query({
     args: { orderId: v.id("orders") },
     handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
         return await ctx.db.get(args.orderId);
     },
 });
@@ -120,6 +129,7 @@ export const getById = query({
 export const resetCjStatus = mutation({
     args: { orderId: v.id("orders") },
     handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
         await ctx.db.patch(args.orderId, {
             cjStatus: "pending",
             cjError: undefined,
@@ -137,6 +147,7 @@ export const resetCjStatus = mutation({
 // Get orders with failed CJ status
 export const getFailedCjOrders = query({
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         return await ctx.db
             .query("orders")
             .filter((q) => q.eq(q.field("cjStatus"), "failed"))
@@ -148,6 +159,7 @@ export const getFailedCjOrders = query({
 // Get orders pending CJ submission
 export const getPendingCjOrders = query({
     handler: async (ctx) => {
+        await requireCjAdminIdentity(ctx);
         return await ctx.db
             .query("orders")
             .filter((q) => q.eq(q.field("cjStatus"), "pending"))

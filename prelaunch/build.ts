@@ -13,7 +13,8 @@ export function prelaunchPlugin(): Plugin {
     },
     transformIndexHtml: {
       order: 'pre',
-      handler(html) {
+      handler(html, ctx) {
+        if (ctx.filename.replace(/\\/g, '/').endsWith('/furniture/index.html')) return html;
         return enabled ? readFileSync(new URL('./index.html', import.meta.url), 'utf8') : html;
       },
     },

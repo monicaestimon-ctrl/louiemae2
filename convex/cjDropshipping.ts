@@ -852,6 +852,8 @@ const markCjFulfillmentFailed = async (
  */
 export const createCjOrder = internalAction({
     args: {
+        commercialMaxSupplierCents: v.optional(v.number()),
+        commercialLogistics: v.optional(v.string()),
         orderId: v.id("orders"),
         orderNumber: v.string(),
         customerName: v.string(),
@@ -899,6 +901,16 @@ export const createCjOrder = internalAction({
             return { success: true, cjOrderId: reservation.order?.cjOrderId };
         }
         const existingOrder = reservation.order;
+        const savedResumeStep = existingOrder?.cjFulfillmentStep === 'failed' ? undefined : existingOrder?.cjFulfillmentStep;
+        // Persisted commercial controls apply to every retry, including the legacy control room.
+        const commercialMaxSupplierCents = existingOrder?.commercialMaxSupplierCents ?? args.commercialMaxSupplierCents;
+        const commercialLogistics = existingOrder?.commercialLogistics ?? args.commercialLogistics;
+        if (existingOrder?.commercialHold) { await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, existingOrder.commercialHold, existingOrder.cjOrderId, savedResumeStep); return { success: false, cjOrderId: existingOrder.cjOrderId, error: existingOrder.commercialHold }; }
+        if (existingOrder?.stripeInvoiceId && (!existingOrder.commercialApprovedUntil || existingOrder.commercialApprovedUntil < Date.now())) {
+            const error = 'Commercial supplier approval expired. Reconcile the supplier order before renewing release.';
+            await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, error, existingOrder.cjOrderId, savedResumeStep);
+            return { success: false, cjOrderId: existingOrder.cjOrderId, error };
+        }
 
         // Get access token
         const accessToken = await ctx.runAction(internal.cjDropshipping.getAccessToken, {});
@@ -952,6 +964,11 @@ export const createCjOrder = internalAction({
         }
 
         const freightQuote = await quoteCjFreightForProducts(accessToken, args.products, countryCode);
+        if (commercialMaxSupplierCents !== undefined && (!freightQuote?.logisticsName || freightQuote.logisticsName !== commercialLogistics)) {
+            const error = 'Commercial delivery service must match the reviewed supplier quote. Resolve shipping before ordering.';
+            await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, error, existingOrder?.cjOrderId, savedResumeStep);
+            return { success: false, error };
+        }
         const reconciliation = calculateOrderPricingReconciliation({
             items: args.products,
             quotedShippingCost: freightQuote?.shippingCost,
@@ -986,6 +1003,11 @@ export const createCjOrder = internalAction({
         let payId = existingOrder?.cjPayId;
         let paymentAmount = existingOrder?.cjPaymentAmount;
         const existingStep = existingOrder?.cjFulfillmentStep;
+        if (existingOrder?.stripeInvoiceId && !cjOrderId && existingStep === 'creating_order') {
+            const error = 'The previous commercial supplier creation outcome is uncertain. Reconcile by order number in CJ before another creation attempt.';
+            await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, error, undefined, 'creating_order');
+            return { success: false, error };
+        }
         let resumeStep: CjFulfillmentStep | undefined =
             hasReachedCjStep(existingStep, "not_started") ? existingStep as CjFulfillmentStep : undefined;
 
@@ -1038,6 +1060,11 @@ export const createCjOrder = internalAction({
                 console.log(`CJ Order created: ${cjOrderId}`);
             }
 
+            if (commercialMaxSupplierCents !== undefined && (paymentAmount === undefined || Math.round(paymentAmount * 100) > commercialMaxSupplierCents)) {
+                const error = 'Commercial supplier total is missing or exceeds the approved spend ceiling. Supplier payment is on hold.';
+                await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, error, cjOrderId, resumeStep || 'order_created');
+                return { success: false, cjOrderId, error };
+            }
             if (!automationConfig.autoFulfillmentEnabled) {
                 return { success: true, cjOrderId };
             }
@@ -1236,6 +1263,15 @@ export const createCjOrder = internalAction({
                 cjAutoPaymentAttemptedAt: new Date().toISOString(),
             });
 
+            if (commercialMaxSupplierCents !== undefined && (paymentAmount === undefined || paymentAmount <= 0 || Math.round(paymentAmount * 100) > commercialMaxSupplierCents)) {
+                const error = 'Supplier payment exceeds the approved commercial ceiling or has no verified amount. Reconcile before paying.';
+                await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, error, cjOrderId, 'payment_order_generated');
+                return { success: false, cjOrderId, error };
+            }
+            if (existingOrder?.stripeInvoiceId) {
+                const latestOrder = await ctx.runQuery(internal.cjHelpers.getOrderByIdInternal, { orderId: args.orderId });
+                if (latestOrder?.commercialHold) { await markCjFulfillmentFailed(ctx, args.orderId, automationConfig.mode, latestOrder.commercialHold, cjOrderId, 'payment_order_generated'); return { success: false, cjOrderId, error: latestOrder.commercialHold }; }
+            }
             const paymentResult = await payBalanceV2(accessToken, { shipmentOrderId, payId });
             if (!paymentResult.ok) {
                 const errorMsg = cjResultErrorMessage(paymentResult, "CJ balance payment failed");
@@ -1549,7 +1585,7 @@ export const syncAllTracking = internalAction({
                     const emailResult = await ctx.runAction(internal.emails.sendShippingNotification, {
                         customerEmail: order.customerEmail,
                         customerName: order.customerName || undefined,
-                        orderId: order.stripeSessionId.slice(-12).toUpperCase(),
+                        orderId: (order.stripeSessionId || order.stripeInvoiceId || String(order._id)).slice(-12).toUpperCase(),
                         trackingNumber: result.trackingNumber,
                         trackingUrl: result.trackingUrl || "",
                         carrier: result.carrier || "Standard Shipping",

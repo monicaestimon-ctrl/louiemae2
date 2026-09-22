@@ -16,7 +16,9 @@ type RetryOrderItem = {
 };
 
 export type CjRetryOrderSource = {
-  stripeSessionId: string;
+  orderId: string;
+  stripeSessionId?: string;
+  stripeInvoiceId?: string;
   customerName?: string;
   customerEmail: string;
   customerPhone?: string;
@@ -71,7 +73,9 @@ export const buildCjRetryOrderPayload = (order: CjRetryOrderSource): CjRetryOrde
   return {
     ok: true,
     payload: {
-      orderNumber: order.stripeSessionId.slice(-12).toUpperCase(),
+      orderNumber: order.stripeSessionId || order.stripeInvoiceId
+        ? (order.stripeSessionId || order.stripeInvoiceId!).slice(-12).toUpperCase()
+        : order.orderId,
       customerName: order.customerName || "Customer",
       customerPhone: order.customerPhone || "",
       customerEmail: order.customerEmail,

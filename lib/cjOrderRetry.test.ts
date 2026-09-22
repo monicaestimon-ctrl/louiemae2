@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildCjRetryOrderPayload, type CjRetryOrderSource } from "./cjOrderRetry";
 
 const baseOrder: CjRetryOrderSource = {
+  orderId: "order-unique-1",
   stripeSessionId: "cs_test_123456789abc",
   customerName: "A Customer",
   customerEmail: "customer@example.com",
@@ -64,4 +65,15 @@ describe("CJ order retry payload", () => {
       error: "Order has no CJ-mapped items to fulfill",
     });
   });
+});
+
+it('uses distinct full database IDs when Stripe IDs are absent', () => {
+  for (const orderId of ['first-common-suffix', 'second-common-suffix']) {
+    expect(buildCjRetryOrderPayload({ ...baseOrder, stripeSessionId: undefined, orderId }))
+      .toMatchObject({ ok: true, payload: { orderNumber: orderId } });
+  }
+});
+it('uses the invoice identifier before the database ID', () => {
+  expect(buildCjRetryOrderPayload({ ...baseOrder, stripeSessionId: undefined, stripeInvoiceId: 'in_123456789abc' }))
+    .toMatchObject({ ok: true, payload: { orderNumber: '123456789ABC' } });
 });

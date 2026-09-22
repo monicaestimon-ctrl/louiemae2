@@ -463,9 +463,21 @@ http.route({
             return new Response(`Webhook Error: ${err.message}`, { status: 400 });
         }
 
+        // Commercial invoice payments must use a verified invoice snapshot, never Checkout metadata.
+        if (event.type === 'charge.refunded' || event.type === 'charge.dispute.created') {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            const payment = (event.data.object as Stripe.Charge | Stripe.Dispute).payment_intent;
+            const paymentIntentId = typeof payment === 'string' ? payment : payment?.id;
+            if (paymentIntentId) await ctx.runAction(internal.commerceStripe.reconcileReversal, { paymentIntentId });
+        }
+        if (event.type === 'invoice.paid' && (event.data.object as Stripe.Invoice).metadata?.commerceProjectId) {
+            if (!webhookSecret || !signature) return new Response('Signed invoice webhook required', { status: 400 });
+            await ctx.runAction(internal.commerceStripe.reconcilePayment, { invoiceId: event.data.object.id });
+        }
         // Handle the event
         if (event.type === "checkout.session.completed") {
             const session = event.data.object as Stripe.Checkout.Session;
+            if (session.payment_status !== "paid") return new Response("Payment pending", { status: 200 });
 
             // Parse items from metadata
             let itemsData: any[] = [];
@@ -491,7 +503,7 @@ http.route({
             const customerPhone = session.customer_details?.phone || shippingDetails?.phone || undefined;
 
             // Create order in database
-            const orderId = await ctx.runMutation(api.orders.createOrder, {
+            const orderId = await ctx.runMutation(internal.orders.createOrder, {
                 stripeSessionId: session.id,
                 stripePaymentIntentId: session.payment_intent as string || undefined,
                 customerEmail: session.customer_details?.email || "",
@@ -929,7 +941,7 @@ async function handleCjOrderSplitWebhook(ctx: any, params: any) {
             void ctx.runAction(internal.emails.sendOrderSplitNotification, {
                 customerEmail: order.customerEmail,
                 customerName: order.customerName || undefined,
-                orderId: order.stripeSessionId.slice(-12).toUpperCase(),
+                orderId: (order.stripeSessionId || order.stripeInvoiceId || String(order._id)).slice(-12).toUpperCase(),
                 splitOrderIds: validSplitOrders.map(s => s.cjOrderId),
             }).catch((emailErr: any) => {
                 console.warn(`CJ ORDERSPLIT: Email notification failed (non-fatal): ${emailErr.message}`);

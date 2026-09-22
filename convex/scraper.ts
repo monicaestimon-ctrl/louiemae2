@@ -79,6 +79,7 @@ type ValidatedPublicUrl = {
 };
 
 type ScraperHttpResponse = {
+    bytes: Buffer;
     status: number;
     statusText: string;
     headers: IncomingHttpHeaders;
@@ -149,13 +150,17 @@ const requestPinnedPublicUrl = (
     const client = parsedUrl.protocol === 'https:' ? https : http;
     const request = client.request(requestOptions, response => {
         const chunks: Buffer[] = [];
+        let received = 0;
         response.on('data', chunk => {
+            received += Buffer.byteLength(chunk);
+            if (received > 8 * 1024 * 1024) { request.destroy(new Error('Supplier response exceeds 8 MB.')); return; }
             chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
         });
         response.on('end', () => {
             const body = Buffer.concat(chunks).toString('utf8');
             const status = response.statusCode ?? 0;
             resolve({
+                bytes: Buffer.concat(chunks),
                 status,
                 statusText: response.statusMessage || '',
                 headers: response.headers,
@@ -168,6 +173,37 @@ const requestPinnedPublicUrl = (
     request.on('error', reject);
     request.end();
 });
+
+/** Bounded, DNS-pinned fetch shared by supplier-specific adapters. */
+export async function readSupplierText(url: string): Promise<string> {
+    let current = new URL(url);
+    for (let hop = 0; hop < 6; hop++) {
+        const validated = await assertSafePublicHttpUrl(current);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 20000);
+        try {
+            const response = await requestPinnedPublicUrl(validated, controller.signal);
+            if (response.status >= 300 && response.status < 400) {
+                const location = getHeader(response.headers, 'location');
+                if (!location) throw new Error('Supplier redirect has no destination.');
+                current = new URL(location, current); continue;
+            }
+            if (!response.ok) throw new Error(`Supplier returned HTTP ${response.status}.`);
+            return await response.text();
+        } finally { clearTimeout(timer); }
+    }
+    throw new Error('Too many supplier redirects.');
+}
+
+export async function readSupplierImage(url: string): Promise<{ data: string; mimeType: string }> {
+    const target = new URL(url);
+    if (target.protocol !== 'https:') throw new Error('Reference images require HTTPS.');
+    const validated = await assertSafePublicHttpUrl(target);
+    const response = await requestPinnedPublicUrl(validated, globalThis.AbortSignal.timeout(20000));
+    const mimeType = (getHeader(response.headers, 'content-type') || '').split(';')[0];
+    if (!response.ok || !['image/jpeg', 'image/png', 'image/webp'].includes(mimeType)) throw new Error('Reference must be a direct JPEG, PNG or WebP image.');
+    return { data: response.bytes.toString('base64'), mimeType };
+}
 
 const requestPinnedRedirectHeaders = (
     validatedUrl: ValidatedPublicUrl,
