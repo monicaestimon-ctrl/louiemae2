@@ -107,6 +107,7 @@ export default defineSchema({
         cjVariantScope: v.optional(v.array(v.string())), // Assigned variants after splitting a mixed listing
         cjSourcingError: v.optional(v.string()), // Rejection reason
         sourceUrl: v.optional(v.string()),       // Original AliExpress/source URL
+        sourceKey: v.optional(v.string()),       // Preserve canonical supplier identities already stored in production
         batchImportItemId: v.optional(v.id("batchImportItems")), // Idempotency key for batch imports
         cjApprovedAt: v.optional(v.string()),    // When CJ approved the product
         cjSubmittedAt: v.optional(v.string()),   // When product was submitted to CJ
@@ -240,6 +241,7 @@ export default defineSchema({
         productEditedBy: v.optional(v.string()),
         searchText: v.optional(v.string()),
     }).index("by_name_key", ["nameKey"])
+        .index("by_source_key", ["sourceKey"])
         .index("by_cj_sourcing_status", ["cjSourcingStatus"])
         .index('by_cj_pricing_due', ['cjSourcingStatus', 'cjPricingLastAttemptAt'])
         .index('by_cj_pricing_alert', ['cjPricingAlert.at'])
