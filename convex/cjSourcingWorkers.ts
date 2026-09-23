@@ -107,7 +107,8 @@ export const processSourcingJob = internalAction({
             });
             if (!markedSending) return { ok: false, outcome: "lease_lost_before_send" };
 
-            const result = await createSourcing(token, context.attempt.payloadSnapshot, {
+            const { price: _retailPrice, ...purchaseRequest } = context.attempt.payloadSnapshot;
+            const result = await createSourcing(token, purchaseRequest, {
                 timeoutMs: CJ_REQUEST_TIMEOUT_MS,
             });
             const sourcingId = result.ok ? normalizedSourcingId(result.data) : null;

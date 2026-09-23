@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { CJPricingReview } from './CJPricingReview';
 import { useAction, useQuery, useMutation } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
@@ -1032,6 +1033,7 @@ export const CJSettings: React.FC<{
                 </div>
             </div>
 
+            <CJPricingReview />
             {/* Size Variant Mapping Section */}
             <div className="mt-16 relative z-10">
                 <FadeIn delay={550}>
@@ -1056,14 +1058,14 @@ export const CJSettings: React.FC<{
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_5px_#fbbf24]"></span>
                             Automated Workflow
                         </strong>
-                        <p className="font-light">Imported source products are automatically queued for CJ sourcing when a source URL exists. They stay hidden from shoppers until you publish them or add them to a launch; CJ approval means the product is fulfillment-ready.</p>
+                        <p className="font-light">Imported source products are queued for CJ sourcing. Approval, variant mapping, and current pricing are checked separately before publication.</p>
                     </div>
                     <div className="flex-1 relative z-10">
                         <strong className="flex items-center gap-2 text-amber-400 uppercase tracking-widest mb-3 font-medium drop-shadow-sm text-[10px] md:text-xs">
                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_5px_#fbbf24]"></span>
                             CJ Sourcing ID
                         </strong>
-                        <p className="font-light">If CJ provides a new SKU or Variant ID, the system will link it. Pricing is not automatically synced - please review the imported cost in CJ before setting your retail price.</p>
+                        <p className="font-light">Open CJ prices &amp; margins to review catalog links, current quotes, and cost-change alerts. Refresh pricing before publishing; missing costs or shipping block publication.</p>
                     </div>
                     <div className="flex-1 relative z-10">
                         <strong className="flex items-center gap-2 text-amber-400 uppercase tracking-widest mb-3 font-medium drop-shadow-sm text-[10px] md:text-xs">

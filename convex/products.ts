@@ -1,5 +1,6 @@
 import { query, mutation, internalQuery, type MutationCtx } from "./_generated/server";
 import { ConvexError, v } from "convex/values";
+import { assertCjPricingReady } from '../lib/cjPricingReview';
 import { evaluateProductCjReadiness, isCjProductStorefrontReady } from "../lib/cjFulfillmentReadiness";
 import { requireCjAdminIdentity } from "./cjAdminAccess";
 import { internal } from "./_generated/api";
@@ -318,6 +319,7 @@ async function createProductDocument(ctx: MutationCtx, args: any, actorEmail?: s
         audience: args.audience,
         productTypeKey: args.canonicalProductType,
     });
+    if ((args.storefrontStatus ?? 'published') === 'published') assertCjPricingReady(args);
     const productId = await ctx.db.insert("products", {
         ...productFields,
         ...categoryAssignment,
@@ -601,6 +603,9 @@ export const update = mutation({
         );
         const existing = await ctx.db.get(id);
         if (!existing) throw new ConvexError({ code: "PRODUCT_NOT_FOUND", message: "Product not found." });
+        if (filteredUpdates.storefrontStatus === 'published') {
+            assertCjPricingReady({ ...existing, ...filteredUpdates, cjPricingReview: existing.cjPricingReview, cjPricingError: existing.cjPricingError } as Doc<'products'>);
+        }
         if (existing.cjVariantScope && (
             updates.cjVariants?.some(variant => !existing.cjVariantScope!.includes(variant.vid)) ||
             updates.variants?.some(variant => variant.cjVariantId && !existing.cjVariantScope!.includes(variant.cjVariantId)) ||
@@ -780,6 +785,7 @@ export const launchNextProducts = mutation({
             .collect();
 
         for (const product of products) {
+            assertCjPricingReady(product);
             await ctx.db.patch(product._id, {
                 storefrontStatus: "published",
                 isNew: true,

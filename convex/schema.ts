@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { cjPricingReviewValidator } from './cjPricingValidators';
 import { authTables } from "@convex-dev/auth/server";
 import { furnitureTables } from './furnitureTables';
 import { commerceTables } from './commerceTables';
@@ -169,6 +170,13 @@ export default defineSchema({
         estimatedCjShippingCost: v.optional(v.number()),
         estimatedCjServiceFee: v.optional(v.number()),
         estimatedLandedCost: v.optional(v.number()),
+        cjPricingReview: v.optional(cjPricingReviewValidator),
+        cjPricingBaseline: v.optional(cjPricingReviewValidator),
+        cjPricingLastAttemptAt: v.optional(v.number()),
+        cjPricingLeaseUntil: v.optional(v.number()),
+        cjPricingLeaseToken: v.optional(v.string()),
+        cjPricingError: v.optional(v.string()),
+        cjPricingAlert: v.optional(v.object({ at: v.number(), message: v.string() })),
         confirmedCjProductCost: v.optional(v.number()),
         confirmedCjShippingCost: v.optional(v.number()),
         confirmedCjServiceFee: v.optional(v.number()),
@@ -233,6 +241,8 @@ export default defineSchema({
         searchText: v.optional(v.string()),
     }).index("by_name_key", ["nameKey"])
         .index("by_cj_sourcing_status", ["cjSourcingStatus"])
+        .index('by_cj_pricing_due', ['cjSourcingStatus', 'cjPricingLastAttemptAt'])
+        .index('by_cj_pricing_alert', ['cjPricingAlert.at'])
         .index("by_cj_sourcing_status_job", ["cjSourcingStatus", "cjSourcingJobId"])
         .index("by_storefront_status", ["storefrontStatus"])
         .index("by_cj_sourcing_id", ["cjSourcingId"])
