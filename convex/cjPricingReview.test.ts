@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('./auth', () => ({ auth: { getUserId: vi.fn() } }));
-import { save, dispatchMonitor, claim, failed } from './cjPricingReview';
+import { save, dispatchMonitor, claim, failed, refreshWorker } from './cjPricingReview';
 import { pricingFingerprint, type CjPricingReview } from '../lib/cjPricingReview';
 const handler = (save as unknown as { _handler: (ctx: any, args: any) => Promise<any> })._handler;
 const review: CjPricingReview = {
@@ -56,6 +56,35 @@ const product = {
   ],
 };
 beforeEach(() => vi.clearAllMocks());
+it('quotes freight using the documented inventory success envelope', async () => {
+  const p = { ...product, variants: [product.variants[0]] };
+  const fetchMock = vi.spyOn(globalThis, 'fetch');
+  const responses = [
+    { result: true, data: { variants: [{ vid: 'v1', variantSku: 's1', variantSellPrice: 10 }] } },
+    { success: true, code: 200, data: { variantInventories: [{ vid: 'v1', inventory: [{ countryCode: 'CN' }] }] } },
+    { result: true, data: [{ logisticName: 'CJPacket', logisticPrice: 5 }] },
+  ];
+  for (const json of responses) fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(json)));
+  const ctx = {
+    runAction: vi.fn().mockResolvedValue('test-token'),
+    runMutation: vi.fn()
+      .mockResolvedValueOnce(p)
+      .mockResolvedValueOnce({ admitted: true, reservedAt: 0 })
+      .mockResolvedValueOnce({ admitted: true, reservedAt: 0 })
+      .mockResolvedValueOnce({ admitted: true, reservedAt: 0 })
+      .mockResolvedValueOnce({ complete: true, repriced: false }),
+  };
+  try {
+    const worker = (refreshWorker as unknown as { _handler: (ctx: any, args: any) => Promise<any> })._handler;
+    expect(await worker(ctx, { productId: 'p' })).toEqual({ complete: true, repriced: false });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(ctx.runMutation.mock.calls[4][1].review.quotes[0]).toMatchObject({
+      vid: 'v1', itemCost: 10, shippingCost: 5, origin: 'CN', logisticsName: 'CJPacket',
+    });
+  } finally {
+    fetchMock.mockRestore();
+  }
+});
 describe('saving CJ quotes', () => {
   it('automatically prices every unpublished variant from its own quote', async () => {
     const ctx = { db: { get: vi.fn().mockResolvedValue(product), patch: vi.fn() } };
