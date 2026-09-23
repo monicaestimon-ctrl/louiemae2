@@ -100,7 +100,7 @@ const ensureJobRecord = async (
         productImage: product.images?.[0],
         productUrl: product.sourceUrl ?? "",
         remark: product.description,
-        price: product.price,
+        price: undefined, // Retail price is not a supplier purchase target.
         thirdProductId: `lm:${productId}:g${generation}`,
     });
     const sourceSnapshot = {
@@ -108,7 +108,7 @@ const ensureJobRecord = async (
         productImage: product.images?.[0]?.trim() || undefined,
         productUrl: product.sourceUrl?.trim() ?? "",
         remark: product.description?.trim().slice(0, 200) || undefined,
-        price: Number.isFinite(product.price) ? product.price : undefined,
+        price: undefined,
     };
     const state: JobState = getLegacyCjInitialJobState({
         status: product.cjSourcingStatus,
@@ -227,7 +227,7 @@ export const requestAdminReconciliation = internalMutation({
             productImage: product.images?.[0],
             productUrl: product.sourceUrl ?? "",
             remark: product.description,
-            price: product.price,
+            price: undefined,
             thirdProductId: `lm:${product._id}:g${nextGeneration}`,
         });
         if ("code" in payloadResult) {
@@ -255,7 +255,7 @@ export const requestAdminReconciliation = internalMutation({
                 productImage: payloadResult.payload.productImage,
                 productUrl: payloadResult.payload.productUrl,
                 remark: payloadResult.payload.remark,
-                price: product.price,
+                price: undefined,
             },
             sourceSnapshotHash: await hashCjSourcingPayload(payloadResult.payload),
             nextAttemptAt: now,
@@ -472,6 +472,7 @@ const createPreparedAttempt = async (
     const thirdProductId = `lm:${job.productId}:g${job.generation}`;
     const payloadResult = buildCjSourcingPayload({
         ...job.sourceSnapshot,
+        price: undefined,
         thirdProductId,
     });
     if ("code" in payloadResult) return null;
@@ -726,7 +727,10 @@ export const markAttemptSending = internalMutation({
         }
         const attempt = await ctx.db.get(job.activeAttemptId);
         if (!attempt || attempt.state !== "prepared") return false;
+        const { price: _retailPrice, ...purchaseRequest } = attempt.payloadSnapshot;
         await ctx.db.patch(attempt._id, {
+            payloadSnapshot: purchaseRequest,
+            payloadHash: await hashCjSourcingPayload(purchaseRequest),
             state: "sending",
             requestStartedAt: Date.now(),
             updatedAt: Date.now(),

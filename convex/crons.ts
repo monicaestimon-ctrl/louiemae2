@@ -49,4 +49,6 @@ crons.interval(
     { limit: 25, source: "cron" }
 );
 
+// Check each approved product about daily, in bounded batches with shared CJ throttling.
+crons.interval('monitor-cj-pricing', { minutes: 15 }, internal.cjPricingReview.dispatchMonitor, {});
 export default crons;

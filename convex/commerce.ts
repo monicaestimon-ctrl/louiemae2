@@ -6,6 +6,7 @@ import { draft, channel, provider } from './commerceTables';
 import { blankCommerceDraft, listingSnapshot, validateDraft } from '../lib/commerce';
 import { evaluateProductCjReadiness } from '../lib/cjFulfillmentReadiness';
 import { listingReady } from './commerceReadiness';
+import { assertCjPricingReady } from '../lib/cjPricingReview';
 
 export const library = query({
   args: { paginationOpts: paginationOptsValidator },
@@ -177,6 +178,7 @@ export const publish = mutation({
         throw new Error('CJ sourcing and mapping must be fulfillment-ready before publication.');
       // CJ keeps its existing retail checkout. The shared record extends it for House.
       if (args.channels.includes('retail')) {
+        assertCjPricingReady(linked);
         if (
           p.draft.name !== linked.name ||
           p.draft.description !== linked.description ||
