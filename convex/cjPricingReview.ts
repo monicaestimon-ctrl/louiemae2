@@ -169,7 +169,8 @@ export const refreshWorker = internalAction({
           signal: globalThis.AbortSignal.timeout(10000),
         });
         const json = await response.json();
-        if (!response.ok || !json.result) throw new Error(json.message || 'CJ quote unavailable.');
+        const succeeded = json.result === true || (json.result === undefined && json.success === true);
+        if (!response.ok || !succeeded) throw new Error(json.message || 'CJ quote unavailable.');
         return json.data;
       };
       const catalog = await request(`product/query?pid=${encodeURIComponent(product.cjProductId)}`);
