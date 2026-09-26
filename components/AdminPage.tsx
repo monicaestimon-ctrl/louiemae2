@@ -23,6 +23,7 @@ import { productStorefrontStatusLabel } from '../lib/productVisibility';
 import { getEffectiveSubcategoryIds, productMatchesCategory } from '../lib/productCategories';
 import { getUserFacingErrorMessage } from '../lib/errorMessages';
 import { getCjProductStatus, type CjProductConnectionState } from '../lib/cjProductStatus';
+import { cjListingUrl } from '../lib/cjPricingReview';
 
 type SmartDescriptionActionResult = {
    ok: boolean;
@@ -1594,6 +1595,9 @@ export const AdminPage: React.FC = () => {
                                     : 'text-cream/35';
                            const isRefreshingInventory = refreshingInventoryProductId === product.id;
                            const cjStatus = productCjStatuses.get(product.id) ?? getCjProductStatus(product);
+                           const cjProductLink = cjStatus.isApproved && product.cjProductId?.trim()
+                              ? cjListingUrl(product.cjProductId.trim())
+                              : null;
 
                            return (
                               <div key={product.id} className="bg-white/5 backdrop-blur-xl p-4 md:p-5 border border-white/10 rounded-2xl flex flex-col md:flex-row gap-4 md:gap-6 md:items-center group hover:bg-white/10 hover:-translate-y-1 hover:shadow-[0_15px_30px_rgba(0,0,0,0.4)] transition-all overflow-hidden relative">
@@ -1640,18 +1644,26 @@ export const AdminPage: React.FC = () => {
 
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 text-[11px] text-cream/55">
                                        <div className="min-w-0 rounded-lg border border-white/10 bg-black/20 px-3 py-2">
-                                          <span className="block text-[9px] uppercase tracking-widest text-cream/30">Source URL</span>
+                                          <span className="block text-[9px] uppercase tracking-widest text-cream/30">Original supplier / 1688 URL</span>
                                           {product.sourceUrl ? (
-                                             <a href={product.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1.5 text-bronze hover:text-amber-400" title={product.sourceUrl}>
+                                             <a href={product.sourceUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open original supplier listing for ${product.name}`} className="inline-flex max-w-full items-start gap-1.5 text-bronze hover:text-amber-400" title={product.sourceUrl}>
                                                 <ExternalLink className="w-3 h-3 flex-shrink-0" />
-                                                <span className="truncate font-mono">{product.sourceUrl}</span>
+                                                <span className="min-w-0 break-all font-mono">{product.sourceUrl}</span>
                                              </a>
                                           ) : (
                                              <button type="button" onClick={() => handleEditProduct(product)} className="text-cream/35 hover:text-bronze">Add source link</button>
                                           )}
                                        </div>
-                                       <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
-                                          <span className="block text-[9px] uppercase tracking-widest text-cream/30">CJ sourcing / link</span>
+                                       <div className="min-w-0 rounded-lg border border-white/10 bg-black/20 px-3 py-2">
+                                          <span className="block text-[9px] uppercase tracking-widest text-cream/30">Approved CJ product URL</span>
+                                          {cjProductLink ? (
+                                             <a href={cjProductLink} target="_blank" rel="noopener noreferrer" aria-label={`Open approved CJ listing for ${product.name}`} className="inline-flex max-w-full items-start gap-1.5 text-bronze hover:text-amber-400" title={cjProductLink}>
+                                                <ExternalLink className="mt-0.5 w-3 h-3 flex-shrink-0" />
+                                                <span className="min-w-0 break-all font-mono">{cjProductLink}</span>
+                                             </a>
+                                          ) : (
+                                             <span className="block text-cream/35">{cjStatus.isApproved ? 'Waiting for CJ product link' : 'Available after CJ approval'}</span>
+                                          )}
                                           <span className={`block ${CJ_STATUS_TEXT_CLASSES[cjStatus.state]}`}>
                                              {cjStatus.detail}
                                           </span>
