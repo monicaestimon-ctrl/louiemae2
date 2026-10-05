@@ -1,7 +1,8 @@
 # Admin inventory rollout
 
 Hold this frontend before merge until the current-version production catalog is
-backfilled, verified through both passes and explicitly enabled. Rebase with the
+backfilled, verified through both passes and explicitly enabled, and health
+version 3 is rebuilt, verified and enabled for exact counters. Rebase with the
 other held frontend PRs and rerun combined CI before deployment.
 
 The inventory tab requests private catalog pages, starting at twenty-five rows.
@@ -18,11 +19,15 @@ Preview explicitly applies to loaded items and retains the full-record fetching,
 admin-edit protection and revision checks in useAdminDescriptionBatch. Load more
 matches before running it on a larger set. Publishing, stock checks and deletes
 retain existing mutations. The global Next Launch action remains available as
-Launch queued products, without an inaccurate partial count.
+Launch queued products, with its exact count when verified health is available.
 
 The inventory tab stops requesting the legacy private context list, including
-while editing. Dashboard and content-editor legacy subscriptions remain separate
-work; this change must not be described as eliminating every full list read.
+while editing. Dashboard totals and global CJ filter counts use verified health
+counters, distinguishing loading/unavailable from zero. A verified empty dashboard
+may request the legacy empty list solely to preserve the existing initial-product
+bootstrap; SiteProvider still checks the authoritative list is empty before seeding.
+Content-editor legacy subscriptions remain separate work; this change must not
+be described as eliminating every full list read.
 
 Validation before production cutover: browse/search past product 500, exercise
 every connection state and configured category descendant, compare complete

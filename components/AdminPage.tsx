@@ -1,6 +1,6 @@
 
-import React, { useMemo, useState, useRef } from 'react';
-import { useAction, useMutation } from 'convex/react';
+import React, { useState, useRef } from 'react';
+import { useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
 import { useSite } from '../contexts/BlogContext';
@@ -22,7 +22,7 @@ import { SafeImage } from './SafeImage';
 import { productStorefrontStatusLabel } from '../lib/productVisibility';
 import { getEffectiveSubcategoryIds } from '../lib/productCategories';
 import { getUserFacingErrorMessage } from '../lib/errorMessages';
-import { getCjProductStatus, type CjProductConnectionState } from '../lib/cjProductStatus';
+import { type CjProductConnectionState } from '../lib/cjProductStatus';
 import { cjListingUrl } from '../lib/cjPricingReview';
 import { useAdminProductDetail } from './useAdminProductDetail';
 import { useAdminDescriptionBatch } from './useAdminDescriptionBatch';
@@ -264,7 +264,12 @@ export const AdminPage: React.FC = () => {
 
    // Product Editor State
    const [isEditingProduct, setIsEditingProduct] = useState(false);
-   useAdminCatalog(isAuthenticated && !isEditingProduct && ['dashboard', 'pages', 'structure', 'journal'].includes(activeTab));
+   const inventoryHealth = useQuery(api.productHealth.status,
+      isAuthenticated && !isEditingProduct && ['dashboard', 'products'].includes(activeTab) ? {} : 'skip');
+   // Preserve the existing empty-catalog bootstrap without subscribing to a
+   // nonempty full catalog just to display dashboard counts.
+   const needsEmptyCatalogBootstrap = activeTab === 'dashboard' && inventoryHealth?.ready === true && inventoryHealth.totalProducts === 0;
+   useAdminCatalog(isAuthenticated && !isEditingProduct && (needsEmptyCatalogBootstrap || ['pages', 'structure', 'journal'].includes(activeTab)));
    const inventory = useAdminInventoryPage(isAuthenticated && activeTab === 'products' && !isEditingProduct, {
       collection: filterCollection, category: filterCategory, search: inventorySearch,
       connection: inventoryCjFilter, collections: siteContent.collections,
@@ -588,24 +593,9 @@ export const AdminPage: React.FC = () => {
       return siteContent.collections.find(c => c.id === id)?.title || id;
    };
 
-   // Dashboard still uses its existing catalog scope until its separate cutover.
-   const productCjStatuses = useMemo(
-      () => new Map(products.map(product => [product.id, getCjProductStatus(product)])),
-      [products],
-   );
-   const inventoryCjCounts = useMemo(() => {
-      const counts: Record<InventoryCjFilter, number> = {
-         all: products.length,
-         ready: 0,
-         approved_needs_setup: 0,
-         pending: 0,
-         not_linked: 0,
-         rejected: 0,
-         attention: 0,
-      };
-      for (const status of productCjStatuses.values()) counts[status.state] += 1;
-      return counts;
-   }, [productCjStatuses, products.length]);
+   const inventoryCjCounts = inventoryHealth?.ready ? inventoryHealth.inventoryCounts : undefined;
+   const inventoryTotal = inventoryHealth?.ready ? inventoryHealth.totalProducts : undefined;
+   const unknownCount = inventoryHealth === undefined ? 'Loading…' : 'Unavailable';
 
    const filteredProducts = inventory.products;
 
@@ -922,8 +912,8 @@ export const AdminPage: React.FC = () => {
                    {/* Glass Metric Cards */}
                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-8 mb-10 md:mb-16">
                       {[
-                         { title: 'All Inventory', count: products.length, Icon: ShoppingBag, onClick: () => { setActiveTab('products'); setFilterCollection('all'); setFilterCategory(null); setInventoryCjFilter('all'); } },
-                         { title: 'CJ Synced & Ready', count: inventoryCjCounts.ready, Icon: Link2, onClick: () => { setActiveTab('products'); setFilterCollection('all'); setFilterCategory(null); setInventoryCjFilter('ready'); } },
+                         { title: 'All Inventory', count: inventoryTotal ?? unknownCount, Icon: ShoppingBag, onClick: () => { setActiveTab('products'); setFilterCollection('all'); setFilterCategory(null); setInventoryCjFilter('all'); } },
+                         { title: 'CJ Synced & Ready', count: inventoryCjCounts?.ready ?? unknownCount, Icon: Link2, onClick: () => { setActiveTab('products'); setFilterCollection('all'); setFilterCategory(null); setInventoryCjFilter('ready'); } },
                          { title: 'Collections', count: siteContent.collections.length, Icon: Layers, onClick: () => setActiveTab('structure') },
                          { title: 'Content Pages', count: 2 + siteContent.customPages.length, Icon: Layout, onClick: () => setActiveTab('pages') },
                       ].map(({ title, count, Icon, onClick }) => (
@@ -1354,7 +1344,7 @@ export const AdminPage: React.FC = () => {
                               className="bg-emerald-500/10 text-emerald-100 border border-emerald-300/20 px-5 md:px-6 py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-emerald-500/20 transition-all shadow-[0_4px_15px_rgba(0,0,0,0.3)] flex items-center gap-2 rounded-lg w-fit backdrop-blur-md"
                            >
                               <Rocket className="w-3 h-3" />
-                              Launch queued products
+                              Launch queued products{inventoryCjCounts ? ` (${inventoryCjCounts.next_launch})` : ''}
                            </button>
                         )}
                         <button
@@ -1387,6 +1377,7 @@ export const AdminPage: React.FC = () => {
                            className="w-full rounded-xl border border-white/10 bg-black/20 py-3 pl-11 pr-4 text-sm text-cream placeholder:text-cream/30 focus:border-bronze focus:outline-none"
                         />
                      </div>
+                     {inventoryCjCounts && <p className="mt-3 text-[10px] text-cream/40">CJ status counts cover all inventory.</p>}
                      <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Filter inventory by CJ status">
                          {INVENTORY_CJ_FILTERS.map(option => {
                             const active = inventoryCjFilter === option.key;
@@ -1398,7 +1389,8 @@ export const AdminPage: React.FC = () => {
                                   aria-pressed={active}
                                   className={`whitespace-nowrap rounded-full border px-3 py-2 text-[10px] uppercase tracking-widest transition-colors ${active ? 'border-bronze/50 bg-bronze/20 text-cream' : 'border-white/10 bg-white/5 text-cream/50 hover:bg-white/10 hover:text-cream'}`}
                                >
-                                  {option.label}
+                                  {option.label}{(option.key === 'all' ? inventoryTotal : inventoryCjCounts?.[option.key]) !== undefined
+                                     ? ` · ${option.key === 'all' ? inventoryTotal : inventoryCjCounts?.[option.key]}` : ''}
                                </button>
                             );
                          })}

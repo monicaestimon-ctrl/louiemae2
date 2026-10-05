@@ -2,7 +2,7 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { AdminPage } from '../AdminPage';
-const mocks = vi.hoisted(() => ({ demand: vi.fn(), loadDetail: vi.fn(), batch: vi.fn(),
+const mocks = vi.hoisted(() => ({ demand: vi.fn(), loadDetail: vi.fn(), batch: vi.fn(), health: undefined as unknown, query: vi.fn(),
   inventory: { products: [] as unknown[], loading: false, unavailable: false, complete: false,
     loadingMore: false, canLoadMore: true, updating: false, loadMore: vi.fn() },
   site: { isAuthenticated: true, isAuthLoading: false, posts: [], products: [],
@@ -12,12 +12,12 @@ vi.mock('../useAdminInventoryPage', () => ({ useAdminInventoryPage: () => mocks.
 vi.mock('../../contexts/BlogContext', () => ({ useSite: () => mocks.site }));
 vi.mock('../../contexts/AdminCatalogDemand', () => ({ useAdminCatalog: (...args: unknown[]) => mocks.demand(...args) }));
 vi.mock('../../contexts/NewsletterContext', () => ({ useNewsletterAdmin: () => ({ subscribers: [], campaigns: [], stats: {} }) }));
-vi.mock('convex/react', () => ({ useMutation: () => vi.fn(), useAction: () => vi.fn() }));
+vi.mock('convex/react', () => ({ useMutation: () => vi.fn(), useAction: () => vi.fn(), useQuery: (...args: unknown[]) => { mocks.query(...args); return mocks.health; } }));
 vi.mock('../useAdminProductDetail', () => ({ useAdminProductDetail: () => ({ load: mocks.loadDetail, cancel: vi.fn(), loadingId: null, error: null }) }));
 vi.mock('../useAdminDescriptionBatch', () => ({ useAdminDescriptionBatch: () => ({ busy: false, previews: [], setPreviews: vi.fn(), run: mocks.batch }) }));
 vi.mock('../FadeIn', () => ({ FadeIn: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 beforeEach(() => {
-  vi.clearAllMocks(); localStorage.setItem('admin-active-tab', 'products');
+  vi.clearAllMocks(); mocks.health = undefined; localStorage.setItem('admin-active-tab', 'products');
   Object.assign(mocks.inventory, { products: [], loading: false, unavailable: false, complete: false, loadingMore: false, canLoadMore: true, updating: false });
 });
 
@@ -56,4 +56,30 @@ it('uses full summary counts/status and opens details or batch generation by loa
   expect(mocks.loadDetail).toHaveBeenCalledWith('beyond-500');
   fireEvent.click(screen.getByRole('button', { name: 'Smart Preview (loaded items)' }));
   expect(mocks.batch).toHaveBeenCalledWith(['beyond-500']);
+});
+
+it('shows verified dashboard counts beyond 500 without a full catalog and distinguishes unknown from zero', () => {
+  localStorage.setItem('admin-active-tab', 'dashboard');
+  const view = render(<AdminPage />);
+  expect(screen.getByRole('button', { name: 'Loading… All Inventory' })).toBeInTheDocument();
+  expect(mocks.demand).toHaveBeenLastCalledWith(false);
+  mocks.health = { ready: false }; view.rerender(<AdminPage />);
+  expect(screen.getByRole('button', { name: 'Unavailable All Inventory' })).toBeInTheDocument();
+  mocks.health = { ready: true, totalProducts: 812, inventoryCounts: { ready: 620, next_launch: 7 } }; view.rerender(<AdminPage />);
+  expect(screen.getByRole('button', { name: '812 All Inventory' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '620 CJ Synced & Ready' })).toBeInTheDocument();
+  expect(mocks.demand).toHaveBeenLastCalledWith(false);
+  fireEvent.click(screen.getByRole('button', { name: '620 CJ Synced & Ready' }));
+  expect(screen.getByRole('button', { name: 'Synced & ready · 620' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('button', { name: 'Launch queued products (7)' })).toBeInTheDocument();
+});
+
+it('allows the existing empty-catalog bootstrap only for a verified exact zero on the dashboard', () => {
+  localStorage.setItem('admin-active-tab', 'dashboard');
+  mocks.health = { ready: false, totalProducts: 0 };
+  const view = render(<AdminPage />);
+  expect(mocks.demand).toHaveBeenLastCalledWith(false);
+  mocks.health = { ready: true, totalProducts: 0, inventoryCounts: { ready: 0 } }; view.rerender(<AdminPage />);
+  expect(mocks.demand).toHaveBeenLastCalledWith(true);
+  expect(screen.getByRole('button', { name: '0 All Inventory' })).toBeInTheDocument();
 });
