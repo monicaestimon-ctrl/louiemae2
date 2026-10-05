@@ -56,6 +56,23 @@ export default defineSchema({
     ...furnitureTables,
     ...commerceTables,
 
+    productCatalog: defineTable({
+        productId: v.id('products'), version: v.number(), productCreatedAt: v.number(),
+        name: v.string(), collection: v.string(), category: v.string(), visible: v.boolean(),
+        sourcingStatus: v.string(), approvedAt: v.string(), searchText: v.string(),
+        // Written only by catalogProjection's explicit field allowlists.
+        publicData: v.any(), adminData: v.any(),
+    }).index('by_product', ['productId'])
+        .index('by_created', ['productCreatedAt', 'productId'])
+        .index('by_visible_created', ['visible', 'productCreatedAt', 'productId'])
+        .index('by_collection_created', ['collection', 'productCreatedAt', 'productId'])
+        .index('by_sourcing_approved', ['sourcingStatus', 'approvedAt', 'productId'])
+        .searchIndex('search_catalog', { searchField: 'searchText', filterFields: ['visible', 'collection'] }),
+    catalogMigrations: defineTable({
+        key: v.string(), version: v.number(), cursor: v.union(v.string(), v.null()),
+        processed: v.number(), complete: v.boolean(), updatedAt: v.number(),
+    }).index('by_key', ['key']),
+
     productSourceSnapshots: defineTable({
         sourceKey: v.string(), schemaVersion: v.number(), adapterVersion: v.number(), fetchedAt: v.number(), contentHash: v.string(),
         snapshot: v.any(), status: v.union(v.literal('complete'), v.literal('partial')), warnings: v.array(v.string()),
