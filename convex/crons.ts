@@ -3,6 +3,9 @@ import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 
+// Only summaries whose 48-hour pending threshold is due are revisited.
+crons.interval('refresh-due-product-health', { minutes: 5 }, internal.productHealth.refreshDue, {});
+
 // Persist signups first; process/recover the bounded marketing queue separately.
 crons.interval('sync-klaviyo-waitlist', { minutes: 1 }, internal.klaviyoWaitlist.dispatch, {});
 crons.interval('reconcile-klaviyo-consent', { minutes: 15 }, internal.klaviyoWaitlistWorker.reconcileConsent, { cursor: null });

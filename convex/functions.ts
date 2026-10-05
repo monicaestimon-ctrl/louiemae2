@@ -4,11 +4,17 @@ import { Triggers } from 'convex-helpers/server/triggers';
 import type { DataModel } from './_generated/dataModel';
 import { syncCatalogProduct } from './catalogMaintenance';
 import { catalogProjection, sameCatalogValue } from '../lib/catalogProjection';
+import { productHealthProjection } from '../lib/productHealth';
+import { syncProductHealth } from './productHealthMaintenance';
 
 // Product-writing entry points use these builders. Reader cutover still requires
 // a completed, verified backfill. Irrelevant telemetry must not invalidate lists.
 const triggers = new Triggers<DataModel>();
 triggers.register('products', async (ctx, change) => {
+  const now = Date.now();
+  if (!change.oldDoc || !change.newDoc || !sameCatalogValue(productHealthProjection(change.oldDoc, now), productHealthProjection(change.newDoc, now))) {
+    await syncProductHealth(ctx, change.id, change.newDoc, now);
+  }
   if (change.oldDoc && change.newDoc
     && sameCatalogValue(catalogProjection(change.oldDoc), catalogProjection(change.newDoc))) return;
   await syncCatalogProduct(ctx, change.id, change.newDoc);

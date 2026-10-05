@@ -98,6 +98,49 @@ GitHub run `37264249871` passed all checks and deployed the production backend.
 The production build and client-secret verification also passed locally. This
 release does not enable summary readers or execute a backfill.
 
+## PR 2C: gated paginated readers (released, inactive)
+
+PR 132 merged at `7ca382a4ae886699117f595a332fb39e814b84cd`.
+GitHub run `37265177281` passed and deployed the production backend. Local
+validation passed 79 files / 517 tests, both type checks, writer coverage,
+lint (519 warnings, zero errors), build and client-secret verification.
+Readiness requires backfill completion, both persisted integrity passes and
+explicit activation. Neither backfill nor activation has run in production.
+Tests cover more than 500 visible products and continuation through empty
+filtered pages. Runtime budget/split behavior still needs live verification.
+
+After deployment, the read-only production `catalogReadiness:status` probe
+returned Server Error (request `faa436b2be9f401a`). HTTP 200 wrapped that backend
+error and is not evidence that service was restored.
+
+## PR 2D: authoritative editor loading (released)
+
+The editor fetches `products.getAdmin` before opening and preserves full source
+details and the latest revision. It handles deleted/unavailable records and
+ignores late responses after cancel, navigation, sign-out, unmount or a newer
+selection. Local validation passed 520 tests before integration with PR 132;
+15 combined reader/editor tests and the frontend type check passed after rebase.
+Live authenticated verification remains blocked by backend availability.
+
+PR 133 merged at `cc723b5d30702a16fe2e6b251399ec74c361bbaf`.
+Combined GitHub CI and backend deployment succeeded in run `37265450146`.
+The exact clean merge commit was deployed to Vercel production as
+`dpl_EWyonxMC9ZNpTGZcQgPfz8rmsWBM`, Ready and aliased to `www.louiemae.com`,
+with the existing `diligent-jay-261` production URL. Build and client-secret
+verification passed; homepage HEAD returned HTTP 200. A transient upload TLS
+failure was resolved by retry. Browser verification could not reconnect to the
+Chrome debugger; authenticated product editing remains unverified live.
+Frontend rollback remains available to `dpl_A5JPVHuwsWcgehXVsco5UbSdfJoX`.
+
+## Remaining work
+
+Frontend pagination adoption, selected variant details, health/job summaries,
+CJ workload measurement and targeted improvements, reviewed historical payload
+compaction, Nexx release/older-preview configuration, production flow checks and
+representative cost measurements are still outstanding. Current CJ code already
+has token caching, refresh leases, due-job leases and bounded dispatch; changes
+must preserve those controls and be justified by workload evidence.
+
 ## Nexx preview canaries (PR 293; deployment blocked)
 
 `monicafernii97-cmd/nexx-app` PR 293 disables upload canaries by default outside

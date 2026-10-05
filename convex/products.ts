@@ -1,7 +1,8 @@
 import { query, mutation, internalQuery, type MutationCtx } from "./functions";
 import { ConvexError, v } from "convex/values";
 import { assertCjPricingReady } from '../lib/cjPricingReview';
-import { evaluateProductCjReadiness, isCjProductStorefrontReady } from "../lib/cjFulfillmentReadiness";
+import { isCjProductStorefrontReady } from "../lib/cjFulfillmentReadiness";
+import { productHealthProblems } from '../lib/productHealth';
 import { requireCjAdminIdentity } from "./cjAdminAccess";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -1473,64 +1474,7 @@ export const auditProductHealth = query({
         }> = [];
 
         for (const product of allProducts) {
-            const problems: string[] = [];
-
-            // Check for missing/broken images
-            if (!product.images || product.images.length === 0) {
-                problems.push("No images");
-            } else {
-                const firstImg = product.images[0];
-                if (firstImg.startsWith("//")) {
-                    problems.push("Protocol-relative image URL (missing https:)");
-                }
-                if (firstImg.includes("1688.com") || firstImg.includes("alicdn.com") || firstImg.includes("cbu01.alicdn")) {
-                    problems.push("Image hosted on 1688/AliExpress CDN (may expire)");
-                }
-                if (firstImg.includes("photo-1612196808214")) {
-                    problems.push("Known broken Unsplash URL");
-                }
-            }
-
-            // Check for stuck sourcing
-            if (product.cjSourcingStatus === "pending") {
-                const submittedAt = product.cjSubmittedAt ? new Date(product.cjSubmittedAt).getTime() : 0;
-                const hoursSinceSubmission = submittedAt ? (Date.now() - submittedAt) / (1000 * 60 * 60) : 0;
-                if (hoursSinceSubmission > 48) {
-                    problems.push(`Stuck pending for ${Math.round(hoursSinceSubmission)}h`);
-                }
-                if (!product.cjSourcingId) {
-                    problems.push("Pending but no cjSourcingId (never submitted to CJ)");
-                }
-            }
-
-            // Check for approved products missing CJ data
-            if (product.cjSourcingStatus === "approved") {
-                const hasCustomerVariants = (product.variants?.length ?? 0) > 0;
-
-                if (!product.cjProductId) problems.push("Approved but missing cjProductId");
-                if (!hasCustomerVariants && !product.cjVariantId) {
-                    problems.push("Approved but missing cjVariantId");
-                }
-                if (hasCustomerVariants && (!product.cjVariants || product.cjVariants.length === 0)) {
-                    problems.push("Approved but no CJ variants (won't appear in Variant Mapping)");
-                }
-                if (hasCustomerVariants) {
-                    const unlinked = product.variants!.filter(v => !v.cjVariantId);
-                    if (unlinked.length > 0) {
-                        problems.push(`${unlinked.length}/${product.variants!.length} customer variants not linked to CJ`);
-                    }
-                }
-            }
-
-            const hasCjFootprint =
-                (product.cjSourcingStatus !== undefined && product.cjSourcingStatus !== "none") ||
-                Boolean(product.cjProductId || product.cjVariantId || product.cjSku || (product.cjVariants?.length ?? 0) > 0);
-            if (hasCjFootprint) {
-                const readiness = evaluateProductCjReadiness(product);
-                for (const problem of [...readiness.errors, ...readiness.warnings]) {
-                    problems.push(problem);
-                }
-            }
+            const problems = productHealthProblems(product, Date.now());
 
             const uniqueProblems = [...new Set(problems)];
 

@@ -65,6 +65,8 @@ import type * as pinnedLookup from "../pinnedLookup.js";
 import type * as pricingAudits from "../pricingAudits.js";
 import type * as productCategoryAssignments from "../productCategoryAssignments.js";
 import type * as productFacts from "../productFacts.js";
+import type * as productHealth from "../productHealth.js";
+import type * as productHealthMaintenance from "../productHealthMaintenance.js";
 import type * as productImageRecords from "../productImageRecords.js";
 import type * as productImages from "../productImages.js";
 import type * as productMigrations from "../productMigrations.js";
@@ -147,6 +149,8 @@ declare const fullApi: ApiFromModules<{
   pricingAudits: typeof pricingAudits;
   productCategoryAssignments: typeof productCategoryAssignments;
   productFacts: typeof productFacts;
+  productHealth: typeof productHealth;
+  productHealthMaintenance: typeof productHealthMaintenance;
   productImageRecords: typeof productImageRecords;
   productImages: typeof productImages;
   productMigrations: typeof productMigrations;
