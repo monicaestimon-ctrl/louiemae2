@@ -33,5 +33,36 @@ type checks passed, lint passed with warnings, production build and client-secre
 verification passed. Tests cover subscription lifecycle, multiple consumers,
 StrictMode, public browsing after login, and unauthenticated requests.
 
-Pending: review, merge, frontend deployment verification, and production
-observations. All later phases remain pending.
+Released: PR 128 merged at `b6eef27071041f4a419aaa567d92c8ecd0dde0b9`.
+GitHub run `37259184405` passed all checks and deployed to
+`https://diligent-jay-261.convex.cloud`. Vercel production deployment
+`dpl_A5JPVHuwsWcgehXVsco5UbSdfJoX` is Ready and aliased to
+`https://www.louiemae.com`; its build used the production Convex URL.
+The clean release checkout contains only that exact merged commit.
+
+Post-release: homepage HTTP 200; the backend query still returns Server Error,
+and admin remains unavailable. Before release, development explicitly reported
+that free-plan limits disabled deployments. Successful code deployment does not
+prove restored service. Real admin-flow and cost verification remain blocked by
+backend availability. No payment or billing configuration changes were made.
+
+Frontend rollback: Vercel deployment `dpl_6kxLhMs8rn8MzgjEYy88eWvGoGCb`.
+Backend prior source: `ce92fc33643d231e50c97015b92433096009779d`.
+
+## PR 2A: isolated catalog foundation (in progress)
+
+Additive catalog and migration tables, explicit projection allowlists, atomic
+maintenance builders, and operator-driven backfill/integrity checks. No current
+application writer or reader uses the prototype builders. No production migration
+has run, and completing a backfill does not enable readers.
+
+Focused tests exercise create/update/hide/delete, transaction rollback, supplier
+field exclusion, no-op writes, 535-product resumable migration, retry cursor
+protection, concurrent changes, drift detection, and orphan detection. The pinned
+Convex runtime remains 1.31.7; helpers and convex-test use compatible versions.
+
+Remaining PR 2 work: integrate and test every product writer, finish bounded
+response contracts, add paginated readers, migrate and verify data, fetch
+authoritative records before editing, then cut over clients. Summary size and
+actual read/write overhead must be measured before adoption. All later phases
+remain pending; the foundation is not a completed cost optimization.
