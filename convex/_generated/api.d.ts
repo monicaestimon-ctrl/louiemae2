@@ -79,6 +79,7 @@ import type * as subscribers from "../subscribers.js";
 import type * as translations from "../translations.js";
 import type * as visualFactCache from "../visualFactCache.js";
 import type * as waitlist from "../waitlist.js";
+import type * as webhookRetention from "../webhookRetention.js";
 
 import type {
   ApiFromModules,
@@ -158,6 +159,7 @@ declare const fullApi: ApiFromModules<{
   translations: typeof translations;
   visualFactCache: typeof visualFactCache;
   waitlist: typeof waitlist;
+  webhookRetention: typeof webhookRetention;
 }>;
 
 /**

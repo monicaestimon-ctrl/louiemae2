@@ -1598,6 +1598,10 @@ export const markWebhookProcessed = internalMutation({
                 completedAt: now,
                 processedAt: existing.processedAt || now,
                 lastError: "",
+                // Successful events cannot be replayed by our worker. Keep the
+                // identity/status for deduplication, without its large payload.
+                payload: undefined,
+                expiresAt: 0,
             });
             return;
         }
