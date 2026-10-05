@@ -13,7 +13,7 @@ vi.mock('convex/react', () => ({
   useQuery: (ref: Parameters<typeof getFunctionName>[0], args: unknown) => {
     const name = getFunctionName(ref); mocks.query(name, args);
     if (name === 'catalogReadiness:status') return mocks.ready === undefined ? undefined : { ready: mocks.ready };
-    if (name === 'products:auditProductHealth') return { totalProducts: 0, issues: [] };
+    if (name === 'productHealth:status') return { ready: false, phase: 'not_started' };
     return undefined;
   },
   usePaginatedQuery: (ref: Parameters<typeof getFunctionName>[0], args: unknown) => {

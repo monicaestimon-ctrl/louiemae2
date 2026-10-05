@@ -13,12 +13,12 @@ function setup(health: typeof summary | { ready: false; phase: string }, pending
   query.mockImplementation(ref => {
     switch (getFunctionName(ref)) {
       case 'productHealth:status': return health;
-      case 'products:getPendingSourcing': return pending;
-      case 'products:getRecentlyApproved':
-      case 'products:getRejectedProducts': return [];
+      case 'catalogReadiness:status': return { ready: true };
       default: return undefined;
     }
   });
+  paginated.mockImplementation((ref, args) => ({ results: getFunctionName(ref) === 'catalog:sourcingPage' && args?.status === 'pending' ? pending ?? [] : [],
+    status: getFunctionName(ref) === 'productHealth:issuesPage' || pending === undefined ? 'LoadingFirstPage' : 'Exhausted', loadMore: vi.fn() }));
 }
 beforeEach(() => { query.mockReset(); paginated.mockReset(); action.mockReset(); action.mockResolvedValue(null); paginated.mockReturnValue({ results: [], status: 'LoadingFirstPage', loadMore: vi.fn() }); });
 describe('CJ dashboard health integration', () => {
@@ -28,6 +28,8 @@ describe('CJ dashboard health integration', () => {
     const names = query.mock.calls.map(([ref]) => getFunctionName(ref));
     expect(names).toContain('productHealth:status');
     expect(names).not.toContain('products:auditProductHealth');
+    expect(names).not.toContain('products:getPendingSourcing');
+    expect(names).not.toContain('products:getProductsWithCjVariants');
     expect(screen.getByRole('button', { name: 'Reconcile All' })).toBeInTheDocument();
     expect(screen.getByText(/12 approved item\(s\) need CJ variant verification/)).toBeInTheDocument();
     expect(screen.getByText('12 CJ issues')).toBeInTheDocument();
@@ -41,10 +43,10 @@ describe('CJ dashboard health integration', () => {
     expect(paginated).toHaveBeenCalledWith(expect.anything(), 'skip', expect.anything());
   });
   it('does not label a still-loading pending query as cleared when health already reports zero issues', async () => {
-    setup({ ...summary, productsWithIssues: 0, productsWithCjIssues: 0, productsMissingCjVariants: 0 });
+    setup({ ...summary, productsWithIssues: 0, productsWithCjIssues: 0, productsMissingCjVariants: 0 }, undefined);
     query.mockImplementation(ref => getFunctionName(ref) === 'productHealth:status' ? { ...summary, productsWithCjIssues: 0, productsMissingCjVariants: 0 } : undefined);
     await act(async () => { render(<CJSettings />); });
-    expect(screen.getByText('Loading pending products...')).toBeInTheDocument();
+    expect(screen.getByText(/Loading pending products/)).toBeInTheDocument();
     expect(screen.queryByText('All cleared')).not.toBeInTheDocument();
   });
 });

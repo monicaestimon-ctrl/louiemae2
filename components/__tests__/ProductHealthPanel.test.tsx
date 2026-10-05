@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProductHealthPanel } from '../ProductHealthPanel';
 const { page, loadMore } = vi.hoisted(() => ({ page: vi.fn(), loadMore: vi.fn() }));
 vi.mock('convex/react', () => ({ usePaginatedQuery: (...args: unknown[]) => page(...args) }));
-const summary = { ready: true, phase: 'ready', verifiedAt: 1, totalProducts: 600, productsWithIssues: 535, productsWithCjIssues: 530, productsMissingCjVariants: 12 };
+const summary = { ready: true, phase: 'ready', verifiedAt: 1, inventoryCounts: {}, totalProducts: 600, productsWithIssues: 535, productsWithCjIssues: 530, productsMissingCjVariants: 12 };
 beforeEach(() => { page.mockReset(); loadMore.mockReset(); page.mockReturnValue({ results: [], status: 'LoadingFirstPage', loadMore }); });
 describe('bounded product health panel', () => {
   it.each([undefined, { ...summary, ready: false, phase: 'backfill' }, { ...summary, ready: false, phase: 'failed' }])('never reads issue pages or reports clear before verified activation', state => {
