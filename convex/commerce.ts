@@ -1,6 +1,7 @@
 import { paginationOptsValidator } from 'convex/server';
 import { v } from 'convex/values';
 import { query, mutation, internalMutation, internalQuery } from './_generated/server';
+import { mutation as productMutation } from './functions';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { draft, channel, provider } from './commerceTables';
 import { blankCommerceDraft, listingSnapshot, validateDraft } from '../lib/commerce';
@@ -159,7 +160,7 @@ export const linkCj = mutation({
     });
   },
 });
-export const publish = mutation({
+export const publish = productMutation({
   args: { id: v.id('commerceProducts'), revision: v.number(), channels: v.array(channel) },
   handler: async (ctx, args) => {
     const actor = await requireCjAdminIdentity(ctx);
@@ -241,7 +242,7 @@ export const publish = mutation({
     });
   },
 });
-export const unpublish = mutation({
+export const unpublish = productMutation({
   args: { id: v.id('commerceProducts'), channel },
   handler: async (ctx, args) => {
     await requireCjAdminIdentity(ctx);

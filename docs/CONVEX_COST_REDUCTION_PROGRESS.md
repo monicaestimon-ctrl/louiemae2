@@ -49,11 +49,11 @@ backend availability. No payment or billing configuration changes were made.
 Frontend rollback: Vercel deployment `dpl_6kxLhMs8rn8MzgjEYy88eWvGoGCb`.
 Backend prior source: `ce92fc33643d231e50c97015b92433096009779d`.
 
-## PR 2A: isolated catalog foundation (in progress)
+## PR 2A: isolated catalog foundation (released)
 
 Additive catalog and migration tables, explicit projection allowlists, atomic
 maintenance builders, and operator-driven backfill/integrity checks. No current
-application writer or reader uses the prototype builders. No production migration
+application writer or reader used the prototype builders in this release. No production migration
 has run, and completing a backfill does not enable readers.
 
 Focused tests exercise create/update/hide/delete, transaction rollback, supplier
@@ -66,3 +66,43 @@ response contracts, add paginated readers, migrate and verify data, fetch
 authoritative records before editing, then cut over clients. Summary size and
 actual read/write overhead must be measured before adoption. All later phases
 remain pending; the foundation is not a completed cost optimization.
+
+PR 129 merged at `2df902e4ef22ed5e20e7d1bba0dad9c974327c14`;
+GitHub run `37260445340` passed and deployed the additive backend foundation.
+
+## Webhook payload retention (released; historical compaction pending)
+
+PR 130 merged at `10488b76fbd744ae2080e305aef7a30547d3564d`;
+GitHub run `37261443650` passed and deployed. Successful processing removes
+recoverable payload content while retaining webhook identity and deduplication.
+Failed and unresolved events retain recovery data. Historical maintenance has
+bounded dry-run previews and exact-ID rechecks; no historical compaction has run.
+The previously observed storage volume has therefore not been reported as removed.
+
+## PR 2B: transactional product-writer integration
+
+The version-2 projection avoids duplicated public fields and bounds description
+excerpts. All 50 identified typed product-writing entry points maintain summaries
+atomically. CI now checks builder coverage through helper calls. Real database
+regressions cover inventory, sourcing, publication, source recovery, image caching,
+pricing, revision conflicts and rollback. Existing readers remain unchanged.
+See `CATALOG_READ_MODEL_ROLLOUT.md` for writer inventory and activation gates.
+
+Local validation: 77 test files / 511 tests passed, frontend and strict Convex
+type checks passed, and lint passed with 520 warnings and zero errors. The
+listing-review tests now use a real transactional test database and verify that
+rejected variant evidence rolls back product, summary and audit changes.
+
+## Nexx preview canaries (PR 293; deployment blocked)
+
+`monicafernii97-cmd/nexx-app` PR 293 disables upload canaries by default outside
+the known production deployment and adds explicit, expiring preview opt-in,
+bounded execution and monotonic progress. Local validation passed 1,662 tests,
+type checks, lint, operational monitor tests and the production build. GitHub CI
+also passed. Vercel preview `dpl_8P4GQ5z27eWi7m8gfRvjWyYtciDT` failed because
+Convex refused preview creation while the team is Disabled. No Nexx production
+release or older-preview reconfiguration has been claimed.
+
+CodeRabbit skipped automatic reviews on these repositories under its current
+repository eligibility settings. Its successful status is not an actual code
+review. No manual review request was posted.

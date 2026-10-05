@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery, mutation } from "./_generated/server";
+import { internalMutation, internalQuery, mutation } from "./functions";
 import { internal } from "./_generated/api";
 import { calculatePricingBreakdown, ESTIMATED_CJ_COST_MULTIPLIER } from "../lib/pricing";
 import { getCjFulfillmentReentryBlock } from "../lib/cjFulfillmentWorkflow";

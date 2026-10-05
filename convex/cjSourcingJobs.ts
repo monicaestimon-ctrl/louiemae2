@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
+import { internalMutation as productMutation } from './functions';
 import {
     internalMutation,
     internalQuery,
@@ -157,7 +158,7 @@ const ensureJobRecord = async (
     return jobId;
 };
 
-export const ensureJobForProduct = internalMutation({
+export const ensureJobForProduct = productMutation({
     args: {
         productId: v.id("products"),
         source: v.union(v.literal("import"), v.literal("migration")),
@@ -165,7 +166,7 @@ export const ensureJobForProduct = internalMutation({
     handler: async (ctx, args) => ensureJobRecord(ctx, args.productId, args.source),
 });
 
-export const requestAdminReconciliation = internalMutation({
+export const requestAdminReconciliation = productMutation({
     args: {
         productId: v.id("products"),
         reason: v.string(),
@@ -271,7 +272,7 @@ export const requestAdminReconciliation = internalMutation({
     },
 });
 
-export const backfillLegacyPendingJobs = internalMutation({
+export const backfillLegacyPendingJobs = productMutation({
     args: { limit: v.optional(v.number()) },
     handler: async (ctx, args) => {
         const limit = Math.min(Math.max(args.limit ?? 25, 1), 50);
@@ -739,7 +740,7 @@ export const markAttemptSending = internalMutation({
     },
 });
 
-export const applySubmissionAccepted = internalMutation({
+export const applySubmissionAccepted = productMutation({
     args: {
         jobId: v.id("cjSourcingJobs"),
         leaseToken: v.string(),
@@ -791,7 +792,7 @@ export const applySubmissionAccepted = internalMutation({
     },
 });
 
-export const applySubmissionFailure = internalMutation({
+export const applySubmissionFailure = productMutation({
     args: {
         jobId: v.id("cjSourcingJobs"),
         leaseToken: v.string(),
@@ -844,7 +845,7 @@ export const applySubmissionFailure = internalMutation({
     },
 });
 
-export const applyPollEvidence = internalMutation({
+export const applyPollEvidence = productMutation({
     args: {
         jobId: v.id("cjSourcingJobs"),
         leaseToken: v.string(),
@@ -915,7 +916,7 @@ export const applyPollEvidence = internalMutation({
     },
 });
 
-export const applyWebhookEvidence = internalMutation({
+export const applyWebhookEvidence = productMutation({
     args: {
         sourcingId: v.string(),
         thirdProductId: v.optional(v.string()),
@@ -1020,7 +1021,7 @@ export const applyWebhookEvidence = internalMutation({
     },
 });
 
-export const applyCatalogResult = internalMutation({
+export const applyCatalogResult = productMutation({
     args: {
         jobId: v.id("cjSourcingJobs"),
         leaseToken: v.string(),
@@ -1104,7 +1105,7 @@ export const applyCatalogResult = internalMutation({
     },
 });
 
-export const releaseWorkerForRetry = internalMutation({
+export const releaseWorkerForRetry = productMutation({
     args: {
         jobId: v.id("cjSourcingJobs"),
         leaseToken: v.string(),
