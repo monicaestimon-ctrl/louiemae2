@@ -93,6 +93,11 @@ type checks passed, and lint passed with 520 warnings and zero errors. The
 listing-review tests now use a real transactional test database and verify that
 rejected variant evidence rolls back product, summary and audit changes.
 
+Released as PR 131 at `3c45efb0d91f9615326313e17cf49291bc979db1`.
+GitHub run `37264249871` passed all checks and deployed the production backend.
+The production build and client-secret verification also passed locally. This
+release does not enable summary readers or execute a backfill.
+
 ## Nexx preview canaries (PR 293; deployment blocked)
 
 `monicafernii97-cmd/nexx-app` PR 293 disables upload canaries by default outside

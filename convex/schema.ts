@@ -65,6 +65,7 @@ export default defineSchema({
     }).index('by_product', ['productId'])
         .index('by_created', ['productCreatedAt', 'productId'])
         .index('by_visible_created', ['visible', 'productCreatedAt', 'productId'])
+        .index('by_visible_collection_created', ['visible', 'collection', 'productCreatedAt', 'productId'])
         .index('by_collection_created', ['collection', 'productCreatedAt', 'productId'])
         .index('by_sourcing_approved', ['sourcingStatus', 'approvedAt', 'productId'])
         .searchIndex('search_catalog', { searchField: 'searchText', filterFields: ['visible', 'collection'] }),
@@ -72,6 +73,12 @@ export default defineSchema({
         key: v.string(), version: v.number(), cursor: v.union(v.string(), v.null()),
         processed: v.number(), complete: v.boolean(), updatedAt: v.number(),
     }).index('by_key', ['key']),
+    catalogReadiness: defineTable({
+        version: v.number(), enabled: v.boolean(),
+        phase: v.union(v.literal('source'), v.literal('orphans'), v.literal('verified'), v.literal('failed')),
+        cursor: v.union(v.string(), v.null()), checked: v.number(),
+        mismatchIds: v.array(v.string()), updatedAt: v.number(),
+    }).index('by_version', ['version']),
 
     productSourceSnapshots: defineTable({
         sourceKey: v.string(), schemaVersion: v.number(), adapterVersion: v.number(), fetchedAt: v.number(), contentHash: v.string(),
