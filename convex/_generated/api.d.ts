@@ -86,6 +86,8 @@ import type * as translations from "../translations.js";
 import type * as visualFactCache from "../visualFactCache.js";
 import type * as waitlist from "../waitlist.js";
 import type * as webhookRetention from "../webhookRetention.js";
+import type * as webhookSummaries from "../webhookSummaries.js";
+import type * as webhookSummaryMaintenance from "../webhookSummaryMaintenance.js";
 
 import type {
   ApiFromModules,
@@ -172,6 +174,8 @@ declare const fullApi: ApiFromModules<{
   visualFactCache: typeof visualFactCache;
   waitlist: typeof waitlist;
   webhookRetention: typeof webhookRetention;
+  webhookSummaries: typeof webhookSummaries;
+  webhookSummaryMaintenance: typeof webhookSummaryMaintenance;
 }>;
 
 /**

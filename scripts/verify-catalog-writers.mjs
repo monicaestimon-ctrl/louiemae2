@@ -1,6 +1,6 @@
 import ts from 'typescript';
 
-// Follow typed product/job writes through shared helpers to their mutation entry
+// Follow typed product/job/webhook writes through helpers to their mutation entry
 // points. This catches an unwrapped new writer before it can make summaries stale.
 const config = ts.readConfigFile('convex/tsconfig.json', ts.sys.readFile);
 const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, 'convex');
@@ -21,9 +21,9 @@ function writesSummarySources(root, seen = new Set()) {
       if (first && ts.isPropertyAccessExpression(callee)
         && callee.expression.getText().endsWith('.db')) {
         const operation = callee.name.text;
-        if (operation === 'insert' && ts.isStringLiteral(first) && ['products', 'cjSourcingJobs'].includes(first.text)) found = true;
+        if (operation === 'insert' && ts.isStringLiteral(first) && ['products', 'cjSourcingJobs', 'cjWebhookLog'].includes(first.text)) found = true;
         if (['patch', 'replace', 'delete'].includes(operation)
-          && ['products', 'cjSourcingJobs'].some(table => checker.typeToString(checker.getTypeAtLocation(first)).includes('"' + table + '"'))) found = true;
+          && ['products', 'cjSourcingJobs', 'cjWebhookLog'].some(table => checker.typeToString(checker.getTypeAtLocation(first)).includes('"' + table + '"'))) found = true;
       }
       let symbol = checker.getSymbolAtLocation(callee);
       if (symbol?.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
@@ -74,6 +74,6 @@ for (const source of program.getSourceFiles()) {
   }
 }
 if (violations.length) {
-  console.error(`Product/job writers missing transactional summary maintenance:\n${violations.join('\n')}`);
+  console.error(`Product/job/webhook writers missing transactional summary maintenance:\n${violations.join('\n')}`);
   process.exitCode = 1;
-} else console.log(`Summary maintenance covers ${checked} typed product/job mutation entry points.`);
+} else console.log(`Summary maintenance covers ${checked} typed product/job/webhook mutation entry points.`);

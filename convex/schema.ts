@@ -56,6 +56,17 @@ export default defineSchema({
     ...furnitureTables,
     ...commerceTables,
 
+    webhookSummaries: defineTable({
+        webhookId: v.id('cjWebhookLog'), version: v.number(), sourceCreatedAt: v.number(),
+        status: v.union(v.literal('processing'), v.literal('processed'), v.literal('retryable'), v.literal('failed')),
+        claimedAt: v.optional(v.string()),
+    }).index('by_webhook', ['webhookId']).index('by_source_created', ['sourceCreatedAt', 'webhookId']),
+    webhookSummaryState: defineTable({
+        key: v.string(), epoch: v.number(), version: v.number(), enabled: v.boolean(),
+        phase: v.union(v.literal('backfill'), v.literal('verify'), v.literal('orphans'), v.literal('verified'), v.literal('failed')),
+        cursor: v.union(v.string(), v.null()), checked: v.number(), mismatchIds: v.array(v.string()),
+        updatedAt: v.number(), verifiedAt: v.optional(v.number()),
+    }).index('by_key', ['key']),
     sourcingCountRows: defineTable({
         jobId: v.id('cjSourcingJobs'), epoch: v.number(), state: cjSourcingStateValidator,
     }).index('by_job', ['jobId']),

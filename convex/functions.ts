@@ -7,10 +7,15 @@ import { catalogProjection, sameCatalogValue } from '../lib/catalogProjection';
 import { productHealthProjection } from '../lib/productHealth';
 import { syncProductHealth } from './productHealthMaintenance';
 import { syncSourcingCount } from './sourcingCountsMaintenance';
+import { syncWebhookSummary, webhookSummaryProjection } from './webhookSummaryMaintenance';
 
-// Product/job-writing entry points use these builders. Reader cutover still requires
+// Product/job/webhook writers use these builders. Reader cutover still requires
 // a completed, verified backfill. Irrelevant telemetry must not invalidate lists.
 const triggers = new Triggers<DataModel>();
+triggers.register('cjWebhookLog', async (ctx, change) => {
+  if (change.oldDoc && change.newDoc && sameCatalogValue(webhookSummaryProjection(change.oldDoc), webhookSummaryProjection(change.newDoc))) return;
+  await syncWebhookSummary(ctx, change.id, change.newDoc);
+});
 triggers.register('cjSourcingJobs', async (ctx, change) => {
   if (change.oldDoc && change.newDoc && change.oldDoc.state === change.newDoc.state) return;
   await syncSourcingCount(ctx, change.id, change.newDoc);
