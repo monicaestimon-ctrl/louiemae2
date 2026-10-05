@@ -1,12 +1,13 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import { internalMutation as productMutation } from './functions';
+import { internalMutation as maintainedMutation } from './functions';
 import {
     internalMutation,
     internalQuery,
     query,
     type MutationCtx,
 } from "./_generated/server";
+import { readySourcingCounts, SOURCING_STATES } from './sourcingCountsMaintenance';
 import type { Doc, Id } from "./_generated/dataModel";
 import { buildCjSourcingPayload, hashCjSourcingPayload } from "../lib/cjSourcing";
 import {
@@ -158,7 +159,7 @@ const ensureJobRecord = async (
     return jobId;
 };
 
-export const ensureJobForProduct = productMutation({
+export const ensureJobForProduct = maintainedMutation({
     args: {
         productId: v.id("products"),
         source: v.union(v.literal("import"), v.literal("migration")),
@@ -166,7 +167,7 @@ export const ensureJobForProduct = productMutation({
     handler: async (ctx, args) => ensureJobRecord(ctx, args.productId, args.source),
 });
 
-export const requestAdminReconciliation = productMutation({
+export const requestAdminReconciliation = maintainedMutation({
     args: {
         productId: v.id("products"),
         reason: v.string(),
@@ -272,7 +273,7 @@ export const requestAdminReconciliation = productMutation({
     },
 });
 
-export const backfillLegacyPendingJobs = productMutation({
+export const backfillLegacyPendingJobs = maintainedMutation({
     args: { limit: v.optional(v.number()) },
     handler: async (ctx, args) => {
         const limit = Math.min(Math.max(args.limit ?? 25, 1), 50);
@@ -494,7 +495,7 @@ const createPreparedAttempt = async (
     return await ctx.db.get(attemptId);
 };
 
-export const dispatchDueJobs = internalMutation({
+export const dispatchDueJobs = maintainedMutation({
     args: {},
     handler: async (ctx) => {
         const now = Date.now();
@@ -740,7 +741,7 @@ export const markAttemptSending = internalMutation({
     },
 });
 
-export const applySubmissionAccepted = productMutation({
+export const applySubmissionAccepted = maintainedMutation({
     args: {
         jobId: v.id("cjSourcingJobs"),
         leaseToken: v.string(),
@@ -792,7 +793,7 @@ export const applySubmissionAccepted = productMutation({
     },
 });
 
-export const applySubmissionFailure = productMutation({
+export const applySubmissionFailure = maintainedMutation({
     args: {
         jobId: v.id("cjSourcingJobs"),
         leaseToken: v.string(),
@@ -845,7 +846,7 @@ export const applySubmissionFailure = productMutation({
     },
 });
 
-export const applyPollEvidence = productMutation({
+export const applyPollEvidence = maintainedMutation({
     args: {
         jobId: v.id("cjSourcingJobs"),
         leaseToken: v.string(),
@@ -916,7 +917,7 @@ export const applyPollEvidence = productMutation({
     },
 });
 
-export const applyWebhookEvidence = productMutation({
+export const applyWebhookEvidence = maintainedMutation({
     args: {
         sourcingId: v.string(),
         thirdProductId: v.optional(v.string()),
@@ -1021,7 +1022,7 @@ export const applyWebhookEvidence = productMutation({
     },
 });
 
-export const applyCatalogResult = productMutation({
+export const applyCatalogResult = maintainedMutation({
     args: {
         jobId: v.id("cjSourcingJobs"),
         leaseToken: v.string(),
@@ -1105,7 +1106,7 @@ export const applyCatalogResult = productMutation({
     },
 });
 
-export const releaseWorkerForRetry = productMutation({
+export const releaseWorkerForRetry = maintainedMutation({
     args: {
         jobId: v.id("cjSourcingJobs"),
         leaseToken: v.string(),
@@ -1147,11 +1148,7 @@ export const releaseWorkerForRetry = productMutation({
 export const getQueueSummary = internalQuery({
     args: {},
     handler: async (ctx) => {
-        const states: JobState[] = [
-            "needs_input", "queued", "submitting", "submitted", "processing", "awaiting_catalog",
-            "sourced", "mapping_required", "fulfillment_ready", "retry_wait",
-            "reconciliation_required", "rejected", "dead_letter", "canceled",
-        ];
+        const states = SOURCING_STATES;
         const counts: Record<string, number> = {};
         for (const state of states) {
             counts[state] = (await ctx.db
@@ -1169,14 +1166,11 @@ export const getAdminOperations = query({
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
         const limit = Math.min(Math.max(Math.floor(args.limit ?? 50), 10), 100);
-        const states: JobState[] = [
-            "needs_input", "queued", "submitting", "submitted", "processing", "awaiting_catalog",
-            "sourced", "mapping_required", "fulfillment_ready", "retry_wait",
-            "reconciliation_required", "rejected", "dead_letter", "canceled",
-        ];
-        const stateCounts: Record<string, number> = {};
+        const states = SOURCING_STATES;
+        const verifiedCounts = await readySourcingCounts(ctx);
+        const stateCounts: Record<string, number> = verifiedCounts ? { ...verifiedCounts } : {};
         const truncatedStates: string[] = [];
-        for (const state of states) {
+        for (const state of verifiedCounts ? [] : states) {
             const rows = await ctx.db
                 .query("cjSourcingJobs")
                 .withIndex("by_state_next_attempt", (q) => q.eq("state", state))

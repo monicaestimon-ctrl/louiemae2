@@ -141,15 +141,53 @@ representative cost measurements are still outstanding. Current CJ code already
 has token caching, refresh leases, due-job leases and bounded dispatch; changes
 must preserve those controls and be justified by workload evidence.
 
-## Nexx preview canaries (PR 293; deployment blocked)
+## Product health summaries (PR 134; backend released, inactive)
+
+PR 134 merged at `f91399e8858f0a37b345ff8055802ce41b241f8e`.
+GitHub run `37266711510` passed and deployed the production backend. Local
+validation passed 81 files / 532 tests, both type checks, writer coverage,
+lint, build and client-secret verification. Health rules are shared with the
+legacy endpoint. New readers use compact issue rows and exact maintained totals;
+epoch rebuilds handle concurrent edits, drift, orphan rows and verification
+restarts. The five-minute age check reads at most 50 due summary rows and does
+not reload full products. No production health rebuild or activation has run;
+frontend adoption and live measurements remain outstanding.
+
+An authenticated CLI call to `catalogReadiness:status` after these releases
+failed with request `a76d700244041beb` and explicitly reported exceeded free-plan
+limits and disabled deployments. The restriction therefore affects operator
+function execution too, not only the public client. Code deployment success
+does not authorize claiming a completed migration or healthy live backend.
+
+## Nexx preview canaries (PR 293; released, live execution checks pending)
 
 `monicafernii97-cmd/nexx-app` PR 293 disables upload canaries by default outside
 the known production deployment and adds explicit, expiring preview opt-in,
 bounded execution and monotonic progress. Local validation passed 1,662 tests,
 type checks, lint, operational monitor tests and the production build. GitHub CI
 also passed. Vercel preview `dpl_8P4GQ5z27eWi7m8gfRvjWyYtciDT` failed because
-Convex refused preview creation while the team is Disabled. No Nexx production
-release or older-preview reconfiguration has been claimed.
+Convex refused preview creation while the team is Disabled. GitHub reported no
+required checks bypassed; all code checks passed and the known environmental
+failure was distinguished from them before normal merge.
+
+PR 293 merged at `56292b9dbb4d8a292ef0007977d6bb53dd530f53`.
+Post-merge CI `37266522502` succeeded. Vercel production deployment
+`dpl_DUbudg2upojtcZu1kQowLnVzvB4g` is Ready, aliased to `nexproof.io` and
+`www.nexproof.io`; its logs confirm deployment to the existing production
+Convex project `blessed-rabbit-457`. Public homepage HEAD returned HTTP 200.
+
+The official management API inventory identified production `blessed-rabbit-457`,
+development `avid-bobcat-637`, and preview `laudable-mammoth-750` (`preview/main`).
+The latter two had no `CHAT_UPLOAD_CANARY_ENABLED` variable. It was set to `false`
+on those two nonproduction deployments, and readback confirmed both values.
+The production setting was not changed. Older code may still register the two
+cron invocations even when their handlers exit early; no zero-invocation or
+measured-savings claim has been made. The preview's recorded expiration is
+`1791212391150` milliseconds since epoch. No deployment or customer data was
+deleted. Rollback of this configuration is to remove only this newly added flag
+on the same nonproduction targets, subject to a deliberate monitoring decision.
+Live upload, cleanup, canary execution and idle-call measurements remain gated
+on restored service.
 
 CodeRabbit skipped automatic reviews on these repositories under its current
 repository eligibility settings. Its successful status is not an actual code

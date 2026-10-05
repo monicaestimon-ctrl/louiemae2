@@ -79,6 +79,8 @@ import type * as siteContent from "../siteContent.js";
 import type * as smartDescriptions from "../smartDescriptions.js";
 import type * as smartNames from "../smartNames.js";
 import type * as sourceProductNormalizer from "../sourceProductNormalizer.js";
+import type * as sourcingCounts from "../sourcingCounts.js";
+import type * as sourcingCountsMaintenance from "../sourcingCountsMaintenance.js";
 import type * as subscribers from "../subscribers.js";
 import type * as translations from "../translations.js";
 import type * as visualFactCache from "../visualFactCache.js";
@@ -163,6 +165,8 @@ declare const fullApi: ApiFromModules<{
   smartDescriptions: typeof smartDescriptions;
   smartNames: typeof smartNames;
   sourceProductNormalizer: typeof sourceProductNormalizer;
+  sourcingCounts: typeof sourcingCounts;
+  sourcingCountsMaintenance: typeof sourcingCountsMaintenance;
   subscribers: typeof subscribers;
   translations: typeof translations;
   visualFactCache: typeof visualFactCache;
