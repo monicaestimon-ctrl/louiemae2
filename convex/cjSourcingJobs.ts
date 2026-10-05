@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { paginationOptsValidator } from 'convex/server';
 import { internal } from "./_generated/api";
 import { internalMutation as maintainedMutation } from './functions';
 import {
@@ -6,11 +7,13 @@ import {
     internalQuery,
     query,
     type MutationCtx,
+    type QueryCtx,
 } from "./_generated/server";
 import { readySourcingCounts, SOURCING_STATES } from './sourcingCountsMaintenance';
 import { webhookSummariesReady } from './webhookSummaryMaintenance';
 import { readyProductMigrationCounts } from './productHealthMaintenance';
-import { catalogIsReady } from './catalogReadiness';
+import { catalogIsReady, requireCatalogReady } from './catalogReadiness';
+import { catalogPageOptions } from '../lib/catalogPagination';
 import { CATALOG_VERSION, type publicCatalogProduct, type adminCatalogProduct } from '../lib/catalogProjection';
 import type { Doc, Id } from "./_generated/dataModel";
 import { buildCjSourcingPayload, hashCjSourcingPayload } from "../lib/cjSourcing";
@@ -1164,9 +1167,45 @@ export const getQueueSummary = internalQuery({
     },
 });
 
+async function adminJobRows(ctx: QueryCtx, jobs: Doc<'cjSourcingJobs'>[], useCatalog: boolean) {
+    const productDisplay = async (productId: Id<'products'>) => {
+        if (!useCatalog) return ctx.db.get(productId);
+        const row = await ctx.db.query('productCatalog').withIndex('by_product', q => q.eq('productId', productId)).unique();
+        if (!row) return null;
+        if (row.version !== CATALOG_VERSION) throw new Error('CATALOG_VERSION_MISMATCH');
+        const display = row.publicData as ReturnType<typeof publicCatalogProduct>;
+        const admin = row.adminData as ReturnType<typeof adminCatalogProduct>;
+        return { name: row.name, images: display.images, sourceUrl: admin.sourceUrl };
+    };
+    return Promise.all(jobs.map(async job => {
+        const product = await productDisplay(job.productId);
+        return {
+            id: job._id, productId: job.productId, productName: product?.name ?? 'Deleted product',
+            productImage: product?.images?.[0], sourceUrl: product?.sourceUrl,
+            state: job.state, generation: job.generation, currentSourcingId: job.currentSourcingId,
+            cjProductId: job.cjProductId, providerSourceStatus: job.providerSourceStatus,
+            attemptCount: job.attemptCount, transientFailureCount: job.transientFailureCount,
+            nextAttemptAt: job.nextAttemptAt, submittedAt: job.submittedAt, updatedAt: job.updatedAt,
+            lastErrorCode: job.lastErrorCode, lastErrorMessage: job.lastErrorMessage,
+            manualReviewReason: job.manualReviewReason,
+        };
+    }));
+}
+
+/** Complete history through bounded cursors, without private source/lease data. */
+export const adminJobsPage = query({ args: { paginationOpts: paginationOptsValidator }, handler: async (ctx, args) => {
+    await requireCjAdminIdentity(ctx);
+    await requireCatalogReady(ctx);
+    // Each job also reads its compact product. Bound all
+    // fan-out by five even when a caller requests a larger page.
+    const batch = await ctx.db.query('cjSourcingJobs').withIndex('by_updated_at').order('desc')
+        .paginate(catalogPageOptions(args.paginationOpts, 5));
+    return { ...batch, page: await adminJobRows(ctx, batch.page, true) };
+} });
+
 /** Admin-only operational read model. Never exposes credentials or lease tokens. */
 export const getAdminOperations = query({
-    args: { limit: v.optional(v.number()) },
+    args: { limit: v.optional(v.number()), includeJobs: v.optional(v.boolean()) },
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
         const limit = Math.min(Math.max(Math.floor(args.limit ?? 50), 10), 100);
@@ -1183,53 +1222,22 @@ export const getAdminOperations = query({
             if (rows.length > 500) truncatedStates.push(state);
         }
 
-        const recentJobs = await ctx.db
+        const recentJobs = args.includeJobs === false ? [] : await ctx.db
             .query("cjSourcingJobs")
             .withIndex("by_updated_at")
             .order("desc")
             .take(limit);
         const useCatalog = await catalogIsReady(ctx);
-        const productDisplay = async (productId: Id<'products'>) => {
-            if (!useCatalog) return ctx.db.get(productId);
-            const row = await ctx.db.query('productCatalog').withIndex('by_product', q => q.eq('productId', productId)).unique();
-            if (!row) return null;
-            if (row.version !== CATALOG_VERSION) throw new Error('CATALOG_VERSION_MISMATCH');
-            const display = row.publicData as ReturnType<typeof publicCatalogProduct>;
-            const admin = row.adminData as ReturnType<typeof adminCatalogProduct>;
-            return { name: row.name, images: display.images, sourceUrl: admin.sourceUrl };
-        };
-        const jobs = await Promise.all(recentJobs.map(async (job) => {
-            const [product, activeAttempt] = await Promise.all([
-                productDisplay(job.productId),
-                job.activeAttemptId ? ctx.db.get(job.activeAttemptId) : Promise.resolve(null),
-            ]);
-            return {
-                id: job._id,
-                productId: job.productId,
-                productName: product?.name ?? "Deleted product",
-                productImage: product?.images?.[0],
-                sourceUrl: product?.sourceUrl,
-                state: job.state,
-                generation: job.generation,
-                currentSourcingId: job.currentSourcingId,
-                cjProductId: job.cjProductId,
-                providerSourceStatus: job.providerSourceStatus,
-                attemptCount: job.attemptCount,
-                transientFailureCount: job.transientFailureCount,
-                nextAttemptAt: job.nextAttemptAt,
-                submittedAt: job.submittedAt,
-                updatedAt: job.updatedAt,
-                lastErrorCode: job.lastErrorCode,
-                lastErrorMessage: job.lastErrorMessage,
-                manualReviewReason: job.manualReviewReason,
-                activeAttempt: activeAttempt ? {
-                    state: activeAttempt.state,
-                    createdAt: activeAttempt.createdAt,
-                    updatedAt: activeAttempt.updatedAt,
-                    errorCode: activeAttempt.errorCode,
-                    errorMessage: activeAttempt.errorMessage,
-                } : null,
-            };
+        const rows = await adminJobRows(ctx, recentJobs, useCatalog);
+        // Preserve the legacy response; the new page reader does not hydrate
+        // unused attempt payloads just to render job status rows.
+        const jobs = await Promise.all(rows.map(async (row, index) => {
+            const id = recentJobs[index].activeAttemptId;
+            const activeAttempt = id ? await ctx.db.get(id) : null;
+            return { ...row, activeAttempt: activeAttempt ? {
+                state: activeAttempt.state, createdAt: activeAttempt.createdAt, updatedAt: activeAttempt.updatedAt,
+                errorCode: activeAttempt.errorCode, errorMessage: activeAttempt.errorMessage,
+            } : null };
         }));
 
         const useWebhookSummaries = await webhookSummariesReady(ctx);
