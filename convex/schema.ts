@@ -101,6 +101,7 @@ export default defineSchema({
         // Optional until the current-version backfill and verification complete.
         price: v.optional(v.number()), featuredPriority: v.optional(v.number()),
         arrivalKind: v.optional(v.string()), arrivalOrder: v.optional(v.number()),
+        dropPriority: v.optional(v.number()),
         connectionState: v.optional(v.string()), adminSearchText: v.optional(v.string()),
         adminSearchNeedsDetail: v.optional(v.boolean()),
         // Added in version 3; readers require the current verified version.
@@ -121,6 +122,7 @@ export default defineSchema({
         .index('by_visible_featured', ['visible', 'featuredPriority', 'productCreatedAt', 'productId'])
         .index('by_visible_collection_featured', ['visible', 'collection', 'featuredPriority', 'productCreatedAt', 'productId'])
         .index('by_arrival', ['visible', 'collection', 'arrivalKind', 'arrivalOrder', 'productCreatedAt', 'productId'])
+        .index('by_collection_drop', ['visible', 'collection', 'arrivalOrder', 'dropPriority', 'productCreatedAt', 'productId'])
         .index('by_sourcing_created', ['sourcingStatus', 'productCreatedAt', 'productId'])
         .index('by_sourcing_approved', ['sourcingStatus', 'approvedAt', 'productId'])
         .searchIndex('search_catalog', { searchField: 'searchText', filterFields: ['visible', 'collection'] }),
