@@ -9,7 +9,7 @@ export const isProductVisibleOnStorefront = (product: Product): boolean => {
   return visibilityReady && fulfillmentReady;
 };
 
-export const productStorefrontStatusLabel = (product: Product): string => {
+export const productStorefrontStatusLabel = (product: Pick<Product, 'storefrontStatus'>): string => {
   if (product.storefrontStatus === 'hidden') return 'Hidden';
   if (product.storefrontStatus === 'next_launch') return 'Next Launch';
   return 'Published';
