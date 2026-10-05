@@ -56,6 +56,18 @@ export default defineSchema({
     ...furnitureTables,
     ...commerceTables,
 
+    productHealth: defineTable({
+        productId: v.id('products'), epoch: v.number(), version: v.number(),
+        hasIssues: v.boolean(), hasCjIssues: v.boolean(), hasMissingCjVariants: v.boolean(), dueAt: v.number(), details: v.any(),
+    }).index('by_product', ['productId']).index('by_issues', ['epoch', 'hasIssues'])
+        .index('by_cj_issues', ['epoch', 'hasCjIssues']).index('by_due', ['epoch', 'dueAt']),
+    productHealthState: defineTable({
+        key: v.string(), epoch: v.number(), version: v.number(), enabled: v.boolean(),
+        phase: v.union(v.literal('backfill'), v.literal('orphans'), v.literal('verify'), v.literal('ready'), v.literal('failed')),
+        cursor: v.union(v.string(), v.null()), total: v.number(), issues: v.number(), cjIssues: v.number(), missingCjVariants: v.number(),
+        revision: v.number(), verificationRevision: v.number(), checked: v.number(), checkedIssues: v.number(), checkedCjIssues: v.number(), checkedMissingCjVariants: v.number(),
+        mismatchIds: v.array(v.string()), updatedAt: v.number(), verifiedAt: v.optional(v.number()),
+    }).index('by_key', ['key']),
     productCatalog: defineTable({
         productId: v.id('products'), version: v.number(), productCreatedAt: v.number(),
         name: v.string(), collection: v.string(), category: v.string(), visible: v.boolean(),
