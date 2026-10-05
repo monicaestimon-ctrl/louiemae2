@@ -6,6 +6,7 @@ import { requireCatalogReady } from './catalogReadiness';
 import { CATALOG_VERSION, type publicCatalogProduct, type adminCatalogProduct } from '../lib/catalogProjection';
 import { catalogPageOptions } from '../lib/catalogPagination';
 import { matchesCjQueueFilter } from '../lib/cjVariantQueue';
+import type { Doc } from './_generated/dataModel';
 
 const filters = {
   paginationOpts: paginationOptsValidator,
@@ -22,6 +23,37 @@ function publicRow(row: { version: number; publicData: unknown }) {
   if (row.version !== CATALOG_VERSION) throw new ConvexError({ code: 'CATALOG_VERSION_MISMATCH', message: 'Catalog requires verification.' });
   return row.publicData as ReturnType<typeof publicCatalogProduct>;
 }
+
+function sourcingRow(row: Doc<'productCatalog'>) {
+  const display = publicRow(row);
+  const admin = row.adminData as ReturnType<typeof adminCatalogProduct>;
+  return { _id: row.productId, _creationTime: row.productCreatedAt, name: row.name,
+    images: display.images.slice(0, 1), sourceUrl: admin.sourceUrl,
+    cjSourcingStatus: admin.cjSourcingStatus, cjSourcingState: admin.cjSourcingState,
+    cjSourcingId: admin.cjSourcingId, cjSourcingError: admin.cjSourcingError,
+    cjSubmittedAt: admin.cjSubmittedAt, cjApprovedAt: admin.cjApprovedAt, cjProductId: admin.cjProductId };
+}
+
+export const sourcingPage = query({ args: { paginationOpts: paginationOptsValidator,
+  status: v.union(v.literal('pending'), v.literal('rejected')),
+}, handler: async (ctx, args) => {
+  await requireCjAdminIdentity(ctx);
+  await requireCatalogReady(ctx);
+  const batch = await ctx.db.query('productCatalog').withIndex('by_sourcing_created', q => q.eq('sourcingStatus', args.status))
+    .paginate(catalogPageOptions(args.paginationOpts));
+  return { ...batch, page: batch.page.map(sourcingRow) };
+} });
+
+export const recentApprovalsPage = query({ args: { paginationOpts: paginationOptsValidator, since: v.string() }, handler: async (ctx, args) => {
+  await requireCjAdminIdentity(ctx);
+  await requireCatalogReady(ctx);
+  // The caller keeps this cutoff stable across pages. Preserve the existing
+  // ISO-string comparison, applying it through the index before reading rows.
+  const batch = await ctx.db.query('productCatalog')
+    .withIndex('by_sourcing_approved', q => q.eq('sourcingStatus', 'approved').gte('approvedAt', args.since))
+    .order('desc').paginate(catalogPageOptions(args.paginationOpts));
+  return { ...batch, page: batch.page.filter(row => Boolean(row.approvedAt)).map(sourcingRow) };
+} });
 
 export const storefrontPage = query({ args: filters, handler: async (ctx, args) => {
   await requireCatalogReady(ctx);
