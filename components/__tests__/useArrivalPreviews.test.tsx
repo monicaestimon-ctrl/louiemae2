@@ -1,7 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { getFunctionName } from 'convex/server';
-import { useArrivalPreviews, useCollectionArrivalPreview } from '../useArrivalPreviews';
+import { useArrivalPreviews, useCollectionArrivalPreview, useDropPreviews, useCollectionDropPreview } from '../useArrivalPreviews';
 
 const mocks = vi.hoisted(() => ({ ready: undefined as unknown, query: vi.fn(), pages: vi.fn(),
   dated: { results: [] as unknown[], status: 'LoadingFirstPage', loadMore: vi.fn() },
@@ -70,6 +70,32 @@ it('caps previews at twelve and responds to live removal or readiness loss witho
   mocks.legacy.results = [row('stale-legacy')];
   expect(view.result.current.products.map(product => product.id)).toEqual(['remaining']);
   view.rerender({ ready: false });
+  expect(view.result.current.products).toEqual([]);
+  expect(view.result.current.loading).toBe(false);
+});
+
+it('loads collection drop previews independently and skips unavailable catalogs', () => {
+  const view = renderHook(() => useDropPreviews());
+  expect(view.result.current.loading).toBe(true);
+  expect(mocks.pages.mock.calls.every(call => call[1] === 'skip')).toBe(true);
+  mocks.ready = { ready: true }; view.rerender();
+  expect(mocks.pages.mock.calls.slice(-4).map(call => call[1].collection)).toEqual(['fashion', 'kids', 'furniture', 'decor']);
+  expect(mocks.pages.mock.calls.every(call => getFunctionName(call[0]) === 'catalog:dropPage')).toBe(true);
+  mocks.ready = { ready: false }; view.rerender();
+  expect(view.result.current.unavailable).toBe(true);
+  expect(view.result.current.loading).toBe(false);
+});
+
+it('fills short drop pages up to four, preserving backend publication order and reacting to updates', () => {
+  mocks.dated.status = 'CanLoadMore';
+  const view = renderHook(() => useCollectionDropPreview('furniture', true));
+  expect(mocks.dated.loadMore).toHaveBeenCalledWith(4);
+  mocks.dated.results = [row('published')]; view.rerender();
+  expect(mocks.dated.loadMore).toHaveBeenLastCalledWith(3);
+  mocks.dated.results = [row('published'), row('older'), row('legacy-new'), row('plain'), row('extra')]; view.rerender();
+  expect(view.result.current.products.map(product => product.id)).toEqual(['published', 'older', 'legacy-new', 'plain']);
+  expect(view.result.current.loading).toBe(false);
+  mocks.dated.results = []; mocks.dated.status = 'Exhausted'; view.rerender();
   expect(view.result.current.products).toEqual([]);
   expect(view.result.current.loading).toBe(false);
 });

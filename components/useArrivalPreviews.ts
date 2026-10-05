@@ -4,6 +4,10 @@ import { api } from '../convex/_generated/api';
 import type { Product } from '../types';
 
 export type CatalogPreviewProduct = Pick<Product, 'id' | 'name' | 'price' | 'images' | 'category' | 'collection' | 'isNew'>;
+const previewProduct = (row: Omit<CatalogPreviewProduct, 'id'> & { _id: string }): CatalogPreviewProduct => ({
+  id: row._id, name: row.name, price: row.price, images: row.images,
+  category: row.category, collection: row.collection, isNew: row.isNew,
+});
 const PREVIEW_SIZE = 12;
 
 export function useCollectionArrivalPreview(collection: string, since: number, ready: boolean) {
@@ -31,10 +35,7 @@ export function useCollectionArrivalPreview(collection: string, since: number, r
   const complete = datedCount >= PREVIEW_SIZE || (datedStatus === 'Exhausted'
     && (datedCount + legacyCount >= PREVIEW_SIZE || legacyStatus === 'Exhausted'));
   const products: CatalogPreviewProduct[] = ready
-    ? [...dated.results, ...(needsLegacy ? legacy.results : [])].slice(0, PREVIEW_SIZE).map(row => ({
-      id: row._id, name: row.name, price: row.price, images: row.images,
-      category: row.category, collection: row.collection, isNew: row.isNew,
-    })) : [];
+    ? [...dated.results, ...(needsLegacy ? legacy.results : [])].slice(0, PREVIEW_SIZE).map(previewProduct) : [];
   return { products, loading: ready && !complete };
 }
 
@@ -49,6 +50,31 @@ export function useArrivalPreviews() {
   const decor = useCollectionArrivalPreview('decor', since, ready);
   return {
     collectionProducts: { fashion: fashion.products, kids: kids.products, furniture: furniture.products, decor: decor.products } as Record<string, CatalogPreviewProduct[]>,
+    loading: readiness === undefined || fashion.loading || kids.loading || furniture.loading || decor.loading,
+    unavailable: readiness !== undefined && !ready,
+  };
+}
+
+export function useCollectionDropPreview(collection: string, ready: boolean) {
+  const page = usePaginatedQuery(api.catalog.dropPage, ready ? { collection } : 'skip', { initialNumItems: 4 });
+  const count = page.results.length;
+  const { status, loadMore } = page;
+  useEffect(() => {
+    if (ready && count < 4 && status === 'CanLoadMore') loadMore(4 - count);
+  }, [ready, count, status, loadMore]);
+  return { products: ready ? page.results.slice(0, 4).map(previewProduct) : [],
+    loading: ready && count < 4 && status !== 'Exhausted' };
+}
+
+export function useDropPreviews() {
+  const readiness = useQuery(api.catalogReadiness.status, {});
+  const ready = readiness?.ready === true;
+  const fashion = useCollectionDropPreview('fashion', ready);
+  const kids = useCollectionDropPreview('kids', ready);
+  const furniture = useCollectionDropPreview('furniture', ready);
+  const decor = useCollectionDropPreview('decor', ready);
+  return {
+    dropProducts: { fashion: fashion.products, kids: kids.products, furniture: furniture.products, decor: decor.products } as Record<string, CatalogPreviewProduct[]>,
     loading: readiness === undefined || fashion.loading || kids.loading || furniture.loading || decor.loading,
     unavailable: readiness !== undefined && !ready,
   };

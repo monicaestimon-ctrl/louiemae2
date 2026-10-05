@@ -1,4 +1,4 @@
-# Arrivals preview rollout
+# Public collection preview rollout
 
 Hold this frontend until the current catalog version is backfilled, verified
 through both passes and explicitly enabled in production. Rebase with current
@@ -13,7 +13,13 @@ arrivals are exhausted and space remains. Publication ordering, strict thirty-da
 cutoff, visibility and legacy fallback are enforced by the backend contract.
 The cutoff is fixed for the page visit; a new visit refreshes the window.
 
-The page no longer requests the shared full storefront catalog. Preview products
+New Collection separately uses `dropPage` to fill four cards per collection in
+publication order, with legacy featured priority. This is not the arrivals window
+or the storefront's featured sort. Invalid publication dates have the deterministic
+undated ordering documented in the v5 backend contract; verify those records
+explicitly before release. Short byte-limited pages continue until four or exhaustion.
+
+Neither page requests the shared full storefront catalog. Preview products
 have an explicit display-only type, and count badges describe featured arrivals,
 not total inventory. Loading and unavailable states are distinct. Existing
 collection navigation, card presentation and newsletter behavior remain unchanged.
@@ -27,4 +33,5 @@ Check total cost rather than assuming fewer returned rows guarantee savings.
 
 Rollback the frontend before disabling catalog readers. Retain the additive
 backend and authoritative source documents; no automatic legacy scan fallback
-is included in the new page.
+is included in either new page. StorePage's separate legacy reader remains
+follow-up work; this change does not claim to remove that subscription.
