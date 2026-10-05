@@ -222,4 +222,39 @@ edits and dismissals. This prepares batch generation for compact catalog rows;
 it does not itself enable paginated catalog readers or claim measured savings.
 
 Local validation passed 83 files / 546 tests, including nine new batch hook tests.
-Production release and authenticated verification must be recorded after deployment.
+PR 136 merged at `92e9c4c98759e63fc4188a6283f99d54ba5aef58`. PR CI
+`37268452990` and production CI/backend deploy `37268636144` passed.
+The exact clean merge commit was deployed to Vercel production as
+`dpl_CQuxctj99rwjR98xQzJy7GLuuo5D` and verified Ready with the `www.louiemae.com`
+alias and existing `diligent-jay-261` URL. The build and client-secret check
+passed; the public homepage returned HTTP 200. Authenticated generation and
+save verification remain pending Convex service restoration. Frontend rollback
+is available to `dpl_EWyonxMC9ZNpTGZcQgPfz8rmsWBM`.
+
+## Webhook status summaries (PR 138; backend released, inactive)
+
+PR 138 merged at `0725fb6f3a7378181f5295a1c6590d4fe521454b`. PR CI
+`37270739224` and production CI/deploy `37270979319` passed. Validation included
+84 files / 549 tests, both type checks, 58-entry writer coverage, lint, build
+and client-secret verification. Compact metadata preserves the latest-100
+sample, source ordering, status and oldest valid processing claim without
+copying payloads or claim tokens. Claim/retry/completion writes maintain it
+transactionally; unchanged payload-only projections do not rewrite summaries.
+
+No webhook backfill or activation has run. The historical passes still read
+source records and their retained payloads; budget these one-time reads and
+coordinate separately authorized retention work before migration. See
+`WEBHOOK_SUMMARY_ROLLOUT.md`. A later public production readiness probe still
+returned Server Error (`a463e5924ca7b598`); the most recent authenticated
+diagnosis remains the free-plan-disabled team.
+
+## Health frontend (PR 137; reviewed/tested, held before rollout)
+
+PR 137 is open at `9ff1d58b26cd3f0f65065a29a8808d40db8963f4`. CI
+`37269408720` passed 85 files / 556 tests and the other quality checks. The
+prepared dashboard uses exact health totals and paginated compact issues,
+retains manual reconciliation, and never equates an empty partial page with a
+clear inventory. Keep this PR unmerged and undeployed until the production
+health rebuild, verification and activation complete. Update against current
+main and rerun combined CI before its eventual merge. CodeRabbit skipped review
+under the repository eligibility rule; no manual review request was posted.

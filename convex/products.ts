@@ -3,6 +3,7 @@ import { ConvexError, v } from "convex/values";
 import { assertCjPricingReady } from '../lib/cjPricingReview';
 import { isCjProductStorefrontReady } from "../lib/cjFulfillmentReadiness";
 import { productHealthProblems } from '../lib/productHealth';
+import { hasCjVariantQueueFootprint, getCjVariantMappingSummary, compareCjVariantQueueRows } from '../lib/cjVariantQueue';
 import { requireCjAdminIdentity } from "./cjAdminAccess";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -196,6 +197,17 @@ export const getAdmin = query({
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
         return await ctx.db.get(args.id);
+    },
+});
+
+// Variant editors must use the full selected record, including source evidence,
+// every provider/customer option and its revision, rather than a compact list row.
+export const getAdminVariantDetail = query({
+    args: { id: v.id('products') },
+    handler: async (ctx, args) => {
+        await requireCjAdminIdentity(ctx);
+        const product = await ctx.db.get(args.id);
+        return product ? { ...product, mappingSummary: getCjVariantMappingSummary(product) } : null;
     },
 });
 
@@ -1160,59 +1172,9 @@ export const getProductsWithCjVariants = query({
     handler: async (ctx) => {
         await requireCjAdminIdentity(ctx);
         const products = await ctx.db.query("products").take(500);
-        return products
-            .filter((product) => Boolean(
-                (product.cjSourcingStatus && product.cjSourcingStatus !== "none")
-                || product.cjSourcingJobId
-                || product.cjProductId
-                || product.cjVariantId
-                || product.cjSku
-                || (product.cjVariants?.length ?? 0) > 0
-            ))
-            .map((product) => {
-                const customerVariants = product.variants ?? [];
-                const providerVariants = product.cjVariants ?? [];
-                const providerById = new Map(providerVariants.map((variant) => [variant.vid, variant]));
-                const mappedVariants = customerVariants.filter((variant) => variant.cjVariantId && variant.cjSku);
-                const unmappedVariants = customerVariants.filter((variant) => variant.inStock !== false && (!variant.cjVariantId || !variant.cjSku));
-                const invalidMappings = mappedVariants.filter((variant) => {
-                    const provider = providerById.get(variant.cjVariantId!);
-                    return !provider || provider.sku !== variant.cjSku;
-                });
-                const mappedIds = mappedVariants.map((variant) => variant.cjVariantId!);
-                const duplicateMappingCount = mappedIds.length - new Set(mappedIds).size;
-                const issueCodes: string[] = [];
-                if (product.cjSourcingStatus === "pending") issueCodes.push("CJ_APPROVAL_PENDING");
-                if (product.cjSourcingStatus === "rejected") issueCodes.push("CJ_REJECTED");
-                if (!product.cjSourcingStatus || product.cjSourcingStatus === "none") issueCodes.push("CJ_NOT_APPROVED");
-                if (product.cjSourcingStatus === "approved" && !product.cjProductId) issueCodes.push("MISSING_CJ_PRODUCT_ID");
-                if (product.cjSourcingStatus === "approved" && providerVariants.length === 0) issueCodes.push("MISSING_CJ_VARIANTS");
-                if (providerVariants.length > 1 && customerVariants.length === 0) issueCodes.push("MISSING_CUSTOMER_VARIANTS");
-                if (unmappedVariants.length > 0) issueCodes.push("UNMAPPED_CUSTOMER_VARIANTS");
-                if (invalidMappings.length > 0) issueCodes.push("INVALID_CJ_MAPPINGS");
-                if (duplicateMappingCount > 0) issueCodes.push("DUPLICATE_CJ_MAPPINGS");
-                if (product.cjSourcingState === "reconciliation_required") issueCodes.push("RECONCILIATION_REQUIRED");
-                if (product.cjSourcingState === "needs_input") issueCodes.push("NEEDS_INPUT");
-                if (issueCodes.length === 0 && product.cjSourcingStatus === "approved" && product.cjSourcingState === "fulfillment_ready" && product.cjFulfillmentReadiness === "ready") issueCodes.push("READY");
-                return {
-                    ...product,
-                    mappingSummary: {
-                        issueCodes,
-                        customerVariantCount: customerVariants.length,
-                        mappedVariantCount: mappedVariants.length,
-                        unmappedVariantCount: unmappedVariants.length,
-                        cjVariantCount: providerVariants.length,
-                        unmatchedCjVariantCount: Math.max(0, providerVariants.length - new Set(mappedIds).size),
-                        invalidMappingCount: invalidMappings.length + duplicateMappingCount,
-                    },
-                };
-            })
-            .sort((left, right) => {
-                const leftReady = left.mappingSummary.issueCodes.includes("READY") ? 1 : 0;
-                const rightReady = right.mappingSummary.issueCodes.includes("READY") ? 1 : 0;
-                if (leftReady !== rightReady) return leftReady - rightReady;
-                return right.mappingSummary.unmappedVariantCount - left.mappingSummary.unmappedVariantCount;
-            });
+        return products.filter(hasCjVariantQueueFootprint)
+            .map(product => ({ ...product, mappingSummary: getCjVariantMappingSummary(product) }))
+            .sort(compareCjVariantQueueRows);
     },
 });
 
