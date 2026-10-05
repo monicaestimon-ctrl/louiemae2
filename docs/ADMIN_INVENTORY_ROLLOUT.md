@@ -26,8 +26,13 @@ while editing. Dashboard totals and global CJ filter counts use verified health
 counters, distinguishing loading/unavailable from zero. A verified empty dashboard
 may request the legacy empty list solely to preserve the existing initial-product
 bootstrap; SiteProvider still checks the authoritative list is empty before seeding.
-Content-editor legacy subscriptions remain separate work; this change must not
-be described as eliminating every full list read.
+Content editors use name/ID-only pickers with explicit pagination and a separately
+pinned saved selection. Search, unloaded pages and deleted references never
+auto-overwrite the page's stored product ID. The first default product for a new
+feature section comes from one compact option while the page editor is open.
+Pages, journal and structure tabs no longer request the private product list.
+The verified empty-catalog bootstrap is the only remaining AdminPage demand for
+that legacy list; product editing and generation retain explicit full-detail reads.
 
 Validation before production cutover: browse/search past product 500, exercise
 every connection state and configured category descendant, compare complete

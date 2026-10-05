@@ -5,10 +5,12 @@ import { AdminPage } from '../AdminPage';
 const mocks = vi.hoisted(() => ({ demand: vi.fn(), loadDetail: vi.fn(), batch: vi.fn(), health: undefined as unknown, query: vi.fn(),
   inventory: { products: [] as unknown[], loading: false, unavailable: false, complete: false,
     loadingMore: false, canLoadMore: true, updating: false, loadMore: vi.fn() },
-  site: { isAuthenticated: true, isAuthLoading: false, posts: [], products: [],
-    siteContent: { collections: [], customPages: [], navLinks: [] } },
+  site: { isAuthenticated: true, isAuthLoading: false, posts: [], products: [], updateCustomPage: vi.fn(),
+    siteContent: { collections: [], customPages: [] as unknown[], navLinks: [] } },
 }));
 vi.mock('../useAdminInventoryPage', () => ({ useAdminInventoryPage: () => mocks.inventory }));
+vi.mock('../AdminProductPicker', () => ({ AdminProductPicker: ({ value, onChange }: { value?: string; onChange: (id: string) => void }) => <button onClick={() => onChange('later-product')}>Saved product: {value}</button> }));
+vi.mock('../RichTextEditor', () => ({ RichTextEditor: () => null }));
 vi.mock('../../contexts/BlogContext', () => ({ useSite: () => mocks.site }));
 vi.mock('../../contexts/AdminCatalogDemand', () => ({ useAdminCatalog: (...args: unknown[]) => mocks.demand(...args) }));
 vi.mock('../../contexts/NewsletterContext', () => ({ useNewsletterAdmin: () => ({ subscribers: [], campaigns: [], stats: {} }) }));
@@ -18,6 +20,7 @@ vi.mock('../useAdminDescriptionBatch', () => ({ useAdminDescriptionBatch: () => 
 vi.mock('../FadeIn', () => ({ FadeIn: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 beforeEach(() => {
   vi.clearAllMocks(); mocks.health = undefined; localStorage.setItem('admin-active-tab', 'products');
+  mocks.site.siteContent.customPages = [];
   Object.assign(mocks.inventory, { products: [], loading: false, unavailable: false, complete: false, loadingMore: false, canLoadMore: true, updating: false });
 });
 
@@ -82,4 +85,17 @@ it('allows the existing empty-catalog bootstrap only for a verified exact zero o
   mocks.health = { ready: true, totalProducts: 0, inventoryCounts: { ready: 0 } }; view.rerender(<AdminPage />);
   expect(mocks.demand).toHaveBeenLastCalledWith(true);
   expect(screen.getByRole('button', { name: '0 All Inventory' })).toBeInTheDocument();
+});
+
+it('edits a saved off-page content product through the picker without requesting the private list', () => {
+  localStorage.setItem('admin-active-tab', 'pages');
+  mocks.site.siteContent.customPages = [{ id: 'lookbook', title: 'Lookbook', slug: 'lookbook',
+    sections: [{ id: 'feature', type: 'product-feature', title: 'Featured piece', productId: 'saved-beyond-500' }] }];
+  render(<AdminPage />);
+  fireEvent.click(screen.getByText('Lookbook'));
+  expect(mocks.demand).toHaveBeenLastCalledWith(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Saved product: saved-beyond-500' }));
+  expect(mocks.site.updateCustomPage).toHaveBeenCalledWith('lookbook', { sections: [
+    { id: 'feature', type: 'product-feature', title: 'Featured piece', productId: 'later-product' },
+  ] });
 });

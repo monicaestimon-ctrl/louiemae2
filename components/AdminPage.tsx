@@ -27,6 +27,7 @@ import { cjListingUrl } from '../lib/cjPricingReview';
 import { useAdminProductDetail } from './useAdminProductDetail';
 import { useAdminDescriptionBatch } from './useAdminDescriptionBatch';
 import { useAdminInventoryPage } from './useAdminInventoryPage';
+import { AdminProductPicker } from './AdminProductPicker';
 
 type AdminTab =
    | 'dashboard'
@@ -211,7 +212,7 @@ const ImageUploader: React.FC<{
 };
 
 export const AdminPage: React.FC = () => {
-   const { isAuthenticated, isAuthLoading, signIn, logout, posts, addPost, updatePost, deletePost, siteContent, updateSiteContent, addCustomPage, updateCustomPage, deleteCustomPage, products, addProduct, addProducts, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
+   const { isAuthenticated, isAuthLoading, signIn, logout, posts, addPost, updatePost, deletePost, siteContent, updateSiteContent, addCustomPage, updateCustomPage, deleteCustomPage, addProduct, addProducts, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
    const { subscribers, subscriberListTruncated, campaigns, createCampaign, updateCampaign, sendCampaign, deleteCampaign, stats } = useNewsletterAdmin();
    const linkDescriptionAuditToProduct = useMutation(api.descriptionAudits.linkAuditToProduct);
    const launchNextProducts = useMutation(api.products.launchNextProducts);
@@ -269,7 +270,11 @@ export const AdminPage: React.FC = () => {
    // Preserve the existing empty-catalog bootstrap without subscribing to a
    // nonempty full catalog just to display dashboard counts.
    const needsEmptyCatalogBootstrap = activeTab === 'dashboard' && inventoryHealth?.ready === true && inventoryHealth.totalProducts === 0;
-   useAdminCatalog(isAuthenticated && !isEditingProduct && (needsEmptyCatalogBootstrap || ['pages', 'structure', 'journal'].includes(activeTab)));
+   useAdminCatalog(isAuthenticated && !isEditingProduct && needsEmptyCatalogBootstrap);
+   const contentPickerEnabled = isAuthenticated && activeTab === 'pages' && Boolean(activePageEditor);
+   const contentCatalogReadiness = useQuery(api.catalogReadiness.status, contentPickerEnabled ? {} : 'skip');
+   const firstContentProduct = useQuery(api.catalog.adminOptionsPage,
+      contentPickerEnabled && contentCatalogReadiness?.ready ? { paginationOpts: { cursor: null, numItems: 1 } } : 'skip');
    const inventory = useAdminInventoryPage(isAuthenticated && activeTab === 'products' && !isEditingProduct, {
       collection: filterCollection, category: filterCategory, search: inventorySearch,
       connection: inventoryCjFilter, collections: siteContent.collections,
@@ -334,7 +339,7 @@ export const AdminPage: React.FC = () => {
             { title: 'Item 1', image: 'https://images.unsplash.com/photo-1595428774223-ef52624120d2?q=80&w=800', link: '#' },
             { title: 'Item 2', image: 'https://images.unsplash.com/photo-1513519245088-0e12902e5a38?q=80&w=800', link: '#' },
          ] : undefined,
-         productId: type === 'product-feature' ? products[0]?.id : undefined
+         productId: type === 'product-feature' ? firstContentProduct?.page[0]?.id : undefined
       };
 
       if (activePageEditor === 'home') {
@@ -1803,14 +1808,8 @@ export const AdminPage: React.FC = () => {
                                  {/* PRODUCT FEATURE SPECIFIC */}
                                  {section.type === 'product-feature' && (
                                     <div>
-                                       <label className="block text-[10px] uppercase tracking-widest text-earth/40 mb-1">Select Product</label>
-                                       <select
-                                          value={section.productId || ''}
-                                          onChange={(e) => { const newSections = [...sections]; newSections[idx] = { ...section, productId: e.target.value }; updateFunc(newSections); }}
-                                          className="w-full bg-cream/30 p-3 border border-earth/10 text-sm"
-                                       >
-                                          {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                       </select>
+                                       <AdminProductPicker value={section.productId}
+                                          onChange={productId => { const newSections = [...sections]; newSections[idx] = { ...section, productId }; updateFunc(newSections); }} />
                                     </div>
                                  )}
 
@@ -2091,14 +2090,8 @@ export const AdminPage: React.FC = () => {
                                  {/* PRODUCT FEATURE SPECIFIC */}
                                  {section.type === 'product-feature' && (
                                     <div>
-                                       <label className="block text-[10px] uppercase tracking-widest text-earth/40 mb-1">Select Product</label>
-                                       <select
-                                          value={section.productId || ''}
-                                          onChange={(e) => { const newSections = [...sections]; newSections[idx] = { ...section, productId: e.target.value }; updateFunc(newSections); }}
-                                          className="w-full bg-cream/30 p-3 border border-earth/10 text-sm"
-                                       >
-                                          {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                       </select>
+                                       <AdminProductPicker value={section.productId}
+                                          onChange={productId => { const newSections = [...sections]; newSections[idx] = { ...section, productId }; updateFunc(newSections); }} />
                                     </div>
                                  )}
 
