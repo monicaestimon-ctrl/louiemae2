@@ -1,12 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { FadeIn } from './FadeIn';
-import { useSite } from '../contexts/BlogContext';
-import { useStorefrontCatalog } from '../contexts/AdminCatalogDemand';
+import { useDropPreviews, type CatalogPreviewProduct } from './useArrivalPreviews';
 import { useNewsletter } from '../contexts/NewsletterContext';
-import { Product } from '../types';
 import { ArrowRight, Check } from 'lucide-react';
 import { SafeImage } from './SafeImage';
-import { isProductVisibleOnStorefront } from '../lib/productVisibility';
 
 // Collection drop configuration
 const DROP_NAME = "Consider the Lilies";
@@ -26,7 +23,7 @@ const navigateTo = (hash: string) => {
 };
 
 // Luxury Product Card with floating effects and staggered layout
-const LuxuryProductCard: React.FC<{ product: Product; index: number }> = ({ product, index }) => {
+const LuxuryProductCard: React.FC<{ product: CatalogPreviewProduct; index: number }> = ({ product, index }) => {
     // Offset every other item on desktop for a staggered editorial grid look
     const isOffset = index % 2 !== 0;
     const offsetClass = isOffset ? "md:mt-24" : "";
@@ -66,7 +63,7 @@ const LuxuryProductCard: React.FC<{ product: Product; index: number }> = ({ prod
 const LuxuryCategorySection: React.FC<{
     title: string;
     subtitle: string;
-    products: Product[];
+    products: CatalogPreviewProduct[];
     route: string;
 }> = ({ title, subtitle, products, route }) => {
     if (products.length === 0) return null;
@@ -110,8 +107,7 @@ const LuxuryCategorySection: React.FC<{
 };
 
 export const NewCollectionPage: React.FC = () => {
-    useStorefrontCatalog();
-    const { products, isCatalogLoading } = useSite();
+    const { dropProducts, loading: isCatalogLoading, unavailable } = useDropPreviews();
     const { addSubscriberWithTags } = useNewsletter();
 
     // VIP signup form state
@@ -128,27 +124,6 @@ export const NewCollectionPage: React.FC = () => {
         setFirstName('');
         setEmail('');
     };
-
-    const dropProducts = useMemo(() => {
-        const result: Record<string, Product[]> = {};
-
-        CATEGORY_SECTIONS.forEach(sec => {
-            const colProducts = products.filter(p => p.collection === sec.id && isProductVisibleOnStorefront(p));
-
-            colProducts.sort((a, b) => {
-                const dateA = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
-                const dateB = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
-                if (!dateA && !dateB) {
-                    return (b.isNew ? 1 : 0) - (a.isNew ? 1 : 0);
-                }
-                return dateB - dateA;
-            });
-
-            result[sec.id] = colProducts.slice(0, 4);
-        });
-
-        return result;
-    }, [products]);
 
     return (
         <div className="bg-[#FAF9F6] min-h-screen pt-[72px] selection:bg-stone-200">
@@ -211,6 +186,7 @@ export const NewCollectionPage: React.FC = () => {
             {/* Collection Gallery Sections */}
             <div className="pb-32 bg-gradient-to-b from-[#FAF9F6] to-white">
                 {isCatalogLoading && <p role="status" className="py-10 text-center text-earth/60">Loading the collection…</p>}
+                {unavailable && <p role="status" className="py-10 text-center text-earth/60">The collection is temporarily unavailable. Please check back shortly.</p>}
                 {CATEGORY_SECTIONS.map((section) => (
                     <LuxuryCategorySection
                         key={section.id}
