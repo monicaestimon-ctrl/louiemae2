@@ -89,6 +89,7 @@ type QueueFilter = 'needs_attention' | 'awaiting_approval' | 'unmapped' | 'missi
 type CJVariantManagerProps = {
     targetProductId?: string;
     onEditProduct?: (productId: string) => void;
+    detailOnly?: boolean;
 };
 
 const FILTERS: Array<{ key: QueueFilter; label: string }> = [
@@ -147,8 +148,13 @@ const matchesFilter = (product: ProductWithVariants, filter: QueueFilter): boole
     return issues.includes('MISSING_CJ_VARIANTS');
 };
 
-export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProductId, onEditProduct }) => {
-    const products = useQuery(api.products.getProductsWithCjVariants, {}) as ProductWithVariants[] | undefined;
+export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProductId, onEditProduct, detailOnly = false }) => {
+    const legacyProducts = useQuery(api.products.getProductsWithCjVariants, detailOnly ? 'skip' : {}) as ProductWithVariants[] | undefined;
+    const detail = useQuery(api.products.getAdminVariantDetail,
+        detailOnly && targetProductId ? { id: targetProductId as Id<'products'> } : 'skip');
+    const products = useMemo(() => detailOnly
+        ? (!targetProductId ? [] : detail === undefined ? undefined : detail ? [detail] : [])
+        : legacyProducts, [detailOnly, targetProductId, detail, legacyProducts]);
     const saveVariantWorkspace = useMutation(api.products.saveVariantWorkspace);
     const productRefs = useRef<Map<string, HTMLElement>>(new Map());
     const draftRevisions = useRef<Map<string, number>>(new Map());
@@ -201,6 +207,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
     }, [products]);
 
     const visibleProducts = useMemo(() => {
+        if (detailOnly) return products ?? [];
         const query = search.trim().toLowerCase();
         const rows = (products ?? []).filter((product) => {
             if (targetProductId === product._id) return true;
@@ -216,7 +223,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
         });
         if (!targetProductId) return rows;
         return [...rows].sort((left, right) => Number(right._id === targetProductId) - Number(left._id === targetProductId));
-    }, [filter, products, search, targetProductId]);
+    }, [detailOnly, filter, products, search, targetProductId]);
 
     const updateDraft = (productId: string, updater: (variants: CustomerVariant[]) => CustomerVariant[]) => {
         if (!draftRevisions.current.has(productId)) draftRevisions.current.set(productId, products?.find(p => p._id === productId)?.productRevision ?? 0);
@@ -306,6 +313,8 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
         }
     };
 
+    if (detailOnly && !targetProductId) return null;
+    if (detailOnly && detail === null) return <p role="status" className="p-4 text-cream/60">This product is no longer available. Choose another product.</p>;
     if (products === undefined) {
         return (
             <div className="rounded-[2rem] border border-white/10 bg-black/40 p-10 text-center text-cream/50">
@@ -320,7 +329,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
             <section className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-black/40 p-5 shadow-[0_15px_30px_rgba(0,0,0,0.3)] backdrop-blur-2xl md:p-8">
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/5 to-transparent" />
                 <div className="relative z-10">
-                    <div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                    {!detailOnly && <><div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                         <div className="flex items-center gap-4">
                             <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-purple-500/30 bg-purple-900/20">
                                 <Link2 className="h-6 w-6 text-purple-300" />
@@ -381,6 +390,7 @@ export const CJVariantManager: React.FC<CJVariantManagerProps> = ({ targetProduc
                         </div>
                     </div>
 
+                    </>}
                     {error && (
                         <div role="alert" className="mb-4 flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-900/20 p-4 text-sm text-red-300">
                             <AlertCircle className="h-5 w-5 shrink-0" />

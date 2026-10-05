@@ -258,3 +258,17 @@ clear inventory. Keep this PR unmerged and undeployed until the production
 health rebuild, verification and activation complete. Update against current
 main and rerun combined CI before its eventual merge. CodeRabbit skipped review
 under the repository eligibility rule; no manual review request was posted.
+
+## Variant queue backend (PRs 139–140)
+
+PR 139 merged at `bfd9704a2dd2cd43b0ec72e18dbc16097b226f4b`; production CI/deploy
+`37272685369` passed. It preserves the legacy queue contract while adding an
+authenticated, full selected-product detail endpoint and shared mapping rules.
+
+PR 140 merged at `25bca7407f52760bcc51339f3668fa30ff99f4c8`; PR CI `37273442952`
+passed the corrected full suite (554 tests). Catalog v3 adds compact queue
+metadata and bounded indexed pagination without the legacy 500-product ceiling.
+All customer/provider option identifiers remain searchable. Source documents,
+full editor evidence and revisions remain authoritative. Neither migration nor
+activation has run; frontend cutover is held until production verification.
+See `VARIANT_QUEUE_ROLLOUT.md` for the release gate and prepared UI behavior.
