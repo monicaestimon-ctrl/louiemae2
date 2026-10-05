@@ -1,6 +1,6 @@
 # Catalog read-model rollout
 
-The version-2 projection is maintained transactionally at product-writing entry
+The version-4 projection is maintained transactionally at product-writing entry
 points. Source products remain authoritative for detail/edit/checkout operations.
 Current clients still use their existing readers; this writer release does not
 enable incomplete catalog lists or run any migration automatically.
@@ -19,7 +19,7 @@ Writer inventory and verification:
 | Legacy migration tools | `productMigrations` mutation builder | category assignments remain in sync |
 
 `npm run verify:catalog-writers` follows typed writes through helper calls to
-mutation entry points and currently verifies 50 entries. It is part of CI. The
+mutation entry points and currently verifies 58 entries. It is part of CI. The
 initial inventory also manually reviewed untyped writes in batch/lifecycle tools;
 those target their own records, not products. Avoid introducing untyped product
 writes that bypass this structural check. Changes made directly in the Convex
@@ -76,8 +76,9 @@ These are read budgets, not a guarantee about serialized response size or billin
 Collection and public visibility use indexes. Additional category, substring
 search and admin sourcing filters apply to each bounded page. An empty page can
 still have `isDone: false`; a consumer must preserve its cursor and allow continued
-loading, never treat that empty page as the end. Search covers the same bounded
-search text stored in the projection; full descriptions remain detail-only.
+loading, never treat that empty page as the end. The existing `search` argument
+covers bounded projection text. The separate admin search contract below covers
+the complete legacy inventory search fields.
 
 After backfill completion, run `catalogReadiness.begin`, then repeatedly call
 `verifyNext` with the returned phase and cursor. Each transaction checks at most
@@ -92,3 +93,41 @@ Backfill completion alone cannot activate them. `setEnabled({ enabled: false })`
 is the immediate reader stop control. Starting verification or repairing data
 also disables readers. Roll the frontend back before disabling readers used by
 that frontend; no automatic full-table fallback exists.
+
+## Version 4 filter and preview contracts
+
+Version 4 adds indexed price, featured priority, connection state and arrival
+ordering. New schema fields are optional for deployment compatibility, but v3
+verification cannot activate v4 readers: rerun the current-version backfill and
+both verification passes before enabling any prepared frontend.
+
+`storefrontPage.sort` supports price ascending/descending, source creation newest
+first and featured (`isNew` first, then source creation ascending). Omitting sort
+preserves the existing order argument. A future storefront adoption of `newest`
+will replace its opaque-ID comparison with actual creation order. Price ties use
+source creation and product ID in the selected direction.
+
+The serializable category filter preserves configured descendant matching,
+explicit valid category-ID precedence, and legacy category/subcategory fallback.
+Construct it from the requested collection's configuration. Do not reuse one
+collection's category hierarchy for another collection.
+
+`adminPage.adminSearch` preserves the full inventory search concatenation,
+including complete descriptions and every variant mapping field. Up to 16,000
+characters are stored inline. Larger searchable text is not duplicated: only an
+explicit search reads those exceptional authoritative products, at most five
+source documents per page. The summary pagination budget does not include these
+additional source reads. Ordinary list pages never load these full documents.
+Search remains cursor-based, including empty filtered pages, and does not expose
+private search text to public callers. Source reads are reactive dependencies.
+
+`arrivalsPage` separates dated arrivals from legacy `isNew` products without a
+publication date. Dated arrivals use a strict publication timestamp greater than
+the supplied cutoff, newest first; invalid nonempty dates are excluded. Consumers
+fill their dated preview first, then legacy rows only after exhausting dated
+results, and keep the cutoff fixed for the pagination session.
+
+Public summaries include full image and variant counts; admin summaries also
+include full variant-image counts and launch-added timestamps. Capped display
+arrays and description excerpts remain unsuitable for full-product editing.
+Existing deployed client readers are unchanged by these additive endpoints.

@@ -70,6 +70,30 @@ export function productMatchesCategory(
   );
 }
 
+// A serializable equivalent of the existing category matcher for bounded
+// catalog queries. It preserves explicit-ID precedence and legacy fallback.
+export interface CatalogCategoryFilter {
+  requested: string;
+  hierarchy: boolean;
+  validIds: string[];
+  descendantIds: string[];
+  legacyValues: string[];
+}
+export function buildCatalogCategoryFilter(requested: string, collection: CollectionConfig | undefined): CatalogCategoryFilter {
+  const category = collection?.subcategories.find(item => item.id === requested || item.title === requested);
+  if (!collection || !category) return { requested, hierarchy: false, validIds: [], descendantIds: [], legacyValues: [] };
+  const descendants = collection.subcategories.filter(item => getCategoryAndAncestorIds(item.id, collection).includes(category.id));
+  return { requested, hierarchy: true, validIds: collection.subcategories.map(item => item.id),
+    descendantIds: descendants.map(item => item.id), legacyValues: descendants.flatMap(item => [item.id, item.title]) };
+}
+export function matchesCatalogCategoryFilter(product: Pick<Product, 'subcategoryIds' | 'subcategory' | 'category'>, filter: CatalogCategoryFilter) {
+  if (!filter.hierarchy) return product.category === filter.requested || product.subcategory === filter.requested;
+  const valid = new Set(filter.validIds);
+  const explicit = cleanIds(product.subcategoryIds).filter(id => valid.has(id));
+  return explicit.length > 0 ? explicit.some(id => filter.descendantIds.includes(id))
+    : filter.legacyValues.includes(product.subcategory || product.category);
+}
+
 export function normalizeCategoryAssignment(
   assignment: CategoryAssignment,
   collection: CollectionConfig | undefined,

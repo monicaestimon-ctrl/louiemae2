@@ -305,3 +305,19 @@ PR 145 is held open at `6561832a074c9c9e9bd5c3892728a28724f426cb`; CI
 list subscriptions, exposes continuation and window refresh, and distinguishes
 partial/loading/unverified lists from exhausted empty queues. Merge only after
 catalog activation, rebasing with other dashboard releases and rerunning CI.
+
+## Catalog subscription scope (PR 146)
+
+PR 146 merged at `38db52539d2d848e72994d4ca3560e113be45f02`; PR CI
+`37279756631` (562 tests) and production CI/deploy `37280027277` passed.
+Frontend `dpl_81sjJPfhr3kDvZ5gK8e6ECUfAhUG` is Ready on the production aliases;
+homepage HEAD returned 200. Rollback frontend is PR 142's deployment above.
+Public context catalog demand now belongs to its consuming pages; private demand
+is paused during full-product editing and absent from import/CJ settings.
+The editor opens requested IDs directly, including products outside legacy lists.
+
+Production readiness probe `de5cd34746f7fb1f` still returned Server Error.
+The last authenticated diagnosis remains disabled team service; no migration,
+activation, authenticated workflow verification or production savings measurement
+has been completed. Catalog v4 preparation adds the filter/preview contracts in
+`CATALOG_READ_MODEL_ROLLOUT.md`; it does not itself switch client readers.

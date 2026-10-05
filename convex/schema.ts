@@ -95,7 +95,12 @@ export default defineSchema({
         productId: v.id('products'), version: v.number(), productCreatedAt: v.number(),
         name: v.string(), collection: v.string(), category: v.string(), visible: v.boolean(),
         sourcingStatus: v.string(), approvedAt: v.string(), searchText: v.string(),
-        // Optional during the version-3 backfill; readers require verified v3.
+        // Optional until the current-version backfill and verification complete.
+        price: v.optional(v.number()), featuredPriority: v.optional(v.number()),
+        arrivalKind: v.optional(v.string()), arrivalOrder: v.optional(v.number()),
+        connectionState: v.optional(v.string()), adminSearchText: v.optional(v.string()),
+        adminSearchNeedsDetail: v.optional(v.boolean()),
+        // Added in version 3; readers require the current verified version.
         inVariantQueue: v.optional(v.boolean()), queueReady: v.optional(v.number()),
         queueUnmappedOrder: v.optional(v.number()), queueSearchValues: v.optional(v.array(v.string())),
         // Written only by catalogProjection's explicit field allowlists.
@@ -106,6 +111,13 @@ export default defineSchema({
         .index('by_visible_created', ['visible', 'productCreatedAt', 'productId'])
         .index('by_visible_collection_created', ['visible', 'collection', 'productCreatedAt', 'productId'])
         .index('by_collection_created', ['collection', 'productCreatedAt', 'productId'])
+        .index('by_connection_created', ['connectionState', 'productCreatedAt', 'productId'])
+        .index('by_collection_connection_created', ['collection', 'connectionState', 'productCreatedAt', 'productId'])
+        .index('by_visible_price', ['visible', 'price', 'productCreatedAt', 'productId'])
+        .index('by_visible_collection_price', ['visible', 'collection', 'price', 'productCreatedAt', 'productId'])
+        .index('by_visible_featured', ['visible', 'featuredPriority', 'productCreatedAt', 'productId'])
+        .index('by_visible_collection_featured', ['visible', 'collection', 'featuredPriority', 'productCreatedAt', 'productId'])
+        .index('by_arrival', ['visible', 'collection', 'arrivalKind', 'arrivalOrder', 'productCreatedAt', 'productId'])
         .index('by_sourcing_created', ['sourcingStatus', 'productCreatedAt', 'productId'])
         .index('by_sourcing_approved', ['sourcingStatus', 'approvedAt', 'productId'])
         .searchIndex('search_catalog', { searchField: 'searchText', filterFields: ['visible', 'collection'] }),
