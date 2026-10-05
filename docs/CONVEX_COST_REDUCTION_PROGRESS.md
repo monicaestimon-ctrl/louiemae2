@@ -258,3 +258,31 @@ clear inventory. Keep this PR unmerged and undeployed until the production
 health rebuild, verification and activation complete. Update against current
 main and rerun combined CI before its eventual merge. CodeRabbit skipped review
 under the repository eligibility rule; no manual review request was posted.
+
+## Queue and public detail releases (PRs 139–142)
+
+- PR 139: full admin variant detail and shared legacy mapping rules, merged
+  `bfd9704a2dd2cd43b0ec72e18dbc16097b226f4b`; production CI/deploy `37272685369` passed.
+- PR 140: compact catalog v3 variant queue, merged
+  `25bca7407f52760bcc51339f3668fa30ff99f4c8`; PR CI `37273442952` (554 tests) and
+  production CI/deploy `37273839522` passed. Source backfill/verification/activation
+  remain pending. The new queue preserves complete variant search and ordering.
+- PR 141: prepared queue frontend, held open at
+  `e5404eeffc533cdc73170d93fe3c6e92e04837c7`; CI `37275448407` passed (560 tests).
+  It skips the full queue subscription, preserves selected-product drafts and
+  revisions, continues past empty filtered pages and opens off-page editor IDs.
+  Rebase and rerun combined CI before release, after catalog activation.
+- PR 142: full public detail prerequisite, merged
+  `8f67a6d715a01d53367b6fb24f1d3e0efe900440`; PR CI `37274955150` (558 tests) and
+  production CI/deploy `37275179481` passed. The frontend from this exact commit
+  is live as `dpl_3gLRr2GZQegNNvRW5sm5bwpcJxQ9`, verified Ready on louiemae.com,
+  www.louiemae.com and louiemae2.vercel.app. Homepage HEAD returned 200.
+  Rollback frontend: `dpl_CQuxctj99rwjR98xQzJy7GLuuo5D` (PR 136).
+
+These test totals apply to separate branches; PRs 137 and 141 are not included
+in deployed main. CodeRabbit skipped actual reviews under its repository rule;
+manual reviews and CI were completed. Neither homepage availability nor a
+successful deployment establishes authenticated production workflow parity.
+The disabled Convex service still blocks that verification, migrations and
+meaningful workload measurements. See `STOREFRONT_DETAIL_ROLLOUT.md` and
+`VARIANT_QUEUE_ROLLOUT.md` for remaining gates.

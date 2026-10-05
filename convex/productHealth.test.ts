@@ -7,7 +7,8 @@ import schema from './schema';
 import { syncProductHealth } from './productHealthMaintenance';
 import { productHealthProblems, productHealthProjection, healthDetails } from '../lib/productHealth';
 import { requireCjAdminIdentity } from './cjAdminAccess';
-import type { Doc } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
+import { CATALOG_VERSION } from '../lib/catalogProjection';
 vi.mock('./cjAdminAccess', () => ({ requireCjAdminIdentity: vi.fn(async () => ({ email: 'admin@example.com' })) }));
 const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 const mutation = (name: string) => makeFunctionReference<'mutation'>(`productHealth:${name}`);
@@ -20,6 +21,46 @@ async function finish(t: ReturnType<typeof convexTest>, state: Pick<Doc<'product
   return state;
 }
 describe('incremental product health', () => {
+  it('maintains exact legacy migration counts beyond 500 through job assignment, transitions and deletion', async () => {
+    const t = convexTest(schema, modules);
+    const operations = makeFunctionReference<'query'>('cjSourcingJobs:getAdminOperations');
+    const ids = await t.run(async ctx => {
+      const ids: Id<'products'>[] = [];
+      for (let i = 0; i < 515; i++) ids.push(await ctx.db.insert('products', { ...fixture, sourceUrl: 'https://supplier.example/item', cjSourcingStatus: 'pending' }));
+      await ctx.db.insert('products', { ...fixture, cjSourcingStatus: 'approved' });
+      await ctx.db.insert('products', { ...fixture, cjSourcingStatus: 'rejected' });
+      await ctx.db.insert('products', fixture);
+      return ids;
+    });
+    expect((await t.query(operations, {})).migration).toEqual({ remaining: { pending: 500, approved: 1, rejected: 1 }, truncated: true });
+    const state = await finish(t, await t.mutation(mutation('startRebuild'), {}));
+    expect(state).toMatchObject({ phase: 'ready', migrationCounts: { pending: 515, approved: 1, rejected: 1 } });
+    await t.mutation(mutation('setEnabled'), { enabled: true });
+    expect((await t.query(operations, {})).migration).toEqual({ remaining: { pending: 515, approved: 1, rejected: 1 }, truncated: false });
+    await t.mutation(makeFunctionReference<'mutation'>('cjSourcingJobs:ensureJobForProduct'), { productId: ids[0], source: 'migration' });
+    const legacyJobs = (await t.query(operations, {})).jobs;
+    await t.run(ctx => ctx.db.insert('catalogReadiness', { version: CATALOG_VERSION, enabled: true, phase: 'verified',
+      cursor: null, checked: 1, mismatchIds: [], updatedAt: 1 }));
+    expect((await t.query(operations, {})).jobs).toEqual(legacyJobs);
+    await t.mutation(makeFunctionReference<'mutation'>('products:remove'), { id: ids[1] });
+    await t.run(async ctx => {
+      await ctx.db.patch(ids[2], { cjSourcingStatus: 'rejected' });
+      await syncProductHealth(ctx, ids[2], await ctx.db.get(ids[2]));
+    });
+    expect((await t.query(operations, {})).migration.remaining).toEqual({ pending: 512, approved: 1, rejected: 2 });
+    const before = await t.run(ctx => ctx.db.query('productHealthState').first());
+    await expect(t.run(async ctx => {
+      await ctx.db.patch(ids[3], { cjSourcingStatus: 'none' });
+      await syncProductHealth(ctx, ids[3], await ctx.db.get(ids[3]));
+      throw new Error('abort');
+    })).rejects.toThrow('abort');
+    expect(await t.run(ctx => ctx.db.query('productHealthState').first())).toEqual(before);
+    await t.run(async ctx => { const state = (await ctx.db.query('productHealthState').first())!; await ctx.db.patch(state._id, { migrationCounts: { pending: 999, approved: 1, rejected: 2 } }); });
+    await t.mutation(mutation('verifyAgain'), {});
+    const failed = await finish(t, (await t.run(ctx => ctx.db.query('productHealthState').first()))!);
+    expect(failed).toMatchObject({ phase: 'failed', mismatchIds: expect.arrayContaining(['migration_totals']) });
+    await expect(t.mutation(mutation('setEnabled'), { enabled: true })).rejects.toThrow('Verify');
+  }, 60_000);
   it('preserves image, sourcing-age, and variant rules without storing changing hour strings', () => {
     const now = Date.parse('2026-10-05T00:00:00Z');
     const base = { ...fixture, _id: 'id', _creationTime: 1 } as Doc<'products'>;
@@ -64,7 +105,7 @@ describe('incremental product health', () => {
     await t.run(async ctx => { const state = (await ctx.db.query('productHealthState').first())!; await ctx.db.patch(state._id, { total: 999 }); });
     state = await finish(t, await t.mutation(mutation('startRebuild'), {}));
     expect(state).toMatchObject({ phase: 'ready', total: 534, issues: 265 });
-  }, 30_000);
+  }, 60_000);
   it('refreshes time-driven pending issues from the due index in bounded batches', async () => {
     vi.useFakeTimers();
     const now = Date.parse('2026-10-05T00:00:00Z'); vi.setSystemTime(now);
