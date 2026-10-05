@@ -2,6 +2,25 @@ import type { Doc } from '../convex/_generated/dataModel';
 
 type QueueProduct = Pick<Doc<'products'>, 'cjSourcingStatus' | 'cjSourcingState' | 'cjSourcingJobId' | 'cjProductId' | 'cjVariantId' | 'cjSku' | 'cjVariants' | 'variants' | 'cjFulfillmentReadiness'>;
 
+export type CjQueueFilter = 'all' | 'ready' | 'needs_attention' | 'awaiting_approval' | 'unmapped' | 'missing_customer' | 'missing_cj';
+export function matchesCjQueueFilter(issues: string[], filter: CjQueueFilter) {
+  if (filter === 'all') return true;
+  if (filter === 'ready') return issues.includes('READY');
+  if (filter === 'needs_attention') return !issues.includes('READY');
+  if (filter === 'awaiting_approval') return issues.some(code => ['CJ_APPROVAL_PENDING', 'CJ_REJECTED', 'CJ_NOT_APPROVED'].includes(code));
+  if (filter === 'unmapped') return issues.some(code => ['UNMAPPED_CUSTOMER_VARIANTS', 'INVALID_CJ_MAPPINGS', 'DUPLICATE_CJ_MAPPINGS'].includes(code));
+  return issues.includes(filter === 'missing_customer' ? 'MISSING_CUSTOMER_VARIANTS' : 'MISSING_CJ_VARIANTS');
+}
+
+// Keep each value separate: joining values introduces cross-field matches.
+// All options remain searchable, including those beyond list display limits.
+export function cjQueueSearchValues(product: Doc<'products'>) {
+  return [...new Set([product.name, product.cjProductId, product.sourceUrl,
+    ...(product.variants ?? []).flatMap(variant => [variant.name, variant.cjSku, variant.cjVariantId]),
+    ...(product.cjVariants ?? []).flatMap(variant => [variant.name, variant.sku, variant.vid]),
+  ].filter((value): value is string => typeof value === 'string').map(value => value.toLowerCase()))];
+}
+
 export const hasCjVariantQueueFootprint = (product: QueueProduct) => Boolean(
   (product.cjSourcingStatus && product.cjSourcingStatus !== 'none') || product.cjSourcingJobId
   || product.cjProductId || product.cjVariantId || product.cjSku || (product.cjVariants?.length ?? 0) > 0,

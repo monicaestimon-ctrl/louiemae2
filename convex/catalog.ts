@@ -5,6 +5,7 @@ import { requireCjAdminIdentity } from './cjAdminAccess';
 import { requireCatalogReady } from './catalogReadiness';
 import { CATALOG_VERSION, type publicCatalogProduct, type adminCatalogProduct } from '../lib/catalogProjection';
 import { catalogPageOptions } from '../lib/catalogPagination';
+import { matchesCjQueueFilter } from '../lib/cjVariantQueue';
 
 const filters = {
   paginationOpts: paginationOptsValidator,
@@ -42,4 +43,28 @@ export const adminPage = query({ args: { ...filters, sourcingStatus: v.optional(
     && (!args.sourcingStatus || row.sourcingStatus === args.sourcingStatus)).map(row => ({
       ...publicRow(row), ...(row.adminData as ReturnType<typeof adminCatalogProduct>),
     })) };
+} });
+
+export const variantQueuePage = query({ args: {
+  paginationOpts: paginationOptsValidator,
+  search: v.optional(v.string()),
+  filter: v.union(v.literal('all'), v.literal('ready'), v.literal('needs_attention'),
+    v.literal('awaiting_approval'), v.literal('unmapped'), v.literal('missing_customer'), v.literal('missing_cj')),
+}, handler: async (ctx, args) => {
+  await requireCjAdminIdentity(ctx);
+  await requireCatalogReady(ctx);
+  const batch = await ctx.db.query('productCatalog')
+    .withIndex('by_variant_queue', q => q.eq('inVariantQueue', true))
+    .paginate(catalogPageOptions(args.paginationOpts));
+  const search = args.search?.trim().toLowerCase();
+  return { ...batch, page: batch.page.flatMap(row => {
+    // Validate even filtered rows so a mixed-version catalog fails closed.
+    publicRow(row);
+    const admin = row.adminData as ReturnType<typeof adminCatalogProduct>;
+    if (!matchesCjQueueFilter(admin.mappingSummary.issueCodes, args.filter)
+      || (search && !row.queueSearchValues?.some(value => value.includes(search)))) return [];
+    const display = row.publicData as ReturnType<typeof publicCatalogProduct>;
+    return [{ _id: row.productId, _creationTime: row.productCreatedAt, name: row.name,
+      image: display.images[0], price: display.price, ...admin }];
+  }) };
 } });
