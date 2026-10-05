@@ -79,6 +79,7 @@ export default defineSchema({
     }).index('by_key', ['key']),
     productHealth: defineTable({
         productId: v.id('products'), epoch: v.number(), version: v.number(),
+        migrationStatus: v.optional(v.union(v.literal('pending'), v.literal('approved'), v.literal('rejected'))),
         hasIssues: v.boolean(), hasCjIssues: v.boolean(), hasMissingCjVariants: v.boolean(), dueAt: v.number(), details: v.any(),
     }).index('by_product', ['productId']).index('by_issues', ['epoch', 'hasIssues'])
         .index('by_cj_issues', ['epoch', 'hasCjIssues']).index('by_due', ['epoch', 'dueAt']),
@@ -86,6 +87,7 @@ export default defineSchema({
         key: v.string(), epoch: v.number(), version: v.number(), enabled: v.boolean(),
         phase: v.union(v.literal('backfill'), v.literal('orphans'), v.literal('verify'), v.literal('ready'), v.literal('failed')),
         cursor: v.union(v.string(), v.null()), total: v.number(), issues: v.number(), cjIssues: v.number(), missingCjVariants: v.number(),
+        migrationCounts: v.optional(v.record(v.string(), v.number())), checkedMigrationCounts: v.optional(v.record(v.string(), v.number())),
         revision: v.number(), verificationRevision: v.number(), checked: v.number(), checkedIssues: v.number(), checkedCjIssues: v.number(), checkedMissingCjVariants: v.number(),
         mismatchIds: v.array(v.string()), updatedAt: v.number(), verifiedAt: v.optional(v.number()),
     }).index('by_key', ['key']),

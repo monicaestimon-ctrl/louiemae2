@@ -6,6 +6,20 @@ shared rules and remains available for existing clients. New issue pages read
 compact health records; totals come from one maintained state record. No client
 switches to the new endpoints automatically in this backend release.
 
+Version 2 also maintains exact pending/approved/rejected product counts for
+legacy sourcing migration: a product counts only when its sourcing job ID is
+absent. Job assignment, status transitions, insertions and deletions update
+these counts in the same transaction. After explicit health activation,
+`getAdminOperations` uses these counts instead of three full-product scans;
+its `migration.truncated` becomes false and counts can exceed 500. Before
+activation or after explicit rollback it keeps the existing capped contract.
+Version-1 verification cannot activate version 2; start a fresh rebuild.
+
+Separately, verified catalog activation changes operations job display lookups
+to compact catalog rows. It preserves job metadata and source URL while
+avoiding full supplier documents. It never silently reloads a full product to
+repair a missing compact row. Catalog rollback restores the old lookup path.
+
 All product-writing builders maintain health alongside the authoritative product.
 Price-only and unrelated telemetry changes skip health maintenance when the
 derived value is unchanged. Summary changes and totals commit atomically; failed
@@ -28,8 +42,8 @@ backlog can require several runs; measure oldest overdue age before activation.
    Backfill and verification read at most five source products per transaction;
    the orphan pass checks five summary owners. Stale cursor or epoch retries do
    not advance a second page. Concurrent product changes join the new epoch once.
-4. Verification compares every source projection and all four totals, including
-   approved products missing CJ variants. If a live
+4. Verification compares every source projection, all four health totals and
+   all three migration counts, including approved products missing CJ variants. If a live
    summary update occurs during verification, only verification restarts; the
    maintained data does not need to be rebuilt. A busy workload may require a
    quieter verification window. Mismatches leave readers disabled.

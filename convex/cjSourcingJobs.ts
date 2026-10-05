@@ -9,6 +9,9 @@ import {
 } from "./_generated/server";
 import { readySourcingCounts, SOURCING_STATES } from './sourcingCountsMaintenance';
 import { webhookSummariesReady } from './webhookSummaryMaintenance';
+import { readyProductMigrationCounts } from './productHealthMaintenance';
+import { catalogIsReady } from './catalogReadiness';
+import { CATALOG_VERSION, type publicCatalogProduct, type adminCatalogProduct } from '../lib/catalogProjection';
 import type { Doc, Id } from "./_generated/dataModel";
 import { buildCjSourcingPayload, hashCjSourcingPayload } from "../lib/cjSourcing";
 import {
@@ -1185,9 +1188,19 @@ export const getAdminOperations = query({
             .withIndex("by_updated_at")
             .order("desc")
             .take(limit);
+        const useCatalog = await catalogIsReady(ctx);
+        const productDisplay = async (productId: Id<'products'>) => {
+            if (!useCatalog) return ctx.db.get(productId);
+            const row = await ctx.db.query('productCatalog').withIndex('by_product', q => q.eq('productId', productId)).unique();
+            if (!row) return null;
+            if (row.version !== CATALOG_VERSION) throw new Error('CATALOG_VERSION_MISMATCH');
+            const display = row.publicData as ReturnType<typeof publicCatalogProduct>;
+            const admin = row.adminData as ReturnType<typeof adminCatalogProduct>;
+            return { name: row.name, images: display.images, sourceUrl: admin.sourceUrl };
+        };
         const jobs = await Promise.all(recentJobs.map(async (job) => {
             const [product, activeAttempt] = await Promise.all([
-                ctx.db.get(job.productId),
+                productDisplay(job.productId),
                 job.activeAttemptId ? ctx.db.get(job.activeAttemptId) : Promise.resolve(null),
             ]);
             return {
@@ -1238,9 +1251,10 @@ export const getAdminOperations = query({
             }
         }
 
-        const migrationRemaining: Record<string, number> = {};
+        const verifiedMigrationCounts = await readyProductMigrationCounts(ctx);
+        const migrationRemaining: Record<string, number> = verifiedMigrationCounts ? { ...verifiedMigrationCounts } : {};
         let migrationTruncated = false;
-        for (const status of ["pending", "approved", "rejected"] as const) {
+        for (const status of verifiedMigrationCounts ? [] : ["pending", "approved", "rejected"] as const) {
             const rows = await ctx.db
                 .query("products")
                 .withIndex("by_cj_sourcing_status_job", (q) =>
