@@ -1,13 +1,10 @@
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import { FadeIn } from './FadeIn';
-import { useSite } from '../contexts/BlogContext';
-import { useStorefrontCatalog } from '../contexts/AdminCatalogDemand';
-import { Product } from '../types';
+import { useArrivalPreviews, type CatalogPreviewProduct } from './useArrivalPreviews';
 import { ArrowRight } from 'lucide-react';
 import { GlassButton } from './ui/GlassButton';
 import { SafeImage } from './SafeImage';
-import { isProductVisibleOnStorefront } from '../lib/productVisibility';
 
 // Collection config for display
 const COLLECTIONS = [
@@ -25,7 +22,7 @@ const navigateTo = (hash: string) => {
 };
 
 // Reusable product card
-const ProductCard: React.FC<{ product: Product; index: number }> = ({ product, index }) => (
+const ProductCard: React.FC<{ product: CatalogPreviewProduct; index: number }> = ({ product, index }) => (
     <FadeIn delay={index * 80} className="group cursor-pointer flex-shrink-0 w-[260px] md:w-[300px] snap-center">
         <div
             className="relative aspect-[3/4] overflow-hidden bg-white mb-3 rounded-xl shadow-sm"
@@ -59,7 +56,7 @@ const ProductCard: React.FC<{ product: Product; index: number }> = ({ product, i
 const CollectionRow: React.FC<{
     title: string;
     subtitle: string;
-    products: Product[];
+    products: CatalogPreviewProduct[];
     route: string;
     accent: string;
     index: number;
@@ -130,45 +127,12 @@ const CollectionRow: React.FC<{
 };
 
 export const NewArrivalsPage: React.FC = () => {
-    useStorefrontCatalog();
-    const { products, isCatalogLoading } = useSite();
-
-    // Get newest products per collection — auto-expire after 30 days
-    const collectionProducts = useMemo(() => {
-        const result: Record<string, Product[]> = {};
-        const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-
-        COLLECTIONS.forEach(col => {
-            const colProducts = products.filter(p => p.collection === col.id && isProductVisibleOnStorefront(p));
-
-            // Filter to products published within last 30 days, or marked isNew (legacy fallback)
-            const newArrivals = colProducts.filter(p => {
-                if (p.publishedAt) {
-                    return new Date(p.publishedAt).getTime() > thirtyDaysAgo;
-                }
-                // Legacy products without publishedAt — fall back to isNew flag
-                return p.isNew === true;
-            });
-
-            // Sort by publish date (newest first), then by name for consistency
-            newArrivals.sort((a, b) => {
-                const dateA = a.publishedAt ? new Date(a.publishedAt).getTime() : 0;
-                const dateB = b.publishedAt ? new Date(b.publishedAt).getTime() : 0;
-                return dateB - dateA;
-            });
-
-            result[col.id] = newArrivals.slice(0, 12);
-        });
-
-        return result;
-    }, [products]);
-
-    // Total count for hero
-    const totalNew = Object.values(collectionProducts).reduce((sum, arr) => sum + arr.length, 0);
+    const { collectionProducts, loading: isCatalogLoading, unavailable } = useArrivalPreviews();
 
     return (
         <div className="bg-cream min-h-screen pt-24 pb-20">
             {isCatalogLoading && <p role="status" className="text-center text-earth/60">Loading new arrivals…</p>}
+            {unavailable && <p role="status" className="text-center text-earth/60">New arrivals are temporarily unavailable. Please check back shortly.</p>}
 
             {/* Hero */}
             <div className="text-center px-6 mb-20">
@@ -196,7 +160,7 @@ export const NewArrivalsPage: React.FC = () => {
                                 className="flex items-center gap-2 px-5 py-2.5 border border-earth/10 rounded-full text-[10px] uppercase tracking-widest text-earth/60 hover:text-earth hover:border-earth/30 hover:bg-white/50 transition-all"
                             >
                                 {col.title}
-                                <span className="bg-earth/5 px-2 py-0.5 rounded-full text-[9px] text-earth/40">{count}</span>
+                                <span aria-label={`${count} featured arrivals`} className="bg-earth/5 px-2 py-0.5 rounded-full text-[9px] text-earth/40">{count}</span>
                             </button>
                         );
                     })}
