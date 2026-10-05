@@ -341,3 +341,30 @@ CI `37284427183` passed (572 tests). It replaces inventory-tab private list
 demand with paginated summaries, explicit loaded counts and complete detail
 actions. Its production gate is current-version catalog verification/activation.
 Dashboard and content-editor list demand remain separate follow-up work.
+
+## Exact dashboard counters and job history (PRs 150–151)
+
+PR 150 merged at `4ae150ca9e752fbc137f824ff5278d8be08bc47a`; PR CI
+`37285259143` (567 tests) and production CI/deploy `37285649903` passed.
+Health version 3 maintains exact inventory connection-state and Next Launch
+counts. A fresh current-version rebuild/verification/activation remains required.
+
+PR 151 merged at `35f708ab9350336834b1736776b41e0fca1585df`; PR CI
+`37286282336` (570 tests) and production CI/deploy `37286872778` passed.
+Complete job history is paginated with bounded compact product lookups and no
+attempt hydration; operations metrics can omit the duplicate legacy job sample.
+
+PR 149 was subsequently rebased and extended at
+`b0d9238fb73e608b1a8a4d79fa88bd179664c655`; CI `37287011553` passed
+(578 tests). It now removes nonempty-dashboard full-list demand too, with exact
+health counters and guarded empty-catalog bootstrap. Hold until both catalog
+and health version 3 activation. Content-editor demand still remains.
+
+The latest production readiness probe returned Server Error with request ID
+`0b39c67c9a8962b0`. No migration/activation or live workflow/cost verification
+has run. Frontend production remains PR 146's deployment.
+
+PR 145 was subsequently extended with complete job-history pagination at
+`42791694211874106611e311698bd46882931d9b`; CI `37287750467` passed
+(574 tests). It remains held until current catalog activation, with combined
+dashboard checks required when merging the other held frontend changes.

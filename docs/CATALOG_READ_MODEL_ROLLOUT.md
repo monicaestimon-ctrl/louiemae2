@@ -1,6 +1,6 @@
 # Catalog read-model rollout
 
-The version-4 projection is maintained transactionally at product-writing entry
+The version-5 projection is maintained transactionally at product-writing entry
 points. Source products remain authoritative for detail/edit/checkout operations.
 Current clients still use their existing readers; this writer release does not
 enable incomplete catalog lists or run any migration automatically.
@@ -131,3 +131,30 @@ Public summaries include full image and variant counts; admin summaries also
 include full variant-image counts and launch-added timestamps. Capped display
 arrays and description excerpts remain unsuitable for full-product editing.
 Existing deployed client readers are unchanged by these additive endpoints.
+
+## Version 5 content-picker and collection-drop contracts
+
+`adminOptionsPage` returns only product IDs and names for content-editor pickers,
+including hidden inventory. It supports bounded name filtering and preserves
+empty-page continuation. `adminOption` pins the existing selection even when it
+is outside the loaded page; invalid or deleted IDs return null. Both require
+admin authorization and verified current-version readiness, and read summaries
+without fetching authoritative product bodies.
+
+`categoryOptionsPage` exposes public legacy category names in bounded collection
+pages, including names absent from site configuration. A future storefront picker
+must union configured categories with loaded names, deduplicate across pages and
+offer explicit continuation until exhaustion. Do not silently treat the first
+page as a complete category list or auto-scan the entire collection on mount.
+
+`dropPage` uses a collection/publication index for the New Collection preview.
+Valid publication dates sort newest first with source-creation ties; undated
+products prioritize `isNew` before source creation. Invalid dates are treated
+as undated for deterministic ordering instead of the old NaN comparator. Source
+publication values are not rewritten. Verify invalid-date inventory explicitly
+before frontend adoption. This differs from storefront featured order and from
+the thirty-day arrivals window, so those contracts remain separate.
+
+Version 5 adds a drop tie-priority field. Fresh current-version backfill and
+both verification passes are required before activation; v4 verification is
+insufficient. Existing clients remain unchanged by this backend-only release.

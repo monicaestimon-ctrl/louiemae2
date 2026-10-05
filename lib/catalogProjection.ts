@@ -3,7 +3,7 @@ import { isCjProductStorefrontReady } from './cjFulfillmentReadiness';
 import { cjQueueSearchValues, getCjVariantMappingSummary, hasCjVariantQueueFootprint } from './cjVariantQueue';
 import { getCjProductStatus } from './cjProductStatus';
 
-export const CATALOG_VERSION = 4;
+export const CATALOG_VERSION = 5;
 export const MAX_INLINE_ADMIN_SEARCH_LENGTH = 16_000;
 
 export function adminCatalogSearchText(product: Doc<'products'>, status = getCjProductStatus(product)) {
@@ -76,6 +76,7 @@ export function catalogProjection(product: Doc<'products'>) {
     price: product.price, featuredPriority: product.isNew ? 0 : 1,
     arrivalKind: product.publishedAt ? (Number.isFinite(published) ? 'dated' : 'none') : product.isNew ? 'legacy' : 'none',
     arrivalOrder: Number.isFinite(published) ? -published : 0,
+    dropPriority: Number.isFinite(published) && published !== 0 ? 0 : product.isNew ? 0 : 1,
     connectionState: adminData.connectionStatus.state,
     // Oversized text is searched from bounded authoritative records on explicit
     // searches only, rather than duplicating a near-limit source into this row.

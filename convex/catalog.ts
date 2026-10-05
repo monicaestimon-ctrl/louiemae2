@@ -122,6 +122,47 @@ export const arrivalsPage = query({ args: { collection: v.string(), kind: v.unio
   return { ...batch, page: batch.page.map(publicRow) };
 } });
 
+/** Content pickers need names and IDs, never full product documents. */
+export const adminOptionsPage = query({ args: { paginationOpts: paginationOptsValidator, search: v.optional(v.string()) }, handler: async (ctx, args) => {
+  await requireCjAdminIdentity(ctx);
+  await requireCatalogReady(ctx);
+  const term = args.search?.trim().toLowerCase();
+  const batch = await ctx.db.query('productCatalog').withIndex('by_created').paginate(catalogPageOptions(args.paginationOpts));
+  return { ...batch, page: batch.page.flatMap(row => {
+    publicRow(row);
+    return !term || row.name.toLowerCase().includes(term) ? [{ id: row.productId, name: row.name }] : [];
+  }) };
+} });
+
+export const adminOption = query({ args: { id: v.string() }, handler: async (ctx, args) => {
+  await requireCjAdminIdentity(ctx);
+  await requireCatalogReady(ctx);
+  const id = ctx.db.normalizeId('products', args.id);
+  if (!id) return null;
+  const row = await ctx.db.query('productCatalog').withIndex('by_product', q => q.eq('productId', id)).unique();
+  if (!row) return null;
+  publicRow(row);
+  return { id: row.productId, name: row.name };
+} });
+
+/** Public category discovery keeps legacy names reachable without a full scan. */
+export const categoryOptionsPage = query({ args: { collection: v.string(), paginationOpts: paginationOptsValidator }, handler: async (ctx, args) => {
+  await requireCatalogReady(ctx);
+  const batch = await ctx.db.query('productCatalog').withIndex('by_visible_collection_created', q => q.eq('visible', true).eq('collection', args.collection))
+    .paginate(catalogPageOptions(args.paginationOpts));
+  const categories = new Set<string>();
+  for (const row of batch.page) { publicRow(row); if (row.category) categories.add(row.category); }
+  return { ...batch, page: [...categories] };
+} });
+
+/** Collection-drop previews: publication date first, legacy featured rows next. */
+export const dropPage = query({ args: { collection: v.string(), paginationOpts: paginationOptsValidator }, handler: async (ctx, args) => {
+  await requireCatalogReady(ctx);
+  const batch = await ctx.db.query('productCatalog').withIndex('by_collection_drop', q => q.eq('visible', true).eq('collection', args.collection))
+    .paginate(catalogPageOptions(args.paginationOpts));
+  return { ...batch, page: batch.page.map(publicRow) };
+} });
+
 export const variantQueuePage = query({ args: {
   paginationOpts: paginationOptsValidator,
   search: v.optional(v.string()),
