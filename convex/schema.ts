@@ -106,6 +106,7 @@ export default defineSchema({
         .index('by_visible_created', ['visible', 'productCreatedAt', 'productId'])
         .index('by_visible_collection_created', ['visible', 'collection', 'productCreatedAt', 'productId'])
         .index('by_collection_created', ['collection', 'productCreatedAt', 'productId'])
+        .index('by_sourcing_created', ['sourcingStatus', 'productCreatedAt', 'productId'])
         .index('by_sourcing_approved', ['sourcingStatus', 'approvedAt', 'productId'])
         .searchIndex('search_catalog', { searchField: 'searchText', filterFields: ['visible', 'collection'] }),
     catalogMigrations: defineTable({

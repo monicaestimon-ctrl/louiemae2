@@ -14,12 +14,53 @@ const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 const publicPage = makeFunctionReference<'query'>('catalog:storefrontPage');
 const adminPage = makeFunctionReference<'query'>('catalog:adminPage');
 const variantPage = makeFunctionReference<'query'>('catalog:variantQueuePage');
+const sourcingPage = makeFunctionReference<'query'>('catalog:sourcingPage');
+const approvalsPage = makeFunctionReference<'query'>('catalog:recentApprovalsPage');
 const update = makeFunctionReference<'mutation'>('products:update');
 const product = { name: 'Chair', price: 90, description: 'Oak chair', images: ['chair.jpg'], category: 'chairs', collection: 'furniture', sourceUrl: 'https://supplier.example/private', rawHtmlDescription: 'private payload' };
 async function ready(t: ReturnType<typeof convexTest>) {
   await t.run(ctx => ctx.db.insert('catalogReadiness', { version: CATALOG_VERSION, enabled: true, phase: 'verified', cursor: null, checked: 0, mismatchIds: [], updatedAt: 1 }));
 }
 describe('bounded catalog pages', () => {
+  it('keeps all pending sourcing products reachable and applies approval cutoffs in index order', async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async ctx => {
+      for (let i = 0; i < 515; i++) {
+        const id = await ctx.db.insert('products', { ...product, name: `Pending ${i}`, cjSourcingStatus: 'pending' });
+        await syncCatalogProduct(ctx, id, await ctx.db.get(id));
+      }
+      for (const [name, date] of [['Old', '2026-09-01T00:00:00.000Z'], ['First recent', '2026-10-01T00:00:00.000Z'], ['Latest', '2026-10-04T00:00:00.000Z']]) {
+        const id = await ctx.db.insert('products', { ...product, name, cjSourcingStatus: 'approved', cjApprovedAt: date });
+        await syncCatalogProduct(ctx, id, await ctx.db.get(id));
+      }
+      const rejected = await ctx.db.insert('products', { ...product, cjSourcingStatus: 'rejected', cjSourcingError: 'Provider rejected' });
+      await syncCatalogProduct(ctx, rejected, await ctx.db.get(rejected));
+    });
+    await expect(t.query(sourcingPage, { status: 'pending', paginationOpts: { cursor: null, numItems: 25 } })).rejects.toThrow('CATALOG_NOT_READY');
+    await ready(t);
+    const ids = new Set<string>();
+    let cursor: string | null = null;
+    let done = false;
+    while (!done) {
+      const page: FunctionReturnType<typeof api.catalog.sourcingPage> = await t.query(sourcingPage, { status: 'pending', paginationOpts: { cursor, numItems: 25 } });
+      expect(page.page.length).toBeLessThanOrEqual(25);
+      for (const row of page.page) {
+        expect(ids.has(row._id)).toBe(false); ids.add(row._id);
+        expect(row).not.toHaveProperty('rawHtmlDescription');
+        expect(row).not.toHaveProperty('variants');
+      }
+      cursor = page.continueCursor; done = page.isDone;
+    }
+    expect(ids.size).toBe(515);
+    const recent = await t.query(approvalsPage, { since: '2026-10-01T00:00:00.000Z', paginationOpts: { cursor: null, numItems: 1 } });
+    expect(recent.page.map((row: { name: string }) => row.name)).toEqual(['Latest']);
+    const next = await t.query(approvalsPage, { since: '2026-10-01T00:00:00.000Z', paginationOpts: { cursor: recent.continueCursor, numItems: 25 } });
+    expect(next.page.map((row: { name: string }) => row.name)).toEqual(['First recent']);
+    expect(next.isDone).toBe(true);
+    expect((await t.query(sourcingPage, { status: 'rejected', paginationOpts: { cursor: null, numItems: 25 } })).page[0].cjSourcingError).toBe('Provider rejected');
+    vi.mocked(requireCjAdminIdentity).mockRejectedValueOnce(new Error('Not an admin'));
+    await expect(t.query(approvalsPage, { since: '', paginationOpts: { cursor: null, numItems: 25 } })).rejects.toThrow('Not an admin');
+  });
   it('pages the complete variant queue in legacy priority order without supplier payloads', async () => {
     const t = convexTest(schema, modules);
     await t.run(async ctx => {
