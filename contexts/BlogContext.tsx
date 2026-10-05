@@ -6,6 +6,7 @@ import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
 import { BlogPost, SiteContent, CustomPage, Product, NavLink, CollectionConfig } from '../types';
 import { BLOG_POSTS as INITIAL_POSTS, INITIAL_SITE_CONTENT, PRODUCTS as INITIAL_PRODUCTS } from '../constants';
+import { AdminCatalogDemandContext, useAdminCatalogDemand } from './AdminCatalogDemand';
 
 interface SiteContextType {
   posts: BlogPost[];
@@ -46,14 +47,16 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // --- Auth State (using Convex Auth) ---
   const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
   const { signIn: authSignIn, signOut: authSignOut } = useAuthActions();
+  const { requested: adminCatalogRequested, register: registerAdminCatalog } = useAdminCatalogDemand();
+  const needsAdminCatalog = isAuthenticated && adminCatalogRequested;
 
   // --- Convex Queries ---
   const adminPosts = useQuery(api.blogPosts.listAdmin, isAuthenticated ? {} : 'skip');
   const publicPosts = useQuery(api.blogPosts.list, isAuthenticated ? 'skip' : {});
   const convexPosts = isAuthenticated ? adminPosts : publicPosts;
-  const adminProducts = useQuery(api.products.list, isAuthenticated ? {} : 'skip');
-  const storefrontProducts = useQuery(api.products.listForStorefront, isAuthenticated ? 'skip' : {});
-  const convexProducts = isAuthenticated ? adminProducts : storefrontProducts;
+  const adminProducts = useQuery(api.products.list, needsAdminCatalog ? {} : 'skip');
+  const storefrontProducts = useQuery(api.products.listForStorefront, needsAdminCatalog ? 'skip' : {});
+  const convexProducts = needsAdminCatalog ? adminProducts : storefrontProducts;
   const convexSiteContent = useQuery(api.siteContent.get);
   const convexCustomPages = useQuery(api.customPages.list);
 
@@ -391,7 +394,9 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       updateCollection,
       deleteCollection
     }}>
-      {children}
+      <AdminCatalogDemandContext.Provider value={registerAdminCatalog}>
+        {children}
+      </AdminCatalogDemandContext.Provider>
     </SiteContext.Provider>
   );
 };
