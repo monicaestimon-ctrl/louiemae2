@@ -100,9 +100,43 @@ relying on indexed storefront search.
 
 Retention defaults are intentionally conservative: batch review payloads 72
 hours, terminal batch metadata 30 days, description audit debug payloads 30
-days (the audit identity/final result remains), CJ webhook idempotency logs 90
-days, and CJ/AI usage telemetry 90 days. No cleanup cron is enabled until a
-human reviews the first production dry-run.
+days (the audit identity/final result remains), legacy successful CJ webhook
+diagnostic payloads 90 days, and CJ/AI usage telemetry 90 days. Webhook event
+identities are retained indefinitely until the provider replay horizon is
+verified. No cleanup cron is enabled until a human reviews the first production
+dry-run.
+
+### CJ webhook payloads and safe compaction
+
+New successful events discard their replay payload when the current claim owner
+marks processing complete. Their message ID/status remains, so a delayed provider
+duplicate is still suppressed. Failed, retryable and in-progress events retain
+their payload. A successful event's `expiresAt: 0` denotes an already compacted
+diagnostic; missing expiry metadata is not an expired record.
+
+Historical cleanup is a separate operation from deploying this code:
+
+1. Confirm the deployment and recovery/backup requirements. Code rollback cannot
+   recover discarded historical payloads.
+2. Backfill missing legacy expiry metadata through the existing dry-run-first
+   `dataLifecycle:backfillRetentionMetadata` workflow if needed.
+3. Call `webhookRetention:preview` with `{"cursor":null}`. Each page inspects at
+   most five records, reports only IDs/status/type/estimated payload bytes, and
+   identifies unresolved exclusions. Continue with its cursor, including across
+   pages containing only unresolved events. Do not restart at the first page.
+4. Review the exact eligible IDs and their scope before changing historical
+   data. Call `webhookRetention:compact` with those IDs and `dryRun: true`.
+5. After that scope is approved, call the same IDs with `dryRun: false`. A maximum
+   of five distinct IDs is accepted, and eligibility is rechecked transactionally.
+   Event identities are never deleted; retries and interrupted batches are safe.
+6. Verify duplicate suppression, unresolved-event recovery and table storage
+   before continuing. Stop simply by ceasing these operator calls; no cleanup
+   schedule is registered.
+
+The general lifecycle cleanup also preserves webhook identities and unresolved
+payloads. Prefer the exact-ID webhook tool for production review, because the
+general cleanup additionally handles other retention categories. Expiry queries
+exclude missing/zero timestamps, and a future `now` cannot force early cleanup.
 
 CJ inventory polling uses `cjInventoryNextCheckAt`: visible products remain on
 a six-hour freshness target, while hidden/out-of-stock products are checked

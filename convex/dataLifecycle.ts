@@ -5,8 +5,14 @@ import { requireCjAdminIdentity } from "./cjAdminAccess";
 const clampLimit = (value: number | undefined, max = 50) =>
     Math.min(Math.max(value ?? 25, 1), max);
 
+// Failed/retryable/processing records may still need their replay payload.
 const isTerminalWebhook = (status: string | undefined) =>
-    !status || status === "processed" || status === "failed";
+    status === undefined || status === "processed";
+
+const cleanupCutoff = (requested: number | undefined) => {
+    if (requested !== undefined && !Number.isFinite(requested)) throw new Error('Invalid cleanup time');
+    return Math.min(requested ?? Date.now(), Date.now());
+};
 
 const retentionKindValidator = v.union(
     v.literal("batchJobs"),
@@ -48,16 +54,16 @@ export const report = query({
     args: { now: v.optional(v.number()), limit: v.optional(v.number()) },
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
-        const now = args.now ?? Date.now();
+        const now = cleanupCutoff(args.now);
         const limit = clampLimit(args.limit);
         const [payloads, audits, webhookLogs, jobs, pollRuns, sourcingRuns, aiRequestUsage] = await Promise.all([
-            ctx.db.query("batchImportPayloads").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
-            ctx.db.query("descriptionAudits").withIndex("by_debug_expiry", q => q.lt("debugExpiresAt", now)).take(limit),
-            ctx.db.query("cjWebhookLog").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
-            ctx.db.query("batchImportJobs").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
-            ctx.db.query("cjInventoryPollRuns").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
-            ctx.db.query("cjWorkerRuns").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
-            ctx.db.query("aiRequestUsage").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
+            ctx.db.query("batchImportPayloads").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
+            ctx.db.query("descriptionAudits").withIndex("by_debug_expiry", q => q.gt("debugExpiresAt", 0).lt("debugExpiresAt", now)).take(limit),
+            ctx.db.query("cjWebhookLog").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
+            ctx.db.query("batchImportJobs").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
+            ctx.db.query("cjInventoryPollRuns").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
+            ctx.db.query("cjWorkerRuns").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
+            ctx.db.query("aiRequestUsage").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
         ]);
         const terminalJobs = jobs.filter(job =>
             job.status === "ready" || job.status === "completed" || job.status === "cancelled",
@@ -69,6 +75,7 @@ export const report = query({
                 batchPayloads: payloads.length,
                 descriptionAuditDebugPayloads: audits.filter(audit => !audit.compactedAt).length,
                 terminalWebhookLogs: webhookLogs.filter(log => isTerminalWebhook(log.status)).length,
+                unresolvedWebhookLogsExcluded: webhookLogs.filter(log => !isTerminalWebhook(log.status)).length,
                 terminalBatchJobs: terminalJobs.length,
                 inventoryPollRuns: pollRuns.length,
                 sourcingWorkerRuns: sourcingRuns.length,
@@ -80,6 +87,13 @@ export const report = query({
                 webhookExpiry: webhookLogs[0]?.expiresAt,
                 batchJobExpiry: terminalJobs[0]?.expiresAt,
             },
+            webhookPolicy: 'Compact successful payloads; retain all event identities and unresolved payloads.',
+            webhookSamples: webhookLogs.map(log => ({
+                id: log._id, status: log.status ?? 'processed',
+                eligible: isTerminalWebhook(log.status),
+                reason: isTerminalWebhook(log.status) ? 'successful_diagnostic_expired' : 'unresolved_preserved',
+                approximatePayloadBytes: log.payload === undefined ? 0 : new globalThis.TextEncoder().encode(JSON.stringify(log.payload)).length,
+            })),
         };
     },
 });
@@ -96,16 +110,16 @@ export const cleanup = mutation({
     },
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
-        const now = args.now ?? Date.now();
+        const now = cleanupCutoff(args.now);
         const limit = clampLimit(args.limit);
         const [payloads, audits, webhookLogs, jobs, pollRuns, sourcingRuns, aiRequestUsage] = await Promise.all([
-            ctx.db.query("batchImportPayloads").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
-            ctx.db.query("descriptionAudits").withIndex("by_debug_expiry", q => q.lt("debugExpiresAt", now)).take(limit),
-            ctx.db.query("cjWebhookLog").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
-            ctx.db.query("batchImportJobs").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(Math.min(limit, 10)),
-            ctx.db.query("cjInventoryPollRuns").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
-            ctx.db.query("cjWorkerRuns").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
-            ctx.db.query("aiRequestUsage").withIndex("by_expiry", q => q.lt("expiresAt", now)).take(limit),
+            ctx.db.query("batchImportPayloads").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
+            ctx.db.query("descriptionAudits").withIndex("by_debug_expiry", q => q.gt("debugExpiresAt", 0).lt("debugExpiresAt", now)).take(limit),
+            ctx.db.query("cjWebhookLog").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
+            ctx.db.query("batchImportJobs").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(Math.min(limit, 10)),
+            ctx.db.query("cjInventoryPollRuns").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
+            ctx.db.query("cjWorkerRuns").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
+            ctx.db.query("aiRequestUsage").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
         ]);
         const terminalLogs = webhookLogs.filter(log => isTerminalWebhook(log.status));
         const auditsToCompact = audits.filter(audit => !audit.compactedAt);
@@ -131,7 +145,12 @@ export const cleanup = mutation({
                     compactedAt: now,
                 });
             }
-            for (const log of terminalLogs) await ctx.db.delete(log._id);
+            for (const log of terminalLogs) await ctx.db.patch(log._id, {
+                payload: undefined,
+                // Zero means no diagnostic payload remains eligible. Preserve
+                // the message ID indefinitely until a replay horizon is verified.
+                expiresAt: 0,
+            });
             for (const run of pollRuns) await ctx.db.delete(run._id);
             for (const run of sourcingRuns) await ctx.db.delete(run._id);
             for (const usage of aiRequestUsage) await ctx.db.delete(usage._id);
@@ -173,6 +192,8 @@ export const cleanup = mutation({
                 batchPayloads: payloads.length,
                 descriptionAuditDebugPayloads: auditsToCompact.length,
                 terminalWebhookLogs: terminalLogs.length,
+                unresolvedWebhookLogsExcluded: webhookLogs.length - terminalLogs.length,
+                webhookIdentitiesDeleted: 0,
                 terminalBatchJobs: terminalJobs.length,
                 terminalBatchJobsDeleted: args.dryRun ? 0 : batchJobsDeleted,
                 terminalBatchJobsDeferred: batchJobsDeferred,
