@@ -27,6 +27,16 @@ Keep row-level diagnosis, resubmission, removal and product navigation available
 Use an explicit refreshed seven-day cutoff and make its window clear; do not
 change cutoff values between pages of the same pagination session.
 
-The current frontend still uses the legacy sourcing lists. No source data or
-retention policy is changed by these endpoints. Rollback the frontend independently
-while retaining these additive readers and indexes.
+The prepared frontend uses these readers through `useCjSourcingPages`, with
+25 initial rows and 25-row continuation. The legacy sourcing subscriptions are
+removed. Partial counts say loaded, incomplete pages do not report cleared
+queues, and Reconcile All remains available when the candidate set is unknown.
+Every loaded approval is displayed, with a stable cutoff until the operator
+selects Refresh seven-day window. Existing row actions remain unchanged.
+
+Hold the frontend PR until catalog activation and index readiness are verified.
+Rebase against current main and the other released dashboard changes, rerun CI,
+then exercise diagnosis, resubmission, deletion, window refresh and pagination
+against real production data. No source data or retention policy is changed by
+these endpoints. Rollback the frontend independently while retaining additive
+readers and indexes.
