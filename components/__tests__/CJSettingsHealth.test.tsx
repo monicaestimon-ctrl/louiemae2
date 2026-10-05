@@ -1,4 +1,5 @@
 import { act, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { getFunctionName } from 'convex/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CJSettings } from '../CJSettings';
@@ -6,7 +7,7 @@ const { query, paginated, action } = vi.hoisted(() => ({ query: vi.fn(), paginat
 vi.mock('convex/react', () => ({ useQuery: (...args: unknown[]) => query(...args), usePaginatedQuery: (...args: unknown[]) => paginated(...args), useAction: () => action, useMutation: () => vi.fn() }));
 vi.mock('../CJVariantManager', () => ({ CJVariantManager: () => null }));
 vi.mock('../CJPricingReview', () => ({ CJPricingReview: () => null }));
-vi.mock('../FadeIn', () => ({ FadeIn: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
+vi.mock('../FadeIn', () => ({ FadeIn: ({ children }: { children: ReactNode }) => <div>{children}</div> }));
 const summary = { ready: true, phase: 'ready', totalProducts: 535, productsWithIssues: 12, productsWithCjIssues: 12, productsMissingCjVariants: 12 };
 function setup(health: typeof summary | { ready: false; phase: string }, pending: unknown[] | undefined = []) {
   query.mockImplementation(ref => {
