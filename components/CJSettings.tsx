@@ -5,7 +5,7 @@ import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
 import { Wifi, RefreshCw, Settings, CheckCircle, XCircle, Loader2, Package, Clock, AlertTriangle, ArrowRight, ExternalLink, Trash2, RotateCcw, Key, Link2, Search } from 'lucide-react';
 import { FadeIn } from './FadeIn';
-import { CJVariantManager } from './CJVariantManager';
+import { CJVariantQueue } from './CJVariantQueue';
 import { SafeImage } from './SafeImage';
 import { ProductHealthPanel } from './ProductHealthPanel';
 
@@ -986,7 +986,7 @@ export const CJSettings: React.FC<{
                 </FadeIn>
                 <div className="w-full">
                     {/* The CJVariantManager creates its own dark-glass wrapper internally if needed, but we provide it full width and context */}
-                    <CJVariantManager targetProductId={targetProductId} onEditProduct={onEditProduct} />
+                    <CJVariantQueue targetProductId={targetProductId} onEditProduct={onEditProduct} />
                 </div>
             </div>
 

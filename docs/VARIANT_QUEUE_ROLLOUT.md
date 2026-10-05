@@ -42,3 +42,19 @@ frontend cutover is verified.
 Rollback the frontend reader independently if needed. Do not delete source
 products, reset source revisions, or discard dirty drafts during rollback.
 The version-3 migration and activation have not run in production.
+
+## Prepared frontend
+
+`CJVariantQueue` uses server-filtered pages of 25 compact rows. It labels counts
+as loaded matches, offers continuation even when a filtered page is empty, and
+only calls a search exhausted after the server reports completion. Deep links
+open authoritative details even when the target is outside the loaded page.
+The existing mapping workspace runs in detail-only mode, with its legacy list
+subscription skipped; the same instance retains per-product draft values and
+the original revision while switching products. Deleted products are explicit.
+Revision conflicts leave drafts available for review.
+
+Hold the frontend PR until production catalog v3 is verified and enabled.
+Then rebase against current main, rerun CI, deploy the frontend and exercise
+mapping saves, split-product actions, full supplier details, deletion, search,
+pagination and concurrent-edit conflicts using the production admin account.
