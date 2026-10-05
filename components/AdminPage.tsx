@@ -1067,8 +1067,7 @@ export const AdminPage: React.FC = () => {
                    <CJSettings
                       targetProductId={cjNavContext.productId}
                       onEditProduct={(productId) => {
-                         const product = products.find((candidate) => candidate.id === productId);
-                         if (product) handleEditProduct(product);
+                         void productDetail.load(productId);
                       }}
                    />
                </FadeIn>
