@@ -14,6 +14,7 @@ overlapping mounted consumers.
 | Admin dashboard, products, page/content editors | Explicit private context demand |
 | CJ settings | Its own operational readers; product editor opens by ID |
 | Product import | Collection configuration and import mutations; no catalog list |
+| Open product editor | Authoritative selected detail; background context list paused until close |
 
 The public collection pages expose an explicit loading state while their
 requested catalog is unavailable. The product seeding guard still depends on

@@ -231,7 +231,6 @@ export const AdminPage: React.FC = () => {
       return saved && (validTabs as readonly string[]).includes(saved) ? saved as typeof validTabs[number] : 'dashboard';
    });
    const [cjNavContext, setCjNavContext] = useState<{ orderId?: string; productId?: string }>({});
-   useAdminCatalog(isAuthenticated && ['dashboard', 'products', 'pages', 'structure', 'journal'].includes(activeTab));
    const setActiveTab = (tab: AdminTab, options?: { preserveCjContext?: boolean }) => {
       if (!options?.preserveCjContext) {
          setCjNavContext({});
@@ -264,6 +263,7 @@ export const AdminPage: React.FC = () => {
 
    // Product Editor State
    const [isEditingProduct, setIsEditingProduct] = useState(false);
+   useAdminCatalog(isAuthenticated && !isEditingProduct && ['dashboard', 'products', 'pages', 'structure', 'journal'].includes(activeTab));
    const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
    const productDetail = useAdminProductDetail(isAuthenticated, activeTab, product => {
       setEditingProduct(product);
