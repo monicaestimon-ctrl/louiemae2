@@ -3,9 +3,8 @@ import React from 'react';
 import { CustomPage, PageSection } from '../types';
 import { FadeIn } from './FadeIn';
 import { ArrowUpRight, ArrowRight } from 'lucide-react';
-import { useSite } from '../contexts/BlogContext';
 import { SafeImage } from './SafeImage';
-import { isProductVisibleOnStorefront } from '../lib/productVisibility';
+import { useStorefrontProductDetail } from './useStorefrontProductDetail';
 
 interface DynamicPageProps {
   page?: CustomPage;
@@ -13,7 +12,7 @@ interface DynamicPageProps {
 }
 
 export const DynamicSectionRenderer: React.FC<{ section: PageSection, index: number }> = ({ section, index }) => {
-    const { products } = useSite();
+    const { product: featuredProduct } = useStorefrontProductDetail(section.type === 'product-feature' ? section.productId : undefined);
 
     switch (section.type) {
         case 'hero':
@@ -132,7 +131,7 @@ export const DynamicSectionRenderer: React.FC<{ section: PageSection, index: num
             );
 
         case 'product-feature': {
-            const product = products.find(p => p.id === section.productId && isProductVisibleOnStorefront(p));
+            const product = featuredProduct;
             if (!product) {
                 // Return a placeholder or null, but for admin preview purposes, user might want to see that something is there.
                 // For now, returning null is standard, but let's at least log it or check if we should show a placeholder.

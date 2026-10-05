@@ -13,6 +13,7 @@ import { GlassButton } from './ui/GlassButton';
 import { useNewsletter } from '../contexts/NewsletterContext';
 import { SafeImage } from './SafeImage';
 import { getCategoryParentId, productMatchesCategory } from '../lib/productCategories';
+import { useStorefrontProductDetail } from './useStorefrontProductDetail';
 
 /** Sentinel for variants with no assigned image */
 const NO_IMAGE_KEY = '__no_image__';
@@ -182,14 +183,18 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
 
   // Decoded category from URL
   const selectedCategory = useMemo(() => decodeURIComponent(initialCategory), [initialCategory]);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | undefined>(undefined);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  const { product: selectedProduct, loading: detailLoading, unavailable: detailUnavailable } = useStorefrontProductDetail(selectedProductId);
+  const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(undefined);
+  // Price/stock changes and deleted options must not leave a stale cart selection.
+  const selectedVariant = selectedProduct?.variants?.find(variant => variant.id === selectedVariantId && variant.inStock !== false);
+  const setSelectedVariant = (variant: ProductVariant | undefined) => setSelectedVariantId(variant?.id);
   /** Tracks the active image group (color/style) independently from selectedVariant */
   const [activeImageGroupKey, setActiveImageGroupKey] = useState<string | null>(null);
 
   // Reset variant and group key when changing product
   const handleSelectProduct = (product: Product | null) => {
-    setSelectedProduct(product);
+    setSelectedProductId(product?.id ?? null);
     setSelectedVariant(undefined);
     setActiveImageGroupKey(null);
   };
@@ -1065,6 +1070,12 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
       )}
 
       {/* Product Modal */}
+      {selectedProductId && (detailLoading || detailUnavailable) && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6" role="dialog" aria-modal="true" aria-label="Product details">
+        <div className="rounded-lg bg-cream p-8 text-earth">
+          <p role="status">{detailLoading ? 'Loading product details…' : 'This product is no longer available.'}</p>
+          <button type="button" onClick={() => handleSelectProduct(null)} className="mt-5 underline">Close</button>
+        </div>
+      </div>}
       {selectedProduct && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 md:p-8">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => handleSelectProduct(null)}></div>

@@ -225,6 +225,23 @@ export const get = query({
     },
 });
 
+/** Full customer detail for one selection; private supplier fields stay excluded. */
+export const getStorefrontDetail = query({
+    args: { id: v.string() },
+    handler: async (ctx, args) => {
+        // Page configuration can contain retired or non-Convex IDs.
+        const id = ctx.db.normalizeId('products', args.id);
+        if (!id) return null;
+        const product = await ctx.db.get(id);
+        if (!product || !isProductVisibleOnStorefront(product)) return null;
+        return { ...toStorefrontProduct(product), images: product.images,
+            variants: product.variants?.map(variant => ({
+                id: variant.id, name: variant.name, image: variant.image,
+                priceAdjustment: variant.priceAdjustment, inStock: variant.inStock,
+            })) };
+    },
+});
+
 const toStorefrontProduct = (product: any) => ({
     _id: product._id,
     _creationTime: product._creationTime,
@@ -1467,4 +1484,3 @@ export const auditProductHealth = query({
         };
     },
 });
-
