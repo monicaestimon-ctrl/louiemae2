@@ -1,7 +1,9 @@
 import type { Doc } from '../convex/_generated/dataModel';
 import { isCjProductStorefrontReady } from './cjFulfillmentReadiness';
+import { cjQueueSearchValues, getCjVariantMappingSummary, hasCjVariantQueueFootprint } from './cjVariantQueue';
+import { getCjProductStatus } from './cjProductStatus';
 
-export const CATALOG_VERSION = 2;
+export const CATALOG_VERSION = 3;
 
 export function isCatalogProductPublic(product: Doc<'products'>) {
   return (!product.storefrontStatus || product.storefrontStatus === 'published')
@@ -45,16 +47,24 @@ export function adminCatalogProduct(product: Doc<'products'>) {
     cjInventoryNeedsReview: product.cjInventoryNeedsReview,
     cjInventoryReviewReason: product.cjInventoryReviewReason,
     launchBatchId: product.launchBatchId, launchedAt: product.launchedAt,
+    imageCount: product.images.length,
+    connectionStatus: getCjProductStatus(product),
+    mappingSummary: getCjVariantMappingSummary(product),
   };
 }
 
 export function catalogProjection(product: Doc<'products'>) {
+  const mapping = getCjVariantMappingSummary(product);
   return {
     productId: product._id, version: CATALOG_VERSION,
     productCreatedAt: product._creationTime,
     name: product.name, collection: product.collection, category: product.category,
     visible: isCatalogProductPublic(product),
     sourcingStatus: product.cjSourcingStatus ?? 'none',
+    inVariantQueue: hasCjVariantQueueFootprint(product),
+    queueReady: mapping.issueCodes.includes('READY') ? 1 : 0,
+    queueUnmappedOrder: -mapping.unmappedVariantCount,
+    queueSearchValues: cjQueueSearchValues(product),
     approvedAt: product.cjApprovedAt ?? '',
     searchText: [product.name, product.description, product.category, product.collection,
       product.subcategory, ...(product.subcategoryIds ?? [])].filter(Boolean).join(' ').toLowerCase().slice(0, 8000),

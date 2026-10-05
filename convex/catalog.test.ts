@@ -3,6 +3,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { convexTest } from 'convex-test';
 import { makeFunctionReference } from 'convex/server';
+import type { FunctionReturnType } from 'convex/server';
+import { api } from './_generated/api';
 import schema from './schema';
 import { CATALOG_VERSION } from '../lib/catalogProjection';
 import { syncCatalogProduct } from './catalogMaintenance';
@@ -11,12 +13,68 @@ vi.mock('./cjAdminAccess', () => ({ requireCjAdminIdentity: vi.fn(async () => ({
 const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 const publicPage = makeFunctionReference<'query'>('catalog:storefrontPage');
 const adminPage = makeFunctionReference<'query'>('catalog:adminPage');
+const variantPage = makeFunctionReference<'query'>('catalog:variantQueuePage');
 const update = makeFunctionReference<'mutation'>('products:update');
 const product = { name: 'Chair', price: 90, description: 'Oak chair', images: ['chair.jpg'], category: 'chairs', collection: 'furniture', sourceUrl: 'https://supplier.example/private', rawHtmlDescription: 'private payload' };
 async function ready(t: ReturnType<typeof convexTest>) {
   await t.run(ctx => ctx.db.insert('catalogReadiness', { version: CATALOG_VERSION, enabled: true, phase: 'verified', cursor: null, checked: 0, mismatchIds: [], updatedAt: 1 }));
 }
 describe('bounded catalog pages', () => {
+  it('pages the complete variant queue in legacy priority order without supplier payloads', async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async ctx => {
+      for (let i = 0; i < 535; i++) {
+        const id = await ctx.db.insert('products', { ...product, name: `Queue ${i}`,
+          cjSourcingStatus: 'pending', variants: Array.from({ length: i % 3 }, (_, n) => ({ id: `${n}`, name: `Option ${n}`, priceAdjustment: 0, inStock: true })) });
+        await syncCatalogProduct(ctx, id, await ctx.db.get(id));
+      }
+      const excluded = await ctx.db.insert('products', { ...product, cjSourcingState: 'queued' });
+      await syncCatalogProduct(ctx, excluded, await ctx.db.get(excluded));
+    });
+    await ready(t);
+    const seen = new Set<string>();
+    let cursor: string | null = null;
+    let previousUnmapped = Infinity;
+    let done = false;
+    while (!done) {
+      const batch: FunctionReturnType<typeof api.catalog.variantQueuePage> = await t.query(variantPage, { filter: 'all', paginationOpts: { cursor, numItems: 25 } });
+      expect(batch.page.length).toBeLessThanOrEqual(25);
+      for (const row of batch.page) {
+        expect(seen.has(row._id)).toBe(false);
+        seen.add(row._id);
+        expect(row.mappingSummary.unmappedVariantCount).toBeLessThanOrEqual(previousUnmapped);
+        previousUnmapped = row.mappingSummary.unmappedVariantCount;
+        expect(row).not.toHaveProperty('rawHtmlDescription');
+        expect(row).not.toHaveProperty('variants');
+        expect(row).not.toHaveProperty('queueSearchValues');
+      }
+      cursor = batch.continueCursor; done = batch.isDone;
+    }
+    expect(seen.size).toBe(535);
+  });
+  it('searches options beyond display limits and preserves empty-page continuation and authorization', async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async ctx => {
+      for (const name of ['First', 'Second']) {
+        const id = await ctx.db.insert('products', { ...product, name, cjSourcingStatus: 'pending',
+          variants: Array.from({ length: 150 }, (_, i) => ({ id: `${i}`, priceAdjustment: 0, inStock: true, name: name === 'Second' && i === 149 ? 'Rare Needle' : `Option ${i}` })) });
+        await syncCatalogProduct(ctx, id, await ctx.db.get(id));
+      }
+    });
+    const args = { filter: 'awaiting_approval', search: ' RARE needle ', paginationOpts: { cursor: null, numItems: 1 } };
+    await expect(t.query(variantPage, args)).rejects.toThrow('CATALOG_NOT_READY');
+    await ready(t);
+    const first = await t.query(variantPage, args);
+    expect(first.page).toEqual([]);
+    expect(first.isDone).toBe(false);
+    const next = await t.query(variantPage, { ...args, paginationOpts: { cursor: first.continueCursor, numItems: 1 } });
+    expect(next.page.map((row: { name: string }) => row.name)).toEqual(['Second']);
+    expect(next.page[0].mappingSummary.customerVariantCount).toBe(150);
+    expect((await t.query(variantPage, { ...args, search: 'second https', paginationOpts: { cursor: null, numItems: 50 } })).page).toEqual([]);
+    expect((await t.query(variantPage, { ...args, search: '', filter: 'ready' })).page).toEqual([]);
+    vi.mocked(requireCjAdminIdentity).mockRejectedValueOnce(new Error('Not an admin'));
+    await expect(t.query(variantPage, args)).rejects.toThrow('Not an admin');
+  });
   it('keeps every public product reachable beyond 500 and excludes hidden/private data', async () => {
     const t = convexTest(schema, modules);
     await t.run(async ctx => {

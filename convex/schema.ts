@@ -93,9 +93,13 @@ export default defineSchema({
         productId: v.id('products'), version: v.number(), productCreatedAt: v.number(),
         name: v.string(), collection: v.string(), category: v.string(), visible: v.boolean(),
         sourcingStatus: v.string(), approvedAt: v.string(), searchText: v.string(),
+        // Optional during the version-3 backfill; readers require verified v3.
+        inVariantQueue: v.optional(v.boolean()), queueReady: v.optional(v.number()),
+        queueUnmappedOrder: v.optional(v.number()), queueSearchValues: v.optional(v.array(v.string())),
         // Written only by catalogProjection's explicit field allowlists.
         publicData: v.any(), adminData: v.any(),
     }).index('by_product', ['productId'])
+        .index('by_variant_queue', ['inVariantQueue', 'queueReady', 'queueUnmappedOrder', 'productCreatedAt', 'productId'])
         .index('by_created', ['productCreatedAt', 'productId'])
         .index('by_visible_created', ['visible', 'productCreatedAt', 'productId'])
         .index('by_visible_collection_created', ['visible', 'collection', 'productCreatedAt', 'productId'])
