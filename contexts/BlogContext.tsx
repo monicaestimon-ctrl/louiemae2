@@ -6,13 +6,14 @@ import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
 import { BlogPost, SiteContent, CustomPage, Product, NavLink, CollectionConfig } from '../types';
 import { BLOG_POSTS as INITIAL_POSTS, INITIAL_SITE_CONTENT, PRODUCTS as INITIAL_PRODUCTS } from '../constants';
-import { AdminCatalogDemandContext, useAdminCatalogDemand } from './AdminCatalogDemand';
+import { AdminCatalogDemandContext, StorefrontCatalogDemandContext, useCatalogDemand } from './AdminCatalogDemand';
 
 interface SiteContextType {
   posts: BlogPost[];
   products: Product[];
   siteContent: SiteContent;
   isLoading: boolean;  // True while Convex data is loading
+  isCatalogLoading: boolean;
   isAuthenticated: boolean;
   isAuthLoading: boolean;  // True while auth state is loading
   signIn: (email: string, password: string, flow: 'signIn' | 'signUp') => Promise<void>;
@@ -47,7 +48,8 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // --- Auth State (using Convex Auth) ---
   const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
   const { signIn: authSignIn, signOut: authSignOut } = useAuthActions();
-  const { requested: adminCatalogRequested, register: registerAdminCatalog } = useAdminCatalogDemand();
+  const { requested: adminCatalogRequested, register: registerAdminCatalog } = useCatalogDemand();
+  const { requested: storefrontCatalogRequested, register: registerStorefrontCatalog } = useCatalogDemand();
   const needsAdminCatalog = isAuthenticated && adminCatalogRequested;
 
   // --- Convex Queries ---
@@ -55,7 +57,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const publicPosts = useQuery(api.blogPosts.list, isAuthenticated ? 'skip' : {});
   const convexPosts = isAuthenticated ? adminPosts : publicPosts;
   const adminProducts = useQuery(api.products.list, needsAdminCatalog ? {} : 'skip');
-  const storefrontProducts = useQuery(api.products.listForStorefront, needsAdminCatalog ? 'skip' : {});
+  const storefrontProducts = useQuery(api.products.listForStorefront, !needsAdminCatalog && storefrontCatalogRequested ? {} : 'skip');
   const convexProducts = needsAdminCatalog ? adminProducts : storefrontProducts;
   const convexSiteContent = useQuery(api.siteContent.get);
   const convexCustomPages = useQuery(api.customPages.list);
@@ -372,6 +374,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       products,
       siteContent,
       isLoading,
+      isCatalogLoading: convexProducts === undefined,
       isAuthenticated,
       isAuthLoading,
       signIn,
@@ -395,7 +398,9 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       deleteCollection
     }}>
       <AdminCatalogDemandContext.Provider value={registerAdminCatalog}>
-        {children}
+        <StorefrontCatalogDemandContext.Provider value={registerStorefrontCatalog}>
+          {children}
+        </StorefrontCatalogDemandContext.Provider>
       </AdminCatalogDemandContext.Provider>
     </SiteContext.Provider>
   );

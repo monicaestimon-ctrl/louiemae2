@@ -286,3 +286,22 @@ successful deployment establishes authenticated production workflow parity.
 The disabled Convex service still blocks that verification, migrations and
 meaningful workload measurements. See `STOREFRONT_DETAIL_ROLLOUT.md` and
 `VARIANT_QUEUE_ROLLOUT.md` for remaining gates.
+
+## Operations and sourcing readers (PRs 143–145)
+
+PR 143 merged at `7e67ebf6283176c6982a6e369825e6b6cd9fe617`; PR CI
+`37276935892` (559 tests) and production CI/deploy `37277203842` passed.
+Health version 2 adds exact migration counts. Operations uses these only after
+explicit health verification/activation, and compact job displays only after
+catalog verification/activation. No migration or activation has run.
+
+PR 144 merged at `a462db87403af8195629fe8cb79e87854ff72cce`; PR CI
+`37277674851` (560 tests) and production CI/deploy `37278203855` passed.
+Pending/rejected readers use a sourcing/creation index; recent approvals use
+an indexed inclusive cutoff, newest first. All readers are bounded and private.
+
+PR 145 is held open at `6561832a074c9c9e9bd5c3892728a28724f426cb`; CI
+`37278747812` passed (563 tests). Its prepared frontend removes the three legacy
+list subscriptions, exposes continuation and window refresh, and distinguishes
+partial/loading/unverified lists from exhausted empty queues. Merge only after
+catalog activation, rebasing with other dashboard releases and rerunning CI.

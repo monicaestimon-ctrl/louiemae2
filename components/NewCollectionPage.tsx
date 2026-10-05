@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
+import { useStorefrontCatalog } from '../contexts/AdminCatalogDemand';
 import { useNewsletter } from '../contexts/NewsletterContext';
 import { Product } from '../types';
 import { ArrowRight, Check } from 'lucide-react';
@@ -109,7 +110,8 @@ const LuxuryCategorySection: React.FC<{
 };
 
 export const NewCollectionPage: React.FC = () => {
-    const { products } = useSite();
+    useStorefrontCatalog();
+    const { products, isCatalogLoading } = useSite();
     const { addSubscriberWithTags } = useNewsletter();
 
     // VIP signup form state
@@ -208,6 +210,7 @@ export const NewCollectionPage: React.FC = () => {
 
             {/* Collection Gallery Sections */}
             <div className="pb-32 bg-gradient-to-b from-[#FAF9F6] to-white">
+                {isCatalogLoading && <p role="status" className="py-10 text-center text-earth/60">Loading the collection…</p>}
                 {CATEGORY_SECTIONS.map((section) => (
                     <LuxuryCategorySection
                         key={section.id}
