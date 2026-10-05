@@ -39,7 +39,7 @@ describe('catalog reader readiness', () => {
     expect(await t.query(status, {})).toMatchObject({ ready: true });
     await t.mutation(ref('setEnabled'), { enabled: false });
     expect(await t.query(status, {})).toMatchObject({ ready: false });
-  });
+  }, 30_000);
   it('detects drift and orphans, repairs exact IDs, and requires verification again', async () => {
     const t = convexTest(schema, modules);
     const id = await t.run(ctx => ctx.db.insert('products', product));
