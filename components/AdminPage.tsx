@@ -25,6 +25,7 @@ import { getEffectiveSubcategoryIds, productMatchesCategory } from '../lib/produ
 import { getUserFacingErrorMessage } from '../lib/errorMessages';
 import { getCjProductStatus, type CjProductConnectionState } from '../lib/cjProductStatus';
 import { cjListingUrl } from '../lib/cjPricingReview';
+import { useAdminProductDetail } from './useAdminProductDetail';
 
 type SmartDescriptionActionResult = {
    ok: boolean;
@@ -275,6 +276,10 @@ export const AdminPage: React.FC = () => {
    // Product Editor State
    const [isEditingProduct, setIsEditingProduct] = useState(false);
    const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
+   const productDetail = useAdminProductDetail(isAuthenticated, activeTab, product => {
+      setEditingProduct(product);
+      setIsEditingProduct(true);
+   });
    const [isBatchRegenerating, setIsBatchRegenerating] = useState(false);
    const [refreshingInventoryProductId, setRefreshingInventoryProductId] = useState<string | null>(null);
    const [batchDescriptionPreviews, setBatchDescriptionPreviews] = useState<Array<{
@@ -406,6 +411,7 @@ export const AdminPage: React.FC = () => {
 
    // --- PRODUCT HANDLERS ---
    const handleCreateProduct = () => {
+      productDetail.cancel();
       // Default to first collection if any
       const defaultCollection = siteContent.collections.length > 0 ? siteContent.collections[0].id : 'furniture';
 
@@ -432,8 +438,7 @@ export const AdminPage: React.FC = () => {
    };
 
    const handleEditProduct = (prod: Product) => {
-      setEditingProduct(prod);
-      setIsEditingProduct(true);
+      void productDetail.load(prod.id);
    };
 
    const handleDeleteProduct = (id: string) => {
@@ -2328,6 +2333,20 @@ export const AdminPage: React.FC = () => {
          />
 
          {/* Full-screen curation must sit above the admin sidebar (z-200). */}
+         {productDetail.loadingId && (
+            <div className="fixed inset-0 z-[310] flex items-center justify-center bg-black/50">
+               <div className="rounded-2xl bg-cream p-6 text-earth shadow-xl">
+                  <p role="status" className="flex items-center gap-3"><Loader2 className="h-5 w-5 animate-spin" />Loading product details…</p>
+                  <button type="button" onClick={productDetail.cancel} className="mt-4 text-sm underline">Cancel</button>
+               </div>
+            </div>
+         )}
+         {productDetail.error && (
+            <div role="alert" className="fixed bottom-6 right-6 z-[310] max-w-sm rounded-2xl bg-cream p-5 text-earth shadow-xl">
+               <p>{productDetail.error}</p>
+               <button type="button" onClick={productDetail.cancel} className="mt-3 text-sm underline">Dismiss</button>
+            </div>
+         )}
          {isEditingProduct && (
             <div data-testid="product-studio-overlay" className="fixed inset-0 z-[300] overflow-y-auto bg-gradient-to-br from-cream via-[#f7f1e7] to-[#eadfce] p-3 md:p-8">
                <ProductImport
@@ -2336,7 +2355,7 @@ export const AdminPage: React.FC = () => {
                   initialProduct={editingProduct}
                   collections={siteContent.collections}
                   onImportProducts={() => undefined}
-                  onClose={() => { setIsEditingProduct(false); setEditingProduct(null); }}
+                  onClose={() => { productDetail.cancel(); setIsEditingProduct(false); setEditingProduct(null); }}
                   onSaveProduct={async (prod) => {
                      if (prod.id) {
                         await updateProduct(prod.id, prod);
