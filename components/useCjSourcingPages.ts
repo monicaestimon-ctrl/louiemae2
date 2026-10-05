@@ -10,5 +10,6 @@ export function useCjSourcingPages() {
   const pending = usePaginatedQuery(api.catalog.sourcingPage, ready ? { status: 'pending' } : 'skip', { initialNumItems: 25 });
   const rejected = usePaginatedQuery(api.catalog.sourcingPage, ready ? { status: 'rejected' } : 'skip', { initialNumItems: 25 });
   const approved = usePaginatedQuery(api.catalog.recentApprovalsPage, ready ? { since } : 'skip', { initialNumItems: 25 });
-  return { ready, pending, rejected, approved, since, refreshApprovals: () => setSince(approvalCutoff()) };
+  const jobs = usePaginatedQuery(api.cjSourcingJobs.adminJobsPage, ready ? {} : 'skip', { initialNumItems: 5 });
+  return { ready, checking: readiness === undefined, pending, rejected, approved, jobs, since, refreshApprovals: () => setSince(approvalCutoff()) };
 }

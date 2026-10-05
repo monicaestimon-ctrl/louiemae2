@@ -46,7 +46,7 @@ export const CJSettings: React.FC<{
     const approvedComplete = sourcingPages.ready && sourcingPages.approved.status === 'Exhausted';
     const rejectedComplete = sourcingPages.ready && sourcingPages.rejected.status === 'Exhausted';
     const productHealth = useQuery(api.products.auditProductHealth);
-    const operations = useQuery(api.cjSourcingJobs.getAdminOperations, { limit: 50 });
+    const operations = useQuery(api.cjSourcingJobs.getAdminOperations, { includeJobs: false });
     const approvedMissingCjVariantIssues = productHealth?.issues?.filter(issue =>
         issue.problems.some(problem => problem.includes("Approved but no CJ variants"))
     ) || [];
@@ -379,10 +379,13 @@ export const CJSettings: React.FC<{
                     )}
 
                     <div className="space-y-2 max-h-80 overflow-y-auto pr-1 custom-scrollbar">
-                        {operations?.jobs.length === 0 && (
+                        <SourcingPageControls ready={sourcingPages.ready} checking={sourcingPages.checking}
+                            status={sourcingPages.jobs.status} count={sourcingPages.jobs.results.length}
+                            label="sourcing jobs" loadMore={sourcingPages.jobs.loadMore} pageSize={5} />
+                        {sourcingPages.ready && sourcingPages.jobs.status === 'Exhausted' && sourcingPages.jobs.results.length === 0 && (
                             <div className="text-sm text-cream/40 py-6 text-center">No durable sourcing jobs yet.</div>
                         )}
-                        {operations?.jobs.map((job) => {
+                        {sourcingPages.jobs.results.map((job) => {
                             const needsAttention = ["needs_input", "mapping_required", "reconciliation_required", "rejected", "dead_letter"].includes(job.state);
                             return (
                                 <div key={job.id} className="grid grid-cols-1 md:grid-cols-[minmax(0,1.5fr)_auto_minmax(0,2fr)_auto] gap-3 md:items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3">
@@ -647,7 +650,7 @@ export const CJSettings: React.FC<{
                                     </div>
                                 )}
 
-                                <SourcingPageControls ready={sourcingPages.ready} status={sourcingPages.pending.status} count={pendingProducts.length} label="pending products" loadMore={sourcingPages.pending.loadMore} />
+                                <SourcingPageControls ready={sourcingPages.ready} checking={sourcingPages.checking} status={sourcingPages.pending.status} count={pendingProducts.length} label="pending products" loadMore={sourcingPages.pending.loadMore} />
                                 {pendingComplete && pendingProducts.length === 0 ? (
                                     <div className="flex-1 flex flex-col items-center justify-center text-cream/30 py-12 relative z-10">
                                         <CheckCircle className="w-12 h-12 mb-3 opacity-50 drop-shadow-sm text-green-400" />
@@ -901,7 +904,7 @@ export const CJSettings: React.FC<{
 
                                     <p className="relative z-10 text-xs text-cream/60">Approved since {new Date(sourcingPages.since).toLocaleString()} · Newest first</p>
                                     <button type="button" onClick={sourcingPages.refreshApprovals} className="relative z-10 my-2 text-xs text-green-300 underline">Refresh seven-day window</button>
-                                    <SourcingPageControls ready={sourcingPages.ready} status={sourcingPages.approved.status} count={recentlyApproved.length} label="approvals" loadMore={sourcingPages.approved.loadMore} />
+                                    <SourcingPageControls ready={sourcingPages.ready} checking={sourcingPages.checking} status={sourcingPages.approved.status} count={recentlyApproved.length} label="approvals" loadMore={sourcingPages.approved.loadMore} />
                                     {approvedComplete && recentlyApproved.length === 0 ? (
                                         <div className="py-8 text-center text-cream/40 font-serif text-lg tracking-wide relative z-10">No recent approvals</div>
                                     ) : (
@@ -935,7 +938,7 @@ export const CJSettings: React.FC<{
                                         </div>
                                     </div>
 
-                                    <SourcingPageControls ready={sourcingPages.ready} status={sourcingPages.rejected.status} count={rejectedProducts.length} label="rejected products" loadMore={sourcingPages.rejected.loadMore} />
+                                    <SourcingPageControls ready={sourcingPages.ready} checking={sourcingPages.checking} status={sourcingPages.rejected.status} count={rejectedProducts.length} label="rejected products" loadMore={sourcingPages.rejected.loadMore} />
                                     {rejectedComplete && rejectedProducts.length === 0 ? (
                                         <div className="py-8 text-center text-cream/40 font-serif text-lg tracking-wide relative z-10">No issues found</div>
                                     ) : (

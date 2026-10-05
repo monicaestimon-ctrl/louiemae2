@@ -34,6 +34,13 @@ queues, and Reconcile All remains available when the candidate set is unknown.
 Every loaded approval is displayed, with a stable cutoff until the operator
 selects Refresh seven-day window. Existing row actions remain unchanged.
 
+The same frontend now reads sourcing-job history with `adminJobsPage`, five
+jobs at a time, and passes `includeJobs: false` to the operations metrics query.
+Older jobs beyond the former 100-job limit remain reachable. Job rows omit
+unused attempt payload hydration; reconciliation still targets the original
+product ID. All four lists distinguish loading/unavailable from an exhausted
+empty result, and status messages use customer-facing language.
+
 Hold the frontend PR until catalog activation and index readiness are verified.
 Rebase against current main and the other released dashboard changes, rerun CI,
 then exercise diagnosis, resubmission, deletion, window refresh and pagination
