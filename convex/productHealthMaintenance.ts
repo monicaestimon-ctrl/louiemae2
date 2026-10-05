@@ -1,6 +1,6 @@
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
-import { HEALTH_VERSION, productHealthProjection, insertStuckHealthProblem, emptyMigrationCounts } from '../lib/productHealth';
+import { HEALTH_VERSION, productHealthProjection, insertStuckHealthProblem, emptyMigrationCounts, emptyInventoryCounts } from '../lib/productHealth';
 import { sameCatalogValue } from '../lib/catalogProjection';
 
 export const getHealthState = (ctx: Pick<QueryCtx, 'db'>) => ctx.db.query('productHealthState').withIndex('by_key', q => q.eq('key', 'primary')).unique();
@@ -38,8 +38,12 @@ export async function syncProductHealth(ctx: Pick<MutationCtx, 'db'>, id: Id<'pr
   const migrationCounts = { ...emptyMigrationCounts(), ...state.migrationCounts };
   if (counted && existing?.migrationStatus) migrationCounts[existing.migrationStatus] -= 1;
   if (projected?.migrationStatus) migrationCounts[projected.migrationStatus] += 1;
+  const inventoryCounts = { ...emptyInventoryCounts(), ...state.inventoryCounts };
+  if (counted && existing?.connectionState) inventoryCounts[existing.connectionState] -= 1;
+  if (projected) inventoryCounts[projected.connectionState] += 1;
+  inventoryCounts.next_launch += Number(projected?.nextLaunch ?? false) - Number(counted && existing?.nextLaunch || false);
   await ctx.db.patch(state._id, {
-    migrationCounts,
+    migrationCounts, inventoryCounts,
     total: state.total + (projected ? 1 : 0) - (counted ? 1 : 0),
     issues: state.issues + (projected?.hasIssues ? 1 : 0) - (counted && existing?.hasIssues ? 1 : 0),
     cjIssues: state.cjIssues + (projected?.hasCjIssues ? 1 : 0) - (counted && existing?.hasCjIssues ? 1 : 0),

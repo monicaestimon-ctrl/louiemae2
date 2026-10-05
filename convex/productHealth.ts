@@ -3,7 +3,7 @@ import { v, ConvexError } from 'convex/values';
 import { internalMutation, query } from './_generated/server';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { getHealthState, syncProductHealth, markHealthDeadline } from './productHealthMaintenance';
-import { HEALTH_VERSION, healthDetails, productHealthProjection, emptyMigrationCounts } from '../lib/productHealth';
+import { HEALTH_VERSION, healthDetails, productHealthProjection, emptyMigrationCounts, emptyInventoryCounts } from '../lib/productHealth';
 import { sameCatalogValue } from '../lib/catalogProjection';
 import { catalogPageOptions } from '../lib/catalogPagination';
 
@@ -13,6 +13,7 @@ export const status = query({ args: {}, handler: async ctx => {
   const ready = state?.enabled === true && state.phase === 'ready' && state.version === HEALTH_VERSION;
   return { ready, phase: state?.phase ?? 'not_started', verifiedAt: state?.verifiedAt,
     totalProducts: ready ? state.total : undefined, productsWithIssues: ready ? state.issues : undefined,
+    inventoryCounts: ready ? state.inventoryCounts : undefined,
     productsWithCjIssues: ready ? state.cjIssues : undefined, productsMissingCjVariants: ready ? state.missingCjVariants : undefined };
 } });
 export const issuesPage = query({ args: { paginationOpts: paginationOptsValidator, cjOnly: v.optional(v.boolean()) }, handler: async (ctx, args) => {
@@ -33,6 +34,7 @@ export const startRebuild = internalMutation({ args: {}, handler: async ctx => {
   const next = { key: 'primary', epoch: (state?.epoch ?? 0) + 1, version: HEALTH_VERSION, enabled: false,
     phase: 'backfill' as const, cursor: null, total: 0, issues: 0, cjIssues: 0, missingCjVariants: 0, revision: 0,
     migrationCounts: emptyMigrationCounts(), checkedMigrationCounts: emptyMigrationCounts(),
+    inventoryCounts: emptyInventoryCounts(), checkedInventoryCounts: emptyInventoryCounts(),
     verificationRevision: 0, checked: 0, checkedIssues: 0, checkedCjIssues: 0, checkedMissingCjVariants: 0, mismatchIds: [], updatedAt: Date.now() };
   if (state) await ctx.db.replace(state._id, next); else await ctx.db.insert('productHealthState', next);
   return next;
@@ -55,12 +57,12 @@ export const rebuildNext = internalMutation({ args: {
     for (const row of batch.page) await syncProductHealth(ctx, row.productId, await ctx.db.get(row.productId), now);
     const current = (await ctx.db.get(state._id))!;
     await ctx.db.patch(state._id, { cursor: batch.isDone ? null : batch.continueCursor, phase: batch.isDone ? 'verify' : 'orphans',
-      verificationRevision: current.revision, checked: 0, checkedIssues: 0, checkedCjIssues: 0, checkedMissingCjVariants: 0, checkedMigrationCounts: emptyMigrationCounts(), updatedAt: now });
+      verificationRevision: current.revision, checked: 0, checkedIssues: 0, checkedCjIssues: 0, checkedMissingCjVariants: 0, checkedMigrationCounts: emptyMigrationCounts(), checkedInventoryCounts: emptyInventoryCounts(), updatedAt: now });
   } else {
     if (state.verificationRevision !== state.revision) {
       // A live update invalidates only this read-only verification pass. It does
       // not require rebuilding otherwise transactionally maintained counters.
-      await ctx.db.patch(state._id, { cursor: null, checked: 0, checkedIssues: 0, checkedCjIssues: 0, checkedMissingCjVariants: 0, checkedMigrationCounts: emptyMigrationCounts(), verificationRevision: state.revision, updatedAt: now });
+      await ctx.db.patch(state._id, { cursor: null, checked: 0, checkedIssues: 0, checkedCjIssues: 0, checkedMissingCjVariants: 0, checkedMigrationCounts: emptyMigrationCounts(), checkedInventoryCounts: emptyInventoryCounts(), verificationRevision: state.revision, updatedAt: now });
       return { ...(await ctx.db.get(state._id)), advanced: false, verificationRestarted: true };
     }
     const batch = await ctx.db.query('products').paginate(catalogPageOptions({ cursor: state.cursor, numItems: 5 }, 5, 2_000_000));
@@ -69,6 +71,7 @@ export const rebuildNext = internalMutation({ args: {
     let checkedCjIssues = state.checkedCjIssues;
     let checkedMissingCjVariants = state.checkedMissingCjVariants;
     const checkedMigrationCounts = { ...emptyMigrationCounts(), ...state.checkedMigrationCounts };
+    const checkedInventoryCounts = { ...emptyInventoryCounts(), ...state.checkedInventoryCounts };
     for (const product of batch.page) {
       const expected = { ...productHealthProjection(product, now), epoch: state.epoch };
       const row = await ctx.db.query('productHealth').withIndex('by_product', q => q.eq('productId', product._id)).unique();
@@ -77,12 +80,15 @@ export const rebuildNext = internalMutation({ args: {
       checkedIssues += Number(expected.hasIssues); checkedCjIssues += Number(expected.hasCjIssues);
       checkedMissingCjVariants += Number(expected.hasMissingCjVariants);
       if (expected.migrationStatus) checkedMigrationCounts[expected.migrationStatus] += 1;
+      checkedInventoryCounts[expected.connectionState] += 1;
+      checkedInventoryCounts.next_launch += Number(expected.nextLaunch);
     }
     const checked = state.checked + batch.page.length;
     if (batch.isDone && (checked !== state.total || checkedIssues !== state.issues || checkedCjIssues !== state.cjIssues || checkedMissingCjVariants !== state.missingCjVariants)) mismatches.push('aggregate_totals');
     if (batch.isDone && !sameCatalogValue(checkedMigrationCounts, state.migrationCounts)) mismatches.push('migration_totals');
+    if (batch.isDone && !sameCatalogValue(checkedInventoryCounts, state.inventoryCounts)) mismatches.push('inventory_totals');
     await ctx.db.patch(state._id, { cursor: batch.isDone || mismatches.length ? null : batch.continueCursor,
-      phase: mismatches.length ? 'failed' : batch.isDone ? 'ready' : 'verify', checked, checkedIssues, checkedCjIssues, checkedMissingCjVariants, checkedMigrationCounts,
+      phase: mismatches.length ? 'failed' : batch.isDone ? 'ready' : 'verify', checked, checkedIssues, checkedCjIssues, checkedMissingCjVariants, checkedMigrationCounts, checkedInventoryCounts,
       mismatchIds: mismatches, updatedAt: now, ...(batch.isDone && !mismatches.length ? { verifiedAt: now } : {}) });
   }
   return { ...(await ctx.db.get(state._id)), advanced: true };
@@ -93,6 +99,7 @@ export const verifyAgain = internalMutation({ args: {}, handler: async ctx => {
   if (!state || ['backfill', 'orphans'].includes(state.phase)) throw new Error('Complete the rebuild first.');
   await ctx.db.patch(state._id, { enabled: false, phase: 'verify', cursor: null, checked: 0, checkedIssues: 0, checkedCjIssues: 0, checkedMissingCjVariants: 0,
     checkedMigrationCounts: emptyMigrationCounts(),
+    checkedInventoryCounts: emptyInventoryCounts(),
     verificationRevision: state.revision, mismatchIds: [], updatedAt: Date.now() });
 } });
 export const setEnabled = internalMutation({ args: { enabled: v.boolean() }, handler: async (ctx, args) => {

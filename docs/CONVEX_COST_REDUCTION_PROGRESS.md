@@ -321,3 +321,23 @@ The last authenticated diagnosis remains disabled team service; no migration,
 activation, authenticated workflow verification or production savings measurement
 has been completed. Catalog v4 preparation adds the filter/preview contracts in
 `CATALOG_READ_MODEL_ROLLOUT.md`; it does not itself switch client readers.
+
+## Catalog v4 backend and held arrivals frontend (PRs 147–148)
+
+PR 147 merged at `1ea3b45a62fc666019943fea5ca3861baf3bac71`; PR CI
+`37282834887` (566 tests) and production CI/deploy `37283269340` succeeded.
+It adds complete admin search, category matching, price/featured ordering and
+dated/legacy arrival contracts. No catalog backfill or activation has run.
+The frontend remains PR 146's deployment; this release changes backend contracts.
+
+PR 148 is held open at `ae30686af14d6131b9e905a655645df06353e617`;
+CI `37283622583` passed (569 tests). Its arrivals previews replace the full
+storefront subscription while continuing short pages and preserving the dated
+and legacy rules. Hold until current-version catalog activation and rerun CI
+after rebasing at release. See `ARRIVALS_PREVIEW_ROLLOUT.md` on that branch.
+
+PR 149 is held open at `dacfdf0a7f8d4edaf2eb0bac4a37770e5e70d6d8`;
+CI `37284427183` passed (572 tests). It replaces inventory-tab private list
+demand with paginated summaries, explicit loaded counts and complete detail
+actions. Its production gate is current-version catalog verification/activation.
+Dashboard and content-editor list demand remain separate follow-up work.
