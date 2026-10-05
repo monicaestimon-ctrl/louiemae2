@@ -1,8 +1,10 @@
 import type { Doc } from '../convex/_generated/dataModel';
 import { evaluateProductCjReadiness } from './cjFulfillmentReadiness';
+import { getCjProductStatus } from './cjProductStatus';
 
-export const HEALTH_VERSION = 2;
+export const HEALTH_VERSION = 3;
 export const emptyMigrationCounts = () => ({ pending: 0, approved: 0, rejected: 0 });
+export const emptyInventoryCounts = () => ({ not_linked: 0, pending: 0, rejected: 0, approved_needs_setup: 0, ready: 0, attention: 0, next_launch: 0 });
 export function insertStuckHealthProblem(problems: string[]) {
   if (problems.includes('Stuck pending')) return problems;
   const imageProblems = new Set(['No images', 'Protocol-relative image URL (missing https:)',
@@ -82,6 +84,7 @@ export function productHealthProjection(product: Doc<'products'>, now: number) {
   const problems = productHealthProblems(product, now).map(problem => problem.startsWith('Stuck pending for ') ? 'Stuck pending' : problem);
   return {
     productId: product._id, version: HEALTH_VERSION, hasIssues: problems.length > 0,
+    connectionState: getCjProductStatus(product).state, nextLaunch: product.storefrontStatus === 'next_launch',
     migrationStatus: product.cjSourcingJobId === undefined && product.cjSourcingStatus && product.cjSourcingStatus !== 'none'
       ? product.cjSourcingStatus : undefined,
     hasCjIssues: problems.some(isCjHealthProblem), dueAt: deadline > now ? deadline : 0,

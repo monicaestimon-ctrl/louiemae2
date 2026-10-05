@@ -13,7 +13,13 @@ these counts in the same transaction. After explicit health activation,
 `getAdminOperations` uses these counts instead of three full-product scans;
 its `migration.truncated` becomes false and counts can exceed 500. Before
 activation or after explicit rollback it keeps the existing capped contract.
-Version-1 verification cannot activate version 2; start a fresh rebuild.
+Version 3 adds exact counts for all six inventory CJ connection states and the
+Next Launch queue. Counts follow the complete shared connection-status rules,
+including all customer variants, and update atomically on transitions/deletions.
+`status.inventoryCounts` is available only after current-version activation;
+future dashboard clients must distinguish unavailable counts from zero. The
+bounded source verification independently checks every count and rejects drift.
+Version-1 or version-2 verification cannot activate version 3; start a fresh rebuild.
 
 Separately, verified catalog activation changes operations job display lookups
 to compact catalog rows. It preserves job metadata and source URL while

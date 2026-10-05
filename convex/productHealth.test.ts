@@ -21,6 +21,47 @@ async function finish(t: ReturnType<typeof convexTest>, state: Pick<Doc<'product
   return state;
 }
 describe('incremental product health', () => {
+  it('maintains all inventory states and queued-launch counts, and rejects counter drift or old-version activation', async () => {
+    const t = convexTest(schema, modules);
+    const ready = { ...fixture, cjSourcingStatus: 'approved' as const, cjSourcingState: 'fulfillment_ready' as const,
+      cjFulfillmentReadiness: 'ready' as const, cjProductId: 'pid',
+      cjVariants: [{ vid: 'vid', sku: 'sku', name: 'Small' }],
+      variants: [{ id: 'small', name: 'Small', priceAdjustment: 0, inStock: true, cjVariantId: 'vid', cjSku: 'sku' }] };
+    const ids = await t.run(async ctx => {
+      const ids: Id<'products'>[] = [];
+      for (const product of [fixture, { ...fixture, cjSourcingStatus: 'pending' as const },
+        { ...fixture, cjSourcingStatus: 'rejected' as const }, { ...fixture, cjSourcingStatus: 'approved' as const },
+        { ...fixture, cjProductId: 'partial' }, { ...ready, storefrontStatus: 'next_launch' as const }]) {
+        ids.push(await ctx.db.insert('products', product));
+      }
+      return ids;
+    });
+    await finish(t, await t.mutation(mutation('startRebuild'), {}));
+    expect(await t.query(status, {})).toMatchObject({ ready: false });
+    expect(await t.query(status, {})).not.toHaveProperty('inventoryCounts');
+    await t.mutation(mutation('setEnabled'), { enabled: true });
+    expect(await t.query(status, {})).toMatchObject({ totalProducts: 6, inventoryCounts: {
+      not_linked: 1, pending: 1, rejected: 1, approved_needs_setup: 1, attention: 1, ready: 1, next_launch: 1,
+    } });
+    await t.run(async ctx => {
+      await ctx.db.patch(ids[0], { cjSourcingStatus: 'pending', storefrontStatus: 'next_launch' });
+      await syncProductHealth(ctx, ids[0], await ctx.db.get(ids[0]));
+    });
+    await t.mutation(makeFunctionReference<'mutation'>('products:remove'), { id: ids[5] });
+    expect(await t.query(status, {})).toMatchObject({ totalProducts: 5, inventoryCounts: { not_linked: 0, pending: 2, ready: 0, next_launch: 1 } });
+    await t.run(async ctx => {
+      const state = (await ctx.db.query('productHealthState').first())!;
+      await ctx.db.patch(state._id, { inventoryCounts: { ...state.inventoryCounts, pending: 999 } });
+    });
+    await t.mutation(mutation('verifyAgain'), {});
+    expect(await finish(t, (await t.run(ctx => ctx.db.query('productHealthState').first()))!)).toMatchObject({ phase: 'failed', mismatchIds: expect.arrayContaining(['inventory_totals']) });
+    await expect(t.mutation(mutation('setEnabled'), { enabled: true })).rejects.toThrow('Verify');
+    await finish(t, await t.mutation(mutation('startRebuild'), {}));
+    await t.run(async ctx => { const state = (await ctx.db.query('productHealthState').first())!; await ctx.db.patch(state._id, { version: 2, enabled: true }); });
+    expect(await t.query(status, {})).toMatchObject({ ready: false });
+    expect(await t.query(status, {})).not.toHaveProperty('inventoryCounts');
+    await expect(t.mutation(mutation('setEnabled'), { enabled: true })).rejects.toThrow('Verify');
+  });
   it('maintains exact legacy migration counts beyond 500 through job assignment, transitions and deletion', async () => {
     const t = convexTest(schema, modules);
     const operations = makeFunctionReference<'query'>('cjSourcingJobs:getAdminOperations');
@@ -99,8 +140,10 @@ describe('incremental product health', () => {
     expect(state).toMatchObject({ phase: 'ready', total: 535, issues: 266, enabled: false });
     await t.mutation(mutation('setEnabled'), { enabled: true });
     expect(await t.query(status, {})).toMatchObject({ ready: true, totalProducts: 535, productsWithIssues: 266 });
+    expect(await t.query(status, {})).toMatchObject({ inventoryCounts: { not_linked: 535, ready: 0, next_launch: 0 } });
     await t.mutation(makeFunctionReference<'mutation'>('products:remove'), { id: ids[3] });
     expect(await t.query(status, {})).toMatchObject({ totalProducts: 534, productsWithIssues: 265 });
+    expect(await t.query(status, {})).toMatchObject({ inventoryCounts: { not_linked: 534 } });
     // Restarting after a counter drift repairs totals rather than incrementing old totals.
     await t.run(async ctx => { const state = (await ctx.db.query('productHealthState').first())!; await ctx.db.patch(state._id, { total: 999 }); });
     state = await finish(t, await t.mutation(mutation('startRebuild'), {}));
