@@ -4,6 +4,7 @@ import { useAction, useMutation } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
 import { useSite } from '../contexts/BlogContext';
+import { useAdminCatalog } from '../contexts/AdminCatalogDemand';
 import { RichTextEditor } from './RichTextEditor';
 import { useNewsletterAdmin } from '../contexts/NewsletterContext';
 import { FadeIn } from './FadeIn';
@@ -240,6 +241,7 @@ export const AdminPage: React.FC = () => {
       return saved && (validTabs as readonly string[]).includes(saved) ? saved as typeof validTabs[number] : 'dashboard';
    });
    const [cjNavContext, setCjNavContext] = useState<{ orderId?: string; productId?: string }>({});
+   useAdminCatalog(isAuthenticated && ['dashboard', 'products', 'cj-settings', 'pages', 'structure', 'journal', 'import'].includes(activeTab));
    const setActiveTab = (tab: AdminTab, options?: { preserveCjContext?: boolean }) => {
       if (!options?.preserveCjContext) {
          setCjNavContext({});
