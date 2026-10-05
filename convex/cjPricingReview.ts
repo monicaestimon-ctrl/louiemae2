@@ -7,7 +7,7 @@ import {
   internalQuery,
   mutation,
   query,
-} from './_generated/server';
+} from './functions';
 import type { Doc } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import { requireCjAdminIdentity } from './cjAdminAccess';

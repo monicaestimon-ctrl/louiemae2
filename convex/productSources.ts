@@ -1,5 +1,6 @@
 import { sourceEvidenceWarnings } from '../lib/productGeneration';
 import { internalQuery, internalMutation, query } from './_generated/server';
+import { internalMutation as productMutation } from './functions';
 import { v } from 'convex/values';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 
@@ -52,7 +53,7 @@ export const legacyEvidence = internalQuery({ args: { productId: v.id('products'
     return audit ? { snapshot: audit.sourceSnapshot, url: product.sourceUrl } : null;
 } });
 
-export const attachRecovered = internalMutation({ args: { productId: v.id('products'), sourceSnapshotId: v.id('productSourceSnapshots'), expectedRevision: v.number() }, handler: async (ctx, args) => {
+export const attachRecovered = productMutation({ args: { productId: v.id('products'), sourceSnapshotId: v.id('productSourceSnapshots'), expectedRevision: v.number() }, handler: async (ctx, args) => {
     const product = await ctx.db.get(args.productId);
     if (!product || (product.productRevision ?? 0) !== args.expectedRevision) return 'changed';
     if (product.sourceSnapshotId) return 'already_linked';

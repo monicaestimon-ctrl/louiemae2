@@ -1,7 +1,7 @@
 import type { Doc } from '../convex/_generated/dataModel';
 import { isCjProductStorefrontReady } from './cjFulfillmentReadiness';
 
-export const CATALOG_VERSION = 1;
+export const CATALOG_VERSION = 2;
 
 export function isCatalogProductPublic(product: Doc<'products'>) {
   return (!product.storefrontStatus || product.storefrontStatus === 'published')
@@ -14,7 +14,9 @@ export function isCatalogProductPublic(product: Doc<'products'>) {
 export function publicCatalogProduct(product: Doc<'products'>) {
   return {
     _id: product._id, _creationTime: product._creationTime,
-    name: product.name, price: product.price, description: product.description,
+    name: product.name, price: product.price,
+    descriptionExcerpt: product.description.slice(0, 2000),
+    descriptionTruncated: product.description.length > 2000,
     images: product.images.slice(0, 24), category: product.category,
     collection: product.collection, subcategory: product.subcategory,
     subcategoryIds: product.subcategoryIds, primarySubcategoryId: product.primarySubcategoryId,
@@ -31,7 +33,6 @@ export function publicCatalogProduct(product: Doc<'products'>) {
 // variant mapping continue to fetch the authoritative product by ID.
 export function adminCatalogProduct(product: Doc<'products'>) {
   return {
-    ...publicCatalogProduct(product),
     sourceUrl: product.sourceUrl, productRevision: product.productRevision,
     cjSourcingStatus: product.cjSourcingStatus, cjSourcingState: product.cjSourcingState,
     cjFulfillmentReadiness: product.cjFulfillmentReadiness,

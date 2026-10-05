@@ -17,6 +17,7 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "verify:client-secrets": "node scripts/verify-client-secrets.mjs",
+    "verify:catalog-writers": "node scripts/verify-catalog-writers.mjs",
     "verify:environment": "node scripts/verify-environment.mjs"
   },
   "dependencies": {

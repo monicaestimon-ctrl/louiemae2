@@ -1,247 +1,139 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-vi.mock('./auth', () => ({ auth: { getUserId: vi.fn() } }));
-import { save, dispatchMonitor, claim, failed, refreshWorker } from './cjPricingReview';
+// @vitest-environment node
+/// <reference types="vite/client" />
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { convexTest } from 'convex-test';
+import { makeFunctionReference } from 'convex/server';
+import schema from './schema';
+import type { Doc } from './_generated/dataModel';
+import { refreshWorker } from './cjPricingReview';
 import { pricingFingerprint, type CjPricingReview } from '../lib/cjPricingReview';
-const handler = (save as unknown as { _handler: (ctx: any, args: any) => Promise<any> })._handler;
-const review: CjPricingReview = {
-  cjProductId: 'pid',
-  checkedAt: Date.now(),
-  destination: 'US',
-  quantity: 1,
-  quotes: [
-    {
-      vid: 'v1',
-      sku: 's1',
-      name: 'Small',
-      itemCost: 10,
-      shippingCost: 5,
-      origin: 'CN',
-      logisticsName: 'CJPacket',
-    },
-    {
-      vid: 'v2',
-      sku: 's2',
-      name: 'Large',
-      itemCost: 20,
-      shippingCost: 8,
-      origin: 'CN',
-      logisticsName: 'CJPacket',
-    },
-  ],
-};
-const product = {
-  _id: 'p',
-  cjProductId: 'pid',
-  cjSourcingStatus: 'approved',
-  price: 80,
-  storefrontStatus: 'hidden',
-  productRevision: 2,
+
+const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
+// Inspect scheduled work without running provider actions in unit tests.
+beforeEach(() => vi.useFakeTimers());
+afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
+type ProductInput = Omit<Doc<'products'>, '_id' | '_creationTime'>;
+const product: ProductInput = {
+  name: 'Dress', description: 'A dress', images: ['dress.jpg'], category: 'dresses', collection: 'fashion',
+  cjProductId: 'pid', cjSourcingStatus: 'approved', price: 80, storefrontStatus: 'hidden', productRevision: 2,
   variants: [
-    {
-      id: 'small',
-      name: 'Small',
-      cjVariantId: 'v1',
-      cjSku: 's1',
-      priceAdjustment: 0,
-      inStock: true,
-    },
-    {
-      id: 'large',
-      name: 'Large',
-      cjVariantId: 'v2',
-      cjSku: 's2',
-      priceAdjustment: 0,
-      inStock: true,
-    },
+    { id: 'small', name: 'Small', cjVariantId: 'v1', cjSku: 's1', priceAdjustment: 0, inStock: true },
+    { id: 'large', name: 'Large', cjVariantId: 'v2', cjSku: 's2', priceAdjustment: 0, inStock: true },
   ],
 };
-beforeEach(() => vi.clearAllMocks());
+const review: CjPricingReview = {
+  cjProductId: 'pid', checkedAt: Date.now(), destination: 'US', quantity: 1,
+  quotes: [
+    { vid: 'v1', sku: 's1', name: 'Small', itemCost: 10, shippingCost: 5, origin: 'CN', logisticsName: 'CJPacket' },
+    { vid: 'v2', sku: 's2', name: 'Large', itemCost: 20, shippingCost: 8, origin: 'CN', logisticsName: 'CJPacket' },
+  ],
+};
+async function setup(overrides: Partial<ProductInput> = {}) {
+  const t = convexTest(schema, modules);
+  const id = await t.run(ctx => ctx.db.insert('products', { ...product, ...overrides }));
+  const read = () => t.run(ctx => ctx.db.get(id));
+  const save = async (options: { review?: CjPricingReview; allowReprice?: boolean; fingerprint?: string } = {}) =>
+    t.mutation(makeFunctionReference<'mutation'>('cjPricingReview:save'), {
+      productId: id, fingerprint: options.fingerprint ?? pricingFingerprint((await read())!), review, ...options,
+    });
+  return { t, id, read, save };
+}
+
 it('quotes freight using the documented inventory success envelope', async () => {
-  const p = { ...product, variants: [product.variants[0]] };
+  const p = { ...product, _id: 'p', variants: [product.variants![0]] };
   const fetchMock = vi.spyOn(globalThis, 'fetch');
-  const responses = [
+  for (const json of [
     { result: true, data: { variants: [{ vid: 'v1', variantSku: 's1', variantSellPrice: 10 }] } },
     { success: true, code: 200, data: { variantInventories: [{ vid: 'v1', inventory: [{ countryCode: 'CN' }] }] } },
     { result: true, data: [{ logisticName: 'CJPacket', logisticPrice: 5 }] },
-  ];
-  for (const json of responses) fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(json)));
+  ]) fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(json)));
   const ctx = {
     runAction: vi.fn().mockResolvedValue('test-token'),
-    runMutation: vi.fn()
-      .mockResolvedValueOnce(p)
+    runMutation: vi.fn().mockResolvedValueOnce(p)
       .mockResolvedValueOnce({ admitted: true, reservedAt: 0 })
       .mockResolvedValueOnce({ admitted: true, reservedAt: 0 })
       .mockResolvedValueOnce({ admitted: true, reservedAt: 0 })
       .mockResolvedValueOnce({ complete: true, repriced: false }),
   };
   try {
-    const worker = (refreshWorker as unknown as { _handler: (ctx: any, args: any) => Promise<any> })._handler;
+    const worker = (refreshWorker as unknown as { _handler: (ctx: unknown, args: unknown) => Promise<unknown> })._handler;
     expect(await worker(ctx, { productId: 'p' })).toEqual({ complete: true, repriced: false });
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(ctx.runMutation.mock.calls[4][1].review.quotes[0]).toMatchObject({
-      vid: 'v1', itemCost: 10, shippingCost: 5, origin: 'CN', logisticsName: 'CJPacket',
-    });
-  } finally {
-    fetchMock.mockRestore();
-  }
+    expect(ctx.runMutation.mock.calls[4][1].review.quotes[0]).toMatchObject({ vid: 'v1', itemCost: 10, shippingCost: 5, origin: 'CN', logisticsName: 'CJPacket' });
+  } finally { fetchMock.mockRestore(); }
 });
-describe('saving CJ quotes', () => {
-  it('automatically prices every unpublished variant from its own quote', async () => {
-    const ctx = { db: { get: vi.fn().mockResolvedValue(product), patch: vi.fn() } };
-    expect(
-      await handler(ctx, {
-        productId: 'p',
-        fingerprint: pricingFingerprint(product),
-        review,
-        allowReprice: true,
-      })
-    ).toEqual({ complete: true, repriced: true });
-    expect(ctx.db.patch).toHaveBeenCalledWith(
-      'p',
-      expect.objectContaining({
-        price: 24.99,
-        variants: [
-          expect.objectContaining({ priceAdjustment: 0 }),
-          expect.objectContaining({ priceAdjustment: 23 }),
-        ],
-        productRevision: 3,
-      })
-    );
+
+describe('saving CJ quotes with transactional catalog maintenance', () => {
+  it('automatically prices every unpublished variant from its own quote and updates the summary', async () => {
+    const f = await setup();
+    expect(await f.save({ allowReprice: true })).toEqual({ complete: true, repriced: true });
+    expect(await f.read()).toMatchObject({ price: 24.99, productRevision: 3, variants: [{ priceAdjustment: 0 }, { priceAdjustment: 23 }] });
+    expect(await f.t.run(ctx => ctx.db.query('productCatalog').first())).toMatchObject({ publicData: { price: 24.99, variants: [{ priceAdjustment: 0 }, { priceAdjustment: 23 }] } });
   });
-  it.each([
-    { ...product, adminPriceLocked: true },
-    { ...product, storefrontStatus: 'published' },
-  ])('preserves locked or published retail prices', async (p) => {
-    const ctx = { db: { get: vi.fn().mockResolvedValue(p), patch: vi.fn() } };
-    const result = await handler(ctx, {
-      productId: 'p',
-      fingerprint: pricingFingerprint(p),
-      review,
-      allowReprice: true,
-    });
-    expect(result.repriced).toBe(false);
-    expect(ctx.db.patch.mock.calls[0][1]).not.toHaveProperty('price');
+
+  it.each<Partial<ProductInput>>([{ adminPriceLocked: true }, { storefrontStatus: 'published' }])('preserves locked or published retail prices: %j', async overrides => {
+    const f = await setup(overrides);
+    expect(await f.save({ allowReprice: true })).toMatchObject({ repriced: false });
+    expect(await f.read()).toMatchObject({ price: 80, productRevision: 2, variants: [{ priceAdjustment: 0 }, { priceAdjustment: 0 }] });
   });
+
   it('does not apply partial quotes', async () => {
-    const ctx = { db: { get: vi.fn().mockResolvedValue(product), patch: vi.fn() } };
-    expect(
-      (
-        await handler(ctx, {
-          productId: 'p',
-          fingerprint: pricingFingerprint(product),
-          review: { ...review, quotes: review.quotes.slice(0, 1) },
-        })
-      ).repriced
-    ).toBe(false);
+    const f = await setup();
+    expect(await f.save({ review: { ...review, quotes: review.quotes.slice(0, 1) }, allowReprice: true })).toMatchObject({ repriced: false });
+    expect((await f.read())?.price).toBe(80);
   });
-  it('rejects concurrent mapping or price changes', async () => {
-    const ctx = {
-      db: { get: vi.fn().mockResolvedValue({ ...product, price: 90 }), patch: vi.fn() },
-    };
-    await expect(
-      handler(ctx, { productId: 'p', fingerprint: pricingFingerprint(product), review })
-    ).rejects.toThrow('changed');
-    expect(ctx.db.patch).not.toHaveBeenCalled();
+
+  it('rejects concurrent mapping or price changes without changing either record', async () => {
+    const f = await setup({ price: 90 });
+    await expect(f.save({ fingerprint: pricingFingerprint(product) })).rejects.toThrow('changed');
+    expect((await f.read())?.price).toBe(90);
+    expect(await f.t.run(ctx => ctx.db.query('productCatalog').collect())).toEqual([]);
   });
 });
 
-const run = (fn: unknown, ctx: any, args: any) =>
-  (fn as { _handler: (ctx: any, args: any) => Promise<any> })._handler(ctx, args);
 describe('daily price monitoring', () => {
   it('compares to the last complete quote after an intervening partial failure', async () => {
-    const p = { ...product, cjPricingBaseline: review, cjPricingReview: { ...review, quotes: [] } };
-    const ctx = { db: { get: vi.fn().mockResolvedValue(p), patch: vi.fn() } };
-    await handler(ctx, {
-      productId: 'p',
-      fingerprint: pricingFingerprint(p),
-      review: {
-        ...review,
-        quotes: review.quotes.map((q) => ({ ...q, shippingCost: q.shippingCost! + 2 })),
-      },
-      allowReprice: false,
-    });
-    expect(ctx.db.patch.mock.calls[0][1].cjPricingAlert.message).toContain('$15.00 → $17.00');
+    const f = await setup({ cjPricingBaseline: review, cjPricingReview: { ...review, quotes: [] } });
+    await f.save({ review: { ...review, quotes: review.quotes.map(q => ({ ...q, shippingCost: q.shippingCost! + 2 })) }, allowReprice: false });
+    expect((await f.read())?.cjPricingAlert?.message).toContain('$15.00 → $17.00');
   });
-  it('alerts on supplier cost changes without repricing even unpublished products', async () => {
-    const p = { ...product, cjPricingReview: review };
-    const ctx = { db: { get: vi.fn().mockResolvedValue(p), patch: vi.fn() } };
-    await handler(ctx, {
-      productId: 'p',
-      fingerprint: pricingFingerprint(p),
-      review: {
-        ...review,
-        quotes: review.quotes.map((q) => ({ ...q, itemCost: q.itemCost! + 1 })),
-      },
-      allowReprice: false,
-    });
-    const update = ctx.db.patch.mock.calls[0][1];
-    expect(update.cjPricingAlert.message).toContain('$10.00 → $11.00');
-    expect(update).not.toHaveProperty('price');
+
+  it('alerts on supplier cost changes without repricing unpublished products', async () => {
+    const f = await setup({ cjPricingReview: review });
+    await f.save({ review: { ...review, quotes: review.quotes.map(q => ({ ...q, itemCost: q.itemCost! + 1 })) }, allowReprice: false });
+    expect((await f.read())?.cjPricingAlert?.message).toContain('$10.00 → $11.00');
+    expect((await f.read())?.price).toBe(80);
   });
+
   it('preserves unacknowledged alerts through unchanged successful checks', async () => {
-    const p = {
-      ...product,
-      cjPricingReview: review,
-      cjPricingAlert: { at: 1, message: 'Previous change' },
-    };
-    const ctx = { db: { get: vi.fn().mockResolvedValue(p), patch: vi.fn() } };
-    await handler(ctx, {
-      productId: 'p',
-      fingerprint: pricingFingerprint(p),
-      review,
-      allowReprice: false,
-    });
-    expect(ctx.db.patch.mock.calls[0][1]).not.toHaveProperty('cjPricingAlert');
+    const f = await setup({ cjPricingReview: review, cjPricingAlert: { at: 1, message: 'Previous change' } });
+    await f.save({ allowReprice: false });
+    expect((await f.read())?.cjPricingAlert?.message).toBe('Previous change');
   });
-  it('bounds scheduled batches and does not permit monitor repricing', async () => {
-    const take = vi.fn().mockResolvedValue([{ ...product }]);
-    const range = { eq: vi.fn().mockReturnThis(), lt: vi.fn().mockReturnThis() };
-    const ctx = {
-      db: {
-        query: () => ({
-          withIndex: (_: string, fn: any) => {
-            fn(range);
-            return { take };
-          },
-        }),
-        patch: vi.fn(),
-      },
-      scheduler: { runAfter: vi.fn() },
-    };
-    expect(await run(dispatchMonitor, ctx, {})).toEqual({ scheduled: 1 });
-    expect(take).toHaveBeenCalledWith(10);
-    expect(range.eq).toHaveBeenCalledWith('cjSourcingStatus', 'approved');
-    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
-      productId: 'p',
-      allowReprice: false,
-    });
+
+  it('bounds due batches and never schedules monitor repricing', async () => {
+    const f = await setup({ cjPricingLastAttemptAt: 0 });
+    await f.t.run(async ctx => { for (let i = 0; i < 11; i++) await ctx.db.insert('products', { ...product, cjPricingLastAttemptAt: 0 }); });
+    expect(await f.t.mutation(makeFunctionReference<'mutation'>('cjPricingReview:dispatchMonitor'), {})).toEqual({ scheduled: 10 });
+    const jobs = await f.t.run(ctx => ctx.db.system.query('_scheduled_functions').collect());
+    expect(jobs).toHaveLength(10);
+    for (const job of jobs) expect(job.args).toEqual([expect.objectContaining({ allowReprice: false })]);
   });
+
   it('prevents two workers from checking a product concurrently', async () => {
-    const ctx = {
-      db: {
-        get: vi.fn().mockResolvedValue({ ...product, cjPricingLeaseUntil: Date.now() + 10000 }),
-        patch: vi.fn(),
-      },
-    };
-    expect(await run(claim, ctx, { productId: 'p', leaseToken: 'new' })).toBeNull();
-    expect(ctx.db.patch).not.toHaveBeenCalled();
+    const f = await setup();
+    const claim = makeFunctionReference<'mutation'>('cjPricingReview:claim');
+    expect(await f.t.mutation(claim, { productId: f.id, leaseToken: 'first' })).not.toBeNull();
+    expect(await f.t.mutation(claim, { productId: f.id, leaseToken: 'second' })).toBeNull();
+    expect((await f.read())?.cjPricingLeaseToken).toBe('first');
   });
+
   it('records errors visibly and ignores a stale worker failure', async () => {
-    const ctx = {
-      db: {
-        get: vi.fn().mockResolvedValue({ ...product, cjPricingLeaseToken: 'current' }),
-        patch: vi.fn(),
-      },
-    };
-    await run(failed, ctx, { productId: 'p', leaseToken: 'old', error: 'Timeout' });
-    expect(ctx.db.patch).not.toHaveBeenCalled();
-    await run(failed, ctx, { productId: 'p', leaseToken: 'current', error: 'Timeout' });
-    expect(ctx.db.patch).toHaveBeenCalledWith(
-      'p',
-      expect.objectContaining({
-        cjPricingError: 'Timeout',
-        cjPricingAlert: expect.objectContaining({ message: 'CJ price check failed: Timeout' }),
-      })
-    );
+    const f = await setup({ cjPricingLeaseToken: 'current' });
+    const failed = makeFunctionReference<'mutation'>('cjPricingReview:failed');
+    await f.t.mutation(failed, { productId: f.id, leaseToken: 'old', error: 'Timeout' });
+    expect((await f.read())?.cjPricingError).toBeUndefined();
+    await f.t.mutation(failed, { productId: f.id, leaseToken: 'current', error: 'Timeout' });
+    expect(await f.read()).toMatchObject({ cjPricingError: 'Timeout', cjPricingAlert: { message: 'CJ price check failed: Timeout' } });
   });
 });

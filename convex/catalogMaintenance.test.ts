@@ -8,6 +8,7 @@ import { sameCatalogValue } from '../lib/catalogProjection';
 import { internalMutation } from './functions';
 import type { MutationCtx } from './_generated/server';
 import type { Id } from './_generated/dataModel';
+import { makeFunctionReference } from 'convex/server';
 
 const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 const product = { name: 'Chair', price: 90, description: 'An oak chair', images: ['chair.jpg'], category: 'chairs', collection: 'furniture' };
@@ -63,6 +64,32 @@ describe('isolated catalog projection maintenance', () => {
   it('compares stored objects regardless of property order and omitted undefined values', () => {
     expect(sameCatalogValue({ b: 1, a: { x: 2, absent: undefined } }, { a: { x: 2 }, b: 1 })).toBe(true);
     expect(sameCatalogValue({ rows: [1, 2] }, { rows: [2, 1] })).toBe(false);
+  });
+
+  it('stores an explicit excerpt rather than duplicating large descriptions in list rows', async () => {
+    const t = convexTest(schema, modules);
+    const id = await t.run(async ctx => {
+      const id = await ctx.db.insert('products', { ...product, description: 'x'.repeat(800_000) });
+      await syncCatalogProduct(ctx, id, await ctx.db.get(id));
+      return id;
+    });
+    const row = await t.run(ctx => ctx.db.query('productCatalog').first());
+    expect(row?.publicData).toMatchObject({ descriptionTruncated: true, descriptionExcerpt: 'x'.repeat(2000) });
+    expect(row?.adminData).not.toHaveProperty('description');
+    expect(JSON.stringify(row).length).toBeLessThan(15_000);
+    expect((await t.run(ctx => ctx.db.get(id)))?.description).toHaveLength(800_000);
+  });
+
+  it('the real image caching writer atomically updates the source and summary', async () => {
+    const t = convexTest(schema, modules);
+    const id = await t.run(ctx => ctx.db.insert('products', product));
+    await t.mutation(makeFunctionReference<'mutation'>('productImageRecords:patchCachedProductImages'), {
+      productId: id, images: ['cached.jpg'], descriptionImages: ['private-description.jpg'],
+    });
+    expect(await t.run(ctx => ctx.db.get(id))).toMatchObject({ images: ['cached.jpg'], descriptionImages: ['private-description.jpg'] });
+    const row = await t.run(ctx => ctx.db.query('productCatalog').first());
+    expect(row?.publicData.images).toEqual(['cached.jpg']);
+    expect(row?.publicData).not.toHaveProperty('descriptionImages');
   });
 
   it('does not write a summary for telemetry-only product changes', async () => {

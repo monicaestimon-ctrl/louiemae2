@@ -38,6 +38,9 @@ jobs:
       - name: Strict Convex type check
         run: npx tsc -p convex/tsconfig.json
 
+      - name: Verify transactional catalog writers
+        run: npm run verify:catalog-writers
+
       - name: Run tests
         run: npm run test:run
 
