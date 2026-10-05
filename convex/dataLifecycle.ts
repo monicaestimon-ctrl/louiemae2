@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query } from "./functions";
 import { requireCjAdminIdentity } from "./cjAdminAccess";
 
 const clampLimit = (value: number | undefined, max = 50) =>

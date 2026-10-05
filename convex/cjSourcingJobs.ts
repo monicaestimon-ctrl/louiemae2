@@ -8,6 +8,7 @@ import {
     type MutationCtx,
 } from "./_generated/server";
 import { readySourcingCounts, SOURCING_STATES } from './sourcingCountsMaintenance';
+import { webhookSummariesReady } from './webhookSummaryMaintenance';
 import type { Doc, Id } from "./_generated/dataModel";
 import { buildCjSourcingPayload, hashCjSourcingPayload } from "../lib/cjSourcing";
 import {
@@ -1218,10 +1219,13 @@ export const getAdminOperations = query({
             };
         }));
 
+        const useWebhookSummaries = await webhookSummariesReady(ctx);
         const [control, workerRuns, webhookRows] = await Promise.all([
             ctx.db.query("cjApiControl").withIndex("by_key", (q) => q.eq("key", "primary")).unique(),
             ctx.db.query("cjWorkerRuns").withIndex("by_created_at").order("desc").take(20),
-            ctx.db.query("cjWebhookLog").order("desc").take(100),
+            useWebhookSummaries
+                ? ctx.db.query('webhookSummaries').withIndex('by_source_created').order('desc').take(100)
+                : ctx.db.query("cjWebhookLog").order("desc").take(100),
         ]);
         const webhookCounts: Record<string, number> = { processing: 0, processed: 0, retryable: 0, failed: 0 };
         let oldestProcessingAt: number | undefined;
