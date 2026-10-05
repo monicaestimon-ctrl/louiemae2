@@ -222,4 +222,11 @@ edits and dismissals. This prepares batch generation for compact catalog rows;
 it does not itself enable paginated catalog readers or claim measured savings.
 
 Local validation passed 83 files / 546 tests, including nine new batch hook tests.
-Production release and authenticated verification must be recorded after deployment.
+PR 136 merged at `92e9c4c98759e63fc4188a6283f99d54ba5aef58`. PR CI
+`37268452990` and production CI/backend deploy `37268636144` passed.
+The exact clean merge commit was deployed to Vercel production as
+`dpl_CQuxctj99rwjR98xQzJy7GLuuo5D` and verified Ready with the `www.louiemae.com`
+alias and existing `diligent-jay-261` URL. The build and client-secret check
+passed; the public homepage returned HTTP 200. Authenticated generation and
+save verification remain pending Convex service restoration. Frontend rollback
+is available to `dpl_EWyonxMC9ZNpTGZcQgPfz8rmsWBM`.
