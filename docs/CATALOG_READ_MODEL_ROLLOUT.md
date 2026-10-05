@@ -56,3 +56,39 @@ Activation order remains mandatory:
 Rollback before reader cutover may restore prior writer code while retaining the
 additive schema. Any rollback that stops maintenance invalidates summary readiness;
 rebuild and verify before later activation. No table deletion is required.
+
+## Reader preparation and readiness controls
+
+`catalog.storefrontPage` and `catalog.adminPage` are additive endpoints. Existing
+screens continue using old contracts until the frontend cutover is verified.
+Admin authorization precedes readiness checks. Public pages use only visible
+rows and the public allowlist; they never return the private half of a summary.
+Both endpoints reject requests before explicit readiness activation.
+
+Pages preserve Convex continuation/end cursors and split metadata. They request
+at most 50 rows and a 500,000-byte read budget. Convex 1.31.7 includes the budget
+fields in its exported validator and deployed pagination implementation while
+omitting them from its stripped `PaginationOptions` interface; the shared helper
+derives its contract from that validator. Integration checks against a restored
+deployment must confirm runtime behavior and page-split handling before cutover.
+These are read budgets, not a guarantee about serialized response size or billing.
+
+Collection and public visibility use indexes. Additional category, substring
+search and admin sourcing filters apply to each bounded page. An empty page can
+still have `isDone: false`; a consumer must preserve its cursor and allow continued
+loading, never treat that empty page as the end. Search covers the same bounded
+search text stored in the projection; full descriptions remain detail-only.
+
+After backfill completion, run `catalogReadiness.begin`, then repeatedly call
+`verifyNext` with the returned phase and cursor. Each transaction checks at most
+five sources or orphan candidates. Stale cursor/phase retries cannot advance an
+extra page. A mismatch changes the phase to `failed`, records affected product
+IDs and keeps readers disabled. Repair one to five distinct IDs with `repair`,
+then restart both verification passes. Repair handles deleted-source orphans.
+
+Only after phase `verified`, index readiness, representative preview checks and
+operator review may `setEnabled({ enabled: true })` activate the new endpoints.
+Backfill completion alone cannot activate them. `setEnabled({ enabled: false })`
+is the immediate reader stop control. Starting verification or repairing data
+also disables readers. Roll the frontend back before disabling readers used by
+that frontend; no automatic full-table fallback exists.
