@@ -2,6 +2,7 @@
 import React, { useMemo } from 'react';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
+import { useStorefrontCatalog } from '../contexts/AdminCatalogDemand';
 import { Product } from '../types';
 import { ArrowRight } from 'lucide-react';
 import { GlassButton } from './ui/GlassButton';
@@ -129,7 +130,8 @@ const CollectionRow: React.FC<{
 };
 
 export const NewArrivalsPage: React.FC = () => {
-    const { products } = useSite();
+    useStorefrontCatalog();
+    const { products, isCatalogLoading } = useSite();
 
     // Get newest products per collection — auto-expire after 30 days
     const collectionProducts = useMemo(() => {
@@ -166,6 +168,7 @@ export const NewArrivalsPage: React.FC = () => {
 
     return (
         <div className="bg-cream min-h-screen pt-24 pb-20">
+            {isCatalogLoading && <p role="status" className="text-center text-earth/60">Loading new arrivals…</p>}
 
             {/* Hero */}
             <div className="text-center px-6 mb-20">

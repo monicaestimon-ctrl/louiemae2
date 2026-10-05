@@ -231,7 +231,7 @@ export const AdminPage: React.FC = () => {
       return saved && (validTabs as readonly string[]).includes(saved) ? saved as typeof validTabs[number] : 'dashboard';
    });
    const [cjNavContext, setCjNavContext] = useState<{ orderId?: string; productId?: string }>({});
-   useAdminCatalog(isAuthenticated && ['dashboard', 'products', 'cj-settings', 'pages', 'structure', 'journal', 'import'].includes(activeTab));
+   useAdminCatalog(isAuthenticated && ['dashboard', 'products', 'pages', 'structure', 'journal'].includes(activeTab));
    const setActiveTab = (tab: AdminTab, options?: { preserveCjContext?: boolean }) => {
       if (!options?.preserveCjContext) {
          setCjNavContext({});
@@ -1067,8 +1067,7 @@ export const AdminPage: React.FC = () => {
                    <CJSettings
                       targetProductId={cjNavContext.productId}
                       onEditProduct={(productId) => {
-                         const product = products.find((candidate) => candidate.id === productId);
-                         if (product) handleEditProduct(product);
+                         void productDetail.load(productId);
                       }}
                    />
                </FadeIn>
