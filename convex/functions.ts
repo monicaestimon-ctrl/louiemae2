@@ -6,10 +6,15 @@ import { syncCatalogProduct } from './catalogMaintenance';
 import { catalogProjection, sameCatalogValue } from '../lib/catalogProjection';
 import { productHealthProjection } from '../lib/productHealth';
 import { syncProductHealth } from './productHealthMaintenance';
+import { syncSourcingCount } from './sourcingCountsMaintenance';
 
-// Product-writing entry points use these builders. Reader cutover still requires
+// Product/job-writing entry points use these builders. Reader cutover still requires
 // a completed, verified backfill. Irrelevant telemetry must not invalidate lists.
 const triggers = new Triggers<DataModel>();
+triggers.register('cjSourcingJobs', async (ctx, change) => {
+  if (change.oldDoc && change.newDoc && change.oldDoc.state === change.newDoc.state) return;
+  await syncSourcingCount(ctx, change.id, change.newDoc);
+});
 triggers.register('products', async (ctx, change) => {
   const now = Date.now();
   if (!change.oldDoc || !change.newDoc || !sameCatalogValue(productHealthProjection(change.oldDoc, now), productHealthProjection(change.newDoc, now))) {

@@ -1,6 +1,6 @@
 import ts from 'typescript';
 
-// Follow typed product writes through shared helpers to their mutation entry
+// Follow typed product/job writes through shared helpers to their mutation entry
 // points. This catches an unwrapped new writer before it can make summaries stale.
 const config = ts.readConfigFile('convex/tsconfig.json', ts.sys.readFile);
 const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, 'convex');
@@ -9,7 +9,7 @@ const checker = program.getTypeChecker();
 const projectSource = source => !source.isDeclarationFile && !source.fileName.includes('node_modules')
   && !source.fileName.includes('.test.') && !source.fileName.includes('_generated');
 
-function writesProducts(root, seen = new Set()) {
+function writesSummarySources(root, seen = new Set()) {
   if (seen.has(root)) return false;
   seen.add(root);
   let found = false;
@@ -21,9 +21,9 @@ function writesProducts(root, seen = new Set()) {
       if (first && ts.isPropertyAccessExpression(callee)
         && callee.expression.getText().endsWith('.db')) {
         const operation = callee.name.text;
-        if (operation === 'insert' && ts.isStringLiteral(first) && first.text === 'products') found = true;
+        if (operation === 'insert' && ts.isStringLiteral(first) && ['products', 'cjSourcingJobs'].includes(first.text)) found = true;
         if (['patch', 'replace', 'delete'].includes(operation)
-          && checker.typeToString(checker.getTypeAtLocation(first)).includes('"products"')) found = true;
+          && ['products', 'cjSourcingJobs'].some(table => checker.typeToString(checker.getTypeAtLocation(first)).includes('"' + table + '"'))) found = true;
       }
       let symbol = checker.getSymbolAtLocation(callee);
       if (symbol?.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
@@ -32,7 +32,7 @@ function writesProducts(root, seen = new Set()) {
         const fn = ts.isFunctionDeclaration(declaration) ? declaration
           : ts.isVariableDeclaration(declaration) ? declaration.initializer : undefined;
         if (fn && (ts.isFunctionDeclaration(fn) || ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) {
-          if (writesProducts(fn, seen)) found = true;
+          if (writesSummarySources(fn, seen)) found = true;
         }
       }
     }
@@ -67,13 +67,13 @@ for (const source of program.getSourceFiles()) {
       if (!builderSource || !definition || !ts.isObjectLiteralExpression(definition)) continue;
       const property = definition.properties.find(p => p.name?.getText(source) === 'handler');
       const handler = property && ts.isPropertyAssignment(property) ? property.initializer : property;
-      if (!handler || !writesProducts(handler)) continue;
+      if (!handler || !writesSummarySources(handler)) continue;
       checked++;
       if (builderSource !== './functions') violations.push(`${source.fileName}:${source.getLineAndCharacterOfPosition(declaration.getStart()).line + 1} ${declaration.name.getText(source)}`);
     }
   }
 }
 if (violations.length) {
-  console.error(`Product writers missing transactional catalog maintenance:\n${violations.join('\n')}`);
+  console.error(`Product/job writers missing transactional summary maintenance:\n${violations.join('\n')}`);
   process.exitCode = 1;
-} else console.log(`Catalog maintenance covers ${checked} typed product mutation entry points.`);
+} else console.log(`Summary maintenance covers ${checked} typed product/job mutation entry points.`);

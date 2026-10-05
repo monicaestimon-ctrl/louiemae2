@@ -56,6 +56,16 @@ export default defineSchema({
     ...furnitureTables,
     ...commerceTables,
 
+    sourcingCountRows: defineTable({
+        jobId: v.id('cjSourcingJobs'), epoch: v.number(), state: cjSourcingStateValidator,
+    }).index('by_job', ['jobId']),
+    sourcingCountState: defineTable({
+        key: v.string(), epoch: v.number(), version: v.number(), enabled: v.boolean(),
+        phase: v.union(v.literal('backfill'), v.literal('orphans'), v.literal('verify'), v.literal('ready'), v.literal('failed')),
+        cursor: v.union(v.string(), v.null()), counts: v.record(v.string(), v.number()),
+        revision: v.number(), verificationRevision: v.number(), checkedCounts: v.record(v.string(), v.number()),
+        mismatchIds: v.array(v.string()), updatedAt: v.number(), verifiedAt: v.optional(v.number()),
+    }).index('by_key', ['key']),
     productHealth: defineTable({
         productId: v.id('products'), epoch: v.number(), version: v.number(),
         hasIssues: v.boolean(), hasCjIssues: v.boolean(), hasMissingCjVariants: v.boolean(), dueAt: v.number(), details: v.any(),
