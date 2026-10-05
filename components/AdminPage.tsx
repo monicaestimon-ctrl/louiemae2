@@ -18,7 +18,6 @@ import { CJControlRoom } from './CJControlRoom';
 import { CJRiskCheck } from './CJRiskCheck';
 import { CommerceStudio } from './CommerceStudio';
 import { CommerceProjects } from './CommerceProjects';
-import { buildSourceProductSnapshot } from '../lib/smartDescription';
 import { SafeImage } from './SafeImage';
 import { productStorefrontStatusLabel } from '../lib/productVisibility';
 import { getEffectiveSubcategoryIds, productMatchesCategory } from '../lib/productCategories';
@@ -26,16 +25,7 @@ import { getUserFacingErrorMessage } from '../lib/errorMessages';
 import { getCjProductStatus, type CjProductConnectionState } from '../lib/cjProductStatus';
 import { cjListingUrl } from '../lib/cjPricingReview';
 import { useAdminProductDetail } from './useAdminProductDetail';
-
-type SmartDescriptionActionResult = {
-   ok: boolean;
-   description?: string;
-   auditId?: string;
-   fallbackUsed?: boolean;
-   warnings?: string[];
-   facts?: { sourceQuality?: { score?: number } };
-   error?: string;
-};
+import { useAdminDescriptionBatch } from './useAdminDescriptionBatch';
 
 type AdminTab =
    | 'dashboard'
@@ -224,7 +214,6 @@ export const AdminPage: React.FC = () => {
    const { subscribers, subscriberListTruncated, campaigns, createCampaign, updateCampaign, sendCampaign, deleteCampaign, stats } = useNewsletterAdmin();
    const linkDescriptionAuditToProduct = useMutation(api.descriptionAudits.linkAuditToProduct);
    const launchNextProducts = useMutation(api.products.launchNextProducts);
-   const generateSmartDescription = useAction(api.smartDescriptions.generateSmartDescription);
    const refreshInventory = useAction(api.cjActions.refreshInventory);
    const generatePageStructure = useAction(api.ai.generatePageStructure);
    const generateBlogExcerpts = useAction(api.ai.generateBlogExcerpts);
@@ -280,19 +269,9 @@ export const AdminPage: React.FC = () => {
       setEditingProduct(product);
       setIsEditingProduct(true);
    });
-   const [isBatchRegenerating, setIsBatchRegenerating] = useState(false);
+   const descriptionBatch = useAdminDescriptionBatch(isAuthenticated && activeTab === 'products');
+   const { busy: isBatchRegenerating, previews: batchDescriptionPreviews, setPreviews: setBatchDescriptionPreviews } = descriptionBatch;
    const [refreshingInventoryProductId, setRefreshingInventoryProductId] = useState<string | null>(null);
-   const [batchDescriptionPreviews, setBatchDescriptionPreviews] = useState<Array<{
-      product: Product;
-      description: string;
-      generatedDescription: string;
-      auditId: string;
-      fallbackUsed: boolean;
-      warnings: string[];
-      sourceQuality?: number;
-   }>>([]);
-
-
    // Structure/Collection Editor State
    const [editingCollection, setEditingCollection] = useState<Partial<CollectionConfig> | null>(null);
    const [editingCollectionOriginalId, setEditingCollectionOriginalId] = useState<string | null>(null);
@@ -484,81 +463,14 @@ export const AdminPage: React.FC = () => {
       }
    };
 
-   const buildSnapshotFromProduct = (product: Product) => buildSourceProductSnapshot({
-      sourceUrl: product.sourceUrl,
-      name: product.name,
-      description: product.description,
-      rawDescription: product.rawSourceDescription || product.description,
-      htmlDescription: product.rawHtmlDescription || '',
-      price: product.price,
-      currency: product.sourceCurrency || 'USD',
-      images: product.images || [],
-      descriptionImages: product.descriptionImages || [],
-      variants: product.variants || [],
-      category: product.category,
-      subcategory: product.subcategory,
-      collection: product.collection,
-      sourceMetadata: {
-         productId: product.id,
-         descriptionSource: product.descriptionSource,
-         sourcePriceCny: product.sourcePriceCny,
-      },
-   });
-
    const handleBatchRegenerateDescriptions = async () => {
-      const candidates = filteredProducts.filter(product => !product.smartDescription?.adminEdited);
-      if (candidates.length === 0) {
-         alert('No eligible products found. Admin-edited descriptions are protected.');
-         return;
-      }
-
-      setIsBatchRegenerating(true);
-      setBatchDescriptionPreviews([]);
-      try {
-         const previews = [];
-         for (const product of candidates) {
-            const result = await generateSmartDescription({
-               request: {
-                  productId: product.id,
-                  sourceSnapshot: buildSnapshotFromProduct(product),
-                  adminContext: {
-                     selectedCategory: product.category,
-                     selectedSubcategory: product.subcategory,
-                     selectedCollection: product.collection,
-                  },
-                  generationMode: 'batch_regenerate',
-                  options: {
-                     allowImageAnalysis: true,
-                     allowSeoKeywords: true,
-                     forceFreshVariation: true,
-                  },
-               },
-            } as any) as SmartDescriptionActionResult;
-
-            if (result.ok && result.description && result.auditId) {
-               previews.push({
-                  product,
-                  description: result.description,
-                  generatedDescription: result.description,
-                  auditId: result.auditId,
-                  fallbackUsed: Boolean(result.fallbackUsed),
-                  warnings: result.warnings || [],
-                  sourceQuality: result.facts?.sourceQuality?.score,
-               });
-            }
-         }
-         setBatchDescriptionPreviews(previews);
-      } catch (err) {
-         console.error('Batch smart description generation failed:', err);
-         alert('Batch smart description generation failed. Try again with fewer products.');
-      } finally {
-         setIsBatchRegenerating(false);
-      }
+      await descriptionBatch.run(filteredProducts.map(product => product.id));
    };
 
    const approveBatchDescription = async (preview: typeof batchDescriptionPreviews[number]) => {
       const adminEdited = preview.description.trim() !== preview.generatedDescription.trim();
       const updatedProduct: Partial<Product> = {
+         productRevision: preview.product.productRevision ?? 0,
          description: preview.description,
          smartDescription: {
             description: preview.description,
@@ -572,7 +484,12 @@ export const AdminPage: React.FC = () => {
          },
          descriptionSource: adminEdited ? 'ai_generated_admin_edited' : 'ai_generated',
       };
-      await updateProduct(preview.product.id, updatedProduct);
+      try {
+         await updateProduct(preview.product.id, updatedProduct);
+      } catch (error) {
+         alert(getUserFacingErrorMessage(error, 'This product could not be saved. Refresh it and regenerate the preview if its source has changed.'));
+         return;
+      }
       try {
          await linkDescriptionAuditToProduct({
             auditId: preview.auditId as any,
@@ -1510,6 +1427,9 @@ export const AdminPage: React.FC = () => {
                      </div>
                   </div>
 
+                  {descriptionBatch.error && (
+                     <p role="alert" className="mb-4 text-sm text-amber-200">{descriptionBatch.error}</p>
+                  )}
                   {batchDescriptionPreviews.length > 0 && (
                      <div className="mb-6 rounded-2xl border border-purple-300/20 bg-purple-500/10 p-4 backdrop-blur-xl">
                         <div className="flex items-center justify-between gap-4 mb-4">

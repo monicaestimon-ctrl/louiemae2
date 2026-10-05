@@ -134,9 +134,9 @@ Frontend rollback remains available to `dpl_A5JPVHuwsWcgehXVsco5UbSdfJoX`.
 
 ## Remaining work
 
-Frontend pagination adoption, selected variant details, health/job summaries,
+Frontend pagination adoption, selected variant details, remaining dashboard summaries,
 CJ workload measurement and targeted improvements, reviewed historical payload
-compaction, Nexx release/older-preview configuration, production flow checks and
+compaction, production flow checks and
 representative cost measurements are still outstanding. Current CJ code already
 has token caching, refresh leases, due-job leases and bounded dispatch; changes
 must preserve those controls and be justified by workload evidence.
@@ -192,3 +192,34 @@ on restored service.
 CodeRabbit skipped automatic reviews on these repositories under its current
 repository eligibility settings. Its successful status is not an actual code
 review. No manual review request was posted.
+
+## Sourcing state counts (PR 135; backend released, inactive)
+
+PR 135 merged at `a68e76f5729d2be6035006cdd94fabec7effd8e3`.
+PR CI `37267838039` and production CI/deploy `37267967952` succeeded.
+The combined head has 82 test files / 537 tests. Strict types, 51-entry writer
+coverage, lint, build and client-secret verification passed. All typed sourcing
+job writers maintain exact state counters; state-preserving updates avoid the
+counter entirely. A bounded epoch rebuild and source verification gate activation.
+The existing dashboard changes only its state-count reads when enabled, and its
+toggle restores the original capped reads on rollback. Real dispatcher tests
+verify invalid/uncorrelated work still does not dispatch.
+
+No production sourcing rebuild or activation has run. Recent full-product joins,
+webhook sampling and legacy migration counts still need their own reductions.
+See `SOURCING_COUNTS_ROLLOUT.md` for activation, rollback and contention checks.
+
+## Batch description detail prerequisite
+
+Batch generation now fetches each selected product through the authenticated
+detail endpoint before building supplier evidence. It rechecks admin-edited
+protection, skips deleted records, retains the source revision in each preview,
+and passes that revision to the existing save conflict check. Leaving the product
+tab or signing out stops subsequent requests and discards late completions; an
+already running provider request cannot be canceled by this client-side guard.
+Completed previews survive later failures, and later completions preserve user
+edits and dismissals. This prepares batch generation for compact catalog rows;
+it does not itself enable paginated catalog readers or claim measured savings.
+
+Local validation passed 83 files / 546 tests, including nine new batch hook tests.
+Production release and authenticated verification must be recorded after deployment.
