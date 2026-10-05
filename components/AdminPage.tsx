@@ -20,12 +20,13 @@ import { CommerceStudio } from './CommerceStudio';
 import { CommerceProjects } from './CommerceProjects';
 import { SafeImage } from './SafeImage';
 import { productStorefrontStatusLabel } from '../lib/productVisibility';
-import { getEffectiveSubcategoryIds, productMatchesCategory } from '../lib/productCategories';
+import { getEffectiveSubcategoryIds } from '../lib/productCategories';
 import { getUserFacingErrorMessage } from '../lib/errorMessages';
 import { getCjProductStatus, type CjProductConnectionState } from '../lib/cjProductStatus';
 import { cjListingUrl } from '../lib/cjPricingReview';
 import { useAdminProductDetail } from './useAdminProductDetail';
 import { useAdminDescriptionBatch } from './useAdminDescriptionBatch';
+import { useAdminInventoryPage } from './useAdminInventoryPage';
 
 type AdminTab =
    | 'dashboard'
@@ -263,7 +264,11 @@ export const AdminPage: React.FC = () => {
 
    // Product Editor State
    const [isEditingProduct, setIsEditingProduct] = useState(false);
-   useAdminCatalog(isAuthenticated && !isEditingProduct && ['dashboard', 'products', 'pages', 'structure', 'journal'].includes(activeTab));
+   useAdminCatalog(isAuthenticated && !isEditingProduct && ['dashboard', 'pages', 'structure', 'journal'].includes(activeTab));
+   const inventory = useAdminInventoryPage(isAuthenticated && activeTab === 'products' && !isEditingProduct, {
+      collection: filterCollection, category: filterCategory, search: inventorySearch,
+      connection: inventoryCjFilter, collections: siteContent.collections,
+   });
    const [editingProduct, setEditingProduct] = useState<Partial<Product> | null>(null);
    const productDetail = useAdminProductDetail(isAuthenticated, activeTab, product => {
       setEditingProduct(product);
@@ -416,7 +421,7 @@ export const AdminPage: React.FC = () => {
       setIsEditingProduct(true);
    };
 
-   const handleEditProduct = (prod: Product) => {
+   const handleEditProduct = (prod: Pick<Product, 'id'>) => {
       void productDetail.load(prod.id);
    };
 
@@ -424,7 +429,7 @@ export const AdminPage: React.FC = () => {
       if (confirm('Delete this product?')) deleteProduct(id);
    };
 
-   const handleSetProductStorefrontStatus = async (product: Product, storefrontStatus: Product['storefrontStatus']) => {
+   const handleSetProductStorefrontStatus = async (product: Pick<Product, 'id' | 'launchAddedAt' | 'publishedAt'>, storefrontStatus: Product['storefrontStatus']) => {
       const updates: Partial<Product> = {
          storefrontStatus,
          launchAddedAt: storefrontStatus === 'next_launch' ? new Date().toISOString() : product.launchAddedAt,
@@ -435,7 +440,7 @@ export const AdminPage: React.FC = () => {
       await updateProduct(product.id, updates);
    };
 
-   const handleRefreshProductInventory = async (product: Product) => {
+   const handleRefreshProductInventory = async (product: Pick<Product, 'id' | 'name'>) => {
       setRefreshingInventoryProductId(product.id);
       try {
          const result = await refreshInventory({ productId: product.id as Id<'products'> });
@@ -583,8 +588,7 @@ export const AdminPage: React.FC = () => {
       return siteContent.collections.find(c => c.id === id)?.title || id;
    };
 
-   // Filter products
-   const nextLaunchCount = products.filter(product => product.storefrontStatus === 'next_launch').length;
+   // Dashboard still uses its existing catalog scope until its separate cutover.
    const productCjStatuses = useMemo(
       () => new Map(products.map(product => [product.id, getCjProductStatus(product)])),
       [products],
@@ -603,32 +607,7 @@ export const AdminPage: React.FC = () => {
       return counts;
    }, [productCjStatuses, products.length]);
 
-   const filteredProducts = products.filter(p => {
-      const matchCollection = filterCollection === 'all' ? true : p.collection === filterCollection;
-      const collectionConfig = siteContent.collections.find(collection => collection.id === p.collection);
-      const matchCategory = filterCategory ? productMatchesCategory(p, filterCategory, collectionConfig) : true;
-      const cjStatus = productCjStatuses.get(p.id) ?? getCjProductStatus(p);
-      const matchCjStatus = inventoryCjFilter === 'all' || cjStatus.state === inventoryCjFilter;
-      const term = inventorySearch.trim().toLowerCase();
-      const searchable = [
-         p.name,
-         p.description,
-         p.category,
-         p.collection,
-         p.sourceUrl,
-         p.cjProductId,
-         p.cjVariantId,
-         p.cjSku,
-         cjStatus.label,
-         cjStatus.detail,
-         ...(p.variants || []).flatMap(variant => [variant.name, variant.cjVariantId, variant.cjSku]),
-      ]
-         .filter(Boolean)
-         .join(' ')
-         .toLowerCase();
-      const matchSearch = term.length === 0 || searchable.includes(term);
-      return matchCollection && matchCategory && matchCjStatus && matchSearch;
-   });
+   const filteredProducts = inventory.products;
 
    // --- LOGIN SCREEN ---
    if (!isAuthenticated) {
@@ -1369,22 +1348,22 @@ export const AdminPage: React.FC = () => {
                         <h1 className="font-serif text-2xl md:text-4xl text-cream drop-shadow-md">{filterCategory || 'All Items'}</h1>
                      </div>
                      <div className="flex flex-wrap gap-2">
-                        {nextLaunchCount > 0 && (
+                        {!isEditingProduct && (
                            <button
                               onClick={handleLaunchNextProducts}
                               className="bg-emerald-500/10 text-emerald-100 border border-emerald-300/20 px-5 md:px-6 py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-emerald-500/20 transition-all shadow-[0_4px_15px_rgba(0,0,0,0.3)] flex items-center gap-2 rounded-lg w-fit backdrop-blur-md"
                            >
                               <Rocket className="w-3 h-3" />
-                              Launch {nextLaunchCount}
+                              Launch queued products
                            </button>
                         )}
                         <button
                            onClick={handleBatchRegenerateDescriptions}
-                           disabled={isBatchRegenerating || filteredProducts.length === 0}
+                           disabled={isBatchRegenerating || inventory.updating || filteredProducts.length === 0}
                            className="bg-purple-500/10 text-purple-100 border border-purple-300/20 px-5 md:px-6 py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-purple-500/20 transition-all shadow-[0_4px_15px_rgba(0,0,0,0.3)] flex items-center gap-2 rounded-lg w-fit backdrop-blur-md disabled:opacity-50"
                         >
                            {isBatchRegenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <WandIcon className="w-3 h-3" />}
-                           Smart Preview
+                           Smart Preview (loaded items)
                         </button>
                         <button onClick={handleCreateProduct} className="bg-white/10 text-cream border border-white/20 px-5 md:px-6 py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-white/20 transition-all shadow-[0_4px_15px_rgba(0,0,0,0.3)] flex items-center gap-2 rounded-lg w-fit backdrop-blur-md">
                            <Plus className="w-3 h-3" /> Add Product
@@ -1419,7 +1398,7 @@ export const AdminPage: React.FC = () => {
                                   aria-pressed={active}
                                   className={`whitespace-nowrap rounded-full border px-3 py-2 text-[10px] uppercase tracking-widest transition-colors ${active ? 'border-bronze/50 bg-bronze/20 text-cream' : 'border-white/10 bg-white/5 text-cream/50 hover:bg-white/10 hover:text-cream'}`}
                                >
-                                  {option.label} · {inventoryCjCounts[option.key]}
+                                  {option.label}
                                </button>
                             );
                          })}
@@ -1491,7 +1470,11 @@ export const AdminPage: React.FC = () => {
                   )}
 
                   <div className="grid grid-cols-1 gap-4">
-                     {filteredProducts.length === 0 ? (
+                     {inventory.loading || inventory.updating ? (
+                        <p role="status" className="py-10 text-center text-cream/50">Loading inventory…</p>
+                     ) : inventory.unavailable ? (
+                        <p role="status" className="py-10 text-center text-cream/50">Inventory is temporarily unavailable. Please check back shortly.</p>
+                     ) : filteredProducts.length === 0 && inventory.complete ? (
                         <div className="text-center py-20 bg-white/5 border border-white/10 rounded-[2rem] backdrop-blur-2xl shadow-xl">
                            <p className="font-serif text-2xl text-cream/40">No products found in this collection.</p>
                            <button onClick={handleCreateProduct} className="mt-4 text-bronze hover:text-white transition-colors underline text-xs uppercase tracking-widest">Add your first item</button>
@@ -1504,9 +1487,9 @@ export const AdminPage: React.FC = () => {
                               : storefrontStatus === 'next_launch'
                                  ? 'bg-amber-500/15 text-amber-200 border-amber-300/25'
                                  : 'bg-white/10 text-cream/60 border-white/15';
-                           const variants = product.variants || [];
-                           const variantImageCount = variants.filter(variant => variant.image).length;
-                           const imageCount = product.images?.filter(Boolean).length || 0;
+                           const variantCount = product.variantCount;
+                           const variantImageCount = product.variantImageCount;
+                           const imageCount = product.imageCount;
                            const cjIdentifier = product.cjProductId || product.cjVariantId || 'Not linked yet';
                            const inventoryCheckedAt = product.cjInventoryLastCheckedAt
                               ? new Date(product.cjInventoryLastCheckedAt).toLocaleString()
@@ -1520,7 +1503,7 @@ export const AdminPage: React.FC = () => {
                                     ? 'text-red-300'
                                     : 'text-cream/35';
                            const isRefreshingInventory = refreshingInventoryProductId === product.id;
-                           const cjStatus = productCjStatuses.get(product.id) ?? getCjProductStatus(product);
+                           const cjStatus = product.connectionStatus;
                            const cjProductLink = cjStatus.isApproved && product.cjProductId?.trim()
                               ? cjListingUrl(product.cjProductId.trim())
                               : null;
@@ -1599,7 +1582,7 @@ export const AdminPage: React.FC = () => {
                                        <div className="rounded-lg border border-white/10 bg-black/20 px-3 py-2">
                                           <span className="block text-[9px] uppercase tracking-widest text-cream/30">Variants</span>
                                           <span className={cjStatus.isMappingComplete ? 'text-green-300' : 'text-amber-200'}>
-                                             {variants.length > 0
+                                             {variantCount > 0
                                                 ? `${cjStatus.mappedVariantCount}/${cjStatus.sellableVariantCount} sellable variants mapped`
                                                 : cjStatus.isMappingComplete
                                                    ? 'Default CJ variant linked'
@@ -1650,6 +1633,17 @@ export const AdminPage: React.FC = () => {
                      )}
                   </div>
                </FadeIn>
+            )}
+
+            {activeTab === 'products' && !isEditingProduct && !inventory.loading && !inventory.unavailable && (
+               <div className="my-6 flex flex-wrap items-center justify-between gap-4 text-sm text-cream/50">
+                  <p role="status">{filteredProducts.length} matching items loaded{inventory.complete ? ' · All matches loaded' : ' · More inventory remains to check'}</p>
+                  {!inventory.complete && <button type="button" onClick={inventory.loadMore}
+                     disabled={!inventory.canLoadMore || inventory.updating}
+                     className="rounded-lg border border-white/20 px-5 py-3 text-cream disabled:opacity-50">
+                     {inventory.loadingMore ? 'Loading more…' : 'Load more inventory'}
+                  </button>}
+               </div>
             )}
 
             {/* JOURNAL TAB */}
