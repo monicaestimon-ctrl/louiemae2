@@ -1,3 +1,4 @@
+import { indexedInventoryProducts } from './cjInventoryTargetMaintenance';
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation } from "./functions";
 import { internal } from "./_generated/api";
@@ -405,6 +406,9 @@ export const getProductsLinkedToCjInventoryTarget = internalQuery({
     handler: async (ctx, args) => {
         if (!args.vid && !args.sku) return [];
 
+        const indexed = await indexedInventoryProducts(ctx, args);
+        if (indexed !== null) return indexed;
+        // Compatibility during the explicit backfill/verification rollout only.
         const products = await ctx.db.query("products").collect();
         return products.filter((product) => {
             if (args.vid && product.cjVariantId === args.vid) return true;
