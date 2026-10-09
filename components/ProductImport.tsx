@@ -257,8 +257,8 @@ export const ProductImport: React.FC<ProductImportProps> = ({
     const skipObsoleteBatchErrors = useMutation(api.batchImports.skipObsoleteErrors);
     const markBatchPreparationError = useMutation(api.batchImports.markPreparationError);
     const markBatchItemsImported = useMutation(api.batchImports.markImported);
-    const latestBatchJob = useQuery(api.batchImports.getLatest);
-    const effectiveBatchJobId = activeBatchJobId || latestBatchJob?._id || null;
+    const latestBatchJob = useQuery(api.batchImports.getLatest, isStandaloneStudio ? 'skip' : {});
+    const effectiveBatchJobId = isStandaloneStudio ? null : activeBatchJobId || latestBatchJob?._id || null;
     const batchJob = useQuery(api.batchImports.getJob, effectiveBatchJobId ? { jobId: effectiveBatchJobId } : 'skip');
     const batchItems = useQuery(api.batchImports.getItems, effectiveBatchJobId ? { jobId: effectiveBatchJobId } : 'skip');
     const reportedPreparationErrors = useRef(new Set<string>());
@@ -394,21 +394,21 @@ export const ProductImport: React.FC<ProductImportProps> = ({
     };
 
     useEffect(() => {
-        if (!effectiveBatchJobId) return;
+        if (isStandaloneStudio || !effectiveBatchJobId) return;
         setActiveBatchJobId(effectiveBatchJobId);
         try { localStorage.setItem('active-batch-import-job', effectiveBatchJobId); } catch { /* storage unavailable */ }
-    }, [effectiveBatchJobId]);
+    }, [effectiveBatchJobId, isStandaloneStudio]);
 
     useEffect(() => {
-        if (!batchJob || (batchJob.status !== 'completed' && batchJob.status !== 'cancelled')) return;
+        if (isStandaloneStudio || !batchJob || (batchJob.status !== 'completed' && batchJob.status !== 'cancelled')) return;
         if (activeBatchJobId === batchJob._id) {
             setActiveBatchJobId(null);
             try { localStorage.removeItem('active-batch-import-job'); } catch { /* storage unavailable */ }
         }
-    }, [batchJob, activeBatchJobId]);
+    }, [batchJob, activeBatchJobId, isStandaloneStudio]);
 
     useEffect(() => {
-        if (!batchItems) return;
+        if (isStandaloneStudio || !batchItems) return;
         for (const item of batchItems) {
             if (item.status !== 'ready') reportedPreparationErrors.current.delete(item._id);
         }
@@ -434,12 +434,12 @@ export const ProductImport: React.FC<ProductImportProps> = ({
             }
             return additions.length ? [...prev, ...additions] : prev;
         });
-    }, [batchItems, targetCollection]);
+    }, [batchItems, targetCollection, isStandaloneStudio]);
 
     useEffect(() => {
-        if (!batchJob || !batchItems?.some(item => isObsoleteBatchImportError(item))) return;
+        if (isStandaloneStudio || !batchJob || !batchItems?.some(item => isObsoleteBatchImportError(item))) return;
         void skipObsoleteBatchErrors({ jobId: batchJob._id });
-    }, [batchJob, batchItems, skipObsoleteBatchErrors]);
+    }, [batchJob, batchItems, skipObsoleteBatchErrors, isStandaloneStudio]);
 
     /**
      * Shared helper: compute a variant's selling price with optional markup scaling.

@@ -2,9 +2,10 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ProductImport } from '../ProductImport';
+import { getFunctionName } from 'convex/server';
 
-const mocks = vi.hoisted(() => ({ action: vi.fn(), warning: vi.fn(), success: vi.fn() }));
-vi.mock('convex/react', () => ({ useMutation: () => mocks.action, useAction: () => mocks.action, useQuery: () => undefined }));
+const mocks = vi.hoisted(() => ({ action: vi.fn(), query: vi.fn(), warning: vi.fn(), success: vi.fn() }));
+vi.mock('convex/react', () => ({ useMutation: () => mocks.action, useAction: () => mocks.action, useQuery: (...args: unknown[]) => mocks.query(...args) }));
 vi.mock('../FadeIn', () => ({ FadeIn: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 vi.mock('sonner', () => ({ Toaster: () => null, toast: { success: mocks.success, warning: mocks.warning, error: vi.fn() } }));
 vi.mock('../../services/translateService', () => ({ detectChinese: (text: string) => /[\u4e00-\u9fff]/.test(text) }));
@@ -17,7 +18,7 @@ const product = (id: string, count: number) => ({
 });
 
 beforeEach(() => {
-    sessionStorage.clear(); localStorage.clear(); vi.clearAllMocks();
+    sessionStorage.clear(); localStorage.clear(); vi.clearAllMocks(); mocks.query.mockReset();
     vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
     sessionStorage.setItem('import-step', 'review');
 });
@@ -148,5 +149,50 @@ describe('unified add and edit studio modes', () => {
         expect(screen.getByDisplayValue('2T')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: /add variant/i }));
         expect(screen.getByDisplayValue('Variant 2')).toBeInTheDocument();
+    });
+});
+
+
+describe('standalone editor batch isolation', () => {
+    const job = { _id: 'other-job', status: 'completed' };
+    const rows = [{ _id: 'other-item', status: 'ready', normalizedUrl: 'https://example.com/other',
+        result: { source: 'generic', data: { title: 'Unrelated import', price: 15, images: [] } } }];
+
+    it.each(['edit', 'create'] as const)('ignores late batch data and preserves saved import state in %s mode', async (mode) => {
+        localStorage.setItem('active-batch-import-job', job._id);
+        // Deliberately return cached values even for skipped queries: effects
+        // must not merge another workflow or mutate its persistent state.
+        mocks.query.mockImplementation((reference) => {
+            const name = getFunctionName(reference);
+            if (name === 'batchImports:getLatest' || name === 'batchImports:getJob') return job;
+            if (name === 'batchImports:getItems') return rows;
+            return undefined;
+        });
+        render(<ProductImport mode={mode} initialProduct={{ id: mode === 'edit' ? 'saved-product' : undefined,
+            name: 'Original product', price: 30, images: [], collection: 'kids' }}
+            collections={[]} onImportProducts={vi.fn()} onSaveProduct={vi.fn()} />);
+        expect(screen.getByDisplayValue('Original product')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Next Item' })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /review product/i }));
+        expect(screen.getByText(mode === 'edit' ? 'Review Product Changes' : 'Review New Product')).toBeInTheDocument();
+        expect(screen.queryByText('Unrelated import')).not.toBeInTheDocument();
+        expect(localStorage.getItem('active-batch-import-job')).toBe(job._id);
+        expect(mocks.action).not.toHaveBeenCalled();
+        const batchCalls = mocks.query.mock.calls.filter(([ref]) => getFunctionName(ref).startsWith('batchImports:'));
+        expect(batchCalls.length).toBeGreaterThan(0);
+        expect(batchCalls.every(([, args]) => args === 'skip')).toBe(true);
+    });
+
+    it('still loads ready batch items when using the import workflow', () => {
+        const activeJob = { ...job, status: 'ready' };
+        mocks.query.mockImplementation((reference) => {
+            const name = getFunctionName(reference);
+            if (name === 'batchImports:getLatest' || name === 'batchImports:getJob') return activeJob;
+            if (name === 'batchImports:getItems') return rows;
+            return undefined;
+        });
+        render(<ProductImport collections={[]} onImportProducts={vi.fn()} />);
+        expect(JSON.parse(sessionStorage.getItem('import-search-results') || '[]')).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'Unrelated import', batchItemId: 'other-item' })]));
+        expect(localStorage.getItem('active-batch-import-job')).toBe(job._id);
     });
 });
