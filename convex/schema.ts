@@ -329,6 +329,7 @@ export default defineSchema({
         searchText: v.optional(v.string()),
     }).index("by_name_key", ["nameKey"])
         .index("by_source_key", ["sourceKey"])
+        .index("by_cj_product_id", ["cjProductId"])
         .index("by_cj_sourcing_status", ["cjSourcingStatus"])
         .index('by_cj_pricing_due', ['cjSourcingStatus', 'cjPricingLastAttemptAt'])
         .index('by_cj_pricing_alert', ['cjPricingAlert.at'])

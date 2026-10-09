@@ -1183,7 +1183,7 @@ export const getProductByCjProductId = internalQuery({
     handler: async (ctx, args) => {
         const products = await ctx.db
             .query("products")
-            .filter((q) => q.eq(q.field("cjProductId"), args.cjProductId))
+            .withIndex("by_cj_product_id", (q) => q.eq("cjProductId", args.cjProductId))
             .collect();
         return products;
     },
