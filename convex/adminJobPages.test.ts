@@ -12,6 +12,18 @@ import type { Id } from './_generated/dataModel';
 vi.mock('./cjAdminAccess', () => ({ requireCjAdminIdentity: vi.fn(async () => ({ email: 'admin@example.com' })) }));
 const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 const product = { name: 'Chair', price: 90, description: 'private long source', images: ['chair.jpg'], category: 'chairs', collection: 'furniture', sourceUrl: 'https://supplier.example/item' };
+
+it.each([undefined, 'false', 'true'])('reports the deployment monitoring flag %s through existing operations', async value => {
+  vi.stubEnv('BACKGROUND_MONITORING_ENABLED', value);
+  try {
+    const t = convexTest(schema, modules);
+    const result = await t.query(api.cjSourcingJobs.getAdminOperations, { includeJobs: false });
+    expect(result.pricingMonitoringEnabled).toBe(value === 'true');
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
+
 async function seed(count = 130) {
   const t = convexTest(schema, modules);
   const ids = await t.run(async ctx => {

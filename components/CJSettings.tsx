@@ -979,7 +979,7 @@ export const CJSettings: React.FC<{
                 </div>
             </div>
 
-            <CJPricingReview />
+            <CJPricingReview monitoringEnabled={operations?.pricingMonitoringEnabled} />
             {/* Size Variant Mapping Section */}
             <div className="mt-16 relative z-10">
                 <FadeIn delay={550}>

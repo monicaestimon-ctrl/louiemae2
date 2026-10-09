@@ -12,7 +12,7 @@ import {
 import type { Id } from '../convex/_generated/dataModel';
 
 const money = (n?: number) => (n === undefined ? 'Unavailable' : `$${n.toFixed(2)}`);
-export function CJPricingReview() {
+export function CJPricingReview({ monitoringEnabled }: { monitoringEnabled?: boolean }) {
   const { results, status, loadMore } = usePaginatedQuery(
     api.cjPricingReview.listApproved,
     {},
@@ -50,8 +50,12 @@ export function CJPricingReview() {
     >
       <h2 className="font-serif text-2xl">CJ prices & margins</h2>
       <p className="my-3 text-sm">
-        Automatic checks run about daily, with up to 10 due products processed every 15 minutes.
-        Price changes and failed checks appear here until acknowledged. Background checks preserve
+        {monitoringEnabled === false
+          ? 'Automatic pricing checks are paused. You can still refresh prices manually below.'
+          : monitoringEnabled === true
+            ? 'Automatic checks run about daily, with up to 10 due products processed every 15 minutes.'
+            : 'Automatic pricing check status is unavailable. You can still refresh prices manually below.'}
+        {' '}Price changes and failed checks appear here until acknowledged. Background checks preserve
         retail prices.
       </p>
       {!!alerts?.length && (

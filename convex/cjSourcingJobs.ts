@@ -1274,6 +1274,7 @@ export const getAdminOperations = query({
 
         return {
             generatedAt: Date.now(),
+            pricingMonitoringEnabled: process.env.BACKGROUND_MONITORING_ENABLED === 'true',
             stateCounts,
             truncatedStates,
             jobs,
