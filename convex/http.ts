@@ -2,12 +2,13 @@ import { httpRouter } from "convex/server";
 import { v } from "convex/values";
 import { httpAction, internalAction, type ActionCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 import Stripe from "stripe";
 import { getCheckoutShippingForSubtotal } from "../lib/pricing";
 import { getCjAutomationConfig, readBooleanEnv } from "../lib/cjAutomation";
-import { evaluateCheckoutItemCjReadiness, type CjReadinessProduct } from "../lib/cjFulfillmentReadiness";
+import { evaluateCheckoutItemCjReadiness } from "../lib/cjFulfillmentReadiness";
+import { isCatalogProductPublic } from "../lib/catalogProjection";
 import {
     mergeCjInventoryStatuses,
     summarizeCjInventoryRows,
@@ -112,11 +113,12 @@ const normalizeCheckoutItems = (items: unknown): CheckoutItem[] => {
                 cjSku: typeof value.cjSku === "string" ? value.cjSku : undefined,
                 name: typeof value.name === "string" && value.name.trim() ? value.name.trim() : "Louie Mae item",
                 image: typeof value.image === "string" ? value.image : undefined,
-                price: Number(value.price),
+                // Pricing is resolved from the authoritative catalog below.
+                price: 0,
                 quantity: Math.floor(Number(value.quantity)),
             };
         })
-        .filter((item) => Number.isFinite(item.price) && item.price > 0 && Number.isFinite(item.quantity) && item.quantity > 0);
+        .filter((item) => Number.isSafeInteger(item.quantity) && item.quantity > 0);
 };
 
 type CheckoutFulfillmentResolution = {
@@ -149,25 +151,6 @@ const getCheckoutCjGate = () => {
     };
 };
 
-const getStoredCheckoutCjMapping = (
-    product: CjReadinessProduct,
-    item: CheckoutItem,
-): Pick<CheckoutItem, "cjVariantId" | "cjSku"> => {
-    const variants = Array.isArray(product.variants) ? product.variants : [];
-    if (variants.length > 0) {
-        const selectedVariant = variants.find((variant) => variant.id === item.variantId);
-        return {
-            cjVariantId: selectedVariant?.cjVariantId,
-            cjSku: selectedVariant?.cjSku,
-        };
-    }
-
-    return {
-        cjVariantId: product.cjVariantId,
-        cjSku: product.cjSku,
-    };
-};
-
 const resolveCheckoutFulfillmentItems = async (ctx: ActionCtx, checkoutItems: CheckoutItem[]): Promise<CheckoutFulfillmentResolution> => {
     const { required, config } = getCheckoutCjGate();
     const errors: string[] = [];
@@ -180,38 +163,26 @@ const resolveCheckoutFulfillmentItems = async (ctx: ActionCtx, checkoutItems: Ch
 
     for (const [index, item] of checkoutItems.entries()) {
         if (!item.productId) {
-            if (required) {
-                errors.push(`${item.name} is missing product ID for CJ fulfillment validation.`);
-            }
+            errors.push(`${item.name} is missing its catalog product ID.`);
             continue;
         }
 
-        let product: CjReadinessProduct | null = null;
+        let product: Doc<'products'> | null = null;
         try {
             product = await ctx.runQuery(internal.products.getInternal, { id: item.productId as Id<"products"> });
         } catch {
-            if (required) {
-                errors.push(`${item.name} could not be verified for CJ fulfillment.`);
-                unavailableItems.push({
-                    productId: item.productId,
-                    variantId: item.variantId,
-                    name: item.name,
-                    reason: "We could not verify this item for checkout.",
-                });
-            }
-            continue;
+            // Invalid IDs and deleted products must fail closed in every mode.
+            product = null;
         }
 
         if (!product) {
-            if (required) {
-                errors.push(`${item.name} could not be verified for CJ fulfillment.`);
-                unavailableItems.push({
-                    productId: item.productId,
-                    variantId: item.variantId,
-                    name: item.name,
-                    reason: "We could not verify this item for checkout.",
-                });
-            }
+            errors.push(`${item.name} could not be verified in the catalog.`);
+            unavailableItems.push({
+                productId: item.productId,
+                variantId: item.variantId,
+                name: item.name,
+                reason: "We could not verify this item for checkout.",
+            });
             continue;
         }
 
@@ -247,9 +218,23 @@ const resolveCheckoutFulfillmentItems = async (ctx: ActionCtx, checkoutItems: Ch
             }
         }
 
+        const variants = product.variants ?? [];
+        const selectedVariant = variants.find(variant => variant.id === item.variantId);
+        const price = product.price + (selectedVariant?.priceAdjustment ?? 0);
+        if (!isCatalogProductPublic(product)
+            || (variants.length > 0 && !selectedVariant)
+            || (variants.length === 0 && item.variantId !== undefined)
+            || selectedVariant?.inStock === false
+            || !Number.isFinite(price) || Math.round(price * 100) <= 0) {
+            errors.push(`${product.name} is unavailable in the selected option.`);
+            unavailableItems.push({ productId: item.productId, variantId: item.variantId,
+                name: product.name, reason: 'This item is temporarily unavailable for checkout.' });
+            continue;
+        }
+
         const readiness = evaluateCheckoutItemCjReadiness(product, {
             variantId: item.variantId,
-            variantName: item.variantName,
+            variantName: selectedVariant?.name,
             quantity: item.quantity,
         }, { strictInventory: required });
         if (required && !readiness.ready) {
@@ -262,11 +247,14 @@ const resolveCheckoutFulfillmentItems = async (ctx: ActionCtx, checkoutItems: Ch
             });
         }
 
-        const mapping = getStoredCheckoutCjMapping(product, item);
         resolvedItems[index] = {
             ...item,
-            cjVariantId: mapping.cjVariantId ?? item.cjVariantId,
-            cjSku: mapping.cjSku ?? item.cjSku,
+            name: selectedVariant ? `${product.name} - ${selectedVariant.name}` : product.name,
+            variantName: selectedVariant?.name,
+            image: selectedVariant?.image || product.images[0],
+            price,
+            cjVariantId: selectedVariant ? selectedVariant.cjVariantId : product.cjVariantId,
+            cjSku: selectedVariant ? selectedVariant.cjSku : product.cjSku,
         };
     }
 
