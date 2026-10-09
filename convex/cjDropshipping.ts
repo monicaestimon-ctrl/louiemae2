@@ -1,6 +1,7 @@
 "use node";
 
 import { v } from "convex/values";
+import type { Doc } from "./_generated/dataModel";
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import {
@@ -1587,49 +1588,61 @@ export const getTrackingInfo = internalAction({
 export const syncAllTracking = internalAction({
     args: {},
     handler: async (ctx): Promise<{ synced: number; errors: number }> => {
-        // Get orders that need tracking sync
-        const ordersToSync = await ctx.runQuery(internal.cjHelpers.getOrdersNeedingSync, {});
+        const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
 
         let synced = 0;
         let errors = 0;
 
-        for (const order of ordersToSync) {
-            if (!order.cjOrderId) continue;
+        for (const status of ["confirmed", "processing", "shipped"] as const) {
+            let cursor: string | null = null;
+            let done = false;
+            while (!done) {
+                const batch: { page: Doc<"orders">[]; continueCursor: string; isDone: boolean } =
+                    await ctx.runQuery(internal.cjHelpers.getOrdersNeedingSyncPage, { status, cutoff, cursor });
+                cursor = batch.continueCursor;
+                done = batch.isDone;
+                for (const order of batch.page) {
+                    if (!order.cjOrderId) continue;
 
-            try {
-                const result = await ctx.runAction(internal.cjDropshipping.getTrackingInfo, {
-                    orderId: order._id,
-                    cjOrderId: order.cjOrderId,
-                });
-
-                if (result.success) {
-                    synced++;
-                }
-
-                if (result.success && result.trackingNumber && result.trackingNumber !== order.trackingNotificationSentFor) {
-                    // Send shipping notification email
-                    const emailResult = await ctx.runAction(internal.emails.sendShippingNotification, {
-                        customerEmail: order.customerEmail,
-                        customerName: order.customerName || undefined,
-                        orderId: (order.stripeSessionId || order.stripeInvoiceId || String(order._id)).slice(-12).toUpperCase(),
-                        trackingNumber: result.trackingNumber,
-                        trackingUrl: result.trackingUrl || "",
-                        carrier: result.carrier || "Standard Shipping",
-                        estimatedDelivery: result.estimatedDelivery,
-                    });
-                    if (emailResult.success) {
-                        await ctx.runMutation(internal.cjHelpers.markTrackingNotificationSent, {
+                    try {
+                        const result = await ctx.runAction(internal.cjDropshipping.getTrackingInfo, {
                             orderId: order._id,
-                            trackingNumber: result.trackingNumber,
+                            cjOrderId: order.cjOrderId,
                         });
-                    } else {
+
+                        if (result.success) {
+                            synced++;
+                        } else {
+                            errors++;
+                        }
+
+                        if (result.success && result.trackingNumber && result.trackingNumber !== order.trackingNotificationSentFor) {
+                            // Send shipping notification email
+                            const emailResult = await ctx.runAction(internal.emails.sendShippingNotification, {
+                                customerEmail: order.customerEmail,
+                                customerName: order.customerName || undefined,
+                                orderId: (order.stripeSessionId || order.stripeInvoiceId || String(order._id)).slice(-12).toUpperCase(),
+                                trackingNumber: result.trackingNumber,
+                                trackingUrl: result.trackingUrl || "",
+                                carrier: result.carrier || "Standard Shipping",
+                                estimatedDelivery: result.estimatedDelivery,
+                            });
+                            if (emailResult.success) {
+                                await ctx.runMutation(internal.cjHelpers.markTrackingNotificationSent, {
+                                    orderId: order._id,
+                                    trackingNumber: result.trackingNumber,
+                                });
+                            } else {
+                                errors++;
+                                console.error(`Shipping notification failed for order ${order._id}: ${emailResult.error}`);
+                            }
+                        }
+                    } catch (error) {
                         errors++;
-                        console.error(`Shipping notification failed for order ${order._id}: ${emailResult.error}`);
+                        console.error(`Failed to sync tracking for order ${order._id}:`, error);
                     }
                 }
-            } catch (error) {
-                errors++;
-                console.error(`Failed to sync tracking for order ${order._id}:`, error);
+
             }
         }
 
