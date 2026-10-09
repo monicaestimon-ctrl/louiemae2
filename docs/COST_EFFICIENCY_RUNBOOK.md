@@ -320,3 +320,13 @@ The index adds small mapping rows and writes when identifiers change. Record
 backfill usage separately and measure steady-state reads plus mapping-write
 costs. It does not reduce the retained historical `cjWebhookLog` table, authorize
 identity deletion, change provider subscriptions, or resume monitoring.
+
+The product-ID webhook helper `cjHelpers:getProductByCjProductId` uses the native
+`products.by_cj_product_id` index. It preserves exact case-sensitive ID equality,
+all matching listings, and creation order, including hidden/out-of-stock products.
+This index is populated and maintained by Convex; it needs no application-managed
+migration or readiness toggle. Verify schema deployment and an equivalent lookup
+before treating the change as live. Its measured pre-change no-match baseline was
+also 621 source documents / 8,691,954 bytes. Reverting only that helper to its old
+filter scan is compatible with leaving the additive index in place, but restores
+its former read cost. This change does not alter webhook retention or schedules.
