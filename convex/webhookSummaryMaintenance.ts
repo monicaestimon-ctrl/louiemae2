@@ -15,7 +15,16 @@ export async function webhookSummariesReady(ctx: Pick<QueryCtx, 'db'>) {
 }
 export async function syncWebhookSummary(ctx: Pick<MutationCtx, 'db'>, id: Id<'cjWebhookLog'>, source: Doc<'cjWebhookLog'> | null) {
   const existing = await ctx.db.query('webhookSummaries').withIndex('by_webhook', q => q.eq('webhookId', id)).unique();
-  if (!source) { if (existing) await ctx.db.delete(existing._id); return; }
+  if (!source) {
+    if (existing) await ctx.db.delete(existing._id);
+    // Deleting a recent event can expose an older, not-yet-materialized event.
+    // Keep the existing bounded source reader until the recent window is rebuilt.
+    const state = await getWebhookSummaryState(ctx);
+    if (state?.scope === 'recent') await ctx.db.patch(state._id, {
+      enabled: false, phase: 'failed', cursor: null, updatedAt: Date.now(),
+    });
+    return;
+  }
   const projected = webhookSummaryProjection(source);
   if (existing) {
     const value = Object.fromEntries(Object.entries(existing).filter(([key]) => key !== '_id' && key !== '_creationTime'));

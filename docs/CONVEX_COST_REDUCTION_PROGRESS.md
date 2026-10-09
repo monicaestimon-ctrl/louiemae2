@@ -368,3 +368,20 @@ PR 145 was subsequently extended with complete job-history pagination at
 `42791694211874106611e311698bd46882931d9b`; CI `37287750467` passed
 (574 tests). It remains held until current catalog activation, with combined
 dashboard checks required when merging the other held frontend changes.
+
+## Combined reader release prepared
+
+The held frontend changes from PRs 137, 141, 145, 148, 149 and 153 are assembled
+on branch `codex/convex-reader-release` over deployed backend PR 152. Shared CJ
+Settings conflicts were resolved to use paginated sourcing plus exact maintained
+health counts; integration fixtures now exercise the combined contracts.
+
+Local verification: 619 tests in 101 files, frontend type check, full lint with
+zero errors (507 warnings), transactional writer guard covering 58 entry points,
+and production build/client-secret scan. PR 148 CI `37290838765` and PR 153 CI
+`37291953007` passed. No frontend cutover or production data activation occurred.
+
+The latest readiness probe failed with request ID `e18aecd224a43561`. Production
+Convex function restoration is still required for migrations, activation, live
+workflow verification and equivalent-workload cost measurements. See
+`CONVEX_READER_RELEASE.md` for the combined release gates and rollback sequence.

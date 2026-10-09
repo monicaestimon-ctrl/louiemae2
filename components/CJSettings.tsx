@@ -5,8 +5,11 @@ import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
 import { Wifi, RefreshCw, Settings, CheckCircle, XCircle, Loader2, Package, Clock, AlertTriangle, ArrowRight, ExternalLink, Trash2, RotateCcw, Key, Link2, Search } from 'lucide-react';
 import { FadeIn } from './FadeIn';
-import { CJVariantManager } from './CJVariantManager';
+import { CJVariantQueue } from './CJVariantQueue';
 import { SafeImage } from './SafeImage';
+import { ProductHealthPanel } from './ProductHealthPanel';
+import { useCjSourcingPages } from './useCjSourcingPages';
+import { SourcingPageControls } from './SourcingPageControls';
 
 type CjDiagnosticResult = {
     productId: string;
@@ -36,16 +39,17 @@ export const CJSettings: React.FC<{
     const diagnosePending = useAction(api.cjActions.diagnosePending);
 
     // Product sourcing queries
-    const pendingProducts = useQuery(api.products.getPendingSourcing) || [];
-    const recentlyApproved = useQuery(api.products.getRecentlyApproved) || [];
-    const rejectedProducts = useQuery(api.products.getRejectedProducts) || [];
-    const productHealth = useQuery(api.products.auditProductHealth);
-    const operations = useQuery(api.cjSourcingJobs.getAdminOperations, { limit: 50 });
-    const approvedMissingCjVariantIssues = productHealth?.issues?.filter(issue =>
-        issue.problems.some(problem => problem.includes("Approved but no CJ variants"))
-    ) || [];
-    const diagnosticCandidateCount = pendingProducts.length + approvedMissingCjVariantIssues.length;
-    const hasDiagnosticCandidates = diagnosticCandidateCount > 0;
+    const sourcingPages = useCjSourcingPages();
+    const pendingProducts = sourcingPages.pending.results;
+    const recentlyApproved = sourcingPages.approved.results;
+    const rejectedProducts = sourcingPages.rejected.results;
+    const pendingComplete = sourcingPages.ready && sourcingPages.pending.status === 'Exhausted';
+    const approvedComplete = sourcingPages.ready && sourcingPages.approved.status === 'Exhausted';
+    const rejectedComplete = sourcingPages.ready && sourcingPages.rejected.status === 'Exhausted';
+    const productHealth = useQuery(api.productHealth.status);
+    const operations = useQuery(api.cjSourcingJobs.getAdminOperations, { includeJobs: false });
+    const approvedMissingCjVariantCount = productHealth?.ready ? productHealth.productsMissingCjVariants ?? 0 : undefined;
+    const hasDiagnosticCandidates = !pendingComplete || pendingProducts.length > 0 || approvedMissingCjVariantCount === undefined || approvedMissingCjVariantCount > 0;
 
     const [testing, setTesting] = useState(false);
     const [configuring, setConfiguring] = useState(false);
@@ -276,19 +280,6 @@ export const CJSettings: React.FC<{
         </button>
     );
 
-    const fulfillmentIssues = productHealth?.issues?.flatMap((issue) => {
-        const matchedProblems = issue.problems.filter((problem) => {
-            const normalized = problem.toLowerCase();
-            return normalized.includes('cj') ||
-                normalized.includes('variant') ||
-                normalized.includes('inventory') ||
-                normalized.includes('stock');
-        });
-        return matchedProblems.length > 0
-            ? [{ ...issue, matchedProblem: matchedProblems[0] }]
-            : [];
-    }) ?? [];
-    const readinessClear = productHealth !== undefined && fulfillmentIssues.length === 0;
     const operationalCounts = operations?.stateCounts ?? {};
     const activeQueueCount = ["queued", "submitting", "submitted", "processing", "awaiting_catalog", "retry_wait"]
         .reduce((total, state) => total + (operationalCounts[state] ?? 0), 0);
@@ -373,10 +364,13 @@ export const CJSettings: React.FC<{
                     )}
 
                     <div className="space-y-2 max-h-80 overflow-y-auto pr-1 custom-scrollbar">
-                        {operations?.jobs.length === 0 && (
+                        <SourcingPageControls ready={sourcingPages.ready} checking={sourcingPages.checking}
+                            status={sourcingPages.jobs.status} count={sourcingPages.jobs.results.length}
+                            label="sourcing jobs" loadMore={sourcingPages.jobs.loadMore} pageSize={5} />
+                        {sourcingPages.ready && sourcingPages.jobs.status === 'Exhausted' && sourcingPages.jobs.results.length === 0 && (
                             <div className="text-sm text-cream/40 py-6 text-center">No durable sourcing jobs yet.</div>
                         )}
-                        {operations?.jobs.map((job) => {
+                        {sourcingPages.jobs.results.map((job) => {
                             const needsAttention = ["needs_input", "mapping_required", "reconciliation_required", "rejected", "dead_letter"].includes(job.state);
                             return (
                                 <div key={job.id} className="grid grid-cols-1 md:grid-cols-[minmax(0,1.5fr)_auto_minmax(0,2fr)_auto] gap-3 md:items-center bg-white/5 border border-white/10 rounded-xl px-4 py-3">
@@ -532,58 +526,7 @@ export const CJSettings: React.FC<{
                     </FadeIn>
 
                     <FadeIn delay={175}>
-                        <div className="backdrop-blur-2xl bg-black/40 border border-white/10 rounded-[2rem] p-6 shadow-[0_15px_30px_rgba(0,0,0,0.3)] relative overflow-hidden">
-                            <div className="absolute inset-0 border border-white/5 mix-blend-overlay rounded-[2rem] pointer-events-none"></div>
-                            <div className="flex items-center justify-between gap-4 mb-5 relative z-10">
-                                <div>
-                                    <h3 className="font-serif text-lg text-cream drop-shadow-sm">Fulfillment Readiness</h3>
-                                    <span className="text-[10px] uppercase tracking-widest text-cream/50 mt-1 block">
-                                        {productHealth ? `${fulfillmentIssues.length} CJ issue${fulfillmentIssues.length === 1 ? '' : 's'}` : 'Loading checks'}
-                                    </span>
-                                </div>
-                                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center border shadow-inner ${readinessClear
-                                    ? 'bg-green-900/20 border-green-500/30'
-                                    : 'bg-amber-900/20 border-amber-500/30'
-                                    }`}>
-                                    {readinessClear ? (
-                                        <CheckCircle className="w-5 h-5 text-green-400 drop-shadow-[0_0_3px_currentColor]" />
-                                    ) : (
-                                        <AlertTriangle className="w-5 h-5 text-amber-400 drop-shadow-[0_0_3px_currentColor]" />
-                                    )}
-                                </div>
-                            </div>
-
-                            {!productHealth ? (
-                                <div className="text-xs text-cream/40 relative z-10">Checking product readiness...</div>
-                            ) : fulfillmentIssues.length === 0 ? (
-                                <div className="text-xs text-green-300/80 bg-green-500/10 border border-green-500/20 rounded-xl p-3 relative z-10 shadow-inner">
-                                    CJ mappings and inventory snapshots are clear.
-                                </div>
-                            ) : (
-                                <div className="space-y-2 relative z-10 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
-                                    {fulfillmentIssues.slice(0, 5).map((issue) => (
-                                        <div key={issue.productId} className="bg-white/5 border border-white/10 rounded-xl p-3 shadow-inner">
-                                            <div className="flex items-center justify-between gap-3 mb-1">
-                                                <span className="text-sm text-cream font-medium truncate">{issue.name}</span>
-                                                {issue.cjInventoryStatus && (
-                                                    <span className="text-[10px] uppercase tracking-widest text-cream/40 font-mono">
-                                                        {issue.cjInventoryStatus.replace(/_/g, ' ')}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <p className="text-[11px] text-amber-100/80 leading-relaxed">
-                                                {issue.matchedProblem}
-                                            </p>
-                                        </div>
-                                    ))}
-                                    {fulfillmentIssues.length > 5 && (
-                                        <div className="text-center font-mono text-[10px] uppercase tracking-widest text-cream/40 bg-white/5 py-2 rounded-xl border border-white/5 shadow-inner">
-                                            + {fulfillmentIssues.length - 5} more
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
+                        <ProductHealthPanel summary={productHealth} />
                     </FadeIn>
                 </div>
 
@@ -612,8 +555,8 @@ export const CJSettings: React.FC<{
                                         <div className="flex items-center gap-2 mt-1">
                                             <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shadow-[0_0_5px_rgba(251,191,36,0.8)]" />
                                             <span className="text-[10px] uppercase tracking-widest text-cream/50 font-medium">
-                                                {pendingProducts.length} Pending
-                                                {approvedMissingCjVariantIssues.length > 0 && ` - ${approvedMissingCjVariantIssues.length} Missing CJ Variants`}
+                                                {pendingProducts.length} Pending{!pendingComplete && ' loaded'}
+                                                {(approvedMissingCjVariantCount ?? 0) > 0 && ` - ${approvedMissingCjVariantCount} Missing CJ Variants`}
                                             </span>
                                         </div>
                                     </div>
@@ -641,15 +584,19 @@ export const CJSettings: React.FC<{
                                     </div>
                                 )}
 
-                                {pendingProducts.length === 0 ? (
+                                <SourcingPageControls ready={sourcingPages.ready} checking={sourcingPages.checking} status={sourcingPages.pending.status} count={pendingProducts.length} label="pending products" loadMore={sourcingPages.pending.loadMore} />
+                                {pendingComplete && pendingProducts.length === 0 ? (
                                     <div className="flex-1 flex flex-col items-center justify-center text-cream/30 py-12 relative z-10">
                                         <CheckCircle className="w-12 h-12 mb-3 opacity-50 drop-shadow-sm text-green-400" />
                                         <p className="font-serif text-lg tracking-wide text-green-400/50">
-                                            {approvedMissingCjVariantIssues.length > 0 ? 'Pending queue clear' : 'All cleared'}
+                                            No pending sourcing products
                                         </p>
-                                        {approvedMissingCjVariantIssues.length > 0 && (
+                                        {approvedMissingCjVariantCount === undefined && (
+                                            <p className="mt-2 text-xs text-cream/40 text-center max-w-xs">Product health checks are not yet verified.</p>
+                                        )}
+                                        {(approvedMissingCjVariantCount ?? 0) > 0 && (
                                             <p className="mt-2 text-xs text-cream/40 text-center max-w-xs">
-                                                {approvedMissingCjVariantIssues.length} approved item(s) need CJ variant verification. Use Reconcile All.
+                                                {approvedMissingCjVariantCount} approved item(s) need CJ variant verification. Use Reconcile All.
                                             </p>
                                         )}
                                     </div>
@@ -887,26 +834,24 @@ export const CJSettings: React.FC<{
                                         <div>
                                             <h3 className="font-serif text-xl text-cream leading-tight drop-shadow-sm">Recently Approved</h3>
                                             <span className="text-[10px] uppercase tracking-widest text-green-400/80 font-medium block mt-1 drop-shadow-sm">
-                                                {recentlyApproved.length} Live Items
+                                                {recentlyApproved.length} Approvals{!approvedComplete && ' loaded'}
                                             </span>
                                         </div>
                                     </div>
 
-                                    {recentlyApproved.length === 0 ? (
+                                    <p className="relative z-10 text-xs text-cream/60">Approved since {new Date(sourcingPages.since).toLocaleString()} · Newest first</p>
+                                    <button type="button" onClick={sourcingPages.refreshApprovals} className="relative z-10 my-2 text-xs text-green-300 underline">Refresh seven-day window</button>
+                                    <SourcingPageControls ready={sourcingPages.ready} checking={sourcingPages.checking} status={sourcingPages.approved.status} count={recentlyApproved.length} label="approvals" loadMore={sourcingPages.approved.loadMore} />
+                                    {approvedComplete && recentlyApproved.length === 0 ? (
                                         <div className="py-8 text-center text-cream/40 font-serif text-lg tracking-wide relative z-10">No recent approvals</div>
                                     ) : (
-                                        <div className="space-y-3 relative z-10">
-                                            {recentlyApproved.slice(0, 3).map((product) => (
+                                        <div className="max-h-80 space-y-3 overflow-y-auto relative z-10">
+                                            {recentlyApproved.map((product) => (
                                                 <div key={product._id} className="flex items-center gap-3 text-sm text-cream/80 bg-green-500/10 border border-green-500/20 p-3.5 rounded-xl shadow-inner backdrop-blur-md group-hover:bg-green-500/20 transition-colors">
                                                     <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0 drop-shadow-[0_0_2px_currentColor]" />
                                                     <span className="truncate font-medium tracking-wide drop-shadow-sm">{product.name}</span>
                                                 </div>
                                             ))}
-                                            {recentlyApproved.length > 3 && (
-                                                <div className="text-center font-mono text-[10px] uppercase tracking-widest text-cream/40 mt-3 bg-white/5 py-2 rounded-xl border border-white/5 shadow-inner">
-                                                    + {recentlyApproved.length - 3} more
-                                                </div>
-                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -925,12 +870,13 @@ export const CJSettings: React.FC<{
                                         <div>
                                             <h3 className="font-serif text-xl text-cream leading-tight drop-shadow-sm">Requires Attention</h3>
                                             <span className="text-[10px] uppercase tracking-widest text-red-400/80 font-medium block mt-1 drop-shadow-sm">
-                                                {rejectedProducts.length} Issues Found
+                                                {rejectedProducts.length} Issues{!rejectedComplete && ' loaded'}
                                             </span>
                                         </div>
                                     </div>
 
-                                    {rejectedProducts.length === 0 ? (
+                                    <SourcingPageControls ready={sourcingPages.ready} checking={sourcingPages.checking} status={sourcingPages.rejected.status} count={rejectedProducts.length} label="rejected products" loadMore={sourcingPages.rejected.loadMore} />
+                                    {rejectedComplete && rejectedProducts.length === 0 ? (
                                         <div className="py-8 text-center text-cream/40 font-serif text-lg tracking-wide relative z-10">No issues found</div>
                                     ) : (
                                         <div className="space-y-4 relative z-10 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
@@ -1044,7 +990,7 @@ export const CJSettings: React.FC<{
                 </FadeIn>
                 <div className="w-full">
                     {/* The CJVariantManager creates its own dark-glass wrapper internally if needed, but we provide it full width and context */}
-                    <CJVariantManager targetProductId={targetProductId} onEditProduct={onEditProduct} />
+                    <CJVariantQueue targetProductId={targetProductId} onEditProduct={onEditProduct} />
                 </div>
             </div>
 

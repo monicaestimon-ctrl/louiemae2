@@ -24,12 +24,20 @@ for why backfilled records require an explicit source-time index.
 2. Restore Convex function availability. Confirm the target is LouieMae production
    `diligent-jay-261`. Record actual production webhook row and payload volume.
    Project-level historical storage figures do not prove production allocation.
-3. Budget the one-time migration reads: source backfill and source verification
+3. Choose the scope from the reader contract and production size. LouieMae had
+   23,209,840 source events on October 9, 2026 UTC. Use `scope: "recent"` there:
+   each pass covers the exact latest 100 events used by the operations reader,
+   at most 300 row visits across backfill, verification and orphan verification.
+   Live inserts/status changes still maintain summaries transactionally. Older
+   source events and all replay/deduplication evidence remain untouched.
+   The default `scope: "all"` retains the complete-history option for deployments
+   that require it. Budget that option's one-time reads: backfill and verification
    each visit every webhook; the orphan pass also fetches summary owners. Large
    legacy payloads therefore make these passes expensive despite small batches.
    Complete separately authorized, reviewed eligible-payload compaction first
    where appropriate. Never remove unresolved replay evidence to speed this up.
-4. Call internal `webhookSummaries:startRebuild`. Keep its returned epoch.
+4. Call internal `webhookSummaries:startRebuild` with `{ "scope": "recent" }`
+   for LouieMae. Keep its returned epoch. This disables summary use until verified.
 5. Call `webhookSummaries:rebuildNext` with that epoch and the current phase and
    cursor until `verified` or `failed`. Source passes read at most five records
    with a 2 MB pagination budget; the orphan pass reads five compact summaries
@@ -49,6 +57,15 @@ for why backfilled records require an explicit source-time index.
 9. Measure dashboard read bytes and webhook write overhead under a representative
    workload. Record source and summary sizes, executions, latency and errors.
    No production savings are established by a successful deploy or fixture tests.
+
+Recent-window verification checks source projections and the top summary owners,
+including their ordering fields. It supports empty/small tables and arrivals
+during the rebuild. A wrapped source deletion invalidates recent readiness,
+because deleting an event can expose an older event without a summary. The
+dashboard then uses its existing bounded latest-100 source query until an
+operator reruns the recent rebuild. Current retention compacts payloads and
+preserves source identities; it does not trigger this deletion path. Direct
+dashboard edits still bypass transactional maintenance and require reconciliation.
 
 ## Rollback
 

@@ -2,6 +2,8 @@ import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { CJVariantManager } from '../CJVariantManager';
+import { getFunctionName } from 'convex/server';
+import { useQuery } from 'convex/react';
 
 const mocks = vi.hoisted(() => ({
     products: [] as any[],
@@ -9,7 +11,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('convex/react', () => ({
-    useQuery: () => mocks.products,
+    useQuery: vi.fn((reference, args) => args === 'skip' ? undefined
+        : getFunctionName(reference) === 'products:getAdminVariantDetail'
+            ? mocks.products.find(product => product._id === args.id) ?? null : mocks.products),
     useAction: () => vi.fn(),
     useMutation: () => mocks.save,
 }));
@@ -37,6 +41,38 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('CJ product resolution queue', () => {
+    it('loads only selected detail and preserves dirty options and their revision across selections', async () => {
+        mocks.products = ['first', 'second'].map(id => ({
+            _id: id, name: id, images: [], productRevision: 4, cjSourcingStatus: 'pending',
+            variants: [{ id: 'size', name: 'Original', priceAdjustment: 0, inStock: true }],
+            cjVariants: [], mappingSummary: summary(['CJ_APPROVAL_PENDING']),
+        }));
+        const view = render(<CJVariantManager detailOnly targetProductId="first" />);
+        fireEvent.change(await screen.findByDisplayValue('Original'), { target: { value: 'My draft' } });
+        view.rerender(<CJVariantManager detailOnly targetProductId="second" />);
+        expect(await screen.findByDisplayValue('Original')).toBeInTheDocument();
+        mocks.products[0] = { ...mocks.products[0], productRevision: 5,
+            variants: [{ id: 'size', name: 'Concurrent edit', priceAdjustment: 0, inStock: true }] };
+        view.rerender(<CJVariantManager detailOnly targetProductId="first" />);
+        expect(await screen.findByDisplayValue('My draft')).toBeInTheDocument();
+        mocks.save.mockRejectedValueOnce(new Error('Revision conflict'));
+        fireEvent.click(screen.getByRole('button', { name: /save customer variants/i }));
+        await waitFor(() => expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
+            productId: 'first', expectedRevision: 4,
+            variants: [expect.objectContaining({ name: 'My draft' })],
+        })));
+        expect(await screen.findByRole('alert')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('My draft')).toBeInTheDocument();
+        expect(vi.mocked(useQuery).mock.calls.filter(([ref]) => getFunctionName(ref) === 'products:getProductsWithCjVariants')
+            .every(([, args]) => args === 'skip')).toBe(true);
+    });
+    it('does not query detail without a selection and reports deleted products', () => {
+        mocks.products = [];
+        const view = render(<CJVariantManager detailOnly />);
+        expect(vi.mocked(useQuery).mock.calls.every(([, args]) => args === 'skip')).toBe(true);
+        view.rerender(<CJVariantManager detailOnly targetProductId="deleted" />);
+        expect(screen.getByRole('status')).toHaveTextContent('no longer available');
+    });
     it('labels pending products and locks CJ mapping until approval', async () => {
         mocks.products = [{
             _id: 'product_pending',

@@ -3,8 +3,8 @@
 Health summaries preserve the existing image, sourcing age, CJ mapping and
 fulfillment-readiness rules. The legacy full-audit endpoint uses the extracted
 shared rules and remains available for existing clients. New issue pages read
-compact health records; totals come from one maintained state record. No client
-switches to the new endpoints automatically in this backend release.
+compact health records; totals come from one maintained state record. The backend
+was deployed separately before the frontend cutover described below.
 
 Version 2 also maintains exact pending/approved/rejected product counts for
 legacy sourcing migration: a product counts only when its sourcing job ID is
@@ -71,4 +71,23 @@ from a disabled deployment or claim live parity based only on fixture tests.
 Tests cover rule edge cases, 535-source rebuilds, concurrent edits, stale retries,
 deletion, counter drift repair, atomic rollback, bounded deadline processing,
 source parity after deadline refresh, incomplete activation and authorization.
-Production measurements, frontend adoption and live workflow checks remain gates.
+Production initialization, measurements and live workflow checks remain gates.
+
+## Dashboard reader cutover
+
+The prepared CJ dashboard change reads `productHealth:status` and only subscribes to
+`productHealth:issuesPage` after verified activation. It requests five compact
+issues initially and loads another 25 on demand. Exact totals determine the
+readiness badge and missing-variant diagnostics; a partial or empty loaded page
+cannot mean the inventory is clear. Every issue remains reachable through the
+load-more control. The automatic `products:auditProductHealth` subscription has
+been removed from this screen; its old endpoint contract remains for old clients.
+
+Before initial activation or during rebuild/repair, this dashboard explicitly
+shows unverified health. It does not start a full-product scan as a fallback.
+Manual reconciliation and individual product operations remain available.
+Complete the bounded rebuild/verification procedure above before merging and
+deploying this frontend cutover. During subsequent maintenance, it restores the health
+display. A frontend rollback to the previous deployment restores the legacy
+audit subscription, with its original read costs. Disabling summary activation
+alone shows the unverified state in this new frontend.

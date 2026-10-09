@@ -1,22 +1,22 @@
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
-import { Product, CollectionType, ProductVariant, Category } from '../types';
-import { ArrowLeft, X, ArrowUpRight, ShoppingBag, Check } from 'lucide-react';
+import { Product, CollectionType, ProductVariant, Category, CollectionConfig } from '../types';
+import { ArrowLeft, X, ArrowUpRight, Check } from 'lucide-react';
 import { AddToCartButton } from './cart';
-import { CircularGallery, GalleryItem } from './ui/circular-gallery-2';
-import { CurvedCategoryCarousel } from './ui/CurvedCategoryCarousel';
 import { GlassButton } from './ui/GlassButton';
 import { useNewsletter } from '../contexts/NewsletterContext';
 import { SafeImage } from './SafeImage';
-import { getCategoryParentId, productMatchesCategory } from '../lib/productCategories';
+import { getCategoryParentId } from '../lib/productCategories';
 import { useStorefrontProductDetail } from './useStorefrontProductDetail';
+import { useStoreCatalog, useStoreCategoryOptions, type StoreCardProduct } from './useStoreCatalog';
 
 /** Sentinel for variants with no assigned image */
 const NO_IMAGE_KEY = '__no_image__';
+const navigateToStoreHash = (hash: string) => { window.location.hash = hash; };
 
 interface StorePageProps {
   collection: CollectionType;
@@ -163,192 +163,21 @@ const VariantSelector: React.FC<VariantSelectorProps> = React.memo(({
 });
 VariantSelector.displayName = 'VariantSelector';
 
-export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategory = 'All', forceProductView = false }) => {
-  const { siteContent, isLoading } = useSite();
-  const storefrontProducts = useQuery(api.products.listForStorefront);
-  const storefrontProductsLoaded = storefrontProducts !== undefined;
-  const storefrontIsLoading = isLoading || !storefrontProductsLoaded;
-  const [sortOption, setSortOption] = useState<'newest' | 'price-asc' | 'price-desc'>('newest');
-
-  // Find the configuration for this collection from the dynamic state
-  const config = useMemo(() => {
-    return siteContent.collections.find(c => c.id === collection) || {
-      id: collection,
-      title: collection.charAt(0).toUpperCase() + collection.slice(1),
-      subtitle: 'Collection',
-      heroImage: 'https://images.unsplash.com/photo-1595428774223-ef52624120d2?q=80&w=2000',
-      subcategories: []
-    };
-  }, [siteContent.collections, collection]);
-
-  // Decoded category from URL
-  const selectedCategory = useMemo(() => decodeURIComponent(initialCategory), [initialCategory]);
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
-  const { product: selectedProduct, loading: detailLoading, unavailable: detailUnavailable } = useStorefrontProductDetail(selectedProductId);
-  const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(undefined);
-  // Price/stock changes and deleted options must not leave a stale cart selection.
-  const selectedVariant = selectedProduct?.variants?.find(variant => variant.id === selectedVariantId && variant.inStock !== false);
-  const setSelectedVariant = (variant: ProductVariant | undefined) => setSelectedVariantId(variant?.id);
-  /** Tracks the active image group (color/style) independently from selectedVariant */
-  const [activeImageGroupKey, setActiveImageGroupKey] = useState<string | null>(null);
-
-  // Reset variant and group key when changing product
-  const handleSelectProduct = (product: Product | null) => {
-    setSelectedProductId(product?.id ?? null);
-    setSelectedVariant(undefined);
-    setActiveImageGroupKey(null);
-  };
-
-  // Get main categories for logic checks
-  const mainCategoriesForRedirect = useMemo(() => {
-    const flagged = config.subcategories.filter(sub => sub.isMainCategory);
-    return flagged.length > 0 ? flagged : config.subcategories;
-  }, [config.subcategories]);
-
-  // Auto-redirect to main category if there's only one (to show swimlane view immediately)
-  // Skip this for 'kids' collection which has premium grid layout at root level
-  React.useEffect(() => {
-    if (collection === 'kids') return; // Don't auto-redirect for premium layout
-
-    if (selectedCategory === 'All' && mainCategoriesForRedirect.length === 1) {
-      const singleMain = mainCategoriesForRedirect[0];
-      // Only redirect if this category has children (would show swimlanes)
-      const hasChildren = config.subcategories.some(sub =>
-        getCategoryParentId(sub, config) === singleMain.id || sub.parentCategory === singleMain.title,
-      );
-      if (hasChildren) {
-        const newHash = `#collection/${collection}?cat=${encodeURIComponent(singleMain.title)}`;
-        window.location.hash = newHash;
-      }
-    }
-  }, [selectedCategory, mainCategoriesForRedirect, config.subcategories, collection]);
-
-  // Compute the view level based on selected category and available data
-  const viewLevel = useMemo<ViewLevel>(() => {
-    if (selectedCategory === 'All') {
-      return 'ROOT';
-    }
-
-    // Force product grid view when explicitly requested (e.g. "View All Girls")
-    if (forceProductView) {
-      return 'PRODUCT';
-    }
-
-    // Any category with children should show the CATEGORY view (hero slider + swimlanes)
-    const selected = config.subcategories.find(category => category.id === selectedCategory || category.title === selectedCategory);
-    const hasChildren = config.subcategories.some(sub =>
-      (selected && getCategoryParentId(sub, config) === selected.id) || sub.parentCategory === selectedCategory,
-    );
-
-    if (hasChildren) {
-      return 'CATEGORY';
-    }
-
-    return 'PRODUCT';
-  }, [selectedCategory, config.subcategories, forceProductView]);
-
-  // Get main categories (for ROOT view)
-  // Fallback: if no categories have isMainCategory flag, show all subcategories
-  const mainCategories = useMemo(() => {
-    const flagged = config.subcategories.filter(sub => sub.isMainCategory);
-    return flagged.length > 0 ? flagged : config.subcategories;
-  }, [config.subcategories]);
-
-  // Get child categories of the selected main category (for CATEGORY view)
-  const childCategories = useMemo(() => {
-    if (viewLevel !== 'CATEGORY') return [];
-    const selected = config.subcategories.find(category => category.id === selectedCategory || category.title === selectedCategory);
-    return config.subcategories.filter(sub =>
-      (selected && getCategoryParentId(sub, config) === selected.id) || sub.parentCategory === selectedCategory,
-    );
-  }, [config.subcategories, selectedCategory, viewLevel]);
-
-  // Filter products by collection
-  const products = useMemo(() => {
-    return (storefrontProducts || []).map((product: any) => ({
-      ...product,
-      id: product._id || product.id,
-    })) as Product[];
-  }, [storefrontProducts]);
-
-  const collectionProducts = useMemo(() => {
-    return products.filter(p => p.collection === collection);
-  }, [products, collection]);
-
-  // Get products for a specific category (for previews and product grid)
-  const getProductsForCategory = (categoryTitle: string, limit?: number) => {
-    const filtered = collectionProducts.filter(p => productMatchesCategory(p, categoryTitle, config));
-    return limit ? filtered.slice(0, limit) : filtered;
-  };
-
-  // Filter and Sort for PRODUCT view
-  const filteredProducts = useMemo(() => {
-    let result = collectionProducts;
-
-    if (selectedCategory !== 'All') {
-      result = result.filter(p => productMatchesCategory(p, selectedCategory, config));
-    }
-
-    return result.sort((a, b) => {
-      if (sortOption === 'price-asc') return a.price - b.price;
-      if (sortOption === 'price-desc') return b.price - a.price;
-      return b.id.localeCompare(a.id);
-    });
-  }, [collectionProducts, selectedCategory, sortOption, config]);
-
-  // Get unique categories for display in filter bar
-  const categories = useMemo(() => {
-    const cats = new Set(collectionProducts.map(p => p.category));
-    const list = Array.from(cats);
-
-    // Ensure defined subcategories are present
-    config.subcategories.forEach(sub => {
-      if (!list.includes(sub.title)) list.push(sub.title);
-    });
-
-    // Ensure currently selected category is in the list
-    if (selectedCategory !== 'All' && !list.includes(selectedCategory)) {
-      list.push(selectedCategory);
-    }
-
-    return ['All', ...list.sort()];
-  }, [collectionProducts, selectedCategory, config.subcategories]);
-
-  const handleCategoryChange = (cat: string) => {
-    if (cat === selectedCategory) return;
-
-    const subConfig = config.subcategories.find(c => c.title === cat);
-    if (subConfig && subConfig.redirect) {
-      window.location.hash = subConfig.redirect;
-      return;
-    }
-
-    const newHash = cat === 'All'
-      ? `#collection/${collection}`
-      : `#collection/${collection}?cat=${encodeURIComponent(cat)}`;
-    window.location.hash = newHash;
-  };
-
-  // Get back destination based on current view
-  const getBackDestination = () => {
-    if (viewLevel === 'CATEGORY') {
-      // Navigate back to the parent category, or root if no parent
-      const selected = config.subcategories.find(sub => sub.title === selectedCategory || sub.id === selectedCategory);
-      const parentId = selected ? getCategoryParentId(selected, config) : undefined;
-      return config.subcategories.find(sub => sub.id === parentId)?.title || selected?.parentCategory || 'All';
-    }
-    // For PRODUCT view, check if we came from a main category
-    const selected = config.subcategories.find(sub => sub.title === selectedCategory || sub.id === selectedCategory);
-    const parentId = selected ? getCategoryParentId(selected, config) : undefined;
-    return config.subcategories.find(sub => sub.id === parentId)?.title || selected?.parentCategory || 'All';
-  };
+interface PreviewProps {
+  config: CollectionConfig;
+  ready: boolean;
+  checking: boolean;
+  handleCategoryChange: (category: string) => void;
+  onSelect: (product: StoreCardProduct) => void;
+}
+const CatalogUnavailable = () => <p role="status" className="py-8 text-center text-earth/60">Products are temporarily unavailable. Please check back shortly.</p>;
 
   // Render a product card (reusable for both preview and full grid)
-  const ProductCard: React.FC<{ product: Product; index: number; compact?: boolean }> = ({ product, index, compact }) => (
+  const ProductCard: React.FC<{ product: StoreCardProduct; index: number; compact?: boolean; onSelect: (product: StoreCardProduct) => void }> = ({ product, index, compact, onSelect }) => (
     <FadeIn delay={index * 50} className="group cursor-pointer">
       <div
         className={`relative ${compact ? 'aspect-square' : 'aspect-[3/4]'} overflow-hidden bg-white mb-3 rounded-2xl shadow-sm hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-500 border border-white/40 group`}
-        onClick={() => handleSelectProduct(product)}
+        onClick={() => onSelect(product)}
       >
         {product.isNew && !compact && (
           <span className="absolute top-2 left-2 bg-white/90 backdrop-blur-md px-2 py-1 text-[8px] uppercase tracking-widest text-earth z-10 rounded-sm shadow-sm border border-white/50">
@@ -398,7 +227,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
   );
 
   // Reusable Coming Soon newsletter signup for empty product views
-  const ComingSoonSignup: React.FC = () => {
+  const ComingSoonSignup: React.FC<{ selectedCategory: string }> = ({ selectedCategory }) => {
     const { addSubscriberWithTags } = useNewsletter();
     const [csEmail, setCsEmail] = useState('');
     const [csStatus, setCsStatus] = useState<'idle' | 'loading' | 'success'>('idle');
@@ -439,8 +268,9 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
   };
 
   // Subcategory box with product previews
-  const SubcategoryWithPreviews: React.FC<{ category: Category; index: number }> = ({ category, index }) => {
-    const previewProducts = getProductsForCategory(category.title, 4);
+  const SubcategoryWithPreviews: React.FC<PreviewProps & { category: Category; index: number }> = ({ category, index, config, ready, checking, handleCategoryChange, onSelect }) => {
+    const preview = useStoreCatalog(config, category.title, ready, undefined, 4);
+    const previewProducts = preview.products;
     const { addSubscriberWithTags } = useNewsletter();
     const [email, setEmail] = useState('');
     const [subStatus, setSubStatus] = useState<'idle' | 'loading' | 'success'>('idle');
@@ -485,12 +315,12 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
         </div>
 
         {/* Product Previews */}
-        {storefrontIsLoading ? (
+        {checking || preview.loading ? (
           <ProductLoadingGrid compact />
-        ) : previewProducts.length > 0 ? (
+        ) : !ready ? <CatalogUnavailable /> : previewProducts.length > 0 ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
             {previewProducts.map((product, idx) => (
-              <ProductCard key={product.id} product={product} index={idx} compact />
+              <ProductCard key={product.id} product={product} index={idx} compact onSelect={onSelect} />
             ))}
           </div>
         ) : (
@@ -543,14 +373,12 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
   };
 
   // Hero Slider for the top of the Category Page
-  const HeroProductSlider: React.FC<{ categoryTitle: string }> = ({ categoryTitle }) => {
-    // Get newest/featured products for this category
-    // In a real app, you might have a specific "featured" flag, but "newest" serves as a good proxy for "fresh"
-    const featuredProducts = useMemo(() => {
-      let prods = getProductsForCategory(categoryTitle);
-      // Sort by newness/price or curate manually
-      return prods.sort((a, b) => (b.isNew ? 1 : 0) - (a.isNew ? 1 : 0)).slice(0, 8);
-    }, [categoryTitle]);
+  const HeroProductSlider: React.FC<PreviewProps & { categoryTitle: string }> = ({ categoryTitle, config, ready, checking, onSelect }) => {
+    const preview = useStoreCatalog(config, categoryTitle, ready, 'featured', 8);
+    const featuredProducts = preview.products;
+    const collection = config.id;
+    if (checking || preview.loading) return <ProductLoadingGrid />;
+    if (!ready) return <CatalogUnavailable />;
 
     if (featuredProducts.length === 0) return null;
 
@@ -599,7 +427,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
         <div className="flex overflow-x-auto gap-4 md:gap-6 pb-8 snap-x snap-mandatory scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
           {featuredProducts.map((product, idx) => (
             <div key={product.id} className="min-w-[260px] md:min-w-[300px] snap-center">
-              <ProductCard product={product} index={idx} />
+              <ProductCard product={product} index={idx} onSelect={onSelect} />
             </div>
           ))}
 
@@ -620,6 +448,143 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
         </div>
       </FadeIn>
     );
+  };
+
+
+export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategory = 'All', forceProductView = false }) => {
+  const { siteContent, isLoading } = useSite();
+  const readiness = useQuery(api.catalogReadiness.status, {});
+  const catalogReady = readiness?.ready === true;
+  const catalogUnavailable = readiness !== undefined && !catalogReady;
+  const [sortOption, setSortOption] = useState<'newest' | 'price-asc' | 'price-desc'>('newest');
+
+  // Find the configuration for this collection from the dynamic state
+  const config = useMemo(() => {
+    return siteContent.collections.find(c => c.id === collection) || {
+      id: collection,
+      title: collection.charAt(0).toUpperCase() + collection.slice(1),
+      subtitle: 'Collection',
+      heroImage: 'https://images.unsplash.com/photo-1595428774223-ef52624120d2?q=80&w=2000',
+      subcategories: []
+    };
+  }, [siteContent.collections, collection]);
+
+  // Decoded category from URL
+  const selectedCategory = useMemo(() => decodeURIComponent(initialCategory), [initialCategory]);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  const { product: selectedProduct, loading: detailLoading, unavailable: detailUnavailable } = useStorefrontProductDetail(selectedProductId);
+  const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(undefined);
+  // Price/stock changes and deleted options must not leave a stale cart selection.
+  const selectedVariant = selectedProduct?.variants?.find(variant => variant.id === selectedVariantId && variant.inStock !== false);
+  const setSelectedVariant = (variant: ProductVariant | undefined) => setSelectedVariantId(variant?.id);
+  /** Tracks the active image group (color/style) independently from selectedVariant */
+  const [activeImageGroupKey, setActiveImageGroupKey] = useState<string | null>(null);
+
+  // Reset variant and group key when changing product
+  const handleSelectProduct = (product: Pick<Product, 'id'> | null) => {
+    setSelectedProductId(product?.id ?? null);
+    setSelectedVariant(undefined);
+    setActiveImageGroupKey(null);
+  };
+
+  // Get main categories for logic checks
+  const mainCategoriesForRedirect = useMemo(() => {
+    const flagged = config.subcategories.filter(sub => sub.isMainCategory);
+    return flagged.length > 0 ? flagged : config.subcategories;
+  }, [config.subcategories]);
+
+  // Auto-redirect to main category if there's only one (to show swimlane view immediately)
+  // Skip this for 'kids' collection which has premium grid layout at root level
+  React.useEffect(() => {
+    if (collection === 'kids') return; // Don't auto-redirect for premium layout
+
+    if (!forceProductView && selectedCategory === 'All' && mainCategoriesForRedirect.length === 1) {
+      const singleMain = mainCategoriesForRedirect[0];
+      // Only redirect if this category has children (would show swimlanes)
+      const hasChildren = config.subcategories.some(sub =>
+        getCategoryParentId(sub, config) === singleMain.id || sub.parentCategory === singleMain.title,
+      );
+      if (hasChildren) {
+        const newHash = `#collection/${collection}?cat=${encodeURIComponent(singleMain.title)}`;
+        window.location.assign(newHash);
+      }
+    }
+  }, [selectedCategory, mainCategoriesForRedirect, config, collection, forceProductView]);
+
+  // Compute the view level based on selected category and available data
+  const viewLevel = useMemo<ViewLevel>(() => {
+    if (selectedCategory === 'All' && !forceProductView) {
+      return 'ROOT';
+    }
+
+    // Force product grid view when explicitly requested (e.g. "View All Girls")
+    if (forceProductView) {
+      return 'PRODUCT';
+    }
+
+    // Any category with children should show the CATEGORY view (hero slider + swimlanes)
+    const selected = config.subcategories.find(category => category.id === selectedCategory || category.title === selectedCategory);
+    const hasChildren = config.subcategories.some(sub =>
+      (selected && getCategoryParentId(sub, config) === selected.id) || sub.parentCategory === selectedCategory,
+    );
+
+    if (hasChildren) {
+      return 'CATEGORY';
+    }
+
+    return 'PRODUCT';
+  }, [selectedCategory, config, forceProductView]);
+
+  // Get main categories (for ROOT view)
+  // Fallback: if no categories have isMainCategory flag, show all subcategories
+  const mainCategories = useMemo(() => {
+    const flagged = config.subcategories.filter(sub => sub.isMainCategory);
+    return flagged.length > 0 ? flagged : config.subcategories;
+  }, [config.subcategories]);
+
+  // Get child categories of the selected main category (for CATEGORY view)
+  const childCategories = useMemo(() => {
+    if (viewLevel !== 'CATEGORY') return [];
+    const selected = config.subcategories.find(category => category.id === selectedCategory || category.title === selectedCategory);
+    return config.subcategories.filter(sub =>
+      (selected && getCategoryParentId(sub, config) === selected.id) || sub.parentCategory === selectedCategory,
+    );
+  }, [config, selectedCategory, viewLevel]);
+
+  const grid = useStoreCatalog(config, selectedCategory, catalogReady && viewLevel === 'PRODUCT', sortOption);
+  const rootPreview = useStoreCatalog(config, 'All', catalogReady && viewLevel === 'ROOT' && collection === 'kids', undefined, 8);
+  const categoryOptions = useStoreCategoryOptions(config, selectedCategory, catalogReady && viewLevel === 'PRODUCT');
+  const filteredProducts = grid.products;
+  const categories = categoryOptions.categories;
+  const storefrontIsLoading = isLoading || readiness === undefined || (viewLevel === 'PRODUCT' ? grid.loading : rootPreview.loading);
+
+  const handleCategoryChange = (cat: string) => {
+    if (cat === selectedCategory) return;
+
+    const subConfig = config.subcategories.find(c => c.title === cat);
+    if (subConfig && subConfig.redirect) {
+      navigateToStoreHash(subConfig.redirect);
+      return;
+    }
+
+    const newHash = cat === 'All'
+      ? `#collection/${collection}`
+      : `#collection/${collection}?cat=${encodeURIComponent(cat)}`;
+    navigateToStoreHash(newHash);
+  };
+
+  // Get back destination based on current view
+  const getBackDestination = () => {
+    if (viewLevel === 'CATEGORY') {
+      // Navigate back to the parent category, or root if no parent
+      const selected = config.subcategories.find(sub => sub.title === selectedCategory || sub.id === selectedCategory);
+      const parentId = selected ? getCategoryParentId(selected, config) : undefined;
+      return config.subcategories.find(sub => sub.id === parentId)?.title || selected?.parentCategory || 'All';
+    }
+    // For PRODUCT view, check if we came from a main category
+    const selected = config.subcategories.find(sub => sub.title === selectedCategory || sub.id === selectedCategory);
+    const parentId = selected ? getCategoryParentId(selected, config) : undefined;
+    return config.subcategories.find(sub => sub.id === parentId)?.title || selected?.parentCategory || 'All';
   };
 
   return (
@@ -867,6 +832,8 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
         )}
       </section>
 
+      {viewLevel === 'ROOT' && <div className="text-center py-6"><button type="button" onClick={() => window.location.assign(`#collection/${collection}?cat=All&view=products`)} className="border border-earth/20 rounded-full px-6 py-3 text-sm">Shop all {config.title}</button></div>}
+
       {/* --- LEVEL 1: ROOT VIEW - New Arrivals Feed (Kids) --- */}
       {viewLevel === 'ROOT' && collection === 'kids' && (
         <section className="px-4 md:px-8 pb-12 md:pb-16 -mt-8 relative z-30">
@@ -874,7 +841,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
           <div className="container mx-auto">
             {storefrontIsLoading ? (
               <ProductLoadingGrid />
-            ) : (
+            ) : catalogUnavailable ? <CatalogUnavailable /> : (
               <>
                 <FadeIn className="mb-8 text-center md:text-left">
                   <h2 className="font-serif text-3xl md:text-4xl text-earth mb-3 ml-2">New Arrivals</h2>
@@ -884,15 +851,15 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                 </FadeIn>
 
                 <div className="flex overflow-x-auto gap-4 md:gap-6 pb-8 snap-x snap-mandatory scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
-                  {collectionProducts.slice(0, 8).map((product, idx) => (
+                  {rootPreview.products.map((product, idx) => (
                     <div key={product.id} className="min-w-[260px] md:min-w-[300px] snap-center">
-                      <ProductCard product={product} index={idx} />
+                      <ProductCard product={product} index={idx} onSelect={handleSelectProduct} />
                     </div>
                   ))}
 
                   <div className="min-w-[200px] md:min-w-[240px] snap-center flex items-center justify-center">
                     <button
-                      onClick={() => handleCategoryChange('All')}
+                      onClick={() => { window.location.hash = `#collection/${collection}?cat=All&view=products`; }}
                       className="group flex flex-col items-center gap-4 text-earth/50 hover:text-earth transition-colors"
                     >
                       <div className="w-16 h-16 rounded-full border border-earth/20 flex items-center justify-center group-hover:border-earth transition-colors">
@@ -927,13 +894,13 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
             <div className="container mx-auto">
 
               {/* NEW: Hero Slider at the Top */}
-              <HeroProductSlider categoryTitle={selectedCategory} />
+              <HeroProductSlider categoryTitle={selectedCategory} config={config} ready={catalogReady} checking={isLoading || readiness === undefined} handleCategoryChange={handleCategoryChange} onSelect={handleSelectProduct} />
 
               <div id="sub-cats-start" className="h-px w-full bg-earth/10 mb-16"></div>
 
               {/* Subcategory Swimlanes */}
               {childCategories.map((cat, idx) => (
-                <SubcategoryWithPreviews key={cat.id} category={cat} index={idx} />
+                <SubcategoryWithPreviews key={cat.id} category={cat} index={idx} config={config} ready={catalogReady} checking={isLoading || readiness === undefined} handleCategoryChange={handleCategoryChange} onSelect={handleSelectProduct} />
               ))}
             </div>
           </section>
@@ -958,7 +925,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                   Back
                 </button>
                 <div className="h-6 w-px bg-white/10 mx-2 hidden md:block"></div>
-                {categories.slice(0, 8).map(cat => (
+                {categories.map(cat => (
                   <button
                     key={cat}
                     onClick={() => handleCategoryChange(cat)}
@@ -969,11 +936,12 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                 ))}
               </div>
 
+              {(categoryOptions.canLoadMore || categoryOptions.loading) && <button type="button" disabled={categoryOptions.loading} onClick={categoryOptions.loadMore} className="text-xs text-cream/70 whitespace-nowrap">{categoryOptions.loading ? 'Loading categories…' : 'Load more category options'}</button>}
               <div className="flex items-center gap-2 ml-auto md:ml-0 bg-white/5 border border-white/10 px-3 py-1.5 rounded-full backdrop-blur-md">
                 <span className="text-[10px] uppercase tracking-widest text-cream/50">Sort By:</span>
                 <select
                   value={sortOption}
-                  onChange={(e) => setSortOption(e.target.value as any)}
+                  onChange={(e) => setSortOption(e.target.value as 'newest' | 'price-asc' | 'price-desc')}
                   className="bg-transparent text-[10px] uppercase tracking-widest text-bronze focus:outline-none cursor-pointer appearance-none ml-1 font-medium"
                 >
                   <option value="newest" className="bg-stone-900 text-cream">Newest</option>
@@ -988,6 +956,8 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
             <div className="container mx-auto">
               {storefrontIsLoading ? (
                 <ProductLoadingGrid />
+              ) : catalogUnavailable ? <CatalogUnavailable /> : filteredProducts.length === 0 && !grid.complete ? (
+                <p role="status" className="py-8 text-center">No matching products in the loaded page. Load more to continue.</p>
               ) : filteredProducts.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-24 animate-fade-in-up md:min-h-[60vh]">
                   <div className="relative w-full max-w-3xl mx-auto rounded-[2rem] shadow-[0_30px_80px_-20px_rgba(0,0,0,0.3)] translate-y-0 hover:-translate-y-2 transition-transform duration-700">
@@ -1012,7 +982,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                         Join the inner circle. Receive 24-hour early access to {selectedCategory} drops before they open to the public.
                       </p>
 
-                      <ComingSoonSignup />
+                      <ComingSoonSignup selectedCategory={selectedCategory} />
 
                       <button onClick={() => handleCategoryChange(getBackDestination())} className="mt-16 text-[9px] uppercase tracking-[0.2em] text-white/50 border-b border-white/30 pb-1 hover:text-white hover:border-white transition-colors z-20 relative">
                         Return to Collections
@@ -1033,7 +1003,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                             New
                           </span>
                         )}
-                        {product.variants && product.variants.length > 0 && (
+                        {product.variantCount > 0 && (
                           <span className="absolute top-3 right-3 bg-bronze/90 px-2 py-1 text-[9px] uppercase tracking-widest text-white z-10 rounded-sm">
                             Multiple Options
                           </span>
@@ -1064,6 +1034,10 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                   ))}
                 </div>
               )}
+              {catalogReady && <div className="mt-8 text-center">
+                <p role="status" className="text-sm text-earth/60">{filteredProducts.length} products loaded{grid.complete ? ' · All matching products shown' : ''}</p>
+                {(grid.canLoadMore || grid.loadingMore) && <button type="button" disabled={grid.loadingMore} onClick={grid.loadMore} className="mt-4 border border-earth/20 rounded-full px-6 py-3">{grid.loadingMore ? 'Loading products…' : 'Load more products'}</button>}
+              </div>}
             </div>
           </section>
         </>
