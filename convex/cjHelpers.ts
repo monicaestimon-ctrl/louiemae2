@@ -1,3 +1,5 @@
+import { paginator } from "convex-helpers/server/pagination";
+import schema from "./schema";
 import { staleRecoveryRows } from './webhookRecoveryMaintenance';
 import { indexedInventoryProducts } from './cjInventoryTargetMaintenance';
 import { v } from "convex/values";
@@ -621,22 +623,24 @@ export const markTrackingNotificationSent = internalMutation({
 export const getOrdersNeedingSync = internalQuery({
     args: {},
     handler: async (ctx) => {
-        // Get orders with CJ status that can still produce new tracking or delivery updates
-        const orders = await ctx.db
-            .query("orders")
-            .filter((q) =>
-                q.or(
-                    q.eq(q.field("cjStatus"), "confirmed"),
-                    q.eq(q.field("cjStatus"), "processing"),
-                    q.eq(q.field("cjStatus"), "shipped")
-                )
-            )
-            .collect();
-
-        // Filter to only those that haven't been synced recently (1 hour)
-        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-        return orders.filter(o => !o.cjLastSyncAt || o.cjLastSyncAt < oneHourAgo);
+        const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const groups = await Promise.all((["confirmed", "processing", "shipped"] as const).map(status =>
+            ctx.db.query("orders").withIndex("by_cj_status_sync", q =>
+                q.eq("cjStatus", status).lt("cjLastSyncAt", cutoff)).collect()));
+        // Retain the old internal array contract for in-flight callers.
+        return groups.flat();
     },
+});
+
+// Keep a fixed cutoff across pages; undefined timestamps include legacy orders.
+export const getOrdersNeedingSyncPage = internalQuery({
+    args: {
+        status: v.union(v.literal("confirmed"), v.literal("processing"), v.literal("shipped")),
+        cutoff: v.string(), cursor: v.union(v.string(), v.null()),
+    },
+    handler: (ctx, args) => paginator(ctx.db, schema).query("orders")
+        .withIndex("by_cj_status_sync", q => q.eq("cjStatus", args.status).lt("cjLastSyncAt", args.cutoff))
+        .paginate({ cursor: args.cursor, numItems: 10, maximumRowsRead: 10 }),
 });
 
 export const getProductPricingByStringIds = internalQuery({

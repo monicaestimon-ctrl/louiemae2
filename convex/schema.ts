@@ -696,6 +696,7 @@ export default defineSchema({
     }).index("by_session", ["stripeSessionId"])
         .index("by_email", ["customerEmail"])
         .index("by_cj_status", ["cjStatus"])
+        .index("by_cj_status_sync", ["cjStatus", "cjLastSyncAt"])
         .index("by_cj_order_id", ["cjOrderId"])
         .index("by_cj_payment_status", ["cjPaymentStatus"])
         .index("by_cj_fulfillment_step", ["cjFulfillmentStep"]),

@@ -374,3 +374,10 @@ For an unknown coverage issue or a required return to the legacy reader:
 4. Re-enable only when the restored migration reaches `verified`. Index retirement is a separate reviewed release again.
 
 Do not blindly revert all of main, assume a code revert restores the index instantly, or delete webhook identities to accelerate recovery. Index lifecycle reference: https://docs.convex.dev/database/reading-data/indexes/.
+### Tracking selection and pagination
+
+The tracking sync traverses due `confirmed`, `processing`, and `shipped` orders through `orders.by_cj_status_sync`. Each query reads at most ten rows. The run keeps one one-hour cutoff across every page and uses index-key cursors so updating a processed row does not require that row to remain in the due range. Missing legacy sync timestamps remain eligible; delivered/cancelled/failed orders remain excluded. The old internal array reader is retained for compatibility, but the active worker uses pages.
+
+A failed provider response now increments the returned error count. Existing tracking reconciliation, notification deduplication, four-hour scheduling, and `{ synced, errors }` response shape remain unchanged. Paging bounds individual database reads; it does not establish a maximum duration for a whole sync with a large active-order backlog. If that workload develops, use a durable continuation design with explicit run totals and notification ownership before changing the manual action contract.
+
+Deploy the additive index with the backend before exercising the new reader. Rollback can restore the old reader/worker while retaining this index. Validate pages under changing sync timestamps and status transitions. Production currently has no due tracking orders; empty-run success is not proof of live shipment or email delivery.
