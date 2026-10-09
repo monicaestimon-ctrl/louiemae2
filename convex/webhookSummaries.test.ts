@@ -31,6 +31,68 @@ async function finish(t: ReturnType<typeof convexTest>, state: Pick<Doc<'webhook
   return state;
 }
 describe('compact webhook dashboard summaries', () => {
+  it('initializes only the exact latest-100 window for large histories and preserves live changes', async () => {
+    const t = convexTest(schema, modules);
+    const ids = await t.run(async ctx => {
+      const ids = [];
+      for (let i = 0; i < 535; i++) ids.push(await ctx.db.insert('cjWebhookLog', {
+        ...event, messageId: `history-${i}`, status: i % 2 ? 'failed' : 'processed',
+      }));
+      return ids;
+    });
+    const expected = (await t.query(operations, {})).webhook;
+    const initial = await t.mutation(mutation('startRebuild'), { scope: 'recent' });
+    const state = await finish(t, initial);
+    expect(state).toMatchObject({ phase: 'verified', checked: 300, scope: 'recent', enabled: false });
+    expect(await t.run(ctx => ctx.db.query('webhookSummaries').collect())).toHaveLength(100);
+    expect(await t.run(ctx => ctx.db.query('cjWebhookLog').collect())).toHaveLength(535);
+    await t.mutation(mutation('setEnabled'), { enabled: true });
+    expect((await t.query(operations, {})).webhook).toEqual(expected);
+    await t.mutation(change, { id: ids[0] }); // An old event update must not enter the latest 100.
+    expect((await t.query(operations, {})).webhook).toEqual(expected);
+    await t.mutation(claim, { ...claimEvent, messageId: 'new-after-activation' });
+    const compact = (await t.query(operations, {})).webhook;
+    await t.mutation(mutation('setEnabled'), { enabled: false });
+    expect((await t.query(operations, {})).webhook).toEqual(compact);
+    await t.mutation(mutation('setEnabled'), { enabled: true });
+    await t.mutation(change, { id: ids[534], remove: true });
+    expect(await t.query(status, {})).toMatchObject({ ready: false, phase: 'failed' });
+    await expect(t.mutation(mutation('setEnabled'), { enabled: true })).rejects.toThrow('Verify');
+    const afterDeletion = (await t.query(operations, {})).webhook;
+    expect(await finish(t, await t.mutation(mutation('startRebuild'), { scope: 'recent' }))).toMatchObject({ phase: 'verified' });
+    await t.mutation(mutation('setEnabled'), { enabled: true });
+    expect((await t.query(operations, {})).webhook).toEqual(afterDeletion);
+  });
+  it('checks recent empty/small histories and detects a corrupted recent summary index value', async () => {
+    const t = convexTest(schema, modules);
+    expect(await finish(t, await t.mutation(mutation('startRebuild'), { scope: 'recent' }))).toMatchObject({ phase: 'verified', checked: 0 });
+    await t.run(async ctx => { for (let i = 0; i < 110; i++) await ctx.db.insert('cjWebhookLog', { ...event, messageId: `row-${i}` }); });
+    const state = await finish(t, await t.mutation(mutation('startRebuild'), { scope: 'recent' }));
+    expect(state).toMatchObject({ phase: 'verified', checked: 300 });
+    const old = await t.run(async ctx => (await ctx.db.query('cjWebhookLog').first())!);
+    await t.mutation(change, { id: old._id });
+    await t.run(async ctx => {
+      const row = (await ctx.db.query('webhookSummaries').withIndex('by_webhook', q => q.eq('webhookId', old._id)).unique())!;
+      await ctx.db.patch(row._id, { sourceCreatedAt: Date.now() + 100_000 });
+    });
+    expect(await finish(t, await t.mutation(mutation('startRebuild'), { scope: 'recent' }))).toMatchObject({ phase: 'failed', mismatchIds: [old._id] });
+  });
+  it('handles arrivals during recent verification and invalidates a rebuild on deletion', async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async ctx => { for (let i = 0; i < 105; i++) await ctx.db.insert('cjWebhookLog', { ...event, messageId: `concurrent-${i}` }); });
+    let state = await t.mutation(mutation('startRebuild'), { scope: 'recent' });
+    for (let i = 0; i < 21; i++) state = await t.mutation(mutation('rebuildNext'), { epoch: state.epoch, expectedPhase: state.phase, expectedCursor: state.cursor });
+    expect(state.phase).toBe('verify');
+    await t.mutation(claim, { ...claimEvent, messageId: 'arrival-during-verification' });
+    expect(await finish(t, state)).toMatchObject({ phase: 'verified' });
+    const expected = (await t.query(operations, {})).webhook;
+    await t.mutation(mutation('setEnabled'), { enabled: true });
+    expect((await t.query(operations, {})).webhook).toEqual(expected);
+    state = await t.mutation(mutation('startRebuild'), { scope: 'recent' });
+    const latest = await t.run(async ctx => (await ctx.db.query('cjWebhookLog').order('desc').first())!);
+    await t.mutation(change, { id: latest._id, remove: true });
+    expect(await finish(t, state)).toMatchObject({ phase: 'failed' });
+  });
   it('preserves the latest 100 source records and legacy status/date semantics after bounded backfill', async () => {
     const t = convexTest(schema, modules);
     await t.run(async ctx => {

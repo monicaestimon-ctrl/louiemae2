@@ -66,6 +66,8 @@ export default defineSchema({
         phase: v.union(v.literal('backfill'), v.literal('verify'), v.literal('orphans'), v.literal('verified'), v.literal('failed')),
         cursor: v.union(v.string(), v.null()), checked: v.number(), mismatchIds: v.array(v.string()),
         updatedAt: v.number(), verifiedAt: v.optional(v.number()),
+        scope: v.optional(v.union(v.literal('all'), v.literal('recent'))),
+        phaseChecked: v.optional(v.number()),
     }).index('by_key', ['key']),
     sourcingCountRows: defineTable({
         jobId: v.id('cjSourcingJobs'), epoch: v.number(), state: cjSourcingStateValidator,

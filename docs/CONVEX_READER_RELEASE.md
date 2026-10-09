@@ -12,14 +12,30 @@ Production target: LouieMae `diligent-jay-261`. The existing frontend is PR 146'
 Vercel deployment `dpl_81sjJPfhr3kDvZ5gK8e6ECUfAhUG`; the deployed backend main
 revision is `3cc6103cf375da53753722e6b21de9f0697cb750` (PR 152).
 
-The latest public readiness probe failed with request ID `e18aecd224a43561`.
-An earlier authenticated check diagnosed team deployments disabled for free-plan
-usage limits. A generic server error does not independently establish a new
-billing diagnosis. No production backfill, activation or savings measurement has
-been completed. Code deployment success and a working static homepage do not
-establish application availability.
+On October 9, 2026 UTC, authenticated production functions succeeded after the
+owner transferred the existing project to `monica-estimon`. The deployment URL
+and production data remain on `diligent-jay-261`. CLI access is restored. The
+catalog v5 backfill completed for 621 products and passed 1,242 bidirectional
+checks without mismatches. Catalog readers are enabled. Health v3 independently
+verified all 621 products and totals, then activated at revision 623 after a live
+update required reverification. Sourcing counts verified 603 jobs and activated
+at revision 603. End-to-end frontend release verification remains pending.
+Code deployment success alone does not establish application availability.
 
-Before merging/deploying this release:
+The destination team's billing page reports Starter with an existing $30 monthly
+spending warning and $35 monthly disable threshold. These settings were inspected,
+not changed. The new team's initial usage page showed zero while the deployment
+usage page reported activity; do not interpret delayed usage reporting as savings.
+
+Production database I/O warnings are now configured at 1 GB daily and 5 GB monthly.
+These are conservative initial alerts, not a measured normal-workload forecast.
+No deployment hard-disable threshold was added. The existing team spending cap
+still applies. Reassess alert levels after measuring the migrated active workload,
+and record one-time backfill/verification traffic separately. Windows reset on
+UTC calendar boundaries, independently of the team's billing cycle.
+
+Before the production frontend cutover (the additive webhook backend extension
+must deploy first):
 
 1. Restore Convex application function availability through the account owner.
    Do not change payment methods, billing plans or transfer projects as part of
@@ -31,8 +47,10 @@ Before merging/deploying this release:
    and inventory totals, then enable at the verified revision. Follow
    `PRODUCT_HEALTH_ROLLOUT.md`. Older version verification is insufficient.
 4. Complete and verify sourcing-state counters and webhook summaries according
-   to their operator runbooks. Webhook source scans can be expensive for retained
-   historical payloads: review their production size and migration budget first.
+   to their operator runbooks. Production contains 23,209,840 webhook records;
+   use the verified recent-window initialization for the latest-100 dashboard
+   contract instead of duplicating the entire history. Deploy that additive
+   backend option, initialize with `scope: "recent"`, then verify and enable it.
    Historical deletion/compaction remains a separately scoped operation.
 5. Test the combined frontend against prepared staging data. Include more than
    500 products, sparse category pages, all CJ filters, search beyond truncated
