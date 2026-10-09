@@ -51,6 +51,13 @@ const cjFulfillmentReadinessValidator = v.union(
 );
 
 export default defineSchema({
+    // Only processing leases are represented here; permanent identities remain in cjWebhookLog.
+    webhookRecoveryQueue: defineTable({ webhookId: v.id('cjWebhookLog'), claimedAt: v.optional(v.string()), sourceCreatedAt: v.number() })
+        .index('by_webhook', ['webhookId']).index('by_claimed_at', ['claimedAt', 'sourceCreatedAt', 'webhookId']),
+    webhookRecoveryState: defineTable({ key: v.string(), epoch: v.number(), enabled: v.boolean(),
+        phase: v.union(v.literal('backfill'), v.literal('source'), v.literal('orphans'), v.literal('verified'), v.literal('failed')),
+        cursor: v.union(v.string(), v.null()), checked: v.number(), mismatchIds: v.array(v.string()), updatedAt: v.number(),
+    }).index('by_key', ['key']),
     cjInventoryTargets: defineTable({ productId: v.id('products'), kind: v.union(v.literal('vid'), v.literal('sku')), value: v.string() })
         .index('by_product', ['productId']).index('by_target', ['kind', 'value']),
     cjInventoryTargetState: defineTable({ key: v.string(), enabled: v.boolean(), phase: v.union(v.literal('backfill'), v.literal('source'), v.literal('orphans'), v.literal('verified'), v.literal('failed')), cursor: v.union(v.string(), v.null()), checked: v.number(), mismatchIds: v.array(v.string()), updatedAt: v.number() }).index('by_key', ['key']),
