@@ -51,6 +51,10 @@ const cjFulfillmentReadinessValidator = v.union(
 );
 
 export default defineSchema({
+    cjInventoryTargets: defineTable({ productId: v.id('products'), kind: v.union(v.literal('vid'), v.literal('sku')), value: v.string() })
+        .index('by_product', ['productId']).index('by_target', ['kind', 'value']),
+    cjInventoryTargetState: defineTable({ key: v.string(), enabled: v.boolean(), phase: v.union(v.literal('backfill'), v.literal('source'), v.literal('orphans'), v.literal('verified'), v.literal('failed')), cursor: v.union(v.string(), v.null()), checked: v.number(), mismatchIds: v.array(v.string()), updatedAt: v.number() }).index('by_key', ['key']),
+
     // Convex Auth tables (users, sessions, accounts, etc.)
     ...authTables,
     ...furnitureTables,

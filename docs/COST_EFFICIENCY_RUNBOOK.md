@@ -276,3 +276,47 @@ was removed.
   Roll back only the server action implementation or model selection.
 - Environment guard: use a non-production Convex target. Do not bypass the guard
   by deleting the production reference values.
+
+## CJ stock-webhook target index rollout
+
+The original stock-target lookup read all source products for each VID/SKU. An
+uncached production lookup on October 9, 2026 returned no matches after reading
+621 products / 8,691,954 database bytes. This is a single lookup measurement,
+not an estimate of total invoice savings or historical webhook storage.
+
+`cjInventoryTargets` stores distinct `(productId, kind, value)` associations for
+product-level IDs, customer variant mappings, and CJ variants. All existing
+product writers maintain these through the transactional product trigger.
+Unrelated price/stock/telemetry updates skip target maintenance when keys match.
+VID and SKU remain distinct, matching stays case-sensitive, hidden/out-of-stock
+products remain eligible for updates, and union results deduplicate product IDs.
+
+Release procedure (each deployment separately):
+
+1. Deploy the additive tables/indexes, writer maintenance, gated reader and
+   migration functions. Before activation, the compatible legacy lookup remains
+   in use. No source products or webhook history are removed.
+2. Read `cjInventoryTargets:status`. If no migration exists, call `begin` once.
+   If one is already in progress, resume its returned phase/cursor; do not begin
+   again. An enabled migration cannot restart without an explicit disable.
+3. Call `advance` with the current `expectedPhase` and `expectedCursor` until
+   `verified` or `failed`. Each source batch reads at most two products; byte
+   budgets apply. The backfill syncs exact keys, the source pass compares all
+   keys including duplicates, and the orphan pass checks distinct product IDs
+   so large variant arrays do not multiply full-source reads. Retried stale
+   phase/cursor pairs make no progress and do not duplicate mappings.
+4. Stop on `failed`; inspect mismatch IDs and repair their underlying mapping
+   maintenance issue before restarting. Never activate an incomplete migration.
+5. After phase `verified`, call `setEnabled` with `enabled: true`. Verify the
+   status, compare a bounded equivalent lookup workload, and inspect failures.
+   Source maintenance continues after activation. A stale returned mapping fails
+   processing for recovery rather than silently dropping an inventory update.
+6. For an index-related incident, `setEnabled` with `enabled: false` restores
+   the legacy lookup while retaining target maintenance and data. This restores
+   the prior full-scan cost too; do not leave it as the permanent solution.
+   Rebuild/verify before reactivation. Existing webhook claims/recovery remain.
+
+The index adds small mapping rows and writes when identifiers change. Record
+backfill usage separately and measure steady-state reads plus mapping-write
+costs. It does not reduce the retained historical `cjWebhookLog` table, authorize
+identity deletion, change provider subscriptions, or resume monitoring.

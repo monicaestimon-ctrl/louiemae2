@@ -1,3 +1,4 @@
+import { inventoryTargets, syncInventoryTargets } from './cjInventoryTargetMaintenance';
 import { mutation as rawMutation, internalMutation as rawInternalMutation } from './_generated/server';
 import { customCtx, customMutation } from 'convex-helpers/server/customFunctions';
 import { Triggers } from 'convex-helpers/server/triggers';
@@ -21,6 +22,9 @@ triggers.register('cjSourcingJobs', async (ctx, change) => {
   await syncSourcingCount(ctx, change.id, change.newDoc);
 });
 triggers.register('products', async (ctx, change) => {
+  if (!change.oldDoc || !change.newDoc || !sameCatalogValue(inventoryTargets(change.oldDoc), inventoryTargets(change.newDoc))) {
+    await syncInventoryTargets(ctx, change.id, change.newDoc);
+  }
   const now = Date.now();
   if (!change.oldDoc || !change.newDoc || !sameCatalogValue(productHealthProjection(change.oldDoc, now), productHealthProjection(change.newDoc, now))) {
     await syncProductHealth(ctx, change.id, change.newDoc, now);
