@@ -28,7 +28,13 @@ vi.mock('convex/react', () => ({
 afterEach(cleanup);
 describe('CJ price review screen', () => {
   it('links to the sourced listing and never displays missing shipping as zero', async () => {
-    render(<CJPricingReview />);
+    const { rerender } = render(<CJPricingReview />);
+    expect(screen.getByText(/Automatic pricing check status is unavailable/)).toBeInTheDocument();
+    rerender(<CJPricingReview monitoringEnabled={true} />);
+    expect(screen.getByText(/Automatic checks run about daily/)).toBeInTheDocument();
+    rerender(<CJPricingReview monitoringEnabled={false} />);
+    expect(screen.getByText(/Automatic pricing checks are paused/)).toBeInTheDocument();
+    expect(screen.queryByText(/Automatic checks run about daily/)).not.toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: 'Open CJ product listing', hidden: true })
     ).toHaveAttribute('href', 'https://cjdropshipping.com/product/-p-pid.html');
