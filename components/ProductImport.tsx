@@ -190,7 +190,7 @@ const convertToUsd = (price: number, currency: string): { usd: number; rate: num
     throw new Error(`Unsupported currency "${code}". Only ${Object.keys(CURRENCY_RATES_TO_USD).filter(c => c !== 'RMB').join(', ')} are supported.`);
 };
 
-export const ProductImport: React.FC<ProductImportProps> = ({
+const ProductImportStudio: React.FC<ProductImportProps> = ({
     collections,
     onImportProducts,
     mode = 'import',
@@ -2670,8 +2670,6 @@ export const ProductImport: React.FC<ProductImportProps> = ({
 
     return (
         <div className="relative min-h-[80vh]">
-            {/* Toast Container */}
-            <Toaster position="top-right" richColors closeButton />
 
             {/* Custom Styles for Float/Glow Animations */}
             <style>{`
@@ -3082,5 +3080,14 @@ export const ProductImport: React.FC<ProductImportProps> = ({
         </div>
     );
 };
+
+// Keep feedback mounted through search, editing, and final review. Early returns
+// inside the studio must not hide validation or failed-save notifications.
+export const ProductImport: React.FC<ProductImportProps> = (props) => (
+    <>
+        <Toaster position="top-right" richColors closeButton />
+        <ProductImportStudio {...props} />
+    </>
+);
 
 export default ProductImport;
