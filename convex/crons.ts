@@ -3,8 +3,11 @@ import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 
+// Owner-requested temporary pause. Resume explicitly per deployment.
+const monitoringEnabled = process.env.BACKGROUND_MONITORING_ENABLED === 'true';
+
 // Only summaries whose 48-hour pending threshold is due are revisited.
-crons.interval('refresh-due-product-health', { minutes: 5 }, internal.productHealth.refreshDue, {});
+if (monitoringEnabled) crons.interval('refresh-due-product-health', { minutes: 5 }, internal.productHealth.refreshDue, {});
 
 // Persist signups first; process/recover the bounded marketing queue separately.
 crons.interval('sync-klaviyo-waitlist', { minutes: 1 }, internal.klaviyoWaitlist.dispatch, {});
@@ -53,5 +56,5 @@ crons.interval(
 );
 
 // Check each approved product about daily, in bounded batches with shared CJ throttling.
-crons.interval('monitor-cj-pricing', { minutes: 15 }, internal.cjPricingReview.dispatchMonitor, {});
+if (monitoringEnabled) crons.interval('monitor-cj-pricing', { minutes: 15 }, internal.cjPricingReview.dispatchMonitor, {});
 export default crons;
