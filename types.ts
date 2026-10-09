@@ -1,3 +1,4 @@
+import type { SourceProperties } from './lib/sourceProperties';
 
 export type CollectionType = string; // Was 'furniture' | 'decor' | ... now dynamic
 
@@ -116,7 +117,7 @@ export interface Product {
   sourceScopeStatus?: 'whole_listing' | 'confirmed_subset' | 'needs_confirmation';
   sourceVariantScope?: string[];
   sourceEvidenceOverrides?: { facts?: string; attributeKeys?: string[]; useDescription?: boolean };
-  sourceProperties?: Record<string, string>;
+  sourceProperties?: SourceProperties;
   rawSourceDescription?: string;    // Cleaned source detail text for smart descriptions
   rawHtmlDescription?: string;      // Raw source detail HTML for smart descriptions
   descriptionImages?: string[];     // Source detail/marketing images for smart descriptions
@@ -345,7 +346,7 @@ export interface SourceProduct extends Product {
   productUrl: string;
   source?: ProductSource;
   /** Structured product attributes extracted from OTAPI (material, season, style, etc.) */
-  sourceProperties?: Record<string, string>;
+  sourceProperties?: SourceProperties;
   /** Cleaned source listing/detail text used for smart description generation. */
   rawSourceDescription?: string;
   /** Raw source listing/detail HTML used for source normalization and image/detail context. */

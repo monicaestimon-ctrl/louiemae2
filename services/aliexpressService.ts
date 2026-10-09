@@ -1,3 +1,4 @@
+import { serializeSourceProperties } from '../lib/sourceProperties';
 /**
  * Product Sourcing API Service
  * Uses OTAPI 1688 on RapidAPI for product data from 1688.com
@@ -195,7 +196,7 @@ export const aliexpressService = {
                     productUrl: p.url || '',
                     source: p.source || '1688',
                     // Structured product attributes for AI description generation
-                    sourceProperties: p.sourceProperties || undefined,
+                    sourceProperties: serializeSourceProperties(p.sourceProperties || undefined),
                     rawSourceDescription: p.rawSourceDescription || p.description || undefined,
                     rawHtmlDescription: p.rawHtmlDescription || undefined,
                 } as SourceProduct)),

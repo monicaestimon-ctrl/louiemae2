@@ -1,3 +1,4 @@
+import { serializeSourceProperties } from './sourceProperties';
 import type { ImportableProduct } from './importableProduct';
 import type { CollectionType } from '../types';
 import { cleanOtapiDescription, extractOtapiSourceProperties } from './otapiHelpers';
@@ -92,7 +93,7 @@ export const buildBatchImportProduct = (
             descriptionImages: result.descriptionImages || [],
             rawSourceDescription: result.rawDescription || '',
             rawHtmlDescription: result.rawHtmlDescription || '',
-            sourceProperties: Object.keys(sourceProperties).length ? sourceProperties : undefined,
+            sourceProperties: Object.keys(sourceProperties).length ? serializeSourceProperties(sourceProperties) : undefined,
         };
     }
 

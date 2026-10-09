@@ -1,3 +1,4 @@
+import { serializeSourceProperties } from '../lib/sourceProperties';
 import { descriptionMetadata, DetailsAndStory, type DetailsAndStoryActions } from './product/DetailsAndStory';
 import { buildImportGenerationInput } from '../lib/productGeneration';
 import React, { useState, useEffect, useRef } from 'react';
@@ -946,7 +947,7 @@ const ProductImportStudio: React.FC<ProductImportProps> = ({
                 sourceSnapshotId: p.sourceSnapshotId,
                 sourceScopeStatus: p.sourceScopeStatus,
                 sourceEvidenceOverrides: p.sourceEvidenceOverrides,
-                sourceProperties: p.sourceProperties,
+                sourceProperties: serializeSourceProperties(p.sourceProperties),
                 rawSourceDescription: p.rawSourceDescription || undefined,
                 rawHtmlDescription: p.rawHtmlDescription || undefined,
                 descriptionImages: p.descriptionImages || undefined,

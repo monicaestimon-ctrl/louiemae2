@@ -1,3 +1,4 @@
+import { sourcePropertyEntries } from './sourceProperties';
 import { buildBatchImportProduct } from './batchImportProduct';
 import { buildSourceProductSnapshot, type SourceProductSnapshot } from './smartDescription';
 
@@ -7,7 +8,7 @@ export function sourceFromImportPayload(result: Parameters<typeof buildBatchImpo
     const snapshot = buildSourceProductSnapshot({ name: product.name, sourceUrl: product.productUrl,
         rawDescription: product.rawSourceDescription || product.description, htmlDescription: product.rawHtmlDescription,
         images: product.images, descriptionImages: product.descriptionImages, variants: product.variants,
-        attributes: Object.entries(product.sourceProperties ?? {}).map(([key, value]) => ({ key, value: String(value), source: 'otapi_property' as const, confidence: .9 })),
+        attributes: sourcePropertyEntries(product.sourceProperties).map(({ key, value }) => ({ key, value: String(value), source: 'otapi_property' as const, confidence: .9 })),
         price: product.sourcePriceOriginal ?? product.sourcePriceCny ?? product.price,
         currency: product.sourcePriceCny ? 'CNY' : product.sourceCurrency || 'USD',
         sellerName: product.seller?.name, sellerRating: product.seller?.rating, salesCount: product.reviewCount,

@@ -1,3 +1,4 @@
+import { serializeSourceProperties } from '../lib/sourceProperties';
 
 import React, { createContext, useContext, ReactNode, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useConvexAuth } from 'convex/react';
@@ -207,12 +208,12 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // --- Product Actions ---
   const addProduct = async (newProductData: Omit<Product, 'id'>): Promise<string | null> => {
-    const productId = await createProduct(newProductData as any);
+    const productId = await createProduct({ ...newProductData, sourceProperties: serializeSourceProperties(newProductData.sourceProperties) } as any);
     return productId as string;
   };
 
   const addProducts = async (newProducts: Omit<Product, 'id'>[]): Promise<string[]> => {
-    const productIds = await createProductBatch({ products: newProducts } as any);
+    const productIds = await createProductBatch({ products: newProducts.map(product => ({ ...product, sourceProperties: serializeSourceProperties(product.sourceProperties) })) } as any);
     return productIds as string[];
   };
 
@@ -285,6 +286,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         .map((field) => [field, (updatedData as any)[field]])
         .filter(([, value]) => value !== undefined)
     );
+    if (updates.sourceProperties !== undefined) updates.sourceProperties = serializeSourceProperties(updatedData.sourceProperties);
     await updateProductMutation({
       id: id as Id<"products">,
       expectedRevision: updatedData.productRevision,

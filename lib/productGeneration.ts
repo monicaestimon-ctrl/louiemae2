@@ -1,3 +1,4 @@
+import { sourcePropertyEntries, type SourceProperties } from './sourceProperties';
 import { buildSourceProductSnapshot, normalizeVariants, sanitizeSourceText, type SourceProductSnapshot } from './smartDescription';
 import type { Product } from '../types';
 
@@ -59,7 +60,7 @@ export function buildGenerationSnapshot(source: SourceProductSnapshot, selection
 
 export function buildImportGenerationInput(product: {
     name: string; productUrl?: string; sourceUrl?: string; description?: string; rawSourceDescription?: string; rawHtmlDescription?: string;
-    sourceProperties?: Record<string, string>; images?: string[]; descriptionImages?: string[];
+    sourceProperties?: SourceProperties; images?: string[]; descriptionImages?: string[];
     variants?: GenerationSelection['variants']; selectedVariants?: string[]; selectedImages?: number[]; imageOrder?: number[];
     sourceSnapshotId?: string; sourceScopeStatus?: string; sourceEvidenceOverrides?: SourceEvidenceOverrides;
     targetCollection?: string; collection?: string; targetSubcategory?: string; category?: string; targetSubcategoryIds?: string[];
@@ -78,7 +79,7 @@ export function buildImportGenerationInput(product: {
     const sourceSnapshot = buildSourceProductSnapshot({ name: product.name, sourceUrl: context.sourceUrl,
         rawDescription: product.rawSourceDescription, htmlDescription: product.rawHtmlDescription,
         images: product.images, descriptionImages: product.descriptionImages, variants: product.variants,
-        attributes: Object.entries(product.sourceProperties ?? {}).map(([key, value]) => ({ key, value, source: 'otapi_property' as const, confidence: .9 })),
+        attributes: sourcePropertyEntries(product.sourceProperties).map(({ key, value }) => ({ key, value, source: 'otapi_property' as const, confidence: .9 })),
         price: product.price, currency: product.sourceCurrency });
     return { sourceSnapshot, sourceSnapshotId: product.sourceSnapshotId, selection, context };
 }
