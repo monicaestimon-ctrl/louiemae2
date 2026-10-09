@@ -330,3 +330,13 @@ before treating the change as live. Its measured pre-change no-match baseline wa
 also 621 source documents / 8,691,954 bytes. Reverting only that helper to its old
 filter scan is compatible with leaving the additive index in place, but restores
 its former read cost. This change does not alter webhook retention or schedules.
+
+### Webhook redelivery retry ceiling
+
+The webhook claim mutation applies the eight-attempt ceiling to every reclaim path,
+including retryable events and expired processing leases. Provider redelivery cannot
+bypass the scheduled retry limit. Exhausted records and their recovery payloads are
+preserved; no automatic reset, deletion, or extra supplier action is performed.
+The final allowed attempt remains claimable, and only its current claim owner may
+complete it. Bounded stale recovery keeps active leases intact and schedules each
+recovered event once. Regression coverage: `convex/cjWebhookRecovery.test.ts`.

@@ -1520,7 +1520,8 @@ export const claimWebhookProcessing = internalMutation({
                 Number.isFinite(claimedAtMs) &&
                 Date.now() - claimedAtMs > CJ_WEBHOOK_PROCESSING_TIMEOUT_MS;
             const retryableFailure = existing.status === "failed" && (existing.attempts || 1) < 8;
-            const retryableStatus = existing.status === "retryable" || retryableFailure || staleProcessing;
+            const retryableStatus = (existing.status === "retryable" || retryableFailure || staleProcessing)
+                && (existing.attempts ?? 1) < 8;
 
             if (!retryableStatus) {
                 return { claimed: false, status: existing.status || "processed" };
