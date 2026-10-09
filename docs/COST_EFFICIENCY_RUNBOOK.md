@@ -341,18 +341,36 @@ The final allowed attempt remains claimable, and only its current claim owner ma
 complete it. Bounded stale recovery keeps active leases intact and schedules each
 recovered event once. Regression coverage: `convex/cjWebhookRecovery.test.ts`.
 
-## Compact webhook recovery queue (additive rollout)
+## Compact webhook recovery queue and index retirement
 
-The October 9 provider table report attributed 5,676,945,241 bytes to webhook documents and 17,030,835,723 bytes to their indexes, across the project. The per-table deployment filter was not honored. These are storage quantities, not a promised invoice reduction.
+The October 9 provider table report attributed 5,676,945,241 bytes to webhook documents and 17,030,835,723 bytes to their indexes across the project. Its per-table deployment filter was not honored. Index bytes are aggregate, not a measurement of this individual index or a promised invoice reduction.
 
-The `webhookRecoveryQueue` contains only processing webhook IDs and lease timing. Source event identities, payloads, status transitions, claim tokens, and retry limits remain in `cjWebhookLog`. Wrapped source writes maintain queue membership in the same transaction. Payload-only changes do not rewrite queue rows.
+PR168 deployed a processing-only queue, completed its bounded source/queue verification in development and production, and enabled both readers. Both environments had zero processing records during migration; populated-event behavior was verified separately in integration tests. Scheduled recovery subsequently succeeded in both environments. Source event identities, unresolved payloads, status transitions, claim tokens, and retry limits remain in `cjWebhookLog`; wrapped source writes maintain the queue transactionally.
 
-This release retains `by_status_claimed_at`. Recovery uses that existing index by default. To migrate separately in development, then production:
+The retirement release removes only `cjWebhookLog.by_status_claimed_at`. It retains `by_message_id` for deduplication and `by_expiry` for retention tooling. No source records are deleted, no cleanup is enabled, and monitoring remains paused. The recovery reader requires an enabled, verified queue and refuses drift. It never falls back to a historical table scan.
 
-1. Inspect `webhookRecoveryQueue:status`; never restart a verified, enabled queue automatically.
-2. Call `webhookRecoveryQueue:begin` once. Advance using the returned epoch, phase, and cursor through `webhookRecoveryQueue:advance`. Each call reads at most two processing source rows or two queue rows plus their sources. The source query uses the processing-status index, not historical table scans.
-3. Stop on `failed` and inspect the exact mismatch IDs. `repair` accepts at most five webhook IDs; it modifies only derived queue rows. Restart verification after repair.
-4. Require completed source and orphan passes with `phase=verified`, then call `setEnabled` with `enabled=true`. The normal recovery schedule and function contract stay unchanged.
-5. Verify the operational schedule remains intact and review recovery results. A queue/source mismatch stops the queue reader instead of processing stale derived data.
+### Deployment gate
 
-Rollback in this additive release is `setEnabled({enabled:false})`, restoring the existing indexed reader. Removing the old index is a separate release after both environments are verified. After index removal, a rollback to that old reader would require rebuilding its index; review that cost and delay before removal. This rollout does not authorize historical identity or payload deletion, start cleanup, or resume monitoring.
+1. Before deployment, check `webhookRecoveryQueue:status` independently in each target. Require `enabled=true`, `phase=verified`, and no mismatches. Do not deploy retirement over an unfinished PR168 migration.
+2. Run the Convex deployment dry run. Require exactly one removed index: `cjWebhookLog.by_status_claimed_at`. Large-index removal requires the CLI's explicit `--allow-deleting-large-indexes` option. Scope that option to this reviewed deployment; do not add a permanent bypass to CI.
+3. Deploy development, inspect deployed indexes and queue readiness, and verify scheduled recovery. Deploy the exact reviewed, CI-passing head to production with the same gate and explicit index-removal option, then merge it. Main CI redeploys the same schema with no remaining index removal. This ordering keeps the ordinary CI deletion guard intact.
+4. Verify the seven operational schedules and a post-release recovery completion. Measure provider storage estimates separately before and after; reporting lag or unrelated writes may affect the result.
+
+### New deployments and repair
+
+Before a genuinely empty deployment receives its first webhook, call `webhookRecoveryQueue:initializeEmpty`. It atomically checks that both source and queue are empty before creating a verified, enabled state. Repeated calls on an already verified, enabled deployment leave its state unchanged. An existing nonempty deployment without verified coverage must use the PR168 migration release first; this endpoint cannot certify it.
+
+`repair` still accepts at most five exact webhook IDs and only synchronizes derived queue rows from the authoritative source. Use it for a known mismatch. It is not a substitute for proving complete coverage after an unknown out-of-band change. The writer guard must continue covering every source mutation.
+
+### Rollback or full rebuild
+
+Old `begin`, `advance`, and `setEnabled(false)` calls now fail before changing state, explaining the prerequisite below. They do not disable scheduled recovery or initiate an expensive history scan.
+
+For an unknown coverage issue or a required return to the legacy reader:
+
+1. Restore PR168's `cjWebhookLog.by_status_claimed_at` definition as a schema-only change while retaining the current queue reader. Deploy and wait for index backfill to finish; the many historical records mean this can take time and add storage. A staged index may be used for background rebuilding if needed.
+2. Restore PR168's recovery maintenance and migration functions from commit `aaf35f5d6f2bbeebf851d7751e1376923d149cdd`, preserving unrelated later changes. Deploy only after the restored index is ready. Convex also ensures a newly defined index is backfilled before registering functions that use it.
+3. Call the restored `setEnabled(false)` to return to indexed source recovery. Source maintenance continues. For a rebuild, call restored `begin`, then advance with its epoch/phase/cursor through processing-source backfill, source verification, and orphan verification. Stop on mismatches and use bounded repair.
+4. Re-enable only when the restored migration reaches `verified`. Index retirement is a separate reviewed release again.
+
+Do not blindly revert all of main, assume a code revert restores the index instantly, or delete webhook identities to accelerate recovery. Index lifecycle reference: https://docs.convex.dev/database/reading-data/indexes/.

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { convexTest } from 'convex-test';
 import { makeFunctionReference } from 'convex/server';
 import schema from './schema';
+import { syncRecoveryQueue } from './webhookRecoveryMaintenance';
 
 const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 const claim = makeFunctionReference<'mutation'>('cjHelpers:claimWebhookProcessing');
@@ -41,11 +42,15 @@ describe('webhook retry and crash recovery', () => {
 
   it('recovers bounded stale work once while retaining exhausted and unrecoverable identities', async () => {
     const t = convexTest(schema, modules);
+    await t.mutation(makeFunctionReference<'mutation'>('webhookRecoveryQueue:initializeEmpty'), {});
     await t.run(async ctx => {
       for (let i = 0; i < 3; i++) await ctx.db.insert('cjWebhookLog', { ...fixture(), messageId: `stale-${i}`, status: 'processing', attempts: 2 });
       await ctx.db.insert('cjWebhookLog', { ...fixture(), messageId: 'exhausted', status: 'processing', attempts: 8 });
       await ctx.db.insert('cjWebhookLog', { ...fixture(), messageId: 'no-payload', status: 'processing', payload: undefined });
       await ctx.db.insert('cjWebhookLog', { ...fixture(), messageId: 'active', status: 'processing', claimedAt: new Date().toISOString() });
+    });
+    await t.run(async ctx => {
+      for (const row of await ctx.db.query('cjWebhookLog').collect()) await syncRecoveryQueue(ctx, row._id, row);
     });
     await t.mutation(recover, { limit: 2 });
     expect(await t.run(ctx => ctx.db.system.query('_scheduled_functions').collect())).toHaveLength(2);
