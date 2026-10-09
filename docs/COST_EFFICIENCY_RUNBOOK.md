@@ -340,3 +340,19 @@ preserved; no automatic reset, deletion, or extra supplier action is performed.
 The final allowed attempt remains claimable, and only its current claim owner may
 complete it. Bounded stale recovery keeps active leases intact and schedules each
 recovered event once. Regression coverage: `convex/cjWebhookRecovery.test.ts`.
+
+## Compact webhook recovery queue (additive rollout)
+
+The October 9 provider table report attributed 5,676,945,241 bytes to webhook documents and 17,030,835,723 bytes to their indexes, across the project. The per-table deployment filter was not honored. These are storage quantities, not a promised invoice reduction.
+
+The `webhookRecoveryQueue` contains only processing webhook IDs and lease timing. Source event identities, payloads, status transitions, claim tokens, and retry limits remain in `cjWebhookLog`. Wrapped source writes maintain queue membership in the same transaction. Payload-only changes do not rewrite queue rows.
+
+This release retains `by_status_claimed_at`. Recovery uses that existing index by default. To migrate separately in development, then production:
+
+1. Inspect `webhookRecoveryQueue:status`; never restart a verified, enabled queue automatically.
+2. Call `webhookRecoveryQueue:begin` once. Advance using the returned epoch, phase, and cursor through `webhookRecoveryQueue:advance`. Each call reads at most two processing source rows or two queue rows plus their sources. The source query uses the processing-status index, not historical table scans.
+3. Stop on `failed` and inspect the exact mismatch IDs. `repair` accepts at most five webhook IDs; it modifies only derived queue rows. Restart verification after repair.
+4. Require completed source and orphan passes with `phase=verified`, then call `setEnabled` with `enabled=true`. The normal recovery schedule and function contract stay unchanged.
+5. Verify the operational schedule remains intact and review recovery results. A queue/source mismatch stops the queue reader instead of processing stale derived data.
+
+Rollback in this additive release is `setEnabled({enabled:false})`, restoring the existing indexed reader. Removing the old index is a separate release after both environments are verified. After index removal, a rollback to that old reader would require rebuilding its index; review that cost and delay before removal. This rollout does not authorize historical identity or payload deletion, start cleanup, or resume monitoring.

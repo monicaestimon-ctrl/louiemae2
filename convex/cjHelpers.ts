@@ -1,3 +1,4 @@
+import { staleRecoveryRows } from './webhookRecoveryMaintenance';
 import { indexedInventoryProducts } from './cjInventoryTargetMaintenance';
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation } from "./functions";
@@ -1680,10 +1681,7 @@ export const recoverStaleWebhookProcessing = internalMutation({
     handler: async (ctx, args) => {
         const limit = Math.min(Math.max(args.limit ?? 20, 1), 50);
         const cutoff = new Date(Date.now() - CJ_WEBHOOK_PROCESSING_TIMEOUT_MS).toISOString();
-        const stale = await ctx.db
-            .query("cjWebhookLog")
-            .withIndex("by_status_claimed_at", (q) => q.eq("status", "processing").lt("claimedAt", cutoff))
-            .take(limit);
+        const stale = await staleRecoveryRows(ctx, cutoff, limit);
         let recovered = 0;
         for (const record of stale) {
             if (!record.payload || (record.attempts ?? 1) >= 8) {

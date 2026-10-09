@@ -1,3 +1,4 @@
+import { syncRecoveryQueue } from './webhookRecoveryMaintenance';
 import { inventoryTargets, syncInventoryTargets } from './cjInventoryTargetMaintenance';
 import { mutation as rawMutation, internalMutation as rawInternalMutation } from './_generated/server';
 import { customCtx, customMutation } from 'convex-helpers/server/customFunctions';
@@ -14,6 +15,10 @@ import { syncWebhookSummary, webhookSummaryProjection } from './webhookSummaryMa
 // a completed, verified backfill. Irrelevant telemetry must not invalidate lists.
 const triggers = new Triggers<DataModel>();
 triggers.register('cjWebhookLog', async (ctx, change) => {
+  if ((change.oldDoc?.status === 'processing' || change.newDoc?.status === 'processing')
+    && (change.oldDoc?.status !== change.newDoc?.status || change.oldDoc?.claimedAt !== change.newDoc?.claimedAt)) {
+    await syncRecoveryQueue(ctx, change.id, change.newDoc);
+  }
   if (change.oldDoc && change.newDoc && sameCatalogValue(webhookSummaryProjection(change.oldDoc), webhookSummaryProjection(change.newDoc))) return;
   await syncWebhookSummary(ctx, change.id, change.newDoc);
 });
