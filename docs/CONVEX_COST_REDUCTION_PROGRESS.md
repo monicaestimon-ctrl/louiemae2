@@ -9,6 +9,25 @@ solely because a narrower test passes.
 
 ## Production rollout verified October 9, 2026 UTC
 
+CJ recovery follow-up: the newest inventory failure at 02:18:15 UTC reported
+provider code `1600014` (API access disabled). The owner unfroze the integration.
+A bounded production refresh then checked and updated one product with zero
+errors in 29,838 ms, confirming restored inventory API access. This does not
+verify order submission or fulfillment permissions.
+
+The follow-up safeguard stops automated inventory batches on that explicit
+account-level error after the first failed provider request. It preserves the
+incomplete product's prior stock and freshness timestamp, records the actual
+checked/deferred counts, and keeps the normal cron retry for automatic recovery.
+Earlier completed products remain committed; ordinary per-product errors and
+manual refresh behavior retain their existing semantics. Five targeted tests
+cover VID/SKU/PID failures, partial-product preservation, recovery, and unchanged
+ordinary/manual error handling.
+
+Follow-up validation: 627 tests in 102 files passed; application and strict
+Convex type checks passed; lint had zero errors and 507 existing warnings;
+production build and client-secret verification passed.
+
 This entry supersedes the historical blocked/held statuses below. PR 154 merged
 all six held frontend changes at `c9bc8ac63fe3d87eba3c711f98a3de95926f0557`.
 PR CI `37872498592` and main CI/backend deployment `37872707431` passed.

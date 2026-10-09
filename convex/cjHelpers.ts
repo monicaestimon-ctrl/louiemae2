@@ -213,6 +213,8 @@ export const recordInventoryPollRun = internalMutation({
         errors: v.number(),
         providerTokenRequested: v.boolean(),
         durationMs: v.number(),
+        stoppedReason: v.optional(v.literal("provider_access_disabled")),
+        deferredProvider: v.optional(v.number()),
     },
     handler: (ctx, args) => {
         const now = Date.now();

@@ -998,6 +998,8 @@ export default defineSchema({
         errors: v.number(),
         providerTokenRequested: v.boolean(),
         durationMs: v.number(),
+        stoppedReason: v.optional(v.literal("provider_access_disabled")),
+        deferredProvider: v.optional(v.number()),
         createdAt: v.number(),
         expiresAt: v.number(),
     }).index("by_created_at", ["createdAt"])

@@ -609,6 +609,8 @@ export const refreshProductInventory = internalAction({
         checked: number;
         updated: number;
         errors: number;
+        stoppedReason?: "provider_access_disabled";
+        deferredProvider?: number;
         products: Array<{
             productId: string;
             name: string;
@@ -631,6 +633,8 @@ export const refreshProductInventory = internalAction({
             updated: number;
             errors: number;
             providerTokenRequested: boolean;
+            stoppedReason?: "provider_access_disabled";
+            deferredProvider?: number;
         }) => ctx.runMutation(internal.cjHelpers.recordInventoryPollRun, {
             source,
             eligible: plan.eligible,
@@ -669,11 +673,24 @@ export const refreshProductInventory = internalAction({
         }> = [];
         let updated = 0;
         let errors = 0;
+        const stopForDisabledAccess = async (product: { _id: string; name: string }, error: string) => {
+            const stoppedReason = "provider_access_disabled" as const;
+            const checked = results.length + 1;
+            const deferredProvider = products.length - checked;
+            await recordRun({ checked, updated, errors: errors + 1,
+                providerTokenRequested: true, stoppedReason, deferredProvider });
+            // Keep prior snapshots and freshness timestamps. An account-level
+            // failure is not evidence of zero stock or a complete product check.
+            return { eligible: plan.eligible, deferredFresh: plan.deferredFresh,
+                checked, updated, errors: errors + 1, stoppedReason, deferredProvider,
+                products: [...results, { productId: product._id, name: product.name, status: "error", error }] };
+        };
 
         try {
           for (const product of products) {
             const checkedAt = new Date().toISOString();
             const snapshots: CjInventorySnapshot[] = [];
+            let disabledAccessError: string | undefined;
             const targets = getProductInventoryTargets(product, {
                 variantId: args.variantId,
                 vid: args.vid,
@@ -691,6 +708,10 @@ export const refreshProductInventory = internalAction({
 
                     if (!inventoryResult) continue;
                     if (inventoryResult.ok === false) {
+                        if (source === "cron" && inventoryResult.error.code === 1600014) {
+                            disabledAccessError = formatCjApiError(inventoryResult.error);
+                            break;
+                        }
                         snapshots.push(createCjInventoryErrorSnapshot({
                             vid: target.vid,
                             sku: target.sku,
@@ -718,10 +739,15 @@ export const refreshProductInventory = internalAction({
                 }
             }
 
+            if (disabledAccessError) return await stopForDisabledAccess(product, disabledAccessError);
+
             if (snapshots.length === 0 && product.cjProductId) {
                 await waitForCjInventoryRequestSlot(ctx);
                 const inventoryResult = await getInventoryByPid(accessToken, product.cjProductId);
                 if (inventoryResult.ok === false) {
+                    if (source === "cron" && inventoryResult.error.code === 1600014) {
+                        return await stopForDisabledAccess(product, formatCjApiError(inventoryResult.error));
+                    }
                     snapshots.push(createCjInventoryErrorSnapshot({
                         lastCheckedAt: checkedAt,
                         lowStockThreshold,
