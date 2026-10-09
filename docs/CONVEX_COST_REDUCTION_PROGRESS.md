@@ -7,7 +7,62 @@ incremental health/sourcing summaries, CJ scheduling, webhook retention, Nexx
 preview jobs, and regression/operational guidance. No phase is considered complete
 solely because a narrower test passes.
 
-## Phase 0 baseline
+## Production rollout verified October 9, 2026 UTC
+
+This entry supersedes the historical blocked/held statuses below. PR 154 merged
+all six held frontend changes at `c9bc8ac63fe3d87eba3c711f98a3de95926f0557`.
+PR CI `37872498592` and main CI/backend deployment `37872707431` passed.
+Validation: 622 tests in 101 files, both type checks, lint (zero errors,
+507 warnings), 58 covered writers, build and client-secret verification.
+
+The owner transferred LouieMae to `monica-estimon`; production remains
+`diligent-jay-261`. Existing Starter billing settings have a $30 warning and $35
+disable threshold; neither was changed. Deployment database I/O warnings were
+added at 1 GB daily and 5 GB monthly, without a deployment disable threshold.
+These conservative initial alerts require calibration to measured normal usage.
+
+All four production read-model gates were verified and enabled:
+
+- Catalog v5: 621 products; 1,242 bidirectional checks; no mismatches.
+- Health v3: 621 products and independent totals; revision 623, after a live
+  update required reverification before activation.
+- Sourcing counts v1: 603 jobs; exact totals at revision 603.
+- Webhook summaries v1: recent scope; 300 checks for the exact latest-100
+  dashboard window. Production has 23,209,840 historical events; no full-history
+  duplication or historical deletion was performed.
+
+Vercel `dpl_BFkKcHtdrfyERgdsJRELFo43ag1t` was built without custom domain
+assignment, checked, and promoted. Both `www.louiemae.com` and `louiemae.com`
+independently resolved to this Ready deployment. The prior rollback deployment
+is `dpl_81sjJPfhr3kDvZ5gK8e6ECUfAhUG`.
+
+Read-only operator checks reached all 621 admin products across 25 pages, with
+unique IDs and authoritative detail. They used the existing allowlisted admin
+through Convex's identity-debug API; they do not prove browser login or editing.
+Operations counts were untruncated; the webhook sample contained 100 processed
+events. Public catalog checks reached 29 visible products across two pages in
+each sort mode, with unique IDs, ascending-price ordering and full detail.
+Anonymous admin access returned an error without records. The landing page
+rendered; the furniture empty state matched zero published furniture products.
+
+The final deployment dashboard showed 12.39K monthly calls and 0.19 GB database
+I/O. These include migrations and unrelated activity, not an isolated benchmark.
+
+Remaining verification and operations work:
+
+- Authenticated browser editing/import/CJ flows and provider-safe checkout;
+  the admin browser is signed out and the user login request is pending.
+- Equivalent-workload savings, worker/queue freshness and longer scheduled-job
+  measurements. The 80% target has not been established in production.
+- Historical retention: the bounded expiry preview found no eligible rows.
+  Five oldest sampled events had no payload/expiry; three sampled August events
+  retained payloads with future expiry. This ten-record sample is not a complete
+  age/size allocation. No old records were deleted or cleanup schedule enabled.
+- Nexx production `blessed-rabbit-457` still explicitly reports free-plan
+  disablement (request `bbba51ae3b0d52b1`). LouieMae's transfer did not restore it;
+  live upload/cleanup and idle-usage checks remain pending service restoration.
+
+## Historical phase 0 baseline
 
 - Repository: `monicaestimon-ctrl/louiemae2`; default branch: `main`.
 - Remote baseline: `ce92fc33643d231e50c97015b92433096009779d` (PR 127).

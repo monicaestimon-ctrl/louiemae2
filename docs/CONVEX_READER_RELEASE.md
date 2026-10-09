@@ -8,9 +8,11 @@ their commits without requiring six separate production frontend deployments.
 
 ## Readiness gates
 
-Production target: LouieMae `diligent-jay-261`. The existing frontend is PR 146's
-Vercel deployment `dpl_81sjJPfhr3kDvZ5gK8e6ECUfAhUG`; the deployed backend main
-revision is `3cc6103cf375da53753722e6b21de9f0697cb750` (PR 152).
+Production target: LouieMae `diligent-jay-261`. PR 154 merged at
+`c9bc8ac63fe3d87eba3c711f98a3de95926f0557`; main CI/backend deployment
+`37872707431` passed. Vercel `dpl_BFkKcHtdrfyERgdsJRELFo43ag1t` is Ready and
+promoted to both custom domains. PR 146's `dpl_81sjJPfhr3kDvZ5gK8e6ECUfAhUG`
+remains the prior compatible frontend for rollback.
 
 On October 9, 2026 UTC, authenticated production functions succeeded after the
 owner transferred the existing project to `monica-estimon`. The deployment URL
@@ -19,8 +21,10 @@ catalog v5 backfill completed for 621 products and passed 1,242 bidirectional
 checks without mismatches. Catalog readers are enabled. Health v3 independently
 verified all 621 products and totals, then activated at revision 623 after a live
 update required reverification. Sourcing counts verified 603 jobs and activated
-at revision 603. End-to-end frontend release verification remains pending.
-Code deployment success alone does not establish application availability.
+at revision 603. Webhook summaries passed 300 recent-window checks and are enabled.
+Public browser and operator read checks passed; authenticated browser editing,
+provider-safe checkout and workload cost measurements remain pending. See the
+latest entry in `CONVEX_COST_REDUCTION_PROGRESS.md` for the evidence and limits.
 
 The destination team's billing page reports Starter with an existing $30 monthly
 spending warning and $35 monthly disable threshold. These settings were inspected,
