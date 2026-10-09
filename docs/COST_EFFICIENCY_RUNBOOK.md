@@ -116,6 +116,16 @@ diagnostic; missing expiry metadata is not an expired record.
 
 Historical cleanup is a separate operation from deploying this code:
 
+For read-only age/size attribution, `webhookRetention:storageSample` accepts
+`fromInclusive` and `toExclusive` creation timestamps in milliseconds. Use a
+small, fixed set of monthly windows. It reads the earliest five records in each
+indexed window with a 2 MB page budget (a final record can cross that budget).
+Results expose IDs, types, statuses, expiry and estimated JSON byte sizes, never
+payload contents, message IDs, claim tokens or error text. These are chronological
+samples, not random samples or estimates of total storage. JSON sizes exclude
+index/platform overhead and must not be presented as billed storage. The query
+does not backfill metadata, authorize cleanup or change any source record.
+
 1. Confirm the deployment and recovery/backup requirements. Code rollback cannot
    recover discarded historical payloads.
 2. Backfill missing legacy expiry metadata through the existing dry-run-first

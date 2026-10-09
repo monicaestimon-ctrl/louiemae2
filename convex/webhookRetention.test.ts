@@ -13,12 +13,46 @@ const processed = makeFunctionReference<'mutation'>('cjHelpers:markWebhookProces
 const failed = makeFunctionReference<'mutation'>('cjHelpers:markWebhookFailed');
 const wasProcessed = makeFunctionReference<'query'>('cjHelpers:wasWebhookProcessed');
 const preview = makeFunctionReference<'query'>('webhookRetention:preview');
+const storageSample = makeFunctionReference<'query'>('webhookRetention:storageSample');
 const compact = makeFunctionReference<'mutation'>('webhookRetention:compact');
 const cleanup = makeFunctionReference<'mutation'>('dataLifecycle:cleanup');
 const payload = { messageId: 'event-1', type: 'ORDER', data: 'x'.repeat(100_000) };
 const oldLog = { messageId: 'old-event', type: 'ORDER', processedAt: '2026-01-01T00:00:00.000Z', payload, expiresAt: 1 };
 
 describe('webhook payload retention and deduplication', () => {
+  it('samples only the indexed age window, bounds rows, redacts contents and preserves source records', async () => {
+    const t = convexTest(schema, modules);
+    const before = await t.run(async ctx => {
+      for (let i = 0; i < 9; i++) await ctx.db.insert('cjWebhookLog', {
+        ...oldLog, messageId: `private-${i}`, payload: { confidential: 'é'.repeat(20) },
+        lastError: 'private diagnostic', claimToken: 'private token',
+        status: i === 1 ? 'failed' : 'processed',
+      });
+      return ctx.db.query('cjWebhookLog').collect();
+    });
+    const sample = await t.query(storageSample, { fromInclusive: before[1]._creationTime, toExclusive: before[7]._creationTime });
+    expect(sample.selection).toBe('earliest_in_window');
+    expect(sample.windowExhausted).toBe(false);
+    expect(sample.records.map((row: { id: string }) => row.id)).toEqual(before.slice(1, 6).map(row => row._id));
+    expect(sample.records[0]).toMatchObject({ status: 'failed', eligible: false, hasPayload: true });
+    expect(sample.records[1]).toMatchObject({ status: 'processed', eligible: true });
+    expect(sample.records[0].approximatePayloadJsonBytes).toBe(new globalThis.TextEncoder().encode(JSON.stringify(before[1].payload)).length);
+    expect(JSON.stringify(sample)).not.toMatch(/confidential|private diagnostic|private token|private-1/);
+    expect(await t.run(ctx => ctx.db.query('cjWebhookLog').collect())).toEqual(before);
+    expect(await t.query(storageSample, { fromInclusive: before[0]._creationTime, toExclusive: before[1]._creationTime }))
+      .toMatchObject({ windowExhausted: true, records: [{ id: before[0]._id }] });
+    expect(await t.query(storageSample, { fromInclusive: 0, toExclusive: 1 })).toMatchObject({ windowExhausted: true, records: [] });
+  });
+
+  it('requires admin access and valid storage-sample boundaries', async () => {
+    const t = convexTest(schema, modules);
+    vi.mocked(requireCjAdminIdentity).mockRejectedValueOnce(new Error('Not an admin'));
+    await expect(t.query(storageSample, { fromInclusive: 0, toExclusive: 1 })).rejects.toThrow('Not an admin');
+    for (const args of [{ fromInclusive: -1, toExclusive: 1 }, { fromInclusive: 1, toExclusive: 1 }, { fromInclusive: 2, toExclusive: 1 }]) {
+      await expect(t.query(storageSample, args)).rejects.toThrow('creation-time window');
+    }
+  });
+
   it('clears a successful payload but preserves duplicate suppression indefinitely', async () => {
     const t = convexTest(schema, modules);
     const args = { messageId: 'event-1', type: 'ORDER', payload };

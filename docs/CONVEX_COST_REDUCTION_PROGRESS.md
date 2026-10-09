@@ -9,6 +9,42 @@ solely because a narrower test passes.
 
 ## Production rollout verified October 9, 2026 UTC
 
+PR 156 merged at `26710f6a96585b787cc6360b715aa2a140016c3f`; main run
+`37875817115` deployed successfully to `diligent-jay-261`. The post-deployment
+single-product refresh succeeded; a scheduled batch subsequently updated all
+25 selected products with zero errors. Inventory scheduling metadata was
+backfilled for 145 approved products in batches of 25. A complete verification
+pass found zero approved products still missing `cjInventoryNextCheckAt`.
+
+Read-only production measurements used the existing allowlisted operator identity
+and Convex execution usage statistics. They do not prove browser authentication:
+
+- Health: the old audit and all 23 new issue pages returned the same 621 total
+  products and 571 issue IDs/problem lists. The old audit read 8,516,488 bytes;
+  new status plus all issue pages read 1,297,987 bytes (84.76% less). No query
+  cache hits or database writes occurred in that comparison. This establishes
+  the health-read result, not total workload/invoice savings or write overhead.
+- Catalog: the legacy response and paginated reader reached identical sets of
+  500 IDs. Initial uncached reads were 8,662,744 bytes for the legacy list and
+  99,365 bytes for the first 25-row page. Full-list comparisons must account for
+  partial byte-budget pages and cache hits; do not extrapolate the initial-page
+  reduction to reading the entire catalog.
+- One legacy embedded JPEG was moved byte-for-byte into the same deployment's
+  file storage. SHA-256 equality was verified before replacing its image URL
+  with a revision-guarded update. All seven images remain; its catalog response
+  row shrank from 724,906 to 3,213 JSON bytes. Original image data is retained in
+  a local rollback artifact, with no storage/source deletion.
+- The current sourcing dashboard read 39,486 bytes with untruncated counts.
+  A subsequent available log window showed 32 inventory snapshot mutations,
+  43 sourcing dispatches and 43 completed legacy-backfill checks, with zero
+  errors or transaction retries. Completed backfill checks read/wrote zero
+  database bytes. The window includes operator activity and is not a controlled
+  before/after workload.
+
+Machine-readable evidence and the image rollback artifact are in the original
+workspace's `tmp/convex-*-2026-10-09.json` files. These exclude credentials;
+the rollback artifact retains the original public product image bytes.
+
 CJ recovery follow-up: the newest inventory failure at 02:18:15 UTC reported
 provider code `1600014` (API access disabled). The owner unfroze the integration.
 A bounded production refresh then checked and updated one product with zero
