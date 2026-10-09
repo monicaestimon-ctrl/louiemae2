@@ -7,6 +7,126 @@ incremental health/sourcing summaries, CJ scheduling, webhook retention, Nexx
 preview jobs, and regression/operational guidance. No phase is considered complete
 solely because a narrower test passes.
 
+## Current status — October 9, 2026, after PR 162
+
+This section supersedes the dated release history below. The complete original
+plan is still open; deployed code, workflow acceptance, and sustained cost
+verification are separate gates. Do not rerun completed migrations merely because
+an older entry describes them as held or blocked.
+
+### Releases and environments
+
+- LouieMae latest runtime source: PR 162, merge
+  `0349800e13794e2b7e9c66261e1f9d42786452cb`. Main CI and Convex deployment
+  [37983051068](https://github.com/monicaestimon-ctrl/louiemae2/actions/runs/37983051068)
+  passed. Vercel `dpl_CFWyKqmfj1U5bLvMNmUy1LPybKcc` is Ready on both custom
+  domains. The public site remains in prelaunch mode.
+- Production remains `diligent-jay-261`; development remains
+  `kindred-squid-489`. Production catalog v5 (621 products, 1,242 checks),
+  health v3 (621 products), sourcing counters (603 jobs), and recent webhook
+  summaries (300 checks) were verified and enabled. These are migration-time
+  counts, not a promise that live counts cannot change.
+- Development was updated through PR 161 backend code. Its 22-product catalog
+  passed 44 bidirectional checks; health (22 products), sourcing (3 jobs), and
+  recent webhook summaries (300 checks) were verified and enabled. PR 162 only
+  changes frontend code and tests; it needs no additional data migration.
+- Nexx production `blessed-rabbit-457` is restored after its separate transfer
+  to team `monica-estimon-39537`. PR 296 released preview controls and transfer
+  routing; browser release assurance run 37952535016 passed upload, chat
+  continuity, and exhibit-packet checks. PR 297 paused monitoring, with main CI
+  37966809428 and final one-off release assurance 37966914793 successful.
+  These historical checks do not authorize resuming scheduled tests.
+- LouieMae production/development and Nexx production plus inspected previews
+  `artful-chameleon-599` and `oceanic-basilisk-702` have monitoring paused.
+  Nexx development `avid-bobcat-637` remains an exception: its old monitoring
+  schedules were observed and the latest existing CLI authorization returned
+  404. Access to that transferred development deployment is still needed.
+
+### Functional evidence and limits
+
+- PR 158 isolates single-product editing from import-batch subscriptions.
+  Authenticated production browser review opened the correct Black Buffet
+  Sideboard as Product 1 of 1; no save was performed in that check.
+- PR 160 displays the pricing-monitor pause using the existing operations
+  response. An authenticated production admin tab showed the pause and an
+  enabled manual refresh control; manual refresh was not invoked.
+- PR 161 takes checkout amount, product details, and fulfillment identifiers
+  from authoritative stored products/variants. Invalid, deleted, hidden, or
+  unavailable selections fail closed. Development and production rejected an
+  invalid selection with HTTP 409 before Stripe session creation. Isolated
+  tests with mocked Stripe prove repeated paid-session delivery creates one
+  order; they do not prove external signature verification or real fulfillment.
+- PR 162 replaces static homepage recommendations with six furniture summaries
+  in featured order and selected-product detail reads. The existing selector
+  and cart flow are reused. Six new tests cover authoritative totals, required
+  variants, stock changes, selection reset, missing detail, and unavailable
+  catalog. Final suite: 655 tests in 105 files; frontend/Convex types, lint
+  (zero errors, 506 warnings), build, and client-secret scan passed.
+- Isolated development browser checks verified collection detail/cart quantity
+  and removal ($420 chair, quantity two, $840 subtotal), and homepage add/remove
+  ($850 sideboard). Both carts were emptied and temporary servers stopped.
+  No real payment, customer order, or supplier fulfillment was initiated.
+- CodeRabbit skipped automatic reviews under repository eligibility rules.
+  Direct diff reviews and CI passed; a skipped status is not independent review.
+
+### Original phase completion audit
+
+| Phase | Implemented/released evidence | Remaining exit gate |
+| --- | --- | --- |
+| 0: baseline | Deployment mapping, isolated checkout, rollback references, bounded measurements | Nexx dev access and webhook storage allocation by deployment |
+| 1A: subscription scope | Admin/single-editor demand scoped; combined reader release live | Complete authenticated edit/import/navigation acceptance |
+| 1B: catalog | Production/development summaries verified and enabled; paginated readers and selected authoritative details; homepage cart fixed | Broader filters/concurrent-edit browser acceptance and total maintenance-cost comparison |
+| 1C: health/sourcing | Verified summaries/counters; identical health results at 84.76% lower read bytes in the measured workload | Summary write overhead/contention and normal active-session workload |
+| 2A: CJ work | Due inventory scheduling, bounded sourcing/retries, restored inventory access | Complete sourcing, tracking and fulfillment acceptance; queue/freshness evidence over representative activity |
+| 2B: retention | New successful payload growth bounded; exact-ID dry-run/compaction tools | Historical storage allocation, replay policy, recovery review, approved cleanup and measured savings |
+| 3: Nexx | Production and inspected previews released; upload/chat assurance passed; monitoring paused | Pause inaccessible development schedules and verify idle activity without restarting monitoring |
+| 4: regression/runbook | Regression suite and release/runbook updates | Close remaining acceptance gates and assess actual billing-window trend |
+
+### Remaining sequence and boundaries
+
+1. Obtain existing-account CLI access to Nexx development, inspect its actual
+   schedules, deploy the reviewed monitoring pause, and verify operational
+   cleanup/recovery remains. Do not create replacement deployments or rotate
+   credentials to work around the missing access.
+2. Complete isolated admin edit/import/publication and provider-safe order,
+   tracking, retry/recovery checks. Verify summary updates as well as UI state.
+   Production business-state actions need their own specific scope; the earlier
+   single Puff Sleeve Tulle Dress reconciliation does not authorize mass retry.
+   That job was submitted with one attempt and zero failures; final sourcing
+   approval remains pending.
+3. Attribute the retained webhook storage before proposing cleanup. The latest
+   dashboard still attributed about 21.15 GB to cjWebhookLog. A complete expiry
+   preview returned no eligible rows. Small chronological samples mostly had
+   no payload; they cannot establish whole-table composition or savings.
+4. Establish provider replay limits and recovery requirements, then produce an
+   exact dry run and cleanup scope for approval before historical deletion.
+   Event identities currently prevent duplicate processing. Stock handling uses
+   receipt time; no provider-event-age guard was observed. Removing identities
+   could therefore admit old stock events as new updates. Do not shorten identity
+   retention based only on a documented retry count.
+5. Compare bounded equivalent workloads including writes, and manually inspect
+   usage during representative operation. The 84.76% health-read reduction is
+   proven for that comparison only; it is not a total-bill prediction. Keep
+   monitoring paused while collecting these one-off checks.
+6. Close the plan only when these gates have evidence. Historical storage,
+   external payment/fulfillment, and future billing savings remain unproven.
+
+Evidence is retained in the original workspace's dated JSON files:
+`homepage-cart-release-2026-10-09.json`,
+`checkout-catalog-release-2026-10-09.json`,
+`pricing-monitor-status-release-2026-10-09.json`,
+`production-fixes-release-2026-10-09.json`,
+`monitoring-pause-status-2026-10-09.json`,
+`louiemae-dev-read-models-2026-10-09.json`, and
+`convex-remaining-evidence-2026-10-09.json` under `tmp/`.
+They are local audit artifacts, not prerequisites for normal application startup.
+
+## Historical release evidence
+
+The entries below describe their recording time. In particular, references to a
+signed-out admin, disabled Nexx production, and held frontend releases are not
+current blockers. Consult the current audit above before any operational action.
+
 ## Production rollout verified October 9, 2026 UTC
 
 PR 156 merged at `26710f6a96585b787cc6360b715aa2a140016c3f`; main run

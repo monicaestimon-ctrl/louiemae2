@@ -4,6 +4,75 @@ This runbook keeps useful storefront, AI, import, inventory, and fulfillment
 features intact while preventing accidental spend and cross-environment data
 access.
 
+## Current operating state — October 9, 2026
+
+See [the completion audit](CONVEX_COST_REDUCTION_PROGRESS.md#current-status--october-9-2026-after-pr-162)
+for release identifiers, migration verification, measured savings, and unresolved
+gates. The original plan is not complete merely because the release is live.
+
+Production is `diligent-jay-261`; isolated development is `kindred-squid-489`.
+Both have verified catalog/health/sourcing/recent-webhook readers enabled.
+Public prelaunch mode stays enabled; do not disable it to perform acceptance.
+For isolated storefront tests, use a local process override against development
+and stop that process after restoring the test cart to its initial state.
+
+### Monitoring pause and operational work
+
+The owner requested all monitoring paused. Leave
+`BACKGROUND_MONITORING_ENABLED` unset or false and do not re-enable scheduled
+workflows or Codex automations without a new request. The pricing panel shows the
+pause; explicit manual refresh remains available. Time-driven health refresh and
+pricing monitoring are paused, while transactional summary maintenance continues.
+
+The verified LouieMae production/development scheduler contains only:
+
+| Job | Interval | Purpose |
+| --- | --- | --- |
+| sync-klaviyo-waitlist | 1 minute | Dispatch persisted signup work |
+| reconcile-klaviyo-consent | 15 minutes | Reconcile consent |
+| sync-cj-tracking | 4 hours | Update order tracking |
+| backfill-cj-sourcing-jobs | 1 minute | Bounded legacy sourcing recovery; completed checks do no database work |
+| dispatch-cj-sourcing-jobs | 1 minute | Lease and dispatch due sourcing |
+| recover-stale-cj-webhooks | 5 minutes | Recover abandoned processing claims |
+| sync-cj-inventory | 30 minutes | Check a bounded set of due inventory records |
+
+Preserve these operational jobs. Changing their intervals merely to reduce call
+counts can delay stock, orders, recovery, or signups. The missing Nexx development
+pause is tracked separately; do not claim every environment is paused until its
+scheduler can be inspected and updated. Nexx production and the two inspected
+previews retain twelve cleanup/recovery jobs. Four chat-upload monitoring
+workflows are disabled and `nexproof-daily-system-check` is paused.
+
+### Authoritative product and checkout behavior
+
+Catalog lists use compact paginated summaries; selected-product details use the
+source product. Homepage recommendations use a six-card furniture preview.
+Summary maintenance must stay transactional across edits, imports, publication,
+inventory, and sourcing changes. A readiness failure must not trigger a full
+catalog fallback. Use bounded integrity/repair tools rather than repeating an
+entire migration by default.
+
+Checkout resolves stored product price plus the selected variant adjustment,
+name, images, and supplier mapping. Never accept browser prices or supplier IDs
+as authoritative. Missing/deleted/hidden/unavailable selections fail closed,
+including when automatic fulfillment is disabled. Preserve payment-event and
+supplier idempotency when testing retries.
+
+### Release and rollback
+
+Latest runtime frontend: PR 162, `dpl_CFWyKqmfj1U5bLvMNmUy1LPybKcc`.
+Prior compatible frontend: PR 160, `dpl_91bkRfBGxCm3chbecaFJf1jyZbk2`.
+The latter retains the old homepage gap but is compatible with the existing
+backend; do not roll back authoritative checkout merely to revert a UI defect.
+
+For a verified frontend regression, restore the prior deployment with the linked
+project's CLI: `vercel rollback dpl_91bkRfBGxCm3chbecaFJf1jyZbk2 --scope team_9duTzU0GI03przH6ifcdZFKt`.
+Then inspect the alias target and repeat the affected flow. This is an emergency
+procedure, not an instruction to roll back now. Keep the current read-model gates
+and maintenance enabled unless a separately verified backend defect requires a
+compatible backend rollback. Never disable a required gate under active clients.
+Code rollback cannot restore deleted historical data.
+
 ## Environment boundaries
 
 | Runtime | Frontend Convex target | Convex secrets | Intended data |
@@ -37,8 +106,10 @@ These changes require dashboard access and are intentionally not automated:
 
 The repository's ignoreCommand runs scripts/vercel-ignore-build.mjs.
 Documentation-only and GitHub-automation-only commits skip a Vercel build;
-runtime changes still build normally. CI cancels superseded runs and deploys
-Convex without repeating the already completed frontend build.
+runtime changes still build normally. CI cancels superseded PR runs but preserves
+main runs once started. It deploys Convex without repeating the already completed
+frontend build. The current GitHub workflow also runs for documentation changes;
+a successful backend job on such a commit is not a new functional backend release.
 
 Review monthly:
 
@@ -113,6 +184,18 @@ marks processing complete. Their message ID/status remains, so a delayed provide
 duplicate is still suppressed. Failed, retryable and in-progress events retain
 their payload. A successful event's `expiresAt: 0` denotes an already compacted
 diagnostic; missing expiry metadata is not an expired record.
+
+The October 9 expiry preview returned zero eligible records. About 21.15 GB was
+still attributed to cjWebhookLog in the dashboard, without verified allocation
+by deployment. Chronological samples often contained identity/status only; these
+small samples cannot explain the whole table. Running compaction repeatedly with
+no eligible rows will not establish storage savings.
+
+Provider retry count does not establish the maximum replay age. Stock processing
+currently records receipt time, so deleting an identity could allow an old stock
+event to be applied again as new. Keep identities until replay behavior and stale
+event handling are resolved. Failed/unresolved events stay protected. No historical
+deletion or automated cleanup is approved by the code-deployment authorization.
 
 Historical cleanup is a separate operation from deploying this code:
 
