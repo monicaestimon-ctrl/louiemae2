@@ -25,9 +25,7 @@ export async function syncRecoveryQueue(ctx: Pick<MutationCtx, 'db'>, webhookId:
 
 export async function staleRecoveryRows(ctx: Pick<QueryCtx, 'db'>, cutoff: string, limit: number) {
   const state = await getRecoveryQueueState(ctx);
-  if (!state?.enabled) return ctx.db.query('cjWebhookLog')
-    .withIndex('by_status_claimed_at', q => q.eq('status', 'processing').lt('claimedAt', cutoff)).take(limit);
-  if (state.phase !== 'verified') throw new Error('WEBHOOK_RECOVERY_QUEUE_NOT_VERIFIED');
+  if (!state?.enabled || state.phase !== 'verified') throw new Error('WEBHOOK_RECOVERY_QUEUE_NOT_VERIFIED');
   const queue = await ctx.db.query('webhookRecoveryQueue').withIndex('by_claimed_at', q => q.lt('claimedAt', cutoff)).take(limit);
   const result: Doc<'cjWebhookLog'>[] = [];
   for (const entry of queue) {
