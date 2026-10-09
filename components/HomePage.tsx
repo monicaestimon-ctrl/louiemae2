@@ -2,19 +2,40 @@
 import React, { useState } from 'react';
 import { FadeIn } from './FadeIn';
 import { GlassButton } from './ui/GlassButton';
-import { PRODUCTS, FASHION_CATEGORIES, KIDS_CATEGORIES } from '../constants';
+import { FASHION_CATEGORIES, KIDS_CATEGORIES } from '../constants';
 import { useSite } from '../contexts/BlogContext';
 import { useNewsletter } from '../contexts/NewsletterContext';
-import { Product } from '../types';
-import { X, ShoppingBag, ArrowUpRight, Check } from 'lucide-react';
+import type { ProductVariant, CollectionConfig } from '../types';
+import { useQuery } from 'convex/react';
+import { api } from '../convex/_generated/api';
+import { useStoreCatalog } from './useStoreCatalog';
+import { useStorefrontProductDetail } from './useStorefrontProductDetail';
+import { VariantSelector, NO_IMAGE_KEY } from './VariantSelector';
+import { AddToCartButton } from './cart/AddToCartButton';
+import { X, ArrowUpRight, Check } from 'lucide-react';
 import { DynamicSectionRenderer } from './DynamicPage';
 import { SafeImage } from './SafeImage';
+
+const furnitureFallback: CollectionConfig = { id: 'furniture', title: 'Furniture', subtitle: '', heroImage: '', subcategories: [] };
 
 export const HomePage: React.FC = () => {
   const { siteContent, isLoading } = useSite();
   const { home } = siteContent;
   const { addSubscriber } = useNewsletter();
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const readiness = useQuery(api.catalogReadiness.status, {});
+  const furniture = siteContent.collections.find(collection => collection.id === 'furniture') ?? furnitureFallback;
+  const recommendations = useStoreCatalog(furniture, 'All', readiness?.ready === true, 'featured', 6);
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  const { product: selectedProduct, loading: detailLoading, unavailable: detailUnavailable } = useStorefrontProductDetail(selectedProductId);
+  const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>();
+  const [activeImageGroupKey, setActiveImageGroupKey] = useState<string | null>(null);
+  const selectedVariant = selectedProduct?.variants?.find(variant => variant.id === selectedVariantId && variant.inStock !== false);
+  const setSelectedVariant = (variant: ProductVariant | undefined) => setSelectedVariantId(variant?.id);
+  const openProduct = (id: string | null) => {
+    setSelectedProductId(id);
+    setSelectedVariantId(undefined);
+    setActiveImageGroupKey(null);
+  };
 
 
 
@@ -239,12 +260,15 @@ export const HomePage: React.FC = () => {
             <h3 className="font-serif text-lg md:text-xl text-earth italic">Recommended Products</h3>
           </FadeIn>
 
+          {(isLoading || readiness === undefined || recommendations.loading) && <p role="status" className="text-center text-earth/60 mb-6">Loading recommendations…</p>}
+          {readiness !== undefined && !readiness.ready && <p role="status" className="text-center text-earth/60 mb-6">Products are temporarily unavailable. Please check back shortly.</p>}
+          {recommendations.complete && recommendations.products.length === 0 && <p className="text-center text-earth/60 mb-6">New pieces are coming soon.</p>}
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
-            {PRODUCTS.map((product, idx) => (
+            {recommendations.products.map((product, idx) => (
               <FadeIn key={product.id} delay={idx * 100} className="group cursor-pointer">
                 <div
                   className="relative aspect-square overflow-hidden bg-white mb-4 rounded-2xl shadow-sm hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-500 border border-earth/5"
-                  onClick={() => setSelectedProduct(product)}
+                  onClick={() => openProduct(product.id)}
                 >
                   {product.isNew && (
                     <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-2 py-1 text-[9px] uppercase tracking-widest text-earth z-10 rounded-sm shadow-sm border border-white/50">
@@ -264,7 +288,7 @@ export const HomePage: React.FC = () => {
                     </button>
                   </div>
                 </div>
-                <div onClick={() => setSelectedProduct(product)} className="px-1">
+                <div onClick={() => openProduct(product.id)} className="px-1">
                   <h3 className="font-serif text-lg md:text-xl text-earth leading-tight mb-1 group-hover:text-bronze transition-colors">
                     {product.name}
                   </h3>
@@ -429,14 +453,21 @@ export const HomePage: React.FC = () => {
         </FadeIn>
       </section>
 
+      {selectedProductId && (detailLoading || detailUnavailable) && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6" role="dialog" aria-modal="true" aria-label="Product details">
+        <div className="bg-white rounded-2xl p-8 text-center">
+          <p role="status">{detailLoading ? 'Loading product details…' : 'This product is no longer available.'}</p>
+          <button onClick={() => openProduct(null)} className="mt-4 underline">Close</button>
+        </div>
+      </div>}
       {/* Product Modal - Frosted Glass Upgrade */}
       {selectedProduct && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 md:p-8">
-          <div className="absolute inset-0 backdrop-blur-xl motion-reduce:backdrop-blur-none bg-black/50" onClick={() => setSelectedProduct(null)}></div>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 md:p-8" role="dialog" aria-modal="true" aria-label="Product details">
+          <div className="absolute inset-0 backdrop-blur-xl motion-reduce:backdrop-blur-none bg-black/50" onClick={() => openProduct(null)}></div>
 
           <div className="bg-white/95 backdrop-blur-xl w-full max-w-5xl h-[90vh] md:h-auto md:max-h-[85vh] rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.3)] relative flex flex-col md:flex-row overflow-hidden animate-fade-in-up border border-white/60">
             <button
-              onClick={() => setSelectedProduct(null)}
+              onClick={() => openProduct(null)}
+              aria-label="Close product details"
               className="absolute top-4 right-4 z-20 p-2 bg-black/5 hover:bg-black/10 rounded-full transition-colors backdrop-blur-md"
             >
               <X className="w-5 h-5 text-earth" />
@@ -444,7 +475,7 @@ export const HomePage: React.FC = () => {
 
             {/* Image Gallery */}
             <div className="w-full md:w-1/2 bg-earth/5 h-1/2 md:h-auto overflow-hidden relative group">
-              <SafeImage src={selectedProduct.images[0]} alt={selectedProduct.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-[1.5s]" />
+              <SafeImage src={selectedVariant?.image || (activeImageGroupKey && activeImageGroupKey !== NO_IMAGE_KEY ? activeImageGroupKey : selectedProduct.images[0])} alt={selectedProduct.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-[1.5s]" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent pointer-events-none" />
             </div>
 
@@ -457,10 +488,11 @@ export const HomePage: React.FC = () => {
                 </div>
 
                 <h2 className="font-serif text-3xl md:text-5xl text-earth mb-3 leading-tight drop-shadow-sm">{selectedProduct.name}</h2>
-                <p className="font-serif text-2xl italic text-bronze mb-8">${selectedProduct.price}</p>
+                <p className="font-serif text-2xl italic text-bronze mb-8">${(selectedProduct.price + (selectedVariant?.priceAdjustment || 0)).toFixed(2)}</p>
 
                 <div className="h-px w-full bg-gradient-to-r from-earth/20 via-earth/5 to-transparent mb-8"></div>
 
+                {!!selectedProduct.variants?.length && <div className="mb-6"><VariantSelector variants={selectedProduct.variants} selectedVariant={selectedVariant} activeImageGroupKey={activeImageGroupKey} onSelectVariant={setSelectedVariant} onSetGroupKey={setActiveImageGroupKey} /></div>}
                 <p className="font-sans text-earth/70 leading-relaxed mb-8 text-sm">
                   {selectedProduct.description}
                 </p>
@@ -468,15 +500,13 @@ export const HomePage: React.FC = () => {
                 <div className="space-y-4 mb-8">
                   <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50/50 backdrop-blur-sm px-4 py-2 rounded-lg border border-green-100/50 max-w-max">
                     <span className="w-1.5 h-1.5 rounded-full bg-green-600 animate-pulse"></span>
-                    {selectedProduct.inStock ? 'In Stock & Ready to Ship' : 'Made to Order'}
+                    {selectedProduct.inStock ? 'In Stock & Ready to Ship' : 'Out of Stock'}
                   </div>
                 </div>
               </div>
 
               <div className="relative z-10 mt-8">
-                <GlassButton variant="primary" fullWidth className="py-4 shadow-xl">
-                  <ShoppingBag className="w-4 h-4" /> Add to Bag
-                </GlassButton>
+                <AddToCartButton key={selectedProduct.id} product={selectedProduct} selectedVariant={selectedVariant} variantRequired={!!selectedProduct.variants?.length} className="rounded-lg shadow-xl" />
               </div>
             </div>
           </div>
