@@ -1,5 +1,6 @@
+import { convexToJson } from 'convex/values';
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getFunctionName } from 'convex/server';
 import { SiteProvider, useSite } from './BlogContext';
@@ -77,4 +78,17 @@ describe('SiteProvider catalog isolation', () => {
     expect(mocks.query.mock.calls.filter(([name]) => name === 'products:list').every(([, args]) => args === 'skip')).toBe(true);
     expect(mocks.mutation).not.toHaveBeenCalled();
   });
+});
+
+it('serializes supplier labels at create, batch-create and edit mutation boundaries', async () => {
+  const { result } = renderHook(() => useSite(), { wrapper: SiteProvider });
+  mocks.mutation.mockImplementation(async args => { convexToJson(args); return 'saved'; });
+  const product = { name: 'Imported chair', price: 90, description: '', images: [], category: 'Chairs', collection: 'furniture', sourceProperties: { '材质': '白蜡木' } } as Parameters<ReturnType<typeof useSite>['addProduct']>[0];
+  await result.current.addProduct(product);
+  await result.current.addProducts([product]);
+  await result.current.updateProduct('product-id', { sourceProperties: product.sourceProperties, productRevision: 1 });
+  const expected = [{ key: '材质', value: '白蜡木' }];
+  expect(mocks.mutation.mock.calls[0][0].sourceProperties).toEqual(expected);
+  expect(mocks.mutation.mock.calls[1][0].products[0].sourceProperties).toEqual(expected);
+  expect(mocks.mutation.mock.calls[2][0].sourceProperties).toEqual(expected);
 });

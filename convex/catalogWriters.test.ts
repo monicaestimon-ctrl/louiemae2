@@ -92,3 +92,21 @@ describe('authoritative product writers and catalog maintenance', () => {
     expect(await t.run(ctx => ctx.db.query('productCatalog').collect())).toEqual([]);
   });
 });
+
+describe('supplier property storage compatibility', () => {
+  it.each([
+    { label: 'legacy map', value: { Material: 'Oak' } },
+    { label: 'Unicode entries', value: [{ key: '材质', value: '白蜡木' }, { key: '尺寸', value: '65厘米' }] },
+  ])('creates and edits hidden products with $label without losing evidence', async ({ value }) => {
+    const t = convexTest(schema, modules);
+    const id = await t.mutation(create, { ...fixture, storefrontStatus: 'hidden', sourceProperties: value }) as Id<'products'>;
+    const source = await t.run(ctx => ctx.db.get(id));
+    expect(source?.sourceProperties).toEqual(value);
+    const updated = [{ key: '材质', value: '白蜡木' }, { key: '尺寸', value: '75厘米' }];
+    await t.mutation(update, { id, expectedRevision: source?.productRevision, sourceProperties: updated });
+    expect(await t.run(ctx => ctx.db.get(id))).toMatchObject({ sourceProperties: updated, price: 90, storefrontStatus: 'hidden' });
+    const summary = await t.run(ctx => ctx.db.query('productCatalog').unique());
+    expect(summary).toMatchObject({ productId: id, visible: false, publicData: { price: 90 } });
+    expect(summary?.publicData).not.toHaveProperty('sourceProperties');
+  });
+});

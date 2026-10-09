@@ -1,3 +1,4 @@
+import { sourcePropertiesValidator } from './sourcePropertiesValidator';
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 import { cjPricingReviewValidator } from './cjPricingValidators';
@@ -254,7 +255,7 @@ export default defineSchema({
         sourceScopeStatus: v.optional(v.union(v.literal('whole_listing'), v.literal('confirmed_subset'), v.literal('needs_confirmation'))),
         sourceVariantScope: v.optional(v.array(v.string())),
         sourceEvidenceOverrides: v.optional(v.object({ facts: v.optional(v.string()), attributeKeys: v.optional(v.array(v.string())), useDescription: v.optional(v.boolean()) })),
-        sourceProperties: v.optional(v.record(v.string(), v.string())),
+        sourceProperties: v.optional(sourcePropertiesValidator),
         rawSourceDescription: v.optional(v.string()), // Cleaned source detail text for smart descriptions
         rawHtmlDescription: v.optional(v.string()),   // Raw source detail HTML for smart descriptions
         descriptionImages: v.optional(v.array(v.string())), // Source detail/marketing images for smart descriptions

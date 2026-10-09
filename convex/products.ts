@@ -1,3 +1,4 @@
+import { sourcePropertiesValidator } from './sourcePropertiesValidator';
 import { query, mutation, internalQuery, type MutationCtx } from "./functions";
 import { ConvexError, v } from "convex/values";
 import { assertCjPricingReady } from '../lib/cjPricingReview';
@@ -48,7 +49,7 @@ const sourceFields = {
     sourceSnapshotId: v.optional(v.id('productSourceSnapshots')),
     sourceScopeStatus: v.optional(v.union(v.literal('whole_listing'), v.literal('confirmed_subset'), v.literal('needs_confirmation'))),
     sourceEvidenceOverrides: v.optional(v.object({ facts: v.optional(v.string()), attributeKeys: v.optional(v.array(v.string())), useDescription: v.optional(v.boolean()) })),
-    sourceProperties: v.optional(v.record(v.string(), v.string())),
+    sourceProperties: v.optional(sourcePropertiesValidator),
 };
 const listingReviewValidator = v.object({
     ...sourceFields,

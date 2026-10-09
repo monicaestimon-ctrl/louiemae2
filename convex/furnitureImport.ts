@@ -1,4 +1,5 @@
 'use node';
+import { sourcePropertyEntries } from '../lib/sourceProperties';
 import { v } from 'convex/values';
 import { action } from './_generated/server';
 import { api, internal } from './_generated/api';
@@ -43,7 +44,7 @@ export const fromUrl = action({
               minimum: 1,
             },
           ];
-    const props = p.sourceProperties || {};
+    const props = sourcePropertyEntries(p.sourceProperties);
     return {
       product: {
         ...blankFurniture(),
@@ -57,8 +58,8 @@ export const fromUrl = action({
         // A non-USD conversion must be explicitly entered by the operator; no guessed exchange rate.
         usdRate: currency === 'USD' ? 1 : 0,
         variants,
-        supplierNotes: `Imported listing attributes (unconfirmed):\n${Object.entries(props)
-          .map(([k, value]) => `${k}: ${value}`)
+        supplierNotes: `Imported listing attributes (unconfirmed):\n${props
+          .map(({ key, value }) => `${key}: ${value}`)
           .join('\n')}`.slice(0, 8000),
       },
       warnings: [

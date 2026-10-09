@@ -45,7 +45,7 @@ describe('batch import payload compaction', () => {
             sourcePriceCny: 100,
         });
         expect(product.variants).toHaveLength(1);
-        expect(product.sourceProperties?.Material).toBe('Linen');
+        expect(product.sourceProperties).toContainEqual({ key: 'Material', value: 'Linen' });
         expect(compact.rawHtmlDescription).toBe('');
         expect(getSerializedByteLength(compact)).toBeLessThan(getSerializedByteLength(original) / 20);
         expect(() => assertBatchImportPayloadSize(compact)).not.toThrow();
