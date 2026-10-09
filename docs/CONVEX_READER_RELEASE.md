@@ -6,7 +6,13 @@ frontend cutover and rollback after production data verification. Those componen
 PRs remain useful review history; merging this combined release incorporates
 their commits without requiring six separate production frontend deployments.
 
-## Readiness gates
+## Current release status
+
+The combined cutover and four production read-model activations are complete.
+Later fixes through PR 162 are deployed; see the [current completion audit](CONVEX_COST_REDUCTION_PROGRESS.md#current-status--october-9-2026-after-pr-162).
+Do not repeat migrations based on the original checklist below.
+
+## Original cutover evidence and gates
 
 Production target: LouieMae `diligent-jay-261`. PR 154 merged at
 `c9bc8ac63fe3d87eba3c711f98a3de95926f0557`; main CI/backend deployment
@@ -22,9 +28,10 @@ checks without mismatches. Catalog readers are enabled. Health v3 independently
 verified all 621 products and totals, then activated at revision 623 after a live
 update required reverification. Sourcing counts verified 603 jobs and activated
 at revision 603. Webhook summaries passed 300 recent-window checks and are enabled.
-Public browser and operator read checks passed; authenticated browser editing,
-provider-safe checkout and workload cost measurements remain pending. See the
-latest entry in `CONVEX_COST_REDUCTION_PROGRESS.md` for the evidence and limits.
+Public/operator reads passed at cutover. Later authenticated editor review,
+pricing-panel verification, isolated cart flows, checkout fixtures and health
+read measurements are recorded in the current completion audit. Full write-flow,
+external fulfillment and broad workload acceptance remain incomplete.
 
 The destination team's billing page reports Starter with an existing $30 monthly
 spending warning and $35 monthly disable threshold. These settings were inspected,
@@ -38,8 +45,8 @@ still applies. Reassess alert levels after measuring the migrated active workloa
 and record one-time backfill/verification traffic separately. Windows reset on
 UTC calendar boundaries, independently of the team's billing cycle.
 
-Before the production frontend cutover (the additive webhook backend extension
-must deploy first):
+Original cutover checklist (items 1–4 and deployment are completed; remaining
+acceptance gates are tracked in the current audit):
 
 1. Restore Convex application function availability through the account owner.
    Do not change payment methods, billing plans or transfer projects as part of
@@ -91,11 +98,12 @@ oldest queue age and inventory freshness. Separate one-time migration traffic
 from steady-state traffic. Review sparse preview scanning and multi-page clients;
 per-page bounds do not guarantee an absolute per-session cost ceiling.
 
-The plan's 80% database-I/O reduction is an acceptance target, not an established
-result or invoice promise. CJ scheduling changes require actual worker/queue
-measurements; retain current provider-spacing and lease safeguards meanwhile.
-Nexx's separately deployed canary controls still need live upload/cleanup and
-idle-workload verification after its Convex service becomes available.
+The equivalent health-read comparison established 84.76% lower read bytes with
+identical results. This does not establish the broader 80% workload target or an
+invoice reduction; summary writes and representative operation remain to assess.
+CJ worker measurements and Nexx upload/chat assurance are recorded in the current
+audit. Nexx production is restored; development access remains unresolved. Keep
+monitoring paused and preserve provider-spacing and lease safeguards.
 
 For rollback, restore the prior compatible frontend first, then disable new
 read-model gates if required. Do not delete source data or disable gates under
