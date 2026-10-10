@@ -257,7 +257,6 @@ const ProductImportStudio: React.FC<ProductImportProps> = ({
     const cancelBatchImport = useMutation(api.batchImports.cancel);
     const skipObsoleteBatchErrors = useMutation(api.batchImports.skipObsoleteErrors);
     const markBatchPreparationError = useMutation(api.batchImports.markPreparationError);
-    const markBatchItemsImported = useMutation(api.batchImports.markImported);
     const latestBatchJob = useQuery(api.batchImports.getLatest, isStandaloneStudio ? 'skip' : {});
     const effectiveBatchJobId = isStandaloneStudio ? null : activeBatchJobId || latestBatchJob?._id || null;
     const batchJob = useQuery(api.batchImports.getJob, effectiveBatchJobId ? { jobId: effectiveBatchJobId } : 'skip');
@@ -1010,12 +1009,7 @@ const ProductImportStudio: React.FC<ProductImportProps> = ({
                 return;
             }
             await Promise.resolve(onImportProducts(productsToImport));
-            const importedBatchItemIds = selectedProducts
-                .map(product => product.batchItemId)
-                .filter((id): id is Id<'batchImportItems'> => Boolean(id));
-            if (importedBatchItemIds.length > 0) {
-                await markBatchItemsImported({ itemIds: importedBatchItemIds });
-            }
+            // The server commits products and batch completion in one transaction.
             const importedIds = new Set(selectedProducts.map(p => p.id));
             const remainingSelected = searchResults.filter(p => p.selected && !importedIds.has(p.id));
             setSearchResults(prev => prev.map(p => importedIds.has(p.id) ? { ...p, selected: false } : p));
