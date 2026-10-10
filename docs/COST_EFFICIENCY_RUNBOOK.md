@@ -407,3 +407,16 @@ remains an option if measured batches approach that limit.
 No data migration, new cron, sourcing submission, order, payment, or notification
 is introduced. Rollback restores the prior caller and button labels; no records
 need reverting. Monitoring must remain paused.
+
+## Batch completion regression gate (October 9, 2026)
+
+`convex/batchImportCompletion.test.ts` exercises the same save-then-mark sequence
+used by the import UI against isolated Convex tables. It verifies duplicate save
+retries (including after completion), preservation of ten variants/six images
+and non-ASCII supplier fields, hidden catalog projection, per-item payload release,
+legacy inline payload removal, keeping the remaining review group open, and final
+job completion. Invalid saves and unauthorized completion leave review data intact.
+
+This complements the production quick-URL browser import and accepted single CJ
+submission. It does not claim production batch-button acceptance or supplier
+approval/fulfillment. The existing production three ready items are untouched.
