@@ -420,3 +420,20 @@ job completion. Invalid saves and unauthorized completion leave review data inta
 This complements the production quick-URL browser import and accepted single CJ
 submission. It does not claim production batch-button acceptance or supplier
 approval/fulfillment. The existing production three ready items are untouched.
+
+## Atomic batch product save and completion
+
+Deploy the backend before promoting the matching frontend. `products:createBatch`
+now saves products, updates derived summaries, completes associated batch items,
+and deletes their temporary review payloads in one transaction. Invalid/cancelled
+items roll back the entire save. Retries return the existing product identity.
+Legacy clients may still call `batchImports:markImported` after saving; completed
+items remain idempotent, and ready items require a persisted product before cleanup.
+No schema migration or cron change is required.
+
+Rollback the frontend first, or restore both sides together: the new frontend
+relies on server completion and must not remain live against the former backend.
+Development acceptance preserved ten variants/six images, completed the job and
+released its payload in one request, verified retry identity, and removed the hidden
+fixture without CJ submission. UI tests cover one submission and draft preservation
+on rejection. These checks do not claim a new production batch-button import.

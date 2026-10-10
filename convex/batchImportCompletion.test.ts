@@ -43,6 +43,7 @@ describe('reviewed batch completion',()=>{
     const {t,job,items}=await setup();
     const args={products:[product(items[0])]};
     const saved=await t.mutation(create,args);
+    expect(await t.run(ctx=>ctx.db.get(items[0]))).toMatchObject({status:'imported',resultBytes:0});
     expect(await t.mutation(create,args)).toEqual(saved);
     expect(await t.run(ctx=>ctx.db.query('products').collect())).toHaveLength(1);
     await t.mutation(mark,{itemIds:[items[0],items[0]]});
@@ -73,6 +74,24 @@ describe('reviewed batch completion',()=>{
     expect(await t.run(ctx=>ctx.db.query('batchImportPayloads').collect())).toHaveLength(1);
     expect(await t.run(ctx=>ctx.db.get(items[0]))).toMatchObject({status:'ready',resultBytes:100});
     expect(await t.query(latest,{})).toMatchObject({_id:job,status:'ready'});
+  });
+
+  it('rolls product and summary writes back when batch completion cannot commit',async()=>{
+    const {t,job,items}=await setup();
+    await t.run(ctx=>ctx.db.patch(job,{status:'cancelled'}));
+    await expect(t.mutation(create,{products:[product(items[0])]})).rejects.toThrow('IMPORT_ITEM_NOT_READY');
+    expect(await t.run(ctx=>ctx.db.query('products').collect())).toEqual([]);
+    expect(await t.run(ctx=>ctx.db.query('productCatalog').collect())).toEqual([]);
+    expect(await t.run(ctx=>ctx.db.query('productNameClaims').collect())).toEqual([]);
+    expect(await t.run(ctx=>ctx.db.query('batchImportPayloads').collect())).toHaveLength(1);
+    expect(await t.run(ctx=>ctx.db.get(items[0]))).toMatchObject({status:'ready',resultBytes:100});
+  });
+
+  it('refuses legacy completion before the product was saved',async()=>{
+    const {t,items}=await setup();
+    await expect(t.mutation(mark,{itemIds:[items[0]]})).rejects.toThrow('IMPORT_NOT_SAVED');
+    expect(await t.run(ctx=>ctx.db.query('batchImportPayloads').collect())).toHaveLength(1);
+    expect(await t.run(ctx=>ctx.db.get(items[0]))).toMatchObject({status:'ready'});
   });
 
   it('does not release payloads or mark items when authorization fails',async()=>{

@@ -1,3 +1,4 @@
+import { completeSavedBatchItems, refreshBatchJobCompletion } from './batchImportCompletion';
 import { v } from "convex/values";
 import { paginationOptsValidator } from "convex/server";
 import { api, internal } from "./_generated/api";
@@ -32,12 +33,6 @@ const normalizeUrl = (value: string): string => {
 
 const hasOpenBatchWork = (item: { status: string }): boolean =>
     ["pending", "fetching", "ready", "error"].includes(item.status);
-
-const refreshJobCompletion = async (ctx: any, jobId: Id<"batchImportJobs">, now = Date.now()) => {
-    const remaining = await ctx.db.query("batchImportItems").withIndex("by_job", (q: any) => q.eq("jobId", jobId)).collect();
-    const hasOpenWork = remaining.some(hasOpenBatchWork);
-    if (!hasOpenWork) await ctx.db.patch(jobId, { status: "completed", updatedAt: now });
-};
 
 export const create = mutation({
     args: { urls: v.array(v.string()) },
@@ -360,28 +355,7 @@ export const markImported = mutation({
     args: { itemIds: v.array(v.id("batchImportItems")) },
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
-        const now = Date.now();
-        const jobIds = new Set<Id<"batchImportJobs">>();
-        for (const itemId of args.itemIds) {
-            const item = await ctx.db.get(itemId);
-            if (item) jobIds.add(item.jobId);
-            if (item?.status === "ready") {
-                const payload = await ctx.db.query("batchImportPayloads")
-                    .withIndex("by_item", q => q.eq("itemId", itemId))
-                    .unique();
-                if (payload) await ctx.db.delete(payload._id);
-                await ctx.db.patch(itemId, {
-                    status: "imported",
-                    stage: "Imported",
-                    result: undefined,
-                    resultBytes: 0,
-                    updatedAt: now,
-                });
-            }
-        }
-        for (const jobId of jobIds) {
-            await refreshJobCompletion(ctx, jobId, now);
-        }
+        await completeSavedBatchItems(ctx, args.itemIds);
     },
 });
 
@@ -456,7 +430,7 @@ export const skipObsoleteErrors = mutation({
             });
             skipped += 1;
         }
-        if (skipped > 0) await refreshJobCompletion(ctx, args.jobId, now);
+        if (skipped > 0) await refreshBatchJobCompletion(ctx, args.jobId, now);
         return { skipped };
     },
 });

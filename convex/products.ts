@@ -1,3 +1,4 @@
+import { completeSavedBatchItems } from './batchImportCompletion';
 import { sourcePropertiesValidator } from './sourcePropertiesValidator';
 import { query, mutation, internalQuery, type MutationCtx } from "./functions";
 import { ConvexError, v } from "convex/values";
@@ -527,6 +528,8 @@ export const createBatch = mutation({
 
         const productIds: Id<"products">[] = [];
         for (const product of sanitizedProducts) productIds.push(await createProductDocument(ctx, product, identity.email));
+        await completeSavedBatchItems(ctx, sanitizedProducts.flatMap(product =>
+            product.batchImportItemId ? [product.batchImportItemId as Id<"batchImportItems">] : []));
         return productIds;
     },
 });
