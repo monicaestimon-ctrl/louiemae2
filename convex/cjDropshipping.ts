@@ -1,8 +1,8 @@
 "use node";
 
-import { v } from "convex/values";
+import { v, type ObjectType } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
-import { internalAction } from "./_generated/server";
+import { internalAction, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import {
     addCart,
@@ -590,8 +590,7 @@ const mergeInventorySnapshots = (
     ];
 };
 
-export const refreshProductInventory = internalAction({
-    args: {
+const inventoryRefreshArgs = {
         productId: v.optional(v.id("products")),
         variantId: v.optional(v.string()),
         vid: v.optional(v.string()),
@@ -603,8 +602,13 @@ export const refreshProductInventory = internalAction({
             v.literal("cron"),
             v.literal("webhook")
         )),
-    },
-    handler: async (ctx, args): Promise<{
+};
+
+// Share the implementation directly with the public admin action. Nesting a
+// long-running inventory action can lose the caller before the worker finishes.
+export const refreshProductInventoryHandler = async (
+    ctx: ActionCtx, args: ObjectType<typeof inventoryRefreshArgs>,
+): Promise<{
         eligible: number;
         deferredFresh: number;
         checked: number;
@@ -838,7 +842,11 @@ export const refreshProductInventory = internalAction({
           }
           throw error;
         }
-    },
+};
+
+export const refreshProductInventory = internalAction({
+    args: inventoryRefreshArgs,
+    handler: refreshProductInventoryHandler,
 });
 
 const isPaidLikeCjOrderDetail = (detail: any): boolean => {

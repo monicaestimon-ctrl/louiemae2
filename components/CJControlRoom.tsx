@@ -485,7 +485,7 @@ export const CJControlRoom: React.FC<CJControlRoomProps> = ({ onNavigateToTab, t
                             className="inline-flex items-center gap-2 rounded-xl border border-emerald-300/25 bg-emerald-400/10 px-4 py-3 text-[10px] uppercase tracking-[0.2em] text-emerald-100 transition hover:bg-emerald-400/15 disabled:opacity-50"
                         >
                             {busyKey === 'refresh-inventory' ? <Loader2 className="h-4 w-4 animate-spin" /> : <PackageCheck className="h-4 w-4" />}
-                            Inventory
+                            Refresh inventory
                         </button>
                     </div>
                 </div>
