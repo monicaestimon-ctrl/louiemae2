@@ -3,6 +3,7 @@
 import { action, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import { refreshProductInventoryHandler } from "./cjDropshipping";
 import { getCjAutomationConfig, type CjAutomationConfig } from "../lib/cjAutomation";
 import { buildCjRetryOrderPayload } from "../lib/cjOrderRetry";
 import { getCjFulfillmentReentryBlock } from "../lib/cjFulfillmentWorkflow";
@@ -141,7 +142,7 @@ export const refreshInventory = action({
         }>;
     }> => {
         await requireAdminIdentity(ctx);
-        return await ctx.runAction(internal.cjDropshipping.refreshProductInventory, {
+        return await refreshProductInventoryHandler(ctx, {
             ...args,
             source: "manual",
         });

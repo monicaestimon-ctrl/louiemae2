@@ -381,3 +381,29 @@ The tracking sync traverses due `confirmed`, `processing`, and `shipped` orders 
 A failed provider response now increments the returned error count. Existing tracking reconciliation, notification deduplication, four-hour scheduling, and `{ synced, errors }` response shape remain unchanged. Paging bounds individual database reads; it does not establish a maximum duration for a whole sync with a large active-order backlog. If that workload develops, use a durable continuation design with explicit run totals and notification ownership before changing the manual action contract.
 
 Deploy the additive index with the backend before exercising the new reader. Rollback can restore the old reader/worker while retaining this index. Validate pages under changing sync timestamps and status transitions. Production currently has no due tracking orders; empty-run success is not proof of live shipment or email delivery.
+
+## Manual inventory action result (October 9, 2026)
+
+A production manual refresh selected 25 products and successfully updated all 25
+with zero provider errors in 410.656 seconds. Its public `cjActions:refreshInventory`
+caller had already returned an error after 301.705 seconds while awaiting the
+nested action. The error did not mean the inventory writes were rolled back.
+
+The public action now invokes the same inventory handler directly after the
+existing admin authorization check. The internal scheduled action retains that
+handler and its existing arguments. Selection limits, provider request pacing,
+variant snapshots, freshness scheduling and result counters are unchanged. The
+admin controls say **Refresh inventory** to distinguish an action from navigation.
+
+Regression coverage exercises a simulated 425-second, 25-product refresh through
+the public action while making the old nested inventory RPC fail if called. It
+also verifies provider failure reporting, targeted scope, and denial before any
+inventory work. Simulated elapsed time is not a platform timeout test; release
+verification must separately confirm the deployed public action returns its
+actual result. This fixes the observed nested-call failure, not arbitrary-sized
+workloads: the Node action's own execution limit still applies. Durable continuation
+remains an option if measured batches approach that limit.
+
+No data migration, new cron, sourcing submission, order, payment, or notification
+is introduced. Rollback restores the prior caller and button labels; no records
+need reverting. Monitoring must remain paused.

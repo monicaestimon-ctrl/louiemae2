@@ -443,7 +443,7 @@ export const CJSettings: React.FC<{
 
                             <ActionCard
                                 icon={Package}
-                                title="Inventory"
+                                title="Refresh inventory"
                                 description="Refresh CJ stock levels."
                                 onClick={handleRefreshInventory}
                                 loading={refreshingInventory}
