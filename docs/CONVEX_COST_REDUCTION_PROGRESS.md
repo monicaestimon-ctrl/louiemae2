@@ -26,7 +26,7 @@ release entries below. Completed migrations must not be repeated.
   25/25 successful updates with zero errors after 334.84 seconds, removing the
   observed nested-action timeout. This does not promise unlimited action runtime.
 - PR 173 added backend batch lifecycle regression coverage. Main CI 38014675708
-  deployed its backend; the frontend remains the PR 172 runtime because PR 173
+  deployed its backend; that release kept the PR 172 frontend because PR 173
   changed tests and documentation only. That release passed 693 tests.
 - Retiring the verified webhook recovery history index reduced provider database
   estimates from 20,480,274,879 to 15,443,420,687 bytes in production (24.59%) and
