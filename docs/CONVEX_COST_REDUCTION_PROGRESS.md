@@ -7,7 +7,7 @@ incremental health/sourcing summaries, CJ scheduling, webhook retention, Nexx
 preview jobs, and regression/operational guidance. No phase is considered complete
 solely because a narrower test passes.
 
-## Current status — October 9, 2026, through PR 173
+## Current status — October 9, 2026, through PR 174
 
 The complete original plan remains open. This section supersedes the historical
 release entries below. Completed migrations must not be repeated.
@@ -26,7 +26,7 @@ release entries below. Completed migrations must not be repeated.
   25/25 successful updates with zero errors after 334.84 seconds, removing the
   observed nested-action timeout. This does not promise unlimited action runtime.
 - PR 173 added backend batch lifecycle regression coverage. Main CI 38014675708
-  deployed its backend; the frontend remains the PR 172 runtime because PR 173
+  deployed its backend; that release kept the PR 172 frontend because PR 173
   changed tests and documentation only. That release passed 693 tests.
 - Retiring the verified webhook recovery history index reduced provider database
   estimates from 20,480,274,879 to 15,443,420,687 bytes in production (24.59%) and
@@ -40,7 +40,7 @@ release entries below. Completed migrations must not be repeated.
 - Automatic CodeRabbit review was skipped under repository eligibility rules.
   Direct diff review and CI are evidence; a skipped status is not a completed review.
 
-### Current change: atomic batch completion (not yet a production release)
+### Released: atomic batch completion (PR 174)
 
 Product creation now completes its batch items and releases temporary payloads
 inside the same transaction. A failed completion rolls back product and summary
@@ -53,14 +53,36 @@ build/client-secret scan. A disposable development import fetched the actual
 supplier item, saved 10 variants and 6 images, immediately completed its item and
 job, released the payload, and returned the same product ID on retry. The hidden
 fixture was removed and the 22-product baseline restored; no CJ request was sent.
-Review, merge, production rollout, and release verification remain pending.
+PR 174 merged as `df5fbf3a64e69660a71740b92ba1bbf1a5e0dd7f`. Main CI
+38015895717 deployed the backend before frontend promotion. Vercel deployment
+`dpl_8mWNdJCZQP8kMdA8tpreTDb8P78o` was verified Ready on www.louiemae.com
+with that exact commit. Authenticated production import rendering passed with no
+browser errors and retained 57 imported/3 ready batch items. No additional
+production import was submitted; production batch-button acceptance remains open.
+
+### Active-session cost finding
+
+A one-off production sample from 01:45 to 02:15 UTC on October 10 recorded
+233,559,593 read bytes from `products:list`, 97.67% of 239,130,371 total read bytes.
+An older open inventory tab still loaded the full-catalog UI and its old asset
+`Admin-CQ-AG1KV.js`. After confirming it contained only an empty inventory search
+field, no editor/save controls and no dialog, it was refreshed to the current
+`Admin-DZxMJhDG.js` release. The restored import batch remained available.
+
+The subsequent 66-second production window recorded three successful natural
+inventory updates, zero `products:list` calls, 257,694 read bytes and 92,324 write
+bytes across all observed functions. The unequal windows are not a normalized
+before/after billing comparison, and concurrent traffic is included. Another old
+tab could not be inspected and was left untouched. Do not reload an editing tab
+until its unsaved work is preserved. Deployment alone does not update code already
+running in an open browser tab.
 
 ### Original phase completion audit
 
 | Phase | Implemented/released evidence | Remaining exit gate |
 | --- | --- | --- |
 | 0: baseline | Deployment mapping, rollback references, bounded measurements | Nexx development access; historical webhook allocation by deployment |
-| 1A: subscription scope | Scoped admin/editor reads; production Quick URL import passed | Release atomic completion; production batch-button acceptance remains unverified |
+| 1A: subscription scope | Scoped admin/editor reads; production Quick URL import passed | Atomic completion released; production batch-button acceptance remains unverified |
 | 1B: catalog | Verified summaries, pagination, selected details, cart and concurrent-edit checks | Equivalent total maintenance-cost comparison and representative activity |
 | 1C: health/sourcing | Verified counters; measured health reads 84.76% lower | Write overhead/contention and normal active-session workload |
 | 2A: CJ work | Bounded scheduling/retries, indexed lookups, paged tracking, 25/25 manual inventory acceptance | Supplier approval/mapping and downstream tracking/fulfillment acceptance |
@@ -70,8 +92,8 @@ Review, merge, production rollout, and release verification remain pending.
 
 ### Remaining sequence and boundaries
 
-1. Finish the atomic batch-completion release: backend before frontend, then verify
-   the deployed version. Existing production ready items are not test fixtures.
+1. Obtain the separately requested scope for production batch-button acceptance.
+   The atomic completion release is verified live; existing ready items are not test fixtures.
 2. Verify the already-submitted CJ request when its status changes; do not submit
    another supplier request or place an order/payment as part of routine checks.
 3. Obtain access to the existing Nexx development deployment and pause its
