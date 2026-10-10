@@ -437,3 +437,19 @@ Development acceptance preserved ten variants/six images, completed the job and
 released its payload in one request, verified retry identity, and removed the hidden
 fixture without CJ submission. UI tests cover one submission and draft preservation
 on rejection. These checks do not claim a new production batch-button import.
+
+## Browser sessions after cost-reduction releases
+
+Promoting a frontend does not replace JavaScript already running in open tabs.
+If recent logs still show `products:list`, inspect the loaded admin asset and
+visible workflow before changing backend compatibility. On October 10, a retained
+old inventory tab corresponded with 233.6 MB of legacy-list reads in 30 minutes.
+After safely refreshing that idle tab, a 66-second sample containing three normal
+inventory updates recorded no legacy-list calls. This is an operational finding,
+not a normalized bill reduction or proof about every connected client.
+
+Preserve unsaved edits before any refresh. An inventory list with only an empty
+search field is distinct from an edit/import review form. Leave uninspectable tabs
+untouched. Do not remove full-document fields or retire the compatibility endpoint
+just to disconnect old clients; that can break their editing workflow. Collect
+one-off execution samples after migration, keeping recurring monitoring paused.
