@@ -17,3 +17,12 @@ export async function checkedExpirySource(ctx: Pick<QueryCtx, 'db'>, entry: Doc<
   if (!expected || expected.expiresAt !== entry.expiresAt || expected.sourceCreatedAt !== entry.sourceCreatedAt) throw new Error('WEBHOOK_EXPIRY_QUEUE_DRIFT');
   return row!;
 }
+
+export async function requireExpiryQueue(ctx: Pick<QueryCtx, 'db'>) {
+  if ((await expiryState(ctx))?.phase !== 'verified') throw new Error('WEBHOOK_EXPIRY_QUEUE_NOT_VERIFIED');
+}
+export async function expiredWebhookRows(ctx: Pick<QueryCtx, 'db'>, now: number, limit: number) {
+  await requireExpiryQueue(ctx);
+  const entries = await ctx.db.query('webhookExpiryQueue').withIndex('by_expiry', q => q.lt('expiresAt', now)).take(limit);
+  return Promise.all(entries.map(entry => checkedExpirySource(ctx, entry)));
+}

@@ -1,3 +1,5 @@
+import { expiredWebhookRows } from './webhookExpiryMaintenance';
+import { catalogPageOptions } from '../lib/catalogPagination';
 import { v } from "convex/values";
 import { mutation, query } from "./functions";
 import { requireCjAdminIdentity } from "./cjAdminAccess";
@@ -23,7 +25,7 @@ const retentionKindValidator = v.union(
 
 /** Add retention metadata to legacy rows without deleting or compacting them. */
 export const backfillRetentionMetadata = mutation({
-    args: { kind: retentionKindValidator, dryRun: v.boolean(), limit: v.optional(v.number()) },
+    args: { kind: retentionKindValidator, dryRun: v.boolean(), limit: v.optional(v.number()), cursor: v.optional(v.union(v.string(), v.null())) },
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
         const limit = clampLimit(args.limit, 100);
@@ -39,11 +41,16 @@ export const backfillRetentionMetadata = mutation({
             rows = await ctx.db.query("descriptionAudits").withIndex("by_debug_expiry", q => q.eq("debugExpiresAt", undefined)).take(limit);
             if (!args.dryRun) for (const row of rows) await ctx.db.patch(row._id, { debugExpiresAt: row.createdAt + 30 * dayMs });
         } else {
-            rows = await ctx.db.query("cjWebhookLog").withIndex("by_expiry", q => q.eq("expiresAt", undefined)).take(limit);
+            if (args.cursor === undefined) throw new Error('Webhook metadata backfill requires an explicit cursor; start with null and resume with the returned cursor.');
+            const page = await ctx.db.query('cjWebhookLog').withIndex('by_creation_time')
+                .paginate(catalogPageOptions({ cursor: args.cursor, numItems: limit }, 100, 2_000_000));
+            rows = page.page.filter(row => row.expiresAt === undefined);
             if (!args.dryRun) for (const row of rows) {
                 const processedAt = Date.parse(row.processedAt);
                 await ctx.db.patch(row._id, { expiresAt: (Number.isFinite(processedAt) ? processedAt : row._creationTime) + 90 * dayMs });
             }
+            return { kind: args.kind, dryRun: args.dryRun, candidates: rows.length, scanned: page.page.length,
+                hasMore: !page.isDone, cursor: page.continueCursor, complete: page.isDone };
         }
         return { kind: args.kind, dryRun: args.dryRun, candidates: rows.length, hasMore: rows.length === limit };
     },
@@ -59,7 +66,7 @@ export const report = query({
         const [payloads, audits, webhookLogs, jobs, pollRuns, sourcingRuns, aiRequestUsage] = await Promise.all([
             ctx.db.query("batchImportPayloads").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
             ctx.db.query("descriptionAudits").withIndex("by_debug_expiry", q => q.gt("debugExpiresAt", 0).lt("debugExpiresAt", now)).take(limit),
-            ctx.db.query("cjWebhookLog").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
+            expiredWebhookRows(ctx, now, limit),
             ctx.db.query("batchImportJobs").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
             ctx.db.query("cjInventoryPollRuns").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
             ctx.db.query("cjWorkerRuns").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
@@ -115,7 +122,7 @@ export const cleanup = mutation({
         const [payloads, audits, webhookLogs, jobs, pollRuns, sourcingRuns, aiRequestUsage] = await Promise.all([
             ctx.db.query("batchImportPayloads").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
             ctx.db.query("descriptionAudits").withIndex("by_debug_expiry", q => q.gt("debugExpiresAt", 0).lt("debugExpiresAt", now)).take(limit),
-            ctx.db.query("cjWebhookLog").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
+            expiredWebhookRows(ctx, now, limit),
             ctx.db.query("batchImportJobs").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(Math.min(limit, 10)),
             ctx.db.query("cjInventoryPollRuns").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
             ctx.db.query("cjWorkerRuns").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
