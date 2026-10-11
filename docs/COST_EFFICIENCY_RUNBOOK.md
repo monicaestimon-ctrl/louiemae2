@@ -347,7 +347,7 @@ The October 9 provider table report attributed 5,676,945,241 bytes to webhook do
 
 PR168 deployed a processing-only queue, completed its bounded source/queue verification in development and production, and enabled both readers. Both environments had zero processing records during migration; populated-event behavior was verified separately in integration tests. Scheduled recovery subsequently succeeded in both environments. Source event identities, unresolved payloads, status transitions, claim tokens, and retry limits remain in `cjWebhookLog`; wrapped source writes maintain the queue transactionally.
 
-The retirement release removes only `cjWebhookLog.by_status_claimed_at`. It retains `by_message_id` for deduplication and `by_expiry` for retention tooling. No source records are deleted, no cleanup is enabled, and monitoring remains paused. The recovery reader requires an enabled, verified queue and refuses drift. It never falls back to a historical table scan.
+The retirement release removes only `cjWebhookLog.by_status_claimed_at`. That release retains `by_message_id` for deduplication and initially retained `by_expiry`; the expiry retirement procedure below replaces the latter. No source records are deleted, no cleanup is enabled, and monitoring remains paused. The recovery reader requires an enabled, verified queue and refuses drift. It never falls back to a historical table scan.
 
 ### Deployment gate
 
@@ -453,3 +453,49 @@ search field is distinct from an edit/import review form. Leave uninspectable ta
 untouched. Do not remove full-document fields or retire the compatibility endpoint
 just to disconnect old clients; that can break their editing workflow. Collect
 one-off execution samples after migration, keeping recurring monitoring paused.
+
+
+## Compact webhook expiry queue and index retirement
+
+PR176 introduces transactional positive-expiry coverage. PR178 and PR179 bound
+migration reads and reduce calls. PR177 switches retention readers to the
+verified queue and removes only cjWebhookLog.by_expiry. Every webhook identity,
+by_message_id, unresolved payload, recovery schedule and monitoring pause remains.
+No replay-window assumption is used to delete historical receipts.
+
+Before retiring the index in each deployment, require webhookExpiryQueue:status
+with phase verified and no mismatch IDs. The migration copies only positive-expiry
+rows, verifies source coverage, then verifies queue entries against sources. Its
+source pages are capped at 50 rows and 2 MB; reverse verification checkpoints by
+unique webhook ID, stops after crossing a 1 MB soft payload budget, and never
+reads more than 50 source records in one call. An old opaque reverse cursor
+restarts only that verification pass. Keep a saved checkpoint and a bounded
+operator-call ceiling; never scan all receipt history to initialize this queue.
+
+Preview deployment and require exactly cjWebhookLog.by_expiry as the removed
+index. Deploy development first, verify unchanged source counts, expiry preview,
+recovery state, and duplicate suppression. Repeat for production only after its
+independent coverage verification and a passing review/CI. A missing verified
+state or stale queue entry fails closed; readers never fall back to a full scan.
+
+Start webhookRetention:preview again with cursor null after the reader cutover;
+old index cursors cannot be reused. Legacy metadata backfill remains a separate,
+explicitly approved operation. For webhookLogs only, provide cursor null to
+start dataLifecycle:backfillRetentionMetadata and resume using each returned
+cursor until complete. Preview with dryRun true first. Pages may contain zero
+candidates yet still return hasMore true; advance the cursor. Cursorless webhook
+calls are rejected. Do not run this across millions of payload-free receipts
+merely to create expiration metadata. Other record kinds retain their old API.
+
+For new empty deployments, initialize both webhookRecoveryQueue:initializeEmpty
+and webhookExpiryQueue:initializeEmpty before the first webhook. Existing
+nonempty deployments need verified migrations. After retirement, the old expiry
+begin/advance functions fail with an explicit restoration instruction. Exact-ID
+repair changes only derived entries and is not proof of complete coverage.
+
+Rollback of an expiry-reader defect requires restoring cjWebhookLog.by_expiry,
+waiting for its potentially expensive backfill, then restoring the old reader.
+Do not reset migration state, clear the queue, or blindly deploy an old schema.
+Keep the current queue maintenance and source identities intact during recovery.
+Storage estimates and invoices can lag index deletion; report measured provider
+values separately from expected savings, and leave recurring monitoring paused.
