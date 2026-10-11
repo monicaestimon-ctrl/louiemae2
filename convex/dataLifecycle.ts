@@ -4,6 +4,38 @@ import { v } from "convex/values";
 import { mutation, query } from "./functions";
 import { requireCjAdminIdentity } from "./cjAdminAccess";
 
+import type { QueryCtx } from './_generated/server';
+import type { Doc } from './_generated/dataModel';
+
+// Expiration alone does not make an unsaved review disposable. Use the same
+// eligibility checks for previews and execution, within the current transaction.
+async function disposableImportPayloads(ctx: Pick<QueryCtx, 'db'>, payloads: Doc<'batchImportPayloads'>[]) {
+    const eligible: Doc<'batchImportPayloads'>[] = [];
+    for (const payload of payloads) {
+        const item = await ctx.db.get(payload.itemId);
+        const job = await ctx.db.get(payload.jobId);
+        if (item && job && item.jobId === job._id &&
+            (item.status === 'imported' || item.status === 'skipped')) eligible.push(payload);
+    }
+    return eligible;
+}
+
+async function disposableImportJobs(ctx: Pick<QueryCtx, 'db'>, jobs: Doc<'batchImportJobs'>[]) {
+    const eligible: Doc<'batchImportJobs'>[] = [];
+    for (const job of jobs) {
+        if (job.status !== 'completed' && job.status !== 'cancelled') continue;
+        let unfinished = false;
+        for (const status of ['pending', 'fetching', 'ready', 'error'] as const) {
+            if (await ctx.db.query('batchImportItems').withIndex('by_job_status', q => q.eq('jobId', job._id).eq('status', status)).first()) {
+                unfinished = true;
+                break;
+            }
+        }
+        if (!unfinished) eligible.push(job);
+    }
+    return eligible;
+}
+
 const clampLimit = (value: number | undefined, max = 50) =>
     Math.min(Math.max(value ?? 25, 1), max);
 
@@ -63,7 +95,7 @@ export const report = query({
         await requireCjAdminIdentity(ctx);
         const now = cleanupCutoff(args.now);
         const limit = clampLimit(args.limit);
-        const [payloads, audits, webhookLogs, jobs, pollRuns, sourcingRuns, aiRequestUsage] = await Promise.all([
+        const [expiredPayloads, audits, webhookLogs, jobs, pollRuns, sourcingRuns, aiRequestUsage] = await Promise.all([
             ctx.db.query("batchImportPayloads").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
             ctx.db.query("descriptionAudits").withIndex("by_debug_expiry", q => q.gt("debugExpiresAt", 0).lt("debugExpiresAt", now)).take(limit),
             expiredWebhookRows(ctx, now, limit),
@@ -72,9 +104,8 @@ export const report = query({
             ctx.db.query("cjWorkerRuns").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
             ctx.db.query("aiRequestUsage").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
         ]);
-        const terminalJobs = jobs.filter(job =>
-            job.status === "ready" || job.status === "completed" || job.status === "cancelled",
-        );
+        const payloads = await disposableImportPayloads(ctx, expiredPayloads);
+        const terminalJobs = await disposableImportJobs(ctx, jobs);
         return {
             generatedAt: now,
             limit,
@@ -119,7 +150,7 @@ export const cleanup = mutation({
         await requireCjAdminIdentity(ctx);
         const now = cleanupCutoff(args.now);
         const limit = clampLimit(args.limit);
-        const [payloads, audits, webhookLogs, jobs, pollRuns, sourcingRuns, aiRequestUsage] = await Promise.all([
+        const [expiredPayloads, audits, webhookLogs, jobs, pollRuns, sourcingRuns, aiRequestUsage] = await Promise.all([
             ctx.db.query("batchImportPayloads").withIndex("by_expiry", q => q.gt("expiresAt", 0).lt("expiresAt", now)).take(limit),
             ctx.db.query("descriptionAudits").withIndex("by_debug_expiry", q => q.gt("debugExpiresAt", 0).lt("debugExpiresAt", now)).take(limit),
             expiredWebhookRows(ctx, now, limit),
@@ -130,9 +161,8 @@ export const cleanup = mutation({
         ]);
         const terminalLogs = webhookLogs.filter(log => isTerminalWebhook(log.status));
         const auditsToCompact = audits.filter(audit => !audit.compactedAt);
-        const terminalJobs = jobs.filter(job =>
-            job.status === "ready" || job.status === "completed" || job.status === "cancelled",
-        );
+        const payloads = await disposableImportPayloads(ctx, expiredPayloads);
+        const terminalJobs = await disposableImportJobs(ctx, jobs);
         let batchItems = 0;
         let batchJobsDeleted = 0;
         let batchJobsDeferred = 0;
