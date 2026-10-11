@@ -60,3 +60,34 @@ describe('temporary import retention', () => {
     expect(await t.run(ctx=>ctx.db.get(payload))).toBeNull();
   });
 });
+
+describe('description audit diagnostic retention', () => {
+  it.each([true, false])('preserves supplier evidence when compacting diagnostics (product exists: %s)', async productExists => {
+    const t = convexTest(schema, modules);
+    const legacyEvidence = makeFunctionReference<'query'>('productSources:legacyEvidence');
+    const sourceSnapshot = { attributes: [{ name: 'Material', value: 'Solid ash', source: 'otapi_property' }], sourceMetadata: { scoped: false } };
+    const ids = await t.run(async ctx => {
+      await ctx.db.insert('webhookExpiryState', {key:'webhook-expiry-v1',epoch:1,phase:'verified',cursor:null,checked:0,mismatchIds:[],updatedAt:Date.now()});
+      const productId = await ctx.db.insert('products', { name: 'Evidence Chair', price: 120, description: 'Saved description', images: ['https://example.test/chair.png'], category: 'Chairs', collection: 'furniture', sourceUrl: 'https://example.test/supplier/chair' });
+      const auditId = await ctx.db.insert('descriptionAudits', { productId, sourceUrl: 'https://example.test/supplier/chair', sourceDomain: 'example.test', generationMode: 'manual_generate', model: 'fixture', promptVersion: 'v1', brandVoiceVersion: 'v1', sourceSnapshotHash: 'source-hash', sourceSnapshot, normalizedFacts: { material: 'Solid ash' }, generatedDraft: { description: 'draft' }, finalDescription: 'Saved description', rawModelResponse: 'raw diagnostic response', validation: { valid: true }, fallbackUsed: false, adminEdited: false, warnings: [], createdAt: 1, updatedAt: 1, debugExpiresAt: 2 });
+      if (!productExists) await ctx.db.delete(productId);
+      return {productId,auditId};
+    });
+    const before = await t.run(ctx => ctx.db.get(ids.auditId));
+    const recoveryBefore = productExists ? await t.query(legacyEvidence, {productId:ids.productId}) : null;
+    if (productExists) expect(recoveryBefore).toEqual({ snapshot: sourceSnapshot, url: 'https://example.test/supplier/chair' });
+    await t.mutation(cleanup,{dryRun:true,limit:5});
+    expect(await t.run(ctx=>ctx.db.get(ids.auditId))).toEqual(before);
+    await t.mutation(cleanup,{dryRun:false,limit:5});
+    const after = await t.run(ctx=>ctx.db.get(ids.auditId));
+    expect(after?.sourceSnapshot).toEqual(sourceSnapshot);
+    expect(after?.finalDescription).toBe('Saved description');
+    expect(after?.normalizedFacts).toEqual({material:'Solid ash'});
+    expect(after?.generatedDraft).toBeUndefined();
+    expect(after?.rawModelResponse).toBeUndefined();
+    expect(after?.compactedAt).toBeGreaterThan(0);
+    if (productExists) expect(await t.query(legacyEvidence,{productId:ids.productId})).toEqual(recoveryBefore);
+    await t.mutation(cleanup,{dryRun:false,limit:5});
+    expect(await t.run(ctx=>ctx.db.get(ids.auditId))).toEqual(after);
+  });
+});
