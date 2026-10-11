@@ -37,7 +37,7 @@ export const advance = internalMutation({ args: {
       const expected = expiryProjection(row);
       if (!expected || expected.expiresAt !== entry.expiresAt || expected.sourceCreatedAt !== entry.sourceCreatedAt) mismatches.push(entry.webhookId);
       count++; cursor = entry.webhookId;
-      bytes += new TextEncoder().encode(JSON.stringify(convexToJson(row))).length + 1000;
+      bytes += new globalThis.TextEncoder().encode(JSON.stringify(convexToJson(row))).length + 1000;
       // Check after each source read: at most one document can cross the soft
       // budget. The hard row cap is always 50; no unbounded payload reads.
       if (bytes >= 1_000_000 || mismatches.length) break;
@@ -62,3 +62,4 @@ export const repair = internalMutation({ args: { ids: v.array(v.id('cjWebhookLog
   if (args.ids.length > 5) throw new Error('Repair at most five webhook identities.');
   for (const id of new Set(args.ids)) await syncExpiry(ctx, id, await ctx.db.get(id));
 } });
+
