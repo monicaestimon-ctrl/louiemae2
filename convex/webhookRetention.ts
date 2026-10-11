@@ -1,3 +1,4 @@
+import { requireExpiryQueue, checkedExpirySource } from './webhookExpiryMaintenance';
 import { v } from 'convex/values';
 import { mutation, query } from './functions';
 import { requireCjAdminIdentity } from './cjAdminAccess';
@@ -42,11 +43,13 @@ export const preview = query({
   handler: async (ctx, args) => {
     await requireCjAdminIdentity(ctx);
     const now = Date.now();
-    const batch = await ctx.db.query('cjWebhookLog').withIndex('by_expiry', q => q.gt('expiresAt', 0).lt('expiresAt', now))
-      .paginate({ cursor: args.cursor, numItems: 5 });
+    await requireExpiryQueue(ctx);
+    const batch = await ctx.db.query('webhookExpiryQueue').withIndex('by_expiry', q => q.lt('expiresAt', now))
+      .paginate(catalogPageOptions({ cursor: args.cursor, numItems: 5 }, 5, 2_000_000));
+    const rows = await Promise.all(batch.page.map(entry => checkedExpirySource(ctx, entry)));
     return {
       cursor: batch.continueCursor, complete: batch.isDone,
-      records: batch.page.map(row => ({
+      records: rows.map(row => ({
         id: row._id, type: row.type, status: row.status ?? 'processed', expiresAt: row.expiresAt,
         eligible: eligible(row, now),
         reason: eligible(row, now) ? 'successful_diagnostic_expired' : 'unresolved_preserved',

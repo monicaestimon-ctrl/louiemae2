@@ -1,3 +1,4 @@
+import { syncExpiry } from './webhookExpiryMaintenance';
 // @vitest-environment node
 /// <reference types="vite/client" />
 import { describe, expect, it, vi } from 'vitest';
@@ -19,6 +20,12 @@ const cleanup = makeFunctionReference<'mutation'>('dataLifecycle:cleanup');
 const payload = { messageId: 'event-1', type: 'ORDER', data: 'x'.repeat(100_000) };
 const oldLog = { messageId: 'old-event', type: 'ORDER', processedAt: '2026-01-01T00:00:00.000Z', payload, expiresAt: 1 };
 
+async function ready(t: ReturnType<typeof convexTest>) {
+  await t.run(async ctx => {
+    if (!await ctx.db.query('webhookExpiryState').first()) await ctx.db.insert('webhookExpiryState', { key:'webhook-expiry-v1', epoch:1, phase:'verified',cursor:null,checked:0,mismatchIds:[],updatedAt:Date.now() });
+    for (const row of await ctx.db.query('cjWebhookLog').collect()) await syncExpiry(ctx,row._id,row);
+  });
+}
 describe('webhook payload retention and deduplication', () => {
   it('samples only the indexed age window, bounds rows, redacts contents and preserves source records', async () => {
     const t = convexTest(schema, modules);
@@ -64,6 +71,7 @@ describe('webhook payload retention and deduplication', () => {
     expect(JSON.stringify(row).length).toBeLessThan(1000);
     expect(await t.query(wasProcessed, { messageId: args.messageId })).toBe(true);
     expect(await t.mutation(claim, args)).toEqual({ claimed: false, status: 'processed' });
+    await ready(t);
     expect(await t.query(preview, { cursor: null })).toMatchObject({ records: [] });
   });
 
@@ -84,6 +92,7 @@ describe('webhook payload retention and deduplication', () => {
   it('supports dry run and idempotent compaction of legacy successes without deleting identities', async () => {
     const t = convexTest(schema, modules);
     const id = await t.run(ctx => ctx.db.insert('cjWebhookLog', oldLog));
+    await ready(t);
     expect(await t.query(preview, { cursor: null })).toMatchObject({ records: [{ id, eligible: true, approximatePayloadBytes: expect.any(Number) }] });
     await t.mutation(compact, { ids: [id], dryRun: true });
     expect(await t.run(ctx => ctx.db.get(id))).toHaveProperty('payload');
@@ -101,6 +110,7 @@ describe('webhook payload retention and deduplication', () => {
       await ctx.db.insert('cjWebhookLog', { ...oldLog, messageId: 'missing', expiresAt: undefined });
       await ctx.db.insert('cjWebhookLog', { ...oldLog, messageId: 'cleared', expiresAt: 0 });
     });
+    await ready(t);
     const first = await t.query(preview, { cursor: null });
     expect(first.records).toHaveLength(5);
     expect(first.records.every((row: { eligible: boolean }) => !row.eligible)).toBe(true);
@@ -118,6 +128,7 @@ describe('webhook payload retention and deduplication', () => {
       missing: await ctx.db.insert('cjWebhookLog', { ...oldLog, messageId: 'missing', expiresAt: undefined }),
       success: await ctx.db.insert('cjWebhookLog', { ...oldLog, messageId: 'success', status: 'processed' }),
     }));
+    await ready(t);
     await t.mutation(cleanup, { dryRun: false, now: Date.now() + 10 * 86_400_000 });
     for (const id of [ids.failed, ids.future, ids.missing]) expect(await t.run(ctx => ctx.db.get(id))).toHaveProperty('payload');
     expect(await t.run(ctx => ctx.db.get(ids.success))).not.toHaveProperty('payload');
@@ -130,6 +141,7 @@ describe('webhook payload retention and deduplication', () => {
     await expect(t.query(preview, { cursor: null })).rejects.toThrow('Not an admin');
     await expect(t.mutation(compact, { ids: [], dryRun: false })).rejects.toThrow('one and five');
     const id = await t.run(ctx => ctx.db.insert('cjWebhookLog', oldLog));
+    await ready(t);
     await expect(t.mutation(compact, { ids: [id, id], dryRun: false })).rejects.toThrow('distinct');
     expect(await t.run(ctx => ctx.db.get(id))).toHaveProperty('payload');
   });

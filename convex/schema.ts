@@ -887,8 +887,7 @@ export default defineSchema({
         attempts: v.optional(v.number()),
         payload: v.optional(v.any()),
         expiresAt: v.optional(v.number()),
-    }).index("by_message_id", ["messageId"])
-        .index("by_expiry", ["expiresAt"]),
+    }).index("by_message_id", ["messageId"]),
 
     cjSourcingJobs: defineTable({
         productId: v.id("products"),
