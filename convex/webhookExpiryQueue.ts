@@ -18,7 +18,10 @@ export const advance = internalMutation({ args: {
 }, handler: async (ctx, args) => {
   const state = await expiryState(ctx);
   if (!state || state.epoch !== args.expectedEpoch || state.phase !== args.expectedPhase || state.cursor !== args.expectedCursor) throw new Error('WEBHOOK_EXPIRY_STALE_CURSOR');
-  const options = catalogPageOptions({ cursor: state.cursor, numItems: 5 }, 5, 2_000_000);
+  // Source pages are byte-bounded, so small receipts can share a transaction.
+  // Queue verification dereferences payloads separately and stays at five.
+  const pageSize = state.phase === 'queue' ? 5 : 50;
+  const options = catalogPageOptions({ cursor: state.cursor, numItems: pageSize }, pageSize, 2_000_000);
   const mismatches: string[] = [];
   let cursor: string, done: boolean, count: number;
   if (state.phase === 'queue') {

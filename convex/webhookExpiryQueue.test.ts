@@ -18,6 +18,21 @@ async function finish(t: ReturnType<typeof convexTest>, s: any) {
   expect(s.phase).toBe('verified'); return s;
 }
 describe('webhook expiry queue migration', () => {
+  it('bounds source pages at fifty and payload dereference pages at five', async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async ctx => { for(let i=0;i<52;i++) await ctx.db.insert('cjWebhookLog',{...base('bounded-'+i),expiresAt:1}); });
+    let state = await t.mutation(begin, {});
+    state = await t.mutation(advance, step(state));
+    expect(state).toMatchObject({phase:'backfill',checked:50});
+    state = await t.mutation(advance, step(state));
+    expect(state).toMatchObject({phase:'source',checked:52});
+    state = await t.mutation(advance, step(state));
+    expect(state).toMatchObject({phase:'source',checked:102});
+    state = await t.mutation(advance, step(state));
+    expect(state).toMatchObject({phase:'queue',checked:104});
+    state = await t.mutation(advance, step(state));
+    expect(state).toMatchObject({phase:'queue',checked:109});
+  });
   it('indexes only positive expiries, verifies both directions, and never rewrites source history', async () => {
     const t = convexTest(schema, modules);
     const before = await t.run(async ctx => {
