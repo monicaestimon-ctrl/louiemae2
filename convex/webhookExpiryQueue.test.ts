@@ -18,7 +18,29 @@ async function finish(t: ReturnType<typeof convexTest>, s: any) {
   expect(s.phase).toBe('verified'); return s;
 }
 describe('webhook expiry queue migration', () => {
-  it('bounds source pages at fifty and payload dereference pages at five', async () => {
+  it('safely restarts only reverse verification for a cursor from the previous release', async () => {
+    const t=convexTest(schema,modules);
+    await t.run(ctx=>ctx.db.insert('cjWebhookLog',{...base('old-cursor'),expiresAt:1}));
+    let state=await t.mutation(begin,{});
+    while(state.phase!=='queue')state=await t.mutation(advance,step(state));
+    await t.run(ctx=>ctx.db.patch(state._id,{cursor:'old-opaque-pagination-cursor'}));
+    state={...state,cursor:'old-opaque-pagination-cursor'};
+    expect(await t.mutation(advance,step(state))).toMatchObject({phase:'verified',mismatchIds:[]});
+  });
+  it('checkpoints inside a verification page when large payloads reach the byte budget', async () => {
+    const t=convexTest(schema,modules);
+    await t.run(async ctx=>{for(let i=0;i<3;i++)await ctx.db.insert('cjWebhookLog',{...base('large-'+i),expiresAt:1,payload:'x'.repeat(550_000)});});
+    let state=await t.mutation(begin,{});
+    while(state.phase!=='queue')state=await t.mutation(advance,step(state));
+    const before=state.checked;
+    state=await t.mutation(advance,step(state));
+    expect(state).toMatchObject({phase:'queue',checked:before+2});
+    const next=await t.mutation(advance,step(state));
+    expect(next).toMatchObject({phase:'verified',checked:before+3});
+    await expect(t.mutation(advance,step(state))).rejects.toThrow('STALE_CURSOR');
+    expect(await t.run(ctx=>ctx.db.query('cjWebhookLog').collect())).toHaveLength(3);
+  });
+  it('bounds source and small-receipt verification pages at fifty', async () => {
     const t = convexTest(schema, modules);
     await t.run(async ctx => { for(let i=0;i<52;i++) await ctx.db.insert('cjWebhookLog',{...base('bounded-'+i),expiresAt:1}); });
     let state = await t.mutation(begin, {});
@@ -31,7 +53,7 @@ describe('webhook expiry queue migration', () => {
     state = await t.mutation(advance, step(state));
     expect(state).toMatchObject({phase:'queue',checked:104});
     state = await t.mutation(advance, step(state));
-    expect(state).toMatchObject({phase:'queue',checked:109});
+    expect(state).toMatchObject({phase:'queue',checked:154});
   });
   it('indexes only positive expiries, verifies both directions, and never rewrites source history', async () => {
     const t = convexTest(schema, modules);
