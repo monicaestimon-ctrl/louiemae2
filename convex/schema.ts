@@ -862,6 +862,13 @@ export default defineSchema({
         .index("by_job", ["jobId"])
         .index("by_expiry", ["expiresAt"]),
 
+    webhookExpiryQueue: defineTable({ webhookId: v.id('cjWebhookLog'), expiresAt: v.number(), sourceCreatedAt: v.number() })
+        .index('by_webhook', ['webhookId']).index('by_expiry', ['expiresAt', 'sourceCreatedAt']),
+    webhookExpiryState: defineTable({ key: v.string(), epoch: v.number(),
+        phase: v.union(v.literal('backfill'), v.literal('source'), v.literal('queue'), v.literal('verified'), v.literal('failed')),
+        cursor: v.union(v.string(), v.null()), checked: v.number(), mismatchIds: v.array(v.string()), updatedAt: v.number(),
+    }).index('by_key', ['key']),
+
     // CJ Webhook Log - tracks processed messageIds to prevent duplicate processing
     cjWebhookLog: defineTable({
         messageId: v.string(),
