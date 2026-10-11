@@ -1,4 +1,4 @@
-import { v } from 'convex/values';
+import { v, convexToJson } from 'convex/values';
 import { internalMutation, internalQuery } from './_generated/server';
 import { EXPIRY_KEY, expiryState, expiryProjection, syncExpiry } from './webhookExpiryMaintenance';
 import { catalogPageOptions } from '../lib/catalogPagination';
@@ -25,12 +25,24 @@ export const advance = internalMutation({ args: {
   const mismatches: string[] = [];
   let cursor: string, done: boolean, count: number;
   if (state.phase === 'queue') {
-    const page = await ctx.db.query('webhookExpiryQueue').paginate(options);
-    cursor = page.continueCursor; done = page.isDone; count = page.page.length;
-    for (const entry of page.page) {
-      const expected = expiryProjection(await ctx.db.get(entry.webhookId));
+    // Use a stable unique key checkpoint so we can stop inside a page when
+    // payloads consume the byte budget. An old opaque pagination cursor safely
+    // restarts only this verification pass; no source record is changed.
+    const after = state.cursor ? ctx.db.normalizeId('cjWebhookLog', state.cursor) : null;
+    const page = await ctx.db.query('webhookExpiryQueue').withIndex('by_webhook', q => after ? q.gt('webhookId', after) : q).take(50);
+    let bytes = 0;
+    count = 0; cursor = state.cursor ?? '';
+    for (const entry of page) {
+      const row = await ctx.db.get(entry.webhookId);
+      const expected = expiryProjection(row);
       if (!expected || expected.expiresAt !== entry.expiresAt || expected.sourceCreatedAt !== entry.sourceCreatedAt) mismatches.push(entry.webhookId);
+      count++; cursor = entry.webhookId;
+      bytes += new TextEncoder().encode(JSON.stringify(convexToJson(row))).length + 1000;
+      // Check after each source read: at most one document can cross the soft
+      // budget. The hard row cap is always 50; no unbounded payload reads.
+      if (bytes >= 1_000_000 || mismatches.length) break;
     }
+    done = count === page.length && page.length < 50;
   } else {
     const page = await ctx.db.query('cjWebhookLog').withIndex('by_expiry', q => q.gt('expiresAt', 0)).paginate(options);
     cursor = page.continueCursor; done = page.isDone; count = page.page.length;
