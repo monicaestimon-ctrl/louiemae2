@@ -171,12 +171,8 @@ export const cleanup = mutation({
             for (const payload of payloads) await ctx.db.delete(payload._id);
             for (const audit of auditsToCompact) {
                 await ctx.db.patch(audit._id, {
-                    sourceSnapshot: {
-                        compacted: true,
-                        sourceSnapshotHash: audit.sourceSnapshotHash,
-                        sourceUrl: audit.sourceUrl,
-                        sourceDomain: audit.sourceDomain,
-                    },
+                    // Supplier snapshots remain inputs to legacyEvidence recovery.
+                    // Expire model diagnostics without discarding source provenance.
                     generatedDraft: undefined,
                     rawModelResponse: undefined,
                     compactedAt: now,
