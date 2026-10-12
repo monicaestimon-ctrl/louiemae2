@@ -7,7 +7,102 @@ incremental health/sourcing summaries, CJ scheduling, webhook retention, Nexx
 preview jobs, and regression/operational guidance. No phase is considered complete
 solely because a narrower test passes.
 
-## Current status — October 9, 2026, through PR 174
+## Current status — October 11, 2026, through PR 181
+
+This section supersedes the October 9 status below. The implementation is live,
+but the original plan is not complete: normalized operating costs and the latest
+index-retirement billing effect remain unverified. Monitoring stays paused.
+The October 11 follow-up authorizes documentation and two read-only payload
+checks only; no cleanup, recovery migration, or supplier request was executed.
+
+### Implementation checklist
+
+| Phase / priority | Completed evidence | Still open |
+| --- | --- | --- |
+| 0 / priority 1 | Deployment mapping; official project-level document/index storage measurements; itemized draft bill | Latest expiry-index savings after reporting catches up; exact per-deployment table allocation; normal billing trend |
+| 1A | Scoped readers and authorized production batch-button acceptance; hidden import retained six images and ten variants, completed atomically, and submitted once | No additional import is authorized by this documentation task |
+| 1B/1C/4 / priority 2 | Local old/current runtime comparison for catalog, editor, health, inventory writes, and 12-item batch save/completion; functional checks passed | Representative production net cost, including maintenance/storage and contention; local measurements are not invoice savings |
+| 1/4 / priority 3 | Authenticated read-only admin checks and sampled polling-demand assessment; no further small safe optimization justified | Reassess only if new evidence identifies a costly operation; preserve freshness and provider throttling |
+| 2A | Bounded CJ scheduling, indexed lookups, import and manual refresh acceptance | Supplier equivalence/mapping and downstream fulfillment remain deferred; last sourcing observations are historical, not a new CJ check |
+| 2B / priority 4 | Verified expiry queue; PR177 removed the full-history expiry index in both LouieMae environments; PR180 protects unfinished reviews; PR181 preserves supplier audit snapshots | No historical cleanup approved or executed; legacy evidence must be preserved or separately recovered and verified |
+| 3 | Nexx development brought forward while preserving exhibit work; monitoring pause verified | Do not resume monitoring or repeat that migration |
+
+PR177 retained all 23,209,847 production and 4,109,882 development webhook source
+records at rollout. Production's 284,333 expiry entries passed source and reverse
+verification. These are rollout counts, not a claim that receipt counts never grow.
+PR181 merged as `3dcfe473d6c8c1756cff315cd729c98f5899df53`; main CI
+`38174915072` passed and deployed. Its 714 tests passed; development also received
+the safeguard. Thirty audited source snapshots and three unfinished review
+payloads were subsequently unchanged. CodeRabbit skipped its automatic review
+under repository eligibility rules; direct review and CI were used.
+
+### Measured costs and limits
+
+Official daily webhook index storage fell from 17,030,835,723 to 11,353,894,680
+bytes between October 9 and 10 (5,676,941,043 bytes). The October 11 metric still
+showed the latter value at 21:12 UTC. This proves an earlier reduction, not the
+additional effect of PR177. The table report is project aggregate; its deployment
+class is not a production/development split.
+
+The October 11 approximately 16:11 America/Chicago billing check showed an accrued
+Starter draft total of $5.26: database storage $4.07, database I/O $0.88, search
+storage $0.28, file storage $0.03. Function calls, action compute and egress were
+$0.00. Warning/disable thresholds remained $30/$35. These are team-level draft
+charges, not a month-end forecast; migration and verification traffic is included.
+
+Local synthetic comparisons used the same backend and installed dependencies:
+
+- First 40 catalog products: 5,409,763 to 421,118 database read bytes.
+- All 300 catalog products: 5,409,763 to 3,208,290 read bytes, with matching
+  displayed fields and order. Each uncached page is counted once.
+- Full health report with three issue-bearing products among 312: 5,630,422 to
+  7,739 read bytes; issue fields and supplier-associated stock transitions matched.
+- Tested edits, stock changes and a 12-product save/completion added 1,130,488
+  database read-plus-write bytes in the current implementation. Search writes,
+  persistent summary storage, migration cost and subscription effects are separate.
+
+The faster readers have a maintenance cost. Do not present read reductions alone
+as total savings. No supplier, scraper, payment or fulfillment calls were made by
+the local benchmarks. One-off production samples include concurrent traffic and
+do not establish long-term workload frequencies.
+
+### Two legacy payload checks — October 11, approximately 20:28 America/Chicago
+
+Both imported items still link to their expected saved products and durable
+snapshots. Source identities match, stored content hashes validate, and repeated
+reads confirmed unchanged item, product and snapshot records.
+
+| Candidate | Inline JSON bytes | Comparison using current source adapter | Decision |
+| --- | ---: | --- | --- |
+| A | 60,261 | Full semantic snapshot match after excluding timestamps; four attributes, six source images and 39 description images match | Preserve; current-adapter equivalence is not proof that every raw provider field is redundant or permission to delete |
+| B | 190,872 | Images, descriptions and normalized variant groups match, but an attribute value, seller sales count, and supplier variant price/stock metadata differ | Preserve both representations; do not guess which historical value is authoritative |
+
+The 178 other imported inline payloads lack durable snapshots and remain inputs
+to legacy supplier-evidence recovery. Fourteen expired audit snapshots also
+support recovery. Keep all source evidence. PR181 permits compaction of model
+draft/raw diagnostics while preserving snapshots, but no compaction was run.
+Only about 118 KB of expired model diagnostics was identified as immediately
+separable; it is a lower savings priority than the multi-GB index changes.
+
+### Remaining checks and evidence
+
+Use a one-off check on October 12 afternoon America/Chicago for provider storage
+reporting, then October 14–15 for a more useful normal-traffic comparison. These
+are suggested checkpoints, not scheduled jobs or a promise that reporting will
+have caught up. Keep the goal incomplete if accounting or workload evidence is
+still insufficient. No monitoring was re-enabled.
+
+Local audit files in the original workspace's `tmp/` (not startup dependencies):
+`cost-priorities-1-4-current.json`, `cost-workload-assessment-2026-10-11.json`,
+`cost-benchmark-runtime/comparison.json`,
+`cost-benchmark-runtime/supplier-comparison.json`,
+`temporary-data-dependency-audit-1791752462431.json`,
+`two-import-payload-verification-2026-10-11.json`, and
+`audit-evidence-live-acceptance.json`. Exact record IDs and raw provider payloads
+are deliberately excluded from this repository document.
+
+
+## Historical status — October 9, 2026, through PR 174
 
 The complete original plan remains open. This section supersedes the historical
 release entries below. Completed migrations must not be repeated.
