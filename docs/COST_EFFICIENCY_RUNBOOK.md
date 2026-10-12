@@ -499,3 +499,60 @@ Do not reset migration state, clear the queue, or blindly deploy an old schema.
 Keep the current queue maintenance and source identities intact during recovery.
 Storage estimates and invoices can lag index deletion; report measured provider
 values separately from expected savings, and leave recurring monitoring paused.
+
+
+## Retention safeguards and rollback boundaries (October 11, 2026)
+
+PR180 protects unfinished and orphan import-review payloads and rejects job cleanup
+when any child is pending, fetching, ready or error, including children beyond the
+first deletion page. PR181 preserves `descriptionAudits.sourceSnapshot` during
+diagnostic compaction because `productSources:legacyEvidence` can still use its
+supplier attributes. It removes only `generatedDraft` and `rawModelResponse`,
+retaining final descriptions, normalized facts, source identity and audit linkage.
+
+Current instruction: keep monitoring paused and delete nothing. The generic
+`dataLifecycle:cleanup` spans several record categories; do not invoke it with
+`dryRun: false` under an approval limited to documentation or payload verification.
+Do not run evidence recovery actions either: they can write records and fetch
+supplier data. A completed import or expired timestamp alone is insufficient
+evidence that an inline result is disposable.
+
+Read-only verification sequence:
+
+1. Read the exact imported item and its linked product; verify IDs, item status,
+   product source URL and durable snapshot existence.
+2. Reconstruct the evidence locally with `sourceFromImportPayload` and compare
+   using `semanticGenerationKey`. Verify snapshot `sourceKey` and `contentHash`.
+   Report differences; exclude timestamps only under the existing semantic rules.
+3. Compare images, descriptions, attributes, variant groups and full supplier
+   variant metadata. Normalized groups can match while prices or stock differ.
+4. Re-read and hash all records. Sequential reads are not a single transaction;
+   any future approved mutation must revalidate eligibility and references inside
+   its own transaction. Do not save raw provider content in public documentation.
+
+The two October 11 checks found one semantic match and one mismatch. Both remain
+untouched. Preserve the other 178 inline results and audit snapshots needed for
+legacy recovery. Any later removal needs a separately reviewed exact scope,
+recoverable export/rollback approach, content-parity evidence and approval.
+
+Rollback sequence:
+
+- Prefer a targeted fix that retains PR180/181 protections. Reverting PR181
+  restores destructive snapshot compaction; reverting PR180 restores deletion of
+  unfinished reviews. Neither is a safe routine rollback. Keep cleanup unexecuted
+  while diagnosing a retention defect. A code rollback cannot restore deleted data.
+- For the atomic import flow, roll back the frontend first or both sides together;
+  the current frontend relies on server-side completion. Preserve the review data.
+- For reader/index defects, follow the dependency-specific rollout document. In
+  particular, restore and finish backfilling the removed expiry index before using
+  an old reader that requires it. Do not blindly deploy an old schema or reset
+  verified queue state. Rebuilding a large index can incur cost.
+- Keep `BACKGROUND_MONITORING_ENABLED` disabled in each deployment. Preserve
+  essential operational inventory, sourcing, tracking and recovery schedules.
+  A rollback must not copy environment settings from a different team/deployment.
+- Recheck exact target and commit, source counts/hashes as appropriate, duplicate
+  suppression, unfinished review availability and the operational schedule list.
+  Report measured outcomes separately from unverified billing expectations.
+
+For current completion status, consult `CONVEX_COST_REDUCTION_PROGRESS.md`; its
+October 11 section supersedes older access and batch-acceptance blockers.
