@@ -18,7 +18,7 @@ import { SafeImage } from './SafeImage';
 
 const furnitureFallback: CollectionConfig = { id: 'furniture', title: 'Furniture', subtitle: '', heroImage: '', subcategories: [] };
 
-export const HomePage: React.FC = () => {
+export const HomePage: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   const { siteContent, isLoading } = useSite();
   const { home } = siteContent;
   const { addSubscriber } = useNewsletter();
@@ -90,15 +90,16 @@ export const HomePage: React.FC = () => {
           </FadeIn>
           <FadeIn delay={400}>
             <GlassButton
-              onClick={() => navigateTo('#collection/new')}
+              onClick={() => navigateTo('#collection/furniture')}
             >
-              New Collection
+              Shop Furniture
             </GlassButton>
           </FadeIn>
         </div>
       </section>
 
       {/* Intro Text */}
+      {children}
       <section className="py-24 px-6 container mx-auto text-center">
         <FadeIn>
           <h3 className="font-serif text-3xl md:text-5xl text-earth leading-tight max-w-5xl mx-auto">
@@ -292,7 +293,7 @@ export const HomePage: React.FC = () => {
                   <h3 className="font-serif text-lg md:text-xl text-earth leading-tight mb-1 group-hover:text-bronze transition-colors">
                     {product.name}
                   </h3>
-                  <p className="font-serif italic text-earth/80 text-base group-hover:text-bronze/80 transition-colors">${product.price}</p>
+                  <p className="text-xs uppercase tracking-widest text-bronze">Coming Soon</p><p className="font-serif italic text-earth/80 text-base group-hover:text-bronze/80 transition-colors">${product.price}</p>
                 </div>
               </FadeIn>
             ))}

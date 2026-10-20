@@ -1,15 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { loadEnv, type Plugin } from 'vite';
 
-// Keep the original HTML and React entry untouched. Launch day: set
-// VITE_PRELAUNCH_MODE=false and redeploy to restore the original storefront.
+// The storefront is live by default; opt in explicitly for a future waitlist.
 export function prelaunchPlugin(): Plugin {
   let enabled = true;
   return {
     name: 'louie-mae-prelaunch',
     configResolved(config) {
       const env = loadEnv(config.mode, config.root, 'VITE_');
-      enabled = (process.env.VITE_PRELAUNCH_MODE ?? env.VITE_PRELAUNCH_MODE) !== 'false';
+      enabled = (process.env.VITE_PRELAUNCH_MODE ?? env.VITE_PRELAUNCH_MODE) === 'true';
     },
     transformIndexHtml: {
       order: 'pre',

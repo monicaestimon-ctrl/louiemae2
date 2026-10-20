@@ -10,7 +10,7 @@ import { BlogPostView } from './components/BlogPostView';
 import { AdminPage } from './components/AdminPage';
 import { DynamicPage } from './components/DynamicPage';
 import { StorePage } from './components/StorePage';
-import { CommerceCatalog } from './components/CommerceCatalog';
+import { RetailCatalog } from './components/RetailCatalog';
 import { SupportPage } from './components/SupportPage';
 import { NewArrivalsPage } from './components/NewArrivalsPage';
 import { NewCollectionPage } from './components/NewCollectionPage';
@@ -289,7 +289,7 @@ const AppContent = () => {
   const extendedNavLinks = siteContent.navLinks;
 
   // Determine what to render
-  let currentView: React.ReactNode = <HomePage />;
+  let currentView: React.ReactNode = <HomePage><RetailCatalog /></HomePage>;
   let dynamicPageData = null;
 
   if (activePage === 'admin') currentView = <AdminPage />;
@@ -311,7 +311,7 @@ const AppContent = () => {
   else if (activePage.startsWith('#pages/')) {
     const slug = activePage.replace('#pages/', '');
     dynamicPageData = siteContent.customPages.find(p => p.slug === slug);
-    currentView = dynamicPageData ? <DynamicPage page={dynamicPageData} /> : <HomePage />;
+    currentView = dynamicPageData ? <DynamicPage page={dynamicPageData} /> : <HomePage><RetailCatalog /></HomePage>;
   }
   else if (activePage.startsWith('#collection/')) {
     const [path, query] = activePage.split('?');
@@ -324,9 +324,9 @@ const AppContent = () => {
     const collectionExists = siteContent.collections.some(c => c.id === type);
 
     if (collectionExists) {
-      currentView = <><StorePage collection={type as string} initialCategory={category || 'All'} forceProductView={viewProducts} />{type === 'furniture' && <CommerceCatalog channel="retail" />}</>;
+      currentView = <>{type === 'furniture' && <RetailCatalog />}<StorePage collection={type as string} initialCategory={category || 'All'} forceProductView={viewProducts} /></>;
     } else {
-      currentView = <HomePage />;
+      currentView = <HomePage><RetailCatalog /></HomePage>;
     }
   }
 

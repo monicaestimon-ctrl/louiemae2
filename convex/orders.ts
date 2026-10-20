@@ -19,6 +19,8 @@ export const createOrder = internalMutation({
             price: v.number(),
             quantity: v.number(),
             image: v.optional(v.string()),
+            supplierSku: v.optional(v.string()),
+            fulfillmentProvider: v.optional(v.literal('ashcroft')),
             // CJ Dropshipping product mapping
             cjVariantId: v.optional(v.string()),
             cjSku: v.optional(v.string()),

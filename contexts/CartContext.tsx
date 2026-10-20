@@ -23,7 +23,7 @@ interface CartContextType {
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
-const CART_STORAGE_KEY = 'louiemae_cart';
+const CART_STORAGE_KEY = 'louiemae_ashcroft_cart_v1';
 
 // Helper to create unique cart key for product + variant
 const getCartItemKey = (productId: string, variantId?: string) =>
@@ -48,6 +48,7 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, [items]);
 
     const addToCart = (product: Product, quantity: number = 1, variant?: ProductVariant) => {
+        if (product.fulfillmentProvider !== 'ashcroft') return;
         setItems(prev => {
             const key = getCartItemKey(product.id, variant?.id);
             const existingIndex = prev.findIndex(item =>
