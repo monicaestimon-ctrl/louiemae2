@@ -20,6 +20,14 @@ export const holmBusinessType = v.union(
   v.literal('retail')
 );
 export const clientShow = v.union(v.literal('cost'), v.literal('markup'), v.literal('retail'));
+export const partnerTier = v.union(v.literal('base'), v.literal('active'), v.literal('top'), v.literal('elite'));
+export const sourcingStatus = v.union(
+  v.literal('received'),
+  v.literal('sourcing'),
+  v.literal('options_ready'),
+  v.literal('ordered'),
+  v.literal('closed')
+);
 
 export const holmTables = {
   holmProfiles: defineTable({
@@ -30,11 +38,20 @@ export const holmTables = {
     tradeStatus,
     taxExempt: v.optional(v.boolean()),
     defaultSpace: v.optional(v.string()),
+    // Partner program
+    partnerStatus: v.optional(v.literal('active')),
+    partnerTier: v.optional(partnerTier),
+    refCode: v.optional(v.string()),
+    w9Status: v.optional(v.union(v.literal('pending'), v.literal('approved'))),
+    w9FileId: v.optional(v.id('_storage')),
+    referredBy: v.optional(v.id('users')),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index('by_user', ['userId'])
-    .index('by_trade_status', ['tradeStatus', 'updatedAt']),
+    .index('by_trade_status', ['tradeStatus', 'updatedAt'])
+    .index('by_refCode', ['refCode'])
+    .index('by_partner_status', ['partnerStatus', 'updatedAt']),
 
   holmTradeApplications: defineTable({
     userId: v.id('users'),
@@ -72,10 +89,120 @@ export const holmTables = {
     subtotal: v.number(),
     projectDiscount: v.number(),
     tierBps: v.number(),
+    // Partner attribution (retail-priced requests only earn commission)
+    partnerId: v.optional(v.id('users')),
+    refCode: v.optional(v.string()),
+    channel: v.optional(v.string()),
+    partnerState: v.optional(v.union(v.literal('awaiting_payment'), v.literal('credited'), v.literal('void'))),
+    partnerCheckedAt: v.optional(v.number()), // last reconcile pass, so unpaid rows rotate
     createdAt: v.number(),
   })
     .index('by_user', ['userId', 'createdAt'])
-    .index('by_project', ['commerceProjectId']),
+    .index('by_project', ['commerceProjectId'])
+    .index('by_partner_state', ['partnerState', 'partnerCheckedAt'])
+    .index('by_partner', ['partnerId', 'createdAt']),
+
+  holmClicks: defineTable({
+    partnerId: v.id('users'),
+    refCode: v.string(),
+    channel: v.string(),
+    target: v.string(),
+    visitorId: v.string(),
+    at: v.number(),
+  })
+    .index('by_partner', ['partnerId', 'at'])
+    .index('by_visitor_partner', ['visitorId', 'partnerId', 'at']),
+
+  holmCommissions: defineTable({
+    partnerId: v.id('users'),
+    quoteRequestId: v.id('holmQuoteRequests'),
+    commerceProjectId: v.id('commerceProjects'),
+    baseCents: v.number(),
+    rateBps: v.number(),
+    amountCents: v.number(),
+    status: v.union(v.literal('pending'), v.literal('cleared'), v.literal('paid'), v.literal('void')),
+    clearsAt: v.number(),
+    payoutId: v.optional(v.id('holmPayouts')),
+    createdAt: v.number(),
+  })
+    .index('by_partner', ['partnerId', 'createdAt'])
+    .index('by_status_clears', ['status', 'clearsAt'])
+    .index('by_partner_status', ['partnerId', 'status']),
+
+  holmReferrals: defineTable({
+    referrerId: v.id('users'),
+    referredUserId: v.id('users'),
+    status: v.union(v.literal('signed_up'), v.literal('verified'), v.literal('credited')),
+    creditCents: v.number(),
+    checkedAt: v.optional(v.number()), // last reconcile pass, so waiting referrals rotate
+    createdAt: v.number(),
+  })
+    .index('by_referrer', ['referrerId', 'createdAt'])
+    .index('by_referred', ['referredUserId'])
+    .index('by_status_checked', ['status', 'checkedAt']),
+
+  holmCredits: defineTable({
+    userId: v.id('users'),
+    amountCents: v.number(), // positive = credit, negative = redemption
+    reason: v.string(),
+    at: v.number(),
+  }).index('by_user', ['userId', 'at']),
+
+  holmPayouts: defineTable({
+    partnerId: v.id('users'),
+    amountCents: v.number(),
+    reference: v.string(),
+    paidBy: v.string(),
+    paidAt: v.number(),
+  }).index('by_partner', ['partnerId', 'paidAt']),
+
+  holmSourcing: defineTable({
+    number: v.string(),
+    userId: v.id('users'),
+    email: v.string(),
+    type: v.union(v.literal('specific'), v.literal('similar'), v.literal('custom')),
+    title: v.string(),
+    link: v.string(),
+    category: v.string(),
+    material: v.string(),
+    dims: v.string(),
+    quantity: v.number(),
+    targetCents: v.optional(v.number()),
+    neededBy: v.string(),
+    project: v.string(),
+    notes: v.string(),
+    imageIds: v.array(v.id('_storage')),
+    status: sourcingStatus,
+    options: v.array(v.object({ title: v.string(), unitCents: v.number(), leadTime: v.string(), note: v.string() })),
+    chosenOption: v.optional(v.number()),
+    adminNote: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_user', ['userId', 'createdAt'])
+    .index('by_status', ['status', 'createdAt']),
+
+  // A board shared by link: shoppable (retail prices, partner code) or presentation (no prices).
+  holmSharedBoards: defineTable({
+    slug: v.string(),
+    ownerId: v.id('users'),
+    title: v.string(),
+    mode: v.union(v.literal('shop'), v.literal('presentation')),
+    by: v.string(),
+    refCode: v.optional(v.string()),
+    items: v.array(v.object({ productId: v.id('commerceProducts'), note: v.optional(v.string()) })),
+    createdAt: v.number(),
+  })
+    .index('by_slug', ['slug'])
+    .index('by_owner', ['ownerId', 'createdAt']),
+
+  // Projects, boards, collages and inspiration, kept with the account so they follow you.
+  holmUserState: defineTable({
+    userId: v.id('users'),
+    key: v.string(),
+    value: v.any(),
+    updatedAt: v.number(),
+  }).index('by_user_key', ['userId', 'key']),
 
   holmClientQuotes: defineTable({
     slug: v.string(),
