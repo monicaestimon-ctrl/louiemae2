@@ -8,6 +8,7 @@ export function furniturePlugin(): Plugin {
         const [pathname, search] = (req.url || '').split('?');
         if (/^\/furniture(?:\/admin)?\/?$/.test(pathname))
           req.url = `/furniture/index.html${search ? `?${search}` : ''}`;
+        if (/^\/trade\/?$/.test(pathname)) req.url = `/trade/index.html${search ? `?${search}` : ''}`;
         next();
       });
     },

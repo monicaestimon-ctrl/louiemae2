@@ -11,7 +11,7 @@ export default defineConfig(() => {
         host: '0.0.0.0',
       },
       plugins: [furniturePlugin(), prelaunchPlugin(), react()],
-      build: { rollupOptions: { input: { main: path.resolve(__dirname, 'index.html'), furniture: path.resolve(__dirname, 'furniture/index.html') } } },
+      build: { rollupOptions: { input: { main: path.resolve(__dirname, 'index.html'), furniture: path.resolve(__dirname, 'furniture/index.html'), trade: path.resolve(__dirname, 'trade/index.html') } } },
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),

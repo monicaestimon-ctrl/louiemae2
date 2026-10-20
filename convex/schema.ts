@@ -5,6 +5,7 @@ import { cjPricingReviewValidator } from './cjPricingValidators';
 import { authTables } from "@convex-dev/auth/server";
 import { furnitureTables } from './furnitureTables';
 import { commerceTables } from './commerceTables';
+import { holmTables } from './holmTables';
 
 const cjInventoryStatusValidator = v.union(
     v.literal("unknown"),
@@ -67,6 +68,7 @@ export default defineSchema({
     ...authTables,
     ...furnitureTables,
     ...commerceTables,
+    ...holmTables,
 
     webhookSummaries: defineTable({
         webhookId: v.id('cjWebhookLog'), version: v.number(), sourceCreatedAt: v.number(),
