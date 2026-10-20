@@ -196,7 +196,7 @@ function BoardPin({b,ctx}){
   </div>`;
 }
 function Wall({items,ctx,density='normal',mixBoards}){
-  const out=[];items.forEach((p,i)=>{out.push(html`<${PinCard} key=${'p'+p.id} p=${p} ctx=${ctx}/>`);if(mixBoards&&i%5===2){const b=mixBoards[Math.floor(i/5)%mixBoards.length];out.push(html`<${BoardPin} key=${'b'+b.id+i} b=${b} ctx=${ctx}/>`)}});
+  const out=[];items.forEach((p,i)=>{out.push(html`<${PinCard} key=${'p'+p.id} p=${p} ctx=${ctx}/>`);if(mixBoards?.length&&i%5===2){const b=mixBoards[Math.floor(i/5)%mixBoards.length];out.push(html`<${BoardPin} key=${'b'+b.id+i} b=${b} ctx=${ctx}/>`)}});
   return html`<div className=${'wall '+(density==='compact'?'compact':density==='wide'?'wide':'')}>${out}</div>`;
 }
 
@@ -1279,10 +1279,6 @@ function PinDetail({ctx}){
     <section className="pp-sec">
       <div className="sec-h"><h2>More like <em>this</em></h2><div className="row">${[['tone','Similar tone'],['mat','Same material'],['type','Same type']].map(([k,l])=>html`<button key=${k} className=${'chip'+(simF===k?' on':'')} onClick=${()=>setSimF(k)}>${l}</button>`)}</div></div>
       <${Wall} items=${sim} ctx=${ctx}/>
-    </section>
-
-    <section className="pp-sec" style=${{maxWidth:760}}>
-      <h2 style=${{fontSize:34,marginBottom:14}}>${cmts.length} notes from the trade</h2>
     </section>
 
     <div className=${'pp-mini'+(mini?' show':'')}>
