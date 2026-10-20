@@ -14,7 +14,12 @@ body:has(.lm-page) { margin:0; }
 .lm-page section[id] { scroll-margin-top:90px; }
 .lm-header { height:90px; display:grid; grid-template-columns:1fr auto 1fr; align-items:center; padding:0 5%; border-bottom:1px solid #dfd6c9; background:var(--ivory); }
 .lm-header>.lm-wordmark { grid-column:2; }
-.lm-header nav { justify-self:end; }
+.lm-header nav { justify-self:end; grid-column:3; grid-row:1; }
+/* Retail is louiemae.com; Trade is House of Louie Mae at /trade */
+.lm-shopas { grid-column:1; grid-row:1; justify-self:start; display:inline-flex; gap:2px; padding:3px; border-radius:999px; background:#efe7db; }
+.lm-shopas a { font-size:.68rem; font-weight:500; text-transform:uppercase; letter-spacing:.12em; padding:7px 13px; border-radius:999px; color:#6f6458; transition:color .2s, background .2s; }
+.lm-shopas a:hover { color:var(--ink); }
+.lm-shopas a[aria-current] { background:#fffdf8; color:var(--ink); box-shadow:0 1px 4px rgba(0,0,0,.08); }
 .lm-brand-name { font-family:'Cormorant Garamond',Georgia,serif; font-weight:400; white-space:nowrap; }
 .lm-brand-lockup { display:inline-flex; flex-direction:column; align-items:center; gap:16px; }
 .lm-page .lm-house-icon { object-fit:contain; }
@@ -84,6 +89,7 @@ body:has(.lm-page) { margin:0; }
 .lm-mobile-break { display:none; }
 .lm-loading { padding:50px; font-family:Georgia,serif; }
 @media(min-width:1600px) { .lm-page main { max-width:1800px; margin:auto; } }
+@media(max-width:700px) { .lm-shopas a { padding:6px 9px; font-size:.58rem; letter-spacing:.06em; } }
 @media(max-width:1050px) { .lm-copy { padding:40px; } .lm-form-row { flex-direction:column; gap:10px; } .lm-collections img { height:370px; } .lm-home { height:560px; } }
 @media(max-width:700px) {
  .lm-header { height:74px; padding:0 20px; display:flex; justify-content:space-between; } .lm-wordmark { font-size:1.6rem; } .lm-header nav { gap:0; } .lm-header nav a { font-size:.65rem; letter-spacing:.07em; } .lm-header nav a:first-child { display:none; }

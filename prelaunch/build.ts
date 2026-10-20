@@ -3,6 +3,11 @@ import { loadEnv, type Plugin } from 'vite';
 
 // Keep the original HTML and React entry untouched. Launch day: set
 // VITE_PRELAUNCH_MODE=false and redeploy to restore the original storefront.
+// The trade site (/trade) and the furniture catalog (/furniture) are already live and
+// always keep their own pages.
+export const keepsOwnPage = (filename: string) =>
+  /\/(furniture|trade)\/index\.html$/.test(filename.replace(/\\/g, '/'));
+
 export function prelaunchPlugin(): Plugin {
   let enabled = true;
   return {
@@ -14,7 +19,7 @@ export function prelaunchPlugin(): Plugin {
     transformIndexHtml: {
       order: 'pre',
       handler(html, ctx) {
-        if (ctx.filename.replace(/\\/g, '/').endsWith('/furniture/index.html')) return html;
+        if (keepsOwnPage(ctx.filename)) return html;
         return enabled ? readFileSync(new URL('./index.html', import.meta.url), 'utf8') : html;
       },
     },

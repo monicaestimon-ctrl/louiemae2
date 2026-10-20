@@ -3,6 +3,8 @@
   "rewrites": [
     { "source": "/furniture", "destination": "/furniture/index.html" },
     { "source": "/furniture/admin", "destination": "/furniture/index.html" },
+    { "source": "/trade", "destination": "/trade/index.html" },
+    { "source": "/trade/", "destination": "/trade/index.html" },
     {
       "source": "/story",
       "destination": "/api/og?path=story"

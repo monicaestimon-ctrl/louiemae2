@@ -40,6 +40,7 @@ export function LandingPage() {
   return <div className="lm-page">
     <a className="lm-skip" href="#main">Skip to content</a>
     <header className="lm-header">
+      <div className="lm-shopas" role="navigation" aria-label="Shop as"><a href="/" aria-current="page" title="Louie Mae, for your home">Retail</a><a href="/trade" title="House of Louie Mae, for business">Trade</a></div>
       <a className="lm-wordmark" href="/" aria-label="Louie Mae home"><Wordmark /></a>
       <nav aria-label="Main navigation"><a href="#collection-preview">First look</a><a href="#waitlist">Join the waitlist</a></nav>
     </header>
