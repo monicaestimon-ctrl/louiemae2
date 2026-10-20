@@ -15,10 +15,10 @@ class Boundary extends React.Component<{ children: React.ReactNode }, { failed: 
   // A failure on one page shouldn't lock the whole site: moving to another page tries again.
   private retry = () => this.setState({ failed: false });
   componentDidMount() {
-    addEventListener('hashchange', this.retry);
+    window.addEventListener('hashchange', this.retry);
   }
   componentWillUnmount() {
-    removeEventListener('hashchange', this.retry);
+    window.removeEventListener('hashchange', this.retry);
   }
   render() {
     return this.state.failed ? (
