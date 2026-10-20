@@ -6,6 +6,7 @@ export const HOLM_PARTNERS = {
   ceilingBps: 2300,
   attributionDays: 30,
   clearingDays: 30,
+  quoteHoldDays: 120, // unpaid partner-attributed quotes stop waiting for payment after this
   referralCreditCents: 10_000, // $100 store credit
   referralMinOrderCents: 50_000, // after a first paid order over $500
   channels: ['pinterest', 'instagram', 'email', 'website', 'tiktok', 'direct'],

@@ -38,7 +38,9 @@ export const submit = mutation({
   },
   handler: async (ctx, a) => {
     const me = await requireUser(ctx);
-    if (!isVerified(me.profile) && !isPartner(me.profile) && !(await isAdmin(ctx)))
+    const trusted = isVerified(me.profile) || (await isAdmin(ctx));
+    // Partners join without review, so they get a tighter daily limit than verified trade accounts.
+    if (!trusted && !isPartner(me.profile))
       throw new Error('Sourcing is open to verified trade accounts and partners.');
     const title = a.title.trim();
     if (title.length < 3 || title.length > 200) throw new Error('Describe the piece you need.');
@@ -48,8 +50,9 @@ export const submit = mutation({
     if (a.imageIds.length > 8) throw new Error('Add up to 8 images.');
     if ([a.link, a.category, a.material, a.dims, a.neededBy, a.project].some((x) => x.length > 500) || a.notes.length > 3000)
       throw new Error('Please shorten the request details.');
-    const recent = await ctx.db.query('holmSourcing').withIndex('by_user', (q) => q.eq('userId', me.userId)).order('desc').take(10);
-    if (recent.length === 10 && recent[9].createdAt > Date.now() - 86_400_000)
+    const dailyLimit = trusted ? 10 : 3;
+    const recent = await ctx.db.query('holmSourcing').withIndex('by_user', (q) => q.eq('userId', me.userId)).order('desc').take(dailyLimit);
+    if (recent.length === dailyLimit && recent[dailyLimit - 1].createdAt > Date.now() - 86_400_000)
       throw new Error('You have sent several requests today. Our team will be in touch before you send more.');
     const total = await ctx.db.query('holmSourcing').order('desc').first();
     const number = `SR-${total ? Number(total.number.slice(3)) + 1 : 1051}`;

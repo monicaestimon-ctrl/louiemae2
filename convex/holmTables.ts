@@ -94,11 +94,12 @@ export const holmTables = {
     refCode: v.optional(v.string()),
     channel: v.optional(v.string()),
     partnerState: v.optional(v.union(v.literal('awaiting_payment'), v.literal('credited'), v.literal('void'))),
+    partnerCheckedAt: v.optional(v.number()), // last reconcile pass, so unpaid rows rotate
     createdAt: v.number(),
   })
     .index('by_user', ['userId', 'createdAt'])
     .index('by_project', ['commerceProjectId'])
-    .index('by_partner_state', ['partnerState', 'createdAt'])
+    .index('by_partner_state', ['partnerState', 'partnerCheckedAt'])
     .index('by_partner', ['partnerId', 'createdAt']),
 
   holmClicks: defineTable({
@@ -133,11 +134,12 @@ export const holmTables = {
     referredUserId: v.id('users'),
     status: v.union(v.literal('signed_up'), v.literal('verified'), v.literal('credited')),
     creditCents: v.number(),
+    checkedAt: v.optional(v.number()), // last reconcile pass, so waiting referrals rotate
     createdAt: v.number(),
   })
     .index('by_referrer', ['referrerId', 'createdAt'])
     .index('by_referred', ['referredUserId'])
-    .index('by_status', ['status', 'createdAt']),
+    .index('by_status_checked', ['status', 'checkedAt']),
 
   holmCredits: defineTable({
     userId: v.id('users'),

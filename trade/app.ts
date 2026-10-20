@@ -234,7 +234,7 @@ function Header({ctx}){
 }
 const MENU = [
   ['home','The Floor','Start here',1],['discover','Discover','Search & trends',2],['studio','Studio','Collage & room',13],['room','Space Planner','Plan · model · render',7],
-  ['boards','Boards','Your saved ideas',12],['inspo','My Inspo','Uploads & Pinterest',4],['hub','Your quotes','Quotes, client links, trade pass',17],['trade','Trade Account','Apply & verify',3],['sourcing','Sourcing','Request any piece',9],['quiz','Style Quiz','Find your blend',4],
+  ['boards','Boards','Your saved ideas',12],['inspo','My Inspo','Your uploads',4],['hub','Your quotes','Quotes, client links, trade pass',17],['trade','Trade Account','Apply & verify',3],['sourcing','Sourcing','Request any piece',9],['quiz','Style Quiz','Find your blend',4],
 ];
 function TabBar({ctx}){
   const t=[['home','Home','home'],['discover','Discover','compass'],['studio','Studio','brush'],['boards','Boards','board']];
@@ -1729,7 +1729,7 @@ function Studio({ctx}){
       ${tab==='inspo'&&html`<div style=${{display:'grid',gap:10}}>
         <div className="row" style=${{justifyContent:'space-between'}}><span className="help" style=${{margin:0}}>Tap to add. Inspo never shows prices or links.</span><button className="lnk" onClick=${()=>ctx.go('inspo')}>Library</button></div>
         ${ctx.inspo.length?html`<div className="prod-mini">${ctx.inspo.map(x=>html`<div key=${x.id} style=${{display:'grid',gap:4}}><button onClick=${()=>{const n={...mkInspo(x),x:14+Math.random()*30,y:12+Math.random()*30,w:40};commit([...els,n]);setSel(n.id)}} title=${'Add '+x.title}><img src=${x.src} alt="" loading="lazy"/><span>${x.title}</span></button><button className="lnk" style=${{fontSize:11.5,justifySelf:'start'}} onClick=${()=>setBg({img:x.src})}>Set as background</button></div>`)}</div>`
-          :html`<p className="help">No inspo yet. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Upload or import from Pinterest</button></p>`}</div>`}
+          :html`<p className="help">No inspo yet. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Upload inspiration</button></p>`}</div>`}
       ${tab==='ideas'&&html`<div style=${{display:'grid',gap:16}}>${COMMUNITY.map(b=>html`<button key=${b.id} style=${{textAlign:'left'}} onClick=${()=>{commit(b.items.map((id,i)=>mkImg(id,i,mode)).concat([mkText(b.title,6,88,4.6)]));setTitle(b.title+' (remix)');setSel(null)}}>
         <div className="prod-mini" style=${{gridTemplateColumns:'repeat(3,1fr)',gap:3}}>${b.items.slice(0,3).map(id=>html`<span key=${id} style=${{aspectRatio:1,background:`url(${byId(id).img}) center/cover`,borderRadius:6,display:'block'}}></span>`)}</div>
         <b style=${{fontFamily:'var(--display)',fontSize:19,fontWeight:500,display:'block',marginTop:6}}>${b.title}</b><span className="who" style=${{padding:0}}><span className="role">${b.role}</span>${b.by}</span></button>`)}</div>`}
@@ -2489,11 +2489,11 @@ function Quiz({ctx}){
 }
 /* ================= ACCOUNT ================= */
 function Account({ctx}){
-  const me=ctx.me;const {signOut}=useAuthActions();const app=useQuery(api.holm.myApplication);
+  const me=ctx.me;const app=useQuery(api.holm.myApplication);
   if(!me.signedIn)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h3>Sign in to manage your account</h3><button className="btn btn-ink" onClick=${()=>ctx.go('welcome')}>Sign in</button></div></main>`;
   const trade={approved:'Verified',pending:'In review',needs_info:'More information needed',rejected:'Not approved',none:'Not applied'}[me.tradeStatus]||'Not applied';
   return html`<main className="wrap"><div className="acct">
-    <nav aria-label="Account settings"><button className="on">Account</button><button onClick=${()=>ctx.go('hub')}>Quotes and trade pass</button><button onClick=${async()=>{await signOut();ctx.toast('Signed out');ctx.go('home')}}>Log out</button></nav>
+    <nav aria-label="Account settings"><button className="on">Account</button><button onClick=${()=>ctx.go('hub')}>Quotes and trade pass</button><button onClick=${ctx.signOut}>Log out</button></nav>
     <section className="acct-sec">
       <h2>Your account</h2>
       <dl className="specs">
@@ -2561,14 +2561,17 @@ export function App(){
   const remote=useQuery(api.holmSync.load,me.signedIn?{}:'skip');const saveState=useMutation(api.holmSync.save);const synced=useRef(false);
   useEffect(()=>{if(!me.signedIn)synced.current=false},[me.signedIn]);
   useEffect(()=>{if(!me.signedIn||!remote||synced.current)return;synced.current=true;
-    if(remote.tray?.projects?.length){const projects=remote.tray.projects.map(p=>({...p,items:(p.items||[]).filter(i=>has(i.pid))}));setTrayState({...remote.tray,taxExempt:false,later:(remote.tray.later||[]).filter(x=>has(x.pid)),projects,active:projects.some(p=>p.id===remote.tray.active)?remote.tray.active:projects[0].id})}
-    if(Array.isArray(remote.boards)&&remote.boards.length)setBoards(remote.boards.map(b=>({...b,pins:b.pins.filter(x=>has(x.pid))})));
+    const push=(key,value)=>saveState({key,value}).catch(()=>{});
+    // the account wins on matching ids; work from this device that the account doesn't have is kept
+    const localProjects=tray.projects.filter(p=>p.items.length&&!(remote.tray?.projects||[]).some(r=>r.id===p.id));
+    if(remote.tray?.projects?.length){const projects=[...remote.tray.projects.map(p=>({...p,items:(p.items||[]).filter(i=>has(i.pid))})),...localProjects];const merged={...remote.tray,taxExempt:false,later:(remote.tray.later||[]).filter(x=>has(x.pid)),projects,active:projects.some(p=>p.id===remote.tray.active)?remote.tray.active:projects[0].id};setTrayState(merged);if(localProjects.length)push('tray',merged)}
+    else if(tray.projects.some(p=>p.items.length))push('tray',tray);
+    const remoteBoards=Array.isArray(remote.boards)?remote.boards:[];
+    const localBoards=boards.filter(b=>b.pins.length&&!remoteBoards.some(r=>r.id===b.id));
+    if(remoteBoards.length){const merged=[...remoteBoards.map(b=>({...b,pins:b.pins.filter(x=>has(x.pid))})),...localBoards];setBoards(merged);if(localBoards.length)push('boards',merged)}
+    else if(localBoards.length)push('boards',boards);
     if(Array.isArray(remote.collages))setCollages(remote.collages.filter(c=>c.els.every(e=>e.kind!=='img'||has(e.pid))));
     if(Array.isArray(remote.inspo))setInspo(l=>[...remote.inspo,...l.filter(x=>!/^https?:/.test(x.src)&&!remote.inspo.some(y=>y.id===x.id))]);
-    // anything the account doesn't have yet comes from this device
-    const push=(key,value)=>saveState({key,value}).catch(()=>{});
-    if(!remote.tray?.projects?.length&&tray.projects.some(p=>p.items.length))push('tray',tray);
-    if(!(Array.isArray(remote.boards)&&remote.boards.length)&&boards.some(b=>b.pins.length))push('boards',boards);
     if(!Array.isArray(remote.collages)&&collages.length)push('collages',collages.map(c=>({...c,bg:c.bg?.img?.startsWith('data:')?{color:'#EFE6D8'}:c.bg,els:c.els.filter(e=>!String(e.src||'').startsWith('data:'))})));
   },[me.signedIn,remote]);
   const syncSave=(key,value)=>{if(!me.signedIn||!synced.current)return;const t=setTimeout(()=>saveState({key,value}).catch(()=>{}),1500);return()=>clearTimeout(t)};
@@ -2593,7 +2596,7 @@ export function App(){
   const createProject=name=>{const id=uid();setTrayState(t=>({...t,projects:[...t.projects,{id,name,target:20,zones:['Main room'],items:[]}]}));toast(`Project "${name}" created`);return id};
   const addZone=(pid,z)=>setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===pid&&!p.zones.includes(z)?{...p,zones:[...p.zones,z]}:p)}));
   const inspoCtx={inspo,addInspo:items=>setInspo(l=>[...items,...l]),removeInspo:id=>setInspo(l=>l.filter(x=>x.id!==id)),updateInspo:(id,o)=>setInspo(l=>l.map(x=>x.id===id?{...x,...o}:x)),roomWall,setRoomWall,inspoToStudio:(x,ids=[])=>{setStudioSeed({inspo:x,ids,title:x.title});setNonce(n=>n+1);go('studio')}};
-  const signInThen=r=>{setAfterSignIn(r);go('welcome')};const signOut=async()=>{await authSignOut();toast('Signed out');go('home')};
+  const signInThen=r=>{setAfterSignIn(r);go('welcome')};const signOut=async()=>{await authSignOut();synced.current=false;['tray','boards','collages','inspo'].forEach(k=>{try{localStorage.removeItem('hol:'+k)}catch(e){}});setTrayState(TRAY_SEED);setBoards(BOARD_SEED);setCollages([]);setInspo(INSPO_SEED);toast('Signed out');go('home')};
   const ctx={...inspoCtx,me,afterSignIn,signInThen,signOut,route,go,space,setSpace,mode,setMode,boards,saveTo,createBoard,updateBoard,tray,setTrayState,activeProject,trayCount,addToTray,setTray,setMenu,pin,openPin,recent,createProject,addZone,addToProject,toggleLike:id=>setLikes(l=>l.includes(id)?l.filter(x=>x!==id):[...l,id]),likes,toast,query,setQuery,imgQ,setImgQ,imageSearch,studioSeed,setStudioSeed,roomSeed,setRoomSeed,toStudio,board,setBoard,trend,setTrend,collages,saveCollage:c=>{setCollages(cs=>[c,...cs.filter(x=>x.title!==c.title)]);toast('Collage saved',{label:'View',fn:()=>go('boards')})},setTarget:n=>{setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===t.active?{...p,target:n}:p)}));toast(`Seat target for ${activeProject.name} set to ${n}`,{label:'Open tray',fn:()=>setTray(true)})}};
   const pages={inspo:Inspo,home:Home,discover:Discover,trend:Trend,studio:Studio,room:Room,boards:Boards,board:BoardDetail,profile:Profile,hub:Hub,trade:Trade,quiz:Quiz,account:Account,welcome:Welcome,admin:AdminPage,sourcing:Sourcing};
   const Page=pages[route]||Home;

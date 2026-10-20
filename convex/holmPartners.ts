@@ -267,14 +267,19 @@ export const reconcile = internalMutation({
     const waiting = await ctx.db
       .query('holmQuoteRequests')
       .withIndex('by_partner_state', (q) => q.eq('partnerState', 'awaiting_payment'))
-      .take(200);
+      .take(100); // least recently checked first, so unpaid quotes never block newer ones
     for (const r of waiting) {
       const project = await ctx.db.get(r.commerceProjectId);
       if (!project || project.status === 'cancelled' || project.status === 'payment_review') {
         await ctx.db.patch(r._id, { partnerState: 'void' });
         continue;
       }
-      if (!project.paidAt || !r.partnerId || r.priceMode !== 'retail') continue;
+      if (!project.paidAt || !r.partnerId || r.priceMode !== 'retail') {
+        // Unpaid quotes expire after the hold; otherwise they are checked again next pass.
+        const expired = now - r.createdAt > HOLM_PARTNERS.quoteHoldDays * DAY;
+        await ctx.db.patch(r._id, expired ? { partnerState: 'void' } : { partnerCheckedAt: now });
+        continue;
+      }
       const partner = await profileOf(ctx, r.partnerId);
       const rate = HOLM_PARTNERS.tiers[partner?.partnerTier ?? 'base'];
       const base = project.lines.reduce((t, l) => t + l.unitPrice * l.quantity, 0);
@@ -297,17 +302,28 @@ export const reconcile = internalMutation({
     const due = await ctx.db
       .query('holmCommissions')
       .withIndex('by_status_clears', (q) => q.eq('status', 'pending').lte('clearsAt', now))
-      .take(200);
+      .take(100);
     for (const c of due) {
       const project = await ctx.db.get(c.commerceProjectId);
       await ctx.db.patch(c._id, { status: project && project.status !== 'payment_review' && project.status !== 'cancelled' ? 'cleared' : 'void' });
     }
     // 3. Business referrals: $100 credit after the referred business is verified and a first order over $500 is paid.
-    const verified = await ctx.db.query('holmReferrals').withIndex('by_status', (q) => q.eq('status', 'verified')).take(200);
+    // Least recently checked first and in small batches, so one run stays within read limits.
+    const verified = await ctx.db
+      .query('holmReferrals')
+      .withIndex('by_status_checked', (q) => q.eq('status', 'verified'))
+      .take(25);
     for (const ref of verified) {
       const prof = await profileOf(ctx, ref.referredUserId);
-      if (!isVerified(prof)) continue;
-      const requests = await ctx.db.query('holmQuoteRequests').withIndex('by_user', (q) => q.eq('userId', ref.referredUserId)).take(50);
+      if (!isVerified(prof)) {
+        await ctx.db.patch(ref._id, { checkedAt: now });
+        continue;
+      }
+      const requests = await ctx.db
+        .query('holmQuoteRequests')
+        .withIndex('by_user', (q) => q.eq('userId', ref.referredUserId))
+        .order('desc')
+        .take(20);
       let qualifies = false;
       for (const r of requests) {
         const project = await ctx.db.get(r.commerceProjectId);
@@ -316,7 +332,10 @@ export const reconcile = internalMutation({
           break;
         }
       }
-      if (!qualifies) continue;
+      if (!qualifies) {
+        await ctx.db.patch(ref._id, { checkedAt: now });
+        continue;
+      }
       await ctx.db.insert('holmCredits', { userId: ref.referrerId, amountCents: HOLM_PARTNERS.referralCreditCents, reason: 'Business referral', at: now });
       await ctx.db.patch(ref._id, { status: 'credited', creditCents: HOLM_PARTNERS.referralCreditCents });
     }
