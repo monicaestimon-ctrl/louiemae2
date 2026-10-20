@@ -37,6 +37,15 @@ describe('House of Louie Mae trade pricing', () => {
     expect(out.discountCents).toBe(2 * 375_00 + 2 * 100_00);
   });
 
+  it('never raises a line above its trade price when the floor is above retail', () => {
+    const out = applyProjectPricing([
+      { unitCents: 10_000_00, quantity: 3, floorCents: 12_000_00 },
+    ]);
+    expect(out.bps).toBe(500);
+    expect(out.units).toEqual([10_000_00]);
+    expect(out.discountCents).toBe(0);
+  });
+
   it('prices client quotes from trade', () => {
     expect(clientSellCents(10_000, 7_500, 'cost', 0)).toBe(7_500);
     expect(clientSellCents(10_000, 7_500, 'retail', 0)).toBe(10_000);

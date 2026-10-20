@@ -641,6 +641,7 @@ export const requestClientChanges = mutation({
   args: { slug: v.string(), message: v.string() },
   handler: async (ctx, a) => {
     const q = await quoteBySlug(ctx, a.slug);
+    if (q.approval) throw new Error('This quote is already approved. Contact your designer for changes.');
     const message = a.message.trim();
     if (!message || message.length > 2000) throw new Error('Tell your designer what to change.');
     const now = Date.now();
