@@ -363,6 +363,9 @@ const AppContent = () => {
                 {extendedNavLinks.map((link) => (
                   <MobileNavLink key={link.label} link={link} handleNavigation={handleNavigation} />
                 ))}
+                <a href="/trade/" className="font-serif text-3xl md:text-4xl text-cream/70 hover:text-bronze transition-colors">
+                  Trade <span className="text-[0.6rem] uppercase tracking-[0.2em] text-bronze align-middle">House of Louie Mae</span>
+                </a>
               </div>
             </div>
 
@@ -465,6 +468,12 @@ const AppContent = () => {
 
               {/* Actions */}
               <div className="flex items-center gap-4 md:gap-6 ml-auto z-50 pl-4">
+                {/* Retail is this storefront; Trade opens House of Louie Mae */}
+                <div className="hidden md:flex items-center gap-2 text-[0.6rem] uppercase tracking-[0.15em] font-medium" aria-label="Shop as">
+                  <span className="text-earth" aria-current="page">Retail</span>
+                  <span className="text-earth/30">·</span>
+                  <a href="/trade/" className="text-earth/60 hover:text-bronze transition-colors">Trade</a>
+                </div>
                 <button
                   onClick={() => setSearchOpen(true)}
                   className="text-earth hover:text-bronze transition-colors p-1"
