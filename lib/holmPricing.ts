@@ -44,13 +44,16 @@ export type PricedLine = { unitCents: number; quantity: number; floorCents: numb
 
 /**
  * Applies project pricing to trade lines. The tier is set by the whole trade subtotal;
- * each line's unit price drops by up to the tier rate but never below its floor.
+ * each line's unit price drops by up to the tier rate but never below its floor, and never
+ * rises above its trade price (when the floor is above retail, trade is already at retail).
  */
 export function applyProjectPricing(lines: PricedLine[], rules: HolmRules = HOLM_RULES) {
   const subtotal = lines.reduce((t, l) => t + l.unitCents * l.quantity, 0);
   const { bps, next } = projectTier(subtotal, rules);
   const units = lines.map((l) =>
-    bps ? Math.max(l.floorCents, Math.round((l.unitCents * (10000 - bps)) / 10000)) : l.unitCents
+    bps
+      ? Math.min(l.unitCents, Math.max(l.floorCents, Math.round((l.unitCents * (10000 - bps)) / 10000)))
+      : l.unitCents
   );
   const discounted = units.reduce((t, u, i) => t + u * lines[i].quantity, 0);
   return { units, bps, next, subtotalCents: subtotal, discountCents: subtotal - discounted };

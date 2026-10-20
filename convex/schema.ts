@@ -581,6 +581,8 @@ export default defineSchema({
             price: v.number(),
             quantity: v.number(),
             image: v.optional(v.string()),
+            supplierSku: v.optional(v.string()),
+            fulfillmentProvider: v.optional(v.literal('ashcroft')),
             // CJ Dropshipping product mapping
             cjVariantId: v.optional(v.string()), // CJ variant ID (vid)
             cjSku: v.optional(v.string()), // CJ product SKU

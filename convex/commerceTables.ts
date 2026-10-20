@@ -72,6 +72,10 @@ export const projectLine = v.object({
   cjSku: v.optional(v.string()),
 });
 export const commerceTables = {
+  retailCheckouts: defineTable({
+    items: v.array(v.object({ productId: v.string(), variantId: v.string(), variantName: v.string(), name: v.string(), price: v.number(), quantity: v.number(), image: v.optional(v.string()), supplierSku: v.string(), fulfillmentProvider: v.literal('ashcroft') })),
+    subtotal: v.number(), shipping: v.number(), createdAt: v.number(),
+  }),
   commercePaymentLinks: defineTable({
     paymentIntentId: v.string(),
     projectId: v.id('commerceProjects'),
