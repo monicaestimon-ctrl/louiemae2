@@ -1,3 +1,5 @@
+// @vitest-environment node
+// build.ts imports Vite, which needs Node's TextEncoder rather than jsdom's.
 import { expect, it } from 'vitest';
 import { keepsOwnPage } from './build';
 
