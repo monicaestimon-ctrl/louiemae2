@@ -26,11 +26,17 @@ const App = () => <CartProvider><HomePage /><CartProof /></CartProvider>;
 const open = () => fireEvent.click(screen.getByRole('button', { name: 'Quick View' }));
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); mocks.ready = true; mocks.loading = false; mocks.unavailable = false;
-  mocks.product = { id: 'real-product', name: 'Authoritative chair', description: 'Real details', category: 'Chairs', price: 420, images: ['chair.jpg'], inStock: true,
+  mocks.product = { id: 'real-product', name: 'Authoritative chair', fulfillmentProvider: 'ashcroft', description: 'Real details', category: 'Chairs', price: 420, images: ['chair.jpg'], inStock: true,
     variants: [{ id: 'linen', name: 'Linen', inStock: true, priceAdjustment: 20 }, { id: 'sold-out', name: 'Velvet', inStock: false, priceAdjustment: 30 }] } as Product;
 });
 afterEach(cleanup);
 describe('homepage real catalog purchase flow', () => {
+  it('blocks legacy non-Ashcroft products as Coming Soon', () => {
+    mocks.product = { ...mocks.product!, fulfillmentProvider: undefined };
+    render(<App />); open();
+    expect(screen.getByRole('button', { name: 'Coming Soon' })).toBeDisabled();
+    expect(screen.getByLabelText('Cart proof').textContent).toContain('"count":0');
+  });
   it('uses a six-card featured furniture preview and opens authoritative details only on selection', () => {
     render(<App />);
     expect(mocks.catalog).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'furniture' }), 'All', true, 'featured', 6);

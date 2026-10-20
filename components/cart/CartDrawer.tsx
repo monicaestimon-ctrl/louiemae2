@@ -5,6 +5,7 @@ import CartItem from './CartItem';
 
 export const CartDrawer: React.FC = () => {
     const { isOpen, closeCart, items, subtotal, itemCount, removeFromCart } = useCart();
+    const delivery = items.reduce((sum, item) => sum + (item.product.deliveryFee ?? 0) * item.quantity, 0);
     const [isCheckingOut, setIsCheckingOut] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [checkoutBlock, setCheckoutBlock] = useState<{
@@ -176,7 +177,7 @@ export const CartDrawer: React.FC = () => {
                         </div>
 
                         <p className="text-[10px] text-earth/40 mb-4 text-center">
-                            Shipping and taxes calculated at checkout
+                            Economy delivery: ${delivery.toFixed(2)} · Total before tax: ${(subtotal + delivery).toFixed(2)}. Delivery is charged per item; tax is calculated at checkout.
                         </p>
 
                         {/* Error Message */}
