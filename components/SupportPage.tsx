@@ -10,11 +10,11 @@ import {
 const FAQ_ITEMS = [
     {
         q: 'How long does shipping take?',
-        a: 'Most orders arrive within 7–12 business days. During peak seasons or high-demand periods, it may take up to 15 business days. We partner with trusted carriers to get your order to you as quickly as possible — many customers receive theirs even sooner!'
+        a: 'Furniture orders use Economy delivery. Timing depends on stock, processing, destination, and carrier scheduling. We will share tracking and delivery updates once your order ships.'
     },
     {
         q: 'Do you offer free shipping?',
-        a: 'We offer free standard shipping on orders over $75 within the contiguous United States. Orders under $75 have a flat-rate shipping fee calculated at checkout.'
+        a: 'Delivery is charged per item: lighting $19; benches, dining chairs, and stools $29; ottomans $39; accent chairs $49; dining tables and sofas $79; sectionals $99. Each product shows its delivery fee, and your cart shows the combined charge before payment.'
     },
     {
         q: 'What is your return policy?',
@@ -150,16 +150,16 @@ export const SupportPage: React.FC<SupportPageProps> = ({ section }) => {
                             </h3>
                             <div className="bg-white/60 rounded-2xl border border-earth/5 p-6 md:p-8 space-y-4">
                                 <p className="font-sans text-earth/80 text-sm leading-relaxed">
-                                    We know the excitement of waiting for something special — and we want to get your order to you as quickly as possible. Most orders arrive within <strong>7–12 business days</strong>, though many customers receive theirs even sooner.
+                                    Our furniture collection ships with <strong>Economy delivery</strong>. Each piece shows its delivery fee, and delivery is added per item in your cart before payment.
                                 </p>
                                 <p className="font-sans text-earth/80 text-sm leading-relaxed">
-                                    During peak seasons or high-demand periods, delivery may take up to <strong>15 business days</strong>. We appreciate your patience as we work to ensure every package is handled with care.
+                                    Timing depends on availability, order processing, destination, and carrier scheduling. Contact us before ordering if you need a specific arrival date or special delivery arrangements.
                                 </p>
                                 <div className="flex items-start gap-3 bg-cream/80 rounded-xl p-4 mt-4">
                                     <Clock className="w-4 h-4 text-bronze mt-0.5 flex-shrink-0" />
                                     <div>
                                         <p className="font-sans text-earth text-xs font-medium uppercase tracking-wider mb-1">Estimated Delivery</p>
-                                        <p className="font-sans text-earth/70 text-sm">7–12 business days (up to 15 during peak times)</p>
+                                        <p className="font-sans text-earth/70 text-sm">Tracking and delivery updates provided after dispatch</p>
                                     </div>
                                 </div>
                                 <p className="font-sans text-earth/60 text-xs italic">

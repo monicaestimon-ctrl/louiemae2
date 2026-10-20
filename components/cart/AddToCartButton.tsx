@@ -23,7 +23,8 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({
 
     // Disabled if out of stock OR if variant is required but not selected
     const needsVariantSelection = variantRequired && !selectedVariant;
-    const isDisabled = !product.inStock || needsVariantSelection;
+    const comingSoon = product.fulfillmentProvider !== 'ashcroft' || !product.inStock;
+    const isDisabled = comingSoon || !product.inStock || needsVariantSelection || selectedVariant?.inStock === false;
 
     const handleClick = () => {
         if (isDisabled) return;
@@ -44,6 +45,8 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({
     };
 
     const buttonText = getButtonText();
+
+    if (comingSoon) return <button disabled className={`w-full py-4 text-earth/60 border border-earth/20 rounded-lg ${className}`}>Coming Soon</button>;
 
     if (variant === 'icon') {
         return (

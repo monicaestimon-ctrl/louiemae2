@@ -47,7 +47,7 @@ const DEFAULT_META = {
 
 export default function handler(req: VercelRequest, res: VercelResponse) {
     // Keep old shared store URLs on the same temporary landing page.
-    if (process.env.VITE_PRELAUNCH_MODE !== 'false') {
+    if (process.env.VITE_PRELAUNCH_MODE === 'true') {
         res.setHeader('Cache-Control', 'no-store');
         return res.redirect(307, '/');
     }

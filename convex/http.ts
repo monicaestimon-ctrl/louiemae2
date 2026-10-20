@@ -2,13 +2,10 @@ import { httpRouter } from "convex/server";
 import { v } from "convex/values";
 import { httpAction, internalAction, type ActionCtx } from "./_generated/server";
 import { api, internal } from "./_generated/api";
-import type { Doc, Id } from "./_generated/dataModel";
+import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 import Stripe from "stripe";
-import { getCheckoutShippingForSubtotal } from "../lib/pricing";
 import { getCjAutomationConfig, readBooleanEnv } from "../lib/cjAutomation";
-import { evaluateCheckoutItemCjReadiness } from "../lib/cjFulfillmentReadiness";
-import { isCatalogProductPublic } from "../lib/catalogProjection";
 import {
     mergeCjInventoryStatuses,
     summarizeCjInventoryRows,
@@ -87,180 +84,6 @@ const verifyIncomingCjWebhook = async (ctx: any, request: Request, rawBody: stri
     return { ok: true as const };
 };
 
-type CheckoutItem = {
-    productId?: string;
-    variantId?: string;
-    variantName?: string;
-    cjVariantId?: string;
-    cjSku?: string;
-    name: string;
-    image?: string;
-    price: number;
-    quantity: number;
-};
-
-const normalizeCheckoutItems = (items: unknown): CheckoutItem[] => {
-    if (!Array.isArray(items)) return [];
-
-    return items
-        .map((item) => {
-            const value = item && typeof item === "object" ? item as Record<string, unknown> : {};
-            return {
-                productId: typeof value.productId === "string" ? value.productId : undefined,
-                variantId: typeof value.variantId === "string" ? value.variantId : undefined,
-                variantName: typeof value.variantName === "string" ? value.variantName : undefined,
-                cjVariantId: typeof value.cjVariantId === "string" ? value.cjVariantId : undefined,
-                cjSku: typeof value.cjSku === "string" ? value.cjSku : undefined,
-                name: typeof value.name === "string" && value.name.trim() ? value.name.trim() : "Louie Mae item",
-                image: typeof value.image === "string" ? value.image : undefined,
-                // Pricing is resolved from the authoritative catalog below.
-                price: 0,
-                quantity: Math.floor(Number(value.quantity)),
-            };
-        })
-        .filter((item) => Number.isSafeInteger(item.quantity) && item.quantity > 0);
-};
-
-type CheckoutFulfillmentResolution = {
-    items: CheckoutItem[];
-    errors: string[];
-    unavailableItems: Array<{
-        productId?: string;
-        variantId?: string;
-        name: string;
-        reason: string;
-    }>;
-};
-
-const getCustomerUnavailableReason = (errors: string[]): string => {
-    const combined = errors.join(" ").toLowerCase();
-    if (combined.includes("out of stock") || combined.includes("insufficient") || combined.includes("marked out")) {
-        return "This item is no longer available in the selected option.";
-    }
-    if (combined.includes("could not be confirmed") || combined.includes("could not be refreshed") || combined.includes("unknown")) {
-        return "We could not confirm current stock for this item.";
-    }
-    return "This item is temporarily unavailable for checkout.";
-};
-
-const getCheckoutCjGate = () => {
-    const config = getCjAutomationConfig(process.env);
-    return {
-        required: config.autoFulfillmentEnabled && readBooleanEnv(process.env.CJ_REQUIRE_FULFILLMENT_READY_CHECKOUT, true),
-        config,
-    };
-};
-
-const resolveCheckoutFulfillmentItems = async (ctx: ActionCtx, checkoutItems: CheckoutItem[]): Promise<CheckoutFulfillmentResolution> => {
-    const { required, config } = getCheckoutCjGate();
-    const errors: string[] = [];
-    const unavailableItems: CheckoutFulfillmentResolution["unavailableItems"] = [];
-    const resolvedItems = [...checkoutItems];
-
-    if (required && !config.fulfillmentAutomationReady) {
-        errors.push("CJ fulfillment automation is enabled, but CJ_API_KEY is not configured.");
-    }
-
-    for (const [index, item] of checkoutItems.entries()) {
-        if (!item.productId) {
-            errors.push(`${item.name} is missing its catalog product ID.`);
-            continue;
-        }
-
-        let product: Doc<'products'> | null = null;
-        try {
-            product = await ctx.runQuery(internal.products.getInternal, { id: item.productId as Id<"products"> });
-        } catch {
-            // Invalid IDs and deleted products must fail closed in every mode.
-            product = null;
-        }
-
-        if (!product) {
-            errors.push(`${item.name} could not be verified in the catalog.`);
-            unavailableItems.push({
-                productId: item.productId,
-                variantId: item.variantId,
-                name: item.name,
-                reason: "We could not verify this item for checkout.",
-            });
-            continue;
-        }
-
-        if (required) {
-            try {
-                await ctx.runAction(internal.cjDropshipping.refreshProductInventory, {
-                    productId: item.productId as Id<"products">,
-                    variantId: item.variantId,
-                    limit: 1,
-                    source: "checkout",
-                });
-                product = await ctx.runQuery(internal.products.getInternal, { id: item.productId as Id<"products"> });
-                if (!product) {
-                    errors.push(`${item.name} could not be verified for CJ fulfillment.`);
-                    unavailableItems.push({
-                        productId: item.productId,
-                        variantId: item.variantId,
-                        name: item.name,
-                        reason: "We could not verify this item for checkout.",
-                    });
-                    continue;
-                }
-            } catch (error: any) {
-                const message = error?.message || "CJ inventory could not be refreshed.";
-                errors.push(`${item.name} inventory could not be refreshed from CJ: ${message}`);
-                unavailableItems.push({
-                    productId: item.productId,
-                    variantId: item.variantId,
-                    name: item.name,
-                    reason: "We could not confirm current stock for this item.",
-                });
-                continue;
-            }
-        }
-
-        const variants = product.variants ?? [];
-        const selectedVariant = variants.find(variant => variant.id === item.variantId);
-        const price = product.price + (selectedVariant?.priceAdjustment ?? 0);
-        if (!isCatalogProductPublic(product)
-            || (variants.length > 0 && !selectedVariant)
-            || (variants.length === 0 && item.variantId !== undefined)
-            || selectedVariant?.inStock === false
-            || !Number.isFinite(price) || Math.round(price * 100) <= 0) {
-            errors.push(`${product.name} is unavailable in the selected option.`);
-            unavailableItems.push({ productId: item.productId, variantId: item.variantId,
-                name: product.name, reason: 'This item is temporarily unavailable for checkout.' });
-            continue;
-        }
-
-        const readiness = evaluateCheckoutItemCjReadiness(product, {
-            variantId: item.variantId,
-            variantName: selectedVariant?.name,
-            quantity: item.quantity,
-        }, { strictInventory: required });
-        if (required && !readiness.ready) {
-            errors.push(...readiness.errors);
-            unavailableItems.push({
-                productId: item.productId,
-                variantId: item.variantId,
-                name: item.name,
-                reason: getCustomerUnavailableReason(readiness.errors),
-            });
-        }
-
-        resolvedItems[index] = {
-            ...item,
-            name: selectedVariant ? `${product.name} - ${selectedVariant.name}` : product.name,
-            variantName: selectedVariant?.name,
-            image: selectedVariant?.image || product.images[0],
-            price,
-            cjVariantId: selectedVariant ? selectedVariant.cjVariantId : product.cjVariantId,
-            cjSku: selectedVariant ? selectedVariant.cjSku : product.cjSku,
-        };
-    }
-
-    return { items: resolvedItems, errors, unavailableItems };
-};
-
 // Create Stripe checkout session
 http.route({
     path: "/stripe/checkout",
@@ -285,106 +108,31 @@ http.route({
 
         try {
             const body = await request.json();
-            const { items, successUrl, cancelUrl } = body;
-            let checkoutItems = normalizeCheckoutItems(items);
-
-            if (checkoutItems.length === 0) {
-                return new Response(
-                    JSON.stringify({ error: "Checkout requires at least one valid item." }),
-                    {
-                        status: 400,
-                        headers: {
-                            "Content-Type": "application/json",
-                            ...corsHeaders,
-                        }
-                    }
-                );
-            }
-
-            const fulfillmentResolution = await resolveCheckoutFulfillmentItems(ctx, checkoutItems);
-            if (fulfillmentResolution.errors.length > 0) {
-                return new Response(
-                    JSON.stringify({
-                        code: "OUT_OF_STOCK",
-                        error: "We're sorry, one or more items in your cart are no longer available. Please remove the unavailable item before checking out.",
-                        details: fulfillmentResolution.errors.slice(0, 10),
-                        unavailableItems: fulfillmentResolution.unavailableItems.slice(0, 10),
-                    }),
-                    {
-                        status: 409,
-                        headers: {
-                            "Content-Type": "application/json",
-                            ...corsHeaders,
-                        }
-                    }
-                );
-            }
-            checkoutItems = fulfillmentResolution.items;
-
-            // Create line items for Stripe
-            const lineItems = checkoutItems.map((item) => ({
-                price_data: {
-                    currency: "usd",
-                    product_data: {
-                        name: item.name,
-                        images: item.image ? [item.image] : [],
-                    },
-                    unit_amount: Math.round(item.price * 100), // Convert to cents
-                },
-                quantity: item.quantity,
-            }));
-            const checkoutSubtotal = checkoutItems.reduce((total, item) => total + item.price * item.quantity, 0);
-            const checkoutShipping = getCheckoutShippingForSubtotal(checkoutSubtotal);
-            const checkoutShippingAmountCents = Math.round(checkoutShipping.amount * 100);
-
-            // Create checkout session with one customer-facing fixed shipping rate.
-            const session = await stripe.checkout.sessions.create({
-                mode: "payment",
-                line_items: lineItems,
-                success_url: successUrl,
-                cancel_url: cancelUrl,
-                billing_address_collection: "required",
-                shipping_address_collection: {
-                    allowed_countries: ["US"],
-                },
-                shipping_options: [
-                    {
-                        shipping_rate_data: {
-                            type: "fixed_amount",
-                            fixed_amount: { amount: checkoutShippingAmountCents, currency: "usd" },
-                            display_name: checkoutShipping.label,
-                            delivery_estimate: {
-                                minimum: { unit: "business_day", value: 5 },
-                                maximum: { unit: "business_day", value: 7 },
-                            },
-                        },
-                    },
-                ],
-                metadata: {
-                    items: JSON.stringify(checkoutItems.map((item) => ({
-                        productId: item.productId,
-                        variantId: item.variantId,
-                        variantName: item.variantName,
-                        // CJ fulfillment - pass variant-level CJ IDs
-                        cjVariantId: item.cjVariantId,
-                        cjSku: item.cjSku,
-                        name: item.name,
-                        price: item.price,
-                        quantity: item.quantity,
-                    }))),
-                },
-            });
-
-            return new Response(
-                JSON.stringify({ sessionId: session.id, url: session.url }),
-                {
-                    status: 200,
-                    headers: {
-                        "Content-Type": "application/json",
-                        ...corsHeaders,
-                    }
+            const { items } = body;
+            // Only the approved Ashcroft catalog can create new retail payments.
+            {
+                if (!Array.isArray(items) || !items.length || items.length > 30 || items.some((i: any) => !i || !Number.isSafeInteger(i.quantity) || i.quantity < 1)) {
+                    return new Response(JSON.stringify({ error: 'Check your cart quantities.' }), { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
                 }
-            );
+                let snapshot;
+                try {
+                    snapshot = await ctx.runMutation(internal.retailLaunch.createSnapshot, { items: items.map((i: any) => ({ productId: String(i.productId || ''), variantId: String(i.variantId || ''), quantity: i.quantity })) });
+                } catch {
+                    return new Response(JSON.stringify({ code: 'OUT_OF_STOCK', error: 'This item is Coming Soon or no longer available. Please remove it from your cart.' }), { status: 409, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+                }
+                const session = await stripe.checkout.sessions.create({
+                    mode: 'payment', payment_method_types: ['card'],
+                    line_items: snapshot.items.map(i => ({ price_data: { currency: 'usd', product_data: { name: i.name, images: i.image ? [i.image] : [] }, unit_amount: Math.round(i.price * 100) }, quantity: i.quantity })),
+                    success_url: 'https://www.louiemae.com/#checkout/success?session_id={CHECKOUT_SESSION_ID}',
+                    cancel_url: 'https://www.louiemae.com/#checkout/cancel',
+                    billing_address_collection: 'required', phone_number_collection: { enabled: true },
+                    shipping_address_collection: { allowed_countries: ['US'] },
+                    automatic_tax: { enabled: true },
+                    shipping_options: [{ shipping_rate_data: { type: 'fixed_amount', fixed_amount: { amount: snapshot.shipping, currency: 'usd' }, display_name: 'Economy delivery (per item)' } }],
+                    metadata: { retailCheckoutId: snapshot.id },
+                });
+                return new Response(JSON.stringify({ sessionId: session.id, url: session.url }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+            }
         } catch (error: any) {
             console.error("Stripe checkout error:", error);
             return new Response(
@@ -475,8 +223,16 @@ http.route({
                 console.error("Failed to parse Stripe items metadata:", parseError);
             }
 
-            // Get shipping address from session
-            const shippingDetails = (session as any).shipping_details;
+            if (session.metadata?.retailCheckoutId) {
+                if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+                const saved = await ctx.runQuery(internal.retailLaunch.snapshot, { id: session.metadata.retailCheckoutId as Id<'retailCheckouts'> });
+                if (!saved || session.currency !== 'usd' || session.amount_subtotal !== saved.subtotal || session.shipping_cost?.amount_subtotal !== saved.shipping || session.amount_total !== saved.subtotal + saved.shipping + (session.total_details?.amount_tax || 0)) {
+                    return new Response('Payment totals require reconciliation', { status: 400 });
+                }
+                itemsData = saved.items;
+            }
+            // Stripe versions expose delivery details in either location.
+            const shippingDetails = (session as any).collected_information?.shipping_details || (session as any).shipping_details;
 
             const shippingAddress = shippingDetails?.address ? {
                 line1: shippingDetails.address.line1 || "",
@@ -529,6 +285,8 @@ http.route({
                 }
             }
 
+            // Ashcroft payments are saved for manual dealer ordering, never sent to CJ.
+            if (session.metadata?.retailCheckoutId) return new Response(JSON.stringify({ received: true }), { status: 200 });
             // Forward order to CJ Dropshipping if items have CJ mapping
             const productPricingRows = await ctx.runQuery(internal.cjHelpers.getProductPricingByStringIds, {
                 productIds: itemsData

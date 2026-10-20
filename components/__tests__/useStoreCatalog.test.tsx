@@ -19,8 +19,8 @@ describe('bounded store readers', () => {
     const view = renderHook(({ ready }) => useStoreCatalog(config, 'Girls', ready, 'price-asc'), { initialProps: { ready: false } });
     expect(mocks.query.mock.lastCall?.[1]).toBe('skip');
     view.rerender({ ready: true });
-    expect(mocks.query.mock.lastCall?.[1]).toMatchObject({ collection: 'kids', sort: 'price-asc', categoryFilter: { hierarchy: true, descendantIds: ['girls', 'dresses'] } });
-    expect(mocks.query.mock.lastCall?.[2]).toEqual({ initialNumItems: 25 });
+    expect(mocks.query.mock.calls.at(-2)?.[1]).toMatchObject({ collection: 'kids', sort: 'price-asc', categoryFilter: { hierarchy: true, descendantIds: ['girls', 'dresses'] } });
+    expect(mocks.query.mock.calls.at(-2)?.[2]).toEqual({ initialNumItems: 25 });
     expect(view.result.current.loading).toBe(true);
   });
   it('keeps empty filtered pages incomplete, only advances grids on demand and preserves full variant counts', () => {

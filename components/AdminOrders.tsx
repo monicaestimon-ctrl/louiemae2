@@ -8,6 +8,8 @@ type OrderStatus = 'pending' | 'paid' | 'processing' | 'shipped' | 'delivered' |
 type CjStatus = 'pending' | 'sending' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'failed' | 'cancelled';
 
 interface OrderItem {
+    fulfillmentProvider?: 'ashcroft';
+    supplierSku?: string;
     name: string;
     quantity: number;
     price: number;
@@ -296,6 +298,7 @@ export const AdminOrders: React.FC = () => {
                                                                 <span className="text-cream font-medium tracking-wide">
                                                                     {item.name} <span className="text-cream/40 px-2 text-xs">× {item.quantity}</span>
                                                                 </span>
+                                                                {item.fulfillmentProvider === 'ashcroft' && <span className="block text-xs text-bronze">Ashcroft · Manual dealer order · SKU {item.supplierSku}</span>}
                                                                 {(item.cjVariantId || item.cjSku) && (
                                                                     <span className="text-[10px] uppercase tracking-widest text-[#B26EEB] flex items-center gap-1 mt-1 drop-shadow-[0_0_5px_rgba(178,110,235,0.4)]">
                                                                         <Truck className="w-2.5 h-2.5" /> CJ Dropshipped
