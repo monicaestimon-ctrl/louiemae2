@@ -12,6 +12,14 @@ class Boundary extends React.Component<{ children: React.ReactNode }, { failed: 
   static getDerivedStateFromError() {
     return { failed: true };
   }
+  // A failure on one page shouldn't lock the whole site: moving to another page tries again.
+  private retry = () => this.setState({ failed: false });
+  componentDidMount() {
+    window.addEventListener('hashchange', this.retry);
+  }
+  componentWillUnmount() {
+    window.removeEventListener('hashchange', this.retry);
+  }
   render() {
     return this.state.failed ? (
       <main className="holm-boot">
