@@ -212,7 +212,7 @@ function Header({ctx}){
     <form className="search" role="search" onSubmit=${e=>{e.preventDefault();ctx.setQuery(q);ctx.setImgQ(null);ctx.go('discover')}}>
       ${I('search')}
       <input aria-label="Search pieces, materials, spaces" placeholder="Search cognac leather, café benches, bouclé…" value=${q} onInput=${e=>setQ(e.target.value)}/>
-      <button type="button" className="ib" title="Search by voice" aria-label="Search by voice" onClick=${()=>ctx.setVoice(true)}>${I('mic')}</button>
+      
       <button type="button" className="ib" title="Search with a photo" aria-label="Search with a photo" onClick=${()=>fileRef.current.click()}>${I('cam')}</button>
       <input ref=${fileRef} type="file" accept="image/*" hidden onChange=${e=>{const f=e.target.files[0];if(f){ctx.imageSearch(f)}e.target.value=''}}/>
     </form>
@@ -234,7 +234,7 @@ function Header({ctx}){
 }
 const MENU = [
   ['home','The Floor','Start here',1],['discover','Discover','Search & trends',2],['studio','Studio','Collage & room',13],['room','Space Planner','Plan · model · render',7],
-  ['boards','Boards','Your saved ideas',12],['inspo','My Inspo','Uploads & Pinterest',4],['hub','Your quotes','Quotes, client links, trade pass',17],['trade','Trade Account','Apply & verify',3],['quiz','Style Quiz','Find your blend',4],
+  ['boards','Boards','Your saved ideas',12],['inspo','My Inspo','Uploads & Pinterest',4],['hub','Your quotes','Quotes, client links, trade pass',17],['trade','Trade Account','Apply & verify',3],['sourcing','Sourcing','Request any piece',9],['quiz','Style Quiz','Find your blend',4],
 ];
 function TabBar({ctx}){
   const t=[['home','Home','home'],['discover','Discover','compass'],['studio','Studio','brush'],['boards','Boards','board']];
@@ -1024,7 +1024,7 @@ function Discover({ctx}){
   return html`<main className="wrap">
     <div className="ph-head"><div><span className="eyebrow">Discover</span><h1>${searching?html`Results${q.trim()?html` for <em>${q}</em>`:''}`:html`Find the piece, <em>then the room.</em>`}</h1></div>
       <form className="search" style=${{maxWidth:520,margin:0,flex:'1 1 320px',display:'flex'}} onSubmit=${e=>{e.preventDefault();ctx.setQuery(q);ctx.setImgQ(null)}}>${I('search')}<input aria-label="Search" value=${q} onInput=${e=>setQ(e.target.value)} placeholder="Search by piece, material, color or space"/>
-        <button type="button" className="ib" aria-label="Search by voice" onClick=${()=>ctx.setVoice(true)}>${I('mic')}</button><button type="button" className="ib" aria-label="Search with a photo" onClick=${()=>fileRef.current.click()}>${I('cam')}</button>
+        <button type="button" className="ib" aria-label="Search with a photo" onClick=${()=>fileRef.current.click()}>${I('cam')}</button>
         <input ref=${fileRef} type="file" accept="image/*" hidden onChange=${e=>{const f=e.target.files[0];if(f)ctx.imageSearch(f);e.target.value=''}}/></form>
     </div>
     ${ctx.imgQ&&html`<div className="img-q"><img src=${ctx.imgQ.src} alt="Your photo"/><div style=${{flex:1,minWidth:200}}><b style=${{fontWeight:500}}>Matched to the tones in your photo</b><div className="row" style=${{marginTop:6,gap:6}}>${ctx.imgQ.pal.map(c=>html`<button key=${c} className="dot" style=${{width:26,height:26,background:c}} title=${'Filter by '+c} onClick=${()=>tog(tones,setTones,c)}></button>`)}<span className="mono mute" style=${{marginLeft:6}}>Tap a tone to narrow</span></div></div><button className="btn btn-line btn-sm" onClick=${()=>ctx.setImgQ(null)}>Clear photo</button></div>`}
@@ -1094,6 +1094,7 @@ function IndexMenu({ctx}){
     {r:'inspo',l:'My Inspo',d:ctx.inspo.length+' images',img:4,cut:4},
     {r:'hub',l:'Your quotes',d:'Quotes, client links, trade pass',img:17,cut:17},
     {r:'trade',l:'Trade Account',d:'Verified',img:3,cut:3},
+    {r:'sourcing',l:'Sourcing',d:'We find it for you',img:9,cut:9},
     {r:'quiz',l:'Style Quiz',d:'Find your blend',img:21,cut:21},
   ];
   const [hi,setHi]=useState(0);const [sub,setSub]=useState(null);const [q,setQ]=useState('');const refs=useRef([]);
@@ -1247,7 +1248,7 @@ function PinDetail({ctx}){
             <button className="btn btn-line btn-sm" onClick=${()=>ctx.toStudio([p.id])}>${I('brush',{width:15})} Studio</button>
             <button className="btn btn-line btn-sm" onClick=${()=>{ctx.setRoomSeed([p.id]);ctx.openPin(null);ctx.go('room')}}>${I('cube',{width:15})} 3D</button>
             <button className="ib" aria-pressed=${liked} aria-label="Like" onClick=${()=>ctx.toggleLike(p.id)} style=${{color:liked?'var(--cognac)':''}}>${I('heart',liked?{fill:'currentColor'}:{})}</button>
-            <button className="ib" aria-label="Copy link" onClick=${()=>copyText('https://house.louiemae.com/pin/'+p.sku.toLowerCase()+'?ref=studioama',ctx.toast)}>${I('share')}</button>
+            <button className="ib" aria-label="Copy link" onClick=${()=>copyText(location.origin+'/trade#p/'+p.id,ctx.toast)}>${I('share')}</button>
             <a className="ib" aria-label="Save to Pinterest" href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae')} target="_blank" rel="noopener">${I('pint')}</a>
           </div>
         </div>
@@ -1488,7 +1489,7 @@ function Tray({ctx}){
   const submit=async()=>{const m=contactErr();if(m){setStep(1);setErr(m);return}setBusy(true);setErr('');
     try{tokRef.current=tokRef.current||Array.from(crypto.getRandomValues(new Uint8Array(24)),b=>'abcdefghijklmnopqrstuvwxyz0123456789'[b%36]).join('');
       const merged=[];items.forEach(i=>{const ex=merged.find(x=>x.productId===i.p.lid&&x.variantId===i.p.vid);if(ex)ex.quantity+=i.qty;else merged.push({productId:i.p.lid,variantId:i.p.vid,quantity:i.qty,zone:i.zone})});
-      const r=await requestQuote({token:tokRef.current,projectName:proj.name,name:del.name.trim(),email:del.email.trim(),phone:del.phone.trim(),business:del.business.trim(),address:{line1:del.line1.trim(),city:del.city.trim(),state:del.state.trim(),postalCode:del.postal.trim(),country:'US'},timing:del.when,date:del.date,receiving:del.recv,notes:(del.teamNote+(del.notes?'\nAccess: '+del.notes:'')).trim(),website:'',items:merged});
+      const r=await requestQuote({token:tokRef.current,projectName:proj.name,name:del.name.trim(),email:del.email.trim(),phone:del.phone.trim(),business:del.business.trim(),address:{line1:del.line1.trim(),city:del.city.trim(),state:del.state.trim(),postalCode:del.postal.trim(),country:'US'},timing:del.when,date:del.date,receiving:del.recv,notes:(del.teamNote+(del.notes?'\nAccess: '+del.notes:'')).trim(),website:'',items:merged,refCode:activeRef()?.code,visitorId:visitorId()});
       tokRef.current=null;setRef(r.reference);setStep(3)}
     catch(e){setErr(e?.data||String(e?.message||'').replace(/^.*Uncaught Error: /,'').split('\n')[0]||'Something went wrong. Try again.')}finally{setBusy(false)}};
   const fld=(k,label,ph,type='text',auto)=>html`<div><label className="lbl" htmlFor=${'tv-'+k}>${label}</label><input id=${'tv-'+k} className="field" type=${type} autoComplete=${auto} value=${del[k]} placeholder=${ph} onInput=${e=>{setDel({...del,[k]:e.target.value});setErr('')}}/></div>`;
@@ -1738,72 +1739,73 @@ function Studio({ctx}){
     ${share&&html`<${ShareModal} ctx=${ctx} title=${title} ids=${pieces.map(p=>p.id)} onClose=${()=>setShare(false)}/>`}
   </main>`;
 }
+// Partner links: a visitor id stays on this device; a partner code is remembered for 30 days.
+function visitorId(){let v=load('visitor',null);if(!v){v=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');store('visitor',v)}return v}
+function activeRef(){const r=load('ref',null);return r&&Date.now()-r.at<30*864e5?r:null}
+const errText=e=>e?.data||String(e?.message||'').replace(/^.*Uncaught Error: /,'').split('\n')[0]||'Something went wrong. Try again.';
+async function uploadBlob(getUrl,blob){const url=await getUrl();const r=await fetch(url,{method:'POST',headers:{'Content-Type':blob.type||'application/octet-stream'},body:blob});if(!r.ok)throw new Error('The file did not upload. Try again.');return (await r.json()).storageId}
+const dataUrlBlob=async src=>(await fetch(src)).blob();
+
 function ShareModal({ctx,title,ids,onClose}){
-  const [m,setM]=useState('shop');const slug=title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
-  const url=`https://house.louiemae.com/b/${slug}${m==='shop'?'?ref=STUDIOAMA':'?view=presentation'}`;
+  const [m,setM]=useState('shop');const [links,setLinks]=useState({});const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
+  const share=useMutation(api.holmSync.shareBoard);
+  const pieces=[...new Set(ids)].filter(has);
+  const make=async()=>{if(links[m])return links[m];if(!ctx.me.signedIn){onClose();ctx.signInThen(ctx.route);return null}
+    setBusy(true);setErr('');try{const slug=await share({title,mode:m==='shop'?'shop':'presentation',items:pieces.map(id=>({productId:byId(id).lid}))});const url=location.origin+'/trade#b/'+slug;setLinks(l=>({...l,[m]:url}));return url}catch(e){setErr(errText(e));return null}finally{setBusy(false)}};
+  const copy=async()=>{const u=await make();if(u)copyText(u,ctx.toast)};
   return html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&onClose()} role="dialog" aria-modal="true" aria-label="Share">
     <div className="sheet share">
       <div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:36}}>Share <em style=${{color:'var(--cognac)'}}>${title}</em></h2><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>
       <div className="modecards">
-        <button className=${'modecard'+(m==='shop'?' on':'')} onClick=${()=>setM('shop')}><b>Shoppable</b><p>Retail prices and your partner link. You earn 12% on orders for 30 days.</p></button>
-        <button className=${'modecard'+(m==='pres'?' on':'')} onClick=${()=>setM('pres')}><b>Presentation</b><p>Your branding, no prices. The client approves the look; you order at trade.</p></button>
+        <button className=${'modecard'+(m==='shop'?' on':'')} onClick=${()=>setM('shop')}><b>Shoppable</b><p>${ctx.me.partner?'Retail prices with your partner link attached. You earn commission on retail orders for 30 days.':'Retail prices, ready to add to a project. Join the partner program to earn on orders from your links.'}</p></button>
+        <button className=${'modecard'+(m==='pres'?' on':'')} onClick=${()=>setM('pres')}><b>Presentation</b><p>No prices. Your client sees the pieces; you order at trade.</p></button>
       </div>
-      <div className="row" style=${{gap:6}}>${ids.slice(0,5).map(id=>html`<span key=${id} style=${{flex:1,aspectRatio:1,borderRadius:10,background:`url(${byId(id).img}) center/cover`}}></span>`)}</div>
-      <div className="linkbox"><code>${url}</code><button className="btn btn-ink btn-sm" onClick=${()=>copyText(url,ctx.toast)}>${I('link',{width:15})} Copy link</button></div>
-      <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-line btn-sm" onClick=${()=>copyText(url,ctx.toast)}>Instagram story</button><button className="btn btn-line btn-sm" onClick=${()=>copyText(url,ctx.toast)}>Email to client</button></div>
-      <${PublishPin} ctx=${ctx} title=${title} url=${url} ids=${ids}/>
-      ${m==='shop'&&html`<p className="help">Posting on social? Add #ad or "I earn commission" to the caption. FTC rules require it, and it's in the partner terms.</p>`}
+      <div className="row" style=${{gap:6}}>${pieces.slice(0,5).map(id=>html`<span key=${id} style=${{flex:1,aspectRatio:1,borderRadius:10,background:`url(${byId(id).img}) center/cover`}}></span>`)}</div>
+      ${links[m]?html`<div className="linkbox"><code>${links[m]}</code><button className="btn btn-ink btn-sm" onClick=${copy}>${I('link',{width:15})} Copy</button></div>`
+      :html`<button className="btn btn-ink" style=${{justifySelf:'start'}} disabled=${busy||!pieces.length} onClick=${copy}>${I('link',{width:15})} ${busy?'Creating link…':ctx.me.signedIn?'Create and copy link':'Sign in to share'}</button>`}
+      ${err&&html`<p className="help" style=${{color:'var(--bad)'}}>${err}</p>`}
+      ${m==='shop'&&ctx.me.partner&&html`<p className="help">Posting on social? Add #ad or "I earn commission" to the caption. FTC rules require it, and it's in the partner terms.</p>`}
     </div></div>`;
 }
-
-function PublishPin({ctx,title,url,ids}){
-  const [step,setStep]=useState('idle');const [board,setBoard]=useState(PIN_BOARDS[0].id);const [desc,setDesc]=useState(`${title}. Shop every piece from Louie Mae.`);
-  if(step==='idle')return html`<button className="btn btn-line btn-sm" style=${{justifySelf:'start'}} onClick=${()=>setStep(ctx.pinterest?'compose':'connect')}>${I('pint',{width:15})} Publish to Pinterest</button>`;
-  return html`<div className="panel" style=${{padding:16,display:'grid',gap:12}}>
-    ${step==='connect'&&html`<b style=${{fontWeight:500}}>Connect Pinterest</b><p className="help" style=${{margin:0}}>House of Louie Mae asks to read your boards and create pins. You can disconnect any time in Account.</p>
-      <div className="row"><button className="btn btn-ink btn-sm" onClick=${()=>{ctx.setPinterest(true);setStep('compose')}}>Connect account</button><button className="btn btn-line btn-sm" onClick=${()=>setStep('idle')}>Cancel</button></div><p className="help" style=${{margin:0}}>Prototype: no real Pinterest sign-in happens.</p>`}
-    ${step==='compose'&&html`<div className="row" style=${{gap:12,alignItems:'flex-start'}}><span style=${{width:72,aspectRatio:'2/3',borderRadius:10,background:`url(${byId(ids[0]||1).img}) center/cover`,flex:'none'}}></span>
-      <div style=${{flex:1,display:'grid',gap:8,minWidth:0}}><label className="lbl" htmlFor="pp-board" style=${{margin:0}}>Pinterest board</label><select id="pp-board" className="field" style=${{height:38}} value=${board} onChange=${e=>setBoard(e.target.value)}>${PIN_BOARDS.map(b=>html`<option key=${b.id} value=${b.id}>${b.name}</option>`)}</select>
-        <label className="lbl" htmlFor="pp-desc" style=${{margin:0}}>Description</label><textarea id="pp-desc" className="field" rows="2" value=${desc} onInput=${e=>setDesc(e.target.value)}></textarea>
-        <p className="help" style=${{margin:0,overflowWrap:'anywhere'}}>The pin links to <span className="mono" style=${{textTransform:'none'}}>${url.replace('https://','')}</span></p></div></div>
-      <div className="row"><button className="btn btn-cog btn-sm" onClick=${()=>setStep('done')}>Publish pin</button><button className="btn btn-line btn-sm" onClick=${()=>setStep('idle')}>Cancel</button></div>`}
-    ${step==='done'&&html`<div className="row" style=${{alignItems:'flex-start'}}>${I('check',{width:18})}<span>Published to <b style=${{fontWeight:500}}>${PIN_BOARDS.find(b=>b.id===board).name}</b>. Anyone who taps the pin lands on this board${url.includes('ref=')?', and orders count toward your commission':''}.</span></div><p className="help" style=${{margin:0}}>Prototype: nothing was posted.</p>`}
-  </div>`;
+// A board someone shared by link.
+function SharedBoard({ctx,slug}){
+  const b=useQuery(api.holmSync.sharedBoard,{slug});const record=useMutation(api.holmPartners.recordClick);
+  useEffect(()=>{if(b?.refCode){store('ref',{code:b.refCode,ch:'direct',at:Date.now()});record({refCode:b.refCode,channel:'direct',target:'b/'+slug,visitorId:visitorId()}).catch(()=>{})}},[b?.refCode]);
+  if(b===undefined)return html`<main className="wrap"><p className="help" style=${{padding:'80px 0'}}>Opening the board…</p></main>`;
+  if(!b)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h3>This board link isn't complete</h3><p>Ask for the link again.</p><button className="btn btn-line" onClick=${()=>ctx.go('home')}>Visit House of Louie Mae</button></div></main>`;
+  const pieces=b.productIds.map(lid=>PRODUCTS.find(p=>p.lid===lid)).filter(Boolean);const shop=b.mode==='shop';
+  return html`<main className="wrap" style=${{paddingBottom:60}}>
+    <div className="ph-head"><div><h1>${b.title}</h1><p className="mute" style=${{marginTop:8}}>Shared by ${b.by} · ${pieces.length} pieces</p></div>
+      ${shop&&pieces.length>0&&html`<button className="btn btn-ink" onClick=${()=>{pieces.forEach(p=>ctx.addToTray(p.id,1,null,true));ctx.toast(`${pieces.length} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Add all to a project</button>`}</div>
+    <div className="lx-grid" style=${{marginTop:12}}>${pieces.map(p=>html`<article key=${p.id} className="lx-piece in">
+      <button className="lx-stage" onClick=${()=>ctx.openPin(p.id)} aria-label=${'View '+p.name}><span className="lx-cut"><img src=${cut(p.id)} alt="" loading="lazy"/></span><i className="lx-floor"></i></button>
+      <div className="lx-chip glass light"><div className="lx-chip-t"><b>${p.name}</b><span>${p.line}</span></div>${shop&&html`<span className="lx-chip-p num">${fmt(pr(p,ctx.mode))}</span><button className="lx-ic solid" aria-label=${'Add '+p.name+' to a project'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.lx-piece').querySelector('img'))}>${I('plus',{width:16})}</button>`}</div>
+    </article>`)}</div>
+  </main>`;
 }
 
 /* ================= MY INSPO ================= */
 function Inspo({ctx}){
-  const [f,setF]=useState('all');const [open,setOpen]=useState(null);const [imp,setImp]=useState(false);const [drag,setDrag]=useState(false);const [busy,setBusy]=useState(false);const fileRef=useRef();
-  const add=async files=>{const fs=[...files].filter(x=>x.type.startsWith('image/'));if(!fs.length)return;setBusy(true);const out=[];for(const x of fs){try{out.push(await fileToInspo(x))}catch(e){}}ctx.addInspo(out);setBusy(false);ctx.toast(`${out.length} image${out.length===1?'':'s'} added to My Inspo`)};
-  useEffect(()=>{const h=e=>{const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();add(fs)}};addEventListener('paste',h);return()=>removeEventListener('paste',h)},[]);
-  const list=ctx.inspo.filter(x=>f==='all'||x.source===f);const O=ctx.inspo.find(x=>x.id===open);
+  const [open,setOpen]=useState(null);const [drag,setDrag]=useState(false);const [busy,setBusy]=useState(false);const fileRef=useRef();
+  const uploadUrl=useMutation(api.holmSync.inspoUploadUrl);const urlOf=useMutation(api.holmSync.inspoUrl);
+  const add=async files=>{const fs=[...files].filter(x=>x.type.startsWith('image/'));if(!fs.length)return;setBusy(true);const out=[];
+    for(const x of fs){try{const item=await fileToInspo(x);if(ctx.me.signedIn){const id=await uploadBlob(uploadUrl,await dataUrlBlob(item.src));item.src=await urlOf({fileId:id})}out.push(item)}catch(e){}}
+    ctx.addInspo(out);setBusy(false);ctx.toast(out.length?`${out.length} image${out.length===1?'':'s'} added to My Inspo`:'Those files could not be added')};
+  useEffect(()=>{const h=e=>{const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();add(fs)}};addEventListener('paste',h);return()=>removeEventListener('paste',h)},[ctx.me.signedIn]);
+  const list=ctx.inspo;const O=ctx.inspo.find(x=>x.id===open);
   return html`<main className="wrap" onDragOver=${e=>{e.preventDefault();setDrag(true)}} onDragLeave=${e=>{if(!e.currentTarget.contains(e.relatedTarget))setDrag(false)}} onDrop=${e=>{e.preventDefault();setDrag(false);add(e.dataTransfer.files)}}>
-    <div className="ph-head"><div><span className="eyebrow">Private library</span><h1>My <em>Inspo</em></h1><p className="mute" style=${{maxWidth:'58ch',marginTop:12,fontSize:16}}>Your reference images, visible only to you. Upload photos, import a Pinterest board, or paste a screenshot. Each image finds matching Louie pieces and goes straight into Studio or the 3D room.</p></div>
-      <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-line" onClick=${()=>setImp(true)}>${I('pint',{width:16})} Import from Pinterest</button><button className="btn btn-ink" onClick=${()=>fileRef.current.click()}>${I('upload',{width:16})} Upload images</button><input ref=${fileRef} type="file" accept="image/*" multiple hidden onChange=${e=>{add(e.target.files);e.target.value=''}}/></div></div>
-    <div className=${'drop'+(drag?' on':'')} style=${{marginBottom:8}} onClick=${()=>fileRef.current.click()} onKeyDown=${e=>e.key==='Enter'&&fileRef.current.click()} role="button" tabIndex="0">${I('upload',{width:22})}<span><b style=${{color:'var(--ink)',fontWeight:500}}>${busy?'Adding…':drag?'Drop to add':'Drop images anywhere on this page'}</b>, paste a screenshot, or click to choose files</span></div>
-    <div className="row" style=${{justifyContent:'center',gap:8,marginBottom:22,flexWrap:'wrap'}}><span className="mono mute">Or email photos to</span><span className="mono" style=${{textTransform:'none',userSelect:'all'}}>ama@inspo.louiemae.com</span><button className="lnk" onClick=${()=>copyText('ama@inspo.louiemae.com',ctx.toast)}>Copy</button></div>
-    <div className="filters">${[['all','All'],['upload','Uploads'],['pinterest','From Pinterest']].map(([k,l])=>html`<button key=${k} className=${'chip'+(f===k?' on':'')} onClick=${()=>setF(k)}>${l} <span className="mono">${k==='all'?ctx.inspo.length:ctx.inspo.filter(x=>x.source===k).length}</span></button>`)}<span style=${{flex:1}}></span><span className="mono mute">${ctx.pinterest?'Pinterest connected':'Pinterest not connected'}</span></div>
+    <div className="ph-head"><div><h1>My <em>Inspo</em></h1><p className="mute" style=${{maxWidth:'58ch',marginTop:12,fontSize:16}}>Your reference images, visible only to you. Upload photos or paste a screenshot. Each image finds matching Louie pieces and goes straight into Studio or the 3D room.${ctx.me.signedIn?'':' Sign in to keep your library on every device.'}</p></div>
+      <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-ink" onClick=${()=>fileRef.current.click()}>${I('upload',{width:16})} Upload images</button><input ref=${fileRef} type="file" accept="image/*" multiple hidden onChange=${e=>{add(e.target.files);e.target.value=''}}/></div></div>
+    <div className=${'drop'+(drag?' on':'')} style=${{marginBottom:22}} onClick=${()=>fileRef.current.click()} onKeyDown=${e=>e.key==='Enter'&&fileRef.current.click()} role="button" tabIndex="0">${I('upload',{width:22})}<span><b style=${{color:'var(--ink)',fontWeight:500}}>${busy?'Adding…':drag?'Drop to add':'Drop images anywhere on this page'}</b>, paste a screenshot, or click to choose files</span></div>
     ${list.length?html`<div className="wall">${list.map(x=>html`<div key=${x.id} className="pin"><div className="pin-img" onClick=${()=>setOpen(x.id)}><img src=${x.src} alt=${x.title} style=${{aspectRatio:x.ar||1}}/>
-        <div className="pin-ov"><div className="r1"><span className="pin-board"><span>${x.source==='pinterest'?'From Pinterest':'Upload'}</span></span></div>
+        <div className="pin-ov"><div className="r1"><span className="pin-board"><span>Upload</span></span></div>
           <div className="r2"><span className="row" style=${{gap:4}}>${x.pal.slice(0,4).map(c=>html`<span key=${c} className="dot" style=${{width:16,height:16,background:c,boxShadow:'0 0 0 2px #fff'}}></span>`)}</span><button className="pin-act" aria-label="Mix in Studio" title="Mix in Studio" onClick=${e=>{e.stopPropagation();ctx.inspoToStudio(x)}}>${I('brush')}</button></div></div></div>
         <div className="pin-meta"><b>${x.title}</b></div></div>`)}</div>`
-      :html`<div className="empty"><h3>Nothing here yet</h3><p>Upload a few photos or import a Pinterest board to start.</p></div>`}
-    ${imp&&html`<${PinImport} ctx=${ctx} onClose=${()=>setImp(false)}/>`}
+      :html`<div className="empty"><h3>Nothing here yet</h3><p>Upload a few photos or paste a screenshot to start.</p></div>`}
     ${O&&html`<${InspoDetail} ctx=${ctx} x=${O} onClose=${()=>setOpen(null)}/>`}
   </main>`;
 }
-function PinImport({ctx,onClose}){
-  const [step,setStep]=useState(ctx.pinterest?'boards':'connect');const [sel,setSel]=useState([]);
-  return html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&onClose()} role="dialog" aria-modal="true" aria-label="Import from Pinterest"><div className="sheet share">
-    <div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:34}}>Import from <em style=${{color:'var(--cognac)'}}>Pinterest</em></h2><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>
-    ${step==='connect'?html`<p className="mute">Connect your Pinterest account to bring your own boards into My Inspo. House of Louie Mae can read your boards and pins, and creates pins only when you publish. Imported pins stay private to you and keep a link to the original.</p>
-      <button className="btn btn-ink" style=${{justifySelf:'start'}} onClick=${()=>{ctx.setPinterest(true);setStep('boards')}}>${I('pint',{width:16})} Connect Pinterest</button><p className="help">Prototype: no real sign-in. The sample boards use Louie Mae photos as stand-ins for pins.</p>`
-    :html`<span className="st-h">Choose boards to import</span><div style=${{display:'grid',gap:8}}>${PIN_BOARDS.map(b=>html`<button key=${b.id} className=${'modecard'+(sel.includes(b.id)?' on':'')} style=${{display:'flex',alignItems:'center',gap:12}} aria-pressed=${sel.includes(b.id)} onClick=${()=>setSel(sel.includes(b.id)?sel.filter(x=>x!==b.id):[...sel,b.id])}>
-        <span className="row" style=${{gap:2,flex:'none'}}>${b.ids.slice(0,3).map(id=>html`<span key=${id} style=${{width:34,height:44,borderRadius:6,background:`url(${byId(id).img}) center/cover`}}></span>`)}</span>
-        <span style=${{flex:1,minWidth:0}}><b>${b.name}</b><p>${b.n} pins · this preview imports ${b.ids.length}</p></span>${sel.includes(b.id)&&I('check',{width:18})}</button>`)}</div>
-      <div className="row" style=${{justifyContent:'flex-end'}}><button className="btn btn-line" onClick=${onClose}>Cancel</button><button className="btn btn-ink" disabled=${!sel.length} onClick=${()=>{const items=PIN_BOARDS.filter(b=>sel.includes(b.id)).flatMap(b=>b.ids.map((id,i)=>({id:uid(),src:byId(id).img,title:b.name+' · pin '+(i+1),source:'pinterest',pal:[byId(id).tone,'#E9DCC8'],ar:byId(id).ar,link:'https://www.pinterest.com/',t:Date.now()})));ctx.addInspo(items);ctx.toast(items.length+' pins imported to My Inspo');onClose()}}>Import${sel.length?` ${sel.length} board${sel.length>1?'s':''}`:''}</button></div>`}
-  </div></div>`;
-}
+
 function InspoDetail({ctx,x,onClose}){
   const [t,setT]=useState(x.title);
   const sim=[...PRODUCTS].sort((a,b)=>Math.min(...x.pal.map(c=>cdist(c,a.tone)))-Math.min(...x.pal.map(c=>cdist(c,b.tone)))).slice(0,8);
@@ -2174,6 +2176,38 @@ function TradePass({name,since}){
         <span className="tc-name foil">${name}</span><span className="tc-meta"><span>Verified ${since}</span><span className="num">25% · Trade</span></span></span>
     </div></div>`;
 }
+// Partner program panel on the "Your quotes" page.
+function PartnerPanel({ctx}){
+  const ph=useQuery(api.holmPartners.hub,ctx.me.signedIn?{}:'skip');const join=useMutation(api.holmPartners.join);const w9Url=useMutation(api.holmPartners.w9UploadUrl);const submitW9=useMutation(api.holmPartners.submitW9);
+  const [agree,setAgree]=useState(false);const [busy,setBusy]=useState(false);const [ch,setCh]=useState('pinterest');const [target,setTarget]=useState('home');const w9Ref=useRef();
+  if(!ctx.me.signedIn||ph===undefined)return null;
+  if(!ph)return html`<section className="panel" style=${{marginBottom:24,display:'grid',gap:12}}><h3>Partner program</h3>
+    <p className="help" style=${{margin:0}}>Share pieces and boards and earn commission on retail orders placed through your links: 10% to start, up to 18% by tier. Trade-priced orders don't earn commission. Referring a business that's verified and places a first order over $500 earns $100 in store credit.</p>
+    <label className="cq-check"><input type="checkbox" checked=${agree} onChange=${e=>setAgree(e.target.checked)}/><span>I agree to the partner terms: commission on retail orders through my links within 30 days, payouts after an approved W-9, and disclosure on social posts.</span></label>
+    <button className="btn btn-ink" style=${{justifySelf:'start'}} disabled=${!agree||busy} onClick=${async()=>{setBusy(true);try{await join({acceptTerms:true});ctx.toast('Welcome to the partner program')}catch(e){ctx.toast(errText(e))}finally{setBusy(false)}}}>Join the partner program</button></section>`;
+  const base=location.origin+'/trade';const hash=target==='home'?'':target.startsWith('p:')?'#p/'+target.slice(2):'#'+target;
+  const link=`${base}?ref=${ph.refCode}&ch=${ch}${hash}`;
+  const money=c=>fmt(c/100,true);
+  const status={signed_up:'Signed up',verified:'Verified, awaiting first order',credited:'Credit earned'};
+  return html`<section style=${{display:'grid',gap:18,marginBottom:24}}>
+    <div className="ph-head" style=${{margin:0}}><div><h2 style=${{fontSize:38}}>Partner Hub</h2><p className="mute">${(ph.rateBps/100)}% commission on retail orders · ${ph.tier[0].toUpperCase()+ph.tier.slice(1)} tier</p></div></div>
+    <div className="kpis">${[['Link visits · 30 days',ph.clicks30],['Quote requests from your links',ph.quotes],['Pending',money(ph.pendingCents)],['Cleared, ready to pay',money(ph.clearedCents)],['Paid',money(ph.paidCents)]].map(([l,v])=>html`<div key=${l} className="kpi"><span className="mono mute">${l}</span><div className="v">${v}</div></div>`)}</div>
+    <div className="g2">
+      <div className="panel" style=${{display:'grid',gap:10,alignContent:'start'}}><h3>Your link</h3>
+        <div className="g2f" style=${{gap:8}}><select className="field" aria-label="Link to" value=${target} onChange=${e=>setTarget(e.target.value)}><option value="home">House of Louie Mae home</option><option value="discover">Discover</option><optgroup label="Pieces">${PRODUCTS.slice(0,60).map(p=>html`<option key=${p.id} value=${'p:'+p.id}>${p.name} ${p.line}</option>`)}</optgroup></select>
+          <select className="field" aria-label="Channel" value=${ch} onChange=${e=>setCh(e.target.value)}>${[['pinterest','Pinterest'],['instagram','Instagram'],['email','Email'],['website','Website'],['tiktok','TikTok'],['direct','Direct']].map(([k,l])=>html`<option key=${k} value=${k}>${l}</option>`)}</select></div>
+        <div className="linkbox"><code>${link}</code><button className="btn btn-ink btn-sm" onClick=${()=>copyText(link,ctx.toast)}>Copy</button></div>
+        <div className="kv"><span className="mono mute">Code</span><b style=${{fontWeight:500}}>${ph.refCode}</b><span className="mono mute">Window</span><span>30 days from the first click</span><span className="mono mute">Clearing</span><span>30 days after payment</span><span className="mono mute">Tax form</span><span>${ph.w9Status==='approved'?'W-9 approved':ph.w9Status==='pending'?'W-9 in review':html`<button className="lnk" onClick=${()=>w9Ref.current.click()}>Upload your W-9</button>`}</span></div>
+        <input ref=${w9Ref} type="file" accept=".pdf,image/*" hidden onChange=${async e=>{const x=e.target.files[0];if(!x)return;try{const id=await uploadBlob(w9Url,x);await submitW9({fileId:id});ctx.toast('W-9 received')}catch(err){ctx.toast(errText(err))}}}/>
+        <p className="help" style=${{margin:0}}>Add "I earn a commission" or #ad when you post. Orders you place yourself don't earn commission; your trade account is always the better price.</p></div>
+      <div className="panel" style=${{display:'grid',gap:8,alignContent:'start'}}><h3>Referrals and credit</h3>
+        ${ph.referrals.length?ph.referrals.map((r,i)=>html`<div key=${i} className="sumrow" style=${{borderBottom:'1px solid var(--line)',padding:'8px 0'}}><span>${r.name}<br/><small className="mute">${status[r.status]}</small></span><span>${r.creditCents?money(r.creditCents):''}</span></div>`):html`<p className="help" style=${{margin:0}}>Businesses who sign up through your link appear here.</p>`}
+        <div className="sumrow total"><span>Store credit</span><span>${money(ph.creditCents)}</span></div>
+        ${ph.payouts.length>0&&html`<h3 style=${{marginTop:10}}>Payouts</h3>${ph.payouts.map((x,i)=>html`<div key=${i} className="sumrow"><span>${new Date(x.paidAt).toLocaleDateString()}<br/><small className="mute">${x.reference}</small></span><span>${money(x.amountCents)}</span></div>`)}`}
+      </div>
+    </div>
+  </section>`;
+}
 function Hub({ctx}){
   const me=ctx.me;
   const quotes=useQuery(api.holm.myQuoteRequests)||[];const cqs=useQuery(api.holm.myClientQuotes)||[];const app=useQuery(api.holm.myApplication);
@@ -2191,39 +2225,44 @@ function Hub({ctx}){
         ${cqs.length?html`<div style=${{display:'grid',gap:2,marginTop:8}}>${cqs.map(q=>html`<div key=${q.slug} className="sumrow" style=${{borderBottom:'1px solid var(--line)',padding:'10px 0'}}><span>${q.title}<br/><small className="mute">${q.number} · ${q.clientName} · ${cqStatus[q.status]}${q.approval?` by ${q.approval.name}`:''}</small></span><span className="row" style=${{gap:6}}><button className="btn btn-line btn-sm" onClick=${()=>copyText(location.origin+'/trade#q/'+q.slug,ctx.toast)}>Copy link</button><button className="btn btn-line btn-sm" onClick=${()=>{location.hash='q/'+q.slug}}>Open</button></span></div>`)}</div>`
         :html`<p className="help">${me.verified?'Create one from your tray: price a project, add your markup, send one link.':'Client quotes open with a verified trade account.'}</p>`}</div>
     </div>
-    <section className="panel" style=${{marginBottom:60,display:'grid',gap:8}}><h3>How partners earn</h3><p className="help" style=${{margin:0}}>Commission is paid on retail sales through your shared links, at 10% to 18% by tier. Trade-priced orders don't earn commission. Referring a business that's verified and places a first order over $500 earns $100 in store credit. Tracked links and payouts open with the partner program.</p></section>
+    <${PartnerPanel} ctx=${ctx}/>
+    <div style=${{height:40}}></div>
   </main>`;
 }
 /* ================= SOURCING REQUESTS ================= */
-const SR_STATUS=['Received','Sourcing','Options ready','Listed for you','Ordered'];
-const SR_SEED=[];
 function Sourcing({ctx}){
-  const blank={type:'specific',title:'',link:'',cat:'Seating',material:'',w:'',d:'',h:'',qty:1,budget:'',date:'',project:ctx.tray.active,notes:'',imgs:[]};
-  const [f,setF]=useState(blank);const [sent,setSent]=useState(null);const set=(k,v)=>setF({...f,[k]:v});const ok=f.title.trim().length>2&&f.qty>0;
+  const submit=useMutation(api.holmSourcing.submit);const uploadUrl=useMutation(api.holmSourcing.uploadUrl);const me=ctx.me;
+  const blank={type:'specific',title:'',link:'',cat:'Seating',material:'',w:'',d:'',h:'',qty:1,budget:'',date:'',project:ctx.activeProject?.name||'',notes:'',imgs:[]};
+  const [f,setF]=useState(blank);const [sent,setSent]=useState(null);const [busy,setBusy]=useState(false);const [err,setErr]=useState('');const set=(k,v)=>{setF({...f,[k]:v});setErr('')};const ok=f.title.trim().length>2&&f.qty>0;
+  const can=me.verified||me.partner||me.admin;
+  const send=async()=>{setBusy(true);setErr('');try{const imageIds=[];for(const src of f.imgs.slice(0,8))imageIds.push(await uploadBlob(uploadUrl,await dataUrlBlob(src)));
+      const n=await submit({type:f.type,title:f.title,link:f.link,category:f.cat,material:f.material,dims:[f.w&&`W ${f.w} cm`,f.d&&`D ${f.d} cm`,f.h&&`H ${f.h} cm`].filter(Boolean).join(' · '),quantity:+f.qty,targetCents:f.budget?Math.round(+f.budget*100):undefined,neededBy:f.date,project:f.project,notes:f.notes,imageIds});setSent(n)}
+    catch(e){setErr(errText(e))}finally{setBusy(false)}};
+  const intro=html`<div><h1 style=${{fontSize:'clamp(44px,5.6vw,76px)'}}>Can't find it? <em style=${{fontStyle:'italic',color:'var(--cognac)'}}>We'll source it.</em></h1>
+      <p className="mute" style=${{marginTop:18,maxWidth:'48ch',fontSize:16}}>Tell us the piece your project needs. Our team finds it through our suppliers and comes back with options, trade pricing and lead times.</p>
+      <ol className="tv-time" style=${{marginTop:26}}>${[['Request','Send a link, photo or spec'],['Sourcing','We search our supplier network, usually 2 to 5 business days'],['Options','You get options with pricing and lead times'],['Ordered','Choose an option and we place it in your project']].map(([t,d],i)=>html`<li key=${t} className=${i===0?'on':''}><i></i><b>${t}</b><span>${d}</span></li>`)}</ol>
+      <div className="note" style=${{marginTop:6}}>${I('pin',{width:18})}<span>Open to verified trade accounts and partners. Sourcing is free to request; you only pay if you order.</span></div></div>`;
+  if(!can)return html`<main className="wrap"><div className="apply">${intro}<div className="formcard" style=${{textAlign:'center',justifyItems:'center',padding:'48px 28px'}}><h2 style=${{fontSize:38}}>For trade accounts and partners</h2><p className="mute" style=${{maxWidth:'38ch'}}>${me.signedIn?'Apply for trade or join the partner program to request sourcing.':'Sign in, then apply for trade or join the partner program.'}</p><div className="row" style=${{flexWrap:'wrap',justifyContent:'center'}}><button className="btn btn-ink" onClick=${()=>me.signedIn?ctx.go('trade'):ctx.signInThen('sourcing')}>${me.signedIn?'Apply for trade':'Sign in'}</button>${me.signedIn&&html`<button className="btn btn-line" onClick=${()=>ctx.go('hub')}>Partner program</button>`}</div></div></div></main>`;
   return html`<main className="wrap"><div className="apply">
-    <div><span className="eyebrow">Sourcing · trade and partners</span><h1 style=${{fontSize:'clamp(44px,5.6vw,76px)'}}>Can't find it? <em style=${{fontStyle:'italic',color:'var(--cognac)'}}>We'll source it.</em></h1>
-      <p className="mute" style=${{marginTop:18,maxWidth:'48ch',fontSize:16}}>Tell us the piece your project needs. Our team finds it through our suppliers, quotes it at trade, and once it's listed you earn your partner commission every time it sells through your link or boards.</p>
-      <ol className="tv-time" style=${{marginTop:26}}>${[['Request','Send a link, photo or spec'],['Sourcing','We search our supplier network, usually 2 to 5 business days'],['Options','You get options with trade pricing and lead times'],['Listed for you','The piece goes live with you credited as the sourcer'],['Earn','Commission on every sale through your link or boards']].map(([t,d],i)=>html`<li key=${t} className=${i===0?'on':''}><i></i><b>${t}</b><span>${d}</span></li>`)}</ol>
-      <div className="note" style=${{marginTop:6}}>${I('pin',{width:18})}<span>Open to verified trade accounts and partners. Sourcing is free to request; you only pay if you order.</span></div>
-    </div>
-    ${sent?html`<div className="formcard" style=${{textAlign:'center',justifyItems:'center',padding:'48px 28px'}}><span className="pulse" style=${{background:'var(--ok)'}}>${I('check')}</span><h2 style=${{fontSize:42}}>Request received</h2><p className="mono">${sent.id}</p><p className="mute" style=${{maxWidth:'40ch'}}>We're on it. You'll see updates under "Your requests" and in your Partner Hub.</p><div className="row"><button className="btn btn-ink" onClick=${()=>{setSent(null);setF(blank)}}>Request another</button><button className="btn btn-line" onClick=${()=>ctx.go('hub')}>Your quotes</button></div></div>`:
-    html`<form className="formcard" onSubmit=${e=>{e.preventDefault();if(!ok)return;const P=ctx.tray.projects.find(p=>p.id===f.project);const r={id:'SR-'+(1050+ctx.sourcing.length),title:f.title.trim(),qty:+f.qty,budget:+f.budget||null,status:0,date:'Today',project:P?P.name:'',cat:f.cat,type:f.type,img:f.imgs[0]||null};ctx.addSourcing(r);setSent(r)}}>
+    ${intro}
+    ${sent?html`<div className="formcard" style=${{textAlign:'center',justifyItems:'center',padding:'48px 28px'}}><span className="pulse" style=${{background:'var(--ok)'}}>${I('check')}</span><h2 style=${{fontSize:42}}>Request received</h2><p className="mono">${sent}</p><p className="mute" style=${{maxWidth:'40ch'}}>We're on it. You'll get an email when options are ready, and they'll appear under "Your requests".</p><div className="row"><button className="btn btn-ink" onClick=${()=>{setSent(null);setF(blank)}}>Request another</button></div></div>`:
+    html`<form className="formcard" onSubmit=${e=>{e.preventDefault();if(ok&&!busy)send()}}>
       <span className="pp-lbl">What do you need?</span>
       <div className="types" style=${{gridTemplateColumns:'repeat(3,minmax(0,1fr))'}}>${[['specific','A specific product','You know the exact item'],['similar','Something similar','Like a photo or reference'],['custom','A custom spec','Size, material or finish']].map(([k,l,s])=>html`<button type="button" key=${k} className=${'typec'+(f.type===k?' on':'')} onClick=${()=>set('type',k)} aria-pressed=${f.type===k}><b>${l}</b><small>${s}</small></button>`)}</div>
-      <div><label className="lbl" htmlFor="sr-t">Product or description</label><input id="sr-t" className="field" value=${f.title} onInput=${e=>set('title',e.target.value)} placeholder="e.g. Cane-back counter stools in walnut"/></div>
+      <div><label className="lbl" htmlFor="sr-t">Product or description</label><input id="sr-t" className="field" value=${f.title} onInput=${e=>set('title',e.target.value)} placeholder="Cane-back counter stools in walnut"/></div>
       <div className="g2f"><div><label className="lbl" htmlFor="sr-l">Link (optional)</label><input id="sr-l" className="field" value=${f.link} onInput=${e=>set('link',e.target.value)} placeholder="Product page or Pinterest pin"/></div>
         <div><label className="lbl" htmlFor="sr-c">Category</label><select id="sr-c" className="field" value=${f.cat} onChange=${e=>set('cat',e.target.value)}>${['Seating','Tables','Lighting','Rugs & textiles','Storage','Outdoor','Decor','Other'].map(c=>html`<option key=${c}>${c}</option>`)}</select></div></div>
-      <div><span className="lbl">Photos or references</span><label className="drop" style=${{cursor:'pointer'}}>${I('upload',{width:22})}<span>${f.imgs.length?f.imgs.length+' image'+(f.imgs.length>1?'s':'')+' added':'Upload photos, screenshots or spec sheets'}</span><input type="file" accept="image/*" multiple hidden onChange=${async e=>{const out=[];for(const x of e.target.files){try{out.push((await fileToInspo(x)).src)}catch(err){}}set('imgs',[...f.imgs,...out])}}/></label>
-        ${f.imgs.length>0&&html`<div className="pl-mini" style=${{marginTop:8}}>${f.imgs.map((s,i)=>html`<button type="button" key=${i} onClick=${()=>set('imgs',f.imgs.filter((_,k)=>k!==i))} title="Remove"><img src=${s} alt=""/></button>`)}</div>`}
-        <button type="button" className="lnk" style=${{marginTop:6}} onClick=${()=>ctx.go('inspo')}>Or pick from My Inspo</button></div>
-      <div><label className="lbl" htmlFor="sr-m">Material, finish or colour</label><input id="sr-m" className="field" value=${f.material} onInput=${e=>set('material',e.target.value)} placeholder="e.g. walnut frame, cognac leather seat"/></div>
+      <div><span className="lbl">Photos or references</span><label className="drop" style=${{cursor:'pointer'}}>${I('upload',{width:22})}<span>${f.imgs.length?f.imgs.length+' image'+(f.imgs.length>1?'s':'')+' added':'Upload photos, screenshots or spec sheets'}</span><input type="file" accept="image/*" multiple hidden onChange=${async e=>{const out=[];for(const x of e.target.files){try{out.push((await fileToInspo(x)).src)}catch(err){}}set('imgs',[...f.imgs,...out].slice(0,8))}}/></label>
+        ${f.imgs.length>0&&html`<div className="pl-mini" style=${{marginTop:8}}>${f.imgs.map((s,i)=>html`<button type="button" key=${i} onClick=${()=>set('imgs',f.imgs.filter((_,k)=>k!==i))} title="Remove"><img src=${s} alt=""/></button>`)}</div>`}</div>
+      <div><label className="lbl" htmlFor="sr-m">Material, finish or colour</label><input id="sr-m" className="field" value=${f.material} onInput=${e=>set('material',e.target.value)} placeholder="Walnut frame, cognac leather seat"/></div>
       <div className="pl-dims">${[['w','Width (cm)'],['d','Depth (cm)'],['h','Height (cm)']].map(([k,l])=>html`<label key=${k}><span className="mono mute">${l}</span><input className="field num" type="number" min="0" value=${f[k]} onInput=${e=>set(k,e.target.value)}/></label>`)}</div>
-      <div className="g2f"><div><label className="lbl" htmlFor="sr-q">Quantity</label><input id="sr-q" className="field num" type="number" min="1" value=${f.qty} onInput=${e=>set('qty',Math.max(1,+e.target.value||1))}/></div>
-        <div><label className="lbl" htmlFor="sr-b">Target trade price per unit (optional)</label><input id="sr-b" className="field num" type="number" min="0" value=${f.budget} onInput=${e=>set('budget',e.target.value)} placeholder="$"/></div></div>
+      <div className="g2f"><div><label className="lbl" htmlFor="sr-q">Quantity</label><input id="sr-q" className="field num" type="number" min="1" value=${f.qty} onInput=${e=>set('qty',Math.max(1,Math.floor(+e.target.value)||1))}/></div>
+        <div><label className="lbl" htmlFor="sr-b">Target price per unit (optional)</label><input id="sr-b" className="field num" type="number" min="0" value=${f.budget} onInput=${e=>set('budget',e.target.value)} placeholder="$"/></div></div>
       <div className="g2f"><div><label className="lbl" htmlFor="sr-d">Needed by</label><input id="sr-d" className="field" type="date" value=${f.date} onInput=${e=>set('date',e.target.value)}/></div>
-        <div><label className="lbl" htmlFor="sr-p">For project</label><select id="sr-p" className="field" value=${f.project} onChange=${e=>set('project',e.target.value)}>${ctx.tray.projects.map(p=>html`<option key=${p.id} value=${p.id}>${p.name}</option>`)}<option value="">Not for a specific project</option></select></div></div>
+        <div><label className="lbl" htmlFor="sr-p">For project</label><input id="sr-p" className="field" value=${f.project} onInput=${e=>set('project',e.target.value)} placeholder="Project or room name"/></div></div>
       <div><label className="lbl" htmlFor="sr-n">Notes for our team</label><textarea id="sr-n" className="field" rows="3" value=${f.notes} onInput=${e=>set('notes',e.target.value)} placeholder="Commercial use, fire code, colour matching, anything we should know"></textarea></div>
-      <button className="btn btn-ink btn-lg" disabled=${!ok} style=${{justifySelf:'start'}}>Send sourcing request ${I('arrow',{width:16})}</button>
+      ${err&&html`<p className="help" style=${{color:'var(--bad)'}}>${err}</p>`}
+      <button className="btn btn-ink btn-lg" disabled=${!ok||busy} style=${{justifySelf:'start'}}>${busy?'Sending…':'Send sourcing request'} ${I('arrow',{width:16})}</button>
     </form>`}
   </div>
   <section style=${{paddingBottom:60}}>
@@ -2231,17 +2270,23 @@ function Sourcing({ctx}){
     <${SourcingList} ctx=${ctx}/>
   </section></main>`;
 }
+const SR_STEPS=['received','sourcing','options_ready','ordered'];
+const SR_LABEL={received:'Received',sourcing:'Sourcing',options_ready:'Options ready',ordered:'Ordered',closed:'Closed'};
+
 function SourcingList({ctx,compact}){
-  const list=compact?ctx.sourcing.slice(0,3):ctx.sourcing;
+  const rows=useQuery(api.holmSourcing.mine,ctx.me.signedIn?{}:'skip');const choose=useMutation(api.holmSourcing.choose);
+  if(!ctx.me.signedIn)return html`<p className="help">Sign in to see your requests.</p>`;
+  if(rows===undefined)return html`<p className="help">Loading…</p>`;
+  const list=compact?rows.slice(0,3):rows;
   if(!list.length)return html`<p className="help">No requests yet.</p>`;
-  return html`<div className="sr-list">${list.map(r=>html`<div key=${r.id} className="sr-row">
-    <span className="sr-th" style=${r.img?{backgroundImage:`url(${r.img})`}:{}}>${r.img?'':I('search',{width:18})}</span>
-    <div style=${{minWidth:0}}><b>${r.title}</b><div className="meta"><span className="mono">${r.id}</span><span>${r.qty} × ${r.budget?fmt(r.budget)+' target':'no target price'}</span>${r.project&&html`<span>${r.project}</span>`}<span>${r.date}</span></div>
-      ${!compact&&html`<div className="sr-steps">${SR_STATUS.map((s,i)=>html`<i key=${s} className=${i<=r.status?'on':''} title=${s}></i>`)}</div>`}</div>
-    <span className=${'tv-status'+(r.status===2?' warn':'')}>${SR_STATUS[r.status]}</span>
+  return html`<div className="sr-list">${list.map(r=>html`<div key=${r.id} className="sr-row" style=${{alignItems:'flex-start'}}>
+    <span className="sr-th" style=${r.image?{backgroundImage:`url(${r.image})`}:{}}>${r.image?'':I('search',{width:18})}</span>
+    <div style=${{minWidth:0}}><b>${r.title}</b><div className="meta"><span className="mono">${r.number}</span><span>${r.quantity} × ${r.targetCents?fmt(r.targetCents/100)+' target':'no target price'}</span>${r.project&&html`<span>${r.project}</span>`}<span>${new Date(r.createdAt).toLocaleDateString()}</span></div>
+      ${!compact&&html`<div className="sr-steps">${SR_STEPS.map((s,i)=>html`<i key=${s} className=${i<=SR_STEPS.indexOf(r.status)?'on':''} title=${SR_LABEL[s]}></i>`)}</div>`}
+      ${!compact&&r.options.length>0&&html`<div style=${{display:'grid',gap:6,marginTop:10}}>${r.options.map((o,i)=>html`<div key=${i} className="sumrow" style=${{border:'1px solid var(--line)',borderRadius:12,padding:'10px 12px'}}><span><b style=${{fontWeight:500}}>${o.title}</b><br/><small className="mute">${fmt(o.unitCents/100)} each${o.leadTime?' · '+o.leadTime:''}${o.note?' · '+o.note:''}</small></span>${r.chosenOption===i?html`<span className="tv-status">Chosen</span>`:r.status==='options_ready'&&html`<button className="btn btn-line btn-sm" onClick=${()=>choose({id:r.id,option:i}).then(()=>ctx.toast('Option chosen. We will follow up by email.')).catch(e=>ctx.toast(errText(e)))}>Choose</button>`}</div>`)}</div>`}</div>
+    <span className=${'tv-status'+(r.status==='options_ready'?' warn':'')}>${SR_LABEL[r.status]}</span>
   </div>`)}</div>`;
 }
-
 /* ================= PARTNER HUB: Pinterest, links, sourcing, payouts ================= */
 
 /* ================= TRADE APPLICATION ================= */
@@ -2310,12 +2355,54 @@ function Trade({ctx}){
   </div></main>`;
 }
 // Team review queue for trade applications (admin accounts only).
+function AdminPage({ctx}){
+  const [tab,setTab]=useState('apps');
+  if(!ctx.me.admin)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h3>Team only</h3><p>Sign in with an admin account to manage House of Louie Mae.</p></div></main>`;
+  return html`<main className="wrap" style=${{paddingBottom:60}}>
+    <div className="seg" style=${{margin:'28px 0 0'}}>${[['apps','Trade applications'],['sourcing','Sourcing'],['partners','Partners']].map(([k,l])=>html`<button key=${k} className=${tab===k?'on':''} onClick=${()=>setTab(k)}>${l}</button>`)}</div>
+    ${tab==='apps'?html`<${TradeAdmin} ctx=${ctx}/>`:tab==='sourcing'?html`<${SourcingAdmin} ctx=${ctx}/>`:html`<${PartnersAdmin} ctx=${ctx}/>`}
+  </main>`;
+}
+function SourcingAdmin({ctx}){
+  const [status,setStatus]=useState('received');const rows=useQuery(api.holmSourcing.adminList,{status});const update=useMutation(api.holmSourcing.adminUpdate);
+  const [edit,setEdit]=useState({});
+  const ed=r=>edit[r._id]||{status:r.status,note:r.adminNote||'',options:r.options.map(o=>({...o,price:(o.unitCents/100).toFixed(2)}))};
+  const setEd=(r,o)=>setEdit({...edit,[r._id]:{...ed(r),...o}});
+  const save=async r=>{const e=ed(r);try{await update({id:r._id,status:e.status,adminNote:e.note||undefined,options:e.options.filter(o=>o.title.trim()).map(o=>({title:o.title.trim(),unitCents:Math.round(+o.price*100)||0,leadTime:o.leadTime||'',note:o.note||''}))});ctx.toast('Saved');setEdit({...edit,[r._id]:undefined})}catch(x){ctx.toast(errText(x))}};
+  return html`<div style=${{marginTop:18}}>
+    <div className="seg">${['received','sourcing','options_ready','ordered','closed'].map(k=>html`<button key=${k} className=${status===k?'on':''} onClick=${()=>setStatus(k)}>${SR_LABEL[k]}</button>`)}</div>
+    ${rows===undefined?html`<p className="help">Loading…</p>`:!rows.length?html`<div className="empty"><h3>Nothing here</h3><p>No requests with this status.</p></div>`:
+    html`<div style=${{display:'grid',gap:14,marginTop:14}}>${rows.map(r=>{const e=ed(r);return html`<div key=${r._id} className="panel" style=${{display:'grid',gap:10}}>
+      <div className="row" style=${{justifyContent:'space-between',flexWrap:'wrap'}}><h3>${r.number} · ${r.title}</h3><span className="mono mute">${r.email}</span></div>
+      <p className="help" style=${{margin:0}}>${r.quantity} × · ${r.category}${r.material?' · '+r.material:''}${r.dims?' · '+r.dims:''}${r.targetCents?' · target '+fmt(r.targetCents/100):''}${r.neededBy?' · needed by '+r.neededBy:''}${r.project?' · '+r.project:''}</p>
+      ${r.link&&html`<a href=${r.link} target="_blank" rel="noopener noreferrer">${r.link}</a>`}${r.notes&&html`<p>${r.notes}</p>`}
+      ${r.imageUrls.length>0&&html`<div className="pl-mini">${r.imageUrls.filter(Boolean).map((u,i)=>html`<a key=${i} href=${u} target="_blank" rel="noopener"><img src=${u} alt=""/></a>`)}</div>`}
+      ${r.chosenOption!=null&&html`<p className="tv-status">Client chose: ${r.options[r.chosenOption]?.title}</p>`}
+      <div style=${{display:'grid',gap:6}}>${e.options.map((o,i)=>html`<div key=${i} className="g3f" style=${{display:'grid',gridTemplateColumns:'2fr 1fr 1fr 2fr auto',gap:6}}><input className="field" placeholder="Option" value=${o.title} onInput=${x=>{const op=[...e.options];op[i]={...o,title:x.target.value};setEd(r,{options:op})}}/><input className="field num" placeholder="Price $" value=${o.price} onInput=${x=>{const op=[...e.options];op[i]={...o,price:x.target.value};setEd(r,{options:op})}}/><input className="field" placeholder="Lead time" value=${o.leadTime} onInput=${x=>{const op=[...e.options];op[i]={...o,leadTime:x.target.value};setEd(r,{options:op})}}/><input className="field" placeholder="Note" value=${o.note} onInput=${x=>{const op=[...e.options];op[i]={...o,note:x.target.value};setEd(r,{options:op})}}/><button className="ib" aria-label="Remove option" onClick=${()=>setEd(r,{options:e.options.filter((_,k)=>k!==i)})}>${I('x',{width:14})}</button></div>`)}
+        <button className="btn btn-line btn-sm" style=${{justifySelf:'start'}} onClick=${()=>setEd(r,{options:[...e.options,{title:'',price:'',leadTime:'',note:''}]})}>${I('plus',{width:14})} Add option</button></div>
+      <div className="g2f"><select className="field" value=${e.status} onChange=${x=>setEd(r,{status:x.target.value})}>${['received','sourcing','options_ready','ordered','closed'].map(k=>html`<option key=${k} value=${k}>${SR_LABEL[k]}</option>`)}</select><input className="field" placeholder="Note to the requester (emailed when the status changes)" value=${e.note} onInput=${x=>setEd(r,{note:x.target.value})}/></div>
+      <button className="btn btn-ink" style=${{justifySelf:'start'}} onClick=${()=>save(r)}>Save</button>
+    </div>`})}</div>`}
+  </div>`;
+}
+function PartnersAdmin({ctx}){
+  const rows=useQuery(api.holmPartners.adminPartners);const setP=useMutation(api.holmPartners.adminSetPartner);const pay=useMutation(api.holmPartners.adminRecordPayout);const [refs,setRefs]=useState({});
+  const run=(p,ok)=>p.then(()=>ctx.toast(ok)).catch(e=>ctx.toast(errText(e)));
+  if(rows===undefined)return html`<p className="help" style=${{marginTop:18}}>Loading…</p>`;
+  if(!rows.length)return html`<div className="empty"><h3>No partners yet</h3><p>Accounts that join the partner program appear here.</p></div>`;
+  return html`<div style=${{display:'grid',gap:14,marginTop:18}}>${rows.map(p=>html`<div key=${p.userId} className="panel" style=${{display:'grid',gap:10}}>
+    <div className="row" style=${{justifyContent:'space-between',flexWrap:'wrap'}}><h3>${p.name}</h3><span className="mono mute">${p.email} · ${p.refCode}</span></div>
+    <div className="kv"><span className="mono mute">Pending</span><span>${fmt(p.pendingCents/100,true)}</span><span className="mono mute">Cleared</span><span>${fmt(p.clearedCents/100,true)}</span><span className="mono mute">Paid</span><span>${fmt(p.paidCents/100,true)}</span><span className="mono mute">W-9</span><span>${p.w9Status==='none'?'Not uploaded':html`${p.w9Url&&html`<a href=${p.w9Url} target="_blank" rel="noopener">View</a> · `}${p.w9Status==='approved'?'Approved':html`<button className="lnk" onClick=${()=>run(setP({userId:p.userId,w9Approved:true}),'W-9 approved')}>Approve</button>`}`}</span></div>
+    <div className="row" style=${{flexWrap:'wrap'}}><select className="field" style=${{maxWidth:200}} value=${p.tier} onChange=${e=>run(setP({userId:p.userId,tier:e.target.value}),'Tier saved')}>${[['base','Base · 10%'],['active','Active · 12%'],['top','Top · 15%'],['elite','Elite · 18%']].map(([k,l])=>html`<option key=${k} value=${k}>${l}</option>`)}</select>
+      ${p.clearedCents>0&&html`<input className="field" style=${{maxWidth:260}} placeholder="Payment reference" value=${refs[p.userId]||''} onInput=${e=>setRefs({...refs,[p.userId]:e.target.value})}/><button className="btn btn-ink" onClick=${()=>run(pay({userId:p.userId,reference:refs[p.userId]||''}),'Payout recorded')}>Record payout of ${fmt(p.clearedCents/100,true)}</button>`}</div>
+  </div>`)}</div>`;
+}
 function TradeAdmin({ctx}){
   const [status,setStatus]=useState('pending');const rows=useQuery(api.holm.adminApplications,ctx.me.admin?{status}:'skip');const review=useMutation(api.holm.reviewApplication);
   const [notes,setNotes]=useState({});const [busy,setBusy]=useState('');
-  if(!ctx.me.admin)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h3>Team only</h3><p>Sign in with an admin account to review trade applications.</p></div></main>`;
+  if(!ctx.me.admin)return null;
   const decide=async(id,decision)=>{setBusy(id+decision);try{await review({id,decision,note:notes[id]||undefined});ctx.toast('Saved')}catch(e){ctx.toast(e?.data||'Could not save the decision')}finally{setBusy('')}};
-  return html`<main className="wrap" style=${{paddingBottom:60}}>
+  return html`<div>
     <div className="ph-head"><div><h1>Trade applications</h1></div><div className="seg">${[['pending','In review'],['needs_info','Needs info'],['approved','Approved'],['rejected','Not approved']].map(([k,l])=>html`<button key=${k} className=${status===k?'on':''} onClick=${()=>setStatus(k)}>${l}</button>`)}</div></div>
     ${rows===undefined?html`<p className="help">Loading…</p>`:!rows.length?html`<div className="empty"><h3>Nothing here</h3><p>No applications with this status.</p></div>`:
     html`<div style=${{display:'grid',gap:14}}>${rows.map(r=>html`<div key=${r._id} className="panel" style=${{display:'grid',gap:10}}>
@@ -2328,7 +2415,7 @@ function TradeAdmin({ctx}){
       ${status==='pending'||status==='needs_info'?html`<textarea className="field" rows="2" placeholder="Note to the applicant (sent with needs info or not approved)" value=${notes[r._id]||''} onInput=${e=>setNotes({...notes,[r._id]:e.target.value})}></textarea>
       <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-ink" disabled=${!!busy} onClick=${()=>decide(r._id,'approved')}>Approve</button><button className="btn btn-line" disabled=${!!busy} onClick=${()=>decide(r._id,'needs_info')}>Ask for more information</button><button className="btn btn-line" disabled=${!!busy} onClick=${()=>decide(r._id,'rejected')}>Don't approve</button></div>`:r.reviewNote&&html`<p className="help">${r.reviewNote}</p>`}
     </div>`)}</div>`}
-  </main>`;
+  </div>`;
 }
 /* ================= QUIZ v2: blend two styles ================= */
 const STYLES={
@@ -2451,7 +2538,7 @@ function Welcome({ctx}){
 export function App(){
   const me0=useQuery(api.holm.me);const me=me0||{signedIn:false,verified:false,admin:false,tradeStatus:'none'};
   const {signOut:authSignOut}=useAuthActions();const ensureProfile=useMutation(api.holm.ensureProfile);
-  useEffect(()=>{if(me.signedIn)ensureProfile().catch(()=>{})},[me.signedIn]);
+  useEffect(()=>{if(me.signedIn)ensureProfile({ref:activeRef()?.code}).catch(()=>{})},[me.signedIn]);
   const [afterSignIn,setAfterSignIn]=useState(null);
   const getRoute=()=>(location.hash.replace('#','')||'home');
   const [route,setRoute]=useState(getRoute());
@@ -2460,15 +2547,32 @@ export function App(){
   const [boards,setBoards]=useState(()=>load('boards',BOARD_SEED).map(b=>({...b,pins:b.pins.filter(x=>has(x.pid))})));
   const [tray,setTrayState]=useState(()=>{const t=load('tray',TRAY_SEED);const projects=(t.projects||[]).map(p=>({...p,items:(p.items||[]).filter(i=>has(i.pid))}));return projects.length?{...t,taxExempt:false,later:(t.later||[]).filter(x=>has(x.pid)),projects,active:projects.some(p=>p.id===t.active)?t.active:projects[0].id}:TRAY_SEED});
   const [collages,setCollages]=useState(()=>load('collages',[]).filter(c=>c.els.every(e=>e.kind!=='img'||has(e.pid))));
-  const [likes,setLikes]=useState([]);const [recent,setRecent]=useState([]);const [sourcing,setSourcing]=useState(()=>load('sourcing',SR_SEED));
-  useEffect(()=>store('sourcing',sourcing),[sourcing]);
-  const [inspo,setInspo]=useState(()=>load('inspo',INSPO_SEED));const [pinterest,setPinterest]=useState(()=>load('pinterest',false));const [roomWall,setRoomWall]=useState(null);
-  useEffect(()=>store('inspo',inspo),[inspo]);useEffect(()=>store('pinterest',pinterest),[pinterest]);
+  const [likes,setLikes]=useState([]);const [recent,setRecent]=useState([]);
+  const [inspo,setInspo]=useState(()=>load('inspo',INSPO_SEED));const [roomWall,setRoomWall]=useState(null);
+  useEffect(()=>store('inspo',inspo),[inspo]);
   const [pin,setPin]=useState(null);const [trayOpen,setTray]=useState(false);const [menu,setMenu]=useState(false);const [toastS,setToastS]=useState(null);
-  const [query,setQuery]=useState('');const [imgQ,setImgQ]=useState(null);const [voice,setVoice]=useState(false);
+  const [query,setQuery]=useState('');const [imgQ,setImgQ]=useState(null);
   const [studioSeed,setStudioSeed]=useState(null);const [nonce,setNonce]=useState(0);const [roomSeed,setRoomSeed]=useState(null);const [board,setBoard]=useState('b1');const [trend,setTrend]=useState('t1');
-  useEffect(()=>{const h=()=>{setRoute(getRoute());setPin(null);scrollTo(0,0)};addEventListener('hashchange',h);return()=>removeEventListener('hashchange',h)},[]);
-  useEffect(()=>store('space',space),[space]);useEffect(()=>store('mode',modePref),[modePref]);useEffect(()=>store('boards',boards),[boards]);useEffect(()=>store('tray',tray),[tray]);useEffect(()=>store('collages',collages),[collages]);
+  useEffect(()=>{const h=()=>{const r=getRoute();if(r.startsWith('p/')){const id=+r.slice(2);if(has(id)){setPin(id);return}}setRoute(r);setPin(null);scrollTo(0,0)};h();addEventListener('hashchange',h);return()=>removeEventListener('hashchange',h)},[]);
+  // a visit through a partner link (?ref=CODE&ch=channel)
+  const recordClick=useMutation(api.holmPartners.recordClick);
+  useEffect(()=>{const q=new URLSearchParams(location.search);const code=(q.get('ref')||'').toUpperCase().replace(/[^A-Z0-9]/g,'');if(!code)return;const ch=(q.get('ch')||'direct').toLowerCase();store('ref',{code,ch,at:Date.now()});recordClick({refCode:code,channel:ch,target:getRoute(),visitorId:visitorId()}).catch(()=>{})},[]);
+  // projects, boards, collages and inspiration follow the account
+  const remote=useQuery(api.holmSync.load,me.signedIn?{}:'skip');const saveState=useMutation(api.holmSync.save);const synced=useRef(false);
+  useEffect(()=>{if(!me.signedIn)synced.current=false},[me.signedIn]);
+  useEffect(()=>{if(!me.signedIn||!remote||synced.current)return;synced.current=true;
+    if(remote.tray?.projects?.length){const projects=remote.tray.projects.map(p=>({...p,items:(p.items||[]).filter(i=>has(i.pid))}));setTrayState({...remote.tray,taxExempt:false,later:(remote.tray.later||[]).filter(x=>has(x.pid)),projects,active:projects.some(p=>p.id===remote.tray.active)?remote.tray.active:projects[0].id})}
+    if(Array.isArray(remote.boards)&&remote.boards.length)setBoards(remote.boards.map(b=>({...b,pins:b.pins.filter(x=>has(x.pid))})));
+    if(Array.isArray(remote.collages))setCollages(remote.collages.filter(c=>c.els.every(e=>e.kind!=='img'||has(e.pid))));
+    if(Array.isArray(remote.inspo))setInspo(l=>[...remote.inspo,...l.filter(x=>!/^https?:/.test(x.src)&&!remote.inspo.some(y=>y.id===x.id))]);
+    // anything the account doesn't have yet comes from this device
+    const push=(key,value)=>saveState({key,value}).catch(()=>{});
+    if(!remote.tray?.projects?.length&&tray.projects.some(p=>p.items.length))push('tray',tray);
+    if(!(Array.isArray(remote.boards)&&remote.boards.length)&&boards.some(b=>b.pins.length))push('boards',boards);
+    if(!Array.isArray(remote.collages)&&collages.length)push('collages',collages.map(c=>({...c,bg:c.bg?.img?.startsWith('data:')?{color:'#EFE6D8'}:c.bg,els:c.els.filter(e=>!String(e.src||'').startsWith('data:'))})));
+  },[me.signedIn,remote]);
+  const syncSave=(key,value)=>{if(!me.signedIn||!synced.current)return;const t=setTimeout(()=>saveState({key,value}).catch(()=>{}),1500);return()=>clearTimeout(t)};
+  useEffect(()=>store('space',space),[space]);useEffect(()=>syncSave('tray',tray),[tray,me.signedIn]);useEffect(()=>syncSave('boards',boards),[boards,me.signedIn]);useEffect(()=>syncSave('collages',collages.map(c=>({...c,bg:c.bg?.img?.startsWith('data:')?{color:'#EFE6D8'}:c.bg,els:c.els.filter(e=>!String(e.src||'').startsWith('data:'))}))),[collages,me.signedIn]);useEffect(()=>syncSave('inspo',inspo.filter(x=>/^https?:/.test(x.src))),[inspo,me.signedIn]);useEffect(()=>store('mode',modePref),[modePref]);useEffect(()=>store('boards',boards),[boards]);useEffect(()=>store('tray',tray),[tray]);useEffect(()=>store('collages',collages),[collages]);
   useEffect(()=>{document.body.style.overflow=(pin||trayOpen||menu)?'hidden':''},[pin,trayOpen,menu]);
   const go=r=>{if(getRoute()===r){scrollTo({top:0,behavior:'smooth'});setPin(null)}else location.hash=r};
   const toast=(msg,action)=>setToastS({msg,action,k:Date.now()});
@@ -2488,23 +2592,19 @@ export function App(){
   const addToProject=(pid,qty,projId,zone,fromEl,quiet)=>{setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==projId)return p;const z=zone||p.zones[0];const ex=p.items.find(i=>i.pid===pid&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,qty,zone:z}]}})}));fly(fromEl);if(!quiet){const pn=(tray.projects.find(p=>p.id===projId)||{}).name||'project';toast(byId(pid).name+' added to '+pn+(zone?' · '+zone:''),{label:'Open tray',fn:()=>{setPin(null);setTray(true)}})}};
   const createProject=name=>{const id=uid();setTrayState(t=>({...t,projects:[...t.projects,{id,name,target:20,zones:['Main room'],items:[]}]}));toast(`Project "${name}" created`);return id};
   const addZone=(pid,z)=>setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===pid&&!p.zones.includes(z)?{...p,zones:[...p.zones,z]}:p)}));
-  const addSourcing=r=>{setSourcing(x=>[r,...x]);toast('Sourcing request '+r.id+' sent')};
-  const inspoCtx={inspo,addInspo:items=>setInspo(l=>[...items,...l]),removeInspo:id=>setInspo(l=>l.filter(x=>x.id!==id)),updateInspo:(id,o)=>setInspo(l=>l.map(x=>x.id===id?{...x,...o}:x)),pinterest,setPinterest,roomWall,setRoomWall,inspoToStudio:(x,ids=[])=>{setStudioSeed({inspo:x,ids,title:x.title});setNonce(n=>n+1);go('studio')}};
+  const inspoCtx={inspo,addInspo:items=>setInspo(l=>[...items,...l]),removeInspo:id=>setInspo(l=>l.filter(x=>x.id!==id)),updateInspo:(id,o)=>setInspo(l=>l.map(x=>x.id===id?{...x,...o}:x)),roomWall,setRoomWall,inspoToStudio:(x,ids=[])=>{setStudioSeed({inspo:x,ids,title:x.title});setNonce(n=>n+1);go('studio')}};
   const signInThen=r=>{setAfterSignIn(r);go('welcome')};const signOut=async()=>{await authSignOut();toast('Signed out');go('home')};
-  const ctx={...inspoCtx,me,afterSignIn,signInThen,signOut,route,go,space,setSpace,mode,setMode,boards,saveTo,createBoard,updateBoard,tray,setTrayState,activeProject,trayCount,addToTray,setTray,setMenu,pin,openPin,recent,sourcing,addSourcing,createProject,addZone,addToProject,toggleLike:id=>setLikes(l=>l.includes(id)?l.filter(x=>x!==id):[...l,id]),likes,toast,query,setQuery,imgQ,setImgQ,imageSearch,setVoice,studioSeed,setStudioSeed,roomSeed,setRoomSeed,toStudio,board,setBoard,trend,setTrend,collages,saveCollage:c=>{setCollages(cs=>[c,...cs.filter(x=>x.title!==c.title)]);toast('Collage saved',{label:'View',fn:()=>go('boards')})},setTarget:n=>{setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===t.active?{...p,target:n}:p)}));toast(`Seat target for ${activeProject.name} set to ${n}`,{label:'Open tray',fn:()=>setTray(true)})}};
-  const pages={inspo:Inspo,home:Home,discover:Discover,trend:Trend,studio:Studio,room:Room,boards:Boards,board:BoardDetail,profile:Profile,hub:Hub,trade:Trade,quiz:Quiz,account:Account,welcome:Welcome,admin:TradeAdmin};
+  const ctx={...inspoCtx,me,afterSignIn,signInThen,signOut,route,go,space,setSpace,mode,setMode,boards,saveTo,createBoard,updateBoard,tray,setTrayState,activeProject,trayCount,addToTray,setTray,setMenu,pin,openPin,recent,createProject,addZone,addToProject,toggleLike:id=>setLikes(l=>l.includes(id)?l.filter(x=>x!==id):[...l,id]),likes,toast,query,setQuery,imgQ,setImgQ,imageSearch,studioSeed,setStudioSeed,roomSeed,setRoomSeed,toStudio,board,setBoard,trend,setTrend,collages,saveCollage:c=>{setCollages(cs=>[c,...cs.filter(x=>x.title!==c.title)]);toast('Collage saved',{label:'View',fn:()=>go('boards')})},setTarget:n=>{setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===t.active?{...p,target:n}:p)}));toast(`Seat target for ${activeProject.name} set to ${n}`,{label:'Open tray',fn:()=>setTray(true)})}};
+  const pages={inspo:Inspo,home:Home,discover:Discover,trend:Trend,studio:Studio,room:Room,boards:Boards,board:BoardDetail,profile:Profile,hub:Hub,trade:Trade,quiz:Quiz,account:Account,welcome:Welcome,admin:AdminPage,sourcing:Sourcing};
   const Page=pages[route]||Home;
   if(route.startsWith('q/'))return html`<${React.Fragment}><${ClientQuote} ctx=${ctx} code=${route.slice(2)}/><${Toast} t=${toastS} onClose=${()=>setToastS(null)}/><//>`;
   return html`<${React.Fragment}>
     <${Header} ctx=${ctx}/>
-    <${Page} key=${route+(route==='studio'?nonce:'')} ctx=${ctx}/>
+    ${route.startsWith('b/')?html`<${SharedBoard} key=${route} ctx=${ctx} slug=${route.slice(2)}/>`:html`<${Page} key=${route+(route==='studio'?nonce:'')} ctx=${ctx}/>`}
     <${TabBar} ctx=${ctx}/>
     ${pin&&html`<${PinDetail} ctx=${ctx}/>`}
     ${trayOpen&&html`<${Tray} ctx=${ctx}/>`}
     ${menu&&html`<${IndexMenu} ctx=${ctx}/>`}
-    ${voice&&html`<div className="voice" onClick=${e=>e.target===e.currentTarget&&setVoice(false)} role="dialog" aria-modal="true" aria-label="Voice search"><div className="voice-card"><span className="pulse">${I('mic')}</span><h2 style=${{fontSize:34}}>Listening…</h2><p className="mute" style=${{fontSize:14}}>Voice search runs in the House app. In this preview, tap a phrase.</p>
-      <div style=${{display:'flex',flexWrap:'wrap',gap:6,justifyContent:'center'}}>${['cognac leather benches for a café','olive velvet for a bistro','bouclé for a lobby','rattan lights over a bar'].map(t=>html`<button key=${t} className="chip" onClick=${()=>{setQuery(t);setImgQ(null);setVoice(false);go('discover')}}>"${t}"</button>`)}</div>
-      <button className="btn btn-line btn-sm" onClick=${()=>setVoice(false)}>Cancel</button></div></div>`}
     <${Toast} t=${toastS} onClose=${()=>setToastS(null)}/>
   <//>`;
 }

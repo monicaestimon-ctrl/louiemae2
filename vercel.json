@@ -1,7 +1,10 @@
 {
   "ignoreCommand": "node scripts/vercel-ignore-build.mjs",
+  "redirects": [
+    { "source": "/furniture", "destination": "/trade", "permanent": false },
+    { "source": "/furniture/", "destination": "/trade", "permanent": false }
+  ],
   "rewrites": [
-    { "source": "/furniture", "destination": "/furniture/index.html" },
     { "source": "/furniture/admin", "destination": "/furniture/index.html" },
     { "source": "/trade", "destination": "/trade/index.html" },
     { "source": "/trade/", "destination": "/trade/index.html" },

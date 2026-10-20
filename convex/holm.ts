@@ -3,7 +3,6 @@ import { query, mutation } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
-import { auth } from './auth';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { listingReady } from './commerceReadiness';
 import { address } from './commerceTables';
@@ -19,30 +18,8 @@ import {
 type Ctx = QueryCtx | MutationCtx;
 
 // ---------- who is viewing ----------
-async function viewer(ctx: Ctx) {
-  const userId = (await auth.getUserId(ctx).catch(() => null)) as Id<'users'> | null;
-  if (!userId) return null;
-  const user = await ctx.db.get(userId);
-  const profile = await ctx.db
-    .query('holmProfiles')
-    .withIndex('by_user', (q) => q.eq('userId', userId))
-    .unique();
-  return { userId, email: (typeof user?.email === 'string' ? user.email : '').toLowerCase(), profile };
-}
-const isVerified = (p: Doc<'holmProfiles'> | null) => p?.tradeStatus === 'approved';
-async function isAdmin(ctx: Ctx) {
-  try {
-    await requireCjAdminIdentity(ctx);
-    return true;
-  } catch {
-    return false;
-  }
-}
-async function requireUser(ctx: Ctx) {
-  const me = await viewer(ctx);
-  if (!me) throw new Error('Sign in to continue.');
-  return me;
-}
+import { viewer, isVerified, isAdmin, isPartner, requireUser } from './holmAccess';
+import { markReferralVerified, recordReferral, resolveAttribution } from './holmPartners';
 
 export const me = query({
   args: {},
@@ -57,6 +34,7 @@ export const me = query({
       businessName: me.profile?.businessName || null,
       tradeStatus: admin ? ('approved' as const) : me.profile?.tradeStatus || ('none' as const),
       verified: admin || isVerified(me.profile),
+      partner: isPartner(me.profile),
       admin,
     };
   },
@@ -64,11 +42,12 @@ export const me = query({
 
 /** Create the House profile on first sign-in. */
 export const ensureProfile = mutation({
-  args: {},
-  handler: async (ctx) => {
+  args: { ref: v.optional(v.string()) },
+  handler: async (ctx, a) => {
     const me = await requireUser(ctx);
     if (me.profile) return me.profile._id;
     const now = Date.now();
+    await recordReferral(ctx, me.userId, a.ref);
     return ctx.db.insert('holmProfiles', {
       userId: me.userId,
       displayName: me.email.split('@')[0] || 'Member',
@@ -286,6 +265,7 @@ export const reviewApplication = mutation({
       updatedAt: now,
     };
     if (profile) await ctx.db.patch(profile._id, patch);
+    if (a.decision === 'approved') await markReferralVerified(ctx, app.userId);
     const copy = {
       approved: `Your trade account for ${app.businessName} is approved. Trade pricing is now on for every piece, and your digital trade pass is in your account.\n\nhttps://louiemae.com/trade`,
       rejected: `We weren't able to approve the trade account for ${app.businessName}.${note ? `\n\n${note}` : ''}\n\nReply to this email if anything has changed.`,
@@ -373,6 +353,8 @@ export const requestQuote = mutation({
     notes: v.string(),
     website: v.string(),
     items: v.array(quoteItem),
+    refCode: v.optional(v.string()),
+    visitorId: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
     const me = await viewer(ctx);
@@ -446,8 +428,11 @@ export const requestQuote = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    // Partner commission is earned on retail-priced requests only.
+    const attr = trade ? null : await resolveAttribution(ctx, a.refCode, a.visitorId, { userId: me?.userId, email });
     await ctx.db.insert('holmQuoteRequests', {
       userId: me?.userId,
+      ...(attr ? { partnerId: attr.partnerId, refCode: attr.refCode, channel: attr.channel, partnerState: 'awaiting_payment' as const } : {}),
       commerceProjectId: id,
       projectName: a.projectName || 'Untitled',
       priceMode: trade ? 'trade' : 'retail',

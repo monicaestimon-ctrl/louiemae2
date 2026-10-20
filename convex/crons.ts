@@ -13,6 +13,9 @@ if (monitoringEnabled) crons.interval('refresh-due-product-health', { minutes: 5
 crons.interval('sync-klaviyo-waitlist', { minutes: 1 }, internal.klaviyoWaitlist.dispatch, {});
 crons.interval('reconcile-klaviyo-consent', { minutes: 15 }, internal.klaviyoWaitlistWorker.reconcileConsent, { cursor: null });
 
+// House of Louie Mae: partner commissions on paid retail projects, clearing and referral credit.
+crons.interval('reconcile-house-partners', { hours: 1 }, internal.holmPartners.reconcile, {});
+
 // Sync CJ tracking information every 4 hours
 // This checks orders with CJ status "confirmed" or "processing" for tracking updates
 crons.interval(
