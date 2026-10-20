@@ -1,3 +1,4 @@
+import { retailDetail } from './retailStorefront';
 import { completeSavedBatchItems } from './batchImportCompletion';
 import { sourcePropertiesValidator } from './sourcePropertiesValidator';
 import { query, mutation, internalQuery, type MutationCtx } from "./functions";
@@ -232,6 +233,8 @@ export const getStorefrontDetail = query({
     args: { id: v.string() },
     handler: async (ctx, args) => {
         // Page configuration can contain retired or non-Convex IDs.
+        const retailId = ctx.db.normalizeId('commerceProducts', args.id);
+        if (retailId) return retailDetail(ctx, retailId);
         const id = ctx.db.normalizeId('products', args.id);
         if (!id) return null;
         const product = await ctx.db.get(id);

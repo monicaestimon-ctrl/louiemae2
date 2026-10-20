@@ -72,7 +72,7 @@ const CatalogUnavailable = () => <p role="status" className="py-8 text-center te
         <h3 className={`font-serif ${compact ? 'text-sm' : 'text-base'} text-earth leading-tight mb-1 group-hover:text-bronze transition-colors truncate`}>
           {product.name}
         </h3>
-        <span className="block text-xs uppercase tracking-widest text-bronze">Coming Soon</span><span className={`font-serif italic text-earth/80 ${compact ? 'text-sm' : 'text-base'} group-hover:text-bronze/80 transition-colors`}>${product.price}</span>
+        {!product.inStock && <span className="block text-xs uppercase tracking-widest text-bronze">Coming Soon</span>}<span className={`font-serif italic text-earth/80 ${compact ? 'text-sm' : 'text-base'} group-hover:text-bronze/80 transition-colors`}>${product.price}</span>
       </div>
     </FadeIn>
   );
@@ -891,7 +891,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                           </h3>
                           <p className="text-[10px] uppercase tracking-widest text-earth/50">{product.category}</p>
                         </div>
-                        <span className="text-xs text-bronze">Coming Soon · </span><span className="font-serif italic text-earth text-lg">${product.price}</span>
+                        {!product.inStock && <span className="text-xs text-bronze">Coming Soon · </span>}<span className="font-serif italic text-earth text-lg">${product.price}</span>
                       </div>
                     </FadeIn>
                   ))}
@@ -961,10 +961,11 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                 <div className="space-y-3 mb-6">
                   <div className="flex items-center gap-2 text-xs text-green-700">
                     <span className="w-2 h-2 rounded-full bg-green-600"></span>
-                    {selectedProduct.inStock ? 'In Stock & Ready to Ship' : 'Made to Order'}
+                    {selectedProduct.fulfillmentProvider && selectedProduct.inStock ? 'Available to order' : 'Coming Soon'}
                   </div>
                 </div>
               </div>
+              {selectedProduct.fulfillmentProvider && selectedProduct.inStock && <p className="text-sm text-earth/60">${selectedProduct.deliveryFee} Economy delivery per item</p>}
               <AddToCartButton
                 product={selectedProduct}
                 selectedVariant={selectedVariant}

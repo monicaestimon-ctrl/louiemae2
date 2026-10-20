@@ -3,6 +3,19 @@ import { internalMutation, internalQuery, query } from './_generated/server';
 import { paginationOptsValidator } from 'convex/server';
 import { checkQuantity } from '../lib/commerce';
 import { launchPrice, retailDelivery, supplierAvailable, retailDescription } from '../lib/retailLaunch';
+import { storefrontListing } from './retailStorefront';
+
+export const storefrontPage = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    const batch = await ctx.db.query('commerceListings').withIndex('by_channel_published', q => q.eq('channel', 'retail').eq('published', true)).paginate(args.paginationOpts);
+    const page = await Promise.all(batch.page.map(async listing => {
+      const product = await ctx.db.get(listing.productId);
+      return product?.provider === 'ashcroft' ? storefrontListing(listing) : null;
+    }));
+    return { ...batch, page: page.filter(p => p !== null) };
+  },
+});
 
 export const catalog = query({
   args: { paginationOpts: paginationOptsValidator },

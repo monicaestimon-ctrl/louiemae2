@@ -28,3 +28,8 @@ Production must use live Stripe credentials and a live signed webhook for real o
 ## Validation
 
 Frontend and Convex type checks, catalog-writer verification, production build and client-secret scan passed. Full suite passed 712 tests initially; four load-related timeouts passed on focused rerun (20 tests). The final pricing/checkout/homepage group passed 32 tests. Backend dry-run and deployment confirmed no removed indexes. Live production API returned authoritative catalog prices and created an unpaid Stripe test session; no payment or dealer order was placed.
+
+## Storefront integration
+
+Preserve the original LouieMae homepage, collection layout, product cards, quick-view windows, and navigation. Retail listings are adapted into those existing product views. No extra catalog panel or customer-facing supplier branding is rendered. Coming Soon labels remain on unavailable and other-supplier products. The restored interface passed 24 focused storefront and checkout tests; the original modal and cart were verified in the staged browser.
+

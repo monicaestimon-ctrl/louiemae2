@@ -18,7 +18,7 @@ import { SafeImage } from './SafeImage';
 
 const furnitureFallback: CollectionConfig = { id: 'furniture', title: 'Furniture', subtitle: '', heroImage: '', subcategories: [] };
 
-export const HomePage: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
+export const HomePage: React.FC = () => {
   const { siteContent, isLoading } = useSite();
   const { home } = siteContent;
   const { addSubscriber } = useNewsletter();
@@ -90,16 +90,16 @@ export const HomePage: React.FC<{ children?: React.ReactNode }> = ({ children })
           </FadeIn>
           <FadeIn delay={400}>
             <GlassButton
-              onClick={() => navigateTo('#collection/furniture')}
+              onClick={() => navigateTo('#collection/new')}
             >
-              Shop Furniture
+              New Collection
             </GlassButton>
           </FadeIn>
         </div>
       </section>
 
       {/* Intro Text */}
-      {children}
+
       <section className="py-24 px-6 container mx-auto text-center">
         <FadeIn>
           <h3 className="font-serif text-3xl md:text-5xl text-earth leading-tight max-w-5xl mx-auto">
@@ -293,7 +293,7 @@ export const HomePage: React.FC<{ children?: React.ReactNode }> = ({ children })
                   <h3 className="font-serif text-lg md:text-xl text-earth leading-tight mb-1 group-hover:text-bronze transition-colors">
                     {product.name}
                   </h3>
-                  <p className="text-xs uppercase tracking-widest text-bronze">Coming Soon</p><p className="font-serif italic text-earth/80 text-base group-hover:text-bronze/80 transition-colors">${product.price}</p>
+                  {!product.inStock && <p className="text-xs uppercase tracking-widest text-bronze">Coming Soon</p>}<p className="font-serif italic text-earth/80 text-base group-hover:text-bronze/80 transition-colors">${product.price}</p>
                 </div>
               </FadeIn>
             ))}
@@ -501,12 +501,13 @@ export const HomePage: React.FC<{ children?: React.ReactNode }> = ({ children })
                 <div className="space-y-4 mb-8">
                   <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50/50 backdrop-blur-sm px-4 py-2 rounded-lg border border-green-100/50 max-w-max">
                     <span className="w-1.5 h-1.5 rounded-full bg-green-600 animate-pulse"></span>
-                    {selectedProduct.inStock ? 'In Stock & Ready to Ship' : 'Out of Stock'}
+                    {selectedProduct.fulfillmentProvider && selectedProduct.inStock ? 'Available to order' : 'Coming Soon'}
                   </div>
                 </div>
               </div>
 
               <div className="relative z-10 mt-8">
+                {selectedProduct.fulfillmentProvider && selectedProduct.inStock && <p className="text-sm text-earth/60 mb-3">${selectedProduct.deliveryFee} Economy delivery per item</p>}
                 <AddToCartButton key={selectedProduct.id} product={selectedProduct} selectedVariant={selectedVariant} variantRequired={!!selectedProduct.variants?.length} className="rounded-lg shadow-xl" />
               </div>
             </div>

@@ -10,7 +10,7 @@ import {
 const FAQ_ITEMS = [
     {
         q: 'How long does shipping take?',
-        a: 'Ashcroft orders use Economy delivery. Timing depends on stock, processing, destination, and carrier scheduling. We will share tracking and delivery updates once your order ships.'
+        a: 'Furniture orders use Economy delivery. Timing depends on stock, processing, destination, and carrier scheduling. We will share tracking and delivery updates once your order ships.'
     },
     {
         q: 'Do you offer free shipping?',
@@ -150,7 +150,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ section }) => {
                             </h3>
                             <div className="bg-white/60 rounded-2xl border border-earth/5 p-6 md:p-8 space-y-4">
                                 <p className="font-sans text-earth/80 text-sm leading-relaxed">
-                                    Our Ashcroft collection ships with <strong>Economy delivery</strong>. Each piece shows its delivery fee, and delivery is added per item in your cart before payment.
+                                    Our furniture collection ships with <strong>Economy delivery</strong>. Each piece shows its delivery fee, and delivery is added per item in your cart before payment.
                                 </p>
                                 <p className="font-sans text-earth/80 text-sm leading-relaxed">
                                     Timing depends on availability, order processing, destination, and carrier scheduling. Contact us before ordering if you need a specific arrival date or special delivery arrangements.

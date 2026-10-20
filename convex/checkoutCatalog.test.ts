@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { convexTest } from 'convex-test';
 import schema from './schema';
 import { blankCommerceDraft, listingSnapshot } from '../lib/commerce';
-import { internal } from './_generated/api';
+import { api, internal } from './_generated/api';
 const stripe = vi.hoisted(() => ({ create: vi.fn(), event: vi.fn() }));
 vi.mock('stripe', () => ({
   default: class {
@@ -74,6 +74,17 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 describe('Ashcroft retail checkout', () => {
+  it('uses the existing LouieMae card and detail shape with the same checkout prices', async () => {
+    const t = convexTest(schema, modules);
+    const { id, listing } = await fixture(t);
+    const page = await t.query(api.retailLaunch.storefrontPage, { paginationOpts: { numItems: 25, cursor: null } });
+    const detail = await t.query(api.products.getStorefrontDetail, { id });
+    expect(page.page[0]).toMatchObject({ _id: id, price: 2549, category: 'Sofas', collection: 'furniture', inStock: true });
+    expect(detail).toMatchObject({ _id: id, price: 2549, deliveryFee: 79, variants: [{ id: 'tan', priceAdjustment: 0, inStock: true }] });
+    expect(detail).not.toHaveProperty('fulfillment');
+    await t.run(ctx => ctx.db.patch(listing, { published: false }));
+    expect(await t.query(api.products.getStorefrontDetail, { id })).toBeNull();
+  });
   it('uses stored prices, per-unit delivery, and supplier mapping despite client manipulation', async () => {
     const t = convexTest(schema, modules);
     const { id } = await fixture(t);
