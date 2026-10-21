@@ -7,7 +7,7 @@ export const NewsletterPopup: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle');
-  const dialogRef = useRef<HTMLDialogElement>(null);
+  const dialogRef = useRef<React.ComponentRef<'dialog'>>(null);
   const [error, setError] = useState('');
   const { addSubscriber } = useNewsletter();
 
