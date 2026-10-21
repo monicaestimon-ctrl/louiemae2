@@ -2562,6 +2562,7 @@ function Welcome({ctx}){
       ${err&&html`<p className="help" style=${{color:'var(--bad)'}}>${err}</p>`}
       <button className="btn btn-ink btn-lg" style=${{justifyContent:'center'}} disabled=${busy}>${busy?'One moment…':flow==='signIn'?'Sign in':'Create account'}</button>
       <p className="help" style=${{textAlign:'center'}}>${flow==='signIn'?html`New to the House? <button type="button" className="lnk" onClick=${()=>{setFlow('signUp');setErr('')}}>Create an account</button>`:html`Already have an account? <button type="button" className="lnk" onClick=${()=>{setFlow('signIn');setErr('')}}>Sign in</button>`}</p>
+      <p className="help" style=${{textAlign:'center'}}>By continuing you agree to our <a href="/terms" target="_blank" rel="noopener">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
     </form></div>
   </main>`;
 }
