@@ -5,7 +5,9 @@
 
 export const HOLM_RULES = {
   tradeDiscountBps: 2500, // trade = retail − 25%
-  minMarginBps: 2500, // no discount takes a piece below landed cost + 25% gross margin
+  minMarginBps: 2500, // no discount takes a piece below landed cost + 25% margin after card fees
+  processingBps: 290, // card processing, 2.9% …
+  processingCents: 30, // … plus 30¢ per payment
   projectTiers: [
     { minCents: 1_000_000, bps: 300 }, // over $10,000 trade → extra 3%
     { minCents: 2_500_000, bps: 500 }, // over $25,000 trade → extra 5%
@@ -15,13 +17,18 @@ export const HOLM_RULES = {
 export type HolmRules = {
   tradeDiscountBps: number;
   minMarginBps: number;
+  processingBps: number;
+  processingCents: number;
   projectTiers: readonly { minCents: number; bps: number }[];
 };
 
-/** Lowest unit price that keeps the margin floor. 0 when cost is unknown. */
+/**
+ * Lowest unit price that keeps the margin floor once card processing is paid:
+ * price − cost − processing ≥ margin × price. 0 when cost is unknown.
+ */
 export function floorCents(costCents: number, rules: HolmRules = HOLM_RULES) {
   if (!Number.isFinite(costCents) || costCents <= 0) return 0;
-  return Math.ceil(costCents / (1 - rules.minMarginBps / 10000));
+  return Math.ceil((costCents + rules.processingCents) / (1 - (rules.minMarginBps + rules.processingBps) / 10000));
 }
 
 /** Trade unit price for one variant. */
