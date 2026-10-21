@@ -2548,7 +2548,7 @@ function Welcome({ctx}){
     if(!/^\S+@\S+\.\S+$/.test(e))return setErr('Enter your email address.');
     if(pw.length<8)return setErr('Use a password of at least 8 characters.');
     setBusy(true);try{const fd=new FormData();fd.set('email',e.trim().toLowerCase());fd.set('password',pw);fd.set('flow',flow);await signIn('password',fd)}
-    catch(x){setErr(flow==='signIn'?'That email and password did not match. Try again or create an account.':'We could not create that account. If you already have one, sign in instead.')}finally{setBusy(false)}};
+    catch(x){setErr(flow==='signIn'?'That email and password did not match. Try again or create an account.'+(opts?.google?' If you have signed in with Google before, use Continue with Google.':''):'We could not create that account. If you already have one, sign in instead.')}finally{setBusy(false)}};
   return html`<main className="welcome">
     <div className="wl-art"><div className="wl-cols">${cols.map((c,i)=>html`<div key=${i} className="wl-col">${[...c,...c].map((id,j)=>html`<img key=${j} src=${byId(id).img} alt="" loading="lazy"/>`)}</div>`)}</div>
       <div className="wl-mark"><div><h1>House of Louie Mae</h1><p style=${{opacity:.8}}>The trade floor for rooms people remember.</p></div></div></div>
