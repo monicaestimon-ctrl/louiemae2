@@ -6,6 +6,8 @@
   ],
   "rewrites": [
     { "source": "/furniture/admin", "destination": "/furniture/index.html" },
+    { "source": "/privacy", "destination": "/privacy.html" },
+    { "source": "/terms", "destination": "/terms.html" },
     { "source": "/trade", "destination": "/trade/index.html" },
     { "source": "/trade/", "destination": "/trade/index.html" },
     {
