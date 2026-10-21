@@ -8,7 +8,10 @@ import { listingReady } from './commerceReadiness';
 import { address } from './commerceTables';
 import { clientShow, holmBusinessType } from './holmTables';
 import { checkQuantity, totalLines } from '../lib/commerce';
+import { deliveryCents, freightFor } from '../lib/holmDelivery';
+import { launchPrice, retailDelivery } from '../lib/retailLaunch';
 import {
+  HOLM_RULES,
   applyProjectPricing,
   clientSellCents,
   floorCents,
@@ -61,13 +64,18 @@ export const ensureProfile = mutation({
 // ---------- pricing ----------
 type FulfillmentVariant = NonNullable<Doc<'commerceListings'>['fulfillment']>[number];
 
-/** Landed cost of one unit in USD cents: supplier cost, or CJ's landed cost when higher. */
+/**
+ * Landed cost of one unit in USD cents: supplier cost, or CJ's landed cost when higher.
+ * Ashcroft bills freight separately, so its freight allowance is part of the landed cost.
+ */
 function costCents(
   product: Doc<'commerceProducts'>,
   variant: FulfillmentVariant,
-  linked: Doc<'products'> | null
+  linked: Doc<'products'> | null,
+  freight: number
 ) {
   const supplier = Math.round(variant.cost * (product.draft.usdRate || 1) * 100);
+  if (product.provider === 'ashcroft') return supplier > 0 ? supplier + freight : 0;
   const landed = linked?.confirmedLandedCost ?? linked?.estimatedLandedCost;
   return Math.max(supplier, landed ? Math.round(landed * 100) : 0);
 }
@@ -81,13 +89,27 @@ async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>) {
   const product = await ctx.db.get(listing.productId);
   if (!product || !(await listingReady(ctx, product, listing))) return null;
   const linked = product.cjProductId ? await ctx.db.get(product.cjProductId) : null;
+  // Ashcroft pieces use the louiemae.com price as retail: the storefront builds the freight
+  // allowance into it (see storefrontListing), so trade at 25% off carries freight too.
+  const store =
+    product.provider === 'ashcroft'
+      ? await ctx.db
+          .query('commerceListings')
+          .withIndex('by_product_channel', (q) => q.eq('productId', product._id).eq('channel', 'retail'))
+          .unique()
+      : null;
+  const named = store?.snapshot ?? listing.snapshot;
+  const rate = product.provider === 'ashcroft' ? retailDelivery(named.category, named.name) : null;
   const variants = listing.snapshot.variants.flatMap((sv) => {
     const route = listing.fulfillment?.find((f) => f.id === sv.id);
     if (!route) return [];
-    const retail = retailCents(route);
-    const cost = costCents(product, route, linked);
-    if (retail <= 0) return [];
-    return [{ ...sv, retail, trade: tradeCents(retail, cost), floor: floorCents(cost) }];
+    const base = store?.snapshot.variants.find((v) => v.id === sv.id)?.price || retailCents(route);
+    if (base <= 0) return [];
+    const retail = rate ? launchPrice(base, rate.freight, rate.delivery) : base;
+    const byPrefix = freightFor(route.sku);
+    const freight = rate ? { cents: rate.freight, known: true } : byPrefix;
+    const cost = costCents(product, route, linked, freight.cents);
+    return [{ ...sv, retail, cost, sku: route.sku, freightKnown: freight.known, trade: tradeCents(retail, cost), floor: floorCents(cost) }];
   });
   return variants.length ? { product, listing, variants, inStock: linked?.inStock !== false } : null;
 }
@@ -128,6 +150,55 @@ export const catalog = query({
       });
     }
     return { trade, items: out };
+  },
+});
+
+/** Margin after landed cost and card processing, in basis points of the price. */
+function marginBps(priceCents: number, costCents: number) {
+  if (priceCents <= 0) return 0;
+  const processing = (priceCents * HOLM_RULES.processingBps) / 10000 + HOLM_RULES.processingCents;
+  return Math.round(((priceCents - costCents - processing) / priceCents) * 10000);
+}
+
+/** Every House piece with its cost, prices and margins, flagged where pricing needs a look. */
+export const adminPricing = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireCjAdminIdentity(ctx);
+    const listings = await ctx.db
+      .query('commerceListings')
+      .withIndex('by_channel_published', (q) => q.eq('channel', 'house').eq('published', true))
+      .take(300);
+    const deepest = Math.max(...HOLM_RULES.projectTiers.map((t) => t.bps));
+    const rows = [];
+    for (const listing of listings) {
+      const priced = await pricedListing(ctx, listing);
+      if (!priced) continue;
+      for (const x of priced.variants) {
+        const listedTrade = Math.round((x.retail * (10000 - HOLM_RULES.tradeDiscountBps)) / 10000);
+        const project = Math.min(x.trade, Math.max(x.floor, Math.round((x.trade * (10000 - deepest)) / 10000)));
+        const flags: string[] = [];
+        if (x.cost <= 0) flags.push('No dealer cost: trade has no margin floor');
+        if (x.cost > 0 && x.trade > listedTrade) flags.push(`Floor holds trade at ${Math.round((1 - x.trade / x.retail) * 100)}% off`);
+        if (priced.product.provider === 'ashcroft' && !x.freightKnown) flags.push('Freight allowance estimated');
+        if (x.cost > 0 && marginBps(project, x.cost) < HOLM_RULES.minMarginBps - 5) flags.push('Below margin floor');
+        rows.push({
+          productId: priced.product._id,
+          name: listing.snapshot.name,
+          variant: x.name,
+          sku: x.sku,
+          retailCents: x.retail,
+          tradeCents: x.trade,
+          projectCents: project,
+          costCents: x.cost,
+          retailMarginBps: x.cost > 0 ? marginBps(x.retail, x.cost) : null,
+          tradeMarginBps: x.cost > 0 ? marginBps(x.trade, x.cost) : null,
+          projectMarginBps: x.cost > 0 ? marginBps(project, x.cost) : null,
+          flags,
+        });
+      }
+    }
+    return rows.sort((a, b) => b.flags.length - a.flags.length || (a.tradeMarginBps ?? -1e9) - (b.tradeMarginBps ?? -1e9));
   },
 });
 
@@ -393,14 +464,15 @@ export const requestQuote = mutation({
       throw new Error('You have sent several requests. Please wait an hour before sending another.');
     const trade = !!me && (isVerified(me.profile) || (await isAdmin(ctx)));
     const priced = await priceSelection(ctx, a.items, trade);
-    totalLines(priced.lines, 0, 0);
+    const delivery = deliveryCents(priced.subtotal);
+    totalLines(priced.lines, delivery, 0);
     const timing = { asap: 'As soon as ready', date: `Scheduled${a.date ? ` for ${a.date}` : ''}`, split: 'Ship as available' }[a.timing];
     const receiving = { white: 'White glove', threshold: 'Threshold', dock: 'Commercial dock' }[a.receiving];
     const areas = [...new Set(priced.zones)].map((z) => `${z}: ${priced.lines.filter((_, i) => priced.zones[i] === z).map((l) => `${l.quantity} × ${l.name}`).join(', ')}`);
     const notes = [
       `Project: ${a.projectName || 'Untitled'}`,
       `Pricing: ${trade ? `verified trade${priced.tierBps ? ` with ${priced.tierBps / 100}% project pricing` : ''}` : 'retail (no verified trade account)'}`,
-      `Delivery: ${timing} · ${receiving}`,
+      `Delivery: ${timing} · ${receiving} · flat $${(delivery / 100).toFixed(2)}`,
       ...areas,
       a.notes.trim() ? `Notes: ${a.notes.trim()}` : '',
     ]
@@ -419,7 +491,7 @@ export const requestQuote = mutation({
       notes,
       requested: priced.lines,
       lines: priced.lines,
-      delivery: 0,
+      delivery,
       tax: 0,
       revision: 1,
       status: 'requested',
@@ -440,6 +512,7 @@ export const requestQuote = mutation({
       subtotal: priced.subtotal,
       projectDiscount: priced.projectDiscount,
       tierBps: priced.tierBps,
+      deliveryCents: delivery,
       createdAt: now,
     });
     for (const audience of ['owner', 'customer'] as const)

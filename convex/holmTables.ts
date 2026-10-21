@@ -89,6 +89,7 @@ export const holmTables = {
     subtotal: v.number(),
     projectDiscount: v.number(),
     tierBps: v.number(),
+    deliveryCents: v.optional(v.number()),
     // Partner attribution (retail-priced requests only earn commission)
     partnerId: v.optional(v.id('users')),
     refCode: v.optional(v.string()),
