@@ -1,27 +1,34 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Menu, Search, X, Instagram, Facebook, Twitter, ChevronDown } from 'lucide-react';
 import { AiConcierge } from './components/AiConcierge';
 import { NavLink } from './types';
 import { HomePage } from './components/HomePage';
-import { StoryPage } from './components/StoryPage';
-import { BlogPage } from './components/BlogPage';
-import { BlogPostView } from './components/BlogPostView';
-import { AdminPage } from './components/AdminPage';
 import { DynamicPage } from './components/DynamicPage';
-import { StorePage } from './components/StorePage';
-
-import { SupportPage } from './components/SupportPage';
-import { NewArrivalsPage } from './components/NewArrivalsPage';
-import { NewCollectionPage } from './components/NewCollectionPage';
-import { ShopLandingPage } from './components/ShopLandingPage';
 import { NewsletterPopup } from './components/NewsletterPopup';
 import { SiteProvider, useSite } from './contexts/BlogContext';
 import { NewsletterProvider } from './contexts/NewsletterContext';
 import { CartProvider } from './contexts/CartContext';
 import { CartIcon, CartDrawer } from './components/cart';
-import { CheckoutSuccess, CheckoutCancel } from './components/checkout';
-import { SearchModal } from './components/SearchModal';
+
+// Everything past the home page loads on demand so the first visit only downloads
+// what it shows. Each page keeps its named export; lazy() needs a default.
+const named = <T extends Record<string, unknown>, K extends keyof T>(load: () => Promise<T>, key: K) =>
+  lazy(() => load().then((m) => ({ default: m[key] as React.ComponentType<any> })));
+const StoryPage = named(() => import('./components/StoryPage'), 'StoryPage');
+const BlogPage = named(() => import('./components/BlogPage'), 'BlogPage');
+const BlogPostView = named(() => import('./components/BlogPostView'), 'BlogPostView');
+const AdminPage = named(() => import('./components/AdminPage'), 'AdminPage');
+const StorePage = named(() => import('./components/StorePage'), 'StorePage');
+const SupportPage = named(() => import('./components/SupportPage'), 'SupportPage');
+const NewArrivalsPage = named(() => import('./components/NewArrivalsPage'), 'NewArrivalsPage');
+const NewCollectionPage = named(() => import('./components/NewCollectionPage'), 'NewCollectionPage');
+const ShopLandingPage = named(() => import('./components/ShopLandingPage'), 'ShopLandingPage');
+const CheckoutSuccess = named(() => import('./components/checkout'), 'CheckoutSuccess');
+const CheckoutCancel = named(() => import('./components/checkout'), 'CheckoutCancel');
+const SearchModal = named(() => import('./components/SearchModal'), 'SearchModal');
+
+const PageFallback = () => <div className="min-h-[100svh]" aria-busy="true" />;
 
 
 interface MobileNavLinkProps {
@@ -76,7 +83,7 @@ const MobileNavLink: React.FC<MobileNavLinkProps> = ({ link, handleNavigation, d
           {link.label}
         </button>
         {hasChildren && (
-          <button onClick={() => setIsOpen(!isOpen)} className="p-2 text-cream/50 hover:text-cream transition-colors">
+          <button onClick={() => setIsOpen(!isOpen)} aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${link.label}`} aria-expanded={isOpen} className="p-2 text-cream/50 hover:text-cream transition-colors">
             <ChevronDown className={`w-5 h-5 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
           </button>
         )}
@@ -351,6 +358,7 @@ const AppContent = () => {
               </div>
               <button
                 onClick={() => setMobileMenuOpen(false)}
+                aria-label="Close menu"
                 className="group relative w-10 h-10 flex items-center justify-center rounded-full border border-white/20 bg-white/5 backdrop-blur-sm hover:bg-white/10 hover:border-white/40 transition-all duration-300 shadow-lg"
               >
                 <X className="w-5 h-5 text-cream group-hover:rotate-90 transition-transform duration-500" />
@@ -400,6 +408,8 @@ const AppContent = () => {
               {/* Mobile Menu Icon */}
               <button
                 className="lg:hidden text-earth z-50 p-2 -ml-2 hover:opacity-70 transition-opacity"
+                aria-label="Open menu"
+                aria-expanded={mobileMenuOpen}
                 onClick={() => setMobileMenuOpen(true)}
               >
                 <Menu className="w-6 h-6" />
@@ -476,6 +486,7 @@ const AppContent = () => {
                 </div>
                 <button
                   onClick={() => setSearchOpen(true)}
+                  aria-label="Search"
                   className="text-earth hover:text-bronze transition-colors p-1"
                 >
                   <Search className="w-4 h-4 md:w-5 md:h-5" />
@@ -491,21 +502,23 @@ const AppContent = () => {
       <CartDrawer />
 
       {/* Search Modal */}
-      <SearchModal
+      {searchOpen && <Suspense fallback={null}><SearchModal
         isOpen={searchOpen}
         onClose={() => setSearchOpen(false)}
         onProductClick={(productId) => {
           setSelectedProductId(productId);
           setSearchOpen(false);
         }}
-      />
+      /></Suspense>}
 
       {/* Main Content Area */}
-      {activePage.startsWith('#support') ? (
-        <SupportPage section={activePage.match(/#support\/(.+)/)?.[1]} />
-      ) : (
-        <>{currentView}</>
-      )}
+      <Suspense fallback={<PageFallback />}>
+        {activePage.startsWith('#support') ? (
+          <SupportPage section={activePage.match(/#support\/(.+)/)?.[1]} />
+        ) : (
+          <>{currentView}</>
+        )}
+      </Suspense>
 
       {/* Hyper-Glassmorphic Footer */}
       {activePage !== 'admin' && (
@@ -516,13 +529,13 @@ const AppContent = () => {
           <div className="container mx-auto pt-24 pb-12 px-6 relative z-10">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">
               <div>
-                <h4 className="font-serif text-3xl mb-6 text-white drop-shadow-md">Louie Mae</h4>
+                <p className="font-serif text-3xl mb-6 text-white drop-shadow-md">Louie Mae</p>
                 <p className="text-sm text-cream/70 font-sans leading-relaxed">
                   Curating a life you love through timeless design and authentic living.
                 </p>
               </div>
               <div>
-                <h4 className="font-serif text-xl mb-6 text-white/90">Shop</h4>
+                <h2 className="font-serif text-xl mb-6 text-white/90">Shop</h2>
                 <ul className="space-y-4 text-sm text-cream/70">
                   <li><button onClick={() => handleNavigation('#new-arrivals')} className="hover:text-white transition-colors cursor-pointer w-full text-left">New Arrivals</button></li>
                   <li><button onClick={() => handleNavigation('#collection/fashion')} className="hover:text-white transition-colors cursor-pointer w-full text-left">Women's</button></li>
@@ -532,7 +545,7 @@ const AppContent = () => {
                 </ul>
               </div>
               <div>
-                <h4 className="font-serif text-xl mb-6 text-white/90">Support</h4>
+                <h2 className="font-serif text-xl mb-6 text-white/90">Support</h2>
                 <ul className="space-y-4 text-sm text-cream/70">
                   <li><button onClick={() => handleNavigation('#support/shipping')} className="hover:text-white transition-colors cursor-pointer w-full text-left">Shipping & Returns</button></li>
                   <li><button onClick={() => handleNavigation('#support/faq')} className="hover:text-white transition-colors cursor-pointer w-full text-left">FAQ</button></li>
@@ -542,7 +555,7 @@ const AppContent = () => {
                 </ul>
               </div>
               <div>
-                <h4 className="font-serif text-xl mb-6 text-white/90">Follow Us</h4>
+                <h2 className="font-serif text-xl mb-6 text-white/90">Follow Us</h2>
                 <div className="flex gap-5">
                   <a href="#" aria-label="Instagram" className="p-3 bg-white/5 rounded-full border border-white/10 hover:bg-white/15 hover:border-bronze/40 transition-all">
                     <Instagram className="w-5 h-5 text-cream" />

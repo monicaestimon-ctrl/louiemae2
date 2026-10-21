@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Mail, Check } from 'lucide-react';
 import { useNewsletter } from '../contexts/NewsletterContext';
+import { responsiveImage } from '../lib/responsiveImage';
 
 export const NewsletterPopup: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
@@ -61,8 +62,8 @@ export const NewsletterPopup: React.FC = () => {
         {/* Image Side */}
         <div className="w-full md:w-1/2 h-48 md:h-full relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent z-10"></div>
-          <img 
-            src="/images/brand/mae-collective-home.png" 
+          <img loading="lazy" decoding="async" 
+            {...responsiveImage("/images/brand/mae-collective-home.png", '(min-width: 1024px) 50vw, 100vw')} 
             alt="LouieMae — Curated living, designed with intention" 
             className="w-full h-full object-cover"
           />

@@ -124,6 +124,8 @@ export const AiConcierge: React.FC = () => {
       {/* Toggle Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
+        aria-label={isOpen ? 'Close the concierge' : 'Ask the Louie Mae concierge'}
+        aria-expanded={isOpen}
         className="group relative flex items-center justify-center w-14 h-14 bg-earth text-white rounded-full shadow-lg hover:bg-bronze transition-all duration-300 hover:scale-105"
       >
         <div className="absolute inset-0 bg-white/10 rounded-full animate-pulse"></div>

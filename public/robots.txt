@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /furniture/admin
+
+Sitemap: https://louiemae.com/sitemap.xml

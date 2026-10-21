@@ -15,6 +15,7 @@ import { useStorefrontProductDetail } from './useStorefrontProductDetail';
 import { useStoreCatalog, useStoreCategoryOptions, type StoreCardProduct } from './useStoreCatalog';
 
 import { VariantSelector, NO_IMAGE_KEY } from './VariantSelector';
+import { responsiveImage } from '../lib/responsiveImage';
 const navigateToStoreHash = (hash: string) => { window.location.hash = hash; };
 
 interface StorePageProps {
@@ -522,7 +523,9 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                               }}
                             >
                               <img
-                                src={cat.image}
+                                {...responsiveImage(cat.image, '(min-width: 768px) 33vw, 70vw')}
+                                loading="lazy"
+                                decoding="async"
                                 alt={cat.title}
                                 className="absolute inset-0 w-full h-full object-cover transition-all duration-700 group-hover:scale-110"
                                 style={{ opacity: 0 }}
@@ -584,7 +587,9 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                               }}
                             >
                               <img
-                                src={cat.image}
+                                {...responsiveImage(cat.image, '(min-width: 768px) 33vw, 70vw')}
+                                loading="lazy"
+                                decoding="async"
                                 alt={cat.title}
                                 className="absolute inset-0 w-full h-full object-cover transition-all duration-700 group-hover:scale-110"
                                 style={{ opacity: 0 }}
@@ -661,7 +666,9 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                           }}
                         >
                           <img
-                            src={cat.image}
+                            {...responsiveImage(cat.image, '(min-width: 768px) 33vw, 70vw')}
+                            loading="lazy"
+                            decoding="async"
                             alt={cat.title}
                             className="absolute inset-0 w-full h-full object-cover transition-all duration-700 group-hover:scale-110"
                             style={{ opacity: 0 }}

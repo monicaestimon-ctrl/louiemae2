@@ -3,6 +3,7 @@ import React from 'react';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
 import { ArrowUpRight } from 'lucide-react';
+import { responsiveImage } from '../lib/responsiveImage';
 
 export const ShopLandingPage: React.FC = () => {
    const { siteContent } = useSite();
@@ -27,8 +28,8 @@ export const ShopLandingPage: React.FC = () => {
                </FadeIn>
 
                <FadeIn delay={200} className="w-full relative overflow-hidden rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-earth/5">
-                  <img
-                     src={home.shop?.headerImage || "/images/brand/DINNERTABLE.png"}
+                  <img loading="lazy"
+                     {...responsiveImage(home.shop?.headerImage || "/images/brand/DINNERTABLE.png", '100vw')}
                      alt="Louie Mae Signature"
                      fetchPriority="high"
                      decoding="async"
@@ -61,7 +62,9 @@ export const ShopLandingPage: React.FC = () => {
                            className="w-full h-full relative"
                         >
                            <img
-                              src={cat.image}
+                              loading="lazy"
+                              decoding="async"
+                              {...responsiveImage(cat.image, '(min-width: 1024px) 50vw, 100vw')}
                               alt={cat.title}
                               className={`w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-110 ${(cat as any).objectPosition || ''}`}
                            />

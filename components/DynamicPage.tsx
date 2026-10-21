@@ -5,6 +5,7 @@ import { FadeIn } from './FadeIn';
 import { ArrowUpRight, ArrowRight } from 'lucide-react';
 import { SafeImage } from './SafeImage';
 import { useStorefrontProductDetail } from './useStorefrontProductDetail';
+import { responsiveImage } from '../lib/responsiveImage';
 
 interface DynamicPageProps {
   page?: CustomPage;
@@ -29,7 +30,7 @@ export const DynamicSectionRenderer: React.FC<{ section: PageSection, index: num
                     </FadeIn>
                     {section.image && (
                     <FadeIn delay={200} className="relative w-full aspect-[16/9] md:aspect-[21/9] overflow-hidden rounded-sm shadow-sm mx-auto">
-                        <img src={section.image} alt={section.heading} className="w-full h-full object-cover" />
+                        <img loading="lazy" decoding="async" {...responsiveImage(section.image, '(min-width: 1024px) 50vw, 100vw')} alt={section.heading} className="w-full h-full object-cover" />
                     </FadeIn>
                     )}
                 </div>
@@ -55,7 +56,7 @@ export const DynamicSectionRenderer: React.FC<{ section: PageSection, index: num
             <section className="container mx-auto px-6 md:px-12 max-w-6xl mb-24">
                 <FadeIn className={`flex flex-col md:flex-row gap-12 items-center ${index % 2 !== 0 ? 'md:flex-row-reverse' : ''}`}>
                     <div className="flex-1 w-full aspect-[4/5] rounded-sm overflow-hidden">
-                    {section.image && <img src={section.image} alt="" className="w-full h-full object-cover" />}
+                    {section.image && <img loading="lazy" decoding="async" {...responsiveImage(section.image, '(min-width: 1024px) 50vw, 100vw')} alt="" className="w-full h-full object-cover" />}
                     </div>
                     <div className="flex-1 space-y-6">
                     <h3 className="font-serif text-3xl text-earth">{section.heading}</h3>
@@ -83,7 +84,7 @@ export const DynamicSectionRenderer: React.FC<{ section: PageSection, index: num
             return (
                 <section className="px-4 md:px-12 mb-24">
                     <FadeIn className="w-full h-[60vh] md:h-[80vh] overflow-hidden rounded-sm relative">
-                        {section.image && <img src={section.image} alt="" className="w-full h-full object-cover" />}
+                        {section.image && <img loading="lazy" decoding="async" {...responsiveImage(section.image, '(min-width: 1024px) 50vw, 100vw')} alt="" className="w-full h-full object-cover" />}
                         {(section.heading || section.subheading) && (
                             <div className="absolute inset-0 bg-black/20 flex flex-col items-center justify-center text-center p-8">
                                 {section.subheading && <p className="text-white/80 text-xs uppercase tracking-[0.3em] mb-4">{section.subheading}</p>}
@@ -111,7 +112,7 @@ export const DynamicSectionRenderer: React.FC<{ section: PageSection, index: num
                                         className="relative aspect-[3/4] overflow-hidden rounded-sm mb-4"
                                         onClick={() => item.link && (window.location.hash = item.link)}
                                     >
-                                        <img src={item.image} alt={item.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                                        <img loading="lazy" decoding="async" {...responsiveImage(item.image, '(min-width: 1024px) 50vw, 100vw')} alt={item.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
                                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors"></div>
                                         {item.link && (
                                             <div className="absolute top-4 right-4 bg-white/20 backdrop-blur-md p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
