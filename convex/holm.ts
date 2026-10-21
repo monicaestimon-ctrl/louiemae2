@@ -695,7 +695,12 @@ export const approveClientQuote = mutation({
       key: `client-quote-approved:${q._id}`,
       to: q.replyEmail,
       subject: `Approved: ${q.title} (${q.number})`,
-      text: `${name} approved quote ${q.number} for ${q.title}.\n\nTotal: $${(total / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}\nPayment in full is due before delivery.\n\nOpen your House of Louie Mae tray to request the order at trade pricing: https://louiemae.com/trade`,
+      text: `${name} approved quote ${q.number} for ${q.title}.\n\nTotal: $${(total / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}${
+        // quotes sent before pay-in-full keep the deposit terms they were sent with
+        q.depositBps > 0 && q.depositBps < 10000
+          ? `\nDeposit (${q.depositBps / 100}%): $${((total * q.depositBps) / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 2 })}, balance due before delivery.`
+          : '\nPayment in full is due before delivery.'
+      }\n\nOpen your House of Louie Mae tray to request the order at trade pricing: https://louiemae.com/trade`,
     });
   },
 });

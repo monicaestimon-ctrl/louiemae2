@@ -1388,7 +1388,7 @@ function ClientQuote({ctx,code}){
   if(!sample&&data===undefined)return html`<main className="cq-missing"><p className="mute">Opening your quote…</p></main>`;
   if(!q)return html`<main className="cq-missing"><h1>This quote link isn't complete</h1><p>Ask your designer to send the link again.</p></main>`;
   const lines=q.lines;const zones=[...new Set(lines.map(l=>l.z))];
-  const sub=lines.reduce((s,l)=>s+l.u*l.q,0);const total=sub+Math.max(0,q.dl);
+  const sub=lines.reduce((s,l)=>s+l.u*l.q,0);const total=sub+Math.max(0,q.dl);const dep=Math.round(total*q.dep/100);
   const by=q.by;const expired=Date.now()>q.until;
   const done=local||(q.approved?{kind:'approved',name:q.approved.name}:q.changed?{kind:'changes'}:null);
   const palette=[];lines.forEach(l=>{const w=l.u*l.q;const f=palette.find(x=>cdist(x.c,l.tone)<20);f?f.w+=w:palette.push({c:l.tone,w})});
@@ -1430,12 +1430,12 @@ function ClientQuote({ctx,code}){
           <div className="cq-row"><span>Delivery and installation</span><b className="num">${q.dl<0?'Quoted separately':q.dl?fmt(q.dl):'Included'}</b></div>
           <div className="cq-row"><span>Sales tax</span><b>Added at invoice</b></div>
           <div className="cq-total"><span>Total</span><b className="num">${fmt(total)}</b></div>
-          <div className="cq-row"><span>Payment</span><b>In full before delivery</b></div>
+          ${q.dep>0&&q.dep<100?html`<div className="cq-row"><span>Deposit to begin · ${q.dep}%</span><b className="num">${fmt(dep)}</b></div><div className="cq-row"><span>Balance</span><b>Due before delivery</b></div>`:html`<div className="cq-row"><span>Payment</span><b>In full before delivery</b></div>`}
           <div className="cq-facts"><span>${I('clock',{width:15})} Arrives in ${q.lt}</span><span>${I('calendar',{width:15})} ${expired?'Expired':'Valid until'} ${qDate(q.until)}</span></div>
           ${done?html`<div className="cq-done">
               <span className="cq-seal">${I('check',{width:18})}</span>
               <b>${done.kind==='approved'?`Approved by ${done.name}`:'Changes requested'}</b>
-              <p>${done.kind==='approved'?`${by} has been notified and will confirm availability and send your invoice. Payment in full is due before delivery.`:`${by} has your note and will send an updated quote.`}</p>
+              <p>${done.kind==='approved'?`${by} has been notified and will confirm availability and send your invoice. ${q.dep>0&&q.dep<100?'The balance is due before delivery.':'Payment in full is due before delivery.'}`:`${by} has your note and will send an updated quote.`}</p>
             </div>`
           :mode==='approve'?html`<div className="cq-form">
               <label className="qc-f"><span>Your full name</span><input value=${name} autoFocus onInput=${e=>{setName(e.target.value);setErr('')}} aria-invalid=${!!(err&&!name.trim())}/></label>
