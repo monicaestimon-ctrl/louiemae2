@@ -472,7 +472,7 @@ export const requestQuote = mutation({
     const notes = [
       `Project: ${a.projectName || 'Untitled'}`,
       `Pricing: ${trade ? `verified trade${priced.tierBps ? ` with ${priced.tierBps / 100}% project pricing` : ''}` : 'retail (no verified trade account)'}`,
-      `Delivery: ${timing} · ${receiving} · flat ${(delivery / 100).toFixed(2)}`,
+      `Delivery: ${timing} · ${receiving} · flat $${(delivery / 100).toFixed(2)}`,
       ...areas,
       a.notes.trim() ? `Notes: ${a.notes.trim()}` : '',
     ]
