@@ -495,26 +495,26 @@ export const HomePage: React.FC = () => {
       </div>}
       {/* Product Modal - Frosted Glass Upgrade */}
       {selectedProduct && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 md:p-8" role="dialog" aria-modal="true" aria-label="Product details">
+        <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:p-8" role="dialog" aria-modal="true" aria-label="Product details">
           <div className="absolute inset-0 backdrop-blur-xl motion-reduce:backdrop-blur-none bg-black/50" onClick={() => openProduct(null)}></div>
 
-          <div className="bg-white/95 backdrop-blur-xl w-full max-w-5xl h-[90vh] md:h-auto md:max-h-[85vh] rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.3)] relative flex flex-col md:flex-row overflow-hidden animate-fade-in-up border border-white/60">
+          <div className="bg-white/95 backdrop-blur-xl w-full max-w-5xl h-[92vh] supports-[height:100svh]:h-[92svh] md:h-auto md:max-h-[85vh] rounded-t-3xl md:rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.3)] relative flex flex-col md:flex-row overflow-hidden animate-fade-in-up border border-white/60">
             <button
               onClick={() => openProduct(null)}
               aria-label="Close product details"
-              className="absolute top-4 right-4 z-20 p-2 bg-black/5 hover:bg-black/10 rounded-full transition-colors backdrop-blur-md"
+              className="absolute top-3 right-3 md:top-4 md:right-4 z-20 p-2.5 md:p-2 bg-white/80 md:bg-black/5 hover:bg-black/10 rounded-full shadow-sm md:shadow-none transition-colors backdrop-blur-md"
             >
               <X className="w-5 h-5 text-earth" />
             </button>
 
             {/* Image Gallery */}
-            <div className="w-full md:w-1/2 bg-earth/5 h-1/2 md:h-auto overflow-hidden relative group">
+            <div className="w-full md:w-1/2 bg-earth/5 h-[42%] shrink-0 md:h-auto overflow-hidden relative group">
               <SafeImage src={selectedVariant?.image || (activeImageGroupKey && activeImageGroupKey !== NO_IMAGE_KEY ? activeImageGroupKey : selectedProduct.images[0])} alt={selectedProduct.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-[1.5s]" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent pointer-events-none" />
             </div>
 
             {/* Details */}
-            <div className="w-full md:w-1/2 p-8 md:p-12 overflow-y-auto flex flex-col relative bg-gradient-to-br from-white/40 to-white/10">
+            <div className="w-full md:w-1/2 flex-1 min-h-0 p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:p-12 overflow-y-auto overscroll-contain flex flex-col relative bg-gradient-to-br from-white/40 to-white/10">
               <div className="mb-auto relative z-10">
                 <div className="flex items-center gap-3 mb-6 text-[10px] uppercase tracking-[0.2em] text-earth/60 font-medium">
                   <span className="w-1.5 h-1.5 bg-bronze rounded-full shadow-[0_0_8px_rgba(139,90,43,0.5)]"></span>
