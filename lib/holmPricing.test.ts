@@ -12,9 +12,13 @@ describe('House of Louie Mae trade pricing', () => {
     expect(tradeCents(10_000_00, 4_000_00)).toBe(7_500_00);
   });
 
-  it('never prices below landed cost plus the 25% margin floor', () => {
-    expect(floorCents(6_000_00)).toBe(8_000_00);
-    expect(tradeCents(10_000_00, 6_000_00)).toBe(8_000_00);
+  it('never prices below landed cost plus the 25% margin floor after card fees', () => {
+    // (6,000 + 0.30) / (1 − 0.25 − 0.029)
+    expect(floorCents(6_000_00)).toBe(8_322_20);
+    expect(tradeCents(10_000_00, 6_000_00)).toBe(8_322_20);
+    // the floor price keeps at least 25% after cost and processing
+    const p = floorCents(568_00);
+    expect(p - 568_00 - (p * 0.029 + 30)).toBeGreaterThanOrEqual(p * 0.25 - 1);
   });
 
   it('never prices above retail, even when cost is higher', () => {

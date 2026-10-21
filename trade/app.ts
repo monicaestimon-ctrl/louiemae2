@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import htm from 'htm';
 import type { HolmProduct } from './catalog';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery, useMutation, useAction } from 'convex/react';
+import { deliveryCents, DELIVERY_TIERS } from '../lib/holmDelivery';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 export const html = htm.bind(React.createElement);
@@ -1073,6 +1074,9 @@ const CAT_OF={sofa:'Seating',sectional:'Seating',bench:'Seating',ottoman:'Seatin
 const PROJECT_TIERS=[[10000,.03],[25000,.05]];
 const tierOf=t=>{let rate=0;for(const [m,b] of PROJECT_TIERS)if(t>=m)rate=b;const next=PROJECT_TIERS.find(([m])=>t<m)||null;return {rate,next}};
 const pct=r=>Math.round(r*100)+'%';
+// One flat delivery fee per order, tiered by subtotal (dollars in, dollars out).
+const deliveryOf=sub=>deliveryCents(Math.round(sub*100))/100;
+const deliveryText=()=>DELIVERY_TIERS.map((t,i)=>(t.underCents===Infinity?fmt(DELIVERY_TIERS[i-1].underCents/100)+'+':'under '+fmt(t.underCents/100))+' '+fmt(t.feeCents/100,t.feeCents%100>0)).join(' · ');
 const tierLine=(t,name)=>{const {rate,next}=tierOf(t);return next?(rate?`Extra ${pct(rate)} unlocked. ${fmt(next[0]-t)} more reaches ${pct(next[1])}.`:`${fmt(next[0]-t)} more in trade${name?' in '+name:''} unlocks an extra ${pct(next[1])}.`):`Top project pricing unlocked: an extra ${pct(rate)}.`};
 function pairsFor(p,n=3){
   const want=p.type==='lighting'?['sofa','sectional','bench','ottoman']:p.type==='ottoman'?['sofa','sectional','bench','lighting']:['ottoman','lighting','bench'];
@@ -1253,7 +1257,7 @@ function PinDetail({ctx}){
           </div>
         </div>
 
-        <form className="pp-block pp-zip" onSubmit=${e=>{e.preventDefault();setZipMsg(/^\d{5}$/.test(zip)?`Delivery to ${zip} is quoted with your order, including white-glove options.`:'Enter a 5-digit ZIP code.')}}>
+        <form className="pp-block pp-zip" onSubmit=${e=>{e.preventDefault();setZipMsg(/^\d{5}$/.test(zip)?`We deliver to ${zip}. One flat fee per order: ${deliveryText()}.`:'Enter a 5-digit ZIP code.')}}>
           <span className="pp-lbl">Delivering to</span>
           <div className="row" style=${{gap:6}}><input className="field" style=${{height:40}} inputMode="numeric" maxLength="5" placeholder="ZIP code" aria-label="Delivery ZIP code" value=${zip} onInput=${e=>setZip(e.target.value.replace(/\D/g,''))}/><button className="btn btn-line btn-sm">Check</button></div>
           ${zipMsg&&html`<p className="help">${zipMsg}</p>`}
@@ -1574,9 +1578,10 @@ function Tray({ctx}){
           <div className="sumrow"><span>Retail subtotal</span><span>${fmt(retail,true)}</span></div>
           ${ctx.mode==='trade'&&html`<div className="sumrow" style=${{color:'var(--ok)'}}><span>Trade savings</span><span>−${fmt(retail-trade,true)}</span></div>`}
           ${tierOn&&html`<div className="sumrow" style=${{color:'var(--ok)'}}><span>Project pricing · ${pct(tier.rate)}</span><span>−${fmt(tierSave,true)}</span></div>`}
-          <div className="sumrow"><span>Delivery</span><span>Quoted after review</span></div>
+          <div className="sumrow"><span>Delivery · flat rate</span><span>${fmt(deliveryOf(sub),true)}</span></div>
           <div className="sumrow"><span>Sales tax</span><span>${tray.taxExempt?'Exempt':'On final quote'}</span></div>
-          <div className="sumrow total"><span>Estimated total</span><span>${fmt(sub)}</span></div>
+          <div className="sumrow total"><span>Estimated total</span><span>${fmt(sub+deliveryOf(sub),true)}</span></div>
+          <p className="help" style=${{marginTop:8}}>One delivery fee per order: ${deliveryText()}.</p>
         </div>
         ${step<2&&html`<button className="btn btn-ink btn-lg" disabled=${!items.length} onClick=${()=>{if(step===1){const m=contactErr();if(m){setErr(m);return}}setErr('');setStep(step+1)}}>${step===0?'Continue to delivery':'Review request'} ${I('arrow',{width:17})}</button>`}
         ${step===2&&html`<button className="btn btn-cog btn-lg" disabled=${busy} onClick=${submit}>${busy?'Sending…':'Request final quote'} ${I('arrow',{width:17})}</button>`}
@@ -1784,17 +1789,27 @@ function SharedBoard({ctx,slug}){
 function Inspo({ctx}){
   const [open,setOpen]=useState(null);const [drag,setDrag]=useState(false);const [busy,setBusy]=useState(false);const fileRef=useRef();
   const uploadUrl=useMutation(api.holmSync.inspoUploadUrl);const urlOf=useMutation(api.holmSync.inspoUrl);
+  const importPin=useAction(api.holmPins.importPin);const [pinUrl,setPinUrl]=useState('');const [pinBusy,setPinBusy]=useState(false);
+  const addPin=async url=>{url=(url||'').trim();if(!url)return;if(!ctx.me.signedIn){ctx.toast('Sign in to import from Pinterest');ctx.signInThen('inspo');return}
+    setPinBusy(true);try{const p=await importPin({url});const blob=await (await fetch(p.src)).blob();const item=await fileToInspo(new File([blob],p.title,{type:blob.type}));
+      ctx.addInspo([{...item,src:p.src,title:p.title.slice(0,60),source:'pinterest',link:p.link,author:p.author}]);setPinUrl('');ctx.toast('Pin added to My Inspo')}
+    catch(e){ctx.toast(errText(e))}setPinBusy(false)};
   const add=async files=>{const fs=[...files].filter(x=>x.type.startsWith('image/'));if(!fs.length)return;setBusy(true);const out=[];
     for(const x of fs){try{const item=await fileToInspo(x);if(ctx.me.signedIn){const id=await uploadBlob(uploadUrl,await dataUrlBlob(item.src));item.src=await urlOf({fileId:id})}out.push(item)}catch(e){}}
     ctx.addInspo(out);setBusy(false);ctx.toast(out.length?`${out.length} image${out.length===1?'':'s'} added to My Inspo`:'Those files could not be added')};
-  useEffect(()=>{const h=e=>{const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();add(fs)}};addEventListener('paste',h);return()=>removeEventListener('paste',h)},[ctx.me.signedIn]);
+  useEffect(()=>{const h=e=>{const fs=[...(e.clipboardData?.files||[])];if(fs.length){e.preventDefault();add(fs);return}
+    const t=e.clipboardData?.getData('text')||'';if(/(pinterest\.[a-z.]+\/pin\/|pin\.it\/)/i.test(t)&&!/^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName||'')){e.preventDefault();addPin(t)}};
+    addEventListener('paste',h);return()=>removeEventListener('paste',h)},[ctx.me.signedIn]);
   const list=ctx.inspo;const O=ctx.inspo.find(x=>x.id===open);
   return html`<main className="wrap" onDragOver=${e=>{e.preventDefault();setDrag(true)}} onDragLeave=${e=>{if(!e.currentTarget.contains(e.relatedTarget))setDrag(false)}} onDrop=${e=>{e.preventDefault();setDrag(false);add(e.dataTransfer.files)}}>
-    <div className="ph-head"><div><h1>My <em>Inspo</em></h1><p className="mute" style=${{maxWidth:'58ch',marginTop:12,fontSize:16}}>Your reference images, visible only to you. Upload photos or paste a screenshot. Each image finds matching Louie pieces and goes straight into Studio or the 3D room.${ctx.me.signedIn?'':' Sign in to keep your library on every device.'}</p></div>
+    <div className="ph-head"><div><h1>My <em>Inspo</em></h1><p className="mute" style=${{maxWidth:'58ch',marginTop:12,fontSize:16}}>Your reference images, visible only to you. Upload photos, paste a screenshot or a Pinterest pin link. Each image finds matching Louie pieces and goes straight into Studio or the 3D room.${ctx.me.signedIn?'':' Sign in to keep your library on every device.'}</p></div>
       <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-ink" onClick=${()=>fileRef.current.click()}>${I('upload',{width:16})} Upload images</button><input ref=${fileRef} type="file" accept="image/*" multiple hidden onChange=${e=>{add(e.target.files);e.target.value=''}}/></div></div>
+    <form className="row" style=${{gap:8,marginBottom:14,flexWrap:'wrap'}} onSubmit=${e=>{e.preventDefault();addPin(pinUrl)}}>
+      <input className="field" style=${{flex:'1 1 320px',maxWidth:520}} aria-label="Pinterest pin link" placeholder="Paste a Pinterest pin link (pinterest.com/pin/… or pin.it/…)" value=${pinUrl} onInput=${e=>setPinUrl(e.target.value)}/>
+      <button className="btn btn-line" disabled=${pinBusy||!pinUrl.trim()}>${I('pint',{width:16})} ${pinBusy?'Importing…':'Import pin'}</button></form>
     <div className=${'drop'+(drag?' on':'')} style=${{marginBottom:22}} onClick=${()=>fileRef.current.click()} onKeyDown=${e=>e.key==='Enter'&&fileRef.current.click()} role="button" tabIndex="0">${I('upload',{width:22})}<span><b style=${{color:'var(--ink)',fontWeight:500}}>${busy?'Adding…':drag?'Drop to add':'Drop images anywhere on this page'}</b>, paste a screenshot, or click to choose files</span></div>
     ${list.length?html`<div className="wall">${list.map(x=>html`<div key=${x.id} className="pin"><div className="pin-img" onClick=${()=>setOpen(x.id)}><img src=${x.src} alt=${x.title} style=${{aspectRatio:x.ar||1}}/>
-        <div className="pin-ov"><div className="r1"><span className="pin-board"><span>Upload</span></span></div>
+        <div className="pin-ov"><div className="r1"><span className="pin-board"><span>${x.source==='pinterest'?'Pinterest':'Upload'}</span></span></div>
           <div className="r2"><span className="row" style=${{gap:4}}>${x.pal.slice(0,4).map(c=>html`<span key=${c} className="dot" style=${{width:16,height:16,background:c,boxShadow:'0 0 0 2px #fff'}}></span>`)}</span><button className="pin-act" aria-label="Mix in Studio" title="Mix in Studio" onClick=${e=>{e.stopPropagation();ctx.inspoToStudio(x)}}>${I('brush')}</button></div></div></div>
         <div className="pin-meta"><b>${x.title}</b></div></div>`)}</div>`
       :html`<div className="empty"><h3>Nothing here yet</h3><p>Upload a few photos or paste a screenshot to start.</p></div>`}
@@ -1809,7 +1824,7 @@ function InspoDetail({ctx,x,onClose}){
     <div className="pd">
       <div className="pd-img"><button className="ib closer" aria-label="Close" onClick=${onClose}>${I('x')}</button><img src=${x.src} alt=${x.title}/></div>
       <div className="pd-body">
-        <span className="mono mute">${x.source==='pinterest'?'Imported from Pinterest':'Your upload'} · private to you</span>
+        <span className="mono mute">${x.source==='pinterest'?html`Imported from ${x.link?html`<a href=${x.link} target="_blank" rel="noopener">Pinterest</a>`:'Pinterest'}${x.author?' · '+x.author:''}`:'Your upload'} · private to you</span>
         <input className="field" aria-label="Image title" value=${t} onInput=${e=>setT(e.target.value)} onBlur=${()=>ctx.updateInspo(x.id,{title:t})} style=${{fontFamily:'var(--display)',fontSize:30,height:58}}/>
         <div><span className="st-h">Palette from this image</span><div className="palette" style=${{marginTop:8}}>${x.pal.map(c=>html`<i key=${c} style=${{background:c}} title=${c}></i>`)}</div></div>
         <div className="row" style=${{flexWrap:'wrap'}}>
@@ -2355,8 +2370,8 @@ function AdminPage({ctx}){
   const [tab,setTab]=useState('apps');
   if(!ctx.me.admin)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h3>Team only</h3><p>Sign in with an admin account to manage House of Louie Mae.</p></div></main>`;
   return html`<main className="wrap" style=${{paddingBottom:60}}>
-    <div className="seg" style=${{margin:'28px 0 0'}}>${[['apps','Trade applications'],['sourcing','Sourcing'],['partners','Partners']].map(([k,l])=>html`<button key=${k} className=${tab===k?'on':''} onClick=${()=>setTab(k)}>${l}</button>`)}</div>
-    ${tab==='apps'?html`<${TradeAdmin} ctx=${ctx}/>`:tab==='sourcing'?html`<${SourcingAdmin} ctx=${ctx}/>`:html`<${PartnersAdmin} ctx=${ctx}/>`}
+    <div className="seg" style=${{margin:'28px 0 0'}}>${[['apps','Trade applications'],['sourcing','Sourcing'],['partners','Partners'],['pricing','Pricing']].map(([k,l])=>html`<button key=${k} className=${tab===k?'on':''} onClick=${()=>setTab(k)}>${l}</button>`)}</div>
+    ${tab==='apps'?html`<${TradeAdmin} ctx=${ctx}/>`:tab==='sourcing'?html`<${SourcingAdmin} ctx=${ctx}/>`:tab==='pricing'?html`<${PricingAdmin} ctx=${ctx}/>`:html`<${PartnersAdmin} ctx=${ctx}/>`}
   </main>`;
 }
 function SourcingAdmin({ctx}){
@@ -2379,6 +2394,23 @@ function SourcingAdmin({ctx}){
       <div className="g2f"><select className="field" value=${e.status} onChange=${x=>setEd(r,{status:x.target.value})}>${['received','sourcing','options_ready','ordered','closed'].map(k=>html`<option key=${k} value=${k}>${SR_LABEL[k]}</option>`)}</select><input className="field" placeholder="Note to the requester (emailed when the status changes)" value=${e.note} onInput=${x=>setEd(r,{note:x.target.value})}/></div>
       <button className="btn btn-ink" style=${{justifySelf:'start'}} onClick=${()=>save(r)}>Save</button>
     </div>`})}</div>`}
+  </div>`;
+}
+function PricingAdmin({ctx}){
+  const rows=useQuery(api.holm.adminPricing);const [only,setOnly]=useState(true);
+  if(rows===undefined)return html`<p className="help" style=${{marginTop:18}}>Loading…</p>`;
+  const flagged=rows.filter(r=>r.flags.length);const list=only?flagged:rows;const m=b=>b==null?'—':(b/100).toFixed(1)+'%';const $=c=>fmt(c/100,true);
+  return html`<div style=${{marginTop:18,display:'grid',gap:14}}>
+    <p className="help">Cost is the dealer cost plus the supplier freight allowance. Margins are after card processing (2.9% + 30¢). Trade never goes below a 25% margin; where that would happen, the floor holds the price and the piece is flagged. Delivery is one flat fee per order: ${deliveryText()}.</p>
+    <div className="row" style=${{gap:8}}><button className=${'chip'+(only?' on':'')} onClick=${()=>setOnly(true)}>Flagged · ${flagged.length}</button><button className=${'chip'+(!only?' on':'')} onClick=${()=>setOnly(false)}>All pieces · ${rows.length}</button></div>
+    ${list.length?html`<div style=${{overflowX:'auto'}}><table className="ptable" style=${{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+      <thead><tr>${['Piece','SKU','Cost','Retail','Trade','Project 5%','Trade margin','Project margin','Flags'].map(h=>html`<th key=${h} style=${{textAlign:'left',padding:'8px 10px',borderBottom:'1px solid var(--line2)',whiteSpace:'nowrap'}}>${h}</th>`)}</tr></thead>
+      <tbody>${list.map(r=>html`<tr key=${r.productId+r.sku}>
+        <td style=${{padding:'8px 10px',borderBottom:'1px solid var(--line)'}}>${r.name}${r.variant&&r.variant!=='Default'?html`<span className="mute"> · ${r.variant}</span>`:''}</td>
+        <td className="mono" style=${{padding:'8px 10px',borderBottom:'1px solid var(--line)'}}>${r.sku}</td>
+        ${[r.costCents?$(r.costCents):'Missing',$(r.retailCents),$(r.tradeCents),$(r.projectCents),m(r.tradeMarginBps),m(r.projectMarginBps)].map((v,i)=>html`<td key=${i} className="num" style=${{padding:'8px 10px',borderBottom:'1px solid var(--line)',whiteSpace:'nowrap'}}>${v}</td>`)}
+        <td style=${{padding:'8px 10px',borderBottom:'1px solid var(--line)',color:r.flags.length?'var(--cognac)':'inherit'}}>${r.flags.join(' · ')||'OK'}</td></tr>`)}</tbody></table></div>`
+      :html`<div className="empty"><h3>Nothing flagged</h3><p>Every piece keeps the full trade discount above the margin floor.</p></div>`}
   </div>`;
 }
 function PartnersAdmin({ctx}){
