@@ -572,7 +572,7 @@ export const createClientQuote = mutation({
     note: v.string(),
     space: v.string(),
     deliveryCents: v.optional(v.number()),
-    depositBps: v.number(),
+    depositBps: v.optional(v.number()), // ignored: every order is paid in full before delivery
     leadTime: v.string(),
     validDays: v.number(),
     items: v.array(quoteItem),
@@ -584,7 +584,6 @@ export const createClientQuote = mutation({
     if (!a.clientName.trim() || a.clientName.length > 150) throw new Error('Add who this quote is for.');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.replyEmail)) throw new Error('Check the approval email address.');
     if (!Number.isInteger(a.markupBps) || a.markupBps < 0 || a.markupBps > 20000) throw new Error('Choose a markup between 0% and 200%.');
-    if (![0, 3000, 5000, 10000].includes(a.depositBps)) throw new Error('Choose a deposit.');
     if (![14, 30, 60].includes(a.validDays)) throw new Error('Choose how long the quote is valid.');
     if (a.deliveryCents !== undefined && (!Number.isSafeInteger(a.deliveryCents) || a.deliveryCents < 0 || a.deliveryCents > 100_000_000))
       throw new Error('Check the delivery amount.');
@@ -629,7 +628,7 @@ export const createClientQuote = mutation({
       space: a.space.slice(0, 40),
       lines,
       deliveryCents: a.deliveryCents,
-      depositBps: a.depositBps,
+      depositBps: 10000,
       leadTime: a.leadTime.trim() || '8 to 10 weeks',
       validUntil: now + a.validDays * 86400000,
       createdAt: now,
@@ -696,7 +695,12 @@ export const approveClientQuote = mutation({
       key: `client-quote-approved:${q._id}`,
       to: q.replyEmail,
       subject: `Approved: ${q.title} (${q.number})`,
-      text: `${name} approved quote ${q.number} for ${q.title}.\n\nTotal: $${(total / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}${q.depositBps ? `\nDeposit (${q.depositBps / 100}%): $${((total * q.depositBps) / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : ''}\n\nOpen your House of Louie Mae tray to request the order at trade pricing: https://louiemae.com/trade`,
+      text: `${name} approved quote ${q.number} for ${q.title}.\n\nTotal: $${(total / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}${
+        // quotes sent before pay-in-full keep the deposit terms they were sent with
+        q.depositBps > 0 && q.depositBps < 10000
+          ? `\nDeposit (${q.depositBps / 100}%): $${((total * q.depositBps) / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 2 })}, balance due before delivery.`
+          : '\nPayment in full is due before delivery.'
+      }\n\nOpen your House of Louie Mae tray to request the order at trade pricing: https://louiemae.com/trade`,
     });
   },
 });

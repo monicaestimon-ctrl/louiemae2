@@ -1312,10 +1312,10 @@ function fromServer(q){
 function QuoteComposer({ctx,onClose}){
   const proj=ctx.activeProject;const me=ctx.me;
   const create=useMutation(api.holm.createClientQuote);
-  const [set,setSet]=useState(()=>({show:'markup',markup:40,brand:'studio',studio:me.businessName||'',email:me.email||'',client:'',title:proj.name,note:'',valid:30,delivery:'',deposit:50,lead:'8 to 10 weeks',...load('qset',{}),title:proj.name}));
+  const [set,setSet]=useState(()=>({show:'markup',markup:40,brand:'studio',studio:me.businessName||'',email:me.email||'',client:'',title:proj.name,note:'',valid:30,delivery:'',lead:'8 to 10 weeks',...load('qset',{}),title:proj.name}));
   const [busy,setBusy]=useState(false);const [link,setLink]=useState('');const [serverErr,setServerErr]=useState('');
   const up=o=>{setSet(s=>({...s,...o}));setLink('')};
-  useEffect(()=>{const {show,markup,brand,studio,email,valid,deposit,lead}=set;store('qset',{show,markup,brand,studio,email,valid,deposit,lead})},[set]);
+  useEffect(()=>{const {show,markup,brand,studio,email,valid,lead}=set;store('qset',{show,markup,brand,studio,email,valid,lead})},[set]);
   useEffect(()=>{const k=e=>e.key==='Escape'&&onClose();addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[]);
   const items=proj.items.map(i=>({...i,p:byId(i.pid)}));
   const cost=items.reduce((s,i)=>s+tp(i.p)*i.qty,0);const sell=items.reduce((s,i)=>s+qSellOf(i.p,set)*i.qty,0);const profit=sell-cost;
@@ -1323,7 +1323,7 @@ function QuoteComposer({ctx,onClose}){
   const [tried,setTried]=useState(false);const ok=!errs.client&&!errs.email&&!errs.studio&&items.length>0;
   const make=async()=>{setTried(true);setServerErr('');if(!ok)return null;if(link)return link;setBusy(true);
     try{const merged=[];items.forEach(i=>{const ex=merged.find(m=>m.productId===i.p.lid&&m.variantId===i.p.vid);if(ex)ex.quantity+=i.qty;else merged.push({productId:i.p.lid,variantId:i.p.vid,quantity:i.qty,zone:i.zone})});
-      const slug=await create({show:set.show,markupBps:Math.round(set.markup*100),studioName:set.brand==='studio'?set.studio:undefined,replyEmail:set.email,clientName:set.client,title:set.title||proj.name,note:set.note,space:ctx.space,deliveryCents:set.delivery?Math.round(+set.delivery*100):undefined,depositBps:set.deposit*100,leadTime:set.lead,validDays:set.valid,items:merged});
+      const slug=await create({show:set.show,markupBps:Math.round(set.markup*100),studioName:set.brand==='studio'?set.studio:undefined,replyEmail:set.email,clientName:set.client,title:set.title||proj.name,note:set.note,space:ctx.space,deliveryCents:set.delivery?Math.round(+set.delivery*100):undefined,leadTime:set.lead,validDays:set.valid,items:merged});
       const url=location.origin+'/trade#q/'+slug;setLink(url);return url}
     catch(e){setServerErr(e?.data||e?.message?.replace(/^.*Uncaught Error: /,'').split('\n')[0]||'Something went wrong. Try again.');return null}finally{setBusy(false)}};
   const share=async()=>{const url=await make();if(url)copyText(url,ctx.toast)};
@@ -1350,7 +1350,7 @@ function QuoteComposer({ctx,onClose}){
         </div>
         <div className="qc-g3">
           <label className="qc-f"><span>Delivery and install</span><input inputMode="numeric" value=${set.delivery} placeholder="Quoted later" onInput=${e=>up({delivery:e.target.value.replace(/[^\d]/g,'')})}/></label>
-          <label className="qc-f"><span>Deposit</span><select value=${set.deposit} onChange=${e=>up({deposit:+e.target.value})}>${[0,30,50,100].map(v=>html`<option key=${v} value=${v}>${v?v+'%':'None'}</option>`)}</select></label>
+          <div className="qc-f"><span>Payment</span><b style=${{fontWeight:500}}>In full before delivery</b></div>
           <label className="qc-f"><span>Valid for</span><select value=${set.valid} onChange=${e=>up({valid:+e.target.value})}>${[14,30,60].map(v=>html`<option key=${v} value=${v}>${v} days</option>`)}</select></label>
         </div>
         <label className="qc-f"><span>A note to your client</span><textarea rows="3" value=${set.note} placeholder="A few words on the direction, finishes, or next steps" onInput=${e=>up({note:e.target.value})}></textarea></label>
@@ -1430,12 +1430,12 @@ function ClientQuote({ctx,code}){
           <div className="cq-row"><span>Delivery and installation</span><b className="num">${q.dl<0?'Quoted separately':q.dl?fmt(q.dl):'Included'}</b></div>
           <div className="cq-row"><span>Sales tax</span><b>Added at invoice</b></div>
           <div className="cq-total"><span>Total</span><b className="num">${fmt(total)}</b></div>
-          ${q.dep>0&&html`<div className="cq-row"><span>Deposit to begin · ${q.dep}%</span><b className="num">${fmt(dep)}</b></div>`}
+          ${q.dep>0&&q.dep<100?html`<div className="cq-row"><span>Deposit to begin · ${q.dep}%</span><b className="num">${fmt(dep)}</b></div><div className="cq-row"><span>Balance</span><b>Due before delivery</b></div>`:html`<div className="cq-row"><span>Payment</span><b>In full before delivery</b></div>`}
           <div className="cq-facts"><span>${I('clock',{width:15})} Arrives in ${q.lt}</span><span>${I('calendar',{width:15})} ${expired?'Expired':'Valid until'} ${qDate(q.until)}</span></div>
           ${done?html`<div className="cq-done">
               <span className="cq-seal">${I('check',{width:18})}</span>
               <b>${done.kind==='approved'?`Approved by ${done.name}`:'Changes requested'}</b>
-              <p>${done.kind==='approved'?`${by} has been notified and will confirm availability and send your deposit invoice.`:`${by} has your note and will send an updated quote.`}</p>
+              <p>${done.kind==='approved'?`${by} has been notified and will confirm availability and send your invoice. ${q.dep>0&&q.dep<100?'The balance is due before delivery.':'Payment in full is due before delivery.'}`:`${by} has your note and will send an updated quote.`}</p>
             </div>`
           :mode==='approve'?html`<div className="cq-form">
               <label className="qc-f"><span>Your full name</span><input value=${name} autoFocus onInput=${e=>{setName(e.target.value);setErr('')}} aria-invalid=${!!(err&&!name.trim())}/></label>
