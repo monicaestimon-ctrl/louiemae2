@@ -1746,3 +1746,9 @@ header.top:not(.over){background:color-mix(in srgb,var(--paper) 94%,transparent)
 .holm-boot h1{font-family:var(--display);font-weight:400;font-size:clamp(34px,4vw,52px)}
 .holm-boot p{color:var(--mute)}
 .holm-boot button{justify-self:center;height:42px;padding:0 20px;border-radius:999px;background:var(--ink);color:var(--onink);border:0;cursor:pointer}
+
+/* Collection cards: every cutout fits inside its stage. Tall pieces such as floor lamps
+   scale down by height instead of spilling over the row below. */
+.lx-cut{display:block;height:100%;min-height:0}
+.lx-cut img{width:100%;height:100%;max-height:none;object-fit:contain}
+.lx-stage.hang .lx-cut img{object-position:50% 0}

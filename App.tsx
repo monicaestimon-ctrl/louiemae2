@@ -537,7 +537,8 @@ const AppContent = () => {
                   <li><button onClick={() => handleNavigation('#support/shipping')} className="hover:text-white transition-colors cursor-pointer w-full text-left">Shipping & Returns</button></li>
                   <li><button onClick={() => handleNavigation('#support/faq')} className="hover:text-white transition-colors cursor-pointer w-full text-left">FAQ</button></li>
                   <li><button onClick={() => handleNavigation('#support/contact')} className="hover:text-white transition-colors cursor-pointer w-full text-left">Contact Us</button></li>
-                  <li><button onClick={() => handleNavigation('#support/privacy')} className="hover:text-white transition-colors cursor-pointer w-full text-left">Privacy Policy</button></li>
+                  <li><a href="/privacy" className="hover:text-white transition-colors">Privacy Policy</a></li>
+                  <li><a href="/terms" className="hover:text-white transition-colors">Terms of Service</a></li>
                 </ul>
               </div>
               <div>
