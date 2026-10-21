@@ -43,6 +43,12 @@ export const me = query({
   },
 });
 
+/** Which sign-in methods the trade site can offer. */
+export const signInOptions = query({
+  args: {},
+  handler: async () => ({ google: !!(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) }),
+});
+
 /** Create the House profile on first sign-in. */
 export const ensureProfile = mutation({
   args: { ref: v.optional(v.string()) },
