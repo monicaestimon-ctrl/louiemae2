@@ -191,7 +191,7 @@ function BoardPin({b,ctx}){
   const imgs=b.items.slice(0,3).map(id=>byId(id).img);
   return html`<div className="pin bpin">
     <div className="mosaic" onClick=${()=>ctx.toStudio(b.items,b.title)} title="Remix in Studio">${imgs.map(s=>html`<div key=${s} style=${{backgroundImage:`url(${s})`}}></div>`)}</div>
-    <h4>${b.title}</h4>
+    <h3>${b.title}</h3>
     <div className="who"><span className="role">${b.role}</span><span>${b.by}</span><span>· ${b.saves} saves</span></div>
     <div className="row" style=${{padding:'8px 4px 0'}}><button className="btn btn-line btn-sm" onClick=${()=>ctx.toStudio(b.items,b.title)}>${I('brush',{width:15})} Remix</button><button className="btn btn-line btn-sm" onClick=${()=>{b.items.forEach(id=>ctx.addToTray(id,1,null,true));ctx.toast(b.items.length+' pieces added to '+ctx.activeProject.name,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Add all to tray</button></div>
   </div>`;
@@ -778,7 +778,7 @@ function RoomPanel({s,ctx,setRef,i}){
   const total=ids.reduce((t,id)=>t+pr(byId(id),ctx.mode),0);
   return html`<article className="rp" ref=${setRef} style=${{zIndex:i+1}} aria-label=${s.name}>
     <div className="rp-stage" ref=${stageRef}>
-      <img className="rp-img" src=${s.img} alt=${s.name+', furnished with Louie Mae pieces'} loading="lazy"/>
+      <img className="rp-img" src=${s.img} srcSet=${`${s.img.replace('.webp','-1200.webp')} 1200w, ${s.img} 2400w`} sizes="100vw" alt=${s.name+', furnished with Louie Mae pieces'} loading="lazy"/>
       <div className="rp-shade" aria-hidden="true"></div>
       ${s.hot.map((h,k)=>{const x=ox+h.x*mw,y=oy+h.y*mh;if(x<16||x>box.w-16||y<80||y>box.h-16)return null;const p=byId(h.id);return html`<button key=${k} className=${'fs-hot rp-dot'+(act===h.id?' on':'')} style=${{left:x+'px',top:y+'px'}} aria-label=${p.name} onMouseEnter=${()=>setAct(h.id)} onMouseLeave=${()=>setAct(null)} onFocus=${()=>setAct(h.id)} onBlur=${()=>setAct(null)} onClick=${()=>setAct(act===h.id?null:h.id)}><i></i><span>${p.name}</span></button>`})}
       <div className="rp-copy">
@@ -1067,7 +1067,7 @@ function Discover({ctx}){
         <input ref=${fileRef} type="file" accept="image/*" hidden onChange=${e=>{const f=e.target.files[0];if(f)ctx.imageSearch(f);e.target.value=''}}/></form>
     </div>
     ${ctx.imgQ&&html`<div className="img-q"><img src=${ctx.imgQ.src} alt="Your photo"/><div style=${{flex:1,minWidth:200}}><b style=${{fontWeight:500}}>Matched to the tones in your photo</b><div className="row" style=${{marginTop:6,gap:6}}>${ctx.imgQ.pal.map(c=>html`<button key=${c} className="dot" style=${{width:26,height:26,background:c}} title=${'Filter by '+c} onClick=${()=>tog(tones,setTones,c)}></button>`)}<span className="mono mute" style=${{marginLeft:6}}>Tap a tone to narrow</span></div></div><button className="btn btn-line btn-sm" onClick=${()=>ctx.setImgQ(null)}>Clear photo</button></div>`}
-    ${!searching&&html`<div className="trend-row">${TRENDS.map(t=>html`<button key=${t.id} className="trend" onClick=${()=>{ctx.setTrend(t.id);ctx.go('trend')}}><img src=${byId(t.img).img} alt="" loading="lazy"/><div><span className="up">Trending · ${t.up}</span><h3>${t.name}</h3></div></button>`)}</div>`}
+    ${!searching&&html`<div className="trend-row">${TRENDS.map(t=>html`<button key=${t.id} className="trend" onClick=${()=>{ctx.setTrend(t.id);ctx.go('trend')}}><img src=${byId(t.img).img} alt="" loading="lazy"/><div><span className="up">Trending · ${t.up}</span><h2>${t.name}</h2></div></button>`)}</div>`}
     <div className="filters">
       <div className="scroll-x">${[['all','Everything'],...Object.entries(TYPE)].map(([k,l])=>html`<button key=${k} className=${'chip'+(type===k?' on':'')} onClick=${()=>setType(k)}>${l}</button>`)}</div>
       <span style=${{flex:1}}></span>
@@ -1350,7 +1350,7 @@ function fromServer(q){
 function QuoteComposer({ctx,onClose}){
   const proj=ctx.activeProject;const me=ctx.me;
   const create=useMutation(api.holm.createClientQuote);
-  const [set,setSet]=useState(()=>({show:'markup',markup:40,brand:'studio',studio:me.businessName||'',email:me.email||'',client:'',title:proj.name,note:'',valid:30,delivery:'',lead:'8 to 10 weeks',...load('qset',{}),title:proj.name}));
+  const [set,setSet]=useState(()=>({show:'markup',markup:40,brand:'studio',studio:me.businessName||'',email:me.email||'',client:'',note:'',valid:30,delivery:'',lead:'8 to 10 weeks',...load('qset',{}),title:proj.name}));
   const [busy,setBusy]=useState(false);const [link,setLink]=useState('');const [serverErr,setServerErr]=useState('');
   const up=o=>{setSet(s=>({...s,...o}));setLink('')};
   useEffect(()=>{const {show,markup,brand,studio,email,valid,lead}=set;store('qset',{show,markup,brand,studio,email,valid,lead})},[set]);
@@ -2150,12 +2150,12 @@ function Boards({ctx}){
     ${tab==='boards'&&html`<div className="boards">
       ${bs.map(b=>html`<button key=${b.id} className="bcard" onClick=${()=>{ctx.setBoard(b.id);ctx.go('board')}}>
         <div className="cov">${[0,1,2].map(i=>html`<div key=${i} style=${{backgroundImage:b.pins[i]?`url(${byId(b.pins[i].pid).img})`:'none'}}></div>`)}</div>
-        <h3>${b.title}</h3><p>${b.pins.length} pins${b.sections.length?` · ${b.sections.length} sections`:''}${b.secret?' · Secret':''}${b.collab?` · ${b.collab} collaborator${b.collab>1?'s':''}`:''}</p></button>`)}
+        <h2>${b.title}</h2><p>${b.pins.length} pins${b.sections.length?` · ${b.sections.length} sections`:''}${b.secret?' · Secret':''}${b.collab?` · ${b.collab} collaborator${b.collab>1?'s':''}`:''}</p></button>`)}
       <button className="newboard" onClick=${()=>setMk(true)}><span>${I('plus',{width:22})}<br/>New board</span></button>
     </div>`}
     ${tab==='pins'&&html`<${Wall} items=${allPins} ctx=${ctx}/>`}
     ${tab==='collages'&&html`<div className="boards">${ctx.collages.map((c,i)=>html`<button key=${i} className="bcard" onClick=${()=>{ctx.setStudioSeed({ids:c.els.filter(e=>e.kind==='img').map(e=>e.pid),title:c.title});ctx.go('studio')}}>
-        <div className="cov" style=${{background:'var(--plaster)'}}>${c.els.filter(e=>e.kind==='img').slice(0,3).map((e,j)=>html`<div key=${j} style=${{backgroundImage:`url(${byId(e.pid).img})`}}></div>`)}</div><h3>${c.title}</h3><p>${c.els.filter(e=>e.kind==='img').length} pieces · Open in Studio</p></button>`)}
+        <div className="cov" style=${{background:'var(--plaster)'}}>${c.els.filter(e=>e.kind==='img').slice(0,3).map((e,j)=>html`<div key=${j} style=${{backgroundImage:`url(${byId(e.pid).img})`}}></div>`)}</div><h2>${c.title}</h2><p>${c.els.filter(e=>e.kind==='img').length} pieces · Open in Studio</p></button>`)}
       <button className="newboard" onClick=${()=>ctx.go('studio')}><span>${I('brush',{width:22})}<br/>New collage</span></button></div>`}
     ${mk&&html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&setMk(false)} role="dialog" aria-modal="true" aria-label="Create board"><form className="sheet share" onSubmit=${e=>{e.preventDefault();if(!n.trim())return;const id=ctx.createBoard(n.trim(),null,sec);setMk(false);setN('');ctx.setBoard(id);ctx.go('board')}}>
       <h2 style=${{fontSize:38}}>Create a board</h2>
@@ -2207,8 +2207,8 @@ function Profile({ctx}){
     </div>
     <div className="wrap">
       <div className="tabs">${[['saved','Boards'],['collages','Collages']].map(([k,l])=>html`<button key=${k} className=${tab===k?'on':''} onClick=${()=>setTab(k)}>${l}</button>`)}</div>
-      ${tab==='saved'&&(ctx.boards.length?html`<div className="boards">${ctx.boards.map(b=>html`<button key=${b.id} className="bcard" onClick=${()=>{ctx.setBoard(b.id);ctx.go('board')}}><div className="cov">${[0,1,2].map(i=>html`<div key=${i} style=${{backgroundImage:b.pins[i]?`url(${byId(b.pins[i].pid).img})`:'none'}}></div>`)}</div><h3>${b.title}</h3><p>${b.pins.length} pins</p></button>`)}</div>`:html`<div className="empty"><h3>No boards yet</h3><p>Save pieces from the floor to start a board.</p></div>`)}
-      ${tab==='collages'&&(ctx.collages.length?html`<div className="boards">${ctx.collages.map((c,i)=>html`<div key=${i} className="bcard"><div className="cov">${c.els.filter(e=>e.kind==='img').slice(0,3).map((e,j)=>html`<div key=${j} style=${{backgroundImage:`url(${byId(e.pid).img})`}}></div>`)}</div><h3>${c.title}</h3></div>`)}</div>`:html`<div className="empty"><h3>No collages yet</h3><p>Compose one in Studio and save it here.</p><button className="btn btn-line" onClick=${()=>ctx.go('studio')}>Open Studio</button></div>`)}
+      ${tab==='saved'&&(ctx.boards.length?html`<div className="boards">${ctx.boards.map(b=>html`<button key=${b.id} className="bcard" onClick=${()=>{ctx.setBoard(b.id);ctx.go('board')}}><div className="cov">${[0,1,2].map(i=>html`<div key=${i} style=${{backgroundImage:b.pins[i]?`url(${byId(b.pins[i].pid).img})`:'none'}}></div>`)}</div><h2>${b.title}</h2><p>${b.pins.length} pins</p></button>`)}</div>`:html`<div className="empty"><h2>No boards yet</h2><p>Save pieces from the floor to start a board.</p></div>`)}
+      ${tab==='collages'&&(ctx.collages.length?html`<div className="boards">${ctx.collages.map((c,i)=>html`<div key=${i} className="bcard"><div className="cov">${c.els.filter(e=>e.kind==='img').slice(0,3).map((e,j)=>html`<div key=${j} style=${{backgroundImage:`url(${byId(e.pid).img})`}}></div>`)}</div><h2>${c.title}</h2></div>`)}</div>`:html`<div className="empty"><h2>No collages yet</h2><p>Compose one in Studio and save it here.</p><button className="btn btn-line" onClick=${()=>ctx.go('studio')}>Open Studio</button></div>`)}
     </div>
     <div className="wrap"><${Footer} ctx=${ctx}/></div>
   </main>`;
