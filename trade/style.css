@@ -1,11 +1,25 @@
 /* Layout: a gallery floor. A masonry wall of pins under a quiet header; tools open as full rooms; the project tray rises from the floor. */
+/* Self-hosted Latin fonts (public/fonts, SIL OFL): Newsreader (opsz 6–72, wght 300–600) and
+   DM Sans (opsz 9–40, wght 400–500), the same axes the Google Fonts link requested. */
+@font-face{font-family:"Newsreader";font-style:normal;font-weight:300 600;font-display:swap;src:url("/fonts/newsreader-latin-normal.woff2") format("woff2");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
+@font-face{font-family:"Newsreader";font-style:italic;font-weight:300 600;font-display:swap;src:url("/fonts/newsreader-latin-italic.woff2") format("woff2");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
+/* A static cut (wght 500, opsz 40) for the first-paint headline in index.html only: 20 KB,
+   so the hero paints in Newsreader at once and matches the app's headline glyph for glyph. */
+@font-face{font-family:"Newsreader Hero";font-style:normal;font-weight:500;font-display:block;src:url("/fonts/newsreader-hero-500.woff2") format("woff2")}
+/* The wordmark's letters only (italic, wght 400, opsz 22): 2 KB instead of the 130 KB italic. */
+@font-face{font-family:"Newsreader Logo";font-style:italic;font-weight:400;font-display:block;src:url("/fonts/newsreader-logo.woff2") format("woff2")}
+@font-face{font-family:"DM Sans";font-style:normal;font-weight:400 500;font-display:swap;src:url("/fonts/dm-sans-latin-normal.woff2") format("woff2");unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
+/* Metric-matched fallbacks (Times/Liberation Serif, Arial/Liberation Sans) so text keeps its
+   size when the web fonts swap in. */
+@font-face{font-family:"Newsreader Fallback";src:local("Times New Roman"),local("Liberation Serif");size-adjust:107%;ascent-override:68.69%;descent-override:24.77%;line-gap-override:0%}
+@font-face{font-family:"DM Sans Fallback";src:local("Arial"),local("Liberation Sans");size-adjust:104.23%;ascent-override:95.17%;descent-override:29.74%;line-gap-override:0%}
 :root{
   --paper:#FBF8F2; --plaster:#F2EADD; --sand:#E5D8C4; --card:#FFFDF9;
   --ink:#2B211A; --bark:#4A3B2D; --mute:#7A6E61; --line:rgba(43,33,26,.13); --line2:rgba(43,33,26,.24);
   --cognac:#A65F2C; --cognac-soft:rgba(166,95,44,.12); --olive:#6C6948; --brass:#AE884C;
   --onink:#FBF8F2; --ok:#4E6A43; --bad:#9B3B2D; --shadow:0 18px 50px -24px rgba(43,33,26,.45);
   --display:"Cormorant Garamond",Georgia,"Times New Roman",serif;
-  --sans:"DM Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --sans:"DM Sans","DM Sans Fallback",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"DM Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
   --r:14px; --ease:cubic-bezier(.2,.7,.1,1);
 }
@@ -22,6 +36,7 @@
 
 *{box-sizing:border-box}
 html,body{height:100%}
+body{margin:0}
 body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer;background:none;border:0;padding:0}
@@ -233,7 +248,7 @@ input[type=range]{width:100%;accent-color:var(--cognac)}
 @media (max-width:860px){.band{grid-template-columns:1fr}}
 
 footer{border-top:1px solid var(--line);padding-block:48px 40px;margin-top:40px;display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:28px}
-footer h4{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin:0 0 12px;font-weight:400}
+footer h2{font-family:var(--mono);font-size:11px;letter-spacing:.12em;line-height:1.5;text-transform:uppercase;color:var(--mute);margin:0 0 12px;font-weight:400}
 footer button{display:block;padding:3px 0;font-size:14px;text-align:left}
 footer button:hover{color:var(--cognac)}
 @media (max-width:760px){footer{grid-template-columns:1fr 1fr}}
@@ -1127,7 +1142,7 @@ a.pin-act{text-decoration:none}
 .scene-meta{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
 .scene-meta h3{font-size:34px;line-height:1;margin-top:4px}.scene-meta p{max-width:46ch;font-size:14px;margin-top:6px}
 /* ================= v5: calmer type, no eyebrows, dedicated sections ================= */
-:root{--display:"Newsreader",Georgia,"Times New Roman",serif;--mono:"DM Sans",system-ui,sans-serif}
+:root{--display:"Newsreader","Newsreader Fallback",Georgia,"Times New Roman",serif;--mono:"DM Sans","DM Sans Fallback",system-ui,sans-serif}
 h1,h2,h3{font-family:var(--display);font-weight:400;letter-spacing:-.018em;font-size-adjust:.42;font-optical-sizing:auto}
 h1 em,h2 em,h3 em{font-style:italic}
 /* Eyebrow labels and uppercase mono micro-labels are gone site-wide */
@@ -1140,7 +1155,7 @@ h1 em,h2 em,h3 em{font-style:italic}
 /* Header: fewer controls */
 .top .ib[title="Studio"],.top .avatar,.top .search .ib[title="Search by voice"]{display:none}
 .logo span{display:none}
-.logo b{font-family:var(--display);font-weight:400;font-size:22px;letter-spacing:-.01em}
+.logo b{font-family:"Newsreader Logo",var(--display);font-weight:400;font-size:22px;letter-spacing:-.01em}
 .dial-btn .mute{display:none}
 
 /* Product cards: three controls on hover */
@@ -1159,12 +1174,17 @@ header.top.over{text-shadow:0 1px 12px rgba(10,6,4,.35)}
 .hf-stage.night .hf-copy,.hf-stage.night .hf-nav{text-shadow:0 1px 18px rgba(10,6,4,.45)}
 .hf-copy,.hf-copy *,.hf-btn,.hf-spaces button,.hf-films,.hf-films button,.hf-prog i,.hf-cue,.hf-cue i{transition:color .6s var(--ease),background-color .6s var(--ease),border-color .6s var(--ease),opacity .2s}
 .hf-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#120D0A}
+/* Film or stills fade in over the poster only once they can draw a frame: never a black hero. */
+.hf-fade{background:none;opacity:0;transition:opacity .45s var(--ease)}
+.hf-fade.on{opacity:1}
 .hf-scrim{position:absolute;inset:0;pointer-events:none;z-index:2;transition:opacity .8s;
   background:linear-gradient(100deg,rgba(251,248,242,.62) 0%,rgba(251,248,242,.32) 30%,rgba(251,248,242,0) 52%),linear-gradient(0deg,rgba(251,248,242,.5),rgba(251,248,242,0) 22%)}
 .hf-stage.night .hf-scrim{background:linear-gradient(180deg,rgba(14,9,6,.55) 0%,rgba(14,9,6,0) 16%),linear-gradient(100deg,rgba(14,9,6,.62) 0%,rgba(14,9,6,.3) 32%,rgba(14,9,6,0) 54%),linear-gradient(0deg,rgba(14,9,6,.55),rgba(14,9,6,0) 24%)}
 .hf-copy{position:absolute;z-index:20;left:clamp(20px,5vw,80px);top:clamp(120px,22vh,220px);max-width:min(540px,44%);color:var(--hero-fg)}
 .hf-copy h1{font-size:clamp(44px,5.6vw,84px);line-height:1;animation:hfIn .7s var(--ease) both}
 .hf-copy p{margin-top:16px;font-size:clamp(15px,1.2vw,18px);line-height:1.5;max-width:40ch;opacity:.86;animation:hfIn .7s .08s var(--ease) both}
+/* Chapter one as first painted from index.html: no entrance, so it never blinks. */
+.hf-copy.still h1,.hf-copy.still p{animation:none}
 @keyframes hfIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 .hf-cta{display:flex;gap:10px;margin-top:26px;flex-wrap:wrap;animation:hfIn .6s .16s var(--ease) both}
 .hf-btn{height:46px;padding:0 22px;border-radius:999px;font-weight:500;font-size:14.5px;color:var(--hero-fg);border:1px solid color-mix(in srgb,var(--hero-fg) 35%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
@@ -1198,6 +1218,8 @@ header.top.over{text-shadow:0 1px 12px rgba(10,6,4,.35)}
   .hf-prog{right:8px}
   .hf-cue{display:none}
 }
+/* Clear the fixed tab bar (≈58px plus the home indicator) so the space picker stays tappable. */
+@media (max-width:900px){.hf-nav{bottom:calc(74px + env(safe-area-inset-bottom,0px))}}
 
 /* ---------- Home sections: one idea each ---------- */
 .hs{padding:clamp(88px,13vh,150px) 0}
@@ -1243,8 +1265,8 @@ header.top.over{text-shadow:0 1px 12px rgba(10,6,4,.35)}
 @media (max-width:760px){.lanes3{grid-template-columns:1fr}}
 
 /* sentence-case every remaining micro-label */
-.index-link span,.oos,.role,.lrow .fig small,.lrow.head,footer h4,.save-pill,.specs dt,.st-h,table.t th,.smap .go,.rh-hint,.rh-tap,.rh-price em,.rh-steps span,.ix-link span,.tv-status,.rs-lab,.rs-tip,.rs-rail b,.fs-hot span,.qz-slide .mono{text-transform:none!important;letter-spacing:0!important;font-family:var(--sans)!important}
-footer h4{font-size:14px;font-weight:500;color:var(--ink)}
+.index-link span,.oos,.role,.lrow .fig small,.lrow.head,footer h2,.save-pill,.specs dt,.st-h,table.t th,.smap .go,.rh-hint,.rh-tap,.rh-price em,.rh-steps span,.ix-link span,.tv-status,.rs-lab,.rs-tip,.rs-rail b,.fs-hot span,.qz-slide .mono{text-transform:none!important;letter-spacing:0!important;font-family:var(--sans)!important}
+footer h2{font-size:14px;font-weight:500;color:var(--ink)}
 table.t th{font-size:12.5px;font-weight:500;color:var(--mute)}
 .tv-status{font-size:12px}
 .fs-hot span{font-size:12.5px}

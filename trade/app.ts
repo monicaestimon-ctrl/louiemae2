@@ -662,20 +662,56 @@ const FILMS={
 };
 const filmsFor=space=>Object.keys(FILMS).filter(k=>FILMS[k].space===space);
 const FILM_AR=16/9;
+// Phones scrub a still sequence instead of the film (scripts/build-film-frames.mjs): iOS
+// never paints a scrubbed video that hasn't played. Stills are 3:4 centre crops, four per
+// second of film, so on any screen narrower than 3:4 they frame exactly like the film.
+const PHONE_FRAMES='(max-aspect-ratio: 3/4)';
+const STILLS_PER_SEC=4;
+const stillCount=TL=>Math.floor((Math.round(TL.total*24)-1)/6)+1;
+const stillUrl=(fk,i)=>`f/${fk}/m/${String(i).padStart(3,'0')}.webp`;
+function useMedia(q){const [m,setM]=useState(()=>matchMedia(q).matches);useEffect(()=>{const mq=matchMedia(q);const f=()=>setM(mq.matches);mq.addEventListener('change',f);return()=>mq.removeEventListener('change',f)},[q]);return m}
+/** Loads a film's stills coarse-to-fine (every 16th, 8th … then the rest), a few at a time. */
+function loadStills(fk,n){
+  const imgs=new Array(n);let dead=false,k=0;const order=[0,n-1];const seen=new Set(order);
+  for(const step of [16,8,4,2,1])for(let i=0;i<n;i+=step)if(!seen.has(i)){seen.add(i);order.push(i)}
+  const next=()=>{if(dead||k>=order.length)return;const i=order[k++];const im=new Image();im.src=stillUrl(fk,i);
+    (im.decode?im.decode():new Promise((res,rej)=>{im.onload=res;im.onerror=rej})).then(()=>{if(!dead)imgs[i]=im},()=>{}).finally(next)};
+  for(let c=0;c<4;c++)next();
+  return {imgs,stop(){dead=true}};
+}
+const nearestStill=(imgs,i)=>{for(let d=0;d<imgs.length;d++){if(imgs[i-d])return imgs[i-d];if(imgs[i+d])return imgs[i+d]}return null};
 
 function FilmStudy({ctx,fk,setFk}){
   const F=FILMS[fk],TL=F.TL;const siblings=filmsFor(ctx.space);
   const secRef=useRef(),stageRef=useRef(),vidRef=useRef(),cur=useRef(0),last=useRef({ch:-1,hot:-1,dark:null});
   const [chi,setChi]=useState(0);const [hot,setHot]=useState(-1);const [dark,setDark]=useState(!!F.darkRoom&&false);
   const [box,setBox]=useState({w:1,h:1});const [pick,setPick]=useState(null);const [started,setStarted]=useState(false);const [ready,setReady]=useState(false);
+  // index.html already showed chapter one; don't replay its entrance when the app takes over.
+  const [fromShell]=useState(()=>document.documentElement.dataset.shell==='trade');useEffect(()=>{delete document.documentElement.dataset.shell},[]);
+  const phone=useMedia(PHONE_FRAMES);const cvRef=useRef(),stills=useRef(null),drawn=useRef(null);
+  // Phones: start fetching stills straight away (frame 0 first). Desktop: the film waits
+  // for the page to finish loading so it never competes with first paint.
+  useEffect(()=>{if(!phone)return;const L=loadStills(fk,stillCount(TL));stills.current=L;drawn.current=null;return()=>{L.stop();stills.current=null}},[fk,phone]);
+  useEffect(()=>{if(phone)return;const v=vidRef.current;if(!v)return;let idle=0;
+    // iOS only buffers (and paints seeks) once a video has played, so tap play/pause.
+    const go=()=>{v.preload='auto';v.load();const p=v.play();if(p)p.then(()=>v.pause(),()=>{})};
+    const later=()=>{idle=(window.requestIdleCallback||setTimeout)(go,{timeout:1500})};
+    if(document.readyState==='complete')later();else addEventListener('load',later,{once:true});
+    return()=>{removeEventListener('load',later);(window.cancelIdleCallback||clearTimeout)(idle)}},[fk,phone]);
   useEffect(()=>{const ro=new ResizeObserver(([e])=>setBox({w:e.contentRect.width,h:e.contentRect.height}));ro.observe(stageRef.current);return()=>ro.disconnect()},[]);
   useEffect(()=>{let raf=0,run=true;
     const tick=()=>{if(!run)return;const sec=secRef.current,st=stageRef.current,v=vidRef.current;
-      if(sec&&st&&v){const r=sec.getBoundingClientRect();const total=Math.max(1,sec.offsetHeight-st.offsetHeight);const P=Math.min(1,Math.max(0,-r.top/total));
+      if(sec&&st){const r=sec.getBoundingClientRect();const total=Math.max(1,sec.offsetHeight-st.offsetHeight);const P=Math.min(1,Math.max(0,-r.top/total));
         const target=P*(TL.total-0.05);
         // critically damped follow: smooth on wheels and trackpads, no overshoot
         cur.current+=(target-cur.current)*0.16;if(Math.abs(target-cur.current)<0.004)cur.current=target;
-        if(!v.seeking&&v.readyState>=1&&Math.abs(v.currentTime-cur.current)>1/48){try{v.currentTime=cur.current}catch(e){}}
+        if(v&&!v.seeking&&v.readyState>=1&&Math.abs(v.currentTime-cur.current)>1/48){try{v.currentTime=cur.current}catch(e){}}
+        const cv=cvRef.current,SL=stills.current;
+        if(cv&&SL){const im=nearestStill(SL.imgs,Math.min(SL.imgs.length-1,Math.round(cur.current*STILLS_PER_SEC)));
+          const dpr=Math.min(2,devicePixelRatio||1),W=Math.round(st.clientWidth*dpr),H=Math.round(st.clientHeight*dpr);
+          if(im&&(drawn.current!==im||cv.width!==W||cv.height!==H)){if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H}
+            const g=cv.getContext('2d'),k=Math.max(W/im.naturalWidth,H/im.naturalHeight),dw=im.naturalWidth*k,dh=im.naturalHeight*k;
+            g.drawImage(im,(W-dw)/2,(H-dh)/2,dw,dh);if(!drawn.current)cv.classList.add('on');drawn.current=im}}
         const t=cur.current;let c=0;for(let i=0;i<TL.ch.length;i++)if(t>=TL.ch[i])c=i;
         const h=TL.hot.findIndex(([a,b])=>t>=a-0.02&&t<=b+0.05);
         const dk=F.darkRoom?t>=TL.ch[2]:t>=TL.dark;
@@ -693,10 +729,12 @@ function FilmStudy({ctx,fk,setFk}){
   const P0=pick&&byId(pick.id);const ids=[...new Set(F.hot.map(h=>h.id))];
   return html`<section className="rh hf" ref=${secRef} style=${{height:'calc(7.5 * 100svh)'}} aria-label=${F.name+' film'}>
     <div className=${'hf-stage'+(dark?' night':'')} ref=${stageRef} onClick=${()=>setPick(null)}>
-      <video ref=${vidRef} className="hf-video" src=${`f/${fk}/film.mp4`} poster=${`f/${fk}/poster.jpg`} muted playsInline preload="auto" aria-hidden="true" onLoadedData=${()=>setReady(true)}></video>
+      <img className="hf-video" src=${phone?stillUrl(fk,0):`f/${fk}/poster.jpg`} alt="" fetchpriority="high" aria-hidden="true"/>
+      ${phone?html`<canvas ref=${cvRef} className="hf-video hf-fade" aria-hidden="true"></canvas>`
+        :html`<video ref=${vidRef} className=${'hf-video hf-fade'+(ready?' on':'')} src=${`f/${fk}/film.mp4`} muted playsInline preload="none" aria-hidden="true" onLoadedData=${()=>setReady(true)}></video>`}
       <div className="hf-scrim" aria-hidden="true"></div>
       ${hot>=0&&F.hot.map((h,i)=>{const x=ox+h.x*mw,y=oy+h.y*mh;if(x<12||x>box.w-12||y<90||y>box.h-12)return null;const p=byId(h.id);return html`<button key=${hot+'-'+i} className="fs-hot" style=${{left:x+'px',top:y+'px',animationDelay:i*90+'ms'}} aria-label=${'View '+p.name} onClick=${e=>{e.stopPropagation();setPick({id:h.id,x:x/box.w*100,y:y/box.h*100})}}><i></i><span>${p.name}</span></button>`})}
-      <div className="hf-copy" onClick=${e=>e.stopPropagation()}>
+      <div className=${'hf-copy'+(fromShell&&chi===0?' still':'')} onClick=${e=>e.stopPropagation()}>
         <h1 key=${'h'+fk+chi}>${ch[0]}</h1>
         <p key=${'p'+fk+chi}>${ch[1]}</p>
         ${chi>=3&&html`<div className="hf-cta"><button className="hf-btn solid" onClick=${()=>{ids.forEach(id=>ctx.addToTray(id,1,null,true));ctx.toast(ids.length+' pieces added to '+ctx.activeProject.name,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Shop the room</button><button className="hf-btn" onClick=${()=>ctx.toStudio(ids,F.name)}>Open in Studio</button></div>`}
@@ -998,9 +1036,9 @@ function Footer({ctx}){
   return html`<footer className="wrap">
     <div><span className="logo"><b>House of Louie Mae</b></span><p className="mute" style=${{marginTop:10,maxWidth:'36ch',fontSize:14}}>The trade and partner floor of Louie Mae. Furniture for cafés, restaurants, bars, workspaces and model homes.</p>
       <form onSubmit=${ev=>{ev.preventDefault();if(e.includes('@'))setOk(true)}} className="row" style=${{marginTop:16,maxWidth:360}}>${ok?html`<span style=${{fontSize:14}}>${I('check',{width:16})} You're on the list for new arrivals.</span>`:html`<input className="field" style=${{height:40}} type="email" placeholder="Work email" aria-label="Work email" value=${e} onInput=${x=>setE(x.target.value)}/><button className="btn btn-ink btn-sm">Join</button>`}</form></div>
-    <div><h4>Shop</h4>${['discover','studio','room','quiz'].map(r=>html`<button key=${r} onClick=${()=>ctx.go(r)}>${MENU.find(m=>m[0]===r)[1]}</button>`)}</div>
-    <div><h4>Trade</h4><button onClick=${()=>ctx.go('trade')}>Apply</button><button onClick=${()=>ctx.go('hub')}>Your quotes</button><button onClick=${()=>ctx.setTray(true)}>Project tray</button></div>
-    <div><h4>You</h4><button onClick=${()=>ctx.go('profile')}>Profile</button><button onClick=${()=>ctx.go('account')}>Account</button></div>
+    <div><h2>Shop</h2>${['discover','studio','room','quiz'].map(r=>html`<button key=${r} onClick=${()=>ctx.go(r)}>${MENU.find(m=>m[0]===r)[1]}</button>`)}</div>
+    <div><h2>Trade</h2><button onClick=${()=>ctx.go('trade')}>Apply</button><button onClick=${()=>ctx.go('hub')}>Your quotes</button><button onClick=${()=>ctx.setTray(true)}>Project tray</button></div>
+    <div><h2>You</h2><button onClick=${()=>ctx.go('profile')}>Profile</button><button onClick=${()=>ctx.go('account')}>Account</button></div>
   </footer>`;
 }
 

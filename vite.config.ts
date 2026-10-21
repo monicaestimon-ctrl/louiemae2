@@ -5,8 +5,8 @@ import { prelaunchPlugin } from './prelaunch/build';
 import { furniturePlugin } from './furniture/build';
 
 /**
- * Inlines the storefront's stylesheet into index.html. The page paints its hero from
- * HTML alone, and an inline stylesheet saves the round trip that would otherwise hold
+ * Inlines each page's stylesheet into its HTML. Both pages paint their hero from HTML
+ * alone, and an inline stylesheet saves the round trip that would otherwise hold
  * that first paint back on a phone connection.
  */
 function inlineEntryCss(pages: string[]): Plugin {
@@ -34,7 +34,7 @@ export default defineConfig(() => {
         port: 3000,
         host: '0.0.0.0',
       },
-      plugins: [furniturePlugin(), prelaunchPlugin(), react(), inlineEntryCss(['index.html'])],
+      plugins: [furniturePlugin(), prelaunchPlugin(), react(), inlineEntryCss(['index.html', 'trade/index.html'])],
       build: { rollupOptions: { input: { main: path.resolve(__dirname, 'index.html'), furniture: path.resolve(__dirname, 'furniture/index.html'), trade: path.resolve(__dirname, 'trade/index.html') } } },
       resolve: {
         alias: {

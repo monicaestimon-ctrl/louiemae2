@@ -71,12 +71,20 @@ Each step ships as its own pull request, reviewed and merged before the next.
 Result (local): mobile 99 / 100 / 100 / 100 (FCP 1.2 s), desktop 100 / 100 / 100 / 100.
 
 ### Step 2 — Trade hero on phones
-- Phones get a scroll-scrubbed frame sequence (portrait crops of each film, WebP,
-  progressively loaded) drawn to a canvas: works on every iOS version, Low Power Mode
-  included, at a fraction of the bytes.
-- Desktop keeps the film, loaded only when the hero is on screen; the poster is a real
-  image that paints first.
-- The hero shell paints from HTML while the catalog loads.
+- Phones scrub a still sequence (3:4 crops of each film, four per second, WebP, loaded
+  coarse-to-fine; `scripts/build-film-frames.mjs`) drawn to a canvas. Works on every iOS
+  version, Low Power Mode included; about 3 MB per room instead of 13 MB.
+- Desktop keeps the film, fetched once the page has loaded; the poster is a real image and
+  the film fades in only when it can draw a frame, so the hero is never black.
+- `body{margin:0}`: removes the 8 px frame around the whole trade site.
+- The space picker clears the phone tab bar.
+- The opening frame, header and headline paint from HTML while the app and catalog load;
+  the app starts after first paint and removes the shell in the same frame it renders.
+- Fonts self-hosted (Newsreader, DM Sans), with a 20 KB static cut for the first-paint
+  headline, a 2 KB cut of the wordmark, and metric-matched fallbacks; stylesheet inlined.
+
+Result (local): mobile 99–100 / 100 / 100 / 100 (FCP 1.1 s, LCP 1.5 s), desktop
+100 / 100 / 100 / 100.
 
 ### Step 3 — Storefront mobile experience
 - Newsletter as a bottom sheet that appears after engagement, respects safe areas and
@@ -85,13 +93,16 @@ Result (local): mobile 99 / 100 / 100 / 100 (FCP 1.2 s), desktop 100 / 100 / 100
 - Header, menu and hero tuned for `svh`/safe areas; 44 px touch targets; product sheet
   and cart drawer full-height on phones.
 
-### Step 4 — Trade performance, accessibility and polish
-- Self-hosted fonts, inlined/critical CSS, responsive cutouts.
-- Accessibility (heading order, names, contrast) to 100.
+### Step 4 — Trade polish
+- Responsive cutouts and scenes for phones.
+- Accessibility across the other trade pages (heading order, names, contrast).
 - Phone pass over Discover, Studio, Boards, Tray, product sheets and the menu.
 
 ## Keeping it at 100
 - Re-run `node scripts/optimize-images.mjs` after adding brand images and commit the
   output; reference images by their original `/images/brand/...` path.
-- The home hero in `index.html` mirrors `components/HomePage.tsx`; change both together.
+- The home hero in `index.html` mirrors `components/HomePage.tsx`, and the trade shell in
+  `trade/index.html` mirrors `Header`/`FilmStudy` in `trade/app.ts`; change them together.
+- New or re-cut hero films: run `node scripts/build-film-frames.mjs <film>` and commit the
+  frames.
 - New pages: import them with `lazy()` in `App.tsx`.
