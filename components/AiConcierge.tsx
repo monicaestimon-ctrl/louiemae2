@@ -56,23 +56,23 @@ export const AiConcierge: React.FC = () => {
   };
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+    <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 md:bottom-6 md:right-6 z-50 flex flex-col items-end">
       {/* Chat Window */}
       {isOpen && (
-        <div className="glass-panel w-[90vw] md:w-96 h-[500px] mb-4 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-fade-in-up">
+        <div role="dialog" aria-label="Louie Mae concierge" className="glass-panel w-[calc(100vw-2rem)] sm:w-96 h-[min(500px,calc(100svh-7.5rem))] mb-3 md:mb-4 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-fade-in-up">
           {/* Header */}
           <div className="bg-earth text-cream p-4 flex justify-between items-center">
             <div className="flex items-center gap-2">
               <MessageSquare className="w-4 h-4 text-bronze" />
               <h3 className="font-serif text-lg tracking-wide">Concierge</h3>
             </div>
-            <button onClick={() => setIsOpen(false)} className="hover:text-bronze transition-colors">
+            <button onClick={() => setIsOpen(false)} aria-label="Close the concierge" className="-mr-2 p-2 hover:text-bronze transition-colors">
               <X className="w-5 h-5" />
             </button>
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-cream/50" ref={scrollRef}>
+          <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-4 bg-cream/50" ref={scrollRef}>
             {messages.map((msg, idx) => (
               <div
                 key={idx}
@@ -107,11 +107,14 @@ export const AiConcierge: React.FC = () => {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                 placeholder="Ask about decor, sizing, or styling..."
-                className="w-full bg-cream-dark/50 border border-sand rounded-full py-3 pl-4 pr-12 text-sm text-earth focus:outline-none focus:border-bronze transition-colors placeholder:text-earth/40"
+                aria-label="Ask the concierge"
+                enterKeyHint="send"
+                className="w-full bg-cream-dark/50 border border-sand rounded-full py-3 pl-4 pr-12 text-base sm:text-sm text-earth focus:outline-none focus:border-bronze transition-colors placeholder:text-earth/40"
               />
               <button
                 onClick={handleSend}
                 disabled={isLoading}
+                aria-label="Send"
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-earth rounded-full text-white hover:bg-bronze transition-colors disabled:opacity-50"
               >
                 <Send className="w-3 h-3" />
@@ -126,7 +129,7 @@ export const AiConcierge: React.FC = () => {
         onClick={() => setIsOpen(!isOpen)}
         aria-label={isOpen ? 'Close the concierge' : 'Ask the Louie Mae concierge'}
         aria-expanded={isOpen}
-        className="group relative flex items-center justify-center w-14 h-14 bg-earth text-white rounded-full shadow-lg hover:bg-bronze transition-all duration-300 hover:scale-105"
+        className="group relative flex items-center justify-center w-[52px] h-[52px] md:w-14 md:h-14 bg-earth text-white rounded-full shadow-lg hover:bg-bronze transition-all duration-300 hover:scale-105"
       >
         <div className="absolute inset-0 bg-white/10 rounded-full animate-pulse"></div>
         {isOpen ? <X className="w-6 h-6" /> : <MessageSquare className="w-6 h-6" />}

@@ -403,7 +403,7 @@ const AppContent = () => {
 
           {/* Desktop Header */}
           <header
-            className={`fixed top-0 left-0 right-0 z-40 transition-all duration-700 border-b ${scrolled ? 'bg-white/30 backdrop-blur-3xl py-3 border-white/40 shadow-[0_15px_30px_rgba(139,90,43,0.1)]' : 'bg-transparent py-6 border-transparent'
+            className={`fixed top-0 left-0 right-0 z-40 transition-all duration-700 border-b ${scrolled ? 'bg-cream/85 lg:bg-white/30 backdrop-blur-3xl py-3 border-white/40 shadow-[0_15px_30px_rgba(139,90,43,0.1)]' : 'bg-transparent py-6 border-transparent'
               }`}
           >
             <div className="w-full px-6 md:px-12 relative flex justify-between items-center min-h-[50px]">
