@@ -38,9 +38,9 @@ const CatalogUnavailable = () => <p role="status" className="py-8 text-center te
 
   // Render a product card (reusable for both preview and full grid)
   const ProductCard: React.FC<{ product: StoreCardProduct; index: number; compact?: boolean; onSelect: (product: StoreCardProduct) => void }> = ({ product, index, compact, onSelect }) => (
-    <FadeIn delay={index * 50} className="group cursor-pointer">
+    <FadeIn delay={Math.min(index, 5) * 50} className="group cursor-pointer">
       <div
-        className={`relative ${compact ? 'aspect-square' : 'aspect-[3/4]'} overflow-hidden bg-white mb-3 rounded-2xl shadow-sm hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-500 border border-white/40 group`}
+        className={`relative aspect-square overflow-hidden bg-white mb-3 rounded-2xl shadow-sm hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-500 border border-white/40 group`}
         onClick={() => onSelect(product)}
       >
         {product.isNew && !compact && (
@@ -51,7 +51,7 @@ const CatalogUnavailable = () => <p role="status" className="py-8 text-center te
         <SafeImage
           src={product.images[0]}
           alt={product.name}
-          className="w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-105"
+          className="w-full h-full object-contain"
         />
         {/* Subtle Inner Glow Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
@@ -784,7 +784,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
           <div className="sticky top-[73px] z-30 bg-gradient-to-r from-[#1a130a]/95 via-[#2d1f12]/95 to-[#1a130a]/95 backdrop-blur-3xl border-b border-white/10 px-4 md:px-8 py-4 transition-all duration-300 shadow-xl">
             <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
             <div className="container mx-auto flex flex-col md:flex-row justify-between items-center gap-4 relative z-10">
-              <div className="flex items-center gap-4 md:gap-6 overflow-x-auto no-scrollbar w-full md:w-auto pb-2 md:pb-0">
+              <div className="flex min-w-0 md:flex-1 items-center gap-3 overflow-x-auto no-scrollbar w-full md:w-auto pb-2 md:pb-0">
                 <button
                   onClick={() => handleCategoryChange(getBackDestination())}
                   className="whitespace-nowrap text-[10px] uppercase tracking-widest text-cream/50 hover:text-cream flex items-center gap-1 group transition-colors"
@@ -810,7 +810,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
               <div className="flex items-center gap-2 ml-auto md:ml-0 bg-white/5 border border-white/10 px-3 py-1.5 rounded-full backdrop-blur-md">
                 <span className="text-[10px] uppercase tracking-widest text-cream/50">Sort By:</span>
                 <select
-                  value={sortOption}
+                  aria-label="Sort products" value={sortOption}
                   onChange={(e) => setSortOption(e.target.value as 'newest' | 'price-asc' | 'price-desc')}
                   className="bg-transparent text-[10px] uppercase tracking-widest text-bronze focus:outline-none cursor-pointer appearance-none ml-1 font-medium"
                 >
@@ -863,9 +863,13 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-10">
                   {filteredProducts.map((product, idx) => (
-                    <FadeIn key={product.id} delay={idx * 50} className="group cursor-pointer">
+                    <FadeIn key={product.id} delay={Math.min(idx, 5) * 50} className="group min-w-0">
                       <div
-                        className="relative aspect-[3/4] overflow-hidden bg-white mb-4 rounded-sm"
+                        className={`relative ${collection === 'furniture' || collection === 'decor' ? 'aspect-square' : 'aspect-[3/4]'} overflow-hidden bg-[#f3efe8] mb-4 rounded-sm`}
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`View ${product.name}`}
+                        onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); handleSelectProduct(product); } }}
                         onClick={() => handleSelectProduct(product)}
                       >
                         {product.isNew && (
@@ -873,7 +877,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                             New
                           </span>
                         )}
-                        {product.variantCount > 0 && (
+                        {product.variantCount > 1 && (
                           <span className="absolute top-3 right-3 bg-bronze/90 px-2 py-1 text-[9px] uppercase tracking-widest text-white z-10 rounded-sm">
                             Multiple Options
                           </span>
@@ -881,24 +885,24 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                         <SafeImage
                           src={product.images[0]}
                           alt={product.name}
-                          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                          className="w-full h-full object-contain"
                         />
                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors"></div>
-                        <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-full group-hover:translate-y-0 transition-transform duration-300">
-                          <button className="w-full bg-white/90 backdrop-blur-sm text-earth py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-earth hover:text-white transition-colors shadow-lg">
+                        <div className="absolute bottom-0 left-0 right-0 p-3 opacity-100 md:opacity-0 md:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200">
+                          <span className="block text-center w-full bg-white/90 backdrop-blur-sm text-earth py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-earth hover:text-white transition-colors shadow-lg">
                             Quick View
-                          </button>
+                          </span>
                         </div>
                       </div>
 
-                      <div className="flex justify-between items-start">
-                        <div>
+                      <div className="flex flex-col gap-2">
+                        <div className="min-w-0">
                           <h3 className="font-serif text-lg text-earth leading-tight mb-1 group-hover:text-bronze transition-colors">
                             {product.name}
                           </h3>
                           <p className="text-[10px] uppercase tracking-widest text-earth/50">{product.category}</p>
                         </div>
-                        {!product.inStock && <span className="text-xs text-bronze">Coming Soon · </span>}<span className="font-serif italic text-earth text-lg">${product.price}</span>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="text-sm text-earth whitespace-nowrap">${product.price.toLocaleString('en-US')}</span>{!product.inStock && <span className="text-xs text-bronze">Coming Soon</span>}</div>
                       </div>
                     </FadeIn>
                   ))}
@@ -936,7 +940,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
               <SafeImage
                 src={selectedVariant?.image || (activeImageGroupKey && activeImageGroupKey !== NO_IMAGE_KEY ? activeImageGroupKey : selectedProduct.images[0])}
                 alt={selectedProduct.name}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain"
               />
             </div>
             <div className="w-full md:w-1/2 flex-1 min-h-0 p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:p-10 overflow-y-auto overscroll-contain bg-cream flex flex-col">

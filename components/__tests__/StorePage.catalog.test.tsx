@@ -40,6 +40,14 @@ describe('store catalog integration', () => {
     expect(screen.getByText('Loading product details…')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Close' })); expect(mocks.detail).toHaveBeenLastCalledWith(null);
   });
+  it('does not call a single variant multiple options and supports keyboard product opening', () => {
+    mocks.products = [{ id: 'single', name: 'One sofa', images: ['image'], price: 2889, category: 'Sofas', isNew: false, variantCount: 1, inStock: true }];
+    render(<StorePage collection="kids" initialCategory="All" forceProductView />);
+    expect(screen.queryByText('Multiple Options')).toBeNull();
+    expect(screen.getByText('$2,889')).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole('button', { name: 'View One sofa' }), { key: 'Enter' });
+    expect(mocks.detail).toHaveBeenLastCalledWith('single');
+  });
   it('shows unavailable state without false Coming Soon or a legacy product subscription', () => {
     mocks.ready = false;
     render(<StorePage collection="kids" initialCategory="Dresses" />);
