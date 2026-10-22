@@ -10,6 +10,8 @@
 //
 // Writes public/trade/f/<film>/b/{plan,room,full}.webp, mask.png (R = piece number, G = alpha)
 // and meta.json. Needs Google Chrome or Microsoft Edge (H.264 decode); set CHROME to override.
+// Then run build-film-sketches.mjs: it outlines each object afresh (replacing objects.png and
+// meta.objects) and draws them.
 import { spawn } from 'node:child_process';
 import { Buffer } from 'node:buffer';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';

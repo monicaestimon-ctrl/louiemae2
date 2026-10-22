@@ -638,7 +638,7 @@ function RoomStudy({ctx}){
 const FILMS={
   bar:{space:'bar',name:'Navy & Brass',sub:'Cocktail bar',darkRoom:true,TL:{"total":21.125,"ch":[0,2.35,6.333,10.133,16.665],"hot":[[14.125,16.125],[19.708,21.125]],"dark":17.925,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
     hot:[{id:14,x:.727,y:.742},{id:14,x:.162,y:.566},{id:5,x:.765,y:.47},{id:16,x:.088,y:.625}],
-    ch:[['Every room starts as a line.','The floor at true scale, with every Louie piece drawn in.'],['Then the walls go up.','A clay study model, low sun through the windows.'],['Navy, marble, brass.','Lacquer, stone and a faceted brass ceiling.'],['Cognac against navy.','The Rory, the Osborne and the Marlowick. Tap any piece.'],['Then the lamps take over.','The room people stay in after dark.']]},
+    ch:[['Every room starts as a line.','The floor at true scale, with every Louie piece drawn in.'],['Then the walls go up.','Drawn in pencil first, low sun through the windows.'],['Navy, marble, brass.','Lacquer, stone and a faceted brass ceiling.'],['Cognac against navy.','The Rory, the Osborne and the Marlowick. Tap any piece.'],['Then the lamps take over.','The room people stay in after dark.']]},
   'cafe-paris':{space:'cafe',name:'Maison Rose',sub:'Patisserie salon',TL:{"total":21.125,"ch":[0,2.35,6.333,10.133,16.665],"hot":[[14.125,16.125],[19.708,21.125]],"dark":17.925,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
     hot:[{id:4,x:.52,y:.46},{id:14,x:.485,y:.555},{id:11,x:.615,y:.27}],
     ch:[['A salon, drawn to scale.','Twelve by eight metres of Paris.'],['Boiserie in clay.','Panelled walls and tall French windows.'],['Blush, terrazzo, walnut.','Plaster, rosso-bordered terrazzo and a fluted vitrine.'],['Olive velvet, tan leather.','The Bellamere, the Rory and the Aurelia. Tap any piece.'],['Globes on, street lamps out.','The salon carries on into the evening.']]},
@@ -656,7 +656,7 @@ const FILMS={
     ch:[['A studio built around samples.','Twenty-two by fourteen metres, with a mezzanine library.'],['The double height rises.','Skylights, steel windows and a spiral stair.'],['Oak, plaster, terracotta.','White oak, warm plaster and a terracotta stair.'],['Tan leather, olive velvet.','Two Westcotts, the Bellamere and the Kensley. Tap any piece.'],['Lanterns over the worktables.','The studio after hours.']]},
   'work-loft':{space:'work',name:'Brick Loft',sub:'Warehouse studio',TL:{"total":21.125,"ch":[0,2.35,6.333,10.133,16.665],"hot":[[14.125,16.125],[19.708,21.125]],"dark":17.925,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
     hot:[{id:2,x:.27,y:.6},{id:16,x:.45,y:.73},{id:13,x:.82,y:.7}],
-    ch:[['A warehouse, re-drawn.','Twenty by twelve metres of studio.'],['Trusses and factory glass.','The shell, as a clay study model.'],['Brick, steel, concrete.','Red brick, black steel and polished concrete.'],['Cognac against brick.','The Roscoe, the Marlowick and the Montrose. Tap any piece.'],['The cobalt pendant comes on.','City lights fill the windows.']]},
+    ch:[['A warehouse, re-drawn.','Twenty by twelve metres of studio.'],['Trusses and factory glass.','The shell, drawn in pencil first.'],['Brick, steel, concrete.','Red brick, black steel and polished concrete.'],['Cognac against brick.','The Roscoe, the Marlowick and the Montrose. Tap any piece.'],['The cobalt pendant comes on.','City lights fill the windows.']]},
   'home-estate':{space:'staging',name:'Mediterranean Estate',sub:'Great room',TL:{"total":21.125,"ch":[0,2.35,6.333,10.133,16.665],"hot":[[14.125,16.125],[19.708,21.125]],"dark":17.925,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
     hot:[{id:6,x:.58,y:.62},{id:10,x:.8,y:.83},{id:13,x:.3,y:.47}],
     ch:[['A great room, to scale.','Sixteen by eleven metres around a limestone hearth.'],['Double height in clay.','Steel windows, an arched niche, the range hood.'],['Limestone and bronze.','Honed stone, warm plaster, walnut and aged bronze.'],['Cognac velvet on jute.','The Osborne, the Kensley and the Montrose. Tap any piece.'],['Firelight and the niche glow.','The house after dark.']]},
@@ -682,15 +682,15 @@ function loadStills(fk,n){
 }
 const nearestStill=(imgs,i)=>{for(let d=0;d<imgs.length;d++){if(imgs[i-d])return imgs[i-d];if(imgs[i+d])return imgs[i+d]}return null};
 // The first part of every film is replaced by a build painted live (trade/filmBuild.ts): the
-// room is drawn, raised in clay, furnished piece by piece and finished, then the film takes over
+// room is drawn, every piece is drawn in its place, then everything is finished, and the film takes over
 // from the furnished frame for the hotspots and the night. BUILD_SECS is how much scroll the
 // build gets, in film seconds. If its layers fail to load, the whole film plays as before.
 const BUILD_SECS=12;
-const BUILD_CH=['Then each piece takes shape.','Drawn, framed in timber and formed in clay, in its place.'];
+const BUILD_CH=['Then every piece is drawn in.','Each one on its own, in its place, before it is made.'];
 /** Scroll timeline for a film with the build in front: chapter starts and copy, in scroll seconds. */
 function buildTimeline(F){const TL=F.TL,tf=TL.hot[0][0]+0.4,S=BUILD_SECS;
   return {tf,total:S+TL.total-tf,
-    ch:[0,(BUILD.lines[0]+0.02)*S,(BUILD.pieces[0]+0.02)*S,BUILD.finish[0]*S,BUILD.dress[0]*S,S+TL.ch[4]-tf],
+    ch:[0,(BUILD.lines[0]+0.02)*S,(BUILD.pieces[0]+0.02)*S,BUILD.finish[0]*S,(BUILD.finish[0]+BUILD.finish[1])/2*S,S+TL.ch[4]-tf],
     copy:[F.ch[0],F.ch[1],BUILD_CH,F.ch[2],F.ch[3],F.ch[4]],shop:4,
     dark:(BUILD.finish[0]+BUILD.finish[1])/2*S}}
 
