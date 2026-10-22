@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
 import { ArrowLeft, Calendar, Clock, Share2, Facebook, Twitter, Link2, Mail, MessageCircle, Check, X } from 'lucide-react';
+import { responsiveImage } from '../lib/responsiveImage';
 
 interface BlogPostViewProps {
     postId: string;
@@ -135,7 +136,9 @@ export const BlogPostView: React.FC<BlogPostViewProps> = ({ postId }) => {
                 <div className="w-full aspect-[16/9] md:aspect-[3/1] overflow-hidden relative">
                     <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-cream z-10" />
                     <img
-                        src={post.image}
+                        loading="lazy"
+                        decoding="async"
+                        {...responsiveImage(post.image, '100vw')}
                         alt={post.title}
                         className="w-full h-full object-cover"
                     />

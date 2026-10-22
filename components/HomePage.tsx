@@ -1,8 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FadeIn } from './FadeIn';
 import { GlassButton } from './ui/GlassButton';
-import { FASHION_CATEGORIES, KIDS_CATEGORIES } from '../constants';
+import { FASHION_CATEGORIES, KIDS_CATEGORIES, INITIAL_SITE_CONTENT } from '../constants';
 import { useSite } from '../contexts/BlogContext';
 import { useNewsletter } from '../contexts/NewsletterContext';
 import type { ProductVariant, CollectionConfig } from '../types';
@@ -15,12 +15,21 @@ import { AddToCartButton } from './cart/AddToCartButton';
 import { X, ArrowUpRight, Check } from 'lucide-react';
 import { DynamicSectionRenderer } from './DynamicPage';
 import { SafeImage } from './SafeImage';
+import { responsiveImage } from '../lib/responsiveImage';
 
+const DEFAULT_HERO_IMAGE = INITIAL_SITE_CONTENT.home.hero.image;
 const furnitureFallback: CollectionConfig = { id: 'furniture', title: 'Furniture', subtitle: '', heroImage: '', subcategories: [] };
 
 export const HomePage: React.FC = () => {
   const { siteContent, isLoading } = useSite();
+  const [heroLoaded, setHeroLoaded] = useState(false);
+  // The HTML shell already played the entrance; don't replay it when the app takes over.
+  const [fromShell] = useState(() => document.documentElement.dataset.shell === 'home');
+  const heroEnter = fromShell ? '' : 'motion-safe:animate-hero-in';
+  const heroRise = fromShell ? '' : 'motion-safe:animate-hero-rise';
   const { home } = siteContent;
+  const savedHero = isLoading ? undefined : home.hero.image;
+  useEffect(() => { delete document.documentElement.dataset.shell; }, []);
   const { addSubscriber } = useNewsletter();
   const readiness = useQuery(api.catalogReadiness.status, {});
   const furniture = siteContent.collections.find(collection => collection.id === 'furniture') ?? furnitureFallback;
@@ -67,34 +76,40 @@ export const HomePage: React.FC = () => {
   return (
     <>
       {/* Hero Section */}
-      <section className="relative h-screen w-full overflow-hidden">
-        <div className="absolute inset-0 bg-black/20 z-10"></div>
+      <section className="relative h-screen h-svh w-full overflow-hidden bg-[#d4c9b8]">
+        {/* index.html paints this same hero before the app loads; the default photo stays
+            underneath and a saved replacement fades in over it once it has downloaded. */}
         <img
-          key={home.hero.image || 'hero'}
-          src={home.hero.image}
+          {...responsiveImage(DEFAULT_HERO_IMAGE, '100vw')}
           alt="Interior"
           loading="eager"
           fetchPriority="high"
-          className="absolute inset-0 w-full h-full object-cover transition-transform duration-[20s] hover:scale-105"
-          style={{ backgroundColor: '#d4c9b8' }}
+          className="absolute inset-0 w-full h-full object-cover"
         />
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-center px-4">
-          <FadeIn>
-            <p className="text-white/90 text-sm md:text-base uppercase tracking-[0.3em] mb-6">{home.hero.pretitle}</p>
-          </FadeIn>
-          <FadeIn delay={200}>
-            <h2 className="font-serif text-5xl md:text-7xl lg:text-8xl text-cream leading-tight mb-8 drop-shadow-lg max-w-5xl">
-              {home.hero.titleLine1}<br />
-              <span className="italic">{home.hero.titleLine2}</span>
-            </h2>
-          </FadeIn>
-          <FadeIn delay={400}>
+        {savedHero && savedHero !== DEFAULT_HERO_IMAGE && (
+          <img
+            key={savedHero}
+            {...responsiveImage(savedHero, '100vw')}
+            alt=""
+            ref={(el) => { if (el?.complete && el.naturalWidth) setHeroLoaded(true); }}
+            onLoad={() => setHeroLoaded(true)}
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-[1200ms] ${heroLoaded ? 'opacity-100' : 'opacity-0'}`}
+          />
+        )}
+        <div className="absolute inset-0 bg-black/20 z-10"></div>
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-center px-6">
+          <p className={`${heroEnter} text-white/90 text-xs md:text-base uppercase tracking-[0.3em] mb-6`}>{home.hero.pretitle}</p>
+          <h2 className={`${heroRise} font-serif text-[2.75rem] sm:text-5xl md:text-7xl lg:text-8xl text-cream leading-[1.08] mb-10 drop-shadow-lg max-w-5xl text-balance`}>
+            {home.hero.titleLine1}<br />
+            <span className="italic">{home.hero.titleLine2}</span>
+          </h2>
+          <div className={`${heroEnter} [animation-delay:300ms]`}>
             <GlassButton
               onClick={() => navigateTo('#collection/new')}
             >
               New Collection
             </GlassButton>
-          </FadeIn>
+          </div>
         </div>
       </section>
 
@@ -121,7 +136,9 @@ export const HomePage: React.FC = () => {
               className="relative group cursor-pointer aspect-[4/3] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
-                src={home.categoryImages.furniture}
+                loading="lazy"
+                decoding="async"
+                {...responsiveImage(home.categoryImages.furniture, '(min-width: 1024px) 50vw, 100vw')}
                 alt="Furniture"
                 className="w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-105"
               />
@@ -138,7 +155,9 @@ export const HomePage: React.FC = () => {
               className="relative group cursor-pointer aspect-[4/3] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
-                src={home.categoryImages.decor}
+                loading="lazy"
+                decoding="async"
+                {...responsiveImage(home.categoryImages.decor, '(min-width: 1024px) 50vw, 100vw')}
                 alt="Decor"
                 className="w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-105"
               />
@@ -158,7 +177,9 @@ export const HomePage: React.FC = () => {
               className="relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
-                src={home.categoryImages.fashion}
+                loading="lazy"
+                decoding="async"
+                {...responsiveImage(home.categoryImages.fashion, '(min-width: 1024px) 50vw, 100vw')}
                 alt="The Mae Collective"
                 className="w-full h-full object-cover object-top transition-transform duration-[1.5s] group-hover:scale-105"
               />
@@ -175,7 +196,9 @@ export const HomePage: React.FC = () => {
               className="relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
-                src={home.categoryImages.kids}
+                loading="lazy"
+                decoding="async"
+                {...responsiveImage(home.categoryImages.kids, '(min-width: 1024px) 50vw, 100vw')}
                 alt="Louie Kids & Co."
                 className="w-full h-full object-cover object-top transition-transform duration-[1.5s] group-hover:scale-105"
               />
@@ -192,7 +215,9 @@ export const HomePage: React.FC = () => {
               className="relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
-                src={home.categoryImages.journal}
+                loading="lazy"
+                decoding="async"
+                {...responsiveImage(home.categoryImages.journal, '(min-width: 1024px) 50vw, 100vw')}
                 alt="Blog"
                 className="w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-105"
               />
@@ -231,19 +256,21 @@ export const HomePage: React.FC = () => {
                   className="relative aspect-[3/4] overflow-hidden rounded-2xl mb-4 shadow-md group-hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] group-hover:-translate-y-2 transition-all duration-500 border border-white/40"
                 >
                   <img
-                    src={cat.image}
+                    loading="lazy"
+                    decoding="async"
+                    {...responsiveImage(cat.image, '(min-width: 1024px) 50vw, 100vw')}
                     alt={cat.title}
                     className="w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-105"
                   />
                   {/* Subtle Inner Glow Overlay */}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
                 </div>
-                <h4
+                <h3
                   onClick={() => navigateTo(`#collection/fashion?cat=${encodeURIComponent(cat.title)}`)}
                   className="font-serif text-lg md:text-xl text-earth group-hover:text-bronze transition-colors px-1"
                 >
                   {cat.title}
-                </h4>
+                </h3>
               </FadeIn>
             ))}
           </div>
@@ -261,9 +288,9 @@ export const HomePage: React.FC = () => {
             <h3 className="font-serif text-lg md:text-xl text-earth italic">Recommended Products</h3>
           </FadeIn>
 
-          {(isLoading || readiness === undefined || recommendations.loading) && <p role="status" className="text-center text-earth/60 mb-6">Loading recommendations…</p>}
-          {readiness !== undefined && !readiness.ready && <p role="status" className="text-center text-earth/60 mb-6">Products are temporarily unavailable. Please check back shortly.</p>}
-          {recommendations.complete && recommendations.products.length === 0 && <p className="text-center text-earth/60 mb-6">New pieces are coming soon.</p>}
+          {(isLoading || readiness === undefined || recommendations.loading) && <p role="status" className="text-center text-earth/80 mb-6">Loading recommendations…</p>}
+          {readiness !== undefined && !readiness.ready && <p role="status" className="text-center text-earth/80 mb-6">Products are temporarily unavailable. Please check back shortly.</p>}
+          {recommendations.complete && recommendations.products.length === 0 && <p className="text-center text-earth/80 mb-6">New pieces are coming soon.</p>}
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
             {recommendations.products.map((product, idx) => (
               <FadeIn key={product.id} delay={idx * 100} className="group cursor-pointer">
@@ -306,7 +333,7 @@ export const HomePage: React.FC = () => {
         <div className="container mx-auto">
           <FadeIn className="text-center mb-16">
             <h2 className="font-serif text-3xl md:text-5xl text-earth leading-tight mb-4">Louie Kids & Co.</h2>
-            <p className="font-sans text-earth/70 text-sm tracking-widest uppercase">
+            <p className="font-sans text-earth/80 text-sm tracking-widest uppercase">
               Shop Our Curated Kids Selection
             </p>
           </FadeIn>
@@ -331,7 +358,7 @@ export const HomePage: React.FC = () => {
                         srcSet="/images/brand/girls-dress1.png"
                       />
                       <img
-                        src={cat.image}
+                        {...responsiveImage(cat.image, '(min-width: 1024px) 50vw, 100vw')}
                         alt={cat.title}
                         loading="lazy"
                         decoding="async"
@@ -340,7 +367,7 @@ export const HomePage: React.FC = () => {
                     </picture>
                   ) : (
                     <img
-                      src={cat.image}
+                      {...responsiveImage(cat.image, '(min-width: 1024px) 50vw, 100vw')}
                       alt={cat.title}
                       loading="lazy"
                       decoding="async"
@@ -383,7 +410,9 @@ export const HomePage: React.FC = () => {
 
           <FadeIn delay={200} className="w-full max-w-4xl overflow-hidden rounded-2xl shadow-lg">
             <img
-              src={home.brand.image}
+              loading="lazy"
+              decoding="async"
+              {...responsiveImage(home.brand.image, '(min-width: 1024px) 50vw, 100vw')}
               alt="Louie Mae Signature Interior"
               className="w-full h-auto object-cover transition-transform duration-[30s] hover:scale-105"
             />
@@ -420,20 +449,24 @@ export const HomePage: React.FC = () => {
 
           <form className="max-w-xl mx-auto space-y-8" onSubmit={handleSubscribe}>
             <div className="text-left group relative">
-              <label className="block font-serif text-xl text-cream/90 mb-2 pl-4 transition-colors group-focus-within:text-bronze">First Name</label>
+              <label htmlFor="home-letter-name" className="block font-serif text-xl text-cream/90 mb-2 pl-4 transition-colors group-focus-within:text-bronze">First Name</label>
               <div className="absolute -inset-0.5 bg-gradient-to-r from-bronze/0 via-bronze/20 to-bronze/0 rounded-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-500 blur-sm"></div>
               <input
+                id="home-letter-name"
                 type="text"
+                autoComplete="given-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="w-full relative bg-white/5 backdrop-blur-md border border-white/10 rounded-xl py-4 px-6 text-cream focus:outline-none focus:border-bronze focus:bg-white/10 transition-all font-sans text-lg shadow-[inset_0_2px_10px_rgba(0,0,0,0.2)]"
               />
             </div>
             <div className="text-left group relative">
-              <label className="block font-serif text-xl text-cream/90 mb-2 pl-4 transition-colors group-focus-within:text-bronze">Email</label>
+              <label htmlFor="home-letter-email" className="block font-serif text-xl text-cream/90 mb-2 pl-4 transition-colors group-focus-within:text-bronze">Email</label>
               <div className="absolute -inset-0.5 bg-gradient-to-r from-bronze/0 via-bronze/20 to-bronze/0 rounded-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-500 blur-sm"></div>
               <input
+                id="home-letter-email"
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required

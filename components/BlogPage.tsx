@@ -4,6 +4,7 @@ import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
 import { useNewsletter } from '../contexts/NewsletterContext';
 import { ArrowRight, Calendar, Check } from 'lucide-react';
+import { responsiveImage } from '../lib/responsiveImage';
 
 export const BlogPage: React.FC = () => {
    // Use the hook to get dynamic posts
@@ -77,7 +78,9 @@ export const BlogPage: React.FC = () => {
                      <div className="relative aspect-[4/5] md:aspect-[21/9] overflow-hidden rounded-sm mb-10 shadow-sm">
                         <div className="absolute inset-0 bg-black/10 group-hover:bg-black/5 transition-colors z-10"></div>
                         <img
-                           src={featuredPost.image}
+                           loading="lazy"
+                           decoding="async"
+                           {...responsiveImage(featuredPost.image, '(min-width: 1024px) 50vw, 100vw')}
                            alt={featuredPost.title}
                            className="w-full h-full object-cover transition-transform duration-[1.5s] ease-out group-hover:scale-105"
                         />
@@ -126,7 +129,9 @@ export const BlogPage: React.FC = () => {
                         <div className="flex flex-col h-full" onClick={() => { window.location.hash = `#blog/${post.id}`; window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
                            <div className="aspect-[3/4] overflow-hidden rounded-sm mb-6 relative shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
                               <img
-                                 src={post.image}
+                                 loading="lazy"
+                                 decoding="async"
+                                 {...responsiveImage(post.image, '(min-width: 1024px) 50vw, 100vw')}
                                  alt={post.title}
                                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                               />

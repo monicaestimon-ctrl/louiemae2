@@ -3,6 +3,7 @@ import React from 'react';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
 import { DynamicSectionRenderer } from './DynamicPage';
+import { responsiveImage } from '../lib/responsiveImage';
 
 export const StoryPage: React.FC = () => {
    const { siteContent } = useSite();
@@ -23,7 +24,9 @@ export const StoryPage: React.FC = () => {
 
                <FadeIn delay={200} className="relative w-full overflow-hidden rounded-2xl mb-16 shadow-sm mx-auto max-w-sm">
                   <img
-                     src={story.hero.image}
+                     loading="lazy"
+                     decoding="async"
+                     {...responsiveImage(story.hero.image, '(min-width: 1024px) 50vw, 100vw')}
                      alt="Our Journey"
                      className="w-full h-auto object-contain rounded-2xl grayscale-[20%] hover:scale-[1.02] transition-transform duration-[3s] ease-out"
                   />

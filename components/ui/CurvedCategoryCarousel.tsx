@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from 'react';
+import { responsiveImage } from '../../lib/responsiveImage';
 
 interface CategoryItem {
     id: string;
@@ -161,7 +162,9 @@ export const CurvedCategoryCarousel: React.FC<CurvedCategoryCarouselProps> = ({
                             >
                                 {/* Image - fades in on load to prevent white flash */}
                                 <img
-                                    src={cat.image}
+                                    {...responsiveImage(cat.image, '(min-width: 768px) 33vw, 70vw')}
+                                    loading="lazy"
+                                    decoding="async"
                                     alt={cat.title}
                                     className="absolute inset-0 w-full h-full object-cover transition-all duration-700 group-hover:scale-110"
                                     style={{ opacity: 0 }}

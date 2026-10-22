@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { getImageProxyUrl, isHttpImageUrl, normalizeImageUrl } from '../lib/imageUrls';
+import { responsiveImage } from '../lib/responsiveImage';
 
 type SafeImageProps = Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src'> & {
   src?: string | null;
@@ -34,10 +35,14 @@ export const SafeImage: React.FC<SafeImageProps> = ({
     return fallbackSrc;
   }, [attempt, fallbackSrc, normalizedSrc, props.alt, proxyFilename]);
 
+  // Brand photography has WebP renditions; product photos pass through unchanged.
+  const responsive = attempt === 0 ? responsiveImage(displaySrc, props.sizes) : { src: displaySrc };
+
   return (
     <img
+      decoding="async"
       {...props}
-      src={displaySrc}
+      {...responsive}
       referrerPolicy={referrerPolicy}
       loading={loading}
       onError={(event) => {

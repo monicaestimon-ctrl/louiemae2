@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Mail, Check } from 'lucide-react';
 import { useNewsletter } from '../contexts/NewsletterContext';
+import { responsiveImage } from '../lib/responsiveImage';
 
 export const NewsletterPopup: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
@@ -80,7 +81,8 @@ export const NewsletterPopup: React.FC = () => {
         <div className="w-full md:w-1/2 h-44 sm:h-56 md:h-auto shrink-0 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent z-10"></div>
           <img
-            src="/images/brand/mae-collective-home.png"
+            {...responsiveImage('/images/brand/mae-collective-home.png', '(min-width: 768px) 384px, 100vw')}
+            decoding="async"
             alt="LouieMae — Curated living, designed with intention"
             className="absolute inset-0 w-full h-full object-cover object-[50%_18%] md:object-center"
           />
