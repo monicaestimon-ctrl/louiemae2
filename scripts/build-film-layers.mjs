@@ -128,8 +128,23 @@ window.build=async(film,T)=>{
   const hard=new Float32Array(N);for(let i=0;i<N;i++)hard[i]=remap.has(lab[i])?1:0;
   const soft=boxBlur(boxBlur(hard,W,H,3),W,H,3);const L2=new Uint8Array(N);for(let i=0;i<N;i++)L2[i]=remap.get(lab[i])||0;
   for(let pass=0;pass<7;pass++)for(let i=0;i<N;i++){if(L2[i])continue;const x=i%W;const n=(x>0&&L2[i-1])||(x<W-1&&L2[i+1])||(i>=W&&L2[i-W])||(i<N-W&&L2[i+W]);if(n)L2[i]=n}
+  // B: the object alone, at full detail. The piece mask above is deliberately generous (it
+  // takes in the floor, reflections and shadows the furniture brings), which is right for the
+  // reveal of the real piece but turns a clay model into a slab. Same colour test with almost
+  // no blur, gaps closed and enclosed holes filled, so the clay follows the real outline.
+  const fch=(s,k)=>{const o=new Float32Array(N);for(let i=0;i<N;i++)o[i]=s[i*4+k];return boxBlur(o,W,H,1)};
+  const fr=fch(a,0),fg=fch(a,1),fb=fch(a,2),gr=fch(b,0),gg=fch(b,1),gb=fch(b,2);
+  let ob=new Float32Array(N);
+  for(let i=0;i<N;i++){if(!L2[i])continue;const la=.3*fr[i]+.59*fg[i]+.11*fb[i],lb=.3*gr[i]+.59*gg[i]+.11*gb[i];
+    const dc=Math.hypot((fr[i]-la)-(gr[i]-lb),(fb[i]-la)-(gb[i]-lb));ob[i]=dc+T.lumaW*Math.abs(la-lb)>T.thresh*1.15?1:0}
+  {const r=Math.round(W/320);ob=boxBlur(ob,W,H,r).map(x=>x>.02?1:0);ob=boxBlur(ob,W,H,r).map(x=>x>.98?1:0);
+    const out=new Uint8Array(N),q=[];const push=i=>{if(!ob[i]&&!out[i]){out[i]=1;q.push(i)}};
+    for(let x=0;x<W;x++){push(x);push((H-1)*W+x)}for(let y=0;y<H;y++){push(y*W);push(y*W+W-1)}
+    while(q.length){const p=q.pop(),x=p%W;if(x>0)push(p-1);if(x<W-1)push(p+1);if(p>=W)push(p-W);if(p<N-W)push(p+W)}
+    for(let i=0;i<N;i++)if(!ob[i]&&!out[i]&&L2[i])ob[i]=1;
+    ob=boxBlur(ob,W,H,1)}
   const mk=new OffscreenCanvas(W,H),mg=mk.getContext('2d'),md=mg.createImageData(W,H);
-  for(let i=0;i<N;i++){const k=i*4;md.data[k]=L2[i];md.data[k+1]=Math.round(soft[i]*255);md.data[k+2]=0;md.data[k+3]=255}
+  for(let i=0;i<N;i++){const k=i*4;md.data[k]=L2[i];md.data[k+1]=Math.round(soft[i]*255);md.data[k+2]=L2[i]?Math.round(Math.min(ob[i],soft[i])*255):0;md.data[k+3]=255}
   mg.putImageData(md,0,0);
   const pad=Math.round(W/128);
   const pieces=keep.map(c=>{const x=Math.max(0,c.x-pad),y=Math.max(0,c.y-pad);return {x,y,w:Math.min(W,c.x+c.w+pad)-x,h:Math.min(H,c.y+c.h+pad)-y}});
