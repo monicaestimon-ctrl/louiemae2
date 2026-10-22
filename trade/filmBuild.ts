@@ -49,6 +49,7 @@ function clayOf(src, W, H) {
 const toCanvas = (data, W, H) => { const c = canvas(W, H); c.getContext('2d').putImageData(new ImageData(data, W, H), 0, 0); return c; };
 
 const WASH = 0.4; // how much tone the drawn room carries
+const BODY = hex('#F8F4EC'); // the lit paper of a drawn piece
 const GRAPHITE = hex('#342E28');
 // key light from the upper left and slightly in front: the shaded side is hatched
 const LIGHT = (() => { const v = [-0.55, -0.62, 0.56], m = Math.hypot(...v); return v.map((c) => c / m); })();
@@ -56,8 +57,10 @@ const LIGHT = (() => { const v = [-0.55, -0.62, 0.56], m = Math.hypot(...v); ret
 const grain = (x, y) => { const s = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453; return s - Math.floor(s); };
 
 /**
- * The tone of one object (a chair, the sofa, a table) as a pencil study: hatching that follows
- * its volume, cross-hatched where darkest, and a soft shadow on the floor. Its lines come from
+ * The tone of one object (a chair, the sofa, a table) as a solid pencil study: an opaque body of
+ * paper shaded to its form and deepening toward its edges as it turns away, so it hides the room's
+ * lines and anything behind it and reads as its own solid piece; hatching that follows its volume, cross-hatched
+ * where darkest; and a soft shadow on the floor. Its lines come from
  * its own drawing (sketch.png). The real object supplies the shading, not its look: its material
  * is divided out (each pixel against the object's own local brightness, so dark leather and pale
  * bouclé shade the same) and fine texture is smoothed away.
@@ -79,8 +82,13 @@ function tone(fullPx, objPx, W, id, b) {
   const A = nblur(Math.max(4, Math.round(W / 48)), 2);    // the material's own brightness
   const rV = Math.max(2, Math.round(W / 200)), hgt = boxBlur(boxBlur(a, w, h, rV), w, h, rV), kN = W / 48;
   const P = Math.max(5, Math.round(W / 170)); // hatch spacing
+  // how far in from the silhouette each pixel is, softly: the form turning away near its edges
+  const rE = Math.max(3, Math.round(W / 160)), deep = boxBlur(boxBlur(a, w, h, rE), w, h, rE);
+  // things on the wall (sconces, art, shelf pieces) stay lighter, so they sit back against it,
+  // and so do rugs and anything else lying flat on the floor
+  const solid = y + h <= (b.H || W * 0.5625) * 0.55 ? 0.55 : h < w * 0.45 ? 0.4 : 1;
   const hatch = (u, t, wob) => { const q = (((u + wob) % P) + P) % P, d = Math.min(q, P - q), half = 0.2 + 0.55 * t; return 1 - ss(half, half + 0.8, d); };
-  const fill = new Uint8ClampedArray(N * 4), shadow = new Uint8ClampedArray(N * 4);
+  const fill = new Uint8ClampedArray(N * 4), shadow = new Uint8ClampedArray(N * 4), body = new Uint8ClampedArray(N * 4);
   for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
     const i = yy * w + xx, o = i * 4;
     const xl = Math.max(0, xx - 1), xr = Math.min(w - 1, xx + 1), yu = Math.max(0, yy - 1), yd = Math.min(h - 1, yy + 1);
@@ -92,10 +100,15 @@ function tone(fullPx, objPx, W, id, b) {
     const form = Math.min(1.45, Math.max(0.3, at(S, i) / Math.max(0.04, at(A, i, 1))));
     const t = Math.min(1, Math.max(0, 1 - ss(0.55, 1.1, form) + 0.35 * (1 - Math.min(1, lam)) + 0.2 * ss(0.75, 1, yy / h)));
     const wob = 0.7 * Math.sin(yy * 0.19 + xx * 0.03);
-    const h1 = hatch(xx + yy, t, wob) * 0.22 * ss(0.4, 0.7, t);
-    const h2 = hatch(xx - yy, t - 0.4, -wob) * 0.18 * ss(0.75, 1, t);
+    const h1 = hatch(xx + yy, t, wob) * 0.3 * ss(0.4, 0.7, t);
+    const h2 = hatch(xx - yy, t - 0.4, -wob) * 0.24 * ss(0.75, 1, t);
     for (let e = 0; e < 3; e++) fill[o + e] = GRAPHITE[e];
     fill[o + 3] = 255 * Math.max(h1, h2) * g * ss(0.45, 0.6, shape[i]);
+    // the solid body: lit paper on the light side, a graphite wash deepening into the shade and
+    // toward the edges, where the form turns away
+    const d = 0.03 + 0.34 * t * (0.85 + 0.15 * g) + 0.16 * (1 - ss(0.45, 0.95, deep[i]));
+    for (let e = 0; e < 3; e++) body[o + e] = BODY[e] + (GRAPHITE[e] - BODY[e]) * d;
+    body[o + 3] = 255 * solid * ss(0.3, 0.55, shape[i]);
   }
   // cast shadow on the floor: the silhouette, dropped and spread, a soft smudge of graphite
   const rS = Math.max(4, Math.round(W / 110)), drop = Math.round(h * 0.03);
@@ -103,9 +116,9 @@ function tone(fullPx, objPx, W, id, b) {
   for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
     const o = (yy * w + xx) * 4, sa = sh[Math.max(0, yy - drop) * w + xx] * (0.3 + 0.7 * ss(0.5, 1, yy / h)) * (1 - ss(0.4, 0.6, shape[yy * w + xx]));
     for (let e = 0; e < 3; e++) shadow[o + e] = GRAPHITE[e];
-    shadow[o + 3] = 255 * Math.min(1, sa * 0.28 * (0.8 + 0.2 * grain(xx + x, yy + y)));
+    shadow[o + 3] = 255 * Math.min(1, sa * 0.42 * (0.8 + 0.2 * grain(xx + x, yy + y)));
   }
-  return { fill: toCanvas(fill, w, h), shadow: toCanvas(shadow, w, h) };
+  return { fill: toCanvas(fill, w, h), shadow: toCanvas(shadow, w, h), body: toCanvas(body, w, h) };
 }
 
 /**
@@ -164,7 +177,7 @@ export async function loadBuild(base) {
   const objects = [];
   for (const [n, o] of (meta.objects || []).entries()) {
     if (!pieces[o.piece - 1]) continue;
-    objects.push({ ...o, p: pieces[o.piece - 1], lines: strokes(atlasPx, atlas.naturalWidth, o.ax, o.ay, o.w, o.h, 1.35), ...tone(fullPx, objPx, W, n + 1, o), beat: grain(n * 7.1, 3.3) });
+    objects.push({ ...o, p: pieces[o.piece - 1], lines: strokes(atlasPx, atlas.naturalWidth, o.ax, o.ay, o.w, o.h, 1.35), ...tone(fullPx, objPx, W, n + 1, { ...o, H }), beat: grain(n * 7.1, 3.3) });
     if (n % 8 === 7) await breathe();
   }
   const roomC = canvas(W, H); roomC.getContext('2d').drawImage(room, 0, 0, W, H);
@@ -246,6 +259,9 @@ export async function loadBuild(base) {
       if (k <= 0 || fade <= 0) continue;
       const shA = ss(0.55, 0.95, k) * fade;
       if (shA > 0) { g.globalAlpha = shA; g.drawImage(o.shadow, o.x, o.y); g.globalAlpha = 1; }
+      // the piece turns solid as its outline closes, so it stands clear of the room and of its
+      // neighbours (back of the room first, so nearer pieces cover farther ones)
+      wipe(g, o.body, o.x, o.y, o.w, o.h, ss(0.2, 0.75, k), 'up', fade, 0.4);
       wipe(g, o.fill, o.x, o.y, o.w, o.h, ss(0.5, 1, k), 'diag', fade, 0.5);
       const f = ss(0, 0.7, k) * STAGES;
       if (f > 0) {
