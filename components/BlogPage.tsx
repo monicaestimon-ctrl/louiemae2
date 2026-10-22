@@ -13,6 +13,7 @@ export const BlogPage: React.FC = () => {
 
    // Newsletter Form State
    const [email, setEmail] = useState('');
+   const [subscribeError, setSubscribeError] = useState('');
    const [subStatus, setSubStatus] = useState<'idle' | 'loading' | 'success'>('idle');
 
    // Filter only published posts for the public view
@@ -24,13 +25,19 @@ export const BlogPage: React.FC = () => {
    const handleSubscribe = async () => {
       if (!email) return;
       setSubStatus('loading');
-      const success = await addSubscriber(email);
-      if (success) {
-         setSubStatus('success');
-         setEmail('');
-      } else {
+      setSubscribeError('');
+      try {
+        const success = await addSubscriber(email.trim());
+        if (success) {
+           setSubStatus('success');
+           setEmail('');
+        } else {
+           setSubStatus('idle');
+           setSubscribeError('You are already on the list.');
+        }
+      } catch {
          setSubStatus('idle');
-         alert('Already subscribed!');
+         setSubscribeError('We could not save your signup. Please try again.');
       }
    };
 
@@ -48,10 +55,10 @@ export const BlogPage: React.FC = () => {
       <div className="bg-cream min-h-screen pt-32 pb-20 w-full overflow-hidden">
          {/* Header */}
          <section className="px-6 md:px-12 mb-20 text-center relative">
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-px h-20 bg-gradient-to-b from-transparent to-bronze/30"></div>
+            <div aria-hidden="true" className="mx-auto mb-6 h-10 w-px bg-gradient-to-b from-transparent to-bronze/40" />
             <FadeIn>
                <span className="text-bronze text-xs tracking-[0.4em] uppercase mb-4 block font-sans">Blog</span>
-               <h1 className="font-serif text-6xl md:text-8xl text-earth mb-8 tracking-tight">Simply Mae</h1>
+               <h1 className="font-serif text-5xl sm:text-6xl md:text-8xl text-earth mb-6 leading-tight tracking-tight">Simply Mae</h1>
                <div className="flex items-center justify-center gap-4 mb-6">
                   <div className="h-px w-8 bg-earth/20"></div>
                   <p className="font-serif text-earth/70 text-xl italic">Curated Reflections</p>
@@ -169,22 +176,23 @@ export const BlogPage: React.FC = () => {
                </h3>
                <p className="font-sans text-xs uppercase tracking-[0.25em] text-earth/40 mb-10">— Leonardo da Vinci</p>
 
-               <div className="flex flex-col md:flex-row items-center justify-center gap-4 max-w-md mx-auto">
+               <form onSubmit={(event) => { event.preventDefault(); void handleSubscribe(); }} className="flex flex-col md:flex-row items-center justify-center gap-4 max-w-md mx-auto">
                   <input
                      type="email"
                      value={email}
                      onChange={(e) => setEmail(e.target.value)}
-                     placeholder="Your email address"
+                     placeholder="Your email address" required aria-label="Email address" autoComplete="email"
                      className="w-full bg-transparent border-b border-earth/20 py-2 text-center md:text-left text-earth placeholder:text-earth/30 focus:outline-none focus:border-bronze transition-colors font-sans"
                   />
                   <button
-                     onClick={handleSubscribe}
+                     type="submit"
                      disabled={subStatus === 'loading' || subStatus === 'success'}
-                     className="whitespace-nowrap bg-earth text-cream px-8 py-2 text-[10px] uppercase tracking-[0.2em] hover:bg-bronze transition-colors flex items-center gap-2 justify-center min-w-[120px]"
+                     className="whitespace-nowrap bg-earth text-cream px-8 py-3 min-h-11 text-[10px] uppercase tracking-[0.2em] hover:bg-bronze transition-colors flex items-center gap-2 justify-center min-w-[120px]"
                   >
-                     {subStatus === 'loading' ? '...' : subStatus === 'success' ? <Check className="w-4 h-4" /> : 'Subscribe'}
+                     {subStatus === 'loading' ? '...' : subStatus === 'success' ? <><Check className="w-4 h-4" /> Subscribed</> : 'Subscribe'}
                   </button>
-               </div>
+               </form>
+               {subscribeError && <p role="status" className="mt-4 text-sm text-earth">{subscribeError}</p>}
             </FadeIn>
          </section>
       </div>

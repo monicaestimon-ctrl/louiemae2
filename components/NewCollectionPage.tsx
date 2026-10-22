@@ -113,33 +113,40 @@ export const NewCollectionPage: React.FC = () => {
     // VIP signup form state
     const [firstName, setFirstName] = useState('');
     const [email, setEmail] = useState('');
+    const [signupError, setSignupError] = useState('');
     const [signupStatus, setSignupStatus] = useState<'idle' | 'loading' | 'success'>('idle');
 
     const handleVipSignup = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!email) return;
         setSignupStatus('loading');
-        await addSubscriberWithTags(email, firstName || 'Friend', ['vip', 'inner-circle', 'early-access']);
-        setSignupStatus('success');
-        setFirstName('');
-        setEmail('');
+        setSignupError('');
+        try {
+          await addSubscriberWithTags(email.trim(), firstName.trim() || 'Friend', ['vip', 'inner-circle', 'early-access']);
+          setSignupStatus('success');
+          setFirstName('');
+          setEmail('');
+        } catch {
+            setSignupStatus('idle');
+            setSignupError('We could not save your signup. Please try again.');
+        }
     };
 
     return (
         <div className="bg-[#FAF9F6] min-h-screen pt-[72px] selection:bg-stone-200">
             {/* Extremely Luxury Editorial Hero */}
-            <div className="relative h-screen w-full overflow-hidden bg-stone-900 flex items-center justify-center">
+            <div className="relative min-h-[calc(100svh-72px)] w-full overflow-hidden bg-stone-900 flex flex-col justify-between">
                 {/* Parallax Background */}
                 <div
                     className="absolute inset-0 w-full h-full bg-cover bg-center opacity-80"
                     style={{
                         backgroundImage: `url('/images/brand/hero-living-organic.png')`,
-                        backgroundAttachment: 'fixed' // Creates the parallax effect
+                        backgroundAttachment: 'scroll'
                     }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-b from-stone-900/30 via-stone-900/10 to-stone-900/50" />
 
-                <div className="relative z-10 flex flex-col items-center justify-center w-full px-6">
+                <div className="relative z-10 flex flex-1 flex-col items-center justify-center w-full px-6 py-20 md:py-28">
                     <FadeIn delay={300}>
                         <h1 className="font-serif text-6xl md:text-8xl lg:text-[130px] leading-none text-white drop-shadow-2xl text-center tracking-tight italic font-light">
                             {DROP_NAME}
@@ -157,20 +164,18 @@ export const NewCollectionPage: React.FC = () => {
                     </FadeIn>
                 </div>
 
-                {/* Frosted Glass Pill — toward the bottom */}
-                <FadeIn delay={900} className="absolute bottom-24 left-1/2 -translate-x-1/2">
+                {/* Keep the pill and scroll cue in flow so wrapped text never overlaps. */}
+                <div className="relative z-10 flex flex-col items-center gap-6 px-6 pb-10 md:pb-14 text-center">
                     <div className="px-6 py-2.5 backdrop-blur-md bg-white/5 border border-white/20 rounded-full shadow-2xl shadow-black/20">
-                        <p className="font-sans text-white/90 text-[9px] md:text-[10px] uppercase tracking-[0.4em] font-medium">
+                        <p className="max-w-xs font-sans text-white/90 text-[10px] leading-relaxed uppercase tracking-[0.2em] font-medium">
                             {DROP_TAGLINE}
                         </p>
                     </div>
-                </FadeIn>
-
-                {/* Floating scroll indicator */}
-                <FadeIn delay={1200} className="absolute bottom-12 left-1/2 -translate-x-1/2 flex flex-col items-center">
-                    <div className="w-[1px] h-16 bg-gradient-to-b from-white/0 via-white/50 to-white/0 animate-pulse" />
-                    <span className="text-[9px] text-white/50 uppercase tracking-[0.3em] mt-4">Scroll to discover</span>
-                </FadeIn>
+                    <button type="button" onClick={() => document.getElementById('drop-gallery')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })} className="flex min-h-11 flex-col items-center gap-3 text-[10px] uppercase tracking-[0.2em] text-white/80 hover:text-white focus-visible:outline focus-visible:outline-offset-4">
+                        <span aria-hidden="true" className="w-px h-8 bg-gradient-to-b from-white/10 to-white/60" />
+                        Scroll to discover
+                    </button>
+                </div>
             </div>
 
             {/* Quiet Luxury Intro Text */}
@@ -184,7 +189,7 @@ export const NewCollectionPage: React.FC = () => {
             </section>
 
             {/* Collection Gallery Sections */}
-            <div className="pb-32 bg-gradient-to-b from-[#FAF9F6] to-white">
+            <div id="drop-gallery" className="scroll-mt-24 pb-20 md:pb-32 bg-gradient-to-b from-[#FAF9F6] to-white">
                 {isCatalogLoading && <p role="status" className="py-10 text-center text-earth/60">Loading the collection…</p>}
                 {unavailable && <p role="status" className="py-10 text-center text-earth/60">The collection is temporarily unavailable. Please check back shortly.</p>}
                 {CATEGORY_SECTIONS.map((section) => (
@@ -204,13 +209,13 @@ export const NewCollectionPage: React.FC = () => {
                     className="absolute inset-0 w-full h-full bg-cover bg-center opacity-90"
                     style={{
                         backgroundImage: `url('/images/brand/hero-living.png')`,
-                        backgroundAttachment: 'fixed'
+                        backgroundAttachment: 'scroll'
                     }}
                 />
                 <div className="absolute inset-0 bg-earth/40" />
 
                 <FadeIn className="relative z-10 w-full max-w-2xl mx-auto px-6">
-                    <div className="backdrop-blur-2xl bg-earth/15 border border-white/10 p-10 md:p-16 rounded-[2rem] shadow-2xl relative overflow-hidden">
+                    <div className="backdrop-blur-2xl bg-earth/15 border border-white/10 p-6 sm:p-10 md:p-16 rounded-[2rem] shadow-2xl relative overflow-hidden">
                         {/* Subtle light effect inside the card */}
                         <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
 
@@ -231,13 +236,14 @@ export const NewCollectionPage: React.FC = () => {
                             </FadeIn>
                         ) : (
                             <form onSubmit={handleVipSignup} className="space-y-10">
+                                {signupError && <p role="alert" className="text-sm text-white">{signupError}</p>}
                                 <div className="space-y-8">
                                     <div className="relative group">
                                         <input
                                             type="text"
                                             value={firstName}
                                             onChange={(e) => setFirstName(e.target.value)}
-                                            placeholder="First Name"
+                                            placeholder="First Name" aria-label="First name" autoComplete="given-name"
                                             className="w-full bg-transparent border-b border-white/20 pb-3 text-lg text-white placeholder:text-white/30 focus:outline-none focus:border-white transition-colors"
                                         />
                                     </div>
@@ -246,7 +252,7 @@ export const NewCollectionPage: React.FC = () => {
                                             type="email"
                                             value={email}
                                             onChange={(e) => setEmail(e.target.value)}
-                                            placeholder="Email Address"
+                                            placeholder="Email Address" aria-label="Email address" autoComplete="email"
                                             required
                                             className="w-full bg-transparent border-b border-white/20 pb-3 text-lg text-white placeholder:text-white/30 focus:outline-none focus:border-white transition-colors"
                                         />

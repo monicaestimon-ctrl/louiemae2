@@ -345,6 +345,8 @@ const AppContent = () => {
         <>
           {/* Mobile Menu Overlay - Hyper Glassmorphic */}
           <div
+            inert={!mobileMenuOpen}
+            aria-hidden={!mobileMenuOpen}
             className={`fixed inset-0 z-50 flex flex-col backdrop-blur-3xl bg-gradient-to-br from-[#3a2a1a]/95 via-[#2d1f12]/95 to-[#1a130a]/95 transition-all duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${mobileMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-[20px] pointer-events-none'
               }`}
           >
