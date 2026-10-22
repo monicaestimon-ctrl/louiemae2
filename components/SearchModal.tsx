@@ -146,7 +146,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
                                                 <SafeImage
                                                     src={product.images[0]}
                                                     alt={product.name}
-                                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                                                    className="w-full h-full object-contain"
                                                 />
                                             ) : (
                                                 <div className="w-full h-full flex items-center justify-center text-cream/20 font-light">
@@ -154,8 +154,8 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
                                                 </div>
                                             )}
                                         </div>
-                                        <div className="p-5 flex flex-col h-full bg-gradient-to-t from-black/20 to-transparent">
-                                            <h3 className="font-serif text-sm text-cream group-hover:text-bronze transition-colors line-clamp-1 drop-shadow-sm">
+                                        <div className="p-4 flex flex-col bg-gradient-to-t from-black/20 to-transparent">
+                                            <h3 className="font-serif text-sm text-cream group-hover:text-bronze transition-colors line-clamp-2 drop-shadow-sm">
                                                 {product.name}
                                             </h3>
                                             <p className="text-[0.55rem] uppercase tracking-[0.2em] text-cream/50 mt-1.5">

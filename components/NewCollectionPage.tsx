@@ -31,13 +31,13 @@ const LuxuryProductCard: React.FC<{ product: CatalogPreviewProduct; index: numbe
     return (
         <FadeIn delay={index * 150} className={`group cursor-pointer flex flex-col w-full ${offsetClass}`}>
             <div
-                className="relative aspect-[3/4] overflow-hidden bg-stone-50 mb-6 rounded-sm shadow-sm transition-all duration-700 hover:shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)] hover:-translate-y-3"
+                className="relative aspect-square overflow-hidden bg-stone-50 mb-6 rounded-sm shadow-sm transition-all duration-700 hover:shadow-[0_30px_60px_-15px_rgba(0,0,0,0.15)] hover:-translate-y-3"
                 onClick={() => navigateTo(`#collection/${product.collection}?cat=${encodeURIComponent(product.category)}`)}
             >
                 <SafeImage
                     src={product.images[0]}
                     alt={product.name}
-                    className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-[1.03]"
+                    className="w-full h-full object-contain"
                 />
 
                 {/* Floating glass overlay on hover */}

@@ -409,7 +409,7 @@ const AppContent = () => {
             <div className="w-full px-6 md:px-12 relative flex justify-between items-center min-h-[50px]">
               {/* Mobile Menu Icon */}
               <button
-                className="lg:hidden text-earth z-50 p-2 -ml-2 hover:opacity-70 transition-opacity"
+                className="min-[1600px]:hidden text-earth z-50 p-2 -ml-2 hover:opacity-70 transition-opacity"
                 aria-label="Open menu"
                 aria-expanded={mobileMenuOpen}
                 onClick={() => setMobileMenuOpen(true)}
@@ -418,9 +418,9 @@ const AppContent = () => {
               </button>
 
               {/* Desktop Navigation & Logo */}
-              <div className="hidden lg:flex absolute inset-0 justify-center items-center pointer-events-none">
-                <div className="flex items-center gap-10 xl:gap-14 pointer-events-auto bg-transparent">
-                  <nav className="flex gap-6 xl:gap-9">
+              <div className="hidden min-[1600px]:flex flex-1 min-w-0 justify-center items-center">
+                <div className="flex items-center gap-6 pointer-events-auto bg-transparent">
+                  <nav className="flex gap-5">
                     {extendedNavLinks.slice(0, 3).map(link => (
                       <div key={link.label} className="relative group">
                         <button
@@ -437,7 +437,7 @@ const AppContent = () => {
                     ))}
                   </nav>
 
-                  <div className="text-center px-6 cursor-pointer" onClick={() => handleNavigation('#')}>
+                  <div className="text-center px-4 cursor-pointer" onClick={() => handleNavigation('#')}>
                     <p className={`text-[0.55rem] uppercase tracking-[0.3em] text-bronze mb-1 transition-all duration-500 ${scrolled ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'}`}>
                       Est. 2021
                     </p>
@@ -446,7 +446,7 @@ const AppContent = () => {
                     </h1>
                   </div>
 
-                  <nav className="flex gap-6 xl:gap-9">
+                  <nav className="flex gap-5">
                     {extendedNavLinks.slice(3).map(link => (
                       <div key={link.label} className="relative group">
                         <button
@@ -467,7 +467,7 @@ const AppContent = () => {
 
               {/* Mobile Logo */}
               <div
-                className="lg:hidden absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center z-40 pointer-events-auto cursor-pointer"
+                className="min-[1600px]:hidden absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center z-40 pointer-events-auto cursor-pointer"
                 onClick={() => handleNavigation('#')}
               >
                 <p className={`text-[0.45rem] uppercase tracking-[0.25em] text-bronze mb-0.5 transition-all ${scrolled ? 'hidden' : 'block'}`}>
@@ -479,7 +479,7 @@ const AppContent = () => {
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-4 md:gap-6 ml-auto z-50 pl-4">
+              <div className="flex items-center gap-4 md:gap-6 ml-auto shrink-0 z-50 pl-6">
                 {/* Retail is this storefront; Trade opens House of Louie Mae */}
                 <div className="hidden md:flex items-center gap-2 text-[0.6rem] uppercase tracking-[0.15em] font-medium" aria-label="Shop as">
                   <span className="text-earth" aria-current="page">Retail</span>
