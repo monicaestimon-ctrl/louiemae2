@@ -42,11 +42,19 @@ describe('homepage real catalog purchase flow', () => {
     expect(mocks.catalog).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'furniture' }), 'All', true, 'featured', 6);
     expect(mocks.detail).toHaveBeenLastCalledWith(null);
     open(); expect(mocks.detail).toHaveBeenLastCalledWith('real-product');
-    expect(within(screen.getByRole('dialog')).getByText('$420.00')).toBeTruthy();
+    expect(within(screen.getByRole('dialog')).getByText('$420')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Select Option First' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Velvet' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Linen' }));
-    expect(within(screen.getByRole('dialog')).getByText('$440.00')).toBeTruthy();
+    expect(within(screen.getByRole('dialog')).getByText('$440')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Add to Cart' }));
+    expect(screen.getByLabelText('Cart proof').textContent).toBe(JSON.stringify({ count: 1, subtotal: 440, variant: 'linen', product: 'real-product' }));
+  });
+  it('automatically adds the sole variant without an option selector', () => {
+    mocks.product = { ...mocks.product!, variants: [mocks.product!.variants![0]] };
+    render(<App />); open();
+    expect(screen.queryByText('Select Option')).toBeNull();
+    expect(within(screen.getByRole('dialog')).getByText('$440')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Add to Cart' }));
     expect(screen.getByLabelText('Cart proof').textContent).toBe(JSON.stringify({ count: 1, subtotal: 440, variant: 'linen', product: 'real-product' }));
   });
