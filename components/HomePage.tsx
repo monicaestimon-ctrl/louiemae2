@@ -38,7 +38,10 @@ export const HomePage: React.FC = () => {
   const { product: selectedProduct, loading: detailLoading, unavailable: detailUnavailable } = useStorefrontProductDetail(selectedProductId);
   const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>();
   const [activeImageGroupKey, setActiveImageGroupKey] = useState<string | null>(null);
-  const selectedVariant = selectedProduct?.variants?.find(variant => variant.id === selectedVariantId && variant.inStock !== false);
+  const selectedVariant = selectedProduct?.variants?.length === 1
+    ? selectedProduct.variants[0]
+    : selectedProduct?.variants?.find(variant => variant.id === selectedVariantId && variant.inStock !== false);
+  const selectedPrice = (selectedProduct?.price ?? 0) + (selectedVariant?.priceAdjustment ?? 0);
   const setSelectedVariant = (variant: ProductVariant | undefined) => setSelectedVariantId(variant?.id);
   const openProduct = (id: string | null) => {
     setSelectedProductId(id);
@@ -522,11 +525,11 @@ export const HomePage: React.FC = () => {
                 </div>
 
                 <h2 className="font-serif text-3xl md:text-5xl text-earth mb-3 leading-tight drop-shadow-sm">{selectedProduct.name}</h2>
-                <p className="font-serif text-2xl italic text-bronze mb-8">${(selectedProduct.price + (selectedVariant?.priceAdjustment || 0)).toFixed(2)}</p>
+                <p className="font-serif text-2xl italic text-bronze mb-8">${selectedPrice.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(selectedPrice) ? 0 : 2, maximumFractionDigits: 2 })}</p>
 
                 <div className="h-px w-full bg-gradient-to-r from-earth/20 via-earth/5 to-transparent mb-8"></div>
 
-                {!!selectedProduct.variants?.length && <div className="mb-6"><VariantSelector variants={selectedProduct.variants} selectedVariant={selectedVariant} activeImageGroupKey={activeImageGroupKey} onSelectVariant={setSelectedVariant} onSetGroupKey={setActiveImageGroupKey} /></div>}
+                {(selectedProduct.variants?.length ?? 0) > 1 && <div className="mb-6"><VariantSelector variants={selectedProduct.variants} selectedVariant={selectedVariant} activeImageGroupKey={activeImageGroupKey} onSelectVariant={setSelectedVariant} onSetGroupKey={setActiveImageGroupKey} /></div>}
                 <p className="font-sans text-earth/70 leading-relaxed mb-8 text-sm">
                   {selectedProduct.description}
                 </p>

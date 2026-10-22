@@ -339,7 +339,10 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
   const { product: selectedProduct, loading: detailLoading, unavailable: detailUnavailable } = useStorefrontProductDetail(selectedProductId);
   const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(undefined);
   // Price/stock changes and deleted options must not leave a stale cart selection.
-  const selectedVariant = selectedProduct?.variants?.find(variant => variant.id === selectedVariantId && variant.inStock !== false);
+  const selectedVariant = selectedProduct?.variants?.length === 1
+    ? selectedProduct.variants[0]
+    : selectedProduct?.variants?.find(variant => variant.id === selectedVariantId && variant.inStock !== false);
+  const selectedPrice = (selectedProduct?.price ?? 0) + (selectedVariant?.priceAdjustment ?? 0);
   const setSelectedVariant = (variant: ProductVariant | undefined) => setSelectedVariantId(variant?.id);
   /** Tracks the active image group (color/style) independently from selectedVariant */
   const [activeImageGroupKey, setActiveImageGroupKey] = useState<string | null>(null);
@@ -952,12 +955,12 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                 </div>
                 <h2 className="font-serif text-2xl md:text-4xl text-earth mb-4 leading-tight">{selectedProduct.name}</h2>
                 <p className="font-serif text-xl md:text-2xl italic text-bronze mb-6">
-                  ${(selectedProduct.price + (selectedVariant?.priceAdjustment || 0)).toFixed(2)}
+                  ${selectedPrice.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(selectedPrice) ? 0 : 2, maximumFractionDigits: 2 })}
                 </p>
                 <div className="h-px w-full bg-earth/10 mb-6"></div>
 
                 {/* Variant Selector — Two-tier: Color/Style swatches → Size pills */}
-                {selectedProduct.variants && selectedProduct.variants.length > 0 && (
+                {selectedProduct.variants && selectedProduct.variants.length > 1 && (
                   <div className="mb-6">
                     <VariantSelector
                       variants={selectedProduct.variants}
