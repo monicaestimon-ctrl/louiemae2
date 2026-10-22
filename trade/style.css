@@ -15,7 +15,7 @@
 @font-face{font-family:"DM Sans Fallback";src:local("Arial"),local("Liberation Sans");size-adjust:104.23%;ascent-override:95.17%;descent-override:29.74%;line-gap-override:0%}
 :root{
   --paper:#FBF8F2; --plaster:#F2EADD; --sand:#E5D8C4; --card:#FFFDF9;
-  --ink:#2B211A; --bark:#4A3B2D; --mute:#7A6E61; --line:rgba(43,33,26,.13); --line2:rgba(43,33,26,.24);
+  --ink:#2B211A; --bark:#4A3B2D; --mute:#6F6356; --line:rgba(43,33,26,.13); --line2:rgba(43,33,26,.24);
   --cognac:#A65F2C; --cognac-soft:rgba(166,95,44,.12); --olive:#6C6948; --brass:#AE884C;
   --onink:#FBF8F2; --ok:#4E6A43; --bad:#9B3B2D; --shadow:0 18px 50px -24px rgba(43,33,26,.45);
   --display:"Cormorant Garamond",Georgia,"Times New Roman",serif;
@@ -187,7 +187,7 @@ label.lbl{display:block;font-size:13px;font-weight:500;margin-bottom:6px}
 .pin{break-inside:avoid;margin-bottom:18px;position:relative;display:block;width:100%;text-align:left}
 .wall.compact .pin{margin-bottom:10px}
 .pin-img{position:relative;border-radius:var(--r);overflow:hidden;background:var(--sand);cursor:zoom-in}
-.pin-img img{width:100%;display:block;transition:transform .9s var(--ease),filter .4s}
+.pin-img img{width:100%;display:block;object-fit:cover;transition:transform .9s var(--ease),filter .4s}
 .pin:hover .pin-img img{transform:scale(1.035)}
 .pin-ov{position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,14,10,.38),transparent 34%,transparent 62%,rgba(20,14,10,.5));opacity:0;transition:opacity .25s;display:flex;flex-direction:column;justify-content:space-between;padding:10px}
 .pin:hover .pin-ov,.pin:focus-within .pin-ov{opacity:1}
@@ -206,7 +206,7 @@ label.lbl{display:block;font-size:13px;font-weight:500;margin-bottom:6px}
 .bpin .mosaic{display:grid;grid-template-columns:2fr 1fr;grid-template-rows:1fr 1fr;gap:3px;aspect-ratio:1/1.05;border-radius:var(--r);overflow:hidden;cursor:pointer}
 .bpin .mosaic div{background:var(--sand) center/cover}
 .bpin .mosaic div:first-child{grid-row:1/3}
-.bpin h4{font-family:var(--display);font-size:21px;font-weight:500;margin:10px 4px 2px;line-height:1.1}
+.bpin h3{font-family:var(--display);font-size:21px;font-weight:500;margin:10px 4px 2px;line-height:1.1}
 .who{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--mute);padding:0 4px}
 .role{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--cognac-soft);color:var(--cognac)}
 
@@ -354,7 +354,7 @@ footer button:hover{color:var(--cognac)}
 .trend img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform 1s var(--ease)}
 .trend:hover img{transform:scale(1.05)}
 .trend div{position:absolute;inset:0;padding:18px;display:flex;flex-direction:column;justify-content:flex-end;background:linear-gradient(180deg,transparent 35%,rgba(18,12,8,.75))}
-.trend h3{font-size:30px;font-style:italic}
+.trend h2{font-size:30px;font-style:italic}
 .trend .up{font-family:var(--mono);font-size:11px;letter-spacing:.08em}
 @media (max-width:760px){.trend-row{grid-template-columns:1fr}}
 .img-q{display:flex;align-items:center;gap:14px;padding:12px;border-radius:16px;background:var(--plaster);margin-bottom:20px;flex-wrap:wrap}
@@ -453,7 +453,7 @@ footer button:hover{color:var(--cognac)}
 .bcard:hover .cov{transform:translateY(-3px)}
 .bcard .cov div{background:var(--sand) center/cover}
 .bcard .cov div:first-child{grid-row:1/3}
-.bcard h3{font-family:var(--display);font-size:24px;margin:10px 2px 0}
+.bcard h2{font-family:var(--display);font-size:24px;margin:10px 2px 0}
 .bcard p{font-size:12.5px;color:var(--mute);padding-inline:2px}
 .newboard{border:1.5px dashed var(--line2);border-radius:18px;aspect-ratio:3/2.2;display:grid;place-items:center;color:var(--mute);font-size:14px;transition:all .2s}
 .newboard:hover{border-color:var(--ink);color:var(--ink);background:var(--plaster)}
