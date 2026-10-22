@@ -11,10 +11,16 @@
 // Writes public/trade/f/<film>/b/{plan,room,full}.webp, mask.png (R = piece number, G = alpha)
 // and meta.json. Needs Google Chrome or Microsoft Edge (H.264 decode); set CHROME to override.
 import { spawn } from 'node:child_process';
+import { Buffer } from 'node:buffer';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
+import { URL } from 'node:url';
+
+// Node 22+ ships a browser-compatible WebSocket client; it talks to Chrome's DevTools port.
+const { WebSocket } = globalThis;
 
 const root = path.resolve('public/trade/f');
 const app = readFileSync(path.resolve('trade/app.ts'), 'utf8');
@@ -174,7 +180,7 @@ try {
   const { result: { targetId } } = await send('Target.createTarget', { url: `http://127.0.0.1:${port}/build` });
   const { result: { sessionId } } = await send('Target.attachToTarget', { targetId, flatten: true });
   await send('Runtime.enable', {}, sessionId);
-  for (let i = 0; i < 50; i++) { const r = await send('Runtime.evaluate', { expression: 'typeof window.build', returnByValue: true }, sessionId);if (r.result?.result?.value === 'function') break;await new Promise((r) => setTimeout(r, 100)); }
+  for (let i = 0; i < 50; i++) { const r = await send('Runtime.evaluate', { expression: 'typeof window.build', returnByValue: true }, sessionId);if (r.result?.result?.value === 'function') break;await sleep(100); }
   for (const fk of films) {
     const TL = timeline(fk);
     // the room is complete but empty just before the furniture arrives; it is furnished and still once the first hotspots show
@@ -186,5 +192,6 @@ try {
   }
 } finally {
   ws.close();proc.kill();server.close();
-  try { rmSync(profile, { recursive: true, force: true }); } catch {}
+  // Chrome can still hold the profile for a moment after exit; a leftover temp folder is harmless
+  try { rmSync(profile, { recursive: true, force: true }); } catch { /* ignore */ }
 }
