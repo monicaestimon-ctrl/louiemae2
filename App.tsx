@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { Menu, Search, X, Instagram, Facebook, Twitter, ChevronDown } from 'lucide-react';
+import { Menu, Search, X, Instagram, ChevronDown } from 'lucide-react';
 import { AiConcierge } from './components/AiConcierge';
 import { NavLink } from './types';
 import { HomePage } from './components/HomePage';
@@ -385,9 +385,7 @@ const AppContent = () => {
                 <div className="space-y-2">
                   <p className="text-[10px] uppercase tracking-[0.2em] text-cream/40">Connect</p>
                   <div className="flex gap-6">
-                    <Instagram className="w-5 h-5 text-cream/60 hover:text-white transition-colors" />
-                    <Facebook className="w-5 h-5 text-cream/60 hover:text-white transition-colors" />
-                    <Twitter className="w-5 h-5 text-cream/60 hover:text-white transition-colors" />
+                    <a href="https://www.instagram.com/itslouiemae/" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><Instagram className="w-5 h-5 text-cream/60 hover:text-white transition-colors" /></a>
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-3">
@@ -559,14 +557,8 @@ const AppContent = () => {
               <div>
                 <h2 className="font-serif text-xl mb-6 text-white/90">Follow Us</h2>
                 <div className="flex gap-5">
-                  <a href="#" aria-label="Instagram" className="p-3 bg-white/5 rounded-full border border-white/10 hover:bg-white/15 hover:border-bronze/40 transition-all">
+                  <a href="https://www.instagram.com/itslouiemae/" target="_blank" rel="noopener noreferrer" aria-label="Instagram" className="p-3 bg-white/5 rounded-full border border-white/10 hover:bg-white/15 hover:border-bronze/40 transition-all">
                     <Instagram className="w-5 h-5 text-cream" />
-                  </a>
-                  <a href="#" aria-label="Facebook" className="p-3 bg-white/5 rounded-full border border-white/10 hover:bg-white/15 hover:border-bronze/40 transition-all">
-                    <Facebook className="w-5 h-5 text-cream" />
-                  </a>
-                  <a href="#" aria-label="Twitter" className="p-3 bg-white/5 rounded-full border border-white/10 hover:bg-white/15 hover:border-bronze/40 transition-all">
-                    <Twitter className="w-5 h-5 text-cream" />
                   </a>
                 </div>
               </div>

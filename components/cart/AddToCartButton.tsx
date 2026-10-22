@@ -39,7 +39,7 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({
     // Determine button text based on state
     const getButtonText = () => {
         if (isAdded) return null; // Will show "Added!" with icon
-        if (!product.inStock) return 'Out of Stock';
+        if (!product.inStock || selectedVariant?.inStock === false) return 'Out of Stock';
         if (needsVariantSelection) return 'Select Option First';
         return null; // Will show "Add to Cart" with icon
     };
