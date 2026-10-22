@@ -62,81 +62,119 @@ function derive(src, W, H) {
 
 const toCanvas = (data, W, H) => { const c = canvas(W, H); c.getContext('2d').putImageData(new ImageData(data, W, H), 0, 0); return c; };
 
-const CLAY = hex('#E8E2D8'), TIMBER = hex('#D8B78C'), SHADOW = hex('#3A2A1E');
-// key light from the upper left and slightly in front, as in a studio clay render
+const SHEET = hex('#F7F2E9'), GRAPHITE = hex('#342E28');
+// key light from the upper left and slightly in front: the shaded side is hatched
 const LIGHT = (() => { const v = [-0.55, -0.62, 0.56], m = Math.hypot(...v); return v.map((c) => c / m); })();
-const HALF = (() => { const v = [LIGHT[0], LIGHT[1], LIGHT[2] + 1], m = Math.hypot(...v); return v.map((c) => c / m); })();
+// a cheap per-pixel hash, for the grain of graphite on paper
+const grain = (x, y) => { const s = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453; return s - Math.floor(s); };
 
 /**
- * A piece as a sculpted study model rather than a grey photo. The real piece's shading is
- * kept (its cushions, arms, folds and the way the light falls across it) but its material is
- * cancelled out: each pixel is divided by the piece's local average brightness, so dark leather
- * and pale bouclé become the same matte clay, and fine texture (weave, grain, print) is
- * smoothed away. A slight rounding at the silhouette, a key light sheen and occlusion at the
- * base finish the model. Returns clay, timber and a contact shadow for the floor beneath it.
+ * One object (a chair, the sofa, a table) as its own 3D pencil study: a smooth, closed
+ * outline of its silhouette, its construction lines (seams, cushion breaks, arms, legs)
+ * drawn only inside it so they never run into a neighbour, and hatching that follows its
+ * volume. Objects are drawn separately and together read as one drawing of the room.
+ *
+ * The real object supplies the drawing, not its look: its material is divided out (each pixel
+ * against the object's own local brightness, so dark leather and pale bouclé shade the same),
+ * fine texture is smoothed away before any line is traced, and lines are thinned to one
+ * stroke. Darker form gets diagonal hatching, the darkest a cross-hatch.
+ * Returns the outline and construction lines (lines), the hatching (fill) and a hatched shadow.
  */
-function sculpt(fullPx, maskPx, W, id, b) {
+function sketch(fullPx, objPx, W, id, b) {
   const { x, y, w, h } = b, N = w * h;
-  // blue channel: the object alone (see build-film-layers.mjs), so the clay follows its outline
-  const a = new Float32Array(N), La = new Float32Array(N);
+  const a = new Float32Array(N), La = new Float32Array(N), Lp = new Float32Array(N);
   for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
     const s = ((y + yy) * W + x + xx) * 4, i = yy * w + xx;
-    if (maskPx[s] !== id) continue;
-    const al = maskPx[s + 2] / 255;
-    a[i] = al; La[i] = al * (0.3 * fullPx[s] + 0.59 * fullPx[s + 1] + 0.11 * fullPx[s + 2]) / 255;
+    const l = (0.3 * fullPx[s] + 0.59 * fullPx[s + 1] + 0.11 * fullPx[s + 2]) / 255;
+    Lp[i] = l;
+    if (objPx[s] !== id) continue;
+    a[i] = objPx[s + 1] / 255; La[i] = a[i] * l;
+  }
+  // the silhouette, smoothed into a clean shape: its 0.5 contour is the outline
+  const r1 = Math.max(1, Math.round(W / 500));
+  const shape = boxBlur(boxBlur(boxBlur(a, w, h, r1), w, h, r1), w, h, r1);
+  const inside = boxBlur(shape.map((v) => (v > 0.5 ? 1 : 0)), w, h, Math.max(2, Math.round(W / 320)));
+  // the object's own area for line work: its mask grown by a few pixels (so the true
+  // silhouette edge, just outside a slightly tight mask, is caught) but never onto another object
+  const grow = boxBlur(a, w, h, Math.max(2, Math.round(W / 280)));
+  const own = new Uint8Array(N);
+  for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+    const s = ((y + yy) * W + x + xx) * 4, other = objPx[s] && objPx[s] !== id && objPx[s + 1] > 60;
+    own[yy * w + xx] = grow[yy * w + xx] > 0.03 && !other ? 1 : 0;
   }
   // normalised blurs, inside the object only, so the floor around it never bleeds in
   const nblur = (r, n) => { let v = La, m = a; for (let k = 0; k < n; k++) { v = boxBlur(v, w, h, r); m = boxBlur(m, w, h, r); } return [v, m]; };
-  const [sv, sm] = nblur(Math.max(1, Math.round(W / 640)), 2);   // texture smoothed away
-  const [av, am] = nblur(Math.max(4, Math.round(W / 48)), 2);    // the material's own brightness
-  // a little roundness at the silhouette
-  const rV = Math.max(2, Math.round(W / 200));
-  const hgt = boxBlur(boxBlur(a, w, h, rV), w, h, rV);
-  const k = W / 48;
-  const clay = new Uint8ClampedArray(N * 4), wood = new Uint8ClampedArray(N * 4), shadow = new Uint8ClampedArray(N * 4);
+  const at = ([v, m], i, d = 0) => (m[i] > 0.02 ? v[i] / m[i] : d);
+  const S = nblur(Math.max(1, Math.round(W / 640)), 2);   // shading, texture smoothed away
+  const A = nblur(Math.max(4, Math.round(W / 48)), 2);    // the material's own brightness
+  const rL = Math.max(1, Math.round(W / 560));
+  const cL = boxBlur(boxBlur(Lp, w, h, rL), w, h, rL);    // what the construction lines trace
+  const rV = Math.max(2, Math.round(W / 200)), hgt = boxBlur(boxBlur(a, w, h, rV), w, h, rV), kN = W / 48;
+  const P = Math.max(5, Math.round(W / 170)); // hatch spacing
+  const hatch = (u, t, wob) => { const q = (((u + wob) % P) + P) % P, d = Math.min(q, P - q), half = 0.2 + 0.55 * t; return 1 - ss(half, half + 0.8, d); };
+  const grad = (f, i) => { const xx = i % w, yy = (i / w) | 0, l = Math.max(0, xx - 1), r = Math.min(w - 1, xx + 1), u = Math.max(0, yy - 1), d = Math.min(h - 1, yy + 1);
+    return [(f[yy * w + r] - f[yy * w + l]) / 2, (f[d * w + xx] - f[u * w + xx]) / 2]; };
+  const fill = new Uint8ClampedArray(N * 4), lines = new Uint8ClampedArray(N * 4), shadow = new Uint8ClampedArray(N * 4);
   for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
     const i = yy * w + xx, o = i * 4;
     const xl = Math.max(0, xx - 1), xr = Math.min(w - 1, xx + 1), yu = Math.max(0, yy - 1), yd = Math.min(h - 1, yy + 1);
-    let nx = -(hgt[yy * w + xr] - hgt[yy * w + xl]) * k, ny = -(hgt[yd * w + xx] - hgt[yu * w + xx]) * k, nz = 1;
-    const m = Math.hypot(nx, ny, nz); nx /= m; ny /= m; nz /= m;
-    const lam = Math.max(0, nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2]);
-    const spec = Math.pow(Math.max(0, nx * HALF[0] + ny * HALF[1] + nz * HALF[2]), 24);
-    // the real piece's light and shade, with its material divided out
-    const sL = sm[i] > 0.02 ? sv[i] / sm[i] : 0, aL = am[i] > 0.02 ? av[i] / am[i] : 1;
-    const form = Math.pow(Math.min(1.45, Math.max(0.3, sL / Math.max(0.04, aL))), 1.6);
-    const occ = (1 - 0.24 * ss(0.7, 1, yy / h)) * (0.84 + 0.16 * ss(0.2, 0.6, hgt[i]));
-    const shade = Math.min(1.12, (0.1 + 0.68 * form + 0.28 * lam) * occ);
-    const grain = 1 + 0.045 * Math.sin((xx * 0.9 + yy * 0.12) + 3 * Math.sin(yy * 0.05 + xx * 0.013));
-    for (let e = 0; e < 3; e++) {
-      clay[o + e] = CLAY[e] * shade + 255 * 0.22 * spec;
-      wood[o + e] = TIMBER[e] * shade * grain + 255 * 0.12 * spec;
-      shadow[o + e] = SHADOW[e];
+    const g = 0.6 + 0.4 * grain(xx + x, yy + y);
+    // Line work traced from the real photo: its true silhouette against the room and its seams,
+    // cushion breaks, arms and legs. Only pixels that belong to this object (own[] is the
+    // object's area, a touch wider than its mask, minus any neighbour's) so lines never run
+    // from one object into the next. The outline is the stronger edge at the boundary.
+    let ink = 0;
+    if (own[i]) {
+      const [gx, gy] = grad(cL, i), mg = Math.hypot(gx, gy);
+      const [p1, p2] = Math.abs(gx) > Math.abs(gy) ? [yy * w + xl, yy * w + xr] : [yu * w + xx, yd * w + xx];
+      if (mg >= Math.hypot(...grad(cL, p1)) && mg >= Math.hypot(...grad(cL, p2))) {
+        const edgeOfShape = 1 - ss(0.75, 0.98, inside[i]);
+        ink = ss(0.006, 0.022, mg) * (0.7 + 0.3 * edgeOfShape);
+      }
     }
-    clay[o + 3] = wood[o + 3] = a[i] * 255;
+    for (let e = 0; e < 3; e++) lines[o + e] = GRAPHITE[e];
+    lines[o + 3] = 255 * ink * g;
+    // tone: the object's shade with its material divided out, plus the key light on its
+    // roundness and a little weight at the base; hatched, cross-hatched where darkest
+    const nx = -(hgt[yy * w + xr] - hgt[yy * w + xl]) * kN, ny = -(hgt[yd * w + xx] - hgt[yu * w + xx]) * kN;
+    const lam = Math.max(0, (nx * LIGHT[0] + ny * LIGHT[1] + LIGHT[2]) / Math.hypot(nx, ny, 1)) / LIGHT[2];
+    const form = Math.min(1.45, Math.max(0.3, at(S, i) / Math.max(0.04, at(A, i, 1))));
+    const t = Math.min(1, Math.max(0, 1 - ss(0.55, 1.1, form) + 0.35 * (1 - Math.min(1, lam)) + 0.2 * ss(0.75, 1, yy / h)));
+    const wob = 0.7 * Math.sin(yy * 0.19 + xx * 0.03);
+    const h1 = hatch(xx + yy, t, wob) * 0.32 * ss(0.4, 0.7, t);
+    const h2 = hatch(xx - yy, t - 0.4, -wob) * 0.25 * ss(0.75, 1, t);
+    for (let e = 0; e < 3; e++) fill[o + e] = GRAPHITE[e];
+    fill[o + 3] = 255 * Math.max(h1, h2) * g * ss(0.45, 0.6, shape[i]);
   }
-  // contact shadow: the silhouette, dropped a little and spread, darkest at the base
-  const rS = Math.max(4, Math.round(W / 90)), drop = Math.round(h * 0.035);
+  // cast shadow on the floor: the silhouette, dropped and spread, drawn in light hatching
+  const rS = Math.max(4, Math.round(W / 110)), drop = Math.round(h * 0.03);
   const sh = boxBlur(boxBlur(a, w, h, rS), w, h, rS);
   for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
-    const src = Math.max(0, yy - drop) * w + xx;
-    shadow[(yy * w + xx) * 4 + 3] = 255 * 0.42 * sh[src] * (0.35 + 0.65 * ss(0.45, 1, yy / h));
+    const o = (yy * w + xx) * 4, sa = sh[Math.max(0, yy - drop) * w + xx] * (0.3 + 0.7 * ss(0.5, 1, yy / h)) * (1 - ss(0.4, 0.6, shape[yy * w + xx]));
+    for (let e = 0; e < 3; e++) shadow[o + e] = GRAPHITE[e];
+    shadow[o + 3] = 255 * Math.min(1, sa * 0.7 * hatch(xx + yy, 0.25, 0));
   }
-  return { clay: toCanvas(clay, w, h), wood: toCanvas(wood, w, h), shadow: toCanvas(shadow, w, h) };
+  // a pencil line has some weight: widen each stroke by a soft pixel either side
+  const thick = new Uint8ClampedArray(lines);
+  for (let yy = 1; yy < h - 1; yy++) for (let xx = 1; xx < w - 1; xx++) {
+    const i = (yy * w + xx) * 4 + 3;
+    thick[i] = Math.max(lines[i], 0.55 * Math.max(lines[i - 4], lines[i + 4], lines[i - w * 4], lines[i + w * 4]));
+  }
+  return { fill: toCanvas(fill, w, h), lines: toCanvas(thick, w, h), shadow: toCanvas(shadow, w, h) };
 }
 
 /** Loads a film's layers and returns a painter for any point u ∈ [0,1] of the build. */
 export async function loadBuild(base) {
-  const [meta, plan, room, full, mask] = await Promise.all([
+  const [meta, plan, room, full, mask, objs] = await Promise.all([
     fetch(base + 'meta.json').then((r) => { if (!r.ok) throw new Error('no build'); return r.json(); }),
-    img(base + 'plan.webp'), img(base + 'room.webp'), img(base + 'full.webp'), img(base + 'mask.png'),
+    img(base + 'plan.webp'), img(base + 'room.webp'), img(base + 'full.webp'), img(base + 'mask.png'), img(base + 'objects.png'),
   ]);
   const W = meta.w, H = meta.h;
   const px = (im) => { const c = canvas(W, H), g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(im, 0, 0, W, H); return g.getImageData(0, 0, W, H).data; };
-  const roomPx = px(room), fullPx = px(full), maskPx = px(mask);
+  const roomPx = px(room), fullPx = px(full), maskPx = px(mask), objPx = px(objs);
   // yield between the heavy passes so scrolling stays smooth while this runs
   const breathe = () => new Promise((r) => setTimeout(r, 0));
   const R = derive(roomPx, W, H); await breathe();
-  const F = derive(fullPx, W, H); await breathe();
   const shellClay = toCanvas(R.clay, W, H), shellInk = toCanvas(R.ink, W, H);
   const pieces = meta.pieces.map((b, n) => {
     const id = n + 1, { x, y, w, h } = b;
@@ -150,8 +188,20 @@ export async function loadBuild(base) {
       }
       return toCanvas(d, w, h);
     };
-    return { ...b, full: layer(fullPx), ink: layer(F.ink), ...sculpt(fullPx, maskPx, W, id, b) };
+    // Until it is revealed, the room behind the piece stays as the sketched shell, so the
+    // finished floor never shows through the drawing; feathered so it has no edge of its own.
+    const hold = (() => {
+      const m = new Float32Array(w * h);
+      for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) { const s = ((y + yy) * W + x + xx) * 4; m[yy * w + xx] = maskPx[s] === id ? maskPx[s + 1] / 255 : 0; }
+      const r = Math.max(3, Math.round(W / 160)), f = boxBlur(boxBlur(m, w, h, r), w, h, r);
+      const c = canvas(w, h), cg = c.getContext('2d'); cg.drawImage(shellClay, x, y, w, h, 0, 0, w, h);
+      const d = cg.getImageData(0, 0, w, h); for (let i = 0; i < w * h; i++) d.data[i * 4 + 3] = 255 * Math.min(1, f[i] * 1.6);
+      cg.putImageData(d, 0, 0); return c;
+    })();
+    return { ...b, full: layer(fullPx), hold };
   });
+  // each object drawn on its own, back of the room first (the build script sorts them)
+  const objects = (meta.objects || []).map((o, n) => ({ ...o, p: pieces[o.piece - 1], ...sketch(fullPx, objPx, W, n + 1, o) })).filter((o) => o.p);
   const roomC = canvas(W, H); roomC.getContext('2d').drawImage(room, 0, 0, W, H);
   const fullC = canvas(W, H); fullC.getContext('2d').drawImage(full, 0, 0, W, H);
   const planC = canvas(W, H); planC.getContext('2d').drawImage(plan, 0, 0, W, H);
@@ -192,7 +242,7 @@ export async function loadBuild(base) {
     wipe(g, p.full, p.x, p.y, p.w, p.h, k, 'diag', 1, 0.38);
     g.restore();
     // the band of light, shaped by the piece
-    sg.globalCompositeOperation = 'copy'; sg.drawImage(p.clay, 0, 0);
+    sg.globalCompositeOperation = 'copy'; sg.drawImage(p.full, 0, 0);
     sg.globalCompositeOperation = 'source-in';
     const band = Math.sin(Math.PI * k);
     sg.fillStyle = edge('diag', p.w, p.h, k, 0.38, [[0, 'rgba(255,250,240,0)'], [0.18, `rgba(255,250,240,${0.85 * band})`], [0.55, 'rgba(255,250,240,0)']]);
@@ -201,7 +251,7 @@ export async function loadBuild(base) {
   };
 
   const n = pieces.length;
-  const at = (span, i, len) => span[0] + (span[1] - span[0] - len) * (n > 1 ? i / (n - 1) : 0.5);
+  const at = (span, i, len, count = n) => span[0] + (span[1] - span[0] - len) * (count > 1 ? i / (count - 1) : 0.5);
 
   /** Paints the build at u into a 2D context of W×H. */
   const paint = (g, u) => {
@@ -220,27 +270,27 @@ export async function loadBuild(base) {
     wipe(g, shellClay, 0, 0, W, H, ss(...BUILD.shell, u), 'up');
     wipe(g, roomC, 0, 0, W, H, ss(...BUILD.finish, u), 'right');
     // the line drawing of the walls leads the clay and lingers until the materials arrive
-    const lineA = 1 - 0.55 * ss(BUILD.shell[1], BUILD.pieces[0] + 0.08, u) - 0.45 * ss(BUILD.finish[0], BUILD.finish[1] - 0.04, u);
+    // and steps back to a faint guide while the furniture is drawn over it
+    const lineA = 1 - 0.7 * ss(BUILD.shell[1], BUILD.pieces[0] + 0.06, u) - 0.3 * ss(BUILD.finish[0], BUILD.finish[1] - 0.04, u);
     wipe(g, shellInk, 0, 0, W, H, ss(...BUILD.lines, u), 'up', lineA);
-    // each piece, back of the room first
-    const len = 0.13, dlen = 0.11;
-    for (let i = 0; i < n; i++) {
-      const p = pieces[i];
-      const k = (u - at(BUILD.pieces, i, len)) / len;
-      if (k <= 0) continue;
-      const kd = ss(0, 1, (u - at(BUILD.dress, i, dlen)) / dlen);
-      if (kd < 1) {
-        // the model sits on the floor: its shadow arrives with it and hands over to the real one
-        const shA = ss(0.25, 0.7, k) * (1 - kd);
-        if (shA > 0) { g.globalAlpha = shA; g.drawImage(p.shadow, p.x, p.y); g.globalAlpha = 1; }
-        wipe(g, p.wood, p.x, p.y, p.w, p.h, ss(0.22, 0.7, k), 'up');
-        wipe(g, p.clay, p.x, p.y, p.w, p.h, ss(0.55, 1, k), 'up', 1, 0.45);
-      }
-      reveal(g, p, kd);
-      // the outline leads, then gives way to the clay form
-      const inkA = (1 - ss(0.6, 0.95, k)) * (1 - kd);
-      wipe(g, p.ink, p.x, p.y, p.w, p.h, ss(0, 0.45, k), 'up', inkA);
+    // how far each piece is through its reveal
+    const dlen = 0.11;
+    for (let i = 0; i < n; i++) pieces[i].kd = ss(0, 1, (u - at(BUILD.dress, i, dlen)) / dlen);
+    // the sketched shell holds behind every piece still to be revealed
+    if (u > BUILD.finish[0]) for (const p of pieces) if (p.kd < 1) { g.globalAlpha = 1 - p.kd; g.drawImage(p.hold, p.x, p.y); g.globalAlpha = 1; }
+    // each object drawn on its own, back of the room first: outline, then hatching and shadow
+    const len = 0.1, m = objects.length;
+    for (let j = 0; j < m; j++) {
+      const o = objects[j], fade = 1 - o.p.kd;
+      const k = (u - at(BUILD.pieces, j, len, m)) / len;
+      if (k <= 0 || fade <= 0) continue;
+      const shA = ss(0.5, 0.9, k) * fade;
+      if (shA > 0) { g.globalAlpha = shA; g.drawImage(o.shadow, o.x, o.y); g.globalAlpha = 1; }
+      wipe(g, o.fill, o.x, o.y, o.w, o.h, ss(0.4, 0.95, k), 'diag', fade, 0.5);
+      wipe(g, o.lines, o.x, o.y, o.w, o.h, ss(0, 0.55, k), 'up', fade, 0.3);
     }
+    // then each piece becomes the real thing, behind a band of light
+    for (const p of pieces) reveal(g, p, p.kd);
     // settle onto the exact frame the film carries on from
     const end = ss(BUILD.dress[1] - 0.05, BUILD.dress[1], u);
     if (end > 0) { g.globalAlpha = end; g.drawImage(fullC, 0, 0); g.globalAlpha = 1; }

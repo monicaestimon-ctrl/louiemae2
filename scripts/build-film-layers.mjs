@@ -143,6 +143,49 @@ window.build=async(film,T)=>{
     while(q.length){const p=q.pop(),x=p%W;if(x>0)push(p-1);if(x<W-1)push(p+1);if(p>=W)push(p-W);if(p<N-W)push(p+W)}
     for(let i=0;i<N;i++)if(!ob[i]&&!out[i]&&L2[i])ob[i]=1;
     ob=boxBlur(ob,W,H,1)}
+  // Objects: each chair, sofa, table and lamp on its own, for the pencil drawing. Floor shows
+  // between neighbouring pieces in the fine mask, so its separate parts are the objects; a
+  // light erosion first breaks the thin contacts (a chair leg touching a table), then each
+  // part grows back to its full outline. Objects never cross from one piece into another.
+  const obB=new Uint8Array(N);for(let i=0;i<N;i++)obB[i]=ob[i]>.5&&L2[i]?1:0;
+  // Where pieces overlap in the picture (a table in front of a sofa, a sofa on its rug) there
+  // is no floor between them, but there is a contour: cut along the photo's strong colour
+  // edges too, so each side becomes its own object.
+  const er0=boxBlur(Float32Array.from(obB),W,H,T.objSplit).map(v=>v>.97?1:0);
+  const C2=[gr,gg,gb].map(c=>boxBlur(boxBlur(c,W,H,2),W,H,2));
+  const er=new Float32Array(N);
+  for(let i=0;i<N;i++){if(!er0[i])continue;const x=i%W;if(x<1||x>=W-1||i<W||i>=N-W)continue;
+    let gm=0;for(const c of C2){const gx=c[i-W+1]+2*c[i+1]+c[i+W+1]-c[i-W-1]-2*c[i-1]-c[i+W-1],gy=c[i+W-1]+2*c[i+W]+c[i+W+1]-c[i-W-1]-2*c[i-W]-c[i-W+1];gm=Math.max(gm,Math.hypot(gx,gy))}
+    er[i]=gm>T.objEdge?0:1}
+  {const cut=boxBlur(er0.map((v,i)=>v&&!er[i]?1:0),W,H,1);for(let i=0;i<N;i++)if(cut[i]>.2)er[i]=0}
+  const ol=new Int32Array(N),opiece=[0],oseeds=[];let oid=0;
+  for(let i=0;i<N;i++){if(!er[i]||ol[i])continue;oid++;const pc=L2[i],px=[i];ol[i]=oid;
+    for(let s=0;s<px.length;s++){const p=px[s];for(const q of nb(p,p%W)){if(q<0||q>=N||ol[q]||!er[q]||L2[q]!==pc)continue;ol[q]=oid;px.push(q)}}
+    if(px.length<N*T.minObj){for(const p of px)ol[p]=-1;opiece.push(0)}else{opiece.push(pc);for(const p of px)oseeds.push(p)}}
+  for(let i=0;i<N;i++)if(ol[i]<0)ol[i]=0;
+  {let fr=oseeds;while(fr.length){const nx=[];for(const p of fr)for(const q of nb(p,p%W)){if(q<0||q>=N||ol[q]||!obB[q]||L2[q]!==L2[p])continue;ol[q]=ol[p];nx.push(q)}fr=nx}}
+  // A seam or a shadow line can cut one piece in two (a sofa down its middle). Rejoin
+  // neighbouring objects of the same material: same average colour, a real shared border.
+  {const sum=new Map();for(let i=0;i<N;i++){const l=ol[i];if(!l)continue;let s=sum.get(l);if(!s)sum.set(l,s=[0,0,0,0]);s[0]+=b[i*4];s[1]+=b[i*4+1];s[2]+=b[i*4+2];s[3]++}
+    const border=new Map();for(let i=0;i<N;i++){const l=ol[i];if(!l)continue;const x=i%W;for(const q of [x<W-1?i+1:-1,i+W<N?i+W:-1]){if(q<0)continue;const m=ol[q];if(!m||m===l)continue;const k=l<m?l+','+m:m+','+l;border.set(k,(border.get(k)||0)+1)}}
+    const par=new Map(),find=l=>{while(par.has(l)&&par.get(l)!==l)l=par.get(l);return l};
+    // halves of one piece share a long border; neighbours that only touch at a leg do not
+    for(const [k,n] of border){const [p,q]=k.split(',').map(Number);const A=sum.get(p),B=sum.get(q);if(!A||!B)continue;
+      if(n<T.mergeBorder||n<T.mergeRatio*Math.sqrt(Math.min(A[3],B[3])))continue;
+      const dc=Math.hypot(A[0]/A[3]-B[0]/B[3],A[1]/A[3]-B[1]/B[3],A[2]/A[3]-B[2]/B[3]);if(dc<T.mergeCol){const rp=find(p),rq=find(q);if(rp!==rq)par.set(rq,rp)}}
+    for(let i=0;i<N;i++)if(ol[i])ol[i]=find(ol[i])}
+  const ob2=new Map();
+  for(let i=0;i<N;i++){const l=ol[i];if(!l)continue;const x=i%W,y=(i/W)|0;let c=ob2.get(l);if(!c)ob2.set(l,c={l,n:0,x0:W,y0:H,x1:0,y1:0});c.n++;if(x<c.x0)c.x0=x;if(x>c.x1)c.x1=x;if(y<c.y0)c.y0=y;if(y>c.y1)c.y1=y}
+  const objList=[...ob2.values()].filter(c=>c.n>=N*T.minObj).sort((p,q)=>p.y1-q.y1||p.x0-q.x0).slice(0,250);
+  const oremap=new Map(objList.map((c,i)=>[c.l,i+1]));
+  const OL=new Uint8Array(N);for(let i=0;i<N;i++)OL[i]=oremap.get(ol[i])||0;
+  // the soft fringe of each outline belongs to its object
+  for(let pass=0;pass<3;pass++)for(let i=0;i<N;i++){if(OL[i]||ob[i]<.02)continue;const x=i%W;const n=(x>0&&OL[i-1])||(x<W-1&&OL[i+1])||(i>=W&&OL[i-W])||(i<N-W&&OL[i+W]);if(n)OL[i]=n}
+  const okk=new OffscreenCanvas(W,H),okg=okk.getContext('2d'),okd=okg.createImageData(W,H);
+  for(let i=0;i<N;i++){const k=i*4;okd.data[k]=OL[i];okd.data[k+1]=OL[i]?Math.round(ob[i]*255):0;okd.data[k+2]=0;okd.data[k+3]=255}
+  okg.putImageData(okd,0,0);
+  const opad=Math.round(W/160);
+  const objects=objList.map(c=>{const x=Math.max(0,c.x0-opad),y=Math.max(0,c.y0-opad);return {x,y,w:Math.min(W,c.x1+1+opad)-x,h:Math.min(H,c.y1+1+opad)-y,piece:opiece[c.l]}});
   const mk=new OffscreenCanvas(W,H),mg=mk.getContext('2d'),md=mg.createImageData(W,H);
   for(let i=0;i<N;i++){const k=i*4;md.data[k]=L2[i];md.data[k+1]=Math.round(soft[i]*255);md.data[k+2]=L2[i]?Math.round(Math.min(ob[i],soft[i])*255):0;md.data[k+3]=255}
   mg.putImageData(md,0,0);
@@ -151,9 +194,10 @@ window.build=async(film,T)=>{
   const webp=c=>c.convertToBlob({type:'image/webp',quality:.86});
   await save(film,'plan.webp',await webp(plan));await save(film,'room.webp',await webp(room));await save(film,'full.webp',await webp(full));
   await save(film,'mask.png',await mk.convertToBlob({type:'image/png'}));
-  const meta={w:W,h:H,full:T.full,pieces};
+  await save(film,'objects.png',await okk.convertToBlob({type:'image/png'}));
+  const meta={w:W,h:H,full:T.full,pieces,objects};
   await save(film,'meta.json',new Blob([JSON.stringify(meta)]));
-  return {pieces:pieces.length,dropped:comps2.length-keep.length};
+  return {pieces:pieces.length,objects:objects.length,dropped:comps2.length-keep.length};
 };
 </script>`;
 
@@ -199,11 +243,11 @@ try {
   for (const fk of films) {
     const TL = timeline(fk);
     // the room is complete but empty just before the furniture arrives; it is furnished and still once the first hotspots show
-    const T = { plan: Math.min(1, TL.ch[1] * 0.4), room: TL.ch[3] - 0.25, full: TL.hot[0][0] + 0.4, thresh: 28, lumaW: 0.35, minArea: 0.002, minCore: 0.0006, split: 9, bigGroup: 0.05, colourW: 1.2, close: 110 };
+    const T = { plan: Math.min(1, TL.ch[1] * 0.4), room: TL.ch[3] - 0.25, full: TL.hot[0][0] + 0.4, thresh: 28, lumaW: 0.35, minArea: 0.002, minCore: 0.0006, split: 9, bigGroup: 0.05, colourW: 1.2, close: 110, objSplit: 1, minObj: 0.0005, objEdge: 90, mergeCol: 26, mergeBorder: 12, mergeRatio: 0.4 };
     const r = await send('Runtime.evaluate', { expression: `build(${JSON.stringify(fk)},${JSON.stringify(T)})`, awaitPromise: true, returnByValue: true }, sessionId);
     if (r.result?.exceptionDetails) throw new Error(`${fk}: ${r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text}`);
     const v = r.result.result.value;
-    console.log(`${fk}: ${v.pieces} pieces (${v.dropped} specks dropped)`);
+    console.log(`${fk}: ${v.pieces} pieces, ${v.objects} objects`);
   }
 } finally {
   ws.close();proc.kill();server.close();
