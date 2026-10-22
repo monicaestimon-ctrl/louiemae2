@@ -100,7 +100,9 @@ function sketch(fullPx, objPx, W, id, b) {
   const own = new Uint8Array(N);
   for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
     const s = ((y + yy) * W + x + xx) * 4, other = objPx[s] && objPx[s] !== id && objPx[s + 1] > 60;
-    own[yy * w + xx] = grow[yy * w + xx] > 0.03 && !other ? 1 : 0;
+    // on the object (its silhouette edge included), never out on the floor beside it, where
+    // reflections and sun patches would leave dashed marks
+    own[yy * w + xx] = grow[yy * w + xx] > 0.03 && shape[yy * w + xx] > 0.3 && !other ? 1 : 0;
   }
   // normalised blurs, inside the object only, so the floor around it never bleeds in
   const nblur = (r, n) => { let v = La, m = a; for (let k = 0; k < n; k++) { v = boxBlur(v, w, h, r); m = boxBlur(m, w, h, r); } return [v, m]; };
@@ -153,6 +155,29 @@ function sketch(fullPx, objPx, W, id, b) {
     const o = (yy * w + xx) * 4, sa = sh[Math.max(0, yy - drop) * w + xx] * (0.3 + 0.7 * ss(0.5, 1, yy / h)) * (1 - ss(0.4, 0.6, shape[yy * w + xx]));
     for (let e = 0; e < 3; e++) shadow[o + e] = GRAPHITE[e];
     shadow[o + 3] = 255 * Math.min(1, sa * 0.7 * hatch(xx + yy, 0.25, 0));
+  }
+  // Keep strokes, drop specks: texture (terrazzo, rug pile, stone grain) leaves short broken
+  // marks, real edges leave continuous lines. Remove any connected run of ink shorter than
+  // minRun pixels; faint ink only survives if it joins a strong stroke (hysteresis).
+  {
+    const minRun = Math.max(18, Math.round(W / 45)), seen = new Uint8Array(N), stack = [];
+    for (let s0 = 0; s0 < N; s0++) {
+      if (seen[s0] || lines[s0 * 4 + 3] < 40) continue;
+      const run = [s0]; seen[s0] = 1; stack.push(s0); let strong = 0, ry0 = h, ry1 = 0, rx0 = w, rx1 = 0;
+      while (stack.length) {
+        const p = stack.pop(), px0 = p % w, py0 = (p / w) | 0;
+        if (py0 < ry0) ry0 = py0; if (py0 > ry1) ry1 = py0; if (px0 < rx0) rx0 = px0; if (px0 > rx1) rx1 = px0;
+        if (lines[p * 4 + 3] > 120) strong++;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+          const qx = px0 + dx, qy = py0 + dy; if (qx < 0 || qy < 0 || qx >= w || qy >= h) continue;
+          const q = qy * w + qx; if (seen[q] || lines[q * 4 + 3] < 40) continue;
+          seen[q] = 1; run.push(q); stack.push(q);
+        }
+      }
+      // short flat streaks are light reflected in a glossy floor, not furniture
+      const streak = ry1 - ry0 <= 4 && rx1 - rx0 < W / 9 && ry0 > h * 0.45;
+      if (run.length < minRun || strong < 6 || streak) for (const p of run) lines[p * 4 + 3] = 0;
+    }
   }
   // a pencil line has some weight: widen each stroke by a soft pixel either side
   const thick = new Uint8ClampedArray(lines);
