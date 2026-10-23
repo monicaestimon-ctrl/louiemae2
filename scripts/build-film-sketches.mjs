@@ -2,23 +2,26 @@
 //
 //   node scripts/build-film-sketches.mjs [film-key ...]
 //
-// Run after build-film-layers.mjs. Two small models run here, at build time only (nothing is
+// Run after build-film-layers.mjs. Three small models run here, at build time only (nothing is
 // shipped to the site):
 //   - SlimSAM (Xenova/slimsam-77-uniform) finds each object's exact outline: every chair, the
 //     sofa, each table and lamp, prompted with a grid of points over the furniture mask.
+//   - CLIP (Xenova/clip-vit-base-patch32) names each outline: furniture and things in the room
+//     are drawn as solid pieces, plants as foliage, and what is only a reflection in a glossy
+//     floor, a shadow or a scrap of wall is left out.
 //   - "Informative drawings" (line-art.onnx) turns each object, cut out on white paper, into a
 //     clean line drawing, so every object is drawn on its own and lines never run together.
 // The empty room is drawn the same way, so the whole build reads as one drawing.
 //
 // Writes public/trade/f/<film>/b/objects.png (R = object number, G = alpha), sketch.png (an
 // atlas of every object's drawing: A = ink, R = the order its strokes are drawn in),
-// roomlines.png (the empty room's drawing: A = ink) and meta.objects. Both models are fetched
+// roomlines.png (the empty room's drawing: A = ink) and meta.objects (each with its kind). The models are fetched
 // from Hugging Face on first run and cached in node_modules/.cache/film-models.
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { env, SamModel, AutoProcessor, RawImage } from '@huggingface/transformers';
+import { env, SamModel, AutoProcessor, RawImage, pipeline } from '@huggingface/transformers';
 import ort from 'onnxruntime-node';
 import sharp from 'sharp';
 
@@ -44,6 +47,32 @@ const SAM = 'Xenova/slimsam-77-uniform';
 const sam = await SamModel.from_pretrained(SAM, { dtype: 'fp32' });
 const processor = await AutoProcessor.from_pretrained(SAM);
 const lineArt = await ort.InferenceSession.create(lineArtPath);
+const clip = await pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32', { dtype: 'q8' });
+
+// What CLIP may call an outline, in three groups; the best single label decides
+const KINDS = {
+  piece: ['a chair', 'an armchair', 'a bar stool', 'a stool', 'a sofa', 'an ottoman', 'a pouf', 'a bench', 'a table', 'a coffee table', 'a side table',
+    'a cushion', 'a rug', 'a lamp', 'a pendant light', 'a wall light', 'a shelf', 'a bowl', 'a cabinet', 'a counter', 'a mirror', 'a painting', 'books', 'a basket', 'a sculpture'],
+  plant: ['a potted plant', 'a tree in a pot', 'a topiary', 'an olive tree', 'leaves', 'a bouquet of flowers'],
+  none: ['a reflection on a shiny floor', 'a patch of floor', 'a shadow on the floor'],
+};
+const LABELS = Object.values(KINDS).flat();
+/**
+ * Names an object cut out on white (m its mask): piece, plant or none. CLIP alone calls green
+ * velvet an olive tree, so a plant must also be busy at a fine scale, leaf against leaf; and an
+ * outline is only left out when CLIP is fairly sure it is a reflection or a shadow.
+ */
+async function kindOf(rgb, m, w, h) {
+  const [top] = await clip(new RawImage(new Uint8ClampedArray(rgb), w, h, 3), LABELS);
+  let kind = Object.keys(KINDS).find((k) => KINDS[k].includes(top.label));
+  const L = new Float32Array(w * h); for (let i = 0; i < w * h; i++) L[i] = (0.3 * rgb[i * 3] + 0.59 * rgb[i * 3 + 1] + 0.11 * rgb[i * 3 + 2]) / 255;
+  const Lb = boxBlur(L, w, h, 2); let busy = 0, n = 0; for (let i = 0; i < w * h; i++) if (m[i]) { busy += Math.abs(L[i] - Lb[i]); n++; }
+  busy /= Math.max(1, n);
+  if (kind === 'plant' && busy < 0.055) kind = 'piece';
+  if (kind === 'none' && top.score < 0.15) kind = 'piece';
+  if (process.env.KIND_DEBUG) console.log('  ', top.label, top.score.toFixed(2), 'busy=' + busy.toFixed(3), kind);
+  return kind;
+}
 
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const rgba = async (file) => { const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true }); return { px: data, W: info.width, H: info.height }; };
@@ -225,7 +254,7 @@ for (const fk of films) {
   const renum = new Map(objs.map((o, i) => [o.id, i + 1]));
   const OL = new Uint8Array(N); for (let i = 0; i < N; i++) OL[i] = renum.get(lab[i]) || 0;
   // ---------- each object drawn on its own ----------
-  const pad = Math.round(W / 120), sheets = [], boxes = [];
+  const pad = Math.round(W / 120), sheets = [], boxes = []; let dropped = 0;
   for (let n = 0; n < objs.length; n++) {
     const id = n + 1, o = objs[n];
     const x = Math.max(0, o.x0 - pad), y = Math.max(0, o.y0 - pad), w = Math.min(W, o.x1 + 1 + pad) - x, h = Math.min(H, o.y1 + 1 + pad) - y;
@@ -233,6 +262,12 @@ for (const fk of films) {
     const m = new Float32Array(w * h);
     for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) m[yy * w + xx] = OL[(y + yy) * W + x + xx] === id ? 1 : 0;
     const mSoft = boxBlur(m, w, h, 1);
+    // what it is: a reflection or a scrap is left out
+    const cut = Buffer.alloc(w * h * 3);
+    for (let i = 0; i < w * h; i++) { const s2 = (((y + ((i / w) | 0)) * W) + x + (i % w)) * 4, a = mSoft[i]; for (let c = 0; c < 3; c++) cut[i * 3 + c] = full.px[s2 + c] * a + 255 * (1 - a); }
+    const kind = await kindOf(cut, m, w, h);
+    if (process.env.KIND_DEBUG) console.log('    #' + id, x, y, w, h, kind);
+    if (kind === 'none') { OL.forEach((v, i) => { if (v === id) OL[i] = 0; }); dropped++; continue; }
     // Dark materials (walnut, leather, black steel) would be drawn as solid shading; lift the
     // object's tones first so the drawing is its form, not its colour.
     let lum = 0, cnt = 0;
@@ -264,7 +299,7 @@ for (const fk of films) {
     const order = strokeOrder(ink, w, h);
     const sheet = Buffer.alloc(w * h * 4);
     for (let i = 0; i < w * h; i++) { if (!ink[i]) continue; sheet[i * 4] = Math.round(255 * order[i]); sheet[i * 4 + 3] = Math.round(255 * ink[i]); }
-    sheets.push(sheet); boxes.push({ x, y, w, h, piece: o.piece, id });
+    sheets.push(sheet); boxes.push({ x, y, w, h, piece: o.piece, kind, id });
   }
   // the objects that were drawn, numbered in order
   { const re = new Map(boxes.map((b2, i) => [b2.id, i + 1])); for (let i = 0; i < N; i++) OL[i] = re.get(OL[i]) || 0; boxes.forEach((b2) => delete b2.id); }
@@ -304,5 +339,5 @@ for (const fk of films) {
   await sharp(roomPng, { raw: { width: W, height: H, channels: 4 } }).png({ compressionLevel: 9 }).toFile(path.join(dir, 'roomlines.png'));
   meta.objects = boxes;
   writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta));
-  console.log(`${fk}: ${boxes.length} objects drawn (${points.length} prompts, ${kept.length} outlines, ${nLab - kept.length} filled in)`);
+  console.log(`${fk}: ${boxes.length} objects drawn, ${boxes.filter((b) => b.kind === 'plant').length} of them plants (${points.length} prompts, ${kept.length} outlines, ${nLab - kept.length} filled in, ${dropped} left out as reflections or scraps)`);
 }

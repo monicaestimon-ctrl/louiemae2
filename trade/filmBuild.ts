@@ -57,11 +57,12 @@ const LIGHT = (() => { const v = [-0.55, -0.62, 0.56], m = Math.hypot(...v); ret
 const grain = (x, y) => { const s = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453; return s - Math.floor(s); };
 
 /**
- * The tone of one object (a chair, the sofa, a table) as a solid pencil study: an opaque body of
- * paper shaded to its form and deepening toward its edges as it turns away, so it hides the room's
- * lines and anything behind it and reads as its own solid piece; hatching that follows its volume, cross-hatched
- * where darkest; and a soft shadow on the floor. Its lines come from
- * its own drawing (sketch.png). The real object supplies the shading, not its look: its material
+ * One object (a chair, the sofa, a table) as a solid pencil study: an opaque body of paper shaded
+ * to its form and deepening toward its edges as it turns away, so it hides the room's lines and
+ * anything behind it; one clean, continuous outline round its whole silhouette, so every piece is
+ * drawn out in full even where the line drawing is faint; hatching that follows its volume,
+ * cross-hatched where darkest; and a soft shadow on the floor. Its inner lines come from its own
+ * drawing (sketch.png). Plants are drawn as their foliage alone. The real object supplies the shading, not its look: its material
  * is divided out (each pixel against the object's own local brightness, so dark leather and pale
  * bouclé shade the same) and fine texture is smoothed away.
  */
@@ -75,6 +76,17 @@ function tone(fullPx, objPx, W, id, b) {
   }
   const r1 = Math.max(1, Math.round(W / 500));
   const shape = boxBlur(boxBlur(a, w, h, r1), w, h, r1);
+  // the silhouette smoothed into one clean shape: its 0.5 contour is the outline, and the body
+  // stops crisply at it
+  // Thin bits (a leg's reflection running down a glossy floor, a stray stem) are trimmed off
+  // first, by opening the mask: legs stay drawn by the line drawing, not traced as drips.
+  const rO = Math.max(3, Math.round(W / 260));
+  const opened = boxBlur(boxBlur(a, w, h, rO).map((v) => (v > 0.92 ? 1 : 0)), w, h, rO).map((v) => (v > 0.08 ? 1 : 0));
+  for (let i = 0; i < N; i++) opened[i] = Math.min(opened[i], a[i]);
+  const rC = Math.max(2, Math.round(W / 400)), sm = boxBlur(boxBlur(opened, w, h, rC), w, h, rC);
+  // Plants (the build names each object) are drawn as foliage alone: a filled, outlined
+  // silhouette of a tree reads as a cloud.
+  const plant = b.kind === 'plant';
   // normalised blurs, inside the object only, so the floor around it never bleeds in
   const nblur = (r, n) => { let v = La, m = a; for (let k = 0; k < n; k++) { v = boxBlur(v, w, h, r); m = boxBlur(m, w, h, r); } return [v, m]; };
   const at = ([v, m], i, d = 0) => (m[i] > 0.02 ? v[i] / m[i] : d);
@@ -88,7 +100,7 @@ function tone(fullPx, objPx, W, id, b) {
   // and so do rugs and anything else lying flat on the floor
   const solid = y + h <= (b.H || W * 0.5625) * 0.55 ? 0.55 : h < w * 0.45 ? 0.4 : 1;
   const hatch = (u, t, wob) => { const q = (((u + wob) % P) + P) % P, d = Math.min(q, P - q), half = 0.2 + 0.55 * t; return 1 - ss(half, half + 0.8, d); };
-  const fill = new Uint8ClampedArray(N * 4), shadow = new Uint8ClampedArray(N * 4), body = new Uint8ClampedArray(N * 4);
+  const fill = new Uint8ClampedArray(N * 4), shadow = new Uint8ClampedArray(N * 4), body = new Uint8ClampedArray(N * 4), edgeLine = new Uint8ClampedArray(N * 4);
   for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
     const i = yy * w + xx, o = i * 4;
     const xl = Math.max(0, xx - 1), xr = Math.min(w - 1, xx + 1), yu = Math.max(0, yy - 1), yd = Math.min(h - 1, yy + 1);
@@ -103,12 +115,15 @@ function tone(fullPx, objPx, W, id, b) {
     const h1 = hatch(xx + yy, t, wob) * 0.3 * ss(0.4, 0.7, t);
     const h2 = hatch(xx - yy, t - 0.4, -wob) * 0.24 * ss(0.75, 1, t);
     for (let e = 0; e < 3; e++) fill[o + e] = GRAPHITE[e];
-    fill[o + 3] = 255 * Math.max(h1, h2) * g * ss(0.45, 0.6, shape[i]);
+    fill[o + 3] = plant ? 0 : 255 * Math.max(h1, h2) * g * ss(0.5, 0.6, sm[i]);
+    // the outline: a pencil line along the smoothed silhouette, about two pixels wide
+    for (let e = 0; e < 3; e++) edgeLine[o + e] = GRAPHITE[e];
+    edgeLine[o + 3] = plant ? 0 : 255 * 0.85 * Math.min(1, 0.4 + 0.6 * solid) * (0.85 + 0.15 * g) * Math.max(0, 1 - Math.abs(sm[i] - 0.5) / 0.16);
     // the solid body: lit paper on the light side, a graphite wash deepening into the shade and
     // toward the edges, where the form turns away
     const d = 0.03 + 0.34 * t * (0.85 + 0.15 * g) + 0.16 * (1 - ss(0.45, 0.95, deep[i]));
     for (let e = 0; e < 3; e++) body[o + e] = BODY[e] + (GRAPHITE[e] - BODY[e]) * d;
-    body[o + 3] = 255 * solid * ss(0.3, 0.55, shape[i]);
+    body[o + 3] = plant ? 0 : 255 * solid * ss(0.44, 0.54, sm[i]);
   }
   // cast shadow on the floor: the silhouette, dropped and spread, a soft smudge of graphite
   const rS = Math.max(4, Math.round(W / 110)), drop = Math.round(h * 0.03);
@@ -118,7 +133,7 @@ function tone(fullPx, objPx, W, id, b) {
     for (let e = 0; e < 3; e++) shadow[o + e] = GRAPHITE[e];
     shadow[o + 3] = 255 * Math.min(1, sa * 0.42 * (0.8 + 0.2 * grain(xx + x, yy + y)));
   }
-  return { fill: toCanvas(fill, w, h), shadow: toCanvas(shadow, w, h), body: toCanvas(body, w, h) };
+  return { fill: toCanvas(fill, w, h), shadow: toCanvas(shadow, w, h), body: toCanvas(body, w, h), edge: toCanvas(edgeLine, w, h) };
 }
 
 /**
@@ -271,6 +286,8 @@ export async function loadBuild(base) {
         if (s0 < STAGES) { g.globalAlpha = fade * (f - s0); g.drawImage(o.lines[s0], o.x, o.y); }
         g.globalAlpha = 1;
       }
+      // its outline closes round it as it is drawn
+      wipe(g, o.edge, o.x, o.y, o.w, o.h, ss(0, 0.6, k), 'up', fade, 0.3);
     }
     if (sweep > 0) {
       for (const p of pieces) reveal(g, p, e);
