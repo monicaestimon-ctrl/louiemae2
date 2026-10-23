@@ -7,6 +7,8 @@ import { useQuery, useMutation, useAction } from 'convex/react';
 import { deliveryCents, DELIVERY_TIERS } from '../lib/holmDelivery';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
+import { loadBuild, BUILD } from './filmBuild';
+import { loadModel, MODEL } from './filmModel';
 export const html = htm.bind(React.createElement);
 
 /* ================= data ================= */
@@ -680,6 +682,24 @@ function loadStills(fk,n){
   return {imgs,stop(){dead=true}};
 }
 const nearestStill=(imgs,i)=>{for(let d=0;d<imgs.length;d++){if(imgs[i-d])return imgs[i-d];if(imgs[i+d])return imgs[i+d]}return null};
+// Each film is told in five parts, two of them painted live over it:
+//   the plan (film) → the clay model raised out of the plan, walls first, then each piece from
+//   its footprint (trade/filmModel.ts) → the camera dives into the model (film) → the room,
+//   still clay, finished by one sweep of light into the real thing (trade/filmBuild.ts) → the
+//   furnished room, its hotspots and the night (film).
+// MODEL_SECS and BUILD_SECS are how much scroll the painted parts get, in film seconds. Where a
+// film's layers are missing or fail to load, the film plays those parts as it is.
+const MODEL_SECS=9,BUILD_SECS=7;
+const BUILD_CH=['Then every piece, in clay.','Each one rises from its place in the plan.'];
+/** Scroll timeline for a film with its painted parts: segment starts, chapter starts and copy, in scroll seconds. */
+function buildTimeline(F,model){const TL=F.TL,tc=TL.ch[1]+1.15,t1=model?Math.min(1,TL.ch[1]*0.4):tc,S1=model?MODEL_SECS:0;
+  const te=TL.ch[2]-0.25,tf=TL.hot[0][0]+0.4,S2=BUILD_SECS;
+  // scroll seconds where each part starts: model, dive, build, furnished
+  const a=t1,c=a+S1,d=c+(te-tc),e=d+S2;
+  return {t1,tc,te,tf,a,c,d,e,S1,S2,total:e+TL.total-tf,
+    ch:[0,model?a:TL.ch[1],model?a+S1*MODEL.pieces[0]:tc,d+S2*BUILD.finish[0],e,e+TL.ch[4]-tf],
+    copy:[F.ch[0],F.ch[1],BUILD_CH,F.ch[2],F.ch[3],F.ch[4]],shop:4,
+    dark:d+S2*(BUILD.finish[0]+BUILD.finish[1])/2}}
 
 function FilmStudy({ctx,fk,setFk}){
   const F=FILMS[fk],TL=F.TL;const siblings=filmsFor(ctx.space);
@@ -689,6 +709,15 @@ function FilmStudy({ctx,fk,setFk}){
   // index.html already showed chapter one; don't replay its entrance when the app takes over.
   const [fromShell]=useState(()=>document.documentElement.dataset.shell==='trade');useEffect(()=>{delete document.documentElement.dataset.shell},[]);
   const phone=useMedia(PHONE_FRAMES);const cvRef=useRef(),stills=useRef(null),drawn=useRef(null);
+  // the build in front of the film: null while its layers load, false if they can't
+  const [modeled,setModeled]=useState(false);const BT=useMemo(()=>buildTimeline(F,modeled),[fk,modeled]);const BTr=useRef(BT);BTr.current=BT;
+  const bcRef=useRef(),painter=useRef(null),modeler=useRef(null),painted=useRef(-1);const [built,setBuilt]=useState(null);
+  const useBuild=built!==false;const CH=useBuild?BT.ch:TL.ch,COPY=useBuild?BT.copy:F.ch,SHOP=useBuild?BT.shop:3;
+  const mode=useRef(useBuild);mode.current=useBuild;
+  useEffect(()=>{let dead=false;painter.current=null;modeler.current=null;painted.current=-1;setBuilt(null);setModeled(false);
+    loadBuild(`f/${fk}/b/`).then(B=>{if(dead)return;const c=bcRef.current;if(c){c.width=B.W;c.height=B.H}painter.current=B;setBuilt(true)},()=>{if(!dead)setBuilt(false)});
+    loadModel(`f/${fk}/b/`).then(M=>{if(dead)return;modeler.current=M;setModeled(true)},()=>{});
+    return()=>{dead=true}},[fk]);
   // Phones: start fetching stills straight away (frame 0 first). Desktop: the film waits
   // for the page to finish loading so it never competes with first paint.
   useEffect(()=>{if(!phone)return;const L=loadStills(fk,stillCount(TL));stills.current=L;drawn.current=null;return()=>{L.stop();stills.current=null}},[fk,phone]);
@@ -702,19 +731,29 @@ function FilmStudy({ctx,fk,setFk}){
   useEffect(()=>{let raf=0,run=true;
     const tick=()=>{if(!run)return;const sec=secRef.current,st=stageRef.current,v=vidRef.current;
       if(sec&&st){const r=sec.getBoundingClientRect();const total=Math.max(1,sec.offsetHeight-st.offsetHeight);const P=Math.min(1,Math.max(0,-r.top/total));
-        const target=P*(TL.total-0.05);
+        const bm=mode.current,B=painter.current,M=modeler.current,BT=BTr.current;
+        const target=P*((bm?BT.total:TL.total)-0.05);
         // critically damped follow: smooth on wheels and trackpads, no overshoot
         cur.current+=(target-cur.current)*0.16;if(Math.abs(target-cur.current)<0.004)cur.current=target;
-        if(v&&!v.seeking&&v.readyState>=1&&Math.abs(v.currentTime-cur.current)>1/48){try{v.currentTime=cur.current}catch(e){}}
+        // s: scroll seconds; ft: where the film is. During the build the film waits on the
+        // empty room the build starts from, and after it carries on from the furnished frame.
+        // s: scroll seconds; ft: where the film is. While a painted part shows, the film waits
+        // on the frame it hands over to (or takes over from).
+        const s=cur.current,inModel=bm&&!!M&&s>=BT.a&&s<BT.c,inBuild=bm&&s>=BT.d&&s<BT.e;
+        const ft=!bm?s:s<BT.a?s:inModel?BT.tc:s<BT.d?BT.tc+s-BT.c:inBuild?BT.te:BT.tf+s-BT.e;
+        const bc=bcRef.current;
+        if(bc){const P2=inModel?M:inBuild?B:null,show=!!P2;if(show){const u=inModel?(s-BT.a)/BT.S1:1+(s-BT.d)/BT.S2;if(Math.abs(u-painted.current)>1e-4){P2.paint(bc.getContext('2d'),inModel?u:u-1);painted.current=u}}
+          if(bc.classList.contains('on')!==show)bc.classList.toggle('on',show)}
+        if(v&&!v.seeking&&v.readyState>=1&&Math.abs(v.currentTime-ft)>1/48){try{v.currentTime=ft}catch(e){}}
         const cv=cvRef.current,SL=stills.current;
-        if(cv&&SL){const im=nearestStill(SL.imgs,Math.min(SL.imgs.length-1,Math.round(cur.current*STILLS_PER_SEC)));
+        if(cv&&SL){const im=nearestStill(SL.imgs,Math.min(SL.imgs.length-1,Math.round(ft*STILLS_PER_SEC)));
           const dpr=Math.min(2,devicePixelRatio||1),W=Math.round(st.clientWidth*dpr),H=Math.round(st.clientHeight*dpr);
           if(im&&(drawn.current!==im||cv.width!==W||cv.height!==H)){if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H}
             const g=cv.getContext('2d'),k=Math.max(W/im.naturalWidth,H/im.naturalHeight),dw=im.naturalWidth*k,dh=im.naturalHeight*k;
             g.drawImage(im,(W-dw)/2,(H-dh)/2,dw,dh);if(!drawn.current)cv.classList.add('on');drawn.current=im}}
-        const t=cur.current;let c=0;for(let i=0;i<TL.ch.length;i++)if(t>=TL.ch[i])c=i;
-        const h=TL.hot.findIndex(([a,b])=>t>=a-0.02&&t<=b+0.05);
-        const dk=F.darkRoom?t>=TL.ch[2]:t>=TL.dark;
+        const chs=bm?BT.ch:TL.ch;let c=0;for(let i=0;i<chs.length;i++)if(s>=chs[i])c=i;
+        const h=inBuild?-1:TL.hot.findIndex(([a,b])=>ft>=a-0.02&&ft<=b+0.05);
+        const dk=F.darkRoom?(bm?s>=BT.dark:ft>=TL.ch[2]):ft>=TL.dark;
         const L=last.current;
         if(c!==L.ch){L.ch=c;setChi(c)}
         if(h!==L.hot){L.hot=h;setHot(h);if(h<0)setPick(null)}
@@ -722,9 +761,13 @@ function FilmStudy({ctx,fk,setFk}){
         if(P>0.004&&!started)setStarted(true)}
       raf=requestAnimationFrame(tick)};
     tick();return()=>{run=false;cancelAnimationFrame(raf)}},[fk]);
-  const ch=F.ch[chi];
+  const ch=COPY[Math.min(chi,COPY.length-1)];
   const mw=Math.max(box.w,box.h*FILM_AR),mh=mw/FILM_AR;const ox=(box.w-mw)/2,oy=(box.h-mh)/2;
-  const goChap=i=>{const sec=secRef.current,st=stageRef.current;const top=sec.getBoundingClientRect().top+scrollY;const total=sec.offsetHeight-st.offsetHeight;const t=i===3?TL.hot[0][0]+0.3:i===4?TL.hot[1][0]+0.3:TL.ch[i]+0.4;scrollTo({top:top+total*(t/TL.total),behavior:'smooth'})};
+  // Chapter buttons: the furnished and night chapters land where their hotspots are showing.
+  const goChap=i=>{const sec=secRef.current,st=stageRef.current;const top=sec.getBoundingClientRect().top+scrollY;const total=sec.offsetHeight-st.offsetHeight;
+    const film=t=>useBuild?BT.e+Math.max(0.2,t-BT.tf):t;
+    const s=i===SHOP?film(TL.hot[0][0]+0.3):i===CH.length-1?film(TL.hot[1][0]+0.3):CH[i]+0.4;
+    scrollTo({top:top+total*(s/(useBuild?BT.total:TL.total)),behavior:'smooth'})};
   const toTop=()=>{const sec=secRef.current;if(sec&&sec.getBoundingClientRect().top<0)scrollTo({top:sec.getBoundingClientRect().top+scrollY,behavior:'smooth'})};
   const P0=pick&&byId(pick.id);const ids=[...new Set(F.hot.map(h=>h.id))];
   return html`<section className="rh hf" ref=${secRef} style=${{height:'calc(7.5 * 100svh)'}} aria-label=${F.name+' film'}>
@@ -732,14 +775,15 @@ function FilmStudy({ctx,fk,setFk}){
       <img className="hf-video" src=${phone?stillUrl(fk,0):`f/${fk}/poster.jpg`} alt="" fetchpriority="high" aria-hidden="true"/>
       ${phone?html`<canvas ref=${cvRef} className="hf-video hf-fade" aria-hidden="true"></canvas>`
         :html`<video ref=${vidRef} className=${'hf-video hf-fade'+(ready?' on':'')} src=${`f/${fk}/film.mp4`} muted playsInline preload="none" aria-hidden="true" onLoadedData=${()=>setReady(true)}></video>`}
+      <canvas ref=${bcRef} className="hf-video hf-build" aria-hidden="true"></canvas>
       <div className="hf-scrim" aria-hidden="true"></div>
       ${hot>=0&&F.hot.map((h,i)=>{const x=ox+h.x*mw,y=oy+h.y*mh;if(x<12||x>box.w-12||y<90||y>box.h-12)return null;const p=byId(h.id);return html`<button key=${hot+'-'+i} className="fs-hot" style=${{left:x+'px',top:y+'px',animationDelay:i*90+'ms'}} aria-label=${'View '+p.name} onClick=${e=>{e.stopPropagation();setPick({id:h.id,x:x/box.w*100,y:y/box.h*100})}}><i></i><span>${p.name}</span></button>`})}
       <div className=${'hf-copy'+(fromShell&&chi===0?' still':'')} onClick=${e=>e.stopPropagation()}>
         <h1 key=${'h'+fk+chi}>${ch[0]}</h1>
         <p key=${'p'+fk+chi}>${ch[1]}</p>
-        ${chi>=3&&html`<div className="hf-cta"><button className="hf-btn solid" onClick=${()=>{ids.forEach(id=>ctx.addToTray(id,1,null,true));ctx.toast(ids.length+' pieces added to '+ctx.activeProject.name,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Shop the room</button><button className="hf-btn" onClick=${()=>ctx.toStudio(ids,F.name)}>Open in Studio</button></div>`}
+        ${chi>=SHOP&&html`<div className="hf-cta"><button className="hf-btn solid" onClick=${()=>{ids.forEach(id=>ctx.addToTray(id,1,null,true));ctx.toast(ids.length+' pieces added to '+ctx.activeProject.name,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Shop the room</button><button className="hf-btn" onClick=${()=>ctx.toStudio(ids,F.name)}>Open in Studio</button></div>`}
       </div>
-      <div className="hf-prog" role="group" aria-label="Chapters" onClick=${e=>e.stopPropagation()}>${F.ch.map((c,i)=>html`<button key=${i} className=${i===chi?'on':i<chi?'done':''} aria-label=${'Go to: '+c[0]} onClick=${()=>goChap(i)}><i></i></button>`)}</div>
+      <div className="hf-prog" role="group" aria-label="Chapters" onClick=${e=>e.stopPropagation()}>${COPY.map((c,i)=>html`<button key=${i} className=${i===chi?'on':i<chi?'done':''} aria-label=${'Go to: '+c[0]} onClick=${()=>goChap(i)}><i></i></button>`)}</div>
       <nav className="hf-nav" aria-label="Choose a space" onClick=${e=>e.stopPropagation()}>
         ${siblings.length>1&&html`<div className="hf-films">${siblings.map(k=>html`<button key=${k} className=${k===fk?'on':''} aria-pressed=${k===fk} onClick=${()=>{setFk(k);toTop()}}>${FILMS[k].name}</button>`)}</div>`}
         <div className="hf-spaces">${SPACE_KEYS.map(k=>html`<button key=${k} className=${k===ctx.space?'on':''} aria-pressed=${k===ctx.space} onClick=${()=>{ctx.setSpace(k);toTop()}}>${SPACES[k].label}</button>`)}</div>
