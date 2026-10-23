@@ -2,11 +2,14 @@
 //
 //   node scripts/build-film-layers.mjs [film-key ...]
 //
-// The films crossfade between finished stages (plan, clay, empty room, furnished room), so the
-// furniture pops in and out. The hero now builds the room itself instead: walls rise from the
-// plan, each piece is framed, formed in clay and finished in place. Everything is derived from
-// three frames of the film: the plan, the finished room before the furniture arrives and the
-// furnished room. The difference between the last two is each piece's silhouette.
+// The films crossfade between finished stages (plan, clay, empty room, furnished room), so all
+// the furniture fades in at once. The hero plays the film up to the empty room, then furnishes
+// it itself: each piece rises in clay in its place, one after another, and is finished. That is
+// derived from three frames of the film: the plan, the finished room before the furniture
+// arrives and the furnished room. The difference between the last two is each piece's silhouette.
+//
+// With CLAY=1 it only saves clay.webp, the film's clay model seen from above, for
+// build-film-model.mjs.
 //
 // Writes public/trade/f/<film>/b/{plan,room,full}.webp, mask.png (R = piece number, G = alpha)
 // and meta.json. Needs Google Chrome or Microsoft Edge (H.264 decode); set CHROME to override.
@@ -64,6 +67,9 @@ function boxBlur(a,W,H,r){const t=new Float32Array(a.length),o=new Float32Array(
   return o}
 const ss=(a,b,x)=>{const t=Math.min(1,Math.max(0,(x-a)/(b-a)));return t*t*(3-2*t)};
 async function save(film,name,blob){const r=await fetch('/out/'+film+'/'+name,{method:'PUT',body:blob});if(!r.ok)throw new Error('save '+name+' '+r.status)}
+// frames alone, saved as they are: the clay model the overhead build is cut from (CLAY=1)
+window.grab=async(film,list)=>{const fr=await frames('/'+film+'/film.mp4',list.map(l=>l.t));
+  for(let i=0;i<list.length;i++)await save(film,list[i].name,await fr[i].convertToBlob({type:'image/webp',quality:.9}));return list.length};
 window.build=async(film,T)=>{
   const [plan,room,full]=await frames('/'+film+'/film.mp4',[T.plan,T.room,T.full]);
   const W=room.width,H=room.height,N=W*H;
@@ -246,6 +252,14 @@ try {
     const TL = timeline(fk);
     // the room is complete but empty just before the furniture arrives; it is furnished and still once the first hotspots show
     const T = { plan: Math.min(1, TL.ch[1] * 0.4), room: TL.ch[3] - 0.25, full: TL.hot[0][0] + 0.4, thresh: 28, lumaW: 0.35, minArea: 0.002, minCore: 0.0006, split: 9, bigGroup: 0.05, colourW: 1.2, close: 110, objSplit: 1, minObj: 0.0005, objEdge: 90, mergeCol: 26, mergeBorder: 12, mergeRatio: 0.4 };
+    if (process.env.CLAY) {
+      // the clay model, complete and nearly still, before the camera dives into the room
+      const list = [{ name: 'clay.webp', t: TL.ch[1] + 1.15 }];
+      const g = await send('Runtime.evaluate', { expression: `grab(${JSON.stringify(fk)},${JSON.stringify(list)})`, awaitPromise: true, returnByValue: true }, sessionId);
+      if (g.result?.exceptionDetails) throw new Error(`${fk}: ${g.result.exceptionDetails.text}`);
+      console.log(`${fk}: clay model frame`);
+      continue;
+    }
     const r = await send('Runtime.evaluate', { expression: `build(${JSON.stringify(fk)},${JSON.stringify(T)})`, awaitPromise: true, returnByValue: true }, sessionId);
     if (r.result?.exceptionDetails) throw new Error(`${fk}: ${r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text}`);
     const v = r.result.result.value;

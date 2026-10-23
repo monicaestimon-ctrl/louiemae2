@@ -1,21 +1,24 @@
-// Draws every piece of furniture in each hero room as its own pencil drawing.
+// Finds every piece of furniture in each hero room as its own clean outline, for the clay
+// furnishing the hero paints between the empty and the furnished frames (trade/filmBuild.ts).
 //
 //   node scripts/build-film-sketches.mjs [film-key ...]
 //
-// Run after build-film-layers.mjs. Three small models run here, at build time only (nothing is
+// Run after build-film-layers.mjs. Four small models run here, at build time only (nothing is
 // shipped to the site):
-//   - SlimSAM (Xenova/slimsam-77-uniform) finds each object's exact outline: every chair, the
-//     sofa, each table and lamp, prompted with a grid of points over the furniture mask.
-//   - CLIP (Xenova/clip-vit-base-patch32) names each outline: furniture and things in the room
-//     are drawn as solid pieces, plants as foliage, and what is only a reflection in a glossy
-//     floor, a shadow or a scrap of wall is left out.
-//   - "Informative drawings" (line-art.onnx) turns each object, cut out on white paper, into a
-//     clean line drawing, so every object is drawn on its own and lines never run together.
-// The empty room is drawn the same way, so the whole build reads as one drawing.
+//   - SlimSAM (Xenova/slimsam-77-uniform) finds each object's outline: every chair, the sofa,
+//     each table and lamp, prompted with a grid of points over the furniture mask.
+//   - CLIP (Xenova/clip-vit-base-patch32) names each outline: furniture and things in the room,
+//     plants, and what is only a reflection or a scrap, which is left out. It also tells a group
+//     (a table with its chairs) from one piece, and joins the parts of one piece found apart.
+//   - Depth Anything V2 (onnx-community/depth-anything-v2-small) cuts reflections in a polished
+//     floor away from the pieces standing on it.
+//   - "Informative drawings" (line-art.onnx) draws each object, cut out on white paper; its ink
+//     also shows which filled-in areas are only texture.
+// Each outline is then snapped to the photo's own edges.
 //
-// Writes public/trade/f/<film>/b/objects.png (R = object number, G = alpha), sketch.png (an
-// atlas of every object's drawing: A = ink, R = the order its strokes are drawn in),
-// roomlines.png (the empty room's drawing: A = ink) and meta.objects (each with its kind). The models are fetched
+// Writes public/trade/f/<film>/b/objects.png (R = object number, G = alpha), meta.objects (each
+// with its kind, back of the room first), sketch.png (an atlas of every object's drawing: A =
+// ink, R = stroke order) and roomlines.png (the empty room's drawing). The models are fetched
 // from Hugging Face on first run and cached in node_modules/.cache/film-models.
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
@@ -48,6 +51,35 @@ const sam = await SamModel.from_pretrained(SAM, { dtype: 'fp32' });
 const processor = await AutoProcessor.from_pretrained(SAM);
 const lineArt = await ort.InferenceSession.create(lineArtPath);
 const clip = await pipeline('zero-shot-image-classification', 'Xenova/clip-vit-base-patch32', { dtype: 'q8' });
+const depth = await pipeline('depth-estimation', 'onnx-community/depth-anything-v2-small', { dtype: 'q8' });
+
+/** Relative depth of an image (larger is nearer), at W×H. */
+async function depthMap(file, W, H) {
+  const { predicted_depth: t } = await depth(await RawImage.read(file));
+  const [h, w] = t.dims.slice(-2), d = t.data, o = new Float32Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const fx = Math.min(w - 1, Math.max(0, ((x + 0.5) * w) / W - 0.5)), fy = Math.min(h - 1, Math.max(0, ((y + 0.5) * h) / H - 0.5));
+    const x0 = fx | 0, y0 = fy | 0, x1 = Math.min(w - 1, x0 + 1), y1 = Math.min(h - 1, y0 + 1), tx = fx - x0, ty = fy - y0;
+    o[y * W + x] = (d[y0 * w + x0] * (1 - tx) + d[y0 * w + x1] * tx) * (1 - ty) + (d[y1 * w + x0] * (1 - tx) + d[y1 * w + x1] * tx) * ty;
+  }
+  return o;
+}
+
+/**
+ * Edge-aware refinement of a mask p against a guide image I (He et al.'s guided filter): the
+ * outline snaps to the photo's own edges, so leaves, spindles and rims are cut cleanly instead
+ * of following SAM's coarse mask.
+ */
+function guided(I, p, w, h, r, eps) {
+  const n = w * h, Ip = new Float32Array(n), II = new Float32Array(n);
+  for (let i = 0; i < n; i++) { Ip[i] = I[i] * p[i]; II[i] = I[i] * I[i]; }
+  const mI = boxBlur(I, w, h, r), mp = boxBlur(p, w, h, r), mIp = boxBlur(Ip, w, h, r), mII = boxBlur(II, w, h, r);
+  const A = new Float32Array(n), B = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const v = mII[i] - mI[i] * mI[i]; A[i] = (mIp[i] - mI[i] * mp[i]) / (v + eps); B[i] = mp[i] - A[i] * mI[i]; }
+  const mA = boxBlur(A, w, h, r), mB = boxBlur(B, w, h, r), q = new Float32Array(n);
+  for (let i = 0; i < n; i++) q[i] = Math.min(1, Math.max(0, mA[i] * I[i] + mB[i]));
+  return q;
+}
 
 // What CLIP may call an outline, in three groups; the best single label decides
 const KINDS = {
@@ -57,6 +89,10 @@ const KINDS = {
   none: ['a reflection on a shiny floor', 'a patch of floor', 'a shadow on the floor'],
 };
 const LABELS = Object.values(KINDS).flat();
+// when SAM's widest outline might be a group of things rather than one
+const GROUP = ['a group of chairs around a table', 'several chairs', 'a dining set', 'several vases on a shelf', 'a collection of objects', 'bottles and jars on a counter'];
+const PART = ['a cushion', 'the back of a chair', 'the arm of a chair', 'a seat cushion', 'a chair leg', 'part of a sofa'];
+const SINGLE = ['one armchair', 'one chair', 'one sofa', 'one table', 'one lamp', 'one vase', 'one bar stool', 'one cabinet', 'one plant'];
 /**
  * Names an object cut out on white (m its mask): piece, plant or none. CLIP alone calls green
  * velvet an olive tree, so a plant must also be busy at a fine scale, leaf against leaf; and an
@@ -74,6 +110,10 @@ async function kindOf(rgb, m, w, h) {
   return kind;
 }
 
+// how far in front of the empty room's floor a pixel must stand, as a fraction of the floor's nearness
+const RISE = Number(process.env.RISE || 0.05);
+// how steeply (per pixel, in the depth range) the empty room must come nearer to count as floor
+const FLOOR_SLOPE = Number(process.env.FLOOR_SLOPE || 0.0006);
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const rgba = async (file) => { const { data, info } = await sharp(file).ensureAlpha().raw().toBuffer({ resolveWithObject: true }); return { px: data, W: info.width, H: info.height }; };
 
@@ -174,6 +214,19 @@ for (const fk of films) {
   // prompts: a grid of points over the furniture
   const step = Math.round(W / 56), points = [];
   for (let y = step / 2; y < H; y += step) for (let x = step / 2; x < W; x += step) if (furn(x | 0, y | 0) > 0.5) points.push([x, y]);
+  // is an outline (low-res cells) several things, or one? CLIP looks at it cut out on white
+  const isGroup = async (cells) => {
+    let x0 = LW, y0 = LH, x1 = -1, y1 = -1;
+    for (let y = 0; y < LH; y++) for (let x = 0; x < LW; x++) if (cells[y * LW + x]) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+    const X0 = Math.floor(x0 / S), Y0 = Math.floor(y0 / S), X1 = Math.min(W - 1, Math.ceil((x1 + 1) / S)), Y1 = Math.min(H - 1, Math.ceil((y1 + 1) / S)), w = X1 - X0 + 1, h = Y1 - Y0 + 1;
+    const rgb = new Uint8ClampedArray(w * h * 3);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const on = cells[Math.min(LH - 1, Math.floor((Y0 + y) * S)) * LW + Math.min(LW - 1, Math.floor((X0 + x) * S))], s2 = ((Y0 + y) * W + X0 + x) * 4;
+      for (let c = 0; c < 3; c++) rgb[(y * w + x) * 3 + c] = on ? full.px[s2 + c] : 255;
+    }
+    const out = await clip(new RawImage(rgb, w, h, 3), [...GROUP, ...SINGLE]);
+    return out.filter((o) => GROUP.includes(o.label)).reduce((t, o) => t + o.score, 0) > 0.5;
+  };
   const cands = [];
   for (let b = 0; b < points.length; b += 48) {
     const batch = points.slice(b, b + 48);
@@ -191,7 +244,11 @@ for (const fk of films) {
         opts.push({ k, off, area, onF: area ? onF / area : 0, score: sc[j * M + k], cells });
       }
       const ok = opts.filter((o) => o.score > 0.82 && o.onF > 0.55 && o.area > LW * LH * 0.0006 && o.area < LW * LH * 0.16).sort((a, c) => c.area - a.area);
-      if (ok.length) cands.push({ ...ok[0], md, MW });
+      // ...but not a group: when the largest is several times the next (a table with its
+      // chairs, a shelf of vases), the next is the object itself
+      let pickO = ok[0];
+      if (ok.length > 1 && ok[0].area > ok[1].area * 2.2 && ok[1].score > 0.86 && await isGroup(ok[0].cells)) pickO = ok[1];
+      if (pickO) cands.push({ ...pickO, md, MW });
     }
   }
   // one mask per object: drop near-duplicates (the same chair found from several points),
@@ -203,7 +260,7 @@ for (const fk of films) {
     for (const k of kept) {
       let inter = 0; for (let i = 0; i < c.cells.length; i++) if (c.cells[i] && k.cells[i]) inter++;
       const union = c.area + k.area - inter;
-      if (inter / union > 0.55 || inter / Math.min(c.area, k.area) > 0.85) { dup = true; if (c.area > k.area * 1.15 && inter / k.area > 0.85 && c.score > k.score - 0.04) Object.assign(k, c); break; }
+      if (inter / union > 0.55 || inter / Math.min(c.area, k.area) > 0.85) { dup = true; if (c.area > k.area * 1.15 && c.area < k.area * 2.2 && inter / k.area > 0.85 && c.score > k.score - 0.04) Object.assign(k, c); break; }
     }
     if (!dup) kept.push(c);
   }
@@ -232,6 +289,86 @@ for (const fk of films) {
       if (q.length < N * 0.0015) continue;
       nLab++; for (const p of q) lab[p] = nLab;
     }
+  }
+  // Floor reflections: SAM outlines a piece together with its reflection in a polished floor.
+  // Depth tells them apart: a reflection lies at the depth of the empty room's floor there, while
+  // the piece stands in front of it. What lies low under a solid part of the same object is cut
+  // away (legs, poles and cords are thin, and kept: depth misses them), and an object that is
+  // nearly all reflection goes.
+  let reflected = 0;
+  {
+    const dF = await depthMap(path.join(dir, 'full.webp'), W, H), dR = await depthMap(path.join(dir, 'room.webp'), W, H);
+    // the two depth maps are relative; fit one to the other where nothing stands
+    let sx = 0, sy = 0, sxx = 0, sxy = 0, n = 0, mx = 0;
+    for (let i = 0; i < N; i += 7) if (!lab[i]) { sx += dR[i]; sy += dF[i]; sxx += dR[i] * dR[i]; sxy += dR[i] * dF[i]; n++; }
+    for (let i = 0; i < N; i++) mx = Math.max(mx, dF[i]);
+    const ka = (n * sxy - sx * sy) / (n * sxx - sx * sx), kb = (sy - ka * sx) / n;
+    const low = new Float32Array(N);
+    // nearness is relative: a far chair stands only a little in front of the floor behind it
+    // and only the floor reflects: in the empty room it comes nearer row by row, where a wall
+    // (and a shelf, and the counter top) keeps its distance
+    const gs = Math.max(3, Math.round(H / 90)), dRs = boxBlur(dR, W, H, gs);
+    const floor = (i) => { const y = (i / W) | 0; if (y < gs || y >= H - gs) return y >= H - gs; return (dRs[i + gs * W] - dRs[i - gs * W]) / mx > FLOOR_SLOPE * gs; };
+    for (let i = 0; i < N; i++) if (lab[i] && floor(i)) { const fl = Math.max(mx * 0.05, ka * dR[i] + kb); low[i] = (dF[i] - fl) / fl < RISE ? 1 : 0; }
+    if (process.env.DEPTH_DEBUG) {
+      const o = Buffer.alloc(N * 3); for (let i = 0; i < N; i++) { const f = floor(i); o[i * 3] = low[i] ? 255 : lab[i] ? 60 : 0; o[i * 3 + 1] = lab[i] && !low[i] ? 255 : 0; o[i * 3 + 2] = f ? 160 : 0; }
+      await sharp(o, { raw: { width: W, height: H, channels: 3 } }).jpeg().toFile(path.join(process.env.DEPTH_DEBUG, fk + '-depth.jpg'));
+    }
+    const rO = Math.max(3, Math.round(W / 260));
+    const wide = boxBlur(boxBlur(low, W, H, rO).map((v) => (v > 0.92 ? 1 : 0)), W, H, rO).map((v) => (v > 0.08 ? 1 : 0));
+    const before = new Uint32Array(nLab + 1), lowN = new Uint32Array(nLab + 1);
+    for (let i = 0; i < N; i++) if (lab[i]) { before[lab[i]]++; if (wide[i] && low[i]) lowN[lab[i]]++; }
+    const gone = new Uint8Array(nLab + 1); for (let id = 1; id <= nLab; id++) if (before[id] && lowN[id] > before[id] * 0.7) { gone[id] = 1; reflected++; }
+    const solid = new Uint8Array(nLab + 1);
+    for (let x = 0; x < W; x++) {
+      solid.fill(0);
+      for (let y = 0; y < H; y++) {
+        const i = y * W + x, id = lab[i]; if (!id) continue;
+        if (gone[id]) { lab[i] = 0; continue; }
+        if (!low[i]) solid[id] = 1; else if (wide[i] && solid[id]) lab[i] = 0;
+      }
+    }
+    // what the cut leaves loose (a drop of a leg's reflection, a speck) goes with it
+    const comp = new Int32Array(N).fill(-1), sizes = [], owner = [];
+    for (let s0 = 0; s0 < N; s0++) {
+      if (!lab[s0] || comp[s0] >= 0) continue;
+      const id = lab[s0], c = sizes.length, q = [s0]; comp[s0] = c;
+      for (let k = 0; k < q.length; k++) { const pI = q[k], x = pI % W; for (const r of [x > 0 ? pI - 1 : -1, x < W - 1 ? pI + 1 : -1, pI - W, pI + W]) if (r >= 0 && r < N && comp[r] < 0 && lab[r] === id) { comp[r] = c; q.push(r); } }
+      sizes.push(q.length); owner.push(id);
+    }
+    const biggest = new Uint32Array(nLab + 1); sizes.forEach((z, c) => { if (z > biggest[owner[c]]) biggest[owner[c]] = z; });
+    for (let i = 0; i < N; i++) if (lab[i] && sizes[comp[i]] < Math.max(N * 0.0002, biggest[lab[i]] * 0.04)) lab[i] = 0;
+  }
+  // Parts of one piece found apart (an armchair's back, its seat and an arm, split by its brass
+  // frame) are joined again: neighbours that share a long border, at least one of them looking like
+  // a part (a cushion, a chair back), become one object when CLIP sees them together as one piece.
+  let joined = 0;
+  {
+    const area = new Uint32Array(nLab + 1), pairs = new Map();
+    for (let i = 0; i < N; i++) {
+      const a = lab[i]; if (!a) continue; area[a]++;
+      const x = i % W;
+      // across a seam or a thin frame between them, too
+      for (const j of [1, 4, 8].flatMap((d) => [x < W - d ? i + d : -1, i + d * W < N ? i + d * W : -1])) { const b = j >= 0 ? lab[j] : 0; if (b && b !== a) { const k = a < b ? a * 65536 + b : b * 65536 + a; pairs.set(k, (pairs.get(k) || 0) + 1); } }
+    }
+    const root = Array.from({ length: nLab + 1 }, (_, i) => i), find = (i) => (root[i] === i ? i : (root[i] = find(root[i])));
+    const cutOf = (ids) => {
+      let x0 = W, y0 = H, x1 = -1, y1 = -1;
+      for (let i = 0; i < N; i++) if (ids.has(find(lab[i])) && lab[i]) { const x = i % W, y = (i / W) | 0; x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+      const w = x1 - x0 + 1, h = y1 - y0 + 1, rgb = new Uint8ClampedArray(w * h * 3);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = (y0 + y) * W + x0 + x, on = lab[i] && ids.has(find(lab[i])); for (let c = 0; c < 3; c++) rgb[(y * w + x) * 3 + c] = on ? full.px[i * 4 + c] : 255; }
+      return new RawImage(rgb, w, h, 3);
+    };
+    const cand = [...pairs].map(([k, n]) => [Math.floor(k / 65536), k % 65536, n]).filter(([a, b, n]) => n > 1.2 * Math.sqrt(Math.min(area[a], area[b]))).sort((p, q) => q[2] - p[2]);
+    for (const [a, b] of cand) {
+      const ra = find(a), rb = find(b); if (ra === rb) continue;
+      const top = async (ids) => (await clip(cutOf(ids), [...GROUP, ...SINGLE, ...PART]))[0];
+      const [ta, tb] = [await top(new Set([ra])), await top(new Set([rb]))];
+      if (!PART.includes(ta.label) || !PART.includes(tb.label)) continue;
+      const tu = await top(new Set([ra, rb]));
+      if (!GROUP.includes(tu.label)) { root[rb] = ra; joined++; }
+    }
+    for (let i = 0; i < N; i++) if (lab[i]) lab[i] = find(lab[i]);
   }
   // each object belongs to the piece most of it sits on
   const objs = [];
@@ -306,9 +443,20 @@ for (const fk of films) {
   // a soft edge for each outline, for the hatching and shadow drawn at runtime
   const objPng = Buffer.alloc(N * 4);
   {
-    const hard = new Float32Array(N); for (let i = 0; i < N; i++) hard[i] = OL[i] ? 1 : 0;
-    const soft = boxBlur(hard, W, H, 1);
-    for (let i = 0; i < N; i++) { objPng[i * 4] = OL[i]; objPng[i * 4 + 1] = OL[i] ? Math.round(255 * Math.min(1, soft[i] * 1.4)) : 0; objPng[i * 4 + 3] = 255; }
+    // each outline snapped to the photo's edges; a pixel already another object's stays theirs
+    const Lum = new Float32Array(N); for (let i = 0; i < N; i++) Lum[i] = (0.3 * full.px[i * 4] + 0.59 * full.px[i * 4 + 1] + 0.11 * full.px[i * 4 + 2]) / 255;
+    const out = OL.slice(), al = new Float32Array(N), rG = Math.max(2, Math.round(W / 420));
+    boxes.forEach((b, n) => {
+      const id = n + 1, p = new Float32Array(b.w * b.h), I = new Float32Array(b.w * b.h);
+      for (let yy = 0; yy < b.h; yy++) for (let xx = 0; xx < b.w; xx++) { const i = (b.y + yy) * W + b.x + xx; p[yy * b.w + xx] = OL[i] === id ? 1 : 0; I[yy * b.w + xx] = Lum[i]; }
+      const q = guided(I, p, b.w, b.h, rG, 0.0015);
+      for (let yy = 0; yy < b.h; yy++) for (let xx = 0; xx < b.w; xx++) {
+        const i = (b.y + yy) * W + b.x + xx, v = q[yy * b.w + xx];
+        if (OL[i] === id) { if (v < 0.4) out[i] = 0; else al[i] = ss(0.4, 0.75, v); }
+        else if (!OL[i] && v > 0.6 && !out[i]) { out[i] = id; al[i] = ss(0.4, 0.75, v); }
+      }
+    });
+    for (let i = 0; i < N; i++) { objPng[i * 4] = out[i]; objPng[i * 4 + 1] = out[i] ? Math.round(255 * al[i]) : 0; objPng[i * 4 + 3] = 255; }
   }
 
 
@@ -339,5 +487,5 @@ for (const fk of films) {
   await sharp(roomPng, { raw: { width: W, height: H, channels: 4 } }).png({ compressionLevel: 9 }).toFile(path.join(dir, 'roomlines.png'));
   meta.objects = boxes;
   writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta));
-  console.log(`${fk}: ${boxes.length} objects drawn, ${boxes.filter((b) => b.kind === 'plant').length} of them plants (${points.length} prompts, ${kept.length} outlines, ${nLab - kept.length} filled in, ${dropped} left out as reflections or scraps)`);
+  console.log(`${fk}: ${boxes.length} objects drawn, ${boxes.filter((b) => b.kind === 'plant').length} of them plants (${points.length} prompts, ${kept.length} outlines, ${nLab - kept.length} filled in, ${dropped} left out as reflections or scraps, ${reflected} as reflections by depth, ${joined} parts joined)`);
 }
