@@ -45,28 +45,29 @@
 </head>
 
 <body>
-  <div id="root">
-    <!-- First paint: the home hero, drawn from HTML before the app loads. React replaces it
-         with the identical hero (components/HomePage.tsx); keep the two in step. -->
-    <section id="lm-shell" class="relative h-screen h-svh w-full overflow-hidden bg-[#d4c9b8]">
-      <img sizes="100vw" alt="Interior" fetchpriority="high" class="absolute inset-0 w-full h-full object-cover"
-        srcset="/images/opt/brand/lm3-480.webp 480w, /images/opt/brand/lm3-960.webp 960w, /images/opt/brand/lm3-1600.webp 1600w"
-        src="/images/opt/brand/lm3-960.webp" />
-      <div class="absolute inset-0 bg-black/20 z-10"></div>
-      <div class="absolute inset-0 z-20 flex flex-col items-center justify-center text-center px-6">
-        <p class="motion-safe:animate-hero-in text-white/90 text-xs md:text-base uppercase tracking-[0.3em] mb-6">Welcome to Louie Mae</p>
-        <h2 class="motion-safe:animate-hero-rise font-serif text-[2.75rem] sm:text-5xl md:text-7xl lg:text-8xl text-cream leading-[1.08] mb-10 drop-shadow-lg max-w-5xl text-balance">Live the life you love.<br /><span class="italic">Love the life you live.</span></h2>
-        <div class="motion-safe:animate-hero-in [animation-delay:300ms]">
-          <a href="/#collection/new" class="relative group overflow-hidden transition-all duration-300 ease-out flex items-center justify-center gap-2 cursor-pointer rounded-md uppercase tracking-[0.2em] font-light border shadow-lg text-white border-white/30 bg-gradient-to-b from-white/10 to-transparent px-8 py-4 md:px-10 md:py-5 text-xs md:text-sm w-auto"><span class="relative z-10 flex items-center gap-2">New Collection</span></a>
-        </div>
+  <!-- The home hero, drawn from HTML before the app loads. It sits outside #root so the app never
+       replaces it: HomePage keeps its text and saved photo in sync and hides it on other pages.
+       HomePage draws the same hero itself when this one is gone; keep the two in step.
+       The headline is the largest paint, so the photo waits behind its fonts (fetchpriority=low). -->
+  <section id="lm-shell" class="relative h-screen h-svh w-full overflow-hidden bg-[#d4c9b8]">
+    <img sizes="100vw" alt="Interior" fetchpriority="low" class="absolute inset-0 w-full h-full object-cover"
+      srcset="/images/opt/brand/lm3-480.webp 480w, /images/opt/brand/lm3-960.webp 960w, /images/opt/brand/lm3-1600.webp 1600w"
+      src="/images/opt/brand/lm3-960.webp" />
+    <div class="absolute inset-0 bg-black/20 z-10"></div>
+    <div class="absolute inset-0 z-20 flex flex-col items-center justify-center text-center px-6">
+      <p class="motion-safe:animate-hero-in text-white/90 text-xs md:text-base uppercase tracking-[0.3em] mb-6">Welcome to Louie Mae</p>
+      <h2 class="motion-safe:animate-hero-rise font-serif text-[2.75rem] sm:text-5xl md:text-7xl lg:text-8xl text-cream leading-[1.08] mb-10 drop-shadow-lg max-w-5xl text-balance">Live the life you love.<br /><span class="italic">Love the life you live.</span></h2>
+      <div class="motion-safe:animate-hero-in [animation-delay:300ms]">
+        <a href="/#collection/new" class="relative group overflow-hidden transition-all duration-300 ease-out flex items-center justify-center gap-2 cursor-pointer rounded-md uppercase tracking-[0.2em] font-light border shadow-lg text-white border-white/30 bg-gradient-to-b from-white/10 to-transparent px-8 py-4 md:px-10 md:py-5 text-xs md:text-sm w-auto"><span class="relative z-10 flex items-center gap-2">New Collection</span></a>
       </div>
-    </section>
-    <script>
-      // The shell is the home hero only; any other entry route starts blank as before.
-      if (location.pathname !== '/' || location.hash.replace('#', '')) document.getElementById('lm-shell').remove();
-      else document.documentElement.dataset.shell = 'home';
-    </script>
-  </div>
+    </div>
+  </section>
+  <script>
+    // The shell is the home hero only; any other entry route starts blank as before.
+    if (location.pathname !== '/' || location.hash.replace('#', '')) document.getElementById('lm-shell').remove();
+    else document.documentElement.dataset.shell = 'home';
+  </script>
+  <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>
 

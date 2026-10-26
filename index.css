@@ -274,7 +274,7 @@ html,
 }
 
 .prose-blog blockquote {
-  border-left: 3px solid #8C6B51;
+  border-left: 3px solid #83634B;
   padding: 1rem 1.5rem;
   margin: 1.5rem 0;
   background: rgba(140, 107, 81, 0.04);
@@ -338,4 +338,11 @@ html,
   border-top: 1px solid rgba(74, 59, 50, 0.12);
   margin: 2rem auto;
   width: 40%;
+}
+
+/* Sections well below the first screen: the browser skips their layout and painting until
+   they come near the viewport, which keeps the app's first render light. */
+.below-fold {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 900px;
 }

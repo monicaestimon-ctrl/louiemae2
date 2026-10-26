@@ -1247,6 +1247,9 @@ header.top.over{text-shadow:0 1px 12px rgba(10,6,4,.35)}
 .chips-min button{height:36px;padding:0 16px;border-radius:999px;font-size:14px;color:var(--mute);border:1px solid var(--line);transition:all .2s}
 .chips-min button:hover{color:var(--ink)}
 .chips-min button.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+/* Sections below the opening film are skipped for layout until they near the screen, so the
+   first render after the catalog arrives lays out only the film. */
+.home>:not(:first-child){content-visibility:auto;contain-intrinsic-size:auto 900px}
 .home .wall{columns:4 260px;column-gap:22px}
 .home .pin{margin-bottom:26px}
 .hs-more{display:flex;justify-content:center;margin-top:24px}
