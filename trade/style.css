@@ -1363,6 +1363,16 @@ header.top:not(.over){background:color-mix(in srgb,var(--paper) 94%,transparent)
 .glass.light{background:rgba(255,253,249,.56);border:1px solid rgba(255,255,255,.7);box-shadow:0 30px 80px -30px rgba(70,44,22,.35),inset 0 1px 0 rgba(255,255,255,.8)}
 .glass.dark{background:rgba(255,248,238,.08);border:1px solid rgba(255,255,255,.14);box-shadow:0 30px 80px -30px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.12);color:#F7EEE2}
 
+/* Photos arrive gently. A lazy photo shows its frame's warm placeholder (already at the
+   final size) until it has loaded (main.tsx marks it data-lo), then fades in. Images that
+   run their own animation keep it. */
+#root img[loading=lazy]:not([data-lo]){opacity:0}
+#root img[loading=lazy][data-lo]:not(.morph,.fp img){animation:imgIn .7s var(--ease)}
+@keyframes imgIn{from{opacity:0}}
+.space-card,.trend{background:var(--sand)}
+.arch{background:#2A211A}
+@media (prefers-reduced-motion:reduce){#root img[loading=lazy][data-lo]{animation:none}}
+
 /* reveal */
 .lx [data-r]{opacity:0;transform:translateY(28px);transition:opacity .9s var(--ease),transform 1s var(--ease);transition-delay:calc(var(--i,0) * 110ms)}
 .lx.in [data-r]{opacity:1;transform:none}
