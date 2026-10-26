@@ -56,6 +56,9 @@ const store=(k,v)=>{try{localStorage.setItem('hol:'+k,JSON.stringify(v))}catch(e
 const hex2rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
 const cdist=(a,b)=>{const[x,y,z]=hex2rgb(a),[p,q,r]=hex2rgb(b);return Math.hypot(x-p,y-q,z-r)};
 const rgb2hex=(r,g,b)=>'#'+[r,g,b].map(v=>Math.round(v).toString(16).padStart(2,'0')).join('');
+// The screen height trade/index.html measured once (see --app-h), so scroll effects don't jump
+// when a phone's toolbar slides away mid-scroll.
+const appH=()=>parseFloat(document.documentElement.style.getPropertyValue('--app-h'))||innerHeight;
 const uid=()=>Math.random().toString(36).slice(2,9);
 const palOf=img=>{const c=document.createElement('canvas');c.width=c.height=48;const g=c.getContext('2d');g.drawImage(img,0,0,48,48);const d=g.getImageData(0,0,48,48).data;const bk={};for(let i=0;i<d.length;i+=4){const k=[d[i]>>5,d[i+1]>>5,d[i+2]>>5].join();const B=(bk[k]=bk[k]||{n:0,r:0,g:0,b:0});B.n++;B.r+=d[i];B.g+=d[i+1];B.b+=d[i+2]}return Object.values(bk).sort((a,b)=>b.n-a.n).slice(0,5).map(B=>rgb2hex(B.r/B.n,B.g/B.n,B.b/B.n))};
 const fileToInspo=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{const s=Math.min(1,900/Math.max(img.width,img.height));const c=document.createElement('canvas');c.width=Math.round(img.width*s);c.height=Math.round(img.height*s);c.getContext('2d').drawImage(img,0,0,c.width,c.height);res({id:uid(),src:c.toDataURL('image/jpeg',.82),title:(f.name||'Pasted image').replace(/\.[^.]+$/,'').replace(/[-_]+/g,' ').slice(0,40),source:'upload',pal:palOf(img),ar:img.width/img.height,t:Date.now()})};img.onerror=rej;img.src=r.result};r.onerror=rej;r.readAsDataURL(f)});
@@ -207,7 +210,7 @@ function Wall({items,ctx,density='normal',mixBoards}){
 /* ================= header / menu / tabbar ================= */
 function Header({ctx}){
   const [over,setOver]=useState(false);
-  useEffect(()=>{const f=()=>{const h=document.querySelector('.rh');setOver(ctx.route==='home'&&!!h&&scrollY<h.offsetHeight-innerHeight*.9)};f();addEventListener('scroll',f,{passive:true});const t=setTimeout(f,60);return()=>{removeEventListener('scroll',f);clearTimeout(t)}},[ctx.route]);
+  useEffect(()=>{const f=()=>{const h=document.querySelector('.rh');setOver(ctx.route==='home'&&!!h&&scrollY<h.offsetHeight-appH()*.9)};f();addEventListener('scroll',f,{passive:true});const t=setTimeout(f,60);return()=>{removeEventListener('scroll',f);clearTimeout(t)}},[ctx.route]);
   const [dial,setDial]=useState(false);const dref=useRef();useOutside(dref,()=>setDial(false));
   const [q,setQ]=useState('');const fileRef=useRef();
   const sp=SPACES[ctx.space];
@@ -385,7 +388,7 @@ function RoomHero({ctx}){
   const sc=room.scenes[active];const M=moodOf(room,sc.mood);const P=pick&&byId(pick.it.id);
   useEffect(()=>setHeroInk(M.fg,M.fg==='#2B211A'?'#FBF8F2':'#1C1510'),[M.fg]);
   const pickSpace=k=>{ctx.setSpace(k);const sec=secRef.current;if(sec&&sec.getBoundingClientRect().top<0)scrollTo({top:sec.getBoundingClientRect().top+scrollY,behavior:'smooth'})};
-  return html`<section className="rh" ref=${secRef} style=${{height:`calc(${n} * 100svh + 1px)`}}>
+  return html`<section className="rh" ref=${secRef} style=${{height:`calc(${n} * var(--app-h, 100svh) + 1px)`}}>
     <div className=${'rh-stage'+(pick?' focus':'')} ref=${stageRef} onPointerMove=${onMove} onClick=${()=>setPick(null)} style=${{'--fg':M.fg,'--sub':M.sub,'--inv':M.fg==='#2B211A'?'#FBF8F2':'#1C1510'}}>
       <div className="rh-scenes" key=${ctx.space}>${room.scenes.map((s,i)=>html`<${RoomScene} key=${i} idx=${i} room=${room} scene=${s} roomCm=${roomCm} onPick=${onPick} refCb=${el=>scenes.current[i]=el}/>`)}</div>
       <div className="rh-grainl" style=${{backgroundImage:`url(${texture('grain').url})`}}></div>
@@ -602,7 +605,7 @@ function RoomStudy({ctx}){
   const goChap=i=>{const sec=secRef.current,st=stageRef.current;const top=sec.getBoundingClientRect().top+scrollY;const total=sec.offsetHeight-st.offsetHeight;scrollTo({top:top+total*[.06,.25,.47,.62,.8][i],behavior:'smooth'})};
   const pickSpace=k=>{ctx.setSpace(k);const sec=secRef.current;if(sec&&sec.getBoundingClientRect().top<0)scrollTo({top:sec.getBoundingClientRect().top+scrollY,behavior:'smooth'})};
   const C3=CHAPTERS[chap];const P0=pick&&byId(pick.id);const ids=[...new Set(cfg.items.map(i=>i.id))];
-  return html`<section className="rh rs" ref=${secRef} style=${{height:'calc(6 * 100svh)'}}>
+  return html`<section className="rh rs" ref=${secRef} style=${{height:'calc(6 * var(--app-h, 100svh))'}}>
     <div className=${'rs-stage'+(night?' night':'')} ref=${stageRef}>
       <canvas ref=${cvRef} className="rs-cv" aria-label=${'3D study of a '+sp.label.toLowerCase()+' furnished with Louie Mae pieces'}></canvas>
       ${!ok&&html`<div className="rs-fallback">3D needs WebGL, which isn't available in this browser.</div>`}
@@ -730,7 +733,7 @@ function FilmStudy({ctx,fk,setFk}){
   const goChap=i=>{const sec=secRef.current,st=stageRef.current;const top=sec.getBoundingClientRect().top+scrollY;const total=sec.offsetHeight-st.offsetHeight;const t=i===3?TL.hot[0][0]+0.3:i===4?TL.hot[1][0]+0.3:TL.ch[i]+0.4;scrollTo({top:top+total*(t/TL.total),behavior:'smooth'})};
   const toTop=()=>{const sec=secRef.current;if(sec&&sec.getBoundingClientRect().top<0)scrollTo({top:sec.getBoundingClientRect().top+scrollY,behavior:'smooth'})};
   const P0=pick&&byId(pick.id);const ids=[...new Set(F.hot.map(h=>h.id))];
-  return html`<section className="rh hf" ref=${secRef} style=${{height:'calc(7.5 * 100svh)'}} aria-label=${F.name+' film'}>
+  return html`<section className="rh hf" ref=${secRef} style=${{height:'calc(7.5 * var(--app-h, 100svh))'}} aria-label=${F.name+' film'}>
     <div className=${'hf-stage'+(dark?' night':'')} ref=${stageRef} onClick=${()=>setPick(null)}>
       <img className="hf-video" src=${phone?stillUrl(fk,0):`f/${fk}/poster.jpg`} alt="" fetchpriority="high" aria-hidden="true"/>
       ${phone?html`<canvas ref=${cvRef} className="hf-video hf-fade" aria-hidden="true"></canvas>`
@@ -809,7 +812,7 @@ function RoomsWeLove({ctx}){
   // are measured (the observer says which), so the page never lays out rooms nobody can see.
   // A room that just left is measured once more so it settles at its end state.
   useEffect(()=>{let raf=0;const seen=new Set(),left=new Set();
-    const set=el=>el.style.setProperty('--p',Math.min(1,Math.max(0,1-el.getBoundingClientRect().top/innerHeight)).toFixed(3));
+    const set=el=>el.style.setProperty('--p',Math.min(1,Math.max(0,1-el.getBoundingClientRect().top/appH())).toFixed(3));
     const f=()=>{raf=0;left.forEach(set);left.clear();seen.forEach(set)};
     const on=()=>{if(!raf&&(seen.size||left.size))raf=requestAnimationFrame(f)};
     const io=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting)seen.add(e.target);else if(seen.delete(e.target))left.add(e.target)});on()});
