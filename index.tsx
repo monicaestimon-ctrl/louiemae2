@@ -21,7 +21,7 @@ if (document.documentElement.dataset.shell === 'home' && document.visibilityStat
   } catch {
     start();
   }
-  setTimeout(start, 300);
+  setTimeout(start, 1500);
 } else {
   start();
 }

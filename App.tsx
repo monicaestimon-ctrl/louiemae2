@@ -1,6 +1,6 @@
 
-import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { Menu, Search, X, Instagram, Facebook, Twitter, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, lazy, Suspense, useSyncExternalStore } from 'react';
+import { Menu, Search, X, Instagram, ChevronDown } from 'lucide-react';
 import { AiConcierge } from './components/AiConcierge';
 import { NavLink } from './types';
 import { HomePage } from './components/HomePage';
@@ -29,6 +29,15 @@ const CheckoutCancel = named(() => import('./components/checkout'), 'CheckoutCan
 const SearchModal = named(() => import('./components/SearchModal'), 'SearchModal');
 
 const PageFallback = () => <div className="min-h-[100svh]" aria-busy="true" />;
+
+// The full desktop navigation only shows at 1600px and wider; narrower screens never build it.
+const WIDE_NAV = '(min-width: 1600px)';
+const subscribeWideNav = (onChange: () => void) => {
+  const mql = window.matchMedia(WIDE_NAV);
+  mql.addEventListener('change', onChange);
+  return () => mql.removeEventListener('change', onChange);
+};
+const isWideNav = () => window.matchMedia(WIDE_NAV).matches;
 
 
 interface MobileNavLinkProps {
@@ -163,6 +172,9 @@ const AppContent = () => {
   const { siteContent } = useSite();
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  // The menu's contents are built the first time it opens, then kept for the fade.
+  const [mobileMenuBuilt, setMobileMenuBuilt] = useState(false);
+  const wideNav = useSyncExternalStore(subscribeWideNav, isWideNav);
   const [activePage, setActivePage] = useState<string>('home');
   const [searchOpen, setSearchOpen] = useState(false);
   const [, setSelectedProductId] = useState<string | null>(null); // TODO: Wire to product detail navigation
@@ -343,13 +355,15 @@ const AppContent = () => {
       {/* Only show Header/Footer if NOT in admin mode */}
       {activePage !== 'admin' && (
         <>
-          {/* Mobile Menu Overlay - Hyper Glassmorphic */}
+          {/* Mobile Menu Overlay - Hyper Glassmorphic. While closed its contents are skipped for
+              layout (content-visibility); allow-discrete keeps them shown until the fade ends. */}
           <div
             inert={!mobileMenuOpen}
             aria-hidden={!mobileMenuOpen}
-            className={`fixed inset-0 z-50 flex flex-col backdrop-blur-3xl bg-gradient-to-br from-[#3a2a1a]/95 via-[#2d1f12]/95 to-[#1a130a]/95 transition-all duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${mobileMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-[20px] pointer-events-none'
+            className={`fixed inset-0 z-50 flex flex-col backdrop-blur-3xl bg-gradient-to-br from-[#3a2a1a]/95 via-[#2d1f12]/95 to-[#1a130a]/95 transition-all [transition-behavior:allow-discrete] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${mobileMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-[20px] pointer-events-none [content-visibility:hidden]'
               }`}
           >
+            {mobileMenuBuilt && <>
             {/* Inner Sheen overlay */}
             <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent pointer-events-none" />
             {/* Mobile Header */}
@@ -385,9 +399,7 @@ const AppContent = () => {
                 <div className="space-y-2">
                   <p className="text-[10px] uppercase tracking-[0.2em] text-cream/40">Connect</p>
                   <div className="flex gap-6">
-                    <Instagram className="w-5 h-5 text-cream/60 hover:text-white transition-colors" />
-                    <Facebook className="w-5 h-5 text-cream/60 hover:text-white transition-colors" />
-                    <Twitter className="w-5 h-5 text-cream/60 hover:text-white transition-colors" />
+                    <a href="https://www.instagram.com/itslouiemae/" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><Instagram className="w-5 h-5 text-cream/60 hover:text-white transition-colors" /></a>
                   </div>
                 </div>
                 <div className="flex flex-col items-end gap-3">
@@ -399,6 +411,7 @@ const AppContent = () => {
                 </div>
               </div>
             </div>
+            </>}
           </div>
 
           {/* Desktop Header */}
@@ -409,18 +422,18 @@ const AppContent = () => {
             <div className="w-full px-6 md:px-12 relative flex justify-between items-center min-h-[50px]">
               {/* Mobile Menu Icon */}
               <button
-                className="lg:hidden text-earth z-50 p-2 -ml-2 hover:opacity-70 transition-opacity"
+                className="min-[1600px]:hidden text-earth z-50 p-2 -ml-2 hover:opacity-70 transition-opacity"
                 aria-label="Open menu"
                 aria-expanded={mobileMenuOpen}
-                onClick={() => setMobileMenuOpen(true)}
+                onClick={() => { setMobileMenuBuilt(true); setMobileMenuOpen(true); }}
               >
                 <Menu className="w-6 h-6" />
               </button>
 
               {/* Desktop Navigation & Logo */}
-              <div className="hidden lg:flex absolute inset-0 justify-center items-center pointer-events-none">
-                <div className="flex items-center gap-10 xl:gap-14 pointer-events-auto bg-transparent">
-                  <nav className="flex gap-6 xl:gap-9">
+              <div className="hidden min-[1600px]:flex flex-1 min-w-0 justify-center items-center">
+                {wideNav && <div className="flex items-center gap-6 pointer-events-auto bg-transparent">
+                  <nav className="flex gap-5">
                     {extendedNavLinks.slice(0, 3).map(link => (
                       <div key={link.label} className="relative group">
                         <button
@@ -437,7 +450,7 @@ const AppContent = () => {
                     ))}
                   </nav>
 
-                  <div className="text-center px-6 cursor-pointer" onClick={() => handleNavigation('#')}>
+                  <div className="text-center px-4 cursor-pointer" onClick={() => handleNavigation('#')}>
                     <p className={`text-[0.55rem] uppercase tracking-[0.3em] text-bronze mb-1 transition-all duration-500 ${scrolled ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'}`}>
                       Est. 2021
                     </p>
@@ -446,7 +459,7 @@ const AppContent = () => {
                     </h1>
                   </div>
 
-                  <nav className="flex gap-6 xl:gap-9">
+                  <nav className="flex gap-5">
                     {extendedNavLinks.slice(3).map(link => (
                       <div key={link.label} className="relative group">
                         <button
@@ -462,12 +475,12 @@ const AppContent = () => {
                       </div>
                     ))}
                   </nav>
-                </div>
+                </div>}
               </div>
 
               {/* Mobile Logo */}
               <div
-                className="lg:hidden absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center z-40 pointer-events-auto cursor-pointer"
+                className="min-[1600px]:hidden absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center z-40 pointer-events-auto cursor-pointer"
                 onClick={() => handleNavigation('#')}
               >
                 <p className={`text-[0.45rem] uppercase tracking-[0.25em] text-bronze mb-0.5 transition-all ${scrolled ? 'hidden' : 'block'}`}>
@@ -479,7 +492,7 @@ const AppContent = () => {
               </div>
 
               {/* Actions */}
-              <div className="flex items-center gap-4 md:gap-6 ml-auto z-50 pl-4">
+              <div className="flex items-center gap-4 md:gap-6 ml-auto shrink-0 z-50 pl-6">
                 {/* Retail is this storefront; Trade opens House of Louie Mae */}
                 <div className="hidden md:flex items-center gap-2 text-[0.6rem] uppercase tracking-[0.15em] font-medium" aria-label="Shop as">
                   <span className="text-earth" aria-current="page">Retail</span>
@@ -524,7 +537,7 @@ const AppContent = () => {
 
       {/* Hyper-Glassmorphic Footer */}
       {activePage !== 'admin' && (
-        <footer className="relative bg-gradient-to-b from-[#2a1a0f] to-[#1a130a] text-cream border-t border-bronze/20 overflow-hidden">
+        <footer className="below-fold relative bg-gradient-to-b from-[#2a1a0f] to-[#1a130a] text-cream border-t border-bronze/20 overflow-hidden">
           {/* Decorative Glossy Glow */}
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-32 bg-bronze/10 filter blur-[80px] rounded-full pointer-events-none" />
           
@@ -559,14 +572,8 @@ const AppContent = () => {
               <div>
                 <h2 className="font-serif text-xl mb-6 text-white/90">Follow Us</h2>
                 <div className="flex gap-5">
-                  <a href="#" aria-label="Instagram" className="p-3 bg-white/5 rounded-full border border-white/10 hover:bg-white/15 hover:border-bronze/40 transition-all">
+                  <a href="https://www.instagram.com/itslouiemae/" target="_blank" rel="noopener noreferrer" aria-label="Instagram" className="p-3 bg-white/5 rounded-full border border-white/10 hover:bg-white/15 hover:border-bronze/40 transition-all">
                     <Instagram className="w-5 h-5 text-cream" />
-                  </a>
-                  <a href="#" aria-label="Facebook" className="p-3 bg-white/5 rounded-full border border-white/10 hover:bg-white/15 hover:border-bronze/40 transition-all">
-                    <Facebook className="w-5 h-5 text-cream" />
-                  </a>
-                  <a href="#" aria-label="Twitter" className="p-3 bg-white/5 rounded-full border border-white/10 hover:bg-white/15 hover:border-bronze/40 transition-all">
-                    <Twitter className="w-5 h-5 text-cream" />
                   </a>
                 </div>
               </div>

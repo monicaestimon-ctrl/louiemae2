@@ -25,7 +25,7 @@ const navigateTo = (hash: string) => {
 const ProductCard: React.FC<{ product: CatalogPreviewProduct; index: number }> = ({ product, index }) => (
     <FadeIn delay={index * 80} className="group cursor-pointer flex-shrink-0 w-[260px] md:w-[300px] snap-center">
         <div
-            className="relative aspect-[3/4] overflow-hidden bg-white mb-3 rounded-xl shadow-sm"
+            className="relative aspect-square overflow-hidden bg-white mb-3 rounded-xl shadow-sm"
             onClick={() => navigateTo(`#collection/${product.collection}?cat=${encodeURIComponent(product.category)}`)}
         >
             {product.isNew && (
@@ -36,7 +36,7 @@ const ProductCard: React.FC<{ product: CatalogPreviewProduct; index: number }> =
             <SafeImage
                 src={product.images[0]}
                 alt={product.name}
-                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                className="w-full h-full object-contain"
             />
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
             <div className="absolute bottom-0 left-0 right-0 p-3 translate-y-full group-hover:translate-y-0 transition-transform duration-300">

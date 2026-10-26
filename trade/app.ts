@@ -1,6 +1,6 @@
 /* eslint-disable */
 // @ts-nocheck
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, startTransition } from 'react';
 import htm from 'htm';
 import type { HolmProduct } from './catalog';
 import { useQuery, useMutation, useAction } from 'convex/react';
@@ -49,12 +49,18 @@ const BOARD_SEED = [{id:'b1',title:'Saved pieces',secret:true,collab:0,sections:
 const TRAY_SEED = {active:'p1',taxExempt:false,projects:[{id:'p1',name:'My first project',target:20,zones:['Main room'],items:[]}]};
 
 /* ================= utils ================= */
+// The header and hero read their ink from these root variables. Changing anything on the root
+// restyles the whole page, so write only when the value really changes.
+const setHeroInk=(fg,inv)=>{const r=document.documentElement.style;if(r.getPropertyValue('--hero-fg')!==fg)r.setProperty('--hero-fg',fg);if(r.getPropertyValue('--hero-inv')!==inv)r.setProperty('--hero-inv',inv)};
 const fmt = (n,dec=false)=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:dec?2:0,maximumFractionDigits:dec?2:0});
 const load=(k,d)=>{try{const v=localStorage.getItem('hol:'+k);return v?JSON.parse(v):d}catch(e){return d}};
 const store=(k,v)=>{try{localStorage.setItem('hol:'+k,JSON.stringify(v))}catch(e){}};
 const hex2rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
 const cdist=(a,b)=>{const[x,y,z]=hex2rgb(a),[p,q,r]=hex2rgb(b);return Math.hypot(x-p,y-q,z-r)};
 const rgb2hex=(r,g,b)=>'#'+[r,g,b].map(v=>Math.round(v).toString(16).padStart(2,'0')).join('');
+// The screen height trade/index.html measured once (see --app-h), so scroll effects don't jump
+// when a phone's toolbar slides away mid-scroll.
+const appH=()=>parseFloat(document.documentElement.style.getPropertyValue('--app-h'))||innerHeight;
 const uid=()=>Math.random().toString(36).slice(2,9);
 const palOf=img=>{const c=document.createElement('canvas');c.width=c.height=48;const g=c.getContext('2d');g.drawImage(img,0,0,48,48);const d=g.getImageData(0,0,48,48).data;const bk={};for(let i=0;i<d.length;i+=4){const k=[d[i]>>5,d[i+1]>>5,d[i+2]>>5].join();const B=(bk[k]=bk[k]||{n:0,r:0,g:0,b:0});B.n++;B.r+=d[i];B.g+=d[i+1];B.b+=d[i+2]}return Object.values(bk).sort((a,b)=>b.n-a.n).slice(0,5).map(B=>rgb2hex(B.r/B.n,B.g/B.n,B.b/B.n))};
 const fileToInspo=f=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{const s=Math.min(1,900/Math.max(img.width,img.height));const c=document.createElement('canvas');c.width=Math.round(img.width*s);c.height=Math.round(img.height*s);c.getContext('2d').drawImage(img,0,0,c.width,c.height);res({id:uid(),src:c.toDataURL('image/jpeg',.82),title:(f.name||'Pasted image').replace(/\.[^.]+$/,'').replace(/[-_]+/g,' ').slice(0,40),source:'upload',pal:palOf(img),ar:img.width/img.height,t:Date.now()})};img.onerror=rej;img.src=r.result};r.onerror=rej;r.readAsDataURL(f)});
@@ -206,7 +212,7 @@ function Wall({items,ctx,density='normal',mixBoards}){
 /* ================= header / menu / tabbar ================= */
 function Header({ctx}){
   const [over,setOver]=useState(false);
-  useEffect(()=>{const f=()=>{const h=document.querySelector('.rh');setOver(ctx.route==='home'&&!!h&&scrollY<h.offsetHeight-innerHeight*.9)};f();addEventListener('scroll',f,{passive:true});const t=setTimeout(f,60);return()=>{removeEventListener('scroll',f);clearTimeout(t)}},[ctx.route]);
+  useEffect(()=>{const f=()=>{const h=document.querySelector('.rh');setOver(ctx.route==='home'&&!!h&&scrollY<h.offsetHeight-appH()*.9)};f();addEventListener('scroll',f,{passive:true});const t=setTimeout(f,60);return()=>{removeEventListener('scroll',f);clearTimeout(t)}},[ctx.route]);
   const [dial,setDial]=useState(false);const dref=useRef();useOutside(dref,()=>setDial(false));
   const [q,setQ]=useState('');const fileRef=useRef();
   const sp=SPACES[ctx.space];
@@ -382,9 +388,9 @@ function RoomHero({ctx}){
   const onMove=e=>{const st=stageRef.current;if(!st)return;const r=st.getBoundingClientRect();st.style.setProperty('--mx',((e.clientX-r.left)/r.width-.5).toFixed(3));st.style.setProperty('--my',((e.clientY-r.top)/r.height-.5).toFixed(3))};
   const onPick=(it,el)=>{const r=el.getBoundingClientRect(),s=stageRef.current.getBoundingClientRect();const below=it.top!=null;setPick({it,below,x:(r.left+r.width/2-s.left)/s.width*100,y:((below?r.bottom:r.top)-s.top)/s.height*100,img:el.querySelector('.rh-cut')})};
   const sc=room.scenes[active];const M=moodOf(room,sc.mood);const P=pick&&byId(pick.it.id);
-  useEffect(()=>{const r=document.documentElement.style;r.setProperty('--hero-fg',M.fg);r.setProperty('--hero-inv',M.fg==='#2B211A'?'#FBF8F2':'#1C1510')},[M.fg]);
+  useEffect(()=>setHeroInk(M.fg,M.fg==='#2B211A'?'#FBF8F2':'#1C1510'),[M.fg]);
   const pickSpace=k=>{ctx.setSpace(k);const sec=secRef.current;if(sec&&sec.getBoundingClientRect().top<0)scrollTo({top:sec.getBoundingClientRect().top+scrollY,behavior:'smooth'})};
-  return html`<section className="rh" ref=${secRef} style=${{height:`calc(${n} * 100svh + 1px)`}}>
+  return html`<section className="rh" ref=${secRef} style=${{height:`calc(${n} * var(--app-h, 100svh) + 1px)`}}>
     <div className=${'rh-stage'+(pick?' focus':'')} ref=${stageRef} onPointerMove=${onMove} onClick=${()=>setPick(null)} style=${{'--fg':M.fg,'--sub':M.sub,'--inv':M.fg==='#2B211A'?'#FBF8F2':'#1C1510'}}>
       <div className="rh-scenes" key=${ctx.space}>${room.scenes.map((s,i)=>html`<${RoomScene} key=${i} idx=${i} room=${room} scene=${s} roomCm=${roomCm} onPick=${onPick} refCb=${el=>scenes.current[i]=el}/>`)}</div>
       <div className="rh-grainl" style=${{backgroundImage:`url(${texture('grain').url})`}}></div>
@@ -591,7 +597,7 @@ function RoomStudy({ctx}){
       // react state (throttled)
       const ch=P<.12?0:P<.3?1:P<.5?2:P<.66?3:4;if(ch!==lastChap){lastChap=ch;setChap(ch)}
       const mins=Math.round((7.5*60+dayK*15.5*60)/10)*10;const label=s5>0||overrideT!=null?`${String(Math.floor(mins/60)%24).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`:'';if(label!==lastTod){lastTod=label;setTod(label)}
-      const nn=dayK>.72||(cfg.dark&&P>.45);if(nn!==lastNight){lastNight=nn;setNight(nn);const r=document.documentElement.style;r.setProperty('--hero-fg',nn?'#F4EADC':'#2B211A');r.setProperty('--hero-inv',nn?'#1C1510':'#FBF8F2')}
+      const nn=dayK>.72||(cfg.dark&&P>.45);if(nn!==lastNight){lastNight=nn;setNight(nn);setHeroInk(nn?'#F4EADC':'#2B211A',nn?'#1C1510':'#FBF8F2')}
     }
     let raf=0;function loop(){cancelAnimationFrame(raf);const tick=()=>{if(!running)return;if(dirty||mouse.in||(P>.36&&P<.56)){frame();dirty=false}raf=requestAnimationFrame(tick)};tick()}
     loop();
@@ -601,7 +607,7 @@ function RoomStudy({ctx}){
   const goChap=i=>{const sec=secRef.current,st=stageRef.current;const top=sec.getBoundingClientRect().top+scrollY;const total=sec.offsetHeight-st.offsetHeight;scrollTo({top:top+total*[.06,.25,.47,.62,.8][i],behavior:'smooth'})};
   const pickSpace=k=>{ctx.setSpace(k);const sec=secRef.current;if(sec&&sec.getBoundingClientRect().top<0)scrollTo({top:sec.getBoundingClientRect().top+scrollY,behavior:'smooth'})};
   const C3=CHAPTERS[chap];const P0=pick&&byId(pick.id);const ids=[...new Set(cfg.items.map(i=>i.id))];
-  return html`<section className="rh rs" ref=${secRef} style=${{height:'calc(6 * 100svh)'}}>
+  return html`<section className="rh rs" ref=${secRef} style=${{height:'calc(6 * var(--app-h, 100svh))'}}>
     <div className=${'rs-stage'+(night?' night':'')} ref=${stageRef}>
       <canvas ref=${cvRef} className="rs-cv" aria-label=${'3D study of a '+sp.label.toLowerCase()+' furnished with Louie Mae pieces'}></canvas>
       ${!ok&&html`<div className="rs-fallback">3D needs WebGL, which isn't available in this browser.</div>`}
@@ -637,51 +643,38 @@ function RoomStudy({ctx}){
 // Each film is a single video: plan → clay model → empty room → furnished → night.
 // Timelines (seconds) come from the build step; hotspots only show while the frame is fully still.
 const FILMS={
-  bar:{space:'bar',name:'Navy & Brass',sub:'Cocktail bar',darkRoom:true,TL:{"total":21.125,"ch":[0,2.35,6.333,10.133,16.665],"hot":[[14.125,16.125],[19.708,21.125]],"dark":17.925,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
+  bar:{space:'bar',name:'Navy & Brass',sub:'Cocktail bar',darkRoom:true,TL:{"total":30.93,"ch":[0,2.4,9.44,12.73,26.15],"hot":[[24.05,25.95],[29.43,30.93]],"dark":27.35,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
     hot:[{id:14,x:.727,y:.742},{id:14,x:.162,y:.566},{id:5,x:.765,y:.47},{id:16,x:.088,y:.625}],
     ch:[['Every room starts as a line.','The floor at true scale, with every Louie piece drawn in.'],['Then the walls go up.','A clay study model, low sun through the windows.'],['Navy, marble, brass.','Lacquer, stone and a faceted brass ceiling.'],['Cognac against navy.','The Rory, the Osborne and the Marlowick. Tap any piece.'],['Then the lamps take over.','The room people stay in after dark.']]},
-  'cafe-paris':{space:'cafe',name:'Maison Rose',sub:'Patisserie salon',TL:{"total":21.125,"ch":[0,2.35,6.333,10.133,16.665],"hot":[[14.125,16.125],[19.708,21.125]],"dark":17.925,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
+  'cafe-paris':{space:'cafe',name:'Maison Rose',sub:'Patisserie salon',TL:{"total":29.2,"ch":[0,2.4,9.44,12.73,24.41],"hot":[[22.31,24.21],[27.7,29.2]],"dark":25.61,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
     hot:[{id:4,x:.52,y:.46},{id:14,x:.485,y:.555},{id:11,x:.615,y:.27}],
     ch:[['A salon, drawn to scale.','Twelve by eight metres of Paris.'],['Boiserie in clay.','Panelled walls and tall French windows.'],['Blush, terrazzo, walnut.','Plaster, rosso-bordered terrazzo and a fluted vitrine.'],['Olive velvet, tan leather.','The Bellamere, the Rory and the Aurelia. Tap any piece.'],['Globes on, street lamps out.','The salon carries on into the evening.']]},
-  'cafe-provence':{space:'cafe',name:'Le Mas',sub:'Courtyard café',TL:{"total":21.125,"ch":[0,2.35,6.333,10.133,16.665],"hot":[[14.125,16.125],[19.708,21.125]],"dark":17.925,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
+  'cafe-provence':{space:'cafe',name:'Le Mas',sub:'Courtyard café',TL:{"total":30.12,"ch":[0,2.4,9.44,12.73,25.33],"hot":[[23.23,25.13],[28.62,30.12]],"dark":26.53,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
     hot:[{id:21,x:.9,y:.53},{id:14,x:.79,y:.6},{id:13,x:.05,y:.58},{id:12,x:.27,y:.17}],
     ch:[['Stone walls, open doors.','A courtyard café at true scale.'],['Arches in clay.','The doors and ceramic niche, in Provençal sun.'],['Limestone and terracotta.','Limewash, honed floors and dark oak beams.'],['Woven leather, rattan light.','The Cressida, the Rory, the Montrose and the Elara. Tap any piece.'],['Lanterns in the olive tree.','The courtyard lights come up.']]},
-  'coffee-riviera':{space:'coffee',name:'Riviera',sub:'Seafront coffee lounge',TL:{"total":20.542,"ch":[0,2.35,6.1,9.55,16.082],"hot":[[13.542,15.542],[19.125,20.542]],"dark":17.342,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
+  'coffee-riviera':{space:'coffee',name:'Riviera',sub:'Seafront coffee lounge',TL:{"total":27.91,"ch":[0,2.3,8.65,11.55,23.13],"hot":[[21.03,22.93],[26.41,27.91]],"dark":24.33,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
     hot:[{id:4,x:.5,y:.61},{id:10,x:.26,y:.8},{id:10,x:.74,y:.8},{id:19,x:.88,y:.62}],
     ch:[['A lounge above the bay.','Sixteen by ten metres, drawn to scale.'],['A curve of glass in clay.','The sculpted ceiling and the long glass wall.'],['Terrazzo, cobalt, the sea.','A fluted tile bar and the bay through the glass.'],['Olive velvet, ivory bouclé.','The Bellamere, two Kensleys and the Ronan. Tap any piece.'],['Blue hour on the water.','The headland lights up and the glass wave glows.']]},
-  'resto-orangerie':{space:'restaurant',name:'The Orangerie',sub:'Glasshouse dining',TL:{"total":21.125,"ch":[0,2.35,6.333,10.133,16.665],"hot":[[14.125,16.125],[19.708,21.125]],"dark":17.925,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
+  'resto-orangerie':{space:'restaurant',name:'The Orangerie',sub:'Glasshouse dining',TL:{"total":29.2,"ch":[0,2.4,9.44,12.73,24.41],"hot":[[22.31,24.21],[27.7,29.2]],"dark":25.61,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
     hot:[{id:4,x:.25,y:.58},{id:10,x:.33,y:.75},{id:19,x:.76,y:.69}],
     ch:[['A dining room made of glass.','Eighteen by ten metres under a glazed roof.'],['Steel and glass in clay.','The conservatory frame in hard garden light.'],['Sage steel, checkerboard marble.','Lemon trees and green-and-cream stone.'],['Olive velvet, ivory bouclé.','The Bellamere, the Kensley and the Ronan. Tap any piece.'],['Then the lanterns glow.','The garden darkens for dinner.']]},
-  'work-library':{space:'work',name:'The Material Library',sub:'Design studio',TL:{"total":21.125,"ch":[0,2.35,6.333,10.133,16.665],"hot":[[14.125,16.125],[19.708,21.125]],"dark":17.925,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
+  'work-library':{space:'work',name:'The Material Library',sub:'Design studio',TL:{"total":30.83,"ch":[0,2.4,9.44,12.73,26.04],"hot":[[23.94,25.84],[29.33,30.83]],"dark":27.24,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
     hot:[{id:3,x:.2,y:.7},{id:3,x:.79,y:.7},{id:4,x:.31,y:.45},{id:10,x:.57,y:.85}],
     ch:[['A studio built around samples.','Twenty-two by fourteen metres, with a mezzanine library.'],['The double height rises.','Skylights, steel windows and a spiral stair.'],['Oak, plaster, terracotta.','White oak, warm plaster and a terracotta stair.'],['Tan leather, olive velvet.','Two Westcotts, the Bellamere and the Kensley. Tap any piece.'],['Lanterns over the worktables.','The studio after hours.']]},
-  'work-loft':{space:'work',name:'Brick Loft',sub:'Warehouse studio',TL:{"total":21.125,"ch":[0,2.35,6.333,10.133,16.665],"hot":[[14.125,16.125],[19.708,21.125]],"dark":17.925,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
+  'work-loft':{space:'work',name:'Brick Loft',sub:'Warehouse studio',TL:{"total":29.7,"ch":[0,2.4,9.44,12.73,24.91],"hot":[[22.81,24.71],[28.2,29.7]],"dark":26.11,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
     hot:[{id:2,x:.27,y:.6},{id:16,x:.45,y:.73},{id:13,x:.82,y:.7}],
     ch:[['A warehouse, re-drawn.','Twenty by twelve metres of studio.'],['Trusses and factory glass.','The shell, as a clay study model.'],['Brick, steel, concrete.','Red brick, black steel and polished concrete.'],['Cognac against brick.','The Roscoe, the Marlowick and the Montrose. Tap any piece.'],['The cobalt pendant comes on.','City lights fill the windows.']]},
-  'home-estate':{space:'staging',name:'Mediterranean Estate',sub:'Great room',TL:{"total":21.125,"ch":[0,2.35,6.333,10.133,16.665],"hot":[[14.125,16.125],[19.708,21.125]],"dark":17.925,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
+  'home-estate':{space:'staging',name:'Mediterranean Estate',sub:'Great room',TL:{"total":29.7,"ch":[0,2.4,9.44,12.73,24.91],"hot":[[22.81,24.71],[28.2,29.7]],"dark":26.11,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
     hot:[{id:6,x:.58,y:.62},{id:10,x:.8,y:.83},{id:13,x:.3,y:.47}],
     ch:[['A great room, to scale.','Sixteen by eleven metres around a limestone hearth.'],['Double height in clay.','Steel windows, an arched niche, the range hood.'],['Limestone and bronze.','Honed stone, warm plaster, walnut and aged bronze.'],['Cognac velvet on jute.','The Osborne, the Kensley and the Montrose. Tap any piece.'],['Firelight and the niche glow.','The house after dark.']]},
 };
 const filmsFor=space=>Object.keys(FILMS).filter(k=>FILMS[k].space===space);
 const FILM_AR=16/9;
-// Phones scrub a still sequence instead of the film (scripts/build-film-frames.mjs): iOS
-// never paints a scrubbed video that hasn't played. Stills are 3:4 centre crops, four per
-// second of film, so on any screen narrower than 3:4 they frame exactly like the film.
+// Phones (any screen narrower than 3:4) get the film as a five-chapter story they swipe
+// through (PhoneStory) instead of a scroll-scrubbed film: one screen, no scroll-jacking,
+// and nothing to keep in step with the finger. Desktop and tablets keep FilmStudy.
 const PHONE_FRAMES='(max-aspect-ratio: 3/4)';
-const STILLS_PER_SEC=4;
-const stillCount=TL=>Math.floor((Math.round(TL.total*24)-1)/6)+1;
-const stillUrl=(fk,i)=>`f/${fk}/m/${String(i).padStart(3,'0')}.webp`;
 function useMedia(q){const [m,setM]=useState(()=>matchMedia(q).matches);useEffect(()=>{const mq=matchMedia(q);const f=()=>setM(mq.matches);mq.addEventListener('change',f);return()=>mq.removeEventListener('change',f)},[q]);return m}
-/** Loads a film's stills coarse-to-fine (every 16th, 8th … then the rest), a few at a time. */
-function loadStills(fk,n){
-  const imgs=new Array(n);let dead=false,k=0;const order=[0,n-1];const seen=new Set(order);
-  for(const step of [16,8,4,2,1])for(let i=0;i<n;i+=step)if(!seen.has(i)){seen.add(i);order.push(i)}
-  const next=()=>{if(dead||k>=order.length)return;const i=order[k++];const im=new Image();im.src=stillUrl(fk,i);
-    (im.decode?im.decode():new Promise((res,rej)=>{im.onload=res;im.onerror=rej})).then(()=>{if(!dead)imgs[i]=im},()=>{}).finally(next)};
-  for(let c=0;c<4;c++)next();
-  return {imgs,stop(){dead=true}};
-}
-const nearestStill=(imgs,i)=>{for(let d=0;d<imgs.length;d++){if(imgs[i-d])return imgs[i-d];if(imgs[i+d])return imgs[i+d]}return null};
 // Each film is told in five parts, two of them painted live over it:
 //   the plan (film) → the clay model raised out of the plan, walls first, then each piece from
 //   its footprint (trade/filmModel.ts) → the camera dives into the model (film) → the room,
@@ -708,7 +701,6 @@ function FilmStudy({ctx,fk,setFk}){
   const [box,setBox]=useState({w:1,h:1});const [pick,setPick]=useState(null);const [started,setStarted]=useState(false);const [ready,setReady]=useState(false);
   // index.html already showed chapter one; don't replay its entrance when the app takes over.
   const [fromShell]=useState(()=>document.documentElement.dataset.shell==='trade');useEffect(()=>{delete document.documentElement.dataset.shell},[]);
-  const phone=useMedia(PHONE_FRAMES);const cvRef=useRef(),stills=useRef(null),drawn=useRef(null);
   // the build in front of the film: null while its layers load, false if they can't
   const [modeled,setModeled]=useState(false);const BT=useMemo(()=>buildTimeline(F,modeled),[fk,modeled]);const BTr=useRef(BT);BTr.current=BT;
   const bcRef=useRef(),painter=useRef(null),modeler=useRef(null),painted=useRef(-1);const [built,setBuilt]=useState(null);
@@ -718,15 +710,13 @@ function FilmStudy({ctx,fk,setFk}){
     loadBuild(`f/${fk}/b/`).then(B=>{if(dead)return;const c=bcRef.current;if(c){c.width=B.W;c.height=B.H}painter.current=B;setBuilt(true)},()=>{if(!dead)setBuilt(false)});
     loadModel(`f/${fk}/b/`).then(M=>{if(dead)return;modeler.current=M;setModeled(true)},()=>{});
     return()=>{dead=true}},[fk]);
-  // Phones: start fetching stills straight away (frame 0 first). Desktop: the film waits
-  // for the page to finish loading so it never competes with first paint.
-  useEffect(()=>{if(!phone)return;const L=loadStills(fk,stillCount(TL));stills.current=L;drawn.current=null;return()=>{L.stop();stills.current=null}},[fk,phone]);
-  useEffect(()=>{if(phone)return;const v=vidRef.current;if(!v)return;let idle=0;
+  // The film waits for the page to finish loading so it never competes with first paint.
+  useEffect(()=>{const v=vidRef.current;if(!v)return;let idle=0;
     // iOS only buffers (and paints seeks) once a video has played, so tap play/pause.
     const go=()=>{v.preload='auto';v.load();const p=v.play();if(p)p.then(()=>v.pause(),()=>{})};
     const later=()=>{idle=(window.requestIdleCallback||setTimeout)(go,{timeout:1500})};
     if(document.readyState==='complete')later();else addEventListener('load',later,{once:true});
-    return()=>{removeEventListener('load',later);(window.cancelIdleCallback||clearTimeout)(idle)}},[fk,phone]);
+    return()=>{removeEventListener('load',later);(window.cancelIdleCallback||clearTimeout)(idle)}},[fk]);
   useEffect(()=>{const ro=new ResizeObserver(([e])=>setBox({w:e.contentRect.width,h:e.contentRect.height}));ro.observe(stageRef.current);return()=>ro.disconnect()},[]);
   useEffect(()=>{let raf=0,run=true;
     const tick=()=>{if(!run)return;const sec=secRef.current,st=stageRef.current,v=vidRef.current;
@@ -735,8 +725,6 @@ function FilmStudy({ctx,fk,setFk}){
         const target=P*((bm?BT.total:TL.total)-0.05);
         // critically damped follow: smooth on wheels and trackpads, no overshoot
         cur.current+=(target-cur.current)*0.16;if(Math.abs(target-cur.current)<0.004)cur.current=target;
-        // s: scroll seconds; ft: where the film is. During the build the film waits on the
-        // empty room the build starts from, and after it carries on from the furnished frame.
         // s: scroll seconds; ft: where the film is. While a painted part shows, the film waits
         // on the frame it hands over to (or takes over from).
         const s=cur.current,inModel=bm&&!!M&&s>=BT.a&&s<BT.c,inBuild=bm&&s>=BT.d&&s<BT.e;
@@ -745,19 +733,13 @@ function FilmStudy({ctx,fk,setFk}){
         if(bc){const P2=inModel?M:inBuild?B:null,show=!!P2;if(show){const u=inModel?(s-BT.a)/BT.S1:1+(s-BT.d)/BT.S2;if(Math.abs(u-painted.current)>1e-4){P2.paint(bc.getContext('2d'),inModel?u:u-1);painted.current=u}}
           if(bc.classList.contains('on')!==show)bc.classList.toggle('on',show)}
         if(v&&!v.seeking&&v.readyState>=1&&Math.abs(v.currentTime-ft)>1/48){try{v.currentTime=ft}catch(e){}}
-        const cv=cvRef.current,SL=stills.current;
-        if(cv&&SL){const im=nearestStill(SL.imgs,Math.min(SL.imgs.length-1,Math.round(ft*STILLS_PER_SEC)));
-          const dpr=Math.min(2,devicePixelRatio||1),W=Math.round(st.clientWidth*dpr),H=Math.round(st.clientHeight*dpr);
-          if(im&&(drawn.current!==im||cv.width!==W||cv.height!==H)){if(cv.width!==W||cv.height!==H){cv.width=W;cv.height=H}
-            const g=cv.getContext('2d'),k=Math.max(W/im.naturalWidth,H/im.naturalHeight),dw=im.naturalWidth*k,dh=im.naturalHeight*k;
-            g.drawImage(im,(W-dw)/2,(H-dh)/2,dw,dh);if(!drawn.current)cv.classList.add('on');drawn.current=im}}
         const chs=bm?BT.ch:TL.ch;let c=0;for(let i=0;i<chs.length;i++)if(s>=chs[i])c=i;
         const h=inBuild?-1:TL.hot.findIndex(([a,b])=>ft>=a-0.02&&ft<=b+0.05);
         const dk=F.darkRoom?(bm?s>=BT.dark:ft>=TL.ch[2]):ft>=TL.dark;
         const L=last.current;
         if(c!==L.ch){L.ch=c;setChi(c)}
         if(h!==L.hot){L.hot=h;setHot(h);if(h<0)setPick(null)}
-        if(dk!==L.dark){L.dark=dk;setDark(dk);const rs=document.documentElement.style;rs.setProperty('--hero-fg',dk?'#F4EADC':'#211912');rs.setProperty('--hero-inv',dk?'#1A130E':'#FBF8F2')}
+        if(dk!==L.dark){L.dark=dk;setDark(dk);setHeroInk(dk?'#F4EADC':'#211912',dk?'#1A130E':'#FBF8F2')}
         if(P>0.004&&!started)setStarted(true)}
       raf=requestAnimationFrame(tick)};
     tick();return()=>{run=false;cancelAnimationFrame(raf)}},[fk]);
@@ -770,11 +752,10 @@ function FilmStudy({ctx,fk,setFk}){
     scrollTo({top:top+total*(s/(useBuild?BT.total:TL.total)),behavior:'smooth'})};
   const toTop=()=>{const sec=secRef.current;if(sec&&sec.getBoundingClientRect().top<0)scrollTo({top:sec.getBoundingClientRect().top+scrollY,behavior:'smooth'})};
   const P0=pick&&byId(pick.id);const ids=[...new Set(F.hot.map(h=>h.id))];
-  return html`<section className="rh hf" ref=${secRef} style=${{height:'calc(7.5 * 100svh)'}} aria-label=${F.name+' film'}>
+  return html`<section className="rh hf" ref=${secRef} style=${{height:'calc(7.5 * var(--app-h, 100svh))'}} aria-label=${F.name+' film'}>
     <div className=${'hf-stage'+(dark?' night':'')} ref=${stageRef} onClick=${()=>setPick(null)}>
-      <img className="hf-video" src=${phone?stillUrl(fk,0):`f/${fk}/poster.jpg`} alt="" fetchpriority="high" aria-hidden="true"/>
-      ${phone?html`<canvas ref=${cvRef} className="hf-video hf-fade" aria-hidden="true"></canvas>`
-        :html`<video ref=${vidRef} className=${'hf-video hf-fade'+(ready?' on':'')} src=${`f/${fk}/film.mp4`} muted playsInline preload="none" aria-hidden="true" onLoadedData=${()=>setReady(true)}></video>`}
+      <img className="hf-video" src=${`f/${fk}/poster.jpg`} alt="" fetchpriority="high" aria-hidden="true"/>
+      <video ref=${vidRef} className=${'hf-video hf-fade'+(ready?' on':'')} src=${`f/${fk}/film.mp4`} muted playsInline preload="none" aria-hidden="true" onLoadedData=${()=>setReady(true)}></video>
       <canvas ref=${bcRef} className="hf-video hf-build" aria-hidden="true"></canvas>
       <div className="hf-scrim" aria-hidden="true"></div>
       ${hot>=0&&F.hot.map((h,i)=>{const x=ox+h.x*mw,y=oy+h.y*mh;if(x<12||x>box.w-12||y<90||y>box.h-12)return null;const p=byId(h.id);return html`<button key=${hot+'-'+i} className="fs-hot" style=${{left:x+'px',top:y+'px',animationDelay:i*90+'ms'}} aria-label=${'View '+p.name} onClick=${e=>{e.stopPropagation();setPick({id:h.id,x:x/box.w*100,y:y/box.h*100})}}><i></i><span>${p.name}</span></button>`})}
@@ -798,12 +779,61 @@ function FilmStudy({ctx,fk,setFk}){
     </div>
   </section>`;
 }
+/* ================= PHONE STORY: the film as five chapters you swipe ================= */
+// Each chapter shows the film's resting frame for it (scripts/build-film-frames.mjs cuts
+// them to f/<film>/s/0-4.webp at these moments). Swipe or tap the sides to move; it also
+// advances on its own until the visitor touches it. The space picker stays at the bottom.
+const STORY_MS=5200;
+const chapterTimes=TL=>[TL.ch[1]-0.3,(TL.ch[1]+TL.ch[2])/2,TL.ch[3]-0.3,TL.hot[0][0]+0.5,TL.hot[1][0]+0.5];
+const inkFor=dark=>dark?{'--hero-fg':'#F6EEE3','--hero-inv':'#1A130E'}:{'--hero-fg':'#211912','--hero-inv':'#FBF8F2'};
+function PhoneStory({ctx,fk,setFk}){
+  const F=FILMS[fk],TL=F.TL;const siblings=filmsFor(ctx.space);
+  const slides=chapterTimes(TL).map((t,k)=>({c:F.ch[k],dark:F.darkRoom?t>=TL.ch[2]:t>=TL.dark}));
+  const secRef=useRef(),railRef=useRef();const [at,setAt]=useState(0);
+  const [held,setHeld]=useState(()=>matchMedia('(prefers-reduced-motion: reduce)').matches);const [onScreen,setOnScreen]=useState(true);
+  // index.html already painted chapter one; don't replay its entrance when the app takes over.
+  const [fromShell]=useState(()=>document.documentElement.dataset.shell==='trade');useEffect(()=>{delete document.documentElement.dataset.shell},[]);
+  const go=k=>{const el=railRef.current;if(el)el.scrollTo({left:Math.max(0,Math.min(slides.length-1,k))*el.clientWidth,behavior:'smooth'})};
+  // the chapter follows the swipe (native scroll snapping does the motion)
+  useEffect(()=>{const el=railRef.current;let raf=0;const on=()=>{if(raf)return;raf=requestAnimationFrame(()=>{raf=0;setAt(Math.max(0,Math.min(slides.length-1,Math.round(el.scrollLeft/el.clientWidth))))})};
+    el.addEventListener('scroll',on,{passive:true});return()=>{el.removeEventListener('scroll',on);cancelAnimationFrame(raf)}},[fk]);
+  // auto-advance only while the hero is on screen and the visitor hasn't taken over
+  useEffect(()=>{const io=new IntersectionObserver(([e])=>setOnScreen(e.isIntersecting&&e.intersectionRatio>.6),{threshold:[0,.6,1]});io.observe(secRef.current);return()=>io.disconnect()},[]);
+  useEffect(()=>{if(held||!onScreen||at>=slides.length-1)return;const t=setTimeout(()=>go(at+1),STORY_MS);return()=>clearTimeout(t)},[at,held,onScreen]);
+  // the header reads its ink from the root, so it matches the chapter on screen
+  useEffect(()=>{const ink=inkFor(slides[at].dark);setHeroInk(ink['--hero-fg'],ink['--hero-inv'])},[at,fk]);
+  const take=()=>{if(!held)setHeld(true)};
+  const tap=e=>{if(e.target.closest('button,a,input'))return;take();const r=e.currentTarget.getBoundingClientRect();go(at+(e.clientX-r.left<r.width/3?-1:1))};
+  const ids=[...new Set(F.hot.map(h=>h.id))];
+  const toTop=()=>{const sec=secRef.current;if(sec&&sec.getBoundingClientRect().top<0)scrollTo({top:sec.getBoundingClientRect().top+scrollY,behavior:'smooth'})};
+  return html`<section className="rh hf ps" ref=${secRef} aria-label=${F.name+', in five chapters'} aria-roledescription="carousel">
+    <div className=${'hf-stage'+(slides[at].dark?' ps-dark':'')} style=${inkFor(slides[at].dark)}>
+      <div className="ps-rail" ref=${railRef} onPointerDown=${take} onClick=${tap}>
+        ${slides.map((s,k)=>html`<div key=${k} className=${'ps-slide'+(k===at?' on':'')+(s.dark?' night':'')} style=${inkFor(s.dark)} role="group" aria-roledescription="chapter" aria-label=${`${k+1} of ${slides.length}`} aria-hidden=${k!==at}>
+          <img className="hf-video" src=${`f/${fk}/s/${k}.webp`} alt="" decoding="async" fetchpriority=${k===0?'high':'low'}/>
+          <div className="hf-scrim" aria-hidden="true"></div>
+          <div className=${'hf-copy'+(fromShell&&k===0?' still':'')}>
+            ${k===0?html`<h1>${s.c[0]}</h1>`:html`<h2>${s.c[0]}</h2>`}
+            <p>${s.c[1]}</p>
+            ${k>=3&&html`<div className="hf-cta"><button className="hf-btn solid" tabIndex=${k===at?0:-1} onClick=${()=>{ids.forEach(id=>ctx.addToTray(id,1,null,true));ctx.toast(ids.length+' pieces added to '+ctx.activeProject.name,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Shop the room</button><button className="hf-btn" tabIndex=${k===at?0:-1} onClick=${()=>ctx.toStudio(ids,F.name)}>Open in Studio</button></div>`}
+          </div>
+        </div>`)}
+      </div>
+      <div className=${'ps-prog'+(held||!onScreen?' held':'')} role="group" aria-label="Chapters">${slides.map((s,k)=>html`<button key=${k+'-'+(k===at?at:'')} className=${k<at?'done':k===at?'on':''} aria-label=${'Chapter '+(k+1)+': '+s.c[0]} aria-current=${k===at?'step':undefined} onClick=${()=>{take();go(k)}} style=${{'--story':STORY_MS+'ms'}}><i></i></button>`)}</div>
+      <nav className="hf-nav" aria-label="Choose a space">
+        ${siblings.length>1&&html`<div className="hf-films">${siblings.map(k=>html`<button key=${k} className=${k===fk?'on':''} aria-pressed=${k===fk} onClick=${()=>{setFk(k);toTop()}}>${FILMS[k].name}</button>`)}</div>`}
+        <div className="hf-spaces">${SPACE_KEYS.map(k=>html`<button key=${k} className=${k===ctx.space?'on':''} aria-pressed=${k===ctx.space} onClick=${()=>{ctx.setSpace(k);toTop()}}>${SPACES[k].label}</button>`)}</div>
+      </nav>
+    </div>
+  </section>`;
+}
 function HeroSwitch({ctx}){
   const list=filmsFor(ctx.space);
   const [picks,setPicks]=useState(()=>load('film',{}));
   const fk=list.includes(picks[ctx.space])?picks[ctx.space]:list[0];
   const setFk=k=>{const n={...picks,[ctx.space]:k};setPicks(n);store('film',n)};
-  return fk?html`<${FilmStudy} key=${fk} fk=${fk} setFk=${setFk} ctx=${ctx}/>`:html`<${RoomStudy} ctx=${ctx}/>`;
+  const phone=useMedia(PHONE_FRAMES);
+  return !fk?html`<${RoomStudy} ctx=${ctx}/>`:phone?html`<${PhoneStory} key=${fk} fk=${fk} setFk=${setFk} ctx=${ctx}/>`:html`<${FilmStudy} key=${fk} fk=${fk} setFk=${setFk} ctx=${ctx}/>`;
 }
 
 /* ================= ROOMS WE LOVE: full-screen rooms that stack as you scroll ================= */
@@ -846,9 +876,16 @@ function RoomPanel({s,ctx,setRef,i}){
 }
 function RoomsWeLove({ctx}){
   const refs=useRef([]);
-  // each room settles from a slight zoom to rest as it slides into place
-  useEffect(()=>{let raf=0;const f=()=>{raf=0;const vh=innerHeight;refs.current.forEach(el=>{if(!el)return;const r=el.getBoundingClientRect();const p=Math.min(1,Math.max(0,1-r.top/vh));el.style.setProperty('--p',p.toFixed(3))})};
-    const on=()=>{if(!raf)raf=requestAnimationFrame(f)};f();addEventListener('scroll',on,{passive:true});addEventListener('resize',on);return()=>{removeEventListener('scroll',on);removeEventListener('resize',on);cancelAnimationFrame(raf)}},[]);
+  // each room settles from a slight zoom to rest as it slides into place. Only rooms on screen
+  // are measured (the observer says which), so the page never lays out rooms nobody can see.
+  // A room that just left is measured once more so it settles at its end state.
+  useEffect(()=>{let raf=0;const seen=new Set(),left=new Set();
+    const set=el=>el.style.setProperty('--p',Math.min(1,Math.max(0,1-el.getBoundingClientRect().top/appH())).toFixed(3));
+    const f=()=>{raf=0;left.forEach(set);left.clear();seen.forEach(set)};
+    const on=()=>{if(!raf&&(seen.size||left.size))raf=requestAnimationFrame(f)};
+    const io=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting)seen.add(e.target);else if(seen.delete(e.target))left.add(e.target)});on()});
+    refs.current.forEach(el=>el&&io.observe(el));
+    addEventListener('scroll',on,{passive:true});addEventListener('resize',on);return()=>{io.disconnect();removeEventListener('scroll',on);removeEventListener('resize',on);cancelAnimationFrame(raf)}},[]);
   return html`<section className="rooms" aria-label="Rooms we love">
     <header className="rooms-h"><h2>Rooms we love</h2><p>Step inside. Every piece is ready to order.</p></header>
     ${SCENES.map((s,i)=>html`<${RoomPanel} key=${s.key} s=${s} i=${i} ctx=${ctx} setRef=${el=>refs.current[i]=el}/>`)}
@@ -1064,15 +1101,25 @@ function TradeBand({ctx}){
 }
 
 function Home({ctx}){
+  // The opening film renders first; the sections below it follow as a background render once
+  // the browser is idle, in short slices, so taking over from the HTML hero stays light.
+  const [below,setBelow]=useState(false);
+  useEffect(()=>{const ric=window.requestIdleCallback||(f=>setTimeout(f,200));const id=ric(()=>startTransition(()=>setBelow(true)),{timeout:1500});return()=>(window.cancelIdleCallback||clearTimeout)(id)},[]);
   return html`<main className="home">
     <${HeroSwitch} ctx=${ctx}/>
+    ${below&&html`<${BelowFilm} ctx=${ctx}/>`}
+  </main>`;
+}
+
+function BelowFilm({ctx}){
+  return html`<${React.Fragment}>
     <${StartRoom} ctx=${ctx}/>
     <${RoomsWeLove} ctx=${ctx}/>
     <${Collection} ctx=${ctx}/>
     <${QuoteShow} ctx=${ctx}/>
     <${TradeBand} ctx=${ctx}/>
     <${Footer} ctx=${ctx}/>
-  </main>`;
+  </${React.Fragment}>`;
 }
 
 function Footer({ctx}){

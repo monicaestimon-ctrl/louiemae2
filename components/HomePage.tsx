@@ -1,5 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { FadeIn } from './FadeIn';
 import { GlassButton } from './ui/GlassButton';
 import { FASHION_CATEGORIES, KIDS_CATEGORIES, INITIAL_SITE_CONTENT } from '../constants';
@@ -18,18 +19,33 @@ import { SafeImage } from './SafeImage';
 import { responsiveImage } from '../lib/responsiveImage';
 
 const DEFAULT_HERO_IMAGE = INITIAL_SITE_CONTENT.home.hero.image;
+const heroShell = () => document.getElementById('lm-shell');
 const furnitureFallback: CollectionConfig = { id: 'furniture', title: 'Furniture', subtitle: '', heroImage: '', subcategories: [] };
 
 export const HomePage: React.FC = () => {
   const { siteContent, isLoading } = useSite();
   const [heroLoaded, setHeroLoaded] = useState(false);
-  // The HTML shell already played the entrance; don't replay it when the app takes over.
-  const [fromShell] = useState(() => document.documentElement.dataset.shell === 'home');
-  const heroEnter = fromShell ? '' : 'motion-safe:animate-hero-in';
-  const heroRise = fromShell ? '' : 'motion-safe:animate-hero-rise';
+  // index.html's hero, when the visit started on the home page. It stays the hero for good:
+  // replacing it would make the browser paint the headline twice and count the late one.
+  const [fromShell] = useState(() => heroShell() !== null);
   const { home } = siteContent;
   const savedHero = isLoading ? undefined : home.hero.image;
-  useEffect(() => { delete document.documentElement.dataset.shell; }, []);
+  useEffect(() => {
+    const shell = heroShell();
+    if (!shell) return;
+    shell.hidden = false;
+    return () => { shell.hidden = true; };
+  }, []);
+  useEffect(() => {
+    const shell = heroShell();
+    const p = shell?.querySelector('p');
+    const h2 = shell?.querySelector('h2');
+    const line2 = h2?.querySelector('span');
+    if (!p || !h2?.firstChild || !line2) return;
+    if (p.textContent !== home.hero.pretitle) p.textContent = home.hero.pretitle;
+    if (h2.firstChild.nodeValue !== home.hero.titleLine1) h2.firstChild.nodeValue = home.hero.titleLine1;
+    if (line2.textContent !== home.hero.titleLine2) line2.textContent = home.hero.titleLine2;
+  }, [home.hero.pretitle, home.hero.titleLine1, home.hero.titleLine2]);
   const { addSubscriber } = useNewsletter();
   const readiness = useQuery(api.catalogReadiness.status, {});
   const furniture = siteContent.collections.find(collection => collection.id === 'furniture') ?? furnitureFallback;
@@ -38,7 +54,10 @@ export const HomePage: React.FC = () => {
   const { product: selectedProduct, loading: detailLoading, unavailable: detailUnavailable } = useStorefrontProductDetail(selectedProductId);
   const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>();
   const [activeImageGroupKey, setActiveImageGroupKey] = useState<string | null>(null);
-  const selectedVariant = selectedProduct?.variants?.find(variant => variant.id === selectedVariantId && variant.inStock !== false);
+  const selectedVariant = selectedProduct?.variants?.length === 1
+    ? selectedProduct.variants[0]
+    : selectedProduct?.variants?.find(variant => variant.id === selectedVariantId && variant.inStock !== false);
+  const selectedPrice = (selectedProduct?.price ?? 0) + (selectedVariant?.priceAdjustment ?? 0);
   const setSelectedVariant = (variant: ProductVariant | undefined) => setSelectedVariantId(variant?.id);
   const openProduct = (id: string | null) => {
     setSelectedProductId(id);
@@ -73,58 +92,62 @@ export const HomePage: React.FC = () => {
     }
   };
 
+  const savedHeroImage = savedHero && savedHero !== DEFAULT_HERO_IMAGE ? (
+    <img
+      key={savedHero}
+      {...responsiveImage(savedHero, '100vw')}
+      alt=""
+      ref={(el) => { if (el?.complete && el.naturalWidth) setHeroLoaded(true); }}
+      onLoad={() => setHeroLoaded(true)}
+      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-[1200ms] ${heroLoaded ? 'opacity-100' : 'opacity-0'}`}
+    />
+  ) : null;
+
   return (
     <>
-      {/* Hero Section */}
-      <section className="relative h-screen h-svh w-full overflow-hidden bg-[#d4c9b8]">
-        {/* index.html paints this same hero before the app loads; the default photo stays
-            underneath and a saved replacement fades in over it once it has downloaded. */}
-        <img
-          {...responsiveImage(DEFAULT_HERO_IMAGE, '100vw')}
-          alt="Interior"
-          loading="eager"
-          fetchPriority="high"
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-        {savedHero && savedHero !== DEFAULT_HERO_IMAGE && (
+      {/* Hero Section: index.html's when there is one, otherwise the same hero drawn here.
+          The default photo stays underneath and a saved replacement fades in over it once it
+          has downloaded. */}
+      {fromShell ? createPortal(savedHeroImage, heroShell()!) : (
+        <section className="relative h-screen h-svh w-full overflow-hidden bg-[#d4c9b8]">
           <img
-            key={savedHero}
-            {...responsiveImage(savedHero, '100vw')}
-            alt=""
-            ref={(el) => { if (el?.complete && el.naturalWidth) setHeroLoaded(true); }}
-            onLoad={() => setHeroLoaded(true)}
-            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-[1200ms] ${heroLoaded ? 'opacity-100' : 'opacity-0'}`}
+            {...responsiveImage(DEFAULT_HERO_IMAGE, '100vw')}
+            alt="Interior"
+            loading="eager"
+            fetchPriority="high"
+            className="absolute inset-0 w-full h-full object-cover"
           />
-        )}
-        <div className="absolute inset-0 bg-black/20 z-10"></div>
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-center px-6">
-          <p className={`${heroEnter} text-white/90 text-xs md:text-base uppercase tracking-[0.3em] mb-6`}>{home.hero.pretitle}</p>
-          <h2 className={`${heroRise} font-serif text-[2.75rem] sm:text-5xl md:text-7xl lg:text-8xl text-cream leading-[1.08] mb-10 drop-shadow-lg max-w-5xl text-balance`}>
-            {home.hero.titleLine1}<br />
-            <span className="italic">{home.hero.titleLine2}</span>
-          </h2>
-          <div className={`${heroEnter} [animation-delay:300ms]`}>
-            <GlassButton
-              onClick={() => navigateTo('#collection/new')}
-            >
-              New Collection
-            </GlassButton>
+          {savedHeroImage}
+          <div className="absolute inset-0 bg-black/20 z-10"></div>
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-center px-6">
+            <p className="motion-safe:animate-hero-in text-white/90 text-xs md:text-base uppercase tracking-[0.3em] mb-6">{home.hero.pretitle}</p>
+            <h2 className="motion-safe:animate-hero-rise font-serif text-[2.75rem] sm:text-5xl md:text-7xl lg:text-8xl text-cream leading-[1.08] mb-10 drop-shadow-lg max-w-5xl text-balance">
+              {home.hero.titleLine1}<br />
+              <span className="italic">{home.hero.titleLine2}</span>
+            </h2>
+            <div className="motion-safe:animate-hero-in [animation-delay:300ms]">
+              <GlassButton
+                onClick={() => navigateTo('#collection/new')}
+              >
+                New Collection
+              </GlassButton>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Intro Text */}
 
       <section className="py-24 px-6 container mx-auto text-center">
         <FadeIn>
-          <h3 className="font-serif text-3xl md:text-5xl text-earth leading-tight max-w-5xl mx-auto">
+          <h2 className="font-serif text-3xl md:text-5xl text-earth leading-tight max-w-5xl mx-auto">
             {home.intro.text}
-          </h3>
+          </h2>
         </FadeIn>
       </section>
 
       {/* 1. Main Categories */}
-      <section className="pb-24 px-4 md:px-12 bg-cream">
+      <section className="below-fold pb-24 px-4 md:px-12 bg-cream">
         <div className="container mx-auto grid grid-cols-1 gap-4 md:gap-6">
 
           {/* Top Row: Furniture & Decor */}
@@ -232,7 +255,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* 2. Fashion Categories (Detailed) */}
-      <section className="py-20 px-4 md:px-12 bg-white">
+      <section className="below-fold py-20 px-4 md:px-12 bg-white">
         <FadeIn className="text-center mb-12">
           <h2 className="font-serif text-3xl md:text-5xl text-earth leading-tight mb-6">
             Shop The Mae Collective
@@ -278,7 +301,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* 3. Recommended Products */}
-      <section className="py-20 px-4 md:px-12 bg-cream-dark/30">
+      <section className="below-fold py-20 px-4 md:px-12 bg-cream-dark/30">
         <div className="container mx-auto">
           <FadeIn className="mb-12 text-center">
             <h2 className="font-serif text-3xl md:text-5xl text-earth leading-tight max-w-5xl mx-auto mb-6">
@@ -306,7 +329,7 @@ export const HomePage: React.FC = () => {
                   <SafeImage
                     src={product.images[0]}
                     alt={product.name}
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                    className="w-full h-full object-contain"
                   />
 
                   {/* Quick View Overlay (Glass) */}
@@ -329,7 +352,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* 4. Kids Categories (Detailed - Updated Asymmetrical Grid) */}
-      <section className="py-24 bg-white px-4 md:px-12">
+      <section className="below-fold py-24 bg-white px-4 md:px-12">
         <div className="container mx-auto">
           <FadeIn className="text-center mb-16">
             <h2 className="font-serif text-3xl md:text-5xl text-earth leading-tight mb-4">Louie Kids & Co.</h2>
@@ -401,7 +424,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* Brand Feature Section */}
-      <section className="pb-20 px-4 md:px-12 bg-cream">
+      <section className="below-fold pb-20 px-4 md:px-12 bg-cream">
         <div className="container mx-auto flex flex-col items-center">
           <FadeIn className="text-center mb-10">
             <p className="text-bronze text-xs md:text-sm uppercase tracking-[0.25em] mb-3">Est. 2021</p>
@@ -430,7 +453,7 @@ export const HomePage: React.FC = () => {
       )}
 
       {/* 5. Newsletter - Atelier Gradient & Glowing Inputs */}
-      <section className="relative py-32 text-center px-6 overflow-hidden">
+      <section className="below-fold relative py-32 text-center px-6 overflow-hidden">
         {/* Background Gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-[#1a130a] via-[#2d1f12] to-[#3a2a1a]"></div>
         {/* Ambient Glows */}
@@ -509,7 +532,7 @@ export const HomePage: React.FC = () => {
 
             {/* Image Gallery */}
             <div className="w-full md:w-1/2 bg-earth/5 h-[42%] shrink-0 md:h-auto overflow-hidden relative group">
-              <SafeImage src={selectedVariant?.image || (activeImageGroupKey && activeImageGroupKey !== NO_IMAGE_KEY ? activeImageGroupKey : selectedProduct.images[0])} alt={selectedProduct.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-[1.5s]" />
+              <SafeImage src={selectedVariant?.image || (activeImageGroupKey && activeImageGroupKey !== NO_IMAGE_KEY ? activeImageGroupKey : selectedProduct.images[0])} alt={selectedProduct.name} className="w-full h-full object-contain" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent pointer-events-none" />
             </div>
 
@@ -522,11 +545,11 @@ export const HomePage: React.FC = () => {
                 </div>
 
                 <h2 className="font-serif text-3xl md:text-5xl text-earth mb-3 leading-tight drop-shadow-sm">{selectedProduct.name}</h2>
-                <p className="font-serif text-2xl italic text-bronze mb-8">${(selectedProduct.price + (selectedVariant?.priceAdjustment || 0)).toFixed(2)}</p>
+                <p className="font-serif text-2xl italic text-bronze mb-8">${selectedPrice.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(selectedPrice) ? 0 : 2, maximumFractionDigits: 2 })}</p>
 
                 <div className="h-px w-full bg-gradient-to-r from-earth/20 via-earth/5 to-transparent mb-8"></div>
 
-                {!!selectedProduct.variants?.length && <div className="mb-6"><VariantSelector variants={selectedProduct.variants} selectedVariant={selectedVariant} activeImageGroupKey={activeImageGroupKey} onSelectVariant={setSelectedVariant} onSetGroupKey={setActiveImageGroupKey} /></div>}
+                {(selectedProduct.variants?.length ?? 0) > 1 && <div className="mb-6"><VariantSelector variants={selectedProduct.variants} selectedVariant={selectedVariant} activeImageGroupKey={activeImageGroupKey} onSelectVariant={setSelectedVariant} onSetGroupKey={setActiveImageGroupKey} /></div>}
                 <p className="font-sans text-earth/70 leading-relaxed mb-8 text-sm">
                   {selectedProduct.description}
                 </p>

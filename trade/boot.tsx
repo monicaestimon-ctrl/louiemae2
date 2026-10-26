@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useMemo } from 'react';
+import React, { useDeferredValue, useLayoutEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ConvexReactClient, useQuery } from 'convex/react';
 import { ConvexAuthProvider } from '@convex-dev/auth/react';
@@ -34,7 +34,9 @@ class Boundary extends React.Component<{ children: React.ReactNode }, { failed: 
 
 /** Loads the live catalog (priced for this viewer) before the site renders. */
 function Shell() {
-  const catalog = useQuery(api.holm.catalog);
+  // Deferred, so the whole site renders as a background pass in short slices instead of one
+  // long task the moment the catalog arrives; the shell stays on screen meanwhile.
+  const catalog = useDeferredValue(useQuery(api.holm.catalog));
   const ready = useMemo(() => {
     if (!catalog) return false;
     setProducts(liveProducts(catalog.items as LiveItem[]));
