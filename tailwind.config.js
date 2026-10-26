@@ -16,7 +16,7 @@ export default {
         cream: '#F9F7F2',
         'cream-dark': '#F0EBE5',
         earth: '#4A3B32',
-        bronze: '#8C6B51',
+        bronze: '#83634B',
         sand: '#D6CFC7',
       },
       fontFamily: {

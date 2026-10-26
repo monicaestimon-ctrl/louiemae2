@@ -1,6 +1,6 @@
 /* eslint-disable */
 // @ts-nocheck
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, startTransition } from 'react';
 import htm from 'htm';
 import type { HolmProduct } from './catalog';
 import { useQuery, useMutation, useAction } from 'convex/react';
@@ -47,6 +47,9 @@ const BOARD_SEED = [{id:'b1',title:'Saved pieces',secret:true,collab:0,sections:
 const TRAY_SEED = {active:'p1',taxExempt:false,projects:[{id:'p1',name:'My first project',target:20,zones:['Main room'],items:[]}]};
 
 /* ================= utils ================= */
+// The header and hero read their ink from these root variables. Changing anything on the root
+// restyles the whole page, so write only when the value really changes.
+const setHeroInk=(fg,inv)=>{const r=document.documentElement.style;if(r.getPropertyValue('--hero-fg')!==fg)r.setProperty('--hero-fg',fg);if(r.getPropertyValue('--hero-inv')!==inv)r.setProperty('--hero-inv',inv)};
 const fmt = (n,dec=false)=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:dec?2:0,maximumFractionDigits:dec?2:0});
 const load=(k,d)=>{try{const v=localStorage.getItem('hol:'+k);return v?JSON.parse(v):d}catch(e){return d}};
 const store=(k,v)=>{try{localStorage.setItem('hol:'+k,JSON.stringify(v))}catch(e){}};
@@ -380,7 +383,7 @@ function RoomHero({ctx}){
   const onMove=e=>{const st=stageRef.current;if(!st)return;const r=st.getBoundingClientRect();st.style.setProperty('--mx',((e.clientX-r.left)/r.width-.5).toFixed(3));st.style.setProperty('--my',((e.clientY-r.top)/r.height-.5).toFixed(3))};
   const onPick=(it,el)=>{const r=el.getBoundingClientRect(),s=stageRef.current.getBoundingClientRect();const below=it.top!=null;setPick({it,below,x:(r.left+r.width/2-s.left)/s.width*100,y:((below?r.bottom:r.top)-s.top)/s.height*100,img:el.querySelector('.rh-cut')})};
   const sc=room.scenes[active];const M=moodOf(room,sc.mood);const P=pick&&byId(pick.it.id);
-  useEffect(()=>{const r=document.documentElement.style;r.setProperty('--hero-fg',M.fg);r.setProperty('--hero-inv',M.fg==='#2B211A'?'#FBF8F2':'#1C1510')},[M.fg]);
+  useEffect(()=>setHeroInk(M.fg,M.fg==='#2B211A'?'#FBF8F2':'#1C1510'),[M.fg]);
   const pickSpace=k=>{ctx.setSpace(k);const sec=secRef.current;if(sec&&sec.getBoundingClientRect().top<0)scrollTo({top:sec.getBoundingClientRect().top+scrollY,behavior:'smooth'})};
   return html`<section className="rh" ref=${secRef} style=${{height:`calc(${n} * 100svh + 1px)`}}>
     <div className=${'rh-stage'+(pick?' focus':'')} ref=${stageRef} onPointerMove=${onMove} onClick=${()=>setPick(null)} style=${{'--fg':M.fg,'--sub':M.sub,'--inv':M.fg==='#2B211A'?'#FBF8F2':'#1C1510'}}>
@@ -589,7 +592,7 @@ function RoomStudy({ctx}){
       // react state (throttled)
       const ch=P<.12?0:P<.3?1:P<.5?2:P<.66?3:4;if(ch!==lastChap){lastChap=ch;setChap(ch)}
       const mins=Math.round((7.5*60+dayK*15.5*60)/10)*10;const label=s5>0||overrideT!=null?`${String(Math.floor(mins/60)%24).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}`:'';if(label!==lastTod){lastTod=label;setTod(label)}
-      const nn=dayK>.72||(cfg.dark&&P>.45);if(nn!==lastNight){lastNight=nn;setNight(nn);const r=document.documentElement.style;r.setProperty('--hero-fg',nn?'#F4EADC':'#2B211A');r.setProperty('--hero-inv',nn?'#1C1510':'#FBF8F2')}
+      const nn=dayK>.72||(cfg.dark&&P>.45);if(nn!==lastNight){lastNight=nn;setNight(nn);setHeroInk(nn?'#F4EADC':'#2B211A',nn?'#1C1510':'#FBF8F2')}
     }
     let raf=0;function loop(){cancelAnimationFrame(raf);const tick=()=>{if(!running)return;if(dirty||mouse.in||(P>.36&&P<.56)){frame();dirty=false}raf=requestAnimationFrame(tick)};tick()}
     loop();
@@ -718,7 +721,7 @@ function FilmStudy({ctx,fk,setFk}){
         const L=last.current;
         if(c!==L.ch){L.ch=c;setChi(c)}
         if(h!==L.hot){L.hot=h;setHot(h);if(h<0)setPick(null)}
-        if(dk!==L.dark){L.dark=dk;setDark(dk);const rs=document.documentElement.style;rs.setProperty('--hero-fg',dk?'#F4EADC':'#211912');rs.setProperty('--hero-inv',dk?'#1A130E':'#FBF8F2')}
+        if(dk!==L.dark){L.dark=dk;setDark(dk);setHeroInk(dk?'#F4EADC':'#211912',dk?'#1A130E':'#FBF8F2')}
         if(P>0.004&&!started)setStarted(true)}
       raf=requestAnimationFrame(tick)};
     tick();return()=>{run=false;cancelAnimationFrame(raf)}},[fk]);
@@ -802,9 +805,16 @@ function RoomPanel({s,ctx,setRef,i}){
 }
 function RoomsWeLove({ctx}){
   const refs=useRef([]);
-  // each room settles from a slight zoom to rest as it slides into place
-  useEffect(()=>{let raf=0;const f=()=>{raf=0;const vh=innerHeight;refs.current.forEach(el=>{if(!el)return;const r=el.getBoundingClientRect();const p=Math.min(1,Math.max(0,1-r.top/vh));el.style.setProperty('--p',p.toFixed(3))})};
-    const on=()=>{if(!raf)raf=requestAnimationFrame(f)};f();addEventListener('scroll',on,{passive:true});addEventListener('resize',on);return()=>{removeEventListener('scroll',on);removeEventListener('resize',on);cancelAnimationFrame(raf)}},[]);
+  // each room settles from a slight zoom to rest as it slides into place. Only rooms on screen
+  // are measured (the observer says which), so the page never lays out rooms nobody can see.
+  // A room that just left is measured once more so it settles at its end state.
+  useEffect(()=>{let raf=0;const seen=new Set(),left=new Set();
+    const set=el=>el.style.setProperty('--p',Math.min(1,Math.max(0,1-el.getBoundingClientRect().top/innerHeight)).toFixed(3));
+    const f=()=>{raf=0;left.forEach(set);left.clear();seen.forEach(set)};
+    const on=()=>{if(!raf&&(seen.size||left.size))raf=requestAnimationFrame(f)};
+    const io=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting)seen.add(e.target);else if(seen.delete(e.target))left.add(e.target)});on()});
+    refs.current.forEach(el=>el&&io.observe(el));
+    addEventListener('scroll',on,{passive:true});addEventListener('resize',on);return()=>{io.disconnect();removeEventListener('scroll',on);removeEventListener('resize',on);cancelAnimationFrame(raf)}},[]);
   return html`<section className="rooms" aria-label="Rooms we love">
     <header className="rooms-h"><h2>Rooms we love</h2><p>Step inside. Every piece is ready to order.</p></header>
     ${SCENES.map((s,i)=>html`<${RoomPanel} key=${s.key} s=${s} i=${i} ctx=${ctx} setRef=${el=>refs.current[i]=el}/>`)}
@@ -1020,15 +1030,25 @@ function TradeBand({ctx}){
 }
 
 function Home({ctx}){
+  // The opening film renders first; the sections below it follow as a background render once
+  // the browser is idle, in short slices, so taking over from the HTML hero stays light.
+  const [below,setBelow]=useState(false);
+  useEffect(()=>{const ric=window.requestIdleCallback||(f=>setTimeout(f,200));const id=ric(()=>startTransition(()=>setBelow(true)),{timeout:1500});return()=>(window.cancelIdleCallback||clearTimeout)(id)},[]);
   return html`<main className="home">
     <${HeroSwitch} ctx=${ctx}/>
+    ${below&&html`<${BelowFilm} ctx=${ctx}/>`}
+  </main>`;
+}
+
+function BelowFilm({ctx}){
+  return html`<${React.Fragment}>
     <${StartRoom} ctx=${ctx}/>
     <${RoomsWeLove} ctx=${ctx}/>
     <${Collection} ctx=${ctx}/>
     <${QuoteShow} ctx=${ctx}/>
     <${TradeBand} ctx=${ctx}/>
     <${Footer} ctx=${ctx}/>
-  </main>`;
+  </${React.Fragment}>`;
 }
 
 function Footer({ctx}){
