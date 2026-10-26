@@ -1,24 +1,26 @@
 // @vitest-environment node
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-// Phones scrub stills cut from each hero film (scripts/build-film-frames.mjs). If a film
-// is replaced without re-cutting them, phones show the old room and request stills that
-// don't exist. The film's timeline in app.ts sets how many stills the hero asks for.
+// Phones show each hero film as five chapter stills (scripts/build-film-frames.mjs). If a
+// film is replaced without re-cutting them, phones show the old room. The script records
+// which film it cut from, so a changed film fails here.
 const here = path.dirname(fileURLToPath(import.meta.url));
 const app = readFileSync(path.join(here, 'app.ts'), 'utf8');
-const films = [...app.matchAll(/'?([a-z-]+)'?:\{space:'[a-z]+'[^\n]*?TL:\{"total":([\d.]+)/g)].map((m) => ({ key: m[1], total: +m[2] }));
-const expected = (total: number) => Math.floor((Math.round(total * 24) - 1) / 6) + 1;
+const films = [...app.matchAll(/'?([a-z-]+)'?:\{space:'[a-z]+'[^\n]*?TL:\{"total"/g)].map((m) => m[1]);
 
-describe('hero film stills', () => {
+describe('phone story stills', () => {
   it('finds the films in app.ts', () => {
     expect(films.length).toBeGreaterThan(0);
   });
-  it.each(films)('$key has one still per quarter second of its film', ({ key, total }) => {
-    const dir = path.join(here, '../public/trade/f', key, 'm');
-    expect(existsSync(dir), `${dir} is missing: run node scripts/build-film-frames.mjs ${key}`).toBe(true);
-    expect(readdirSync(dir).filter((f) => f.endsWith('.webp')).length, `re-run node scripts/build-film-frames.mjs ${key}`).toBe(expected(total));
+  it.each(films)('%s has five chapter stills cut from its current film', (film) => {
+    const dir = path.join(here, '../public/trade/f', film);
+    const rerun = `re-run node scripts/build-film-frames.mjs ${film}`;
+    for (let i = 0; i < 5; i++) expect(existsSync(path.join(dir, 's', `${i}.webp`)), rerun).toBe(true);
+    const sha = createHash('sha1').update(readFileSync(path.join(dir, 'film.mp4'))).digest('hex');
+    expect(readFileSync(path.join(dir, 's', 'film.sha1'), 'utf8').trim(), rerun).toBe(sha);
   });
 });
