@@ -1,5 +1,13 @@
 import './style.css';
 
+// Lazy photos stay clear until they have arrived, then fade in over their warm placeholder
+// (style.css, "Photos arrive gently"). Load and error don't bubble, so listen in capture.
+const arrived = (e: Event) => {
+  if (e.target instanceof HTMLImageElement) e.target.dataset.lo = '';
+};
+document.addEventListener('load', arrived, true);
+document.addEventListener('error', arrived, true);
+
 // index.html paints the hero on its own. Start the app once that first paint has happened
 // so the bundle never stands between the visitor and the hero. Without the shell (other
 // routes) or in a background tab, start at once.
