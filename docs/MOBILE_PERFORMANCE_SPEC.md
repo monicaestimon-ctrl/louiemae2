@@ -86,11 +86,13 @@ Result (local): mobile 99 / 100 / 100 / 100 (FCP 1.2 s), desktop 100 / 100 / 100
 Result (local): mobile 99–100 / 100 / 100 / 100 (FCP 1.1 s, LCP 1.5 s), desktop
 100 / 100 / 100 / 100.
 
-Follow-up: phones now tell each film as a five-chapter story instead of scrubbing it
-(`PhoneStory` in `trade/app.ts`): full-screen stills you swipe or tap through, with a slow
-Ken Burns drift, story-style progress bars and auto-advance that pauses while you hold the
-screen. About 200 KB per room, and nothing is tied to scroll position, so the page scrolls
-normally past it.
+Follow-up: phones now tell each film as five chapter cards you swipe (`PhoneStory` in
+`trade/app.ts`) instead of scrubbing it. The films are landscape 720p, so a full-height
+phone crop showed a thin slice blown up about four times; each card is instead a 4:3 crop
+at the film's own resolution and plays its own short clip (290–760 KB), loaded only when
+that chapter is on screen. Chapters follow on as each clip ends; story-style progress
+bars, the next card peeking in, and sharp stills on a timer where video can't play (Low
+Power Mode, reduced motion). Nothing is tied to scroll position.
 
 ### Step 3 — Storefront mobile experience
 - Newsletter as a bottom sheet that appears after engagement, respects safe areas and
@@ -110,5 +112,5 @@ normally past it.
 - The home hero in `index.html` mirrors `components/HomePage.tsx`, and the trade shell in
   `trade/index.html` mirrors `Header`/`FilmStudy` in `trade/app.ts`; change them together.
 - New or re-cut hero films: run `node scripts/build-film-frames.mjs <film>` and commit the
-  chapter stills (`trade/filmFrames.test.ts` fails until you do).
+  chapter clips (`trade/filmFrames.test.ts` fails until you do).
 - New pages: import them with `lazy()` in `App.tsx`.
