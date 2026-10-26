@@ -1,17 +1,18 @@
-// Cuts the five chapter stills phones show for each House of Louie Mae hero film.
+// Cuts the five chapter clips phones show for each House of Louie Mae hero film.
 //
 //   node scripts/build-film-frames.mjs [film-key ...]
 //
-// On phones the film is told as a five-chapter story you swipe through (PhoneStory in
-// trade/app.ts) instead of being scrubbed by scroll. Each chapter is a resting frame read
-// from the film's timeline (TL) in trade/app.ts: the finished plan, the middle of the clay
-// model, the empty finished room, then the still moments when the furnished room and the
-// night room hold. Stills are 3:4 centre crops, which is what a portrait
-// screen shows of the 16:9 film.
+// On phones the film is told as five chapters you swipe through (PhoneStory in
+// trade/app.ts) instead of being scrubbed by scroll. Each chapter is its own short clip,
+// cut at the chapter boundaries in the film's timeline (TL) in trade/app.ts: the plan, the
+// clay model, the finished room, the furniture arriving and the room after dark. Clips are
+// 4:3 centre crops at the film's full resolution (960×720), so a phone shows them sharp
+// rather than a thin slice of the landscape film blown up to full height.
 //
-// Writes public/trade/f/<film>/s/0.webp … 4.webp and film.sha1 (the film they were cut
-// from; trade/filmFrames.test.ts fails if a film changes without re-running this).
-// Needs ffmpeg on PATH. Commit the output.
+// Writes public/trade/f/<film>/s/<k>.mp4, <k>.webp (its first frame, the poster) and
+// <k>-end.webp (its last frame, shown once played or when motion is reduced) for k = 0…4,
+// and film.sha1 (the film they were cut from; trade/filmFrames.test.ts fails if a film
+// changes without re-running this). Needs ffmpeg on PATH. Commit the output.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -23,8 +24,11 @@ const timelines = Object.fromEntries(
   [...app.matchAll(/'?([a-z-]+)'?:\{space:'[a-z]+'[^\n]*?TL:(\{"total".*?\}\}),\n/g)].map((m) => [m[1], JSON.parse(m[2])]),
 );
 
-/** The moment each chapter rests on (seconds). */
-const chapterTimes = (TL) => [TL.ch[1] - 0.3, (TL.ch[1] + TL.ch[2]) / 2, TL.ch[3] - 0.3, TL.hot[0][0] + 0.5, TL.hot[1][0] + 0.5];
+/** Each chapter's [start, end] in the film (seconds); keep in step with chapterClips in trade/app.ts. */
+const chapterClips = (TL) => [[0, TL.ch[1]], [TL.ch[1], TL.ch[2]], [TL.ch[2], TL.ch[3]], [TL.ch[3], TL.hot[0][1]], [TL.hot[0][1], TL.total]];
+const CROP = 'crop=ih*4/3:ih:(iw-ih*4/3)/2:0';
+const still = (src, t, out) =>
+  execFileSync('ffmpeg', ['-v', 'error', '-ss', t.toFixed(3), '-i', src, '-frames:v', '1', '-vf', CROP, '-c:v', 'libwebp', '-quality', '82', '-compression_level', '6', out]);
 
 const films = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(timelines);
 for (const film of films) {
@@ -34,14 +38,15 @@ for (const film of films) {
   const out = path.join(root, film, 's');
   rmSync(out, { recursive: true, force: true });
   mkdirSync(out, { recursive: true });
-  chapterTimes(TL).forEach((t, i) => {
+  chapterClips(TL).forEach(([a, b], i) => {
     execFileSync('ffmpeg', [
-      '-v', 'error', '-ss', t.toFixed(3), '-i', src, '-frames:v', '1',
-      '-vf', 'crop=ih*3/4:ih:(iw-ih*3/4)/2:0',
-      '-c:v', 'libwebp', '-quality', '80', '-compression_level', '6',
-      path.join(out, `${i}.webp`),
+      '-v', 'error', '-ss', a.toFixed(3), '-t', (b - a).toFixed(3), '-i', src, '-vf', CROP, '-an',
+      '-c:v', 'libx264', '-preset', 'slow', '-crf', '28', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
+      path.join(out, `${i}.mp4`),
     ]);
+    still(src, a, path.join(out, `${i}.webp`));
+    still(src, Math.max(a, b - 0.08), path.join(out, `${i}-end.webp`));
   });
   writeFileSync(path.join(out, 'film.sha1'), createHash('sha1').update(readFileSync(src)).digest('hex') + '\n');
-  console.log(`${film}: 5 chapter stills`);
+  console.log(`${film}: 5 chapter clips`);
 }
