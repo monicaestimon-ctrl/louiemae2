@@ -7,6 +7,7 @@ import { useQuery, useMutation, useAction } from 'convex/react';
 import { deliveryCents, DELIVERY_TIERS } from '../lib/holmDelivery';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
+import { phoneCut } from './phoneCut.mjs';
 export const html = htm.bind(React.createElement);
 
 /* ================= data ================= */
@@ -740,12 +741,12 @@ function FilmStudy({ctx,fk,setFk}){
 }
 /* ================= PHONE FILM: the room film playing straight through ================= */
 // Phones get the same one-screen hero as desktop, but the film plays on its own as one
-// continuous video (f/<film>/phone.mp4, a 3:4 cut from scripts/build-film-frames.mjs)
-// instead of following the scroll. The headline follows the film's chapters; at the end
+// continuous video instead of following the scroll: f/<film>/phone.mp4, a shorter 3:4 cut
+// (trade/phoneCut.mjs) from blueprint to clay to the furnished room in colour to night. The headline follows the film's chapters; at the end
 // the film fades to its first frame and plays again. Where it can't autoplay (Low Power
 // Mode), the opening frame stays with a play button; reduced motion starts paused.
 function PhoneFilm({ctx,fk,setFk}){
-  const F=FILMS[fk],TL=F.TL;const siblings=filmsFor(ctx.space);
+  const F=FILMS[fk],P=phoneCut(F.TL,F.darkRoom);const siblings=filmsFor(ctx.space);
   const secRef=useRef(),vidRef=useRef(),last=useRef({ch:-1,dark:null});
   const [chi,setChi]=useState(0);const [dark,setDark]=useState(false);const [shown,setShown]=useState(false);
   const [loaded,setLoaded]=useState(()=>document.readyState==='complete');const [onScreen,setOnScreen]=useState(true);
@@ -759,14 +760,14 @@ function PhoneFilm({ctx,fk,setFk}){
     if(onScreen&&!paused){const p=v.play();if(p)p.catch(e=>{if(e&&e.name==='NotAllowedError')setPaused(true)})}else v.pause()},[loaded,onScreen,paused]);
   useEffect(()=>{setHeroInk('#211912','#FBF8F2');return()=>setHeroInk('#211912','#FBF8F2')},[fk]);
   // the headline and ink follow the film as it plays
-  const tick=()=>{const v=vidRef.current;if(!v)return;const t=v.currentTime;let c=0;for(let i=0;i<TL.ch.length;i++)if(t>=TL.ch[i])c=i;
-    const dk=F.darkRoom?t>=TL.ch[2]:t>=TL.dark;const L=last.current;
+  const tick=()=>{const v=vidRef.current;if(!v)return;const t=v.currentTime;let c=0;for(let i=0;i<P.ch.length;i++)if(t>=P.ch[i])c=i;
+    const dk=t>=P.dark;const L=last.current;
     if(c!==L.ch){L.ch=c;setChi(c)}
     if(dk!==L.dark){L.dark=dk;setDark(dk);setHeroInk(dk?'#F4EADC':'#211912',dk?'#1A130E':'#FBF8F2')}};
   useEffect(()=>{if(!shown||paused||!onScreen)return;let raf=0;const loop=()=>{tick();raf=requestAnimationFrame(loop)};loop();return()=>cancelAnimationFrame(raf)},[shown,paused,onScreen]);
   // one continuous loop: fade to the opening frame, then start again
   const ended=()=>{setFading(true);setTimeout(()=>{const v=vidRef.current;if(!v)return;v.currentTime=0;tick();setFading(false);if(!paused&&onScreen)v.play().catch(()=>{})},700)};
-  const toChap=i=>{const v=vidRef.current;if(!v)return;v.currentTime=i===3?TL.hot[0][0]+0.3:i===4?TL.hot[1][0]+0.3:TL.ch[i]+0.05;tick();if(paused)setPaused(false)};
+  const toChap=i=>{const v=vidRef.current;if(!v)return;v.currentTime=P.ch[i]+0.05;tick();if(paused)setPaused(false)};
   const toTop=()=>{const sec=secRef.current;if(sec&&sec.getBoundingClientRect().top<0)scrollTo({top:sec.getBoundingClientRect().top+scrollY,behavior:'smooth'})};
   const ch=F.ch[chi];const ids=[...new Set(F.hot.map(h=>h.id))];
   return html`<section className="rh hf pf" ref=${secRef} aria-label=${F.name+' film'}>
