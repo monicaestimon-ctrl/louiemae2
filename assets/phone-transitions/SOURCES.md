@@ -10,12 +10,15 @@ furniture and walls take on their colour in place. Generated with MiniMax H3 on 
 | --- | --- | --- |
 | bar | 670679c8-1fab-4050-97b5-d809c9e859db | https://d8j0ntlcm91z4.cloudfront.net/user_3HyG3R1H25xpTblgFPpSgfk7mlQ/hf_20261028_171343_670679c8-1fab-4050-97b5-d809c9e859db.mp4 |
 | cafe-paris | 165f8936-7bf2-435d-9d2e-1ea4731d1bbb | https://d8j0ntlcm91z4.cloudfront.net/user_3HyG3R1H25xpTblgFPpSgfk7mlQ/hf_20261028_052228_165f8936-7bf2-435d-9d2e-1ea4731d1bbb.mp4 |
-| cafe-provence | e7956548-8675-48b0-89d8-325ae4cd6b24 | https://d8j0ntlcm91z4.cloudfront.net/user_3HyG3R1H25xpTblgFPpSgfk7mlQ/hf_20261028_171343_e7956548-8675-48b0-89d8-325ae4cd6b24.mp4 |
+| cafe-provence | b23a38fc-03aa-47d5-bd13-70d87f38cc0d (v2, start 6.5 s) | https://d8j0ntlcm91z4.cloudfront.net/user_3HyG3R1H25xpTblgFPpSgfk7mlQ/hf_20261028_214706_b23a38fc-03aa-47d5-bd13-70d87f38cc0d.mp4 |
 | coffee-riviera | 0bcee0e1-affe-439e-aab1-f5af4f357b13 | https://d8j0ntlcm91z4.cloudfront.net/user_3HyG3R1H25xpTblgFPpSgfk7mlQ/hf_20261028_171344_0bcee0e1-affe-439e-aab1-f5af4f357b13.mp4 |
 | resto-orangerie | 5f81ca81-9d04-4d59-a241-83f03228ddec | https://d8j0ntlcm91z4.cloudfront.net/user_3HyG3R1H25xpTblgFPpSgfk7mlQ/hf_20261028_171343_5f81ca81-9d04-4d59-a241-83f03228ddec.mp4 |
 | work-library | bbc8f8e9-4ab4-4af3-92d0-6be9cd8e09b6 | https://d8j0ntlcm91z4.cloudfront.net/user_3HyG3R1H25xpTblgFPpSgfk7mlQ/hf_20261028_171343_bbc8f8e9-4ab4-4af3-92d0-6be9cd8e09b6.mp4 |
-| work-loft | aa7809d6-e392-41b7-b1f5-7dc7952e70e6 | https://d8j0ntlcm91z4.cloudfront.net/user_3HyG3R1H25xpTblgFPpSgfk7mlQ/hf_20261028_171344_aa7809d6-e392-41b7-b1f5-7dc7952e70e6.mp4 |
+| work-loft | 113362a6-3fcb-4de0-a11d-e6a7dd94c683 (v2, start 6.5 s) | https://d8j0ntlcm91z4.cloudfront.net/user_3HyG3R1H25xpTblgFPpSgfk7mlQ/hf_20261028_214706_113362a6-3fcb-4de0-a11d-e6a7dd94c683.mp4 |
 | home-estate | c85ea5de-59e1-4bb3-8488-819af9063e6a | https://d8j0ntlcm91z4.cloudfront.net/user_3HyG3R1H25xpTblgFPpSgfk7mlQ/hf_20261028_171343_c85ea5de-59e1-4bb3-8488-819af9063e6a.mp4 |
+
+Each clip is retimed to one constant camera pace from `pace.json` (written by
+`scripts/measure-transition-pace.py`; re-run it after replacing a clip).
 
 To finish: download each (audio stripped: `ffmpeg -i in.mp4 -an -c:v copy <film>.mp4`) into
 this folder, run `node scripts/build-film-frames.mjs`, and commit `public/trade/f/*/phone.*`.
