@@ -1173,7 +1173,7 @@ h1 em,h2 em,h3 em{font-style:italic}
 .hf-stage.night{--hero-fg:#F6EEE3;--hero-inv:#1A130E}
 header.top.over{text-shadow:0 1px 12px rgba(10,6,4,.35)}
 .top.over .dial-btn,.top.over .seg{background-color:color-mix(in srgb,var(--hero-inv,#FBF8F2) 14%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
-.hf-stage.night .hf-copy,.hf-stage.night .hf-nav,.ps-slide.night .hf-copy,.ps-dark .hf-nav{text-shadow:0 1px 18px rgba(10,6,4,.45)}
+.hf-stage.night .hf-copy,.hf-stage.night .hf-nav{text-shadow:0 1px 18px rgba(10,6,4,.45)}
 .hf-copy,.hf-copy *,.hf-btn,.hf-spaces button,.hf-films,.hf-films button,.hf-prog i,.hf-cue,.hf-cue i{transition:color .6s var(--ease),background-color .6s var(--ease),border-color .6s var(--ease),opacity .2s}
 .hf-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#120D0A}
 /* Film or stills fade in over the poster only once they can draw a frame: never a black hero. */
@@ -1184,7 +1184,7 @@ header.top.over{text-shadow:0 1px 12px rgba(10,6,4,.35)}
 .hf-build.on{visibility:visible}
 .hf-scrim{position:absolute;inset:0;pointer-events:none;z-index:2;transition:opacity .8s;
   background:linear-gradient(100deg,rgba(251,248,242,.62) 0%,rgba(251,248,242,.32) 30%,rgba(251,248,242,0) 52%),linear-gradient(0deg,rgba(251,248,242,.5),rgba(251,248,242,0) 22%)}
-.hf-stage.night .hf-scrim,.ps-slide.night .hf-scrim{background:linear-gradient(180deg,rgba(14,9,6,.55) 0%,rgba(14,9,6,0) 16%),linear-gradient(100deg,rgba(14,9,6,.62) 0%,rgba(14,9,6,.3) 32%,rgba(14,9,6,0) 54%),linear-gradient(0deg,rgba(14,9,6,.55),rgba(14,9,6,0) 24%)}
+.hf-stage.night .hf-scrim{background:linear-gradient(180deg,rgba(14,9,6,.55) 0%,rgba(14,9,6,0) 16%),linear-gradient(100deg,rgba(14,9,6,.62) 0%,rgba(14,9,6,.3) 32%,rgba(14,9,6,0) 54%),linear-gradient(0deg,rgba(14,9,6,.55),rgba(14,9,6,0) 24%)}
 .hf-copy{position:absolute;z-index:20;left:clamp(20px,5vw,80px);top:clamp(120px,22vh,220px);max-width:min(540px,44%);color:var(--hero-fg)}
 .hf-copy h1{font-size:clamp(44px,5.6vw,84px);line-height:1;animation:hfIn .7s var(--ease) both}
 .hf-copy p{margin-top:16px;font-size:clamp(15px,1.2vw,18px);line-height:1.5;max-width:40ch;opacity:.86;animation:hfIn .7s .08s var(--ease) both}
@@ -1217,34 +1217,17 @@ header.top.over{text-shadow:0 1px 12px rgba(10,6,4,.35)}
   .hf-copy{max-width:none;right:20px;top:84px}
   .hf-copy h1{font-size:40px}
   .hf-scrim{background:linear-gradient(180deg,rgba(251,248,242,.7) 0%,rgba(251,248,242,0) 42%),linear-gradient(0deg,rgba(251,248,242,.6),rgba(251,248,242,0) 26%)}
-  .hf-stage.night .hf-scrim,.ps-slide.night .hf-scrim{background:linear-gradient(180deg,rgba(14,9,6,.7) 0%,rgba(14,9,6,0) 42%),linear-gradient(0deg,rgba(14,9,6,.6),rgba(14,9,6,0) 26%)}
+  .hf-stage.night .hf-scrim{background:linear-gradient(180deg,rgba(14,9,6,.7) 0%,rgba(14,9,6,0) 42%),linear-gradient(0deg,rgba(14,9,6,.6),rgba(14,9,6,0) 26%)}
   .hf-spaces{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin:0 -20px;padding:0 20px}
   .hf-spaces button{white-space:nowrap}
   .hf-prog{right:8px}
   .hf-cue{display:none}
 }
-/* Phones: the hero film as a five-chapter story you swipe (PhoneStory in app.ts). Only below
-   a 3:4 screen shape, the same test the app uses, so desktop and tablets keep the film. */
-.ps-rail,.ps-prog{display:none}
-@media (max-aspect-ratio:3/4){
-  .hf.ps{height:var(--app-h,100svh)!important}
-  .ps .ps-rail{display:flex;position:absolute;inset:0;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;scrollbar-width:none;-webkit-tap-highlight-color:transparent}
-  .ps-rail::-webkit-scrollbar{display:none}
-  .ps-slide{position:relative;flex:0 0 100%;height:100%;overflow:hidden;scroll-snap-align:start;scroll-snap-stop:always;color:var(--hero-fg)}
-  /* the chapter on screen drifts in very slowly; the others wait at rest */
-  .ps-slide .hf-video{transform-origin:50% 62%;transition:transform 9s cubic-bezier(.25,.1,.25,1)}
-  .ps-slide.on .hf-video{transform:scale(1.07)}
-  .ps .hf-copy{top:98px}
-  .ps .ps-prog{display:flex;position:absolute;z-index:22;left:20px;right:20px;top:calc(env(safe-area-inset-top,0px) + 70px);gap:6px}
-  .ps-prog button{flex:1;height:20px;display:flex;align-items:center}
-  .ps-prog i{position:relative;display:block;width:100%;height:2px;border-radius:2px;overflow:hidden;background:color-mix(in srgb,var(--hero-fg) 26%,transparent);transition:background .6s var(--ease)}
-  .ps-prog i::after{content:'';position:absolute;inset:0;background:var(--hero-fg);transform:scaleX(0);transform-origin:left;transition:background .6s var(--ease)}
-  .ps-prog .done i::after{transform:scaleX(1)}
-  .ps-prog .on i::after{animation:psFill var(--story,5s) linear forwards}
-  .ps-prog.held .on i::after{animation:none;transform:scaleX(1)}
-  .ps .hf-prog,.ps .hf-cue{display:none}
-}
-@keyframes psFill{to{transform:scaleX(1)}}
+/* Phones: one screen, the room film playing straight through (PhoneFilm in app.ts) instead
+   of a scroll-length stage. Only below a 3:4 screen shape, the same test the app uses. */
+@media (max-aspect-ratio:3/4){.hf.pf{height:var(--app-h,100svh)!important}}
+.pf-play{position:absolute;z-index:21;right:20px;bottom:calc(150px + env(safe-area-inset-bottom,0px) + var(--app-gap,0px));width:48px;height:48px;border-radius:50%;display:grid;place-items:center;color:var(--hero-fg);border:1px solid color-mix(in srgb,var(--hero-fg) 35%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);animation:fade .4s}
+.pf-play svg{fill:currentColor;margin-left:2px}
 /* Clear the fixed tab bar (≈58px plus the home indicator) so the space picker stays tappable. */
 @media (max-width:900px){.hf-nav{bottom:calc(74px + env(safe-area-inset-bottom,0px) + var(--app-gap,0px))}}
 
@@ -1365,6 +1348,16 @@ header.top:not(.over){background:color-mix(in srgb,var(--paper) 94%,transparent)
 .glass{border-radius:26px;backdrop-filter:blur(26px) saturate(1.35);-webkit-backdrop-filter:blur(26px) saturate(1.35)}
 .glass.light{background:rgba(255,253,249,.56);border:1px solid rgba(255,255,255,.7);box-shadow:0 30px 80px -30px rgba(70,44,22,.35),inset 0 1px 0 rgba(255,255,255,.8)}
 .glass.dark{background:rgba(255,248,238,.08);border:1px solid rgba(255,255,255,.14);box-shadow:0 30px 80px -30px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.12);color:#F7EEE2}
+
+/* Photos arrive gently. A lazy photo shows its frame's warm placeholder (already at the
+   final size) until it has loaded (main.tsx marks it data-lo), then fades in. Images that
+   run their own animation keep it. */
+#root img[loading=lazy]:not([data-lo]){opacity:0}
+#root img[loading=lazy][data-lo]:not(.morph,.fp img){animation:imgIn .7s var(--ease)}
+@keyframes imgIn{from{opacity:0}}
+.space-card,.trend{background:var(--sand)}
+.arch{background:#2A211A}
+@media (prefers-reduced-motion:reduce){#root img[loading=lazy][data-lo]{animation:none}}
 
 /* reveal */
 .lx [data-r]{opacity:0;transform:translateY(28px);transition:opacity .9s var(--ease),transform 1s var(--ease);transition-delay:calc(var(--i,0) * 110ms)}

@@ -9,6 +9,7 @@ import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { loadBuild, BUILD } from './filmBuild';
 import { loadModel, MODEL } from './filmModel';
+import { phoneCut } from './phoneCut.mjs';
 export const html = htm.bind(React.createElement);
 
 /* ================= data ================= */
@@ -84,6 +85,7 @@ function matchPrompt(q){
 
 /* ================= icons ================= */
 const ICONS={
+ play:'<path d="M8.5 5.5v13l10-6.5z"/>',
  clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
  calendar:'<rect x="4" y="5.5" width="16" height="14" rx="2"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>',
  download:'<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/>',
@@ -670,9 +672,9 @@ const FILMS={
 };
 const filmsFor=space=>Object.keys(FILMS).filter(k=>FILMS[k].space===space);
 const FILM_AR=16/9;
-// Phones (any screen narrower than 3:4) get the film as a five-chapter story they swipe
-// through (PhoneStory) instead of a scroll-scrubbed film: one screen, no scroll-jacking,
-// and nothing to keep in step with the finger. Desktop and tablets keep FilmStudy.
+// Phones (any screen narrower than 3:4) get the film playing straight through (PhoneFilm)
+// instead of scrubbed by scroll: one screen, no scroll-jacking, nothing to keep in step
+// with the finger. Desktop and tablets keep FilmStudy.
 const PHONE_FRAMES='(max-aspect-ratio: 3/4)';
 function useMedia(q){const [m,setM]=useState(()=>matchMedia(q).matches);useEffect(()=>{const mq=matchMedia(q);const f=()=>setM(mq.matches);mq.addEventListener('change',f);return()=>mq.removeEventListener('change',f)},[q]);return m}
 // Each film is told in five parts, two of them painted live over it:
@@ -779,47 +781,49 @@ function FilmStudy({ctx,fk,setFk}){
     </div>
   </section>`;
 }
-/* ================= PHONE STORY: the film as five chapters you swipe ================= */
-// Each chapter shows the film's resting frame for it (scripts/build-film-frames.mjs cuts
-// them to f/<film>/s/0-4.webp at these moments). Swipe or tap the sides to move; it also
-// advances on its own until the visitor touches it. The space picker stays at the bottom.
-const STORY_MS=5200;
-const chapterTimes=TL=>[TL.ch[1]-0.3,(TL.ch[1]+TL.ch[2])/2,TL.ch[3]-0.3,TL.hot[0][0]+0.5,TL.hot[1][0]+0.5];
-const inkFor=dark=>dark?{'--hero-fg':'#F6EEE3','--hero-inv':'#1A130E'}:{'--hero-fg':'#211912','--hero-inv':'#FBF8F2'};
-function PhoneStory({ctx,fk,setFk}){
-  const F=FILMS[fk],TL=F.TL;const siblings=filmsFor(ctx.space);
-  const slides=chapterTimes(TL).map((t,k)=>({c:F.ch[k],dark:F.darkRoom?t>=TL.ch[2]:t>=TL.dark}));
-  const secRef=useRef(),railRef=useRef();const [at,setAt]=useState(0);
-  const [held,setHeld]=useState(()=>matchMedia('(prefers-reduced-motion: reduce)').matches);const [onScreen,setOnScreen]=useState(true);
-  // index.html already painted chapter one; don't replay its entrance when the app takes over.
+/* ================= PHONE FILM: the room film playing straight through ================= */
+// Phones get the same one-screen hero as desktop, but the film plays on its own as one
+// continuous video instead of following the scroll: f/<film>/phone.mp4, a shorter 3:4 cut
+// (trade/phoneCut.mjs) from blueprint to clay to the furnished room in colour to night. The headline follows the film's chapters; at the end
+// the film fades to its first frame and plays again. Where it can't autoplay (Low Power
+// Mode), the opening frame stays with a play button; reduced motion starts paused.
+function PhoneFilm({ctx,fk,setFk}){
+  const F=FILMS[fk],P=phoneCut(F.TL,F.darkRoom);const siblings=filmsFor(ctx.space);
+  const secRef=useRef(),vidRef=useRef(),last=useRef({ch:-1,dark:null});
+  const [chi,setChi]=useState(0);const [dark,setDark]=useState(false);const [shown,setShown]=useState(false);
+  const [loaded,setLoaded]=useState(()=>document.readyState==='complete');const [onScreen,setOnScreen]=useState(true);
+  const [paused,setPaused]=useState(()=>matchMedia('(prefers-reduced-motion: reduce)').matches);const [fading,setFading]=useState(false);
+  // index.html already showed chapter one; don't replay its entrance when the app takes over.
   const [fromShell]=useState(()=>document.documentElement.dataset.shell==='trade');useEffect(()=>{delete document.documentElement.dataset.shell},[]);
-  const go=k=>{const el=railRef.current;if(el)el.scrollTo({left:Math.max(0,Math.min(slides.length-1,k))*el.clientWidth,behavior:'smooth'})};
-  // the chapter follows the swipe (native scroll snapping does the motion)
-  useEffect(()=>{const el=railRef.current;let raf=0;const on=()=>{if(raf)return;raf=requestAnimationFrame(()=>{raf=0;setAt(Math.max(0,Math.min(slides.length-1,Math.round(el.scrollLeft/el.clientWidth))))})};
-    el.addEventListener('scroll',on,{passive:true});return()=>{el.removeEventListener('scroll',on);cancelAnimationFrame(raf)}},[fk]);
-  // auto-advance only while the hero is on screen and the visitor hasn't taken over
-  useEffect(()=>{const io=new IntersectionObserver(([e])=>setOnScreen(e.isIntersecting&&e.intersectionRatio>.6),{threshold:[0,.6,1]});io.observe(secRef.current);return()=>io.disconnect()},[]);
-  useEffect(()=>{if(held||!onScreen||at>=slides.length-1)return;const t=setTimeout(()=>go(at+1),STORY_MS);return()=>clearTimeout(t)},[at,held,onScreen]);
-  // the header reads its ink from the root, so it matches the chapter on screen
-  useEffect(()=>{const ink=inkFor(slides[at].dark);setHeroInk(ink['--hero-fg'],ink['--hero-inv'])},[at,fk]);
-  const take=()=>{if(!held)setHeld(true)};
-  const tap=e=>{if(e.target.closest('button,a,input'))return;take();const r=e.currentTarget.getBoundingClientRect();go(at+(e.clientX-r.left<r.width/3?-1:1))};
-  const ids=[...new Set(F.hot.map(h=>h.id))];
+  // the film waits for the page to finish loading so it never competes with first paint
+  useEffect(()=>{if(loaded)return;const f=()=>setLoaded(true);addEventListener('load',f,{once:true});return()=>removeEventListener('load',f)},[]);
+  useEffect(()=>{const io=new IntersectionObserver(([e])=>setOnScreen(e.isIntersecting),{threshold:0});io.observe(secRef.current);return()=>io.disconnect()},[]);
+  useEffect(()=>{const v=vidRef.current;if(!v)return;v.muted=true;
+    if(onScreen&&!paused){const p=v.play();if(p)p.catch(e=>{if(e&&e.name==='NotAllowedError')setPaused(true)})}else v.pause()},[loaded,onScreen,paused]);
+  useEffect(()=>{setHeroInk('#211912','#FBF8F2');return()=>setHeroInk('#211912','#FBF8F2')},[fk]);
+  // the headline and ink follow the film as it plays
+  const tick=()=>{const v=vidRef.current;if(!v)return;const t=v.currentTime;let c=0;for(let i=0;i<P.ch.length;i++)if(t>=P.ch[i])c=i;
+    const dk=t>=P.dark;const L=last.current;
+    if(c!==L.ch){L.ch=c;setChi(c)}
+    if(dk!==L.dark){L.dark=dk;setDark(dk);setHeroInk(dk?'#F4EADC':'#211912',dk?'#1A130E':'#FBF8F2')}};
+  useEffect(()=>{if(!shown||paused||!onScreen)return;let raf=0;const loop=()=>{tick();raf=requestAnimationFrame(loop)};loop();return()=>cancelAnimationFrame(raf)},[shown,paused,onScreen]);
+  // one continuous loop: fade to the opening frame, then start again
+  const ended=()=>{setFading(true);setTimeout(()=>{const v=vidRef.current;if(!v)return;v.currentTime=0;tick();setFading(false);if(!paused&&onScreen)v.play().catch(()=>{})},700)};
+  const toChap=i=>{const v=vidRef.current;if(!v)return;v.currentTime=P.ch[i]+0.05;tick();if(paused)setPaused(false)};
   const toTop=()=>{const sec=secRef.current;if(sec&&sec.getBoundingClientRect().top<0)scrollTo({top:sec.getBoundingClientRect().top+scrollY,behavior:'smooth'})};
-  return html`<section className="rh hf ps" ref=${secRef} aria-label=${F.name+', in five chapters'} aria-roledescription="carousel">
-    <div className=${'hf-stage'+(slides[at].dark?' ps-dark':'')} style=${inkFor(slides[at].dark)}>
-      <div className="ps-rail" ref=${railRef} onPointerDown=${take} onClick=${tap}>
-        ${slides.map((s,k)=>html`<div key=${k} className=${'ps-slide'+(k===at?' on':'')+(s.dark?' night':'')} style=${inkFor(s.dark)} role="group" aria-roledescription="chapter" aria-label=${`${k+1} of ${slides.length}`} aria-hidden=${k!==at}>
-          <img className="hf-video" src=${`f/${fk}/s/${k}.webp`} alt="" decoding="async" fetchpriority=${k===0?'high':'low'}/>
-          <div className="hf-scrim" aria-hidden="true"></div>
-          <div className=${'hf-copy'+(fromShell&&k===0?' still':'')}>
-            ${k===0?html`<h1>${s.c[0]}</h1>`:html`<h2>${s.c[0]}</h2>`}
-            <p>${s.c[1]}</p>
-            ${k>=3&&html`<div className="hf-cta"><button className="hf-btn solid" tabIndex=${k===at?0:-1} onClick=${()=>{ids.forEach(id=>ctx.addToTray(id,1,null,true));ctx.toast(ids.length+' pieces added to '+ctx.activeProject.name,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Shop the room</button><button className="hf-btn" tabIndex=${k===at?0:-1} onClick=${()=>ctx.toStudio(ids,F.name)}>Open in Studio</button></div>`}
-          </div>
-        </div>`)}
+  const ch=F.ch[chi];const ids=[...new Set(F.hot.map(h=>h.id))];
+  return html`<section className="rh hf pf" ref=${secRef} aria-label=${F.name+' film'}>
+    <div className=${'hf-stage'+(dark?' night':'')}>
+      <img className="hf-video" src=${`f/${fk}/phone.webp`} alt="" fetchpriority="high" aria-hidden="true"/>
+      ${loaded&&html`<video ref=${vidRef} key=${fk} className=${'hf-video hf-fade'+(shown&&!fading?' on':'')} src=${`f/${fk}/phone.mp4`} muted playsInline preload="auto" aria-hidden="true" onPlaying=${()=>setShown(true)} onEnded=${ended} onError=${()=>setPaused(true)}></video>`}
+      <div className="hf-scrim" aria-hidden="true"></div>
+      <div className=${'hf-copy'+(fromShell&&chi===0?' still':'')}>
+        <h1 key=${'h'+fk+chi}>${ch[0]}</h1>
+        <p key=${'p'+fk+chi}>${ch[1].replace(/\s*Tap any piece\.$/,'')}</p>
+        ${chi>=3&&html`<div className="hf-cta"><button className="hf-btn solid" onClick=${()=>{ids.forEach(id=>ctx.addToTray(id,1,null,true));ctx.toast(ids.length+' pieces added to '+ctx.activeProject.name,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Shop the room</button><button className="hf-btn" onClick=${()=>ctx.toStudio(ids,F.name)}>Open in Studio</button></div>`}
       </div>
-      <div className=${'ps-prog'+(held||!onScreen?' held':'')} role="group" aria-label="Chapters">${slides.map((s,k)=>html`<button key=${k+'-'+(k===at?at:'')} className=${k<at?'done':k===at?'on':''} aria-label=${'Chapter '+(k+1)+': '+s.c[0]} aria-current=${k===at?'step':undefined} onClick=${()=>{take();go(k)}} style=${{'--story':STORY_MS+'ms'}}><i></i></button>`)}</div>
+      <div className="hf-prog" role="group" aria-label="Chapters">${F.ch.map((c,i)=>html`<button key=${i} className=${i===chi?'on':i<chi?'done':''} aria-label=${'Go to: '+c[0]} onClick=${()=>toChap(i)}><i></i></button>`)}</div>
+      ${loaded&&paused&&html`<button className="pf-play" aria-label="Play the film" onClick=${()=>setPaused(false)}>${I('play',{width:18})}</button>`}
       <nav className="hf-nav" aria-label="Choose a space">
         ${siblings.length>1&&html`<div className="hf-films">${siblings.map(k=>html`<button key=${k} className=${k===fk?'on':''} aria-pressed=${k===fk} onClick=${()=>{setFk(k);toTop()}}>${FILMS[k].name}</button>`)}</div>`}
         <div className="hf-spaces">${SPACE_KEYS.map(k=>html`<button key=${k} className=${k===ctx.space?'on':''} aria-pressed=${k===ctx.space} onClick=${()=>{ctx.setSpace(k);toTop()}}>${SPACES[k].label}</button>`)}</div>
@@ -833,7 +837,7 @@ function HeroSwitch({ctx}){
   const fk=list.includes(picks[ctx.space])?picks[ctx.space]:list[0];
   const setFk=k=>{const n={...picks,[ctx.space]:k};setPicks(n);store('film',n)};
   const phone=useMedia(PHONE_FRAMES);
-  return !fk?html`<${RoomStudy} ctx=${ctx}/>`:phone?html`<${PhoneStory} key=${fk} fk=${fk} setFk=${setFk} ctx=${ctx}/>`:html`<${FilmStudy} key=${fk} fk=${fk} setFk=${setFk} ctx=${ctx}/>`;
+  return !fk?html`<${RoomStudy} ctx=${ctx}/>`:phone?html`<${PhoneFilm} key=${fk} fk=${fk} setFk=${setFk} ctx=${ctx}/>`:html`<${FilmStudy} key=${fk} fk=${fk} setFk=${setFk} ctx=${ctx}/>`;
 }
 
 /* ================= ROOMS WE LOVE: full-screen rooms that stack as you scroll ================= */

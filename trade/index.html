@@ -51,15 +51,15 @@
   <body>
     <div id="root"></div>
     <!-- First paint: the opening of the default room film (Bar & lounge), drawn from HTML while
-         the app and catalog load. It mirrors Header plus FilmStudy (desktop) or chapter one of
-         PhoneStory (phones) in app.ts; the app removes it the moment it renders. -->
+         the app and catalog load. It mirrors Header plus FilmStudy (desktop) or PhoneFilm (phones) in
+         app.ts; the app removes it the moment it renders. -->
     <div id="holm-shell">
       <header class="top over"><div class="top-in wrap"><button class="logo" aria-label="House of Louie Mae home"><b>House of Louie Mae</b><span>Trade</span></button><form class="search" role="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m20 20-4.2-4.2"></path></svg><input aria-label="Search pieces, materials, spaces" placeholder="Search cognac leather, café benches, bouclé…"><button type="button" class="ib" title="Search with a photo" aria-label="Search with a photo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg></button><input accept="image/*" hidden="" type="file"></form><div class="dial hide-sm"><button class="dial-btn" aria-expanded="false"><i style="background: rgb(217, 166, 108);"></i><span class="mute">Furnishing</span> Bar &amp; lounge <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="14"><path d="m6 9 6 6 6-6"></path></svg></button></div><nav class="seg site-switch hide-sm" aria-label="Shop as"><a href="https://www.louiemae.com" title="Louie Mae, for your home">Retail</a><a class="on" aria-current="page" href="#" title="House of Louie Mae, for business">Trade</a></nav><button class="ib hide-sm" title="Studio" aria-label="Studio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4l6 6-8.5 8.5a3 3 0 0 1-4.2 0l-1.8-1.8a3 3 0 0 1 0-4.2z"></path><path d="M4 20c1.5 0 3-1 3-2.5"></path></svg></button><button class="ib tray-btn" id="trayBtn" title="Project tray" aria-label="Open project tray"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h5l1.5 2.5h5L16 13h5"></path><path d="M5.5 6h13L21 13v6H3v-6z"></path></svg></button><button class="btn btn-line btn-sm hide-sm">Sign in</button><button class="ib" title="Menu" aria-label="Open menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h16M4 15h10"></path></svg></button></div></header>
       <main class="home">
-        <section class="rh hf ps" aria-label="Navy &amp; Brass film" style="height: calc(7.5 * var(--app-h, 100svh))">
+        <section class="rh hf pf" aria-label="Navy &amp; Brass film" style="height: calc(7.5 * var(--app-h, 100svh))">
           <div class="hf-stage">
             <picture>
-              <source media="(max-aspect-ratio: 3/4)" srcset="f/bar/s/0.webp" />
+              <source media="(max-aspect-ratio: 3/4)" srcset="f/bar/phone.webp" />
               <img class="hf-video" alt="" fetchpriority="high" src="f/bar/poster.jpg" />
             </picture>
             <div class="hf-scrim" aria-hidden="true"></div>
@@ -67,7 +67,6 @@
               <h1 style="font-family: 'Newsreader Hero', var(--display)">Every room starts as a line.</h1>
               <p>The floor at true scale, with every Louie piece drawn in.</p>
             </div>
-            <div class="ps-prog" aria-hidden="true"><button tabindex="-1"><i></i></button><button tabindex="-1"><i></i></button><button tabindex="-1"><i></i></button><button tabindex="-1"><i></i></button><button tabindex="-1"><i></i></button></div>
           </div>
         </section>
       </main>

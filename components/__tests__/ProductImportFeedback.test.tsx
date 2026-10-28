@@ -13,7 +13,13 @@ beforeEach(() => {
   localStorage.clear(); sessionStorage.clear();
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
 });
-afterEach(() => { toast.dismiss(); cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+// Sonner removes a dismissed toast on a 200 ms timer it never clears; let it run while the
+// DOM still exists, or it fires after the environment is torn down and fails the run.
+afterEach(async () => {
+  toast.dismiss(); cleanup();
+  await new Promise((r) => setTimeout(r, 250));
+  vi.unstubAllGlobals(); vi.restoreAllMocks();
+});
 
 const fixture = { id: 'saved-product', name: 'Hazelquill Cabinet', description: 'Original description', price: 120,
   images: [], collection: 'furniture' as const, category: 'Side Storage Cabinets',
