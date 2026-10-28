@@ -287,6 +287,24 @@ export const AdminPage: React.FC = () => {
    const descriptionBatch = useAdminDescriptionBatch(isAuthenticated && activeTab === 'products');
    const { busy: isBatchRegenerating, previews: batchDescriptionPreviews, setPreviews: setBatchDescriptionPreviews } = descriptionBatch;
    const [refreshingInventoryProductId, setRefreshingInventoryProductId] = useState<string | null>(null);
+   const inventoryActions = useRef(new Set<string>());
+   const [pendingInventoryActions, setPendingInventoryActions] = useState<Set<string>>(new Set());
+   const [inventoryMessage, setInventoryMessage] = useState<{ error: boolean; text: string } | null>(null);
+   const runInventoryAction = async (id: string, action: () => Promise<void>, success: string) => {
+      if (inventoryActions.current.has(id) || inventoryActions.current.has('launch') || (id === 'launch' && inventoryActions.current.size > 0)) return;
+      inventoryActions.current.add(id);
+      setPendingInventoryActions(new Set(inventoryActions.current));
+      setInventoryMessage(null);
+      try {
+         await action();
+         setInventoryMessage({ error: false, text: success });
+      } catch (error) {
+         setInventoryMessage({ error: true, text: getUserFacingErrorMessage(error, 'The inventory change could not be saved. Please try again.') });
+      } finally {
+         inventoryActions.current.delete(id);
+         setPendingInventoryActions(new Set(inventoryActions.current));
+      }
+   };
    // Structure/Collection Editor State
    const [editingCollection, setEditingCollection] = useState<Partial<CollectionConfig> | null>(null);
    const [editingCollectionOriginalId, setEditingCollectionOriginalId] = useState<string | null>(null);
@@ -436,7 +454,7 @@ export const AdminPage: React.FC = () => {
    };
 
    const handleDeleteProduct = (id: string) => {
-      if (confirm('Delete this product?')) deleteProduct(id);
+      if (confirm('Delete this product?')) void runInventoryAction(id, () => deleteProduct(id), 'Product deleted.');
    };
 
    const handleSetProductStorefrontStatus = async (product: Pick<Product, 'id' | 'launchAddedAt' | 'publishedAt'>, storefrontStatus: Product['storefrontStatus']) => {
@@ -447,7 +465,7 @@ export const AdminPage: React.FC = () => {
       if (storefrontStatus === 'published' && !product.publishedAt) {
          updates.publishedAt = new Date().toISOString();
       }
-      await updateProduct(product.id, updates);
+      await runInventoryAction(product.id, () => updateProduct(product.id, updates), `Product status saved: ${productStorefrontStatusLabel({ storefrontStatus })}.`);
    };
 
    const handleRefreshProductInventory = async (product: Pick<Product, 'id' | 'name'>) => {
@@ -469,13 +487,10 @@ export const AdminPage: React.FC = () => {
 
    const handleLaunchNextProducts = async () => {
       if (!confirm('Publish every item marked Next Launch and refresh the New Arrivals timing?')) return;
-      try {
+      await runInventoryAction('launch', async () => {
          const result = await launchNextProducts({});
          alert(`Launched ${result.launched} product${result.launched === 1 ? '' : 's'} to the storefront.`);
-      } catch (err) {
-         console.error('Launch failed:', err);
-         alert('Launch failed. Please try again or check the console for details.');
-      }
+      }, 'Queued product launch completed.');
    };
 
    const handleBatchRegenerateDescriptions = async () => {
@@ -1334,9 +1349,16 @@ export const AdminPage: React.FC = () => {
                </FadeIn>
             )}
 
+                  {activeTab === 'products' && inventoryMessage && <div role={inventoryMessage.error ? 'alert' : 'status'} className={`fixed bottom-6 right-6 z-[250] max-w-[calc(100vw-3rem)] md:max-w-lg rounded-xl border bg-[#1A130E] p-4 shadow-xl ${inventoryMessage.error ? 'border-red-400/40 text-red-200' : 'border-green-400/40 text-green-200'}`}>
+                     {inventoryMessage.text}
+                     <button type="button" onClick={() => setInventoryMessage(null)} aria-label="Dismiss inventory message" className="ml-3 p-1"><X className="h-4 w-4" /></button>
+                     {inventoryMessage.error && <p className="mt-2 text-sm">For pricing or category issues, open Edit Item, complete the requested changes, then try again.</p>}
+                  </div>}
+
             {/* PRODUCTS TAB */}
             {activeTab === 'products' && (
                <FadeIn>
+                  {pendingInventoryActions.size > 0 && <p role="status" className="mb-4 text-cream/70">Saving inventory changes…</p>}
                   <div className="flex flex-col md:flex-row gap-3 md:gap-0 justify-between md:items-end mb-8 md:mb-12 border-b border-white/10 pb-4 md:pb-6">
                      <div>
                         <span className="text-bronze text-xs uppercase tracking-[0.4em] mb-2 block glow-text">{getCollectionTitle(filterCollection)}</span>
@@ -1346,6 +1368,7 @@ export const AdminPage: React.FC = () => {
                         {!isEditingProduct && (
                            <button
                               onClick={handleLaunchNextProducts}
+                              disabled={pendingInventoryActions.size > 0}
                               className="bg-emerald-500/10 text-emerald-100 border border-emerald-300/20 px-5 md:px-6 py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-emerald-500/20 transition-all shadow-[0_4px_15px_rgba(0,0,0,0.3)] flex items-center gap-2 rounded-lg w-fit backdrop-blur-md"
                            >
                               <Rocket className="w-3 h-3" />
@@ -1499,6 +1522,7 @@ export const AdminPage: React.FC = () => {
                                  : inventoryStatus === 'out_of_stock' || inventoryStatus === 'error'
                                     ? 'text-red-300'
                                     : 'text-cream/35';
+                           const isInventoryPending = pendingInventoryActions.has(product.id) || pendingInventoryActions.has('launch');
                            const isRefreshingInventory = refreshingInventoryProductId === product.id;
                            const cjStatus = product.connectionStatus;
                            const cjProductLink = cjStatus.isApproved && product.cjProductId?.trim()
@@ -1598,13 +1622,13 @@ export const AdminPage: React.FC = () => {
                                     </div>
 
                                     <div className="flex flex-wrap gap-2">
-                                       <button onClick={() => handleSetProductStorefrontStatus(product, 'published')} className="inline-flex items-center gap-1.5 rounded-lg border border-green-400/25 bg-green-500/10 px-3 py-2 text-[10px] uppercase tracking-widest text-green-200 hover:bg-green-500/20">
+                                       <button disabled={isInventoryPending} aria-busy={isInventoryPending} onClick={() => handleSetProductStorefrontStatus(product, 'published')} className="inline-flex items-center gap-1.5 rounded-lg border border-green-400/25 bg-green-500/10 px-3 py-2 text-[10px] uppercase tracking-widest text-green-200 hover:bg-green-500/20">
                                           <Eye className="w-3 h-3" /> Publish
                                        </button>
-                                       <button onClick={() => handleSetProductStorefrontStatus(product, 'hidden')} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[10px] uppercase tracking-widest text-cream/65 hover:bg-white/10">
+                                       <button disabled={isInventoryPending} aria-busy={isInventoryPending} onClick={() => handleSetProductStorefrontStatus(product, 'hidden')} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-[10px] uppercase tracking-widest text-cream/65 hover:bg-white/10">
                                           <EyeOff className="w-3 h-3" /> Hide
                                        </button>
-                                       <button onClick={() => handleSetProductStorefrontStatus(product, 'next_launch')} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300/25 bg-amber-500/10 px-3 py-2 text-[10px] uppercase tracking-widest text-amber-100 hover:bg-amber-500/20">
+                                       <button disabled={isInventoryPending} aria-busy={isInventoryPending} onClick={() => handleSetProductStorefrontStatus(product, 'next_launch')} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300/25 bg-amber-500/10 px-3 py-2 text-[10px] uppercase tracking-widest text-amber-100 hover:bg-amber-500/20">
                                           <Rocket className="w-3 h-3" /> Next Launch
                                        </button>
                                        <button
@@ -1622,7 +1646,7 @@ export const AdminPage: React.FC = () => {
 
                                  <div className="flex gap-2 flex-shrink-0 z-10 md:self-start">
                                     <button onClick={() => handleEditProduct(product)} aria-label={`Edit ${product.name}`} className="p-2 hover:bg-white/20 rounded-full text-cream"><Edit3 className="w-4 h-4" /></button>
-                                    <button onClick={() => handleDeleteProduct(product.id)} aria-label={`Delete ${product.name}`} className="p-2 hover:bg-red-500/20 text-red-400 rounded-full"><Trash2 className="w-4 h-4" /></button>
+                                    <button disabled={isInventoryPending} aria-busy={isInventoryPending} onClick={() => handleDeleteProduct(product.id)} aria-label={`Delete ${product.name}`} className="p-2 hover:bg-red-500/20 text-red-400 rounded-full"><Trash2 className="w-4 h-4" /></button>
                                  </div>
                               </div>
                            );

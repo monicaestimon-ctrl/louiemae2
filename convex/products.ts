@@ -1,3 +1,4 @@
+import { getUserFacingErrorMessage } from '../lib/errorMessages';
 import { retailDetail } from './retailStorefront';
 import { completeSavedBatchItems } from './batchImportCompletion';
 import { sourcePropertiesValidator } from './sourcePropertiesValidator';
@@ -306,13 +307,13 @@ export const findExistingSmartNames = internalQuery({
 async function validateSourceAndAudit(ctx: MutationCtx, fields: any, productId?: Id<'products'>, previousAuditId?: Id<'descriptionAudits'>) {
     if (fields.sourceSnapshotId) {
         const source = await ctx.db.get(fields.sourceSnapshotId as Id<'productSourceSnapshots'>);
-        if (!source || !fields.sourceUrl || source.sourceKey !== sourceIdentity(fields.sourceUrl)) throw new Error('Supplier details do not match this product source.');
+        if (!source || !fields.sourceUrl || source.sourceKey !== sourceIdentity(fields.sourceUrl)) throw new ConvexError({ code: 'SOURCE_MISMATCH', message: 'Supplier details do not match this product source.' });
     }
     if (fields.sourceEvidenceOverrides?.facts?.length > 6000) throw new Error('Confirmed details must be at most 6,000 characters.');
     if (fields.smartDescription?.sourceSnapshotHash && fields.smartDescription.sourceSnapshotHash !== 'pending-link') {
         const audit = await ctx.db.get(fields.smartDescription.auditId as Id<'descriptionAudits'>);
         if (!audit || (audit.productId && audit.productId !== productId) || audit.sourceSnapshotHash !== fields.smartDescription.sourceSnapshotHash
-            || audit.model !== fields.smartDescription.model || audit.promptVersion !== fields.smartDescription.promptVersion) throw new Error('Description evidence changed. Generate a fresh draft before saving.');
+            || audit.model !== fields.smartDescription.model || audit.promptVersion !== fields.smartDescription.promptVersion) throw new ConvexError({ code: 'DESCRIPTION_EVIDENCE_CHANGED', message: 'Description evidence changed. Generate a fresh draft before saving.' });
         if (audit._id !== previousAuditId && audit.selectedCjVariantIds?.length) {
             const selected = [...new Set((fields.variants ?? []).flatMap((v: { cjVariantId?: string }) => v.cjVariantId ? [v.cjVariantId] : []))].sort();
             if (JSON.stringify(selected) !== JSON.stringify([...new Set(audit.selectedCjVariantIds)].sort())) throw new Error('The selected variants changed after description generation. Generate a fresh draft for this selection.');
@@ -657,7 +658,7 @@ export const update = mutation({
             });
         }
 
-        const categoryFieldsChanged = ["category", "collection", "subcategory", "subcategoryIds", "primarySubcategoryId", "storefrontStatus"]
+        const categoryFieldsChanged = filteredUpdates.storefrontStatus === "published" || ["category", "collection", "subcategory", "subcategoryIds", "primarySubcategoryId"]
             .some(field => Object.prototype.hasOwnProperty.call(filteredUpdates, field));
         if (categoryFieldsChanged) {
             const merged = { ...existing, ...filteredUpdates };
@@ -692,7 +693,11 @@ export const update = mutation({
             }
         }
 
-        await validateSourceAndAudit(ctx, { ...existing, ...filteredUpdates }, id, existing.smartDescription?.auditId);
+        const evidenceFieldsChanged = ["sourceUrl", "sourceSnapshotId", "sourceEvidenceOverrides", "smartDescription", "variants"]
+            .some(field => Object.prototype.hasOwnProperty.call(filteredUpdates, field));
+        if (evidenceFieldsChanged || filteredUpdates.storefrontStatus === 'published') {
+            await validateSourceAndAudit(ctx, { ...existing, ...filteredUpdates }, id, existing.smartDescription?.auditId);
+        }
         const searchFieldsChanged = ["name", "description", "category", "collection", "subcategory", "subcategoryIds"]
             .some(field => Object.prototype.hasOwnProperty.call(filteredUpdates, field));
         await ctx.db.patch(id, {
@@ -812,7 +817,7 @@ export const backfillSearchText = mutation({
 export const launchNextProducts = mutation({
     args: {},
     handler: async (ctx) => {
-        await requireCjAdminIdentity(ctx);
+        const identity = await requireCjAdminIdentity(ctx);
 
         const now = new Date().toISOString();
         const launchBatchId = `launch-${Date.now()}`;
@@ -822,8 +827,19 @@ export const launchNextProducts = mutation({
             .collect();
 
         for (const product of products) {
-            assertCjPricingReady(product);
+            let categoryAssignment;
+            try {
+                assertCjPricingReady(product);
+                categoryAssignment = await resolveProductCategoryAssignment(ctx, { ...product, storefrontStatus: 'published' });
+                await validateSourceAndAudit(ctx, product, product._id, product.smartDescription?.auditId);
+            } catch (error) {
+                throw new ConvexError({ code: 'LAUNCH_BLOCKED', message: `${product.name}: ${getUserFacingErrorMessage(error, 'This product is not ready to publish.')}` });
+            }
             await ctx.db.patch(product._id, {
+                ...categoryAssignment,
+                productRevision: (product.productRevision ?? 0) + 1,
+                productEditedAt: Date.now(),
+                productEditedBy: identity.email,
                 storefrontStatus: "published",
                 isNew: true,
                 publishedAt: now,
