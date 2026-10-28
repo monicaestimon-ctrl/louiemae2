@@ -661,7 +661,7 @@ const FILMS={
   'work-library':{space:'work',name:'The Material Library',sub:'Design studio',TL:{"total":30.83,"ch":[0,2.4,9.44,12.73,26.04],"hot":[[23.94,25.84],[29.33,30.83]],"dark":27.24,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
     hot:[{id:3,x:.2,y:.7},{id:3,x:.79,y:.7},{id:4,x:.31,y:.45},{id:10,x:.57,y:.85}],
     ch:[['A studio built around samples.','Twenty-two by fourteen metres, with a mezzanine library.'],['The double height rises.','Skylights, steel windows and a spiral stair.'],['Oak, plaster, terracotta.','White oak, warm plaster and a terracotta stair.'],['Tan leather, olive velvet.','Two Westcotts, the Bellamere and the Kensley. Tap any piece.'],['Lanterns over the worktables.','The studio after hours.']]},
-  'work-loft':{space:'work',name:'Brick Loft',sub:'Warehouse studio',TL:{"total":29.7,"ch":[0,2.4,9.44,12.73,24.91],"hot":[[22.81,24.71],[28.2,29.7]],"dark":26.11,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
+  'work-loft':{space:'work',name:'Brick Loft',sub:'Warehouse studio',phoneClayAt:6.9,TL:{"total":29.7,"ch":[0,2.4,9.44,12.73,24.91],"hot":[[22.81,24.71],[28.2,29.7]],"dark":26.11,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
     hot:[{id:2,x:.27,y:.6},{id:16,x:.45,y:.73},{id:13,x:.82,y:.7}],
     ch:[['A warehouse, re-drawn.','Twenty by twelve metres of studio.'],['Trusses and factory glass.','The shell, as a clay study model.'],['Brick, steel, concrete.','Red brick, black steel and polished concrete.'],['Cognac against brick.','The Roscoe, the Marlowick and the Montrose. Tap any piece.'],['The cobalt pendant comes on.','City lights fill the windows.']]},
   'home-estate':{space:'staging',name:'Mediterranean Estate',sub:'Great room',TL:{"total":29.7,"ch":[0,2.4,9.44,12.73,24.91],"hot":[[22.81,24.71],[28.2,29.7]],"dark":26.11,"reg":{"s":1,"ox":0,"oy":0,"gain":0}},
@@ -742,11 +742,12 @@ function FilmStudy({ctx,fk,setFk}){
 /* ================= PHONE FILM: the room film playing straight through ================= */
 // Phones get the same one-screen hero as desktop, but the film plays on its own as one
 // continuous video instead of following the scroll: f/<film>/phone.mp4, a shorter 3:4 cut
-// (trade/phoneCut.mjs) from blueprint to clay to the furnished room in colour to night. The headline follows the film's chapters; at the end
+// (trade/phoneCut.mjs): blueprint, clay, one shot into the room as its furniture takes
+// on colour, then night. The headline follows the film's chapters; at the end
 // the film fades to its first frame and plays again. Where it can't autoplay (Low Power
 // Mode), the opening frame stays with a play button; reduced motion starts paused.
 function PhoneFilm({ctx,fk,setFk}){
-  const F=FILMS[fk],P=phoneCut(F.TL,F.darkRoom);const siblings=filmsFor(ctx.space);
+  const F=FILMS[fk],P=phoneCut(F.TL,{clayAt:F.phoneClayAt,darkRoom:F.darkRoom});const siblings=filmsFor(ctx.space);
   const secRef=useRef(),vidRef=useRef(),last=useRef({ch:-1,dark:null});
   const [chi,setChi]=useState(0);const [dark,setDark]=useState(false);const [shown,setShown]=useState(false);
   const [loaded,setLoaded]=useState(()=>document.readyState==='complete');const [onScreen,setOnScreen]=useState(true);

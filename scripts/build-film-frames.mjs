@@ -4,58 +4,61 @@
 //
 // Phones play the room film straight through as one continuous video (PhoneFilm in
 // trade/app.ts) instead of scrubbing it with the scroll, and a shorter story than the
-// desktop film (trade/phoneCut.mjs): the blueprint rises into the clay model, the camera
-// pushes into the clay room as it dissolves into the same room furnished and in colour,
-// then day turns to night. The films are landscape, so the phone cut is a 3:4 centre crop
-// at the film's own resolution, lightly sharpened, without audio and with the index up
-// front so it starts playing while it downloads.
+// desktop film (trade/phoneCut.mjs): the blueprint rises into the clay model, one
+// continuous shot pushes down into the clay room while its furniture and walls take on
+// their colour in place, then the furnished room turns to night.
+//
+// That middle shot doesn't exist in the films, so it is generated once per room
+// (MiniMax H3 on Higgsfield, start frame = the film at phoneCut().clay.end, end frame =
+// the film at phoneCut().color.start, both as this 3:4 crop) and kept in
+// assets/phone-transitions/<film>.mp4. Everything else is the film's own footage, a 3:4
+// centre crop, so the joins land on the same frames.
 //
 // Writes public/trade/f/<film>/phone.mp4, phone.webp (its first frame, the poster) and
-// phone.sha1 (the film and cut it was made from; trade/filmFrames.test.ts fails if either
-// changes without re-running this). Needs ffmpeg on PATH. Commit the output.
+// phone.sha1 (the film, transition and cut it was made from; trade/filmFrames.test.ts
+// fails if any of them changes without re-running this). Needs ffmpeg. Commit the output.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { phoneCut, phoneCutSignature, PHONE_CLAY_SPEED, PHONE_HOLD_SPEED, PHONE_NIGHT_SPEED, PHONE_FADE } from '../trade/phoneCut.mjs';
+import { phoneCut, phoneCutSignature, PHONE_CLAY_SPEED, PHONE_NIGHT_SPEED } from '../trade/phoneCut.mjs';
 
 const root = path.resolve('public/trade/f');
 const app = readFileSync('trade/app.ts', 'utf8');
-const timelines = Object.fromEntries(
-  [...app.matchAll(/'?([a-z-]+)'?:\{space:'[a-z]+'[^\n]*?TL:(\{"total".*?\}\}),\n/g)].map((m) => [m[1], JSON.parse(m[2])]),
+const films = Object.fromEntries(
+  [...app.matchAll(/'?([a-z-]+)'?:\{space:'[a-z]+'([^\n]*?)TL:(\{"total".*?\}\}),\r?\n/g)].map((m) => {
+    const clayAt = m[2].match(/phoneClayAt:([\d.]+)/);
+    return [m[1], { TL: JSON.parse(m[3]), opts: { clayAt: clayAt ? +clayAt[1] : undefined, darkRoom: /darkRoom:true/.test(m[2]) } }];
+  }),
 );
-const CROP = 'crop=ih*3/4:ih:(iw-ih*3/4)/2:0';
+const FIT = 'crop=ih*3/4:ih:(iw-ih*3/4)/2:0,scale=720:960:flags=lanczos,setsar=1';
 const f = (n) => n.toFixed(3);
-// a gentle push into the room (z from 1 to 1+by over the window), rendered from 2x so slow zooms don't jitter
-const push = (z) => `scale=2560:1440,zoompan=z='${z}':x='iw/2-iw/zoom/2':y='ih*0.55-ih*0.55/zoom':d=1:s=1280x720:fps=24`;
 
-const films = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(timelines);
-for (const film of films) {
-  const TL = timelines[film];
-  if (!TL) throw new Error(`No timeline for ${film} in trade/app.ts`);
+for (const film of process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(films)) {
+  if (!films[film]) throw new Error(`No timeline for ${film} in trade/app.ts`);
+  const { TL, opts } = films[film];
   const dir = path.join(root, film);
   const src = path.join(dir, 'film.mp4');
-  const { clay, color } = phoneCut(TL);
-  const clayLen = clay.plan + (clay.end - clay.plan) / PHONE_CLAY_SPEED;
-  const zin = `${f(clayLen - PHONE_FADE - 0.6)}`, zlen = `${f(PHONE_FADE + 0.6)}`, settle = `${f(PHONE_FADE + 0.8)}`;
+  const morph = path.resolve('assets/phone-transitions', `${film}.mp4`);
+  const { clay, color } = phoneCut(TL, opts);
   const graph = [
-    `[0:v]trim=0:${f(clay.plan)},setpts=PTS-STARTPTS[plan]`,
-    `[0:v]trim=${f(clay.plan)}:${f(clay.end)},setpts=(PTS-STARTPTS)/${PHONE_CLAY_SPEED}[clay]`,
-    `[0:v]trim=${f(color.start)}:${f(color.night)},setpts=(PTS-STARTPTS)/${PHONE_HOLD_SPEED}[day]`,
-    `[0:v]trim=${f(color.night)}:${f(color.end)},setpts=(PTS-STARTPTS)/${PHONE_NIGHT_SPEED}[night]`,
-    `[plan][clay]concat=n=2:v=1,fps=24,format=yuv420p,${push(`1+0.18*pow(min(max((it-${zin})/${zlen},0),1),2)`)}[a]`,
-    `[day][night]concat=n=2:v=1,fps=24,format=yuv420p,${push(`1.10-0.10*min(it/${settle},1)*(2-min(it/${settle},1))`)}[b]`,
-    `[a][b]xfade=transition=fade:duration=${PHONE_FADE}:offset=${f(clayLen - PHONE_FADE)},${CROP},unsharp=5:5:0.5[v]`,
+    `[0:v]trim=0:${f(clay.plan)},setpts=PTS-STARTPTS,fps=24,${FIT}[plan]`,
+    `[0:v]trim=${f(clay.plan)}:${f(clay.end)},setpts=(PTS-STARTPTS)/${PHONE_CLAY_SPEED},fps=24,${FIT}[clay]`,
+    `[1:v]setpts=PTS-STARTPTS,fps=24,scale=720:960:flags=lanczos,setsar=1[morph]`,
+    `[0:v]trim=${f(color.start)}:${f(color.night)},setpts=PTS-STARTPTS,fps=24,${FIT}[day]`,
+    `[0:v]trim=${f(color.night)}:${f(color.end)},setpts=(PTS-STARTPTS)/${PHONE_NIGHT_SPEED},fps=24,${FIT}[night]`,
+    `[plan][clay][morph][day][night]concat=n=5:v=1,format=yuv420p,unsharp=5:5:0.4[v]`,
   ].join(';');
   execFileSync('ffmpeg', [
-    '-v', 'error', '-y', '-i', src, '-filter_complex', graph, '-map', '[v]', '-an',
+    '-v', 'error', '-y', '-i', src, '-i', morph, '-filter_complex', graph, '-map', '[v]', '-an',
     '-c:v', 'libx264', '-preset', 'slow', '-crf', '26', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
     path.join(dir, 'phone.mp4'),
   ]);
   execFileSync('ffmpeg', [
-    '-v', 'error', '-y', '-i', src, '-frames:v', '1', '-vf', CROP,
+    '-v', 'error', '-y', '-i', src, '-frames:v', '1', '-vf', FIT,
     '-c:v', 'libwebp', '-quality', '82', '-compression_level', '6', path.join(dir, 'phone.webp'),
   ]);
-  writeFileSync(path.join(dir, 'phone.sha1'), createHash('sha1').update(readFileSync(src)).update(phoneCutSignature(TL)).digest('hex') + '\n');
-  console.log(`${film}: phone film, ${phoneCut(TL).total.toFixed(1)} s`);
+  const key = createHash('sha1').update(readFileSync(src)).update(readFileSync(morph)).update(phoneCutSignature(TL, opts));
+  writeFileSync(path.join(dir, 'phone.sha1'), key.digest('hex') + '\n');
+  console.log(`${film}: phone film, ${phoneCut(TL, opts).total.toFixed(1)} s`);
 }
