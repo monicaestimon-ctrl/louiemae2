@@ -26,7 +26,7 @@ import { phoneCut, phoneCutSignature, PHONE_CLAY_SPEED, PHONE_NIGHT_SPEED } from
 const root = path.resolve('public/trade/f');
 const app = readFileSync('trade/app.ts', 'utf8');
 const films = Object.fromEntries(
-  [...app.matchAll(/'?([a-z-]+)'?:\{space:'[a-z]+'([^\n]*?)TL:(\{"total".*?\}\}),\n/g)].map((m) => {
+  [...app.matchAll(/'?([a-z-]+)'?:\{space:'[a-z]+'([^\n]*?)TL:(\{"total".*?\}\}),\r?\n/g)].map((m) => {
     const clayAt = m[2].match(/phoneClayAt:([\d.]+)/);
     return [m[1], { TL: JSON.parse(m[3]), opts: { clayAt: clayAt ? +clayAt[1] : undefined, darkRoom: /darkRoom:true/.test(m[2]) } }];
   }),
