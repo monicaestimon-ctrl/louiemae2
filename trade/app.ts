@@ -1974,6 +1974,12 @@ const plPlace=(doc,it,x,z)=>{const [cx,cz]=plClamp(doc,it,x,z);if(!plHit(doc,it,
   for(let r=.05;r<5;r+=.05){const n=Math.max(8,Math.round(r*40));for(let k=0;k<n;k++){const a=k/n*Math.PI*2;const [px,pz]=plClamp(doc,it,x+Math.cos(a)*r,z+Math.sin(a)*r);if(!plHit(doc,it,px,pz))return [px,pz]}}
   return [cx,cz]};
 const r2=v=>Math.round(v*100)/100;
+// Rugs are layout guides in standard US sizes (metres from feet); they sit under furniture, so they never collide.
+const RUG_SIZES=[['5 × 8 ft',1.52,2.44],['6 × 9 ft',1.83,2.74],['8 × 10 ft',2.44,3.05],['9 × 12 ft',2.74,3.66],['10 × 14 ft',3.05,4.27],['2.5 × 8 ft runner',.76,2.44],['6 ft round',1.83,1.83,1],['8 ft round',2.44,2.44,1]];
+const RUG_MATS=[['jute','Jute'],['wool','Wool']];
+const RUG_COLORS=[['','Natural'],['#F1EADC','Ivory'],['#D9C8A9','Oatmeal'],['#B4683F','Rust'],['#8E9A7C','Sage'],['#6E7787','Slate'],['#4A4440','Charcoal']];
+const rugExt=r=>{if(r.round)return [r.w/2,r.w/2];const a=(r.rot||0)*Math.PI/180,c=Math.abs(Math.cos(a)),sn=Math.abs(Math.sin(a));return [c*r.w/2+sn*r.d/2,sn*r.w/2+c*r.d/2]};
+const rugClamp=(doc,r,x,z)=>{const [ex,ez]=rugExt(r);const lx=Math.max(0,doc.W/2-ex),lz=Math.max(0,doc.D/2-ez);return [r2(Math.max(-lx,Math.min(lx,x))),r2(Math.max(-lz,Math.min(lz,z)))]};
 // Re-seat every piece in order so nothing overlaps or pokes through a wall (after loading or resizing the room).
 const plReflow=doc=>{const placed=[];for(const it of doc.items){const d={...doc,items:placed};const [x,z]=plPlace(d,it,it.x,it.z);placed.push({...it,x:r2(x),z:r2(z)})}return {...doc,items:placed}};
 const plWord=(it,doc)=>`${it.x<-doc.W/6?'left':it.x>doc.W/6?'right':'centre'}${it.z<-doc.D/6?' back':it.z>doc.D/6?' front':''}`;
@@ -1981,7 +1987,7 @@ const plWord=(it,doc)=>`${it.x<-doc.W/6?'left':it.x>doc.W/6?'right':'centre'}${i
 function Room({ctx}){
   const init=()=>{const key=PL_TEMPLATES[ctx.space]?ctx.space:'blank';const t=JSON.parse(JSON.stringify(PL_TEMPLATES[key]));let items=t.items;
     if(ctx.roomSeed&&ctx.roomSeed.length){items=ctx.roomSeed.map((pid,i)=>({pid,x:(i-(ctx.roomSeed.length-1)/2)*1.7,z:-t.D/2+1.3,rot:0,hang:byId(pid).type==='lighting'}))}
-    return plReflow({...t,tpl:key,items:items.map(it=>({...it,uid:uid()})),wallImg:ctx.roomWall||null})};
+    return plReflow({...t,tpl:key,items:items.map(it=>({...it,uid:uid()})),rugs:[],wallImg:ctx.roomWall||null})};
   const [doc,setDoc]=useState(init);const [view,setView]=useState('orbit');const [style,setStyle]=useState('material');const [tod,setTod]=useState(.12);
   const [sel,setSel]=useState(null);const [tab,setTab]=useState('pieces');const [snap,setSnap]=useState(true);const [q,setQ]=useState('');const [cat,setCat]=useState('all');
   const [shot,setShot]=useState(null);const [showPrompt,setShowPrompt]=useState(false);const [proj,setProj]=useState(ctx.tray.active);
@@ -1992,8 +1998,14 @@ function Room({ctx}){
   const redo=()=>{const h=hist.current;if(!h.future.length)return;h.past.push(docRef.current);setDoc(h.future.pop())};
   const patchItem=(id,o)=>{const d=docRef.current;commit({...d,items:d.items.map(i=>{if(i.uid!==id)return i;const n={...i,...o};if('x' in o||'z' in o||'rot' in o){const [x,z]=plPlace(d,n,n.x,n.z);n.x=r2(x);n.z=r2(z)}return n})})};
   const addItem=(pid,x,z)=>{const d=docRef.current;const it={uid:uid(),pid,x:0,z:0,rot:0,hang:byId(pid).type==='lighting'};const [px,pz]=plPlace(d,it,x??0,z??0);it.x=r2(px);it.z=r2(pz);commit({...d,items:[...d.items,it]});setSel(it.uid)};
-  const removeItem=id=>{commit({...docRef.current,items:docRef.current.items.filter(i=>i.uid!==id)});setSel(null)};
-  const dupItem=id=>{const it=docRef.current.items.find(i=>i.uid===id);if(!it)return;const d=docRef.current;const n={...it,uid:uid()};const [px,pz]=plPlace(d,n,it.x+.6,it.z+.3);n.x=r2(px);n.z=r2(pz);commit({...d,items:[...d.items,n]});setSel(n.uid)};
+  const removeItem=id=>{const d=docRef.current;commit({...d,items:d.items.filter(i=>i.uid!==id),rugs:(d.rugs||[]).filter(r=>r.uid!==id)});setSel(null)};
+  const rugOf=id=>(docRef.current.rugs||[]).find(r=>r.uid===id);
+  const patchRug=(id,o)=>{const d=docRef.current;commit({...d,rugs:(d.rugs||[]).map(r=>{if(r.uid!==id)return r;const n={...r,...o};[n.x,n.z]=rugClamp(d,n,n.x,n.z);return n})})};
+  // A new rug centres under the selected piece when there is one, so it lands where the seating is.
+  const addRug=([size,w,dp,round])=>{const d=docRef.current;const at=d.items.find(i=>i.uid===sel);const r={uid:uid(),x:0,z:0,rot:0,w,d:dp,round:!!round,size,mat:'jute',color:''};[r.x,r.z]=rugClamp(d,r,at?at.x:0,at?at.z:0);commit({...d,rugs:[...(d.rugs||[]),r]});setSel(r.uid)};
+  const patchSel=(id,o)=>rugOf(id)?patchRug(id,o):patchItem(id,o);
+  const dupItem=id=>{const rg=rugOf(id);if(rg){const d=docRef.current;const n={...rg,uid:uid()};[n.x,n.z]=rugClamp(d,n,rg.x+.6,rg.z+.3);commit({...d,rugs:[...d.rugs,n]});setSel(n.uid);return}
+    const it=docRef.current.items.find(i=>i.uid===id);if(!it)return;const d=docRef.current;const n={...it,uid:uid()};const [px,pz]=plPlace(d,n,it.x+.6,it.z+.3);n.x=r2(px);n.z=r2(pz);commit({...d,items:[...d.items,n]});setSel(n.uid)};
   useEffect(()=>{if(ctx.roomSeed)ctx.setRoomSeed(null);if(ctx.roomWall)ctx.setRoomWall(null)},[]);
 
   // ---------- engine ----------
@@ -2008,13 +2020,13 @@ function Room({ctx}){
     const ground=new T.Mesh(new T.PlaneGeometry(120,120),new T.MeshStandardMaterial({color:'#EFE9DF',roughness:1}));ground.rotation.x=-Math.PI/2;ground.position.y=-.003;ground.receiveShadow=true;scene.add(ground);
     const grid=new T.GridHelper(60,120,0x2B211A,0x2B211A);grid.material.transparent=true;grid.material.opacity=.07;scene.add(grid);
     const sky=new T.Mesh(new T.SphereGeometry(60,24,16),new T.MeshBasicMaterial({color:'#CFE0EA',side:T.BackSide}));scene.add(sky);
-    const roomG=new T.Group(),itemsG=new T.Group(),dimG=new T.Group();scene.add(roomG,itemsG,dimG);
+    const roomG=new T.Group(),itemsG=new T.Group(),rugsG=new T.Group(),dimG=new T.Group();scene.add(roomG,itemsG,rugsG,dimG);
     const loader=new T.TextureLoader();const cache={};const tex=(url,rep)=>{const k=url+(rep||'');if(cache[k])return cache[k];const t=loader.load(url);t.colorSpace=T.SRGBColorSpace;if(rep){t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(rep[0],rep[1])}t.anisotropy=8;return cache[k]=t};
     const CLAY=new T.MeshStandardMaterial({color:'#F0E9DB',roughness:.95});const LINE=new T.MeshBasicMaterial({color:'#FBFAF6',polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1});
-    const PLANM=new T.MeshBasicMaterial({color:'#E7D7BF'});const PLANSEL=new T.MeshBasicMaterial({color:'#F2C4A2'});
+    const PLANM=new T.MeshBasicMaterial({color:'#E7D7BF'});const PLANRUG=new T.MeshBasicMaterial({color:'#F3EADB',polygonOffset:true,polygonOffsetFactor:-1});const PLANSEL=new T.MeshBasicMaterial({color:'#F2C4A2'});
     const edgeM=new T.LineBasicMaterial({color:'#1E1B19'});const selM=new T.LineBasicMaterial({color:'#E8541E'});const fpM=new T.LineBasicMaterial({color:'#A65F2C'});const dimM=new T.LineBasicMaterial({color:'#E8541E'});
     const glowTex=(()=>{const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');const gr=g.createRadialGradient(64,64,0,64,64,64);gr.addColorStop(0,'rgba(255,214,150,1)');gr.addColorStop(.3,'rgba(255,170,80,.35)');gr.addColorStop(1,'rgba(255,150,60,0)');g.fillStyle=gr;g.fillRect(0,0,128,128);return new T.CanvasTexture(c)})();
-    const S={doc:null,items:new Map(),surfaces:[],edges:[],ceil:null,cam:{th:-.62,ph:.98,r:13,tx:0,ty:.6,tz:-.4},eye:{yaw:0,pitch:-.06,x:0,z:1.5},plan:{x:0,z:0,zoom:1},view:'orbit',style:'material',tod:.12,sel:null,snap:true,drag:null,dims:[]};
+    const S={doc:null,items:new Map(),rugs:new Map(),surfaces:[],edges:[],ceil:null,cam:{th:-.62,ph:.98,r:13,tx:0,ty:.6,tz:-.4},eye:{yaw:0,pitch:-.06,x:0,z:1.5},plan:{x:0,z:0,zoom:1},view:'orbit',style:'material',tod:.12,sel:null,snap:true,drag:null,dims:[]};
     const clear=g=>{while(g.children.length){const o=g.children.pop();o.traverse(c=>{if(c.geometry)c.geometry.dispose()})}};
     const rect=(w,d)=>{const a=w/2,b=d/2;return new T.BufferGeometry().setFromPoints([[-a,-b,a,-b],[a,-b,a,b],[a,b,-a,b],[-a,b,-a,-b]].flatMap(([x1,z1,x2,z2])=>[new T.Vector3(x1,0,z1),new T.Vector3(x2,0,z2)]))};
     function buildRoom(d){clear(roomG);S.surfaces=[];S.edges=[];const {W,D,H}=d;
@@ -2036,12 +2048,21 @@ function Room({ctx}){
       const fp=new T.LineSegments(rect(w,d),fpM);g.add(fp);
       let lamp=null;if(GLOW_AT[it.pid]){const gl=GLOW_AT[it.pid];const light=new T.PointLight('#FFB868',0,7,2);const spr=new T.Sprite(new T.SpriteMaterial({map:glowTex,transparent:true,opacity:0,depthWrite:false,blending:T.AdditiveBlending}));spr.scale.set(w*1.4,w*1.4,1);const ly=(.5-gl[1]/100)*hb+(it.hang?0:hb/2);light.position.set((gl[0]/100-.5)*w,ly,.05);spr.position.copy(light.position);g.add(light,spr);lamp={light,spr}}
       itemsG.add(g);return {g,proxy,pe,bb,fp,lamp,w,d,hp,hb}}
+    const circ=r=>{const pts=[];for(let k=0;k<64;k++){const a=k/64*Math.PI*2,b=(k+1)/64*Math.PI*2;pts.push(new T.Vector3(Math.cos(a)*r,0,Math.sin(a)*r),new T.Vector3(Math.cos(b)*r,0,Math.sin(b)*r))}return new T.BufferGeometry().setFromPoints(pts)};
+    function makeRug(r){const g=new T.Group();const wool=r.mat==='wool',rep=wool?1.5:.6;
+      const fin=new T.MeshStandardMaterial({map:tex(texture(wool?'carpet':'jute').url,[r.w/rep,r.d/rep]),color:new T.Color(r.color||'#ffffff'),roughness:1,polygonOffset:true,polygonOffsetFactor:-1});
+      const m=new T.Mesh(r.round?new T.CircleGeometry(r.w/2,64):new T.PlaneGeometry(r.w,r.d),fin);m.rotation.x=-Math.PI/2;m.position.y=.004;m.receiveShadow=true;m.userData.uid=r.uid;m.userData.fin=fin;g.add(m);
+      const ol=new T.LineSegments(r.round?circ(r.w/2):rect(r.w,r.d),fpM);ol.position.y=.009;g.add(ol);rugsG.add(g);return {g,m,ol,w:r.w,d:r.d}}
+    function placeRug(v){const r=v.it;v.g.position.set(r.x,0,r.z);v.g.rotation.y=(r.rot||0)*Math.PI/180}
+    function syncRugs(rugs){const keep=new Set(rugs.map(r=>r.uid));for(const [k,v] of S.rugs){if(!keep.has(k)){rugsG.remove(v.g);v.g.traverse(c=>{if(c.geometry)c.geometry.dispose()});S.rugs.delete(k)}}
+      rugs.forEach((r,i)=>{const sig=[r.w,r.d,r.round,r.mat,r.color].join();let v=S.rugs.get(r.uid);if(!v||v.sig!==sig){if(v){rugsG.remove(v.g);v.g.traverse(c=>{if(c.geometry)c.geometry.dispose()})}v=makeRug(r);v.sig=sig;S.rugs.set(r.uid,v)}v.it=r;v.m.position.y=.004+i*.0015;v.ol.position.y=.009+i*.0015;placeRug(v)});applyLook()}
     function syncItems(items){const keep=new Set(items.map(i=>i.uid));for(const [k,v] of S.items){if(!keep.has(k)){itemsG.remove(v.g);v.g.traverse(c=>{if(c.geometry)c.geometry.dispose()});S.items.delete(k)}}
       items.forEach(it=>{let v=S.items.get(it.uid);if(!v||v.pid!==it.pid){if(v){itemsG.remove(v.g)}v=makeItem(it);v.pid=it.pid;S.items.set(it.uid,v);if(S.ready&&!it.hang)v.drop=performance.now()}v.it=it;placeItem(v)});applyLook()}
     function placeItem(v){const it=v.it,d=S.doc;const y=it.hang?d.H-v.hb/2-.05:0;v.baseY=y;v.g.position.set(it.x,y,it.z);v.g.rotation.y=(it.rot||0)*Math.PI/180;v.fp.position.y=it.hang?-y+.012:.012}
     function applyLook(){const st=S.style,plan=S.view==='plan';
       S.surfaces.forEach(m=>{m.material=st==='material'?m.userData.fin:st==='clay'?CLAY:LINE});
       S.edges.forEach(e=>e.visible=st!=='material'||plan);edgeM.color.set(st==='clay'&&!plan?'#9C8E7E':'#1E1B19');if(S.ceil)S.ceil.visible=S.view==='eye';
+      for(const [k,v] of S.rugs){const isSel=k===S.sel;v.m.material=plan?PLANRUG:st==='material'?v.m.userData.fin:st==='clay'?CLAY:LINE;v.ol.material=isSel?selM:fpM}
       for(const [k,v] of S.items){const isSel=k===S.sel;const showProxy=plan||st!=='material';v.proxy.visible=showProxy;v.proxy.material=plan?(isSel?PLANSEL:PLANM):st==='line'?LINE:CLAY;
         v.pe.visible=showProxy&&(st!=='material'||plan||isSel);v.pe.material=isSel?selM:edgeM;v.bb.visible=!plan&&st==='material';v.fp.visible=plan||isSel;v.fp.material=isSel?selM:fpM;
         v.bb.material.emissive=v.bb.material.emissive||new T.Color(0);v.bb.material.emissive.setScalar(isSel?.06:0)}
@@ -2063,18 +2084,20 @@ function Room({ctx}){
     const ray=new T.Raycaster(),ndc=new T.Vector2(),floorP=new T.Plane(new T.Vector3(0,1,0),0),hit=new T.Vector3();
     const setNdc=e=>{const r=cv.getBoundingClientRect();ndc.set((e.clientX-r.left)/r.width*2-1,-((e.clientY-r.top)/r.height*2-1));ray.setFromCamera(ndc,S.camObj)};
     const floorAt=e=>{setNdc(e);return ray.ray.intersectPlane(floorP,hit)?hit.clone():null};
-    const pickItem=e=>{setNdc(e);const hits=ray.intersectObjects([...S.items.values()].map(v=>v.proxy),false);return hits.length?hits[0].object.userData.uid:null};
+    const pickItem=e=>{setNdc(e);const hits=ray.intersectObjects([...S.items.values()].map(v=>v.proxy),false);if(hits.length)return hits[0].object.userData.uid;const rh=ray.intersectObjects([...S.rugs.values()].map(v=>v.m),false);return rh.length?rh[0].object.userData.uid:null};
     const snapV=v=>S.snap?Math.round(v/.05)*.05:v;
-    const onDown=e=>{vp.focus();const id=pickItem(e);if(id&&e.button===0){const v=S.items.get(id);if(v.it.lock){api.select(id);return}const f=floorAt(e);api.select(id);S.drag={kind:'item',id,off:f?{x:v.it.x-f.x,z:v.it.z-f.z}:{x:0,z:0},moved:false};cv.setPointerCapture(e.pointerId);return}
+    const onDown=e=>{vp.focus();const id=pickItem(e);if(id&&e.button===0&&S.rugs.has(id)){const v=S.rugs.get(id);const f=floorAt(e);api.select(id);S.drag={kind:'rug',id,off:f?{x:v.it.x-f.x,z:v.it.z-f.z}:{x:0,z:0},moved:false};cv.setPointerCapture(e.pointerId);return}
+      if(id&&e.button===0){const v=S.items.get(id);if(v.it.lock){api.select(id);return}const f=floorAt(e);api.select(id);S.drag={kind:'item',id,off:f?{x:v.it.x-f.x,z:v.it.z-f.z}:{x:0,z:0},moved:false};cv.setPointerCapture(e.pointerId);return}
       if(!id&&e.button===0&&!e.shiftKey)api.select(null);S.drag={kind:e.button===2||e.shiftKey?'pan':'cam',x:e.clientX,y:e.clientY};cv.setPointerCapture(e.pointerId)};
     const onMove=e=>{const g=S.drag;if(!g)return;const d=S.doc;
+      if(g.kind==='rug'){const f=floorAt(e);if(!f)return;const v=S.rugs.get(g.id);const [nx,nz]=rugClamp(d,v.it,snapV(f.x+g.off.x),snapV(f.z+g.off.z));v.it={...v.it,x:nx,z:nz};placeRug(v);g.moved=true;return}
       if(g.kind==='item'){const f=floorAt(e);if(!f)return;const v=S.items.get(g.id);const dn={...d,items:[...S.items.values()].map(x=>x.it)};const it=v.it;let [nx,nz]=plClamp(dn,it,snapV(f.x+g.off.x),snapV(f.z+g.off.z));if(!plHit(dn,it,it.x,it.z)&&plHit(dn,it,nx,nz)){const [ax,az]=plClamp(dn,it,nx,it.z),[bx,bz]=plClamp(dn,it,it.x,nz);if(!plHit(dn,it,ax,az)){nx=ax;nz=az}else if(!plHit(dn,it,bx,bz)){nx=bx;nz=bz}else{nx=it.x;nz=it.z}}v.it={...it,x:nx,z:nz};placeItem(v);g.moved=true;return}
       const dx=e.clientX-g.x,dy=e.clientY-g.y;g.x=e.clientX;g.y=e.clientY;
       if(S.view==='plan'){const k=(ortho.right-ortho.left)/size.w;S.plan.x-=dx*k;S.plan.z-=dy*k;return}
       if(S.view==='eye'){S.eye.yaw+=dx*.004;S.eye.pitch=Math.max(-.6,Math.min(.5,S.eye.pitch-dy*.003));return}
       if(g.kind==='pan'){const c=S.cam;const k=c.r*.0016;c.tx-=(Math.cos(c.th)*dx)*k;c.tz-=(-Math.sin(c.th)*dx)*k;c.ty=Math.max(0,Math.min(3,c.ty+dy*k));return}
       S.cam.th-=dx*.006;S.cam.ph=Math.max(.12,Math.min(1.5,S.cam.ph-dy*.005))};
-    const onUp=e=>{const g=S.drag;S.drag=null;if(g&&g.kind==='item'&&g.moved){const v=S.items.get(g.id);api.onMoved(g.id,{x:+v.it.x.toFixed(2),z:+v.it.z.toFixed(2)})}};
+    const onUp=e=>{const g=S.drag;S.drag=null;if(g&&(g.kind==='item'||g.kind==='rug')&&g.moved){const v=(g.kind==='rug'?S.rugs:S.items).get(g.id);api.onMoved(g.id,{x:+v.it.x.toFixed(2),z:+v.it.z.toFixed(2)})}};
     const onWheel=e=>{e.preventDefault();const s=Math.sign(e.deltaY);if(S.view==='plan')S.plan.zoom=Math.max(.5,Math.min(4,S.plan.zoom*(s>0?.9:1.1)));else if(S.view==='eye'){const d=S.doc;S.eye.x=Math.max(-d.W/2+.4,Math.min(d.W/2-.4,S.eye.x-Math.sin(S.eye.yaw)*s*.35));S.eye.z=Math.max(-d.D/2+.4,Math.min(d.D/2+.4,S.eye.z+Math.cos(S.eye.yaw)*s*.35))}else S.cam.r=Math.max(3,Math.min(32,S.cam.r*(s>0?1.08:.93)))};
     const onDrop=e=>{e.preventDefault();const pid=+e.dataTransfer.getData('text/pid');if(!pid)return;const f=floorAt(e);api.onDrop(pid,f?snapV(f.x):0,f?snapV(f.z):0)};
     cv.addEventListener('pointerdown',onDown);cv.addEventListener('pointermove',onMove);cv.addEventListener('pointerup',onUp);cv.addEventListener('wheel',onWheel,{passive:false});cv.addEventListener('contextmenu',e=>e.preventDefault());cv.addEventListener('dragover',e=>e.preventDefault());cv.addEventListener('drop',onDrop);
@@ -2082,36 +2105,39 @@ function Room({ctx}){
     const tmp=new T.Vector3();
     function labels(){const el=labRef.current;if(!el)return;const d=S.doc;const out=[];const proj=(x,y,z)=>{tmp.set(x,y,z).project(S.camObj);return [(tmp.x+1)/2*size.w,(1-tmp.y)/2*size.h,tmp.z<1]};
       if(S.view==='plan'){const a=proj(0,0,d.D/2+.45),b=proj(d.W/2+.55,0,0);out.push(`<span class="pl-lab dim" style="left:${a[0]}px;top:${a[1]}px">${d.W.toFixed(2)} m</span>`,`<span class="pl-lab dim" style="left:${b[0]}px;top:${b[1]}px">${d.D.toFixed(2)} m</span>`);
+        for(const v of S.rugs.values()){const r=v.it;const p=proj(r.x,0,r.z+rugExt(r)[1]-.22);out.push(`<span class="pl-lab rug${r.uid===S.sel?' sel':''}" style="left:${p[0]}px;top:${p[1]}px">Rug · ${r.size}</span>`)}
         for(const v of S.items.values()){const p=proj(v.it.x,0,v.it.z);out.push(`<span class="pl-lab${v.it.uid===S.sel?' sel':''}" style="left:${p[0]}px;top:${p[1]}px">${byId(v.it.pid).name}</span>`)}}
-      const sv=S.sel&&S.items.get(S.sel);clear(dimG);
+      const sv=S.sel&&(S.items.get(S.sel)||S.rugs.get(S.sel));clear(dimG);
       if(sv&&S.view!=='eye'){const it=sv.it,hw=sv.w/2,hd=sv.d/2;const segs=[[it.x-hw,it.z,-d.W/2,it.z],[it.x+hw,it.z,d.W/2,it.z],[it.x,it.z-hd,it.x,-d.D/2]];
         segs.forEach(([x1,z1,x2,z2])=>{const len=Math.hypot(x2-x1,z2-z1);if(len<.02)return;const g=new T.BufferGeometry().setFromPoints([new T.Vector3(x1,.03,z1),new T.Vector3(x2,.03,z2)]);dimG.add(new T.Line(g,dimM));const m=proj((x1+x2)/2,.03,(z1+z2)/2);if(m[2])out.push(`<span class="pl-lab dist" style="left:${m[0]}px;top:${m[1]}px">${len.toFixed(2)} m</span>`)})}
       el.innerHTML=out.join('')}
     const bounce=t=>{const n=7.5625,k=2.75;return t<1/k?n*t*t:t<2/k?n*(t-=1.5/k)*t+.75:t<2.5/k?n*(t-=2.25/k)*t+.9375:n*(t-=2.625/k)*t+.984375};
     let raf=0,run=true;const loop=()=>{if(!run)return;S.camObj=camera();const now=performance.now();for(const v of S.items.values()){if(v.drop!=null){const t=Math.min(1,(now-v.drop)/520);v.g.position.y=v.baseY+.45*(1-bounce(t));if(t>=1)v.drop=null}}for(const v of S.items.values()){if(v.bb.visible){const wp=v.g.position;v.bb.rotation.y=Math.atan2(S.camObj.position.x-wp.x,S.camObj.position.z-wp.z)-v.g.rotation.y}}lights();renderer.render(scene,S.camObj);labels();raf=requestAnimationFrame(loop)};
     const api={select:id=>{S.sel=id;applyLook();E.current.onSelect&&E.current.onSelect(id)},onMoved:(id,o)=>E.current.onMoved&&E.current.onMoved(id,o),onDrop:(pid,x,z)=>E.current.onDrop&&E.current.onDrop(pid,x,z)};
-    Object.assign(E.current,{S,buildRoom,syncItems,applyLook,api,snapshot:()=>{renderer.render(scene,S.camObj);return cv.toDataURL('image/jpeg',.92)}});
+    Object.assign(E.current,{S,buildRoom,syncItems,syncRugs,applyLook,api,snapshot:()=>{renderer.render(scene,S.camObj);return cv.toDataURL('image/jpeg',.92)}});
     loop();setEng(n=>n+1);
     return()=>{run=false;cancelAnimationFrame(raf);ro.disconnect();scene.traverse(o=>{if(o.geometry)o.geometry.dispose()});renderer.dispose()};
   },[three]);
   // wire engine callbacks to React
-  useEffect(()=>{Object.assign(E.current,{onSelect:id=>setSel(id),onMoved:(id,o)=>patchItem(id,o),onDrop:(pid,x,z)=>addItem(pid,x,z)})});
+  useEffect(()=>{Object.assign(E.current,{onSelect:id=>setSel(id),onMoved:(id,o)=>patchSel(id,o),onDrop:(pid,x,z)=>addItem(pid,x,z)})});
   const geoKey=JSON.stringify([doc.W,doc.D,doc.H,doc.wall,doc.floor,doc.floorTint,doc.openings,doc.wallImg?doc.wallImg.length:0]);
   useEffect(()=>{const e=E.current;if(!e.buildRoom)return;e.buildRoom(doc);e.syncItems(doc.items);setTimeout(()=>{if(e.S)e.S.ready=true},50)},[geoKey,eng]);
   useEffect(()=>{const e=E.current;if(e.syncItems)e.syncItems(doc.items)},[doc.items,eng]);
+  useEffect(()=>{const e=E.current;if(e.syncRugs)e.syncRugs(doc.rugs||[])},[doc.rugs,eng]);
   useEffect(()=>{const e=E.current;if(!e.S)return;e.S.view=view;e.S.style=style;e.S.tod=tod;e.S.snap=snap;e.S.sel=sel;e.applyLook()},[view,style,tod,snap,sel,eng]);
   useEffect(()=>{const k=e=>{if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))return;if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();e.shiftKey?redo():undo();return}
       if(e.key==='1')setView('plan');if(e.key==='2')setView('orbit');if(e.key==='3')setView('eye');
-      const it=sel&&docRef.current.items.find(i=>i.uid===sel);if(!it)return;
-      if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();removeItem(sel)}if(e.key==='r'||e.key==='R')patchItem(sel,{rot:((it.rot||0)+(e.shiftKey?-15:15)+360)%360});if(e.key==='d'&&!e.ctrlKey)dupItem(sel);if(e.key==='Escape')setSel(null);
-      const step=e.shiftKey?.25:.05;const mv={ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]}[e.key];if(mv){e.preventDefault();patchItem(sel,{x:+(it.x+mv[0]).toFixed(2),z:+(it.z+mv[1]).toFixed(2)})}};
+      const it=sel&&(docRef.current.items.find(i=>i.uid===sel)||rugOf(sel));if(!it)return;
+      if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();removeItem(sel)}if(e.key==='r'||e.key==='R')patchSel(sel,{rot:((it.rot||0)+(e.shiftKey?-15:15)+360)%360});if(e.key==='d'&&!e.ctrlKey)dupItem(sel);if(e.key==='Escape')setSel(null);
+      const step=e.shiftKey?.25:.05;const mv={ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]}[e.key];if(mv){e.preventDefault();patchSel(sel,{x:+(it.x+mv[0]).toFixed(2),z:+(it.z+mv[1]).toFixed(2)})}};
     addEventListener('keydown',k);return()=>removeEventListener('keydown',k)});
 
   // ---------- derived ----------
-  const S0=doc.items.find(i=>i.uid===sel);const SD=S0&&plDims(S0.pid);
+  const S0=doc.items.find(i=>i.uid===sel);const SD=S0&&plDims(S0.pid);const R0=!S0&&(doc.rugs||[]).find(r=>r.uid===sel);
+  const rugName=r=>`${r.color?RUG_COLORS.find(c=>c[0]===r.color)?.[1].toLowerCase()+' ':''}${r.mat} rug, ${r.size}`;
   const pieces=doc.items.map(i=>byId(i.pid));const retail=pieces.reduce((s,p)=>s+p.price,0);const seats=pieces.reduce((s,p)=>s+p.seats,0);
   const todLabel=(()=>{const m=Math.round((7.5*60+tod*15.5*60)/10)*10;return `${String(Math.floor(m/60)%24).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`})();
-  const prompt=`Photorealistic interior photograph of a ${doc.W} × ${doc.D} m room with a ${doc.H} m ceiling. Walls in ${doc.wall} limewash plaster, ${PL_FLOORS.find(f=>f[0]===doc.floor)?.[1].toLowerCase()} floor. Openings: ${doc.openings.map(o=>`${o.t==='arch'?'an arched window':o.t==='door'?'a doorway':'a window'} on the ${o.wall} wall`).join(', ')||'none'}.\nFurnished with exactly these Louie Mae pieces, matching their product photos: ${doc.items.map(i=>{const p=byId(i.pid);return `${p.name} ${p.line} at ${plWord(i,doc)}`}).join('; ')||'no furniture yet'}.\nLight: ${tod<.35?'soft morning daylight':tod<.7?'warm golden-hour sun':'after dark, lit by warm lamps'} (${todLabel}). Three-quarter view at 1.3 m height, 26 mm lens, straight verticals, editorial interior photography. No people, no text.`;
+  const prompt=`Photorealistic interior photograph of a ${doc.W} × ${doc.D} m room with a ${doc.H} m ceiling. Walls in ${doc.wall} limewash plaster, ${PL_FLOORS.find(f=>f[0]===doc.floor)?.[1].toLowerCase()} floor. Openings: ${doc.openings.map(o=>`${o.t==='arch'?'an arched window':o.t==='door'?'a doorway':'a window'} on the ${o.wall} wall`).join(', ')||'none'}.\n${(doc.rugs||[]).length?`Rugs: ${doc.rugs.map(r=>`a ${rugName(r)} at ${plWord(r,doc)}`).join('; ')}.\n`:''}Furnished with exactly these Louie Mae pieces, matching their product photos: ${doc.items.map(i=>{const p=byId(i.pid);return `${p.name} ${p.line} at ${plWord(i,doc)}`}).join('; ')||'no furniture yet'}.\nLight: ${tod<.35?'soft morning daylight':tod<.7?'warm golden-hour sun':'after dark, lit by warm lamps'} (${todLabel}). Three-quarter view at 1.3 m height, 26 mm lens, straight verticals, editorial interior photography. No people, no text.`;
   const prods=PRODUCTS.filter(p=>(cat==='all'||p.type===cat)&&(p.name+' '+p.line+' '+p.mat).toLowerCase().includes(q.toLowerCase()));
   const setOpening=(i,o)=>commit({...doc,openings:doc.openings.map((x,k)=>k===i?{...x,...o}:x)});
   const wallLen=w=>w==='back'?doc.W:doc.D;
@@ -2142,12 +2168,17 @@ function Room({ctx}){
         </div>`})}
       </div>`}
       ${tab==='pieces'&&html`<div className="pl-sec">
+        <span className="lbl">Rugs · layout guide</span>
+        <p className="help" style=${{margin:0}}>Standard sizes. A rug lands under the selected piece, or in the middle of the room.</p>
+        <div className="pl-floors">${RUG_SIZES.map(z=>html`<button key=${z[0]} onClick=${()=>addRug(z)}><i style=${{background:'#D8C7A6',borderRadius:z[3]?'50%':'3px',width:z[3]?22:Math.round(14+z[1]*4),height:z[3]?22:Math.round(10+z[2]*3)}}></i>${z[0]}</button>`)}</div>
+        <span className="lbl">Pieces</span>
         <input className="field" style=${{height:40}} placeholder="Search pieces" aria-label="Search pieces" value=${q} onInput=${e=>setQ(e.target.value)}/>
         <div className="scroll-x">${[['all','All'],...Object.entries(TYPE)].map(([k,l])=>html`<button key=${k} className=${'chip'+(cat===k?' on':'')} style=${{height:30,fontSize:12}} onClick=${()=>setCat(k)}>${l}</button>`)}</div>
         <p className="help" style=${{margin:0}}>Click to place in the middle of the room, or drag onto the floor.</p>
         <div className="pl-cat">${prods.map(p=>html`<button key=${p.id} draggable="true" onDragStart=${e=>e.dataTransfer.setData('text/pid',String(p.id))} onClick=${()=>addItem(p.id,0,0)} title=${'Place '+p.name}><img src=${cut(p.id)} alt="" loading="lazy"/><b>${p.name}</b><span className="mono">${plCm(p.id)} cm · ${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span></button>`)}</div>
       </div>`}
-      ${tab==='layers'&&html`<div className="pl-sec">${doc.items.length?doc.items.map(it=>{const p=byId(it.pid);return html`<div key=${it.uid} className=${'layer'+(sel===it.uid?' on':'')} onClick=${()=>setSel(it.uid)}><span className="th" style=${{backgroundImage:`url(${cut(it.pid)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat',backgroundPosition:'center'}}></span><span>${p.name}</span><button className="ib" aria-label=${it.lock?'Unlock':'Lock'} onClick=${e=>{e.stopPropagation();patchItem(it.uid,{lock:!it.lock})}}>${I(it.lock?'lock':'unlock')}</button><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(it.uid)}}>${I('trash')}</button></div>`}):html`<p className="help">No pieces yet. Add some from the Pieces tab.</p>`}</div>`}
+      ${tab==='layers'&&html`<div className="pl-sec">${doc.items.length?doc.items.map(it=>{const p=byId(it.pid);return html`<div key=${it.uid} className=${'layer'+(sel===it.uid?' on':'')} onClick=${()=>setSel(it.uid)}><span className="th" style=${{backgroundImage:`url(${cut(it.pid)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat',backgroundPosition:'center'}}></span><span>${p.name}</span><button className="ib" aria-label=${it.lock?'Unlock':'Lock'} onClick=${e=>{e.stopPropagation();patchItem(it.uid,{lock:!it.lock})}}>${I(it.lock?'lock':'unlock')}</button><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(it.uid)}}>${I('trash')}</button></div>`}):html`<p className="help">No pieces yet. Add some from the Pieces tab.</p>`}
+        ${(doc.rugs||[]).map(r=>html`<div key=${r.uid} className=${'layer'+(sel===r.uid?' on':'')} onClick=${()=>setSel(r.uid)}><span className="th" style=${{background:r.color||'#D8C7A6',borderRadius:r.round?'50%':'4px'}}></span><span>Rug · ${r.size}</span><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(r.uid)}}>${I('trash')}</button></div>`)}</div>`}
     </aside>
 
     <section className="pl-main">
@@ -2178,7 +2209,23 @@ function Room({ctx}){
     </section>
 
     <aside className="pl-side r">
-      ${S0?html`<div className="pl-sec">
+      ${R0?html`<div className="pl-sec">
+        <span className="eyebrow">Rug · layout guide</span><h3 style=${{fontSize:26}}>${R0.size}</h3>
+        <div className="kv"><span className="mono mute">Size</span><span>${R0.round?`${R0.w.toFixed(2)} m across`:`${R0.w.toFixed(2)} × ${R0.d.toFixed(2)} m`}</span><span className="mono mute">Price</span><span>Not priced</span>
+          <span className="mono mute">To left wall</span><span>${(R0.x-rugExt(R0)[0]+doc.W/2).toFixed(2)} m</span><span className="mono mute">To right wall</span><span>${(doc.W/2-R0.x-rugExt(R0)[0]).toFixed(2)} m</span><span className="mono mute">To back wall</span><span>${(R0.z-rugExt(R0)[1]+doc.D/2).toFixed(2)} m</span></div>
+        <span className="lbl">Size</span>
+        <div className="pl-floors">${RUG_SIZES.map(z=>html`<button key=${z[0]} className=${R0.size===z[0]?'on':''} onClick=${()=>patchRug(R0.uid,{size:z[0],w:z[1],d:z[2],round:!!z[3]})}>${z[0]}</button>`)}</div>
+        <span className="lbl">Material</span>
+        <div className="seg">${RUG_MATS.map(([k,l])=>html`<button key=${k} className=${R0.mat===k?'on':''} onClick=${()=>patchRug(R0.uid,{mat:k})}>${l}</button>`)}</div>
+        <span className="lbl">Colour</span>
+        <div className="swatches">${RUG_COLORS.map(([c,l])=>html`<button key=${l} title=${l} aria-label=${'Rug colour '+l} className=${R0.color===c?'on':''} style=${{background:c||'#CDBB98'}} onClick=${()=>patchRug(R0.uid,{color:c})}></button>`)}</div>
+        <div className="pl-dims">${[['x','X (m)'],['z','Z (m)']].map(([k,l])=>html`<label key=${k}><span className="mono mute">${l}</span><input className="field num" type="number" step="0.05" value=${R0[k]} onChange=${e=>patchRug(R0.uid,{[k]:+e.target.value||0})}/></label>`)}<label><span className="mono mute">Rotate</span><input className="field num" type="number" step="15" value=${R0.rot||0} onChange=${e=>patchRug(R0.uid,{rot:((+e.target.value||0)%360+360)%360})}/></label></div>
+        <div className="row" style=${{flexWrap:'wrap',gap:6}}>
+          <button className="btn btn-line btn-sm" onClick=${()=>patchRug(R0.uid,{rot:((R0.rot||0)+90)%360})}>↻ 90°</button>
+          <button className="btn btn-line btn-sm" onClick=${()=>dupItem(R0.uid)}>${I('copy',{width:14})} Duplicate</button>
+          <button className="btn btn-line btn-sm" style=${{color:'var(--bad)'}} onClick=${()=>removeItem(R0.uid)}>${I('trash',{width:14})} Remove</button>
+        </div>
+      </div>`:S0?html`<div className="pl-sec">
         <div className="pl-insp-h"><img src=${cut(S0.pid)} alt=""/><div><span className="mono mute">${SD.p.sku} · ${MAT[SD.p.mat]}</span><h3>${SD.p.name}</h3><p className="mute" style=${{fontSize:13}}>${SD.p.line}</p></div></div>
         <div className="kv"><span className="mono mute">Footprint</span><span>${SD.w.toFixed(2)} × ${SD.d.toFixed(2)} m (approx.)</span><span className="mono mute">Price</span><span>${ctx.mode==='trade'?fmt(tp(SD.p),true):fmt(SD.p.price,true)}</span>
           <span className="mono mute">To left wall</span><span>${(S0.x-SD.w/2+doc.W/2).toFixed(2)} m</span><span className="mono mute">To right wall</span><span>${(doc.W/2-S0.x-SD.w/2).toFixed(2)} m</span><span className="mono mute">To back wall</span><span>${(S0.z-SD.d/2+doc.D/2).toFixed(2)} m</span></div>
