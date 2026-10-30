@@ -1,6 +1,6 @@
 /* eslint-disable */
 // @ts-nocheck
-import React, { useState, useEffect, useRef, useMemo, startTransition } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, startTransition } from 'react';
 import htm from 'htm';
 import type { HolmProduct } from './catalog';
 import { useQuery, useMutation, useAction } from 'convex/react';
@@ -238,10 +238,7 @@ function Header({ctx}){
         <span className="dot" style=${{width:22,height:22,background:SPACES[k].bg,boxShadow:`inset 0 0 0 5px ${SPACES[k].accent}`}}></span>
         <span><b style=${{fontWeight:500}}>${SPACES[k].label}</b><small>${SPACES[k].lede.split('.')[0]}</small></span></button>`)}</div>`}
     </div>
-    <nav className="seg site-switch hide-sm" aria-label="Shop as">
-      <a href="https://www.louiemae.com" title="Louie Mae, for your home">Retail</a>
-      <a className="on" aria-current="page" href="#" onClick=${e=>{e.preventDefault();ctx.go('home')}} title="House of Louie Mae, for business">Trade</a>
-    </nav>
+    <a className="site-out hide-sm" href="https://www.louiemae.com" title="Louie Mae, our retail site for your home">Louie Mae retail ${I('arrow',{width:14})}</a>
     <button className="ib hide-sm" title="Studio" aria-label="Studio" onClick=${()=>ctx.go('studio')}>${I('brush')}</button>
     <button className="ib tray-btn" id="trayBtn" title="Project tray" aria-label="Open project tray" onClick=${()=>ctx.setTray(true)}>${I('tray')}${ctx.trayCount>0&&html`<span className="badge">${ctx.trayCount}</span>`}</button>
     ${ctx.me.signedIn?html`<button className="hide-sm" onClick=${()=>ctx.go('profile')} aria-label="Your profile"><span className="avatar">${(ctx.me.businessName||ctx.me.displayName||'?')[0].toUpperCase()}</span></button>`:html`<button className="btn btn-line btn-sm hide-sm" onClick=${()=>ctx.go('welcome')}>Sign in</button>`}
@@ -1697,151 +1694,344 @@ function Tray({ctx}){
   </section>`;
 }
 
+/* ================= STUDIO & PLANNER SHELL ================= */
+// Both pages share one quiet shell: a 56px top bar, a rail of icons that opens one drawer at a time,
+// a full-bleed canvas, a selection bar beside whatever is selected, and a bottom pill for the total.
+const PAGES=[['square','Square 1:1',1,1],['portrait','Portrait 4:5',4,5],['story','Story 9:16',9,16],['landscape','Landscape 16:9',16,9],['letter','Letter',8.5,11],['a4','A4',210,297]];
+const pageOf=k=>PAGES.find(p=>p[0]===k)||PAGES[1];
+const VIEWS=[['collage','Collage'],['room','Room'],['3d','3D']];
+const TITLE_MAX=32;
+function SxTop({ctx,title,setTitle,view,onView,saved,onShare,children}){
+  return html`<div className="sx-top">
+    <input className="sx-title" aria-label="Title" maxLength=${TITLE_MAX} size=${Math.max(10,title.length+1)} value=${title} onInput=${e=>setTitle(e.target.value)} onKeyDown=${e=>{if(e.key==='Enter')e.currentTarget.blur()}}/>
+    <div className="seg sx-views" role="group" aria-label="View">${VIEWS.map(([k,l])=>html`<button key=${k} className=${view===k?'on':''} aria-pressed=${view===k} onClick=${()=>view!==k&&onView(k)}>${l}</button>`)}</div>
+    <span className="sx-saved" role="status">${saved}</span>
+    <button className="btn btn-cog btn-sm" onClick=${onShare}>${I('share',{width:15})} Share</button>
+    ${children}
+  </div>`;
+}
+// The ⋯ menu: history, page size, export and the trade/retail price toggle, plus anything page-specific.
+function SxMenu({ctx,hist,children}){
+  const [open,setOpen]=useState(false);const ref=useRef();useOutside(ref,()=>setOpen(false));
+  return html`<div className="sx-more" ref=${ref}>
+    <button className="ib" aria-label="More" aria-expanded=${open} onClick=${()=>setOpen(!open)}>${I('dots')}</button>
+    ${open&&html`<div className="pop sx-pop" onClick=${e=>{if(e.target.closest('[data-close]'))setOpen(false)}}>
+      <div className="sx-pop-sec"><span className="sx-lbl">History</span>
+        <div className="row" style=${{gap:6}}><button className="btn btn-line btn-sm" disabled=${!hist.canUndo} onClick=${hist.undo}>${I('undo',{width:15})} Undo</button><button className="btn btn-line btn-sm" disabled=${!hist.canRedo} onClick=${hist.redo}>${I('redo',{width:15})} Redo</button></div>
+        <span className="sx-note">${hist.steps?`${hist.steps} change${hist.steps===1?'':'s'} this session · Ctrl+Z`:'No changes yet'}</span></div>
+      ${children}
+      <div className="sx-pop-sec"><span className="sx-lbl">Prices</span>
+        ${ctx.me.verified?html`<div className="seg" role="group" aria-label="Prices">${[['trade','Trade'],['retail','Retail']].map(([k,l])=>html`<button key=${k} className=${ctx.mode===k?'on':''} onClick=${()=>ctx.setMode(k)}>${l}</button>`)}</div>`
+          :html`<span className="sx-note">Retail prices. <button className="lnk" data-close onClick=${()=>ctx.go('trade')}>Apply for trade pricing</button></span>`}</div>
+    </div>`}
+  </div>`;
+}
+function SxRail({items,open,onPick}){
+  return html`<nav className="sx-rail" aria-label="Tools">${items.map(([k,l,ic])=>html`<button key=${k} className=${open===k?'on':''} aria-pressed=${open===k} aria-label=${l} onClick=${()=>onPick(k)}>${I(ic)}<span className="sx-tip">${l}</span></button>`)}</nav>`;
+}
+function SxDrawer({title,onClose,children}){
+  return html`<aside className="sx-drawer" aria-label=${title}>
+    <div className="sx-drawer-h"><b>${title}</b><button className="ib" aria-label=${'Close '+title} onClick=${onClose}>${I('x')}</button></div>
+    <div className="sx-drawer-b">${children}</div></aside>`;
+}
+function SxPill({ctx,count,total,onOpen}){
+  return html`<button className="sx-pill" onClick=${onOpen} aria-label="Open the piece list"><span>${count} piece${count===1?'':'s'}</span><span className="sx-dot"></span><b className="num">${fmt(total)}</b><span>${ctx.mode==='trade'?'trade':'retail'}</span></button>`;
+}
+// Every piece on the canvas with its quantity; hidden pieces show struck through so the total's rule is visible.
+function SxTray({ctx,rows,onClose}){
+  const [proj,setProj]=useState(ctx.tray.active);const live=rows.filter(r=>!r.hidden);
+  const total=live.reduce((s,r)=>s+pr(byId(r.pid),ctx.mode)*r.qty,0);
+  return html`<div className="scrim sx-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()} role="dialog" aria-modal="true" aria-label="Pieces">
+    <div className="sx-sheet">
+      <div className="sx-drawer-h"><b>Pieces</b><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>
+      <div className="sx-rows">${rows.length?rows.map(r=>{const p=byId(r.pid);return html`<div key=${r.pid+(r.hidden?'h':'')} className=${'sx-row'+(r.hidden?' off':'')}>
+        <span className="sx-th"><img src=${cut(r.pid)} alt=""/></span><span className="sx-row-t"><b>${p.name}</b><span>${p.line}${r.hidden?' · hidden, not counted':''}</span></span>
+        <span className="mono">× ${r.qty}</span><span className="num sx-price">${fmt(pr(p,ctx.mode)*r.qty)}</span></div>`}):html`<p className="sx-note">No pieces yet. Add some from the rail.</p>`}</div>
+      <div className="sx-sheet-f">
+        <span><span className="sx-note">${live.reduce((s,r)=>s+r.qty,0)} pieces · ${ctx.mode==='trade'?'trade':'retail'}</span><br/><b className="num sx-total">${fmt(total)}</b></span>
+        <span className="row" style=${{gap:8,flexWrap:'wrap'}}>
+          <select className="field" style=${{height:38,width:'auto'}} value=${proj} onChange=${e=>setProj(e.target.value)} aria-label="Project">${ctx.tray.projects.map(p=>html`<option key=${p.id} value=${p.id}>${p.name}</option>`)}</select>
+          <button className="btn btn-cog btn-sm" disabled=${!live.length} onClick=${()=>{const P=ctx.tray.projects.find(p=>p.id===proj);live.forEach(r=>ctx.addToProject(r.pid,r.qty,proj,P.zones[0],null,true));ctx.toast(`${live.reduce((s,r)=>s+r.qty,0)} pieces added to ${P.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)});onClose()}}>${I('tray',{width:15})} Add all to project</button>
+        </span></div>
+    </div></div>`;
+}
+function SxDialog({title,onClose,wide,children}){
+  useEffect(()=>{const k=e=>{if(e.key==='Escape')onClose()};addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[]);
+  return html`<div className="scrim sx-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()} role="dialog" aria-modal="true" aria-label=${title}>
+    <div className=${'sx-dialog'+(wide?' wide':'')}><div className="sx-drawer-h"><b>${title}</b><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>${children}</div></div>`;
+}
+const pieceRows=pids=>{const m=new Map();pids.forEach(([pid,hidden])=>{const k=pid+(hidden?'h':'');const r=m.get(k);if(r)r.qty++;else m.set(k,{pid,qty:1,hidden})});return [...m.values()]};
+
 /* ================= STUDIO ================= */
 const BGS=[['Plaster','#EFE6D8'],['Sand','#E1D2BB'],['Limewash','#F4EFE6'],['Olive','#6C6948'],['Cognac','#9A5A2E'],['Espresso','#2B211A']];
 const SHAPES=[['rect','Square'],['arch','Arch'],['circle','Circle'],['pill','Pill']];
-const SLOTS=[[6,8,52,-3,'arch'],[52,4,42,2,'rect'],[44,40,34,-1.5,'circle'],[6,54,40,2.5,'rect'],[60,66,30,-2,'pill'],[30,74,24,3,'rect']];
-function mkImg(pid,i=0,mode='collage'){const s=SLOTS[i%SLOTS.length];return {id:uid(),kind:'img',pid,x:s[0],y:s[1],w:s[2],rot:mode==='room'?0:s[3],shape:mode==='room'?'rect':s[4],border:mode!=='room',motion:false,tone:'none',locked:false,hidden:false,room:mode==='room'}}
+// Three ways to lay out a composed board, so Compose can offer drafts to choose between.
+const LAYOUTS=[
+  [[6,8,52,-3,'arch'],[52,4,42,2,'rect'],[44,40,34,-1.5,'circle'],[6,54,40,2.5,'rect'],[60,66,30,-2,'pill'],[30,74,24,3,'rect']],
+  [[6,4,42,0,'rect'],[52,4,42,0,'rect'],[6,40,42,0,'rect'],[52,40,42,0,'rect'],[70,75,14,0,'circle'],[54,75,14,0,'circle']],
+  [[22,3,56,0,'arch'],[4,52,30,-2,'circle'],[66,52,30,2,'circle'],[37,63,26,0,'rect'],[84,4,12,0,'pill'],[4,4,12,0,'pill']],
+];
+const SLOTS=LAYOUTS[0];
+function mkImg(pid,i=0,mode='collage',L=SLOTS){const s=L[i%L.length];return {id:uid(),kind:'img',pid,x:s[0],y:s[1],w:s[2],rot:mode==='room'?0:s[3],shape:mode==='room'?'rect':s[4],border:mode!=='room',motion:false,tone:'none',locked:false,hidden:false,room:mode==='room'}}
 function mkInspo(x){return {id:uid(),kind:'inspo',src:x.src,ar:x.ar||1,title:x.title,x:6,y:6,w:48,rot:-2,shape:'rect',border:true,motion:false,tone:'none',locked:false,hidden:false}}
 function mkText(t,x=8,y=84,size=7.5){return {id:uid(),kind:'text',text:t,x,y,w:70,rot:0,size,font:'display',color:'#2B211A',locked:false,hidden:false}}
-function compose(prompt,mode){
-  const ps=matchPrompt(prompt).slice(0,5);const use=ps.length?ps:SPACES.cafe.picks.map(byId);
-  const els=use.map((p,i)=>mkImg(p.id,i,mode));
+function compose(prompt,mode,v=0){
+  const ps=matchPrompt(prompt).slice(0,5+(v>1?1:0));const base=ps.length?ps:SPACES.cafe.picks.map(byId);
+  const use=v===1?[...base].reverse():v===2?[...base.slice(1),base[0]]:base;
+  const els=use.map((p,i)=>mkImg(p.id,i,mode,LAYOUTS[v%LAYOUTS.length]));
   const tones=[...new Set(use.map(p=>p.tone))].slice(0,4);
   tones.forEach((c,i)=>els.push({id:uid(),kind:'swatch',color:c,x:70+i*6.5,y:90,w:5.5,rot:0,locked:false,hidden:false}));
   els.push(mkText(prompt.charAt(0).toUpperCase()+prompt.slice(1),6,88,5.2));
   return els;
 }
+const toneF={none:'none',warm:'sepia(.25) saturate(1.1)',mono:'grayscale(1) contrast(1.05)',dusk:'brightness(.85) sepia(.3) hue-rotate(-8deg)'};
+const nameOf=e=>e.kind==='img'?byId(e.pid).name:e.kind==='inspo'?'Inspo · '+e.title:e.kind==='text'?e.text:'Swatch';
+// What an item looks like on a board. Sizes are in container units, so the same markup draws the canvas and its previews.
+function ElView({e}){
+  if(e.kind==='img')return html`<div className=${'cut shape-'+e.shape+(e.border?' bd':'')+(e.room?' room':'')+(e.motion?' float':'')} style=${{aspectRatio:e.shape==='circle'?'1':e.shape==='arch'?'4/5':e.shape==='pill'?'3/4':byId(e.pid).ar}}><img src=${byId(e.pid).img} alt=${byId(e.pid).name} draggable="false" style=${{filter:toneF[e.tone]}}/></div>`;
+  if(e.kind==='inspo')return html`<div className=${'cut shape-'+e.shape+(e.border?' bd':'')+(e.motion?' float':'')} style=${{aspectRatio:e.shape==='circle'?'1':e.shape==='arch'?'4/5':e.shape==='pill'?'3/4':e.ar}}><img src=${e.src} alt=${e.title} draggable="false" style=${{filter:toneF[e.tone]}}/></div>`;
+  if(e.kind==='text')return html`<div className="tx" style=${{fontFamily:`var(--${e.font})`,fontStyle:e.font==='display'?'italic':'normal',color:e.color,fontSize:e.size+'cqw',textTransform:e.font==='mono'?'uppercase':'none',letterSpacing:e.font==='mono'?'.08em':'-.01em'}}>${e.text}</div>`;
+  return html`<div className="sw-shape" style=${{background:e.color,borderRadius:'50%',boxShadow:'0 0 0 .6cqw #FFFDF9'}}></div>`;
+}
+const elStyle=(e,i)=>({left:e.x+'%',top:e.y+'%',width:e.kind==='text'?'auto':e.w+'%',maxWidth:e.kind==='text'?'88%':'none',transform:`rotate(${e.rot}deg)`,zIndex:i});
+const bgStyle=bg=>bg.img?{backgroundImage:`url(${bg.img})`}:{backgroundColor:bg.color};
+// A read-only board, for Compose drafts and Ideas previews.
+function BoardPreview({els,bg,page}){const P=pageOf(page);
+  return html`<div className=${'canvas sx-preview'+(bg.grid&&!bg.img?' grid':'')} style=${{...bgStyle(bg),aspectRatio:`${P[2]}/${P[3]}`}}>${els.map((e,i)=>e.hidden?null:html`<div key=${e.id} className="el" style=${elStyle(e,i)}><${ElView} e=${e}/></div>`)}</div>`;
+}
+const SAMPLE=()=>[mkImg(2,0),mkImg(12,1),mkImg(9,2),mkImg(13,3),mkText('A corner for slow mornings',6,86,4.6)];
+const SNAP=.8;
+// Smart guides: snap the moving box's edges and centre to the board's centre and to every other item, and
+// to equal spacing between its neighbours. Boxes are {x,y,w,h} in percent of the board.
+function snapBox(b,others){
+  const out={x:b.x,y:b.y,gx:[],gy:[]};
+  const axis=(pos,size,lines,key)=>{let best=null;[0,.5,1].forEach(f=>lines.forEach(l=>{const d=l-(pos+size*f);if(Math.abs(d)<SNAP&&(!best||Math.abs(d)<Math.abs(best.d)))best={d,l}}));return best};
+  const xs=[50,...others.flatMap(o=>[o.x,o.x+o.w/2,o.x+o.w])],ys=[50,...others.flatMap(o=>[o.y,o.y+o.h/2,o.y+o.h])];
+  const bx=axis(b.x,b.w,xs),by=axis(b.y,b.h,ys);
+  if(bx){out.x+=bx.d;out.gx.push(bx.l)}if(by){out.y+=by.d;out.gy.push(by.l)}
+  if(!bx){const row=others.filter(o=>o.y<b.y+b.h&&o.y+o.h>b.y);const L=row.filter(o=>o.x+o.w<=b.x+SNAP).sort((p,q)=>q.x+q.w-(p.x+p.w))[0],R=row.filter(o=>o.x>=b.x+b.w-SNAP).sort((p,q)=>p.x-q.x)[0];
+    if(L&&R){const gap=(R.x-(L.x+L.w)-b.w)/2;const nx=L.x+L.w+gap;if(gap>0&&Math.abs(nx-b.x)<SNAP){out.x=nx;out.gap={kind:'x',a:L.x+L.w,b:nx,c:nx+b.w,d:R.x,at:b.y+b.h/2}}}}
+  if(!by){const col=others.filter(o=>o.x<b.x+b.w&&o.x+o.w>b.x);const T=col.filter(o=>o.y+o.h<=b.y+SNAP).sort((p,q)=>q.y+q.h-(p.y+p.h))[0],B=col.filter(o=>o.y>=b.y+b.h-SNAP).sort((p,q)=>p.y-q.y)[0];
+    if(T&&B){const gap=(B.y-(T.y+T.h)-b.h)/2;const ny=T.y+T.h+gap;if(gap>0&&Math.abs(ny-b.y)<SNAP){out.y=ny;out.gap={kind:'y',a:T.y+T.h,b:ny,c:ny+b.h,d:B.y,at:b.x+b.w/2}}}}
+  return out;
+}
+const ZMIN=.25,ZMAX=4;
 function Studio({ctx}){
   const seed=ctx.studioSeed;
-  const [title,setTitle]=useState(seed?.title||'New collage');
-  const [mode,setMode]=useState(seed?.mode||'collage');
-  const [bg,setBg]=useState(seed?.bg?{img:seed.bg}:{color:'#EFE6D8',grid:true});
-  const [els,setEls]=useState(()=>{if(seed?.prompt)return compose(seed.prompt,seed?.mode);if(seed?.inspo)return [mkInspo(seed.inspo),...(seed.ids||[]).map((id,i)=>mkImg(id,i+1))];if(seed?.ids)return seed.ids.map((id,i)=>mkImg(id,i,seed.mode));return [mkImg(2,0),mkImg(12,1),mkImg(9,2),mkImg(13,3),mkText('A corner for slow mornings',6,86,4.6)]});
-  const [sel,setSel]=useState(null);const [tab,setTab]=useState('products');const [pq,setPq]=useState('');const [pm,setPm]=useState('all');const [prompt,setPrompt]=useState(seed?.prompt||'');const [share,setShare]=useState(false);const [dragL,setDragL]=useState(null);const [overL,setOverL]=useState(null);
-  const hist=useRef({past:[],future:[]});const canvasRef=useRef();const drag=useRef(null);const bgRef=useRef();
+  const [doc,setDoc]=useState(()=>{
+    const base={id:uid(),title:seed?.title||'New collage',mode:seed?.mode||'collage',page:'portrait',bg:seed?.bg?{img:seed.bg}:{color:'#EFE6D8',grid:true}};
+    if(seed?.collage)return {page:'portrait',mode:'collage',bg:{color:'#EFE6D8',grid:true},...seed.collage,id:seed.collage.id||uid()};
+    if(seed?.prompt)return {...base,els:compose(seed.prompt,seed?.mode)};
+    if(seed?.inspo)return {...base,els:[mkInspo(seed.inspo),...(seed.ids||[]).map((id,i)=>mkImg(id,i+1))]};
+    if(seed?.ids)return {...base,els:seed.ids.map((id,i)=>mkImg(id,i,seed.mode))};
+    const last=ctx.collages.find(c=>c.id&&c.id===load('collage',null));
+    if(last)return {page:'portrait',mode:'collage',...last,...(seed?.view?{mode:seed.view}:{})};
+    return {...base,...(seed?.view?{mode:seed.view}:{}),els:SAMPLE()};
+  });
+  const {els,bg,mode,page,title}=doc;
+  const [sel,setSel]=useState(null);const [drawer,setDrawer]=useState(null);const [pop,setPop]=useState(null);
+  const [tab,setTab]=useState('pieces');const [pq,setPq]=useState('');const [pf,setPf]=useState('all');
+  const [share,setShare]=useState(false);const [traySheet,setTraySheet]=useState(false);const [composeOpen,setComposeOpen]=useState(false);const [idea,setIdea]=useState(null);
+  const [dragL,setDragL]=useState(null);const [overL,setOverL]=useState(null);
+  const [zoom,setZoom]=useState(1);const [fitW,setFitW]=useState(480);const [guides,setGuides]=useState(null);const [box,setBox]=useState(null);
+  const [saved,setSaved]=useState('Saved');
+  const hist=useRef({past:[],future:[]});const [steps,setSteps]=useState(0);const docRef=useRef(doc);docRef.current=doc;
+  const canvasRef=useRef();const stageRef=useRef();const wrapRef=useRef();const bgRef=useRef();const dirty=useRef(false);
   useEffect(()=>{if(seed)ctx.setStudioSeed(null)},[]);
-  const commit=next=>{hist.current.past.push(els);hist.current.future=[];setEls(next)};
-  const undo=()=>{const h=hist.current;if(!h.past.length)return;h.future.push(els);setEls(h.past.pop())};
-  const redo=()=>{const h=hist.current;if(!h.future.length)return;h.past.push(els);setEls(h.future.pop())};
+  const record=prev=>{hist.current.past.push(prev);if(hist.current.past.length>80)hist.current.past.shift();hist.current.future=[];dirty.current=true;setSteps(s=>s+1)};
+  const commitDoc=next=>{record(docRef.current);setDoc(next)};
+  const commit=nextEls=>commitDoc({...docRef.current,els:nextEls});
+  const undo=()=>{const h=hist.current;if(!h.past.length)return;h.future.push(docRef.current);dirty.current=true;setDoc(h.past.pop());setSteps(s=>s+1)};
+  const redo=()=>{const h=hist.current;if(!h.future.length)return;h.past.push(docRef.current);dirty.current=true;setDoc(h.future.pop());setSteps(s=>s+1)};
+  const setTitle=t=>{dirty.current=true;setDoc(d=>({...d,title:t.slice(0,TITLE_MAX)}))};
+  const setBg=b=>commitDoc({...docRef.current,bg:b});
   const S=els.find(e=>e.id===sel);
   const patch=(id,o)=>commit(els.map(e=>e.id===id?{...e,...o}:e));
-  useEffect(()=>{const k=e=>{if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName))return;if((e.metaKey||e.ctrlKey)&&e.key==='z'){e.preventDefault();e.shiftKey?redo():undo()}else if((e.key==='Delete'||e.key==='Backspace')&&sel){commit(els.filter(x=>x.id!==sel));setSel(null)}};addEventListener('keydown',k);return()=>removeEventListener('keydown',k)});
-  const onDown=(e,el,kind='move')=>{e.stopPropagation();setSel(el.id);if(el.locked)return;const r=canvasRef.current.getBoundingClientRect();const node=e.currentTarget.closest('.el').getBoundingClientRect();
-    const d={kind,id:el.id,sx:e.clientX,sy:e.clientY,o:{...el},r,cx:node.left+node.width/2,cy:node.top+node.height/2,snap:els,moved:false};
-    d.move=ev=>{const dx=(ev.clientX-d.sx)/d.r.width*100,dy=(ev.clientY-d.sy)/d.r.height*100;d.moved=true;
-      setEls(cur=>cur.map(x=>{if(x.id!==d.id)return x;if(d.kind==='move')return {...x,x:d.o.x+dx,y:d.o.y+dy};if(d.kind==='rs'){if(x.kind==='text')return {...x,size:Math.max(2,d.o.size*(1+dx/40))};return {...x,w:Math.max(5,d.o.w+dx)}}if(d.kind==='rot'){const a=Math.atan2(ev.clientY-d.cy,ev.clientX-d.cx)*180/Math.PI+90;return {...x,rot:Math.round(a/3)*3}}return x}))};
-    d.up=()=>{removeEventListener('pointermove',d.move);if(d.moved){hist.current.past.push(d.snap);hist.current.future=[]}drag.current=null};
+  const live=(id,o)=>setDoc(d=>({...d,els:d.els.map(e=>e.id===id?{...e,...o}:e)}));
+  // Autosave every change to the account (or this device when signed out).
+  useEffect(()=>{store('collage',doc.id);if(!dirty.current)return;setSaved('Saving…');const t=setTimeout(()=>{ctx.saveCollage(docRef.current,true);setSaved('Saved')},600);return()=>clearTimeout(t)},[doc]);
+  // The board fits the stage at 100%; zoom scales from there.
+  const P=pageOf(page);
+  useEffect(()=>{const st=stageRef.current;if(!st)return;const fit=()=>{const r=st.getBoundingClientRect();const pad=innerWidth<761?24:64,padB=innerWidth<761?84:96;setFitW(Math.max(160,Math.min(r.width-pad,(r.height-padB)*P[2]/P[3])))};const ro=new ResizeObserver(fit);ro.observe(st);fit();return()=>ro.disconnect()},[page]);
+  const zoomTo=z=>setZoom(Math.max(ZMIN,Math.min(ZMAX,Math.round(z*100)/100)));
+  // Pinch to zoom on touch, and Ctrl/⌘ + wheel on a trackpad or mouse.
+  useEffect(()=>{const st=stageRef.current;if(!st)return;const pts=new Map();let pinch=null;
+    const down=e=>{if(e.pointerType!=='touch')return;pts.set(e.pointerId,[e.clientX,e.clientY]);if(pts.size===2){const [a,b]=[...pts.values()];pinch={d:Math.hypot(a[0]-b[0],a[1]-b[1]),z:zoomRef.current};drag.current?.cancel?.()}};
+    const move=e=>{if(!pts.has(e.pointerId))return;pts.set(e.pointerId,[e.clientX,e.clientY]);if(pinch&&pts.size===2){const [a,b]=[...pts.values()];zoomTo(pinch.z*Math.hypot(a[0]-b[0],a[1]-b[1])/pinch.d)}};
+    const up=e=>{pts.delete(e.pointerId);if(pts.size<2)pinch=null};
+    const wheel=e=>{if(!e.ctrlKey&&!e.metaKey)return;e.preventDefault();zoomTo(zoomRef.current*(e.deltaY>0?.92:1.08))};
+    st.addEventListener('pointerdown',down,true);addEventListener('pointermove',move);addEventListener('pointerup',up);addEventListener('pointercancel',up);st.addEventListener('wheel',wheel,{passive:false});
+    return()=>{st.removeEventListener('pointerdown',down,true);removeEventListener('pointermove',move);removeEventListener('pointerup',up);removeEventListener('pointercancel',up);st.removeEventListener('wheel',wheel)}},[]);
+  const zoomRef=useRef(zoom);zoomRef.current=zoom;
+  const drag=useRef(null);
+  const boxOf=n=>{const c=canvasRef.current;return {x:n.offsetLeft/c.offsetWidth*100,y:n.offsetTop/c.offsetHeight*100,w:n.offsetWidth/c.offsetWidth*100,h:n.offsetHeight/c.offsetHeight*100}};
+  const onDown=(e,el,kind='move')=>{e.stopPropagation();setSel(el.id);setPop(null);if(el.locked||e.button>0)return;
+    const r=canvasRef.current.getBoundingClientRect();const node=e.currentTarget.closest('.el');const nr=node.getBoundingClientRect();
+    const others=[...canvasRef.current.querySelectorAll('.el')].filter(n=>n!==node).map(boxOf);const me=boxOf(node);
+    const d={kind,id:el.id,sx:e.clientX,sy:e.clientY,o:{...el},me,r,cx:nr.left+nr.width/2,cy:nr.top+nr.height/2,snap:docRef.current,moved:false};
+    d.move=ev=>{const dx=(ev.clientX-d.sx)/d.r.width*100,dy=(ev.clientY-d.sy)/d.r.height*100;if(!d.moved&&Math.hypot(ev.clientX-d.sx,ev.clientY-d.sy)<3)return;d.moved=true;
+      if(d.kind==='move'){let x=d.o.x+dx,y=d.o.y+dy;if(!ev.altKey){const s=snapBox({x,y,w:d.me.w,h:d.me.h},others);x=s.x;y=s.y;setGuides(s.gx.length||s.gy.length||s.gap?s:null)}else setGuides(null);live(d.id,{x,y});return}
+      if(d.kind==='rs'){if(d.o.kind==='text')live(d.id,{size:Math.max(2,d.o.size*(1+dx/40))});else live(d.id,{w:Math.max(5,d.o.w+dx)});return}
+      if(d.kind==='rot'){const a=Math.atan2(ev.clientY-d.cy,ev.clientX-d.cx)*180/Math.PI+90;live(d.id,{rot:ev.altKey?Math.round(a):Math.round(a/15)*15})}};
+    d.up=()=>{removeEventListener('pointermove',d.move);setGuides(null);if(d.moved)record(d.snap);drag.current=null};
+    d.cancel=()=>{removeEventListener('pointermove',d.move);setGuides(null);setDoc(d.snap);drag.current=null};
     drag.current=d;addEventListener('pointermove',d.move);addEventListener('pointerup',d.up,{once:true})};
-  const addProduct=pid=>{const n=mkImg(pid,els.filter(e=>e.kind==='img').length,mode);n.x=20+Math.random()*30;n.y=18+Math.random()*30;commit([...els,n]);setSel(n.id)};
-  const prods=PRODUCTS.filter(p=>(pm==='all'||p.mat===pm)&&(p.name+' '+p.line+' '+p.mat).toLowerCase().includes(pq.toLowerCase()));
-  const pieces=els.filter(e=>e.kind==='img'&&!e.hidden).map(e=>byId(e.pid));
-  const retail=pieces.reduce((s,p)=>s+p.price,0);const seats=pieces.reduce((s,p)=>s+p.seats,0);
+  // Keep the selection bar beside the selected item as it moves, zooms or scrolls.
+  useLayoutEffect(()=>{const n=sel&&canvasRef.current?.querySelector(`[data-id="${sel}"]`);const w=wrapRef.current;if(!n||!w){setBox(null);return}
+    const a=n.getBoundingClientRect(),b=w.getBoundingClientRect();const nb={l:a.left-b.left,t:a.top-b.top,w:a.width,h:a.height,W:b.width};
+    setBox(o=>o&&o.l===nb.l&&o.t===nb.t&&o.w===nb.w&&o.h===nb.h&&o.W===nb.W?o:nb)});
+  const [,bump]=useState(0);useEffect(()=>{const st=stageRef.current;if(!st)return;const f=()=>bump(n=>n+1);st.addEventListener('scroll',f);addEventListener('resize',f);return()=>{st.removeEventListener('scroll',f);removeEventListener('resize',f)}},[]);
+  const centreOf=()=>({x:50,y:42});
+  const addEl=n=>{commit([...els,n]);setSel(n.id)};
+  const addProduct=(pid,at)=>{const n=mkImg(pid,els.filter(e=>e.kind==='img').length,mode);n.w=Math.min(n.w,38);const c=at||centreOf();n.x=Math.max(0,Math.min(100-n.w,c.x-n.w/2));n.y=Math.max(0,Math.min(92,c.y-n.w*.4));if(!at)n.rot=0;addEl(n)};
+  const dropOnCanvas=e=>{e.preventDefault();const pid=+e.dataTransfer.getData('text/pid');if(!pid||!has(pid))return;const r=canvasRef.current.getBoundingClientRect();addProduct(pid,{x:(e.clientX-r.left)/r.width*100,y:(e.clientY-r.top)/r.height*100})};
   const layers=[...els].map((e,i)=>({e,i})).reverse();
-  const moveLayer=(id,dir)=>{const i=els.findIndex(e=>e.id===id);const j=i+dir;if(j<0||j>=els.length)return;const a=[...els];[a[i],a[j]]=[a[j],a[i]];commit(a)};
-  const dropLayer=(fromId,toId)=>{if(fromId===toId)return;const a=[...els];const f=a.findIndex(e=>e.id===fromId);const [m]=a.splice(f,1);const t=a.findIndex(e=>e.id===toId);a.splice(t+1,0,m);commit(a)};
-  const dup=()=>{if(!S)return;const n={...S,id:uid(),x:S.x+4,y:S.y+4};commit([...els,n]);setSel(n.id)};
-  const canvasStyle=bg.img?{backgroundImage:`url(${bg.img})`}:{backgroundColor:bg.color};
-  const toneF={none:'none',warm:'sepia(.25) saturate(1.1)',mono:'grayscale(1) contrast(1.05)',dusk:'brightness(.85) sepia(.3) hue-rotate(-8deg)'};
-  const nameOf=e=>e.kind==='img'?byId(e.pid).name:e.kind==='inspo'?'Inspo · '+e.title:e.kind==='text'?e.text:'Swatch';
-  return html`<main className="studio">
-    <aside className="st-panel" aria-label="Layers and editing">
-      <div><div className="st-h"><span>Layers</span><span>${els.length}</span></div>
-        <div style=${{display:'grid',gap:2,marginTop:8}}>${layers.map(({e})=>html`<div key=${e.id} className=${'layer'+(sel===e.id?' on':'')+(overL===e.id?' drop':'')} draggable="true" onDragStart=${()=>setDragL(e.id)} onDragOver=${ev=>{ev.preventDefault();setOverL(e.id)}} onDragLeave=${()=>setOverL(null)} onDrop=${()=>{dropLayer(dragL,e.id);setOverL(null)}} onClick=${()=>setSel(e.id)}>
-          <span className="th" style=${e.kind==='img'?{backgroundImage:`url(${byId(e.pid).img})`}:e.kind==='inspo'?{backgroundImage:`url(${e.src})`}:e.kind==='swatch'?{background:e.color}:{}}>${e.kind==='text'?'T':''}</span>
-          <span style=${{opacity:e.hidden?.4:1}}>${nameOf(e)}</span>
-          <button className="ib" aria-label=${e.hidden?'Show layer':'Hide layer'} onClick=${ev=>{ev.stopPropagation();patch(e.id,{hidden:!e.hidden})}}>${I(e.hidden?'eyeoff':'eye')}</button>
-          <button className="ib" aria-label=${e.locked?'Unlock layer':'Lock layer'} onClick=${ev=>{ev.stopPropagation();patch(e.id,{locked:!e.locked})}}>${I(e.locked?'lock':'unlock')}</button>
-        </div>`)}</div>
-        <p className="help">Drag rows to reorder. Top of the list sits in front.</p></div>
-      ${S?html`<div style=${{display:'grid',gap:14}}>
-        <div className="st-h"><span>Edit ${S.kind==='img'?'piece':S.kind==='inspo'?'inspo image':S.kind==='text'?'text':'swatch'}</span><button className="lnk" onClick=${()=>setSel(null)}>Done</button></div>
-        ${(S.kind==='img'||S.kind==='inspo')&&html`
-          <div><span className="lbl">Cutout shape</span><div className="seg" style=${{flexWrap:'wrap'}}>${SHAPES.map(([k,l])=>html`<button key=${k} className=${S.shape===k?'on':''} onClick=${()=>patch(S.id,{shape:k})}>${l}</button>`)}</div></div>
-          <div><span className="lbl">Tone</span><div className="seg">${['none','warm','mono','dusk'].map(t=>html`<button key=${t} className=${S.tone===t?'on':''} onClick=${()=>patch(S.id,{tone:t})}>${t==='none'?'Original':t[0].toUpperCase()+t.slice(1)}</button>`)}</div></div>
-          <button className="toggle" onClick=${()=>patch(S.id,{border:!S.border})}><span>White border</span><span className=${'sw'+(S.border?' on':'')}></span></button>
-          <button className="toggle" onClick=${()=>patch(S.id,{motion:!S.motion})}><span>Gentle motion</span><span className=${'sw'+(S.motion?' on':'')}></span></button>
-          ${S.kind==='img'&&html`<button className="btn btn-line btn-sm" onClick=${()=>ctx.openPin(S.pid)}>View ${byId(S.pid).name} details</button>`}`}
-        ${S.kind==='text'&&html`
-          <div><label className="lbl" htmlFor="txt-in">Text</label><textarea id="txt-in" className="field" rows="2" value=${S.text} onInput=${e=>setEls(els.map(x=>x.id===S.id?{...x,text:e.target.value}:x))}></textarea></div>
-          <div><span className="lbl">Typeface</span><div className="seg">${[['display','Serif'],['sans','Sans'],['mono','Mono']].map(([k,l])=>html`<button key=${k} className=${S.font===k?'on':''} onClick=${()=>patch(S.id,{font:k})}>${l}</button>`)}</div></div>
-          <div><label className="lbl" htmlFor="txt-sz">Size</label><input id="txt-sz" type="range" min="2" max="16" step=".2" value=${S.size} onInput=${e=>setEls(els.map(x=>x.id===S.id?{...x,size:+e.target.value}:x))}/></div>`}
-        ${(S.kind==='text'||S.kind==='swatch')&&html`<div><span className="lbl">Color</span><div className="swatches">${['#2B211A','#FBF8F2','#A65F2C','#6C6948','#AE884C','#B07A4A','#E7DFD0'].map(c=>html`<button key=${c} style=${{background:c}} className=${(S.color===c)?'on':''} aria-label=${'Color '+c} onClick=${()=>patch(S.id,{color:c})}></button>`)}</div></div>`}
-        <div className="row" style=${{flexWrap:'wrap',gap:6}}>
-          <button className="btn btn-line btn-sm" onClick=${dup}>${I('copy',{width:14})} Duplicate</button>
-          <button className="btn btn-line btn-sm" onClick=${()=>moveLayer(S.id,1)}>${I('up',{width:14})} Forward</button>
-          <button className="btn btn-line btn-sm" onClick=${()=>moveLayer(S.id,-1)}>${I('down',{width:14})} Back</button>
-          <button className="btn btn-line btn-sm" style=${{color:'var(--bad)'}} onClick=${()=>{commit(els.filter(x=>x.id!==S.id));setSel(null)}}>${I('trash',{width:14})} Delete</button>
-        </div>
-      </div>`:html`<div style=${{display:'grid',gap:12}}>
-        <div className="st-h"><span>Background</span></div>
-        <div className="swatches">${BGS.map(([n,c])=>html`<button key=${c} title=${n} aria-label=${n+' background'} className=${bg.color===c&&!bg.img?'on':''} style=${{background:c}} onClick=${()=>setBg({color:c,grid:bg.grid})}></button>`)}</div>
-        <button className="toggle" onClick=${()=>setBg({...bg,grid:!bg.grid})}><span>Dot grid</span><span className=${'sw'+(bg.grid&&!bg.img?' on':'')}></span></button>
-        <button className="btn btn-line btn-sm" onClick=${()=>bgRef.current.click()}>${I('upload',{width:15})} Use a photo of my space</button>
-        <input ref=${bgRef} type="file" accept="image/*" hidden onChange=${e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{setBg({img:r.result});setMode('room');setEls(els.map(x=>x.kind==='img'?{...x,room:true,border:false,rot:0,shape:'rect'}:x))};r.readAsDataURL(f)}}/>
-        ${bg.img&&html`<button className="lnk" onClick=${()=>setBg({color:'#EFE6D8',grid:true})}>Remove photo</button>`}
-        <p className="help">Select anything on the canvas to edit its shape, tone, border, motion or color.</p>
-      </div>`}
-    </aside>
+  const arrange=(id,to)=>{const a=[...els];const i=a.findIndex(e=>e.id===id);const [m]=a.splice(i,1);const j=to==='front'?a.length:to==='back'?0:Math.max(0,Math.min(a.length,i+(to==='fwd'?1:-1)));a.splice(j,0,m);commit(a)};
+  const dropLayer=(fromId,toId)=>{if(!fromId||fromId===toId)return;const a=[...els];const f=a.findIndex(e=>e.id===fromId);const [m]=a.splice(f,1);const t=a.findIndex(e=>e.id===toId);a.splice(t+1,0,m);commit(a)};
+  const dup=()=>{if(!S)return;const n={...S,id:uid(),x:S.x+4,y:S.y+4};addEl(n)};
+  const del=()=>{if(!S)return;commit(els.filter(x=>x.id!==S.id));setSel(null)};
+  useEffect(()=>{const k=e=>{const tag=document.activeElement?.tagName;if(['INPUT','TEXTAREA','SELECT'].includes(tag))return;
+    if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo();return}
+    if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='d'){e.preventDefault();dup();return}
+    if(e.key==='Escape'){if(pop)setPop(null);else if(sel)setSel(null);else setDrawer(null);return}
+    if(e.key==='0'&&!e.metaKey&&!e.ctrlKey){zoomTo(1);return}
+    if((e.key==='+'||e.key==='=')&&!e.metaKey&&!e.ctrlKey){zoomTo(zoomRef.current*1.25);return}
+    if(e.key==='-'&&!e.metaKey&&!e.ctrlKey){zoomTo(zoomRef.current/1.25);return}
+    if(!S)return;
+    if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();del();return}
+    const st=e.shiftKey?2:.5;const mv={ArrowLeft:[-st,0],ArrowRight:[st,0],ArrowUp:[0,-st],ArrowDown:[0,st]}[e.key];if(mv&&!S.locked){e.preventDefault();patch(S.id,{x:S.x+mv[0],y:S.y+mv[1]})}};
+    addEventListener('keydown',k);return()=>removeEventListener('keydown',k)});
+  const pieces=els.filter(e=>e.kind==='img'&&!e.hidden).map(e=>byId(e.pid));
+  const total=pieces.reduce((s,p)=>s+pr(p,ctx.mode),0);
+  const rows=pieceRows(els.filter(e=>e.kind==='img').map(e=>[e.pid,e.hidden]));
+  const openNew=(next,msg)=>{const prev=docRef.current;hist.current={past:[],future:[]};setSteps(0);dirty.current=true;setDoc({id:uid(),page:prev.page,mode:prev.mode,bg:prev.bg,...next});setSel(null);ctx.toast(msg,{label:'Back to '+prev.title,fn:()=>{dirty.current=false;setDoc(prev)}})};
+  const onView=k=>{if(k==='3d'){ctx.setRoomSeed(pieces.map(p=>p.id));ctx.go('room');return}commitDoc({...doc,mode:k,els:els.map(x=>x.kind==='img'?{...x,room:k==='room',border:k==='room'?false:x.border}:x)})};
+  const pickRail=k=>{setPop(null);if(k==='compose'){setComposeOpen(true);return}setDrawer(d=>d===k?null:k)};
+  const MATS={...MAT,wood:'Wood'};const types=[...new Set(PRODUCTS.map(p=>p.type))];const mats=[...new Set(PRODUCTS.map(p=>p.mat))];
+  const filters=[['all','All'],...types.map(t=>['t:'+t,TYPE[t]||t[0].toUpperCase()+t.slice(1)+'s']),...mats.map(m=>['m:'+m,MATS[m]||m])];
+  const prods=PRODUCTS.filter(p=>(pf==='all'||pf==='t:'+p.type||pf==='m:'+p.mat)&&(p.name+' '+p.line+' '+p.mat+' '+p.type).toLowerCase().includes(pq.toLowerCase()));
+  const kindName=S?(S.kind==='img'?'piece':S.kind==='inspo'?'image':S.kind):'';
+  const selItems=!S?[]:[
+    ...(S.kind==='img'||S.kind==='inspo'?[['style','Style'],['shape','Shape'],['tone','Tone']]:[]),
+    ...(S.kind==='text'?[['text','Text'],['font','Type'],['color','Colour']]:[]),
+    ...(S.kind==='swatch'?[['color','Colour']]:[]),
+    ['arrange','Arrange']];
+  const barStyle=box?(()=>{const above=box.t>64;const x=Math.max(8,Math.min(box.W-8,box.l+box.w/2));return {left:x,top:above?box.t-12:box.t+box.h+12,transform:`translate(-50%,${above?'-100%':'0'})`}})():null;
+  return html`<main className="sx studio2">
+    <${SxTop} ctx=${ctx} title=${title} setTitle=${setTitle} view=${mode} onView=${onView} saved=${ctx.me.signedIn?saved:saved==='Saved'?'Saved on this device':saved} onShare=${()=>setShare(true)}>
+      <${SxMenu} ctx=${ctx} hist=${{undo,redo,canUndo:hist.current.past.length>0,canRedo:hist.current.future.length>0,steps:hist.current.past.length}}>
+        <div className="sx-pop-sec"><span className="sx-lbl">Page size</span>
+          <div className="sx-chips">${PAGES.map(([k,l])=>html`<button key=${k} className=${'chip'+(page===k?' on':'')} onClick=${()=>commitDoc({...doc,page:k})}>${l}</button>`)}</div></div>
+        <div className="sx-pop-sec"><span className="sx-lbl">This collage</span>
+          <button className="pop-item" data-close onClick=${()=>{const copy={...docRef.current,id:uid(),title:(title+' copy').slice(0,TITLE_MAX)};ctx.saveCollage(copy,true);dirty.current=false;setDoc(copy);ctx.toast('Saved as '+copy.title)}}>${I('copy',{width:16})} Save as a copy</button>
+          <button className="pop-item" data-close onClick=${()=>setShare(true)}>${I('download',{width:16})} Export and share</button>
+          <button className="pop-item" data-close onClick=${()=>openNew({title:'New collage',els:[],mode:'collage',bg:{color:'#EFE6D8',grid:true}},'New collage started')}>${I('plus',{width:16})} New collage</button></div>
+      <//>
+    <//>
+    <${SxRail} items=${[['add','Add','plus'],['layers','Layers','layers'],['bg','Background','frame'],['compose','Compose','wand']]} open=${drawer} onPick=${pickRail}/>
+    ${drawer==='add'&&html`<${SxDrawer} title="Add" onClose=${()=>setDrawer(null)}>
+      <div className="row" style=${{gap:6}}>
+        <button className="btn btn-line btn-sm" onClick=${()=>addEl(mkText('Add a title',10,10,7))}>${I('text',{width:15})} Text</button>
+        <button className="btn btn-line btn-sm" onClick=${()=>addEl({id:uid(),kind:'swatch',color:'#A65F2C',x:80,y:8,w:8,rot:0,locked:false,hidden:false})}>${I('frame',{width:15})} Swatch</button></div>
+      <div className="sx-tabs" role="tablist">${[['pieces','Pieces'],['inspo','Inspo'],['boards','Boards'],['ideas','Ideas']].map(([k,l])=>html`<button key=${k} role="tab" aria-selected=${tab===k} className=${tab===k?'on':''} onClick=${()=>setTab(k)}>${l}</button>`)}</div>
+      ${tab==='pieces'&&html`<${React.Fragment}><input className="field sx-search" placeholder="Search pieces" aria-label="Search pieces" value=${pq} onInput=${e=>setPq(e.target.value)}/>
+        <div className="sx-chips scroll-x">${filters.map(([k,l])=>html`<button key=${k} className=${'chip'+(pf===k?' on':'')} onClick=${()=>setPf(k)}>${l}</button>`)}</div>
+        <div className="sx-grid">${prods.map(p=>html`<button key=${p.id} className="sx-card" draggable="true" onDragStart=${e=>e.dataTransfer.setData('text/pid',String(p.id))} onClick=${()=>addProduct(p.id)} title=${'Add '+p.name}>
+          <span className="sx-card-i"><img src=${cut(p.id)} alt="" loading="lazy"/></span><b>${p.name}</b><span className="num">${fmt(pr(p,ctx.mode))}</span></button>`)}</div>
+        ${!prods.length&&html`<p className="sx-note">Nothing matches. Try another word.</p>`}<//>`}
+      ${tab==='inspo'&&html`<${React.Fragment}><p className="sx-note">Inspo carries no price or link and never counts in the total. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Library</button></p>
+        ${ctx.inspo.length?html`<div className="sx-grid">${ctx.inspo.map(x=>html`<button key=${x.id} className="sx-card" onClick=${()=>addEl({...mkInspo(x),x:26,y:20,w:44,rot:0})} title=${'Add '+x.title}><span className="sx-card-i photo"><img src=${x.src} alt="" loading="lazy"/></span><b>${x.title}</b></button>`)}</div>`
+          :html`<p className="sx-note">No inspo yet. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Upload inspiration</button></p>`}<//>`}
+      ${tab==='boards'&&html`<${React.Fragment}><p className="sx-note">Adds to the canvas; never replaces it.</p>${ctx.boards.map(b=>html`<div key=${b.id} className="sx-board"><div className="row" style=${{justifyContent:'space-between'}}><b>${b.title}</b><button className="lnk" disabled=${!b.pins.length} onClick=${()=>{commit([...els,...b.pins.slice(0,6).map((x,i)=>mkImg(x.pid,i+els.length,mode))]);ctx.toast(`${Math.min(6,b.pins.length)} pieces added`)}}>Add all</button></div>
+        <div className="sx-grid three">${b.pins.map(x=>html`<button key=${x.pid} className="sx-card" onClick=${()=>addProduct(x.pid)} title=${'Add '+byId(x.pid).name}><span className="sx-card-i"><img src=${cut(x.pid)} alt="" loading="lazy"/></span></button>`)}</div></div>`)}<//>`}
+      ${tab==='ideas'&&html`${COMMUNITY.length?html`<div className="sx-grid">${COMMUNITY.map(b=>html`<button key=${b.id} className="sx-card" onClick=${()=>setIdea(b)}><span className="sx-card-i photo" style=${{backgroundImage:`url(${byId(b.items[0]).img})`,backgroundSize:'cover'}}></span><b>${b.title}</b><span>${b.by}</span></button>`)}</div>`
+        :html`<p className="sx-note">Community boards appear here as members share them. Compose a board of your own from the wand in the rail.</p>`}`}
+    <//>`}
+    ${drawer==='layers'&&html`<${SxDrawer} title="Layers" onClose=${()=>setDrawer(null)}>
+      <p className="sx-note">Top of the list is in front. Drag to reorder.</p>
+      <div className="sx-layers">${layers.map(({e})=>html`<div key=${e.id} className=${'layer sx-layer'+(sel===e.id?' on':'')+(overL===e.id?' drop':'')} draggable="true" onDragStart=${()=>setDragL(e.id)} onDragOver=${ev=>{ev.preventDefault();setOverL(e.id)}} onDragLeave=${()=>setOverL(null)} onDrop=${()=>{dropLayer(dragL,e.id);setOverL(null)}} onClick=${()=>setSel(e.id)}>
+        <span className="th" style=${e.kind==='img'?{backgroundImage:`url(${cut(e.pid)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat'}:e.kind==='inspo'?{backgroundImage:`url(${e.src})`}:e.kind==='swatch'?{background:e.color}:{}}>${e.kind==='text'?'T':''}</span>
+        <span style=${{opacity:e.hidden?.45:1}}>${nameOf(e)}</span>
+        <button className=${'ib'+(e.hidden?' keep':'')} aria-label=${e.hidden?'Show layer':'Hide layer'} onClick=${ev=>{ev.stopPropagation();patch(e.id,{hidden:!e.hidden})}}>${I(e.hidden?'eyeoff':'eye')}</button>
+        <button className=${'ib'+(e.locked?' keep':'')} aria-label=${e.locked?'Unlock layer':'Lock layer'} onClick=${ev=>{ev.stopPropagation();patch(e.id,{locked:!e.locked})}}>${I(e.locked?'lock':'unlock')}</button>
+        <span className="sx-grip" aria-hidden="true">⋮⋮</span>
+      </div>`)}</div>
+      ${!els.length&&html`<p className="sx-note">The board is empty. Add a piece from the rail.</p>`}
+    <//>`}
+    ${drawer==='bg'&&html`<${SxDrawer} title="Background" onClose=${()=>setDrawer(null)}>
+      <div className="swatches">${BGS.map(([n,c])=>html`<button key=${c} title=${n} aria-label=${n+' background'} className=${bg.color===c&&!bg.img?'on':''} style=${{background:c}} onClick=${()=>setBg({color:c,grid:bg.grid})}></button>`)}</div>
+      <button className="toggle" disabled=${!!bg.img} onClick=${()=>setBg({...bg,grid:!bg.grid})}><span>Dot grid</span><span className=${'sw'+(bg.grid&&!bg.img?' on':'')}></span></button>
+      <button className="btn btn-line btn-sm" style=${{justifySelf:'start'}} onClick=${()=>bgRef.current.click()}>${I('upload',{width:15})} Use a photo of my space</button>
+      <input ref=${bgRef} type="file" accept="image/*" hidden onChange=${e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{commitDoc({...docRef.current,bg:{img:r.result},mode:'room',els:docRef.current.els.map(x=>x.kind==='img'?{...x,room:true,border:false,rot:0,shape:'rect'}:x)})};r.readAsDataURL(f);e.target.value=''}}/>
+      ${bg.img&&html`<button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>setBg({color:'#EFE6D8',grid:true})}>Remove photo</button>`}
+      ${ctx.inspo.length>0&&html`<${React.Fragment}><span className="sx-lbl">From your inspo</span><div className="sx-grid three">${ctx.inspo.slice(0,9).map(x=>html`<button key=${x.id} className="sx-card" title=${'Use '+x.title} onClick=${()=>setBg({img:x.src})}><span className="sx-card-i photo"><img src=${x.src} alt=""/></span></button>`)}</div><//>`}
+    <//>`}
 
-    <section className="st-center">
-      <div className="st-bar">
-        <input className="title" aria-label="Collage title" value=${title} onInput=${e=>setTitle(e.target.value)}/>
-        <div className="seg" role="group" aria-label="Studio mode"><button className=${mode==='collage'?'on':''} onClick=${()=>{setMode('collage');setEls(els.map(x=>x.kind==='img'?{...x,room:false}:x))}}>Collage</button><button className=${mode==='room'?'on':''} onClick=${()=>{setMode('room');setEls(els.map(x=>x.kind==='img'?{...x,room:true,border:false}:x))}}>Room</button></div>
-        <span style=${{flex:1}}></span>
-        <button className="ib" aria-label="Undo" title="Undo (Ctrl+Z)" onClick=${undo}>${I('undo')}</button>
-        <button className="ib" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" onClick=${redo}>${I('redo')}</button>
-        <button className="btn btn-line btn-sm" onClick=${()=>{ctx.saveCollage({title,els,bg});}}>Save</button>
-        <button className="btn btn-cog btn-sm" onClick=${()=>setShare(true)}>${I('share',{width:15})} Share</button>
-      </div>
-      <div className="st-stage" onPointerDown=${()=>setSel(null)}>
-        <div className=${'canvas'+(bg.grid&&!bg.img?' grid':'')} ref=${canvasRef} style=${canvasStyle}>
-          ${els.map((e,i)=>e.hidden?null:html`<div key=${e.id} className=${'el'+(sel===e.id?' sel':'')} style=${{left:e.x+'%',top:e.y+'%',width:e.kind==='text'?'auto':e.w+'%',maxWidth:e.kind==='text'?'88%':'none',transform:`rotate(${e.rot}deg)`,zIndex:i,cursor:e.locked?'default':'move'}} onPointerDown=${ev=>onDown(ev,e)}>
-            ${e.kind==='img'&&html`<div className=${'cut shape-'+e.shape+(e.border?' bd':'')+(e.room?' room':'')+(e.motion?' float':'')} style=${{aspectRatio:e.shape==='circle'?'1':e.shape==='arch'?'4/5':e.shape==='pill'?'3/4':byId(e.pid).ar}}><img src=${byId(e.pid).img} alt=${byId(e.pid).name} draggable="false" style=${{filter:toneF[e.tone]}}/></div>`}
-            ${e.kind==='inspo'&&html`<div className=${'cut shape-'+e.shape+(e.border?' bd':'')+(e.motion?' float':'')} style=${{aspectRatio:e.shape==='circle'?'1':e.shape==='arch'?'4/5':e.shape==='pill'?'3/4':e.ar}}><img src=${e.src} alt=${e.title} draggable="false" style=${{filter:toneF[e.tone]}}/></div>`}
-            ${e.kind==='text'&&html`<div className="tx" style=${{fontFamily:`var(--${e.font})`,fontStyle:e.font==='display'?'italic':'normal',color:e.color,fontSize:e.size+'cqw',textTransform:e.font==='mono'?'uppercase':'none',letterSpacing:e.font==='mono'?'.08em':'-.01em'}}>${e.text}</div>`}
-            ${e.kind==='swatch'&&html`<div className="sw-shape" style=${{background:e.color,borderRadius:'50%',boxShadow:'0 0 0 .6cqw #FFFDF9'}}></div>`}
-            ${sel===e.id&&!e.locked&&html`<span className="h h-rs" onPointerDown=${ev=>onDown(ev,e,'rs')}></span><span className="h h-rot" onPointerDown=${ev=>onDown(ev,e,'rot')}></span>`}
+    <section className=${'sx-stagewrap'+(S?' has-sel':'')} ref=${wrapRef}>
+      <div className="sx-stage" ref=${stageRef} onPointerDown=${()=>{setSel(null);setPop(null)}}>
+        <div className=${'canvas sx-canvas'+(bg.grid&&!bg.img?' grid':'')} ref=${canvasRef} style=${{...bgStyle(bg),width:fitW*zoom,aspectRatio:`${P[2]}/${P[3]}`}} onDragOver=${e=>e.preventDefault()} onDrop=${dropOnCanvas}>
+          ${els.map((e,i)=>e.hidden?null:html`<div key=${e.id} data-id=${e.id} className=${'el'+(sel===e.id?' sel':'')} style=${{...elStyle(e,i),cursor:e.locked?'default':'move'}} onPointerDown=${ev=>onDown(ev,e)} onDoubleClick=${()=>{if(e.kind==='text')setPop('text')}}>
+            <${ElView} e=${e}/>
+            ${sel===e.id&&!e.locked&&html`<${React.Fragment}><span className="h h-rs" onPointerDown=${ev=>onDown(ev,e,'rs')}></span><span className="h h-rot" onPointerDown=${ev=>onDown(ev,e,'rot')}></span><//>`}
           </div>`)}
+          ${guides&&html`<${React.Fragment}>${guides.gx.map(x=>html`<i key=${'x'+x} className="sx-guide v" style=${{left:x+'%'}}></i>`)}${guides.gy.map(y=>html`<i key=${'y'+y} className="sx-guide h" style=${{top:y+'%'}}></i>`)}
+            ${guides.gap&&(guides.gap.kind==='x'?[[guides.gap.a,guides.gap.b],[guides.gap.c,guides.gap.d]].map(([a,b],k)=>html`<i key=${'g'+k} className="sx-gap h" style=${{left:a+'%',width:(b-a)+'%',top:guides.gap.at+'%'}}></i>`)
+              :[[guides.gap.a,guides.gap.b],[guides.gap.c,guides.gap.d]].map(([a,b],k)=>html`<i key=${'g'+k} className="sx-gap v" style=${{top:a+'%',height:(b-a)+'%',left:guides.gap.at+'%'}}></i>`))}<//>`}
         </div>
       </div>
-      <div className="st-tools">
-        <button className="ib" onClick=${()=>{const t=mkText('Add a title',10,10,7);commit([...els,t]);setSel(t.id)}}>${I('text',{width:16})} Text</button>
-        <button className="ib" onClick=${()=>setTab('products')}>${I('img',{width:16})} Piece</button>
-        <button className="ib" onClick=${()=>{const s={id:uid(),kind:'swatch',color:'#A65F2C',x:80,y:8,w:8,rot:0,locked:false,hidden:false};commit([...els,s]);setSel(s.id)}}>${I('frame',{width:16})} Swatch</button>
-        <button className="ib" onClick=${dup} disabled=${!S}>${I('copy',{width:16})} Duplicate</button>
-        <button className="ib" onClick=${()=>{ctx.setRoomSeed(pieces.map(p=>p.id));ctx.go('room')}}>${I('cube',{width:16})} 3D preview</button>
+      ${S&&barStyle&&html`<div className="sx-selbar" style=${barStyle} onPointerDown=${e=>e.stopPropagation()} role="toolbar" aria-label=${'Edit '+kindName}>
+        ${selItems.map(([k,l])=>html`<button key=${k} className=${pop===k?'on':''} aria-expanded=${pop===k} onClick=${()=>setPop(pop===k?null:k)}>${l}</button>`)}
+        <button onClick=${dup} aria-label="Duplicate" title="Duplicate (Ctrl+D)">${I('copy',{width:16})}</button>
+        <button onClick=${del} aria-label="Delete" title="Delete">${I('trash',{width:16})}</button>
+        ${pop&&html`<div className="sx-selpop">
+          ${pop==='style'&&html`<${React.Fragment}><button className="toggle" onClick=${()=>patch(S.id,{border:!S.border})}><span>White border</span><span className=${'sw'+(S.border?' on':'')}></span></button>
+            <button className="toggle" onClick=${()=>patch(S.id,{motion:!S.motion})}><span>Gentle motion</span><span className=${'sw'+(S.motion?' on':'')}></span></button>
+            ${S.kind==='img'&&html`<button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>ctx.openPin(S.pid)}>View ${byId(S.pid).name} details</button>`}<//>`}
+          ${pop==='shape'&&html`<div className="seg">${SHAPES.map(([k,l])=>html`<button key=${k} className=${S.shape===k?'on':''} onClick=${()=>patch(S.id,{shape:k})}>${l}</button>`)}</div>`}
+          ${pop==='tone'&&html`<div className="seg">${['none','warm','mono','dusk'].map(t=>html`<button key=${t} className=${S.tone===t?'on':''} onClick=${()=>patch(S.id,{tone:t})}>${t==='none'?'Original':t[0].toUpperCase()+t.slice(1)}</button>`)}</div>`}
+          ${pop==='text'&&html`<textarea className="field" rows="2" aria-label="Text" value=${S.text} onFocus=${()=>record(docRef.current)} onInput=${e=>live(S.id,{text:e.target.value})}></textarea>`}
+          ${pop==='font'&&html`<${React.Fragment}><div className="seg">${[['display','Serif'],['sans','Sans'],['mono','Caps']].map(([k,l])=>html`<button key=${k} className=${S.font===k?'on':''} onClick=${()=>patch(S.id,{font:k})}>${l}</button>`)}</div>
+            <label className="sx-range"><span className="sx-lbl">Size</span><input type="range" min="2" max="16" step=".2" value=${S.size} onPointerDown=${()=>record(docRef.current)} onInput=${e=>live(S.id,{size:+e.target.value})}/></label><//>`}
+          ${pop==='color'&&html`<div className="swatches">${['#2B211A','#FBF8F2','#A65F2C','#6C6948','#AE884C','#B07A4A','#E7DFD0'].map(c=>html`<button key=${c} style=${{background:c}} className=${S.color===c?'on':''} aria-label=${'Colour '+c} onClick=${()=>patch(S.id,{color:c})}></button>`)}</div>`}
+          ${pop==='arrange'&&html`<div className="sx-col">
+            <button className="pop-item" onClick=${()=>arrange(S.id,'front')}>${I('up',{width:15})} Bring to front</button>
+            <button className="pop-item" onClick=${()=>arrange(S.id,'fwd')}>Forward</button>
+            <button className="pop-item" onClick=${()=>arrange(S.id,'bwd')}>Backward</button>
+            <button className="pop-item" onClick=${()=>arrange(S.id,'back')}>${I('down',{width:15})} Send to back</button>
+            <button className="pop-item" onClick=${()=>patch(S.id,{locked:!S.locked})}>${I(S.locked?'unlock':'lock',{width:15})} ${S.locked?'Unlock':'Lock in place'}</button></div>`}
+        </div>`}
+      </div>`}
+      <div className="sx-zoom" role="group" aria-label="Zoom">
+        <button className="ib" aria-label="Zoom out" onClick=${()=>zoomTo(zoom/1.25)} disabled=${zoom<=ZMIN}>${I('minus',{width:15})}</button>
+        <button className="sx-zoom-v num" title="Zoom to fit (0)" onClick=${()=>zoomTo(1)}>${Math.round(zoom*100)}%</button>
+        <button className="ib" aria-label="Zoom in" onClick=${()=>zoomTo(zoom*1.25)} disabled=${zoom>=ZMAX}>${I('plus',{width:15})}</button>
       </div>
-      <div className="st-foot">
-        <span><span className="mono">This ${mode} · ${pieces.length} pieces · ${seats} seats</span><br/><b className="num">${fmt(pieces.reduce((s,p)=>s+pr(p,ctx.mode),0))}</b> <span className="mono">${ctx.mode==='trade'?'trade':'retail'}</span></span>
-        <button className="btn" style=${{background:'var(--onink)',color:'var(--ink)'}} disabled=${!pieces.length} onClick=${()=>{pieces.forEach(p=>ctx.addToTray(p.id,1,null,true));ctx.toast(`${pieces.length} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>${I('tray',{width:17})} Add all to tray</button>
-      </div>
+      <${SxPill} ctx=${ctx} count=${pieces.length} total=${total} onOpen=${()=>setTraySheet(true)}/>
     </section>
 
-    <aside className="st-panel r" aria-label="Add to collage">
-      <form className="compose" onSubmit=${e=>{e.preventDefault();if(!prompt.trim())return;commit(compose(prompt,mode));setSel(null)}}>
-        <span className="mono" style=${{opacity:.7}}>Compose for me</span>
-        <input aria-label="Describe a style, material or color" placeholder="Type a style, texture, material or color" value=${prompt} onInput=${e=>setPrompt(e.target.value)}/>
-        <div className="chips">${['cognac leather café','olive velvet bistro','bouclé lobby','rattan coffee bar','brass lounge'].map(c=>html`<button type="button" key=${c} onClick=${()=>{setPrompt(c);commit(compose(c,mode));setSel(null)}}>${c}</button>`)}</div>
-        <button className="btn btn-cog btn-sm" style=${{justifySelf:'start'}}>${I('wand',{width:15})} Compose</button>
-      </form>
-      <div className="tabs left" style=${{margin:0}}>${[['products','Pieces'],['inspo','My Inspo'],['ideas','Ideas'],['boards','Boards']].map(([k,l])=>html`<button key=${k} className=${tab===k?'on':''} onClick=${()=>setTab(k)}>${l}</button>`)}</div>
-      ${tab==='products'&&html`<div style=${{display:'grid',gap:10}}>
-        <input className="field" style=${{height:40}} placeholder="Search pieces" aria-label="Search pieces" value=${pq} onInput=${e=>setPq(e.target.value)}/>
-        <div className="scroll-x">${[['all','All'],...Object.entries(MAT)].map(([k,l])=>html`<button key=${k} className=${'chip'+(pm===k?' on':'')} style=${{height:30,fontSize:12}} onClick=${()=>setPm(k)}>${l}</button>`)}</div>
-        <div className="prod-mini">${prods.map(p=>html`<button key=${p.id} onClick=${()=>addProduct(p.id)} title=${'Add '+p.name}><img src=${p.img} alt="" loading="lazy"/><span>${p.name}</span></button>`)}</div></div>`}
-      ${tab==='inspo'&&html`<div style=${{display:'grid',gap:10}}>
-        <div className="row" style=${{justifyContent:'space-between'}}><span className="help" style=${{margin:0}}>Tap to add. Inspo never shows prices or links.</span><button className="lnk" onClick=${()=>ctx.go('inspo')}>Library</button></div>
-        ${ctx.inspo.length?html`<div className="prod-mini">${ctx.inspo.map(x=>html`<div key=${x.id} style=${{display:'grid',gap:4}}><button onClick=${()=>{const n={...mkInspo(x),x:14+Math.random()*30,y:12+Math.random()*30,w:40};commit([...els,n]);setSel(n.id)}} title=${'Add '+x.title}><img src=${x.src} alt="" loading="lazy"/><span>${x.title}</span></button><button className="lnk" style=${{fontSize:11.5,justifySelf:'start'}} onClick=${()=>setBg({img:x.src})}>Set as background</button></div>`)}</div>`
-          :html`<p className="help">No inspo yet. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Upload inspiration</button></p>`}</div>`}
-      ${tab==='ideas'&&html`<div style=${{display:'grid',gap:16}}>${COMMUNITY.map(b=>html`<button key=${b.id} style=${{textAlign:'left'}} onClick=${()=>{commit(b.items.map((id,i)=>mkImg(id,i,mode)).concat([mkText(b.title,6,88,4.6)]));setTitle(b.title+' (remix)');setSel(null)}}>
-        <div className="prod-mini" style=${{gridTemplateColumns:'repeat(3,1fr)',gap:3}}>${b.items.slice(0,3).map(id=>html`<span key=${id} style=${{aspectRatio:1,background:`url(${byId(id).img}) center/cover`,borderRadius:6,display:'block'}}></span>`)}</div>
-        <b style=${{fontFamily:'var(--display)',fontSize:19,fontWeight:500,display:'block',marginTop:6}}>${b.title}</b><span className="who" style=${{padding:0}}><span className="role">${b.role}</span>${b.by}</span></button>`)}</div>`}
-      ${tab==='boards'&&html`<div style=${{display:'grid',gap:14}}>${ctx.boards.map(b=>html`<div key=${b.id}><div className="st-h"><span>${b.title}</span><button className="lnk" onClick=${()=>commit([...els,...b.pins.slice(0,5).map((x,i)=>mkImg(x.pid,i+els.length,mode))])}>Add all</button></div>
-        <div className="prod-mini" style=${{gridTemplateColumns:'repeat(3,1fr)',marginTop:6}}>${b.pins.map(x=>html`<button key=${x.pid} onClick=${()=>addProduct(x.pid)}><img src=${byId(x.pid).img} alt="" loading="lazy"/></button>`)}</div></div>`)}</div>`}
-    </aside>
+    ${traySheet&&html`<${SxTray} ctx=${ctx} rows=${rows} onClose=${()=>setTraySheet(false)}/>`}
+    ${composeOpen&&html`<${ComposeDialog} mode=${mode} page=${page} bg=${bg} onClose=${()=>setComposeOpen(false)} onUse=${(p,draft)=>{setComposeOpen(false);openNew({title:(p.charAt(0).toUpperCase()+p.slice(1)).slice(0,TITLE_MAX),els:draft},'Opened as a new collage')}}/>`}
+    ${idea&&html`<${SxDialog} title=${idea.title} onClose=${()=>setIdea(null)}>
+      <${BoardPreview} els=${idea.items.map((id,i)=>mkImg(id,i,'collage')).concat([mkText(idea.title,6,88,4.6)])} bg=${{color:'#EFE6D8',grid:true}} page="portrait"/>
+      <p className="sx-note">By ${idea.by}. Remixing opens a new collage; this one stays as it is.</p>
+      <button className="btn btn-cog btn-sm" style=${{justifySelf:'start'}} onClick=${()=>{const t=idea.title;const items=idea.items;setIdea(null);openNew({title:(t+' (remix)').slice(0,TITLE_MAX),els:items.map((id,i)=>mkImg(id,i,'collage')).concat([mkText(t,6,88,4.6)])},'Opened as a new collage')}}>Remix as a new collage</button>
+    <//>`}
     ${share&&html`<${ShareModal} ctx=${ctx} title=${title} ids=${pieces.map(p=>p.id)} onClose=${()=>setShare(false)}/>`}
   </main>`;
+}
+// Compose: a prompt, then three drafts to choose from. The chosen one opens as a new collage.
+function ComposeDialog({mode,page,bg,onClose,onUse}){
+  const [p,setP]=useState('');const [drafts,setDrafts]=useState(null);const [pick,setPick]=useState(0);
+  const run=q=>{q=(q??p).trim();if(!q)return;setP(q);setDrafts([0,1,2].map(v=>compose(q,mode,v)));setPick(0)};
+  return html`<${SxDialog} title="Compose" wide onClose=${onClose}>
+    <form className="sx-compose" onSubmit=${e=>{e.preventDefault();run()}}>
+      <input className="field" autoFocus aria-label="Describe a style, material or colour" placeholder="A style, texture, material or colour" value=${p} onInput=${e=>setP(e.target.value)}/>
+      <button className="btn btn-cog btn-sm">${I('wand',{width:15})} Compose</button></form>
+    <div className="sx-chips">${['cognac leather café','olive velvet bistro','bouclé lobby','rattan coffee bar','brass lounge'].map(c=>html`<button type="button" key=${c} className="chip" onClick=${()=>run(c)}>${c}</button>`)}</div>
+    ${drafts?html`<${React.Fragment}><div className="sx-drafts" role="radiogroup" aria-label="Drafts">${drafts.map((d,i)=>html`<button key=${i} role="radio" aria-checked=${pick===i} className=${'sx-draft'+(pick===i?' on':'')} onClick=${()=>setPick(i)}><${BoardPreview} els=${d} bg=${bg.img?{color:'#EFE6D8',grid:true}:bg} page=${page}/><span>Draft ${i+1}</span></button>`)}</div>
+      <div className="row" style=${{justifyContent:'space-between',flexWrap:'wrap',gap:8}}><span className="sx-note">Opens as a new collage. The one you are working on stays saved.</span><button className="btn btn-cog btn-sm" onClick=${()=>onUse(p,drafts[pick])}>Use this</button></div><//>`
+      :html`<p className="sx-note">Describe a look and we'll draft three boards from the House catalog.</p>`}
+  <//>`;
 }
 // Partner links: a visitor id stays on this device; a partner code is remembered for 30 days.
 function visitorId(){let v=load('visitor',null);if(!v){v=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');store('visitor',v)}return v}
@@ -1987,12 +2177,21 @@ const plFit=(W,H,ops)=>ops.map((o,i)=>{const near=Math.min(Infinity,...ops.filte
 const plWord=(it,doc)=>`${it.x<-doc.W/6?'left':it.x>doc.W/6?'right':'centre'}${it.z<-doc.D/6?' back':it.z>doc.D/6?' front':''}`;
 
 function Room({ctx}){
-  const init=()=>{const key=PL_TEMPLATES[ctx.space]?ctx.space:'blank';const t=JSON.parse(JSON.stringify(PL_TEMPLATES[key]));let items=t.items;
+  const init=()=>{const saved=load('room',null);const seed=ctx.roomSeed||[];
+    // A saved room is never replaced by pieces sent here: they join it.
+    if(saved&&saved.items&&saved.items.length){const kept=saved.items.filter(i=>has(i.pid));
+      // Only pieces the room doesn't already hold are added, so switching back and forth never duplicates them.
+      const have={};kept.forEach(i=>have[i.pid]=(have[i.pid]||0)+1);const fresh=seed.filter(pid=>has(pid)&&!(have[pid]-->0));
+      const added=fresh.map((pid,i)=>({uid:uid(),pid,x:(i-(fresh.length-1)/2)*1.7,z:-saved.D/2+1.3,rot:0,hang:byId(pid).type==='lighting'}));
+      return plReflow({...saved,items:[...kept,...added],wallImg:ctx.roomWall||saved.wallImg||null})}
+    const key=PL_TEMPLATES[ctx.space]?ctx.space:'blank';const t=JSON.parse(JSON.stringify(PL_TEMPLATES[key]));let items=t.items;
     if(ctx.roomSeed&&ctx.roomSeed.length){items=ctx.roomSeed.map((pid,i)=>({pid,x:(i-(ctx.roomSeed.length-1)/2)*1.7,z:-t.D/2+1.3,rot:0,hang:byId(pid).type==='lighting'}))}
     return plReflow({...t,tpl:key,items:items.map(it=>({...it,uid:uid()})),rugs:[],wallImg:ctx.roomWall||null})};
   const [doc,setDoc]=useState(init);const [view,setView]=useState('orbit');const [style,setStyle]=useState('material');const [tod,setTod]=useState(.12);
   const [sel,setSel]=useState(null);const [tab,setTab]=useState('pieces');const [snap,setSnap]=useState(true);const [q,setQ]=useState('');const [cat,setCat]=useState('all');
-  const [shot,setShot]=useState(null);const [showPrompt,setShowPrompt]=useState(false);const [proj,setProj]=useState(ctx.tray.active);
+  const [shot,setShot]=useState(null);const [showPrompt,setShowPrompt]=useState(false);
+  const [drawer,setDrawer]=useState(null);const [pop,setPop]=useState(null);const [traySheet,setTraySheet]=useState(false);const [tplAsk,setTplAsk]=useState(null);const [lookOpen,setLookOpen]=useState(false);
+  const [title,setTitle]=useState(()=>load('roomTitle','Untitled room'));useEffect(()=>store('roomTitle',title),[title]);
   const [three,threeFailed]=useThree();const [eng,setEng]=useState(0);
   const hist=useRef({past:[],future:[]});const vpRef=useRef(),cvRef=useRef(),labRef=useRef(),E=useRef({}),docRef=useRef(doc);docRef.current=doc;
   const commit=next=>{hist.current.past.push(docRef.current);if(hist.current.past.length>60)hist.current.past.shift();hist.current.future=[];setDoc(next)};
@@ -2009,6 +2208,9 @@ function Room({ctx}){
   const dupItem=id=>{const rg=rugOf(id);if(rg){const d=docRef.current;const n={...rg,uid:uid()};[n.x,n.z]=rugClamp(d,n,rg.x+.6,rg.z+.3);commit({...d,rugs:[...d.rugs,n]});setSel(n.uid);return}
     const it=docRef.current.items.find(i=>i.uid===id);if(!it)return;const d=docRef.current;const n={...it,uid:uid()};const [px,pz]=plPlace(d,n,it.x+.6,it.z+.3);n.x=r2(px);n.z=r2(pz);commit({...d,items:[...d.items,n]});setSel(n.uid)};
   useEffect(()=>{if(ctx.roomSeed)ctx.setRoomSeed(null);if(ctx.roomWall)ctx.setRoomWall(null)},[]);
+  // The room autosaves on this device; a photo on the wall is too large to keep, so it is left out.
+  useEffect(()=>{const t=setTimeout(()=>store('room',{...doc,wallImg:doc.wallImg&&doc.wallImg.startsWith('data:')?null:doc.wallImg}),400);return()=>clearTimeout(t)},[doc]);
+  useEffect(()=>setPop(null),[sel]);
 
   // ---------- engine ----------
   useEffect(()=>{
@@ -2128,6 +2330,7 @@ function Room({ctx}){
   useEffect(()=>{const e=E.current;if(e.syncRugs)e.syncRugs(doc.rugs||[])},[doc.rugs,eng]);
   useEffect(()=>{const e=E.current;if(!e.S)return;e.S.view=view;e.S.style=style;e.S.tod=tod;e.S.snap=snap;e.S.sel=sel;e.applyLook()},[view,style,tod,snap,sel,eng]);
   useEffect(()=>{const k=e=>{if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))return;if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();e.shiftKey?redo():undo();return}
+      if(e.key==='Escape'&&!sel){setDrawer(null);setLookOpen(false);return}
       if(e.key==='1')setView('plan');if(e.key==='2')setView('orbit');if(e.key==='3')setView('eye');
       const it=sel&&(docRef.current.items.find(i=>i.uid===sel)||rugOf(sel));if(!it)return;
       if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();removeItem(sel)}if(e.key==='r'||e.key==='R')patchSel(sel,{rot:((it.rot||0)+(e.shiftKey?-15:15)+360)%360});if(e.key==='d'&&!e.ctrlKey)dupItem(sel);if(e.key==='Escape')setSel(null);
@@ -2143,12 +2346,23 @@ function Room({ctx}){
   const prods=PRODUCTS.filter(p=>(cat==='all'||p.type===cat)&&(p.name+' '+p.line+' '+p.mat).toLowerCase().includes(q.toLowerCase()));
   const setOpening=(i,o)=>commit({...doc,openings:doc.openings.map((x,k)=>k===i?{...x,...o}:x)});
   const wallLen=w=>w==='back'?doc.W:doc.D;
-  return html`<main className="pl">
-    <aside className="pl-side">
-      <div className="tabs left" style=${{margin:0}}>${[['room','Room'],['pieces','Pieces'],['layers','Layers']].map(([k,l])=>html`<button key=${k} className=${tab===k?'on':''} onClick=${()=>setTab(k)}>${l}</button>`)}</div>
-      ${tab==='room'&&html`<div className="pl-sec">
+  const plRows=pieceRows(doc.items.map(i=>[i.pid,false]));
+  const pickRail=k=>setDrawer(d=>d===k?null:k);
+  const selRug=R0,selPiece=S0;
+  return html`<main className="sx planner2">
+    <${SxTop} ctx=${ctx} title=${title} setTitle=${t=>setTitle(t.slice(0,TITLE_MAX))} view="3d" onView=${k=>{ctx.setStudioSeed(k==='room'?{view:'room'}:{view:'collage'});ctx.go('studio')}} saved="Saved on this device" onShare=${()=>eng&&setShot(E.current.snapshot())}>
+      <${SxMenu} ctx=${ctx} hist=${{undo,redo,canUndo:hist.current.past.length>0,canRedo:hist.current.future.length>0,steps:hist.current.past.length}}>
+        <div className="sx-pop-sec"><span className="sx-lbl">Placing</span>
+          <button className="toggle" onClick=${()=>setSnap(!snap)}><span>Snap to 5 cm and walls</span><span className=${'sw'+(snap?' on':'')}></span></button></div>
+        <div className="sx-pop-sec"><span className="sx-lbl">This room</span>
+          <button className="pop-item" data-close disabled=${!eng} onClick=${()=>setShot(E.current.snapshot())}>${I('cam',{width:16})} Snapshot</button>
+          <button className="pop-item" data-close onClick=${()=>setShowPrompt(true)}>${I('wand',{width:16})} Render brief</button></div>
+      <//>
+    <//>
+    <${SxRail} items=${[['add','Add','plus'],['layers','Layers','layers'],['room','Room','cube']]} open=${drawer} onPick=${pickRail}/>
+    ${drawer==='room'&&html`<${SxDrawer} title="Room" onClose=${()=>setDrawer(null)}><div className="pl-sec sx-pl">
         <label className="lbl" htmlFor="pl-tpl">Start from</label>
-        <select id="pl-tpl" className="field" value=${doc.tpl} onChange=${e=>{const t=JSON.parse(JSON.stringify(PL_TEMPLATES[e.target.value]));commit(plReflow({...t,tpl:e.target.value,items:t.items.map(it=>({...it,uid:uid()})),wallImg:null}));setSel(null)}}>${Object.entries(PL_TEMPLATES).map(([k,t])=>html`<option key=${k} value=${k}>${t.label}</option>`)}</select>
+        <select id="pl-tpl" className="field" value=${doc.tpl} onChange=${e=>setTplAsk(e.target.value)}>${Object.entries(PL_TEMPLATES).map(([k,t])=>html`<option key=${k} value=${k}>${t.label}</option>`)}</select>
         <div className="pl-dims">${[['W','Width',3,30],['D','Depth',3,24],['H','Height',2.4,8]].map(([k,l,mn,mx])=>html`<label key=${k}><span className="mono mute">${l} (m)</span><input className="field num" type="number" step="0.1" min=${mn} max=${mx} value=${doc[k]} onChange=${e=>{const v=Math.max(mn,Math.min(mx,+e.target.value||mn));commit(plReflow({...doc,[k]:v}))}}/></label>`)}</div>
         <span className="lbl">Walls</span>
         <div className="swatches">${PL_WALLS.map(c=>html`<button key=${c} className=${doc.wall===c&&!doc.wallImg?'on':''} style=${{background:c}} aria-label=${'Wall '+c} onClick=${()=>commit({...doc,wall:c,wallImg:null})}></button>`)}<label className="pl-color" title="Custom colour"><input type="color" value=${doc.wall} onChange=${e=>commit({...doc,wall:e.target.value})} aria-label="Custom wall colour"/></label></div>
@@ -2168,8 +2382,8 @@ function Room({ctx}){
           <label className="pl-range"><span className="mono mute">Position</span><input type="range" min=${-L/2+o.w/2+.1} max=${L/2-o.w/2-.1} step="0.05" value=${o.x} onInput=${e=>setOpening(i,{x:+e.target.value})}/></label>
           <label className="pl-range"><span className="mono mute">Width ${o.w.toFixed(1)} m</span><input type="range" min=".6" max=${Math.min(6,L-.4)} step="0.1" value=${o.w} onInput=${e=>setOpening(i,{w:+e.target.value,x:Math.max(-L/2+ +e.target.value/2+.1,Math.min(L/2- +e.target.value/2-.1,o.x))})}/></label>
         </div>`})}
-      </div>`}
-      ${tab==='pieces'&&html`<div className="pl-sec">
+</div><//>`}
+    ${drawer==='add'&&html`<${SxDrawer} title="Add" onClose=${()=>setDrawer(null)}><div className="pl-sec sx-pl">
         <span className="lbl">Rugs · layout guide</span>
         <p className="help" style=${{margin:0}}>Standard sizes. A rug lands under the selected piece, or in the middle of the room.</p>
         <div className="pl-floors">${RUG_SIZES.map(z=>html`<button key=${z[0]} onClick=${()=>addRug(z)}><i style=${{background:'#D8C7A6',borderRadius:z[3]?'50%':'3px',width:z[3]?22:Math.round(14+z[1]*4),height:z[3]?22:Math.round(10+z[2]*3)}}></i>${z[0]}</button>`)}</div>
@@ -2178,41 +2392,33 @@ function Room({ctx}){
         <div className="scroll-x">${[['all','All'],...Object.entries(TYPE)].map(([k,l])=>html`<button key=${k} className=${'chip'+(cat===k?' on':'')} style=${{height:30,fontSize:12}} onClick=${()=>setCat(k)}>${l}</button>`)}</div>
         <p className="help" style=${{margin:0}}>Click to place in the middle of the room, or drag onto the floor.</p>
         <div className="pl-cat">${prods.map(p=>html`<button key=${p.id} draggable="true" onDragStart=${e=>e.dataTransfer.setData('text/pid',String(p.id))} onClick=${()=>addItem(p.id,0,0)} title=${'Place '+p.name}><img src=${cut(p.id)} alt="" loading="lazy"/><b>${p.name}</b><span className="mono">${plCm(p.id)} cm · ${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span></button>`)}</div>
-      </div>`}
-      ${tab==='layers'&&html`<div className="pl-sec">${doc.items.length?doc.items.map(it=>{const p=byId(it.pid);return html`<div key=${it.uid} className=${'layer'+(sel===it.uid?' on':'')} onClick=${()=>setSel(it.uid)}><span className="th" style=${{backgroundImage:`url(${cut(it.pid)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat',backgroundPosition:'center'}}></span><span>${p.name}</span><button className="ib" aria-label=${it.lock?'Unlock':'Lock'} onClick=${e=>{e.stopPropagation();patchItem(it.uid,{lock:!it.lock})}}>${I(it.lock?'lock':'unlock')}</button><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(it.uid)}}>${I('trash')}</button></div>`}):html`<p className="help">No pieces yet. Add some from the Pieces tab.</p>`}
-        ${(doc.rugs||[]).map(r=>html`<div key=${r.uid} className=${'layer'+(sel===r.uid?' on':'')} onClick=${()=>setSel(r.uid)}><span className="th" style=${{background:r.color||'#D8C7A6',borderRadius:r.round?'50%':'4px'}}></span><span>Rug · ${r.size}</span><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(r.uid)}}>${I('trash')}</button></div>`)}</div>`}
-    </aside>
+</div><//>`}
+    ${drawer==='layers'&&html`<${SxDrawer} title="Layers" onClose=${()=>setDrawer(null)}><div className="pl-sec sx-pl">${doc.items.length?doc.items.map(it=>{const p=byId(it.pid);return html`<div key=${it.uid} className=${'layer'+(sel===it.uid?' on':'')} onClick=${()=>setSel(it.uid)}><span className="th" style=${{backgroundImage:`url(${cut(it.pid)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat',backgroundPosition:'center'}}></span><span>${p.name}</span><button className="ib" aria-label=${it.lock?'Unlock':'Lock'} onClick=${e=>{e.stopPropagation();patchItem(it.uid,{lock:!it.lock})}}>${I(it.lock?'lock':'unlock')}</button><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(it.uid)}}>${I('trash')}</button></div>`}):html`<p className="help">No pieces yet. Add some from the Pieces tab.</p>`}
+        ${(doc.rugs||[]).map(r=>html`<div key=${r.uid} className=${'layer'+(sel===r.uid?' on':'')} onClick=${()=>setSel(r.uid)}><span className="th" style=${{background:r.color||'#D8C7A6',borderRadius:r.round?'50%':'4px'}}></span><span>Rug · ${r.size}</span><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(r.uid)}}>${I('trash')}</button></div>`)}</div><//>`}
 
-    <section className="pl-main">
-      <div className="pl-bar">
-        <div className="seg" role="group" aria-label="View">${[['plan','Plan','1'],['orbit','Model','2'],['eye','Walk','3']].map(([k,l,n])=>html`<button key=${k} className=${view===k?'on':''} onClick=${()=>setView(k)} title=${l+' ('+n+')'}>${l}</button>`)}</div>
-        <div className="seg" role="group" aria-label="Render style">${[['material','Render'],['clay','Clay'],['line','Line']].map(([k,l])=>html`<button key=${k} className=${style===k?'on':''} onClick=${()=>setStyle(k)}>${l}</button>`)}</div>
-        <label className="pl-tod"><span className="mono">${todLabel}</span><input type="range" min="0" max="1" step="0.01" value=${tod} onInput=${e=>setTod(+e.target.value)} aria-label="Time of day"/></label>
-        <button className=${'chip'+(snap?' on':'')} onClick=${()=>setSnap(!snap)} title="Snap to 5 cm">Snap</button>
-        <span style=${{flex:1}}></span>
-        <button className="ib" aria-label="Undo" title="Undo (Ctrl+Z)" onClick=${undo}>${I('undo')}</button>
-        <button className="ib" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" onClick=${redo}>${I('redo')}</button>
-        <button className="btn btn-line btn-sm" disabled=${!eng} onClick=${()=>setShot(E.current.snapshot())}>${I('cam',{width:15})} Snapshot</button>
-        <button className="btn btn-cog btn-sm" onClick=${()=>setShowPrompt(true)}>${I('wand',{width:15})} Render brief</button>
-      </div>
-      <div className="pl-vp" ref=${vpRef} tabIndex="0" aria-label="Room viewport">
+    <section className=${'sx-stagewrap'+(sel?' has-sel':'')}>
+      <div className="pl-vp sx-vp" ref=${vpRef} tabIndex="0" aria-label="Room viewport">
         <canvas ref=${cvRef} className="pl-cv"></canvas>
         <div className="pl-labels" ref=${labRef} aria-hidden="true"></div>
         ${threeFailed&&html`<div className="pl-fail" role="alert">The 3D view could not load. Check your connection and reload the page to try again.</div>`}
-        <div className="pl-hint mono">${view==='plan'?'Drag to pan · scroll to zoom · drag a piece to move it':view==='eye'?'Drag to look around · scroll to walk':'Drag to orbit · shift-drag to pan · scroll to zoom · drag a piece to move it'} · R rotate · D duplicate</div>
-        <div className="pl-style-tag mono">${style==='material'?'Render · materials and light':style==='clay'?'Clay · massing study':'Line · drafting'} · ${doc.W}×${doc.D} m</div>
+        <div className="sx-viewbar" role="toolbar" aria-label="View">
+          <div className="seg" role="group" aria-label="Camera">${[['plan','Plan','1'],['orbit','Orbit','2'],['eye','Walk','3']].map(([k,l,n])=>html`<button key=${k} className=${view===k?'on':''} aria-pressed=${view===k} onClick=${()=>setView(k)} title=${l+' ('+n+')'}>${l}</button>`)}</div>
+          <div className="sx-more"><button className=${'sx-look'+(lookOpen?' on':'')} aria-expanded=${lookOpen} onClick=${()=>setLookOpen(!lookOpen)}>Look · ${style==='material'?'Render':style==='clay'?'Clay':'Line'}</button>
+            ${lookOpen&&html`<div className="pop sx-pop" style=${{left:0,right:'auto'}}>
+              <div className="sx-pop-sec"><span className="sx-lbl">Look</span><div className="seg" role="group" aria-label="Look">${[['material','Render'],['clay','Clay'],['line','Line']].map(([k,l])=>html`<button key=${k} className=${style===k?'on':''} onClick=${()=>setStyle(k)}>${l}</button>`)}</div></div>
+              <div className="sx-pop-sec"><span className="sx-lbl">Time of day · ${todLabel}</span><input type="range" min="0" max="1" step="0.01" value=${tod} onInput=${e=>setTod(+e.target.value)} aria-label="Time of day" style=${{accentColor:'var(--cognac)'}}/></div>
+            </div>`}</div>
+        </div>
+        <div className="pl-hint sx-hint">${view==='plan'?'Drag to pan · scroll to zoom · drag a piece to move it':view==='eye'?'Drag to look around · scroll to walk':'Drag to orbit · shift-drag to pan · scroll to zoom'} · R rotate · D duplicate</div>
       </div>
-      <div className="st-foot">
-        <span><span className="mono">${doc.items.length} pieces · ${seats} seats</span><br/><b className="num">${fmt(pieces.reduce((s,p)=>s+pr(p,ctx.mode),0))}</b> <span className="mono">${ctx.mode}</span></span>
-        <span className="row" style=${{flexWrap:'wrap'}}>
-          <select className="field" style=${{height:38,width:'auto',background:'transparent',color:'inherit',borderColor:'rgba(127,127,127,.4)'}} value=${proj} onChange=${e=>setProj(e.target.value)} aria-label="Project">${ctx.tray.projects.map(p=>html`<option key=${p.id} value=${p.id}>${p.name}</option>`)}</select>
-          <button className="btn" style=${{background:'var(--onink)',color:'var(--ink)'}} disabled=${!doc.items.length} onClick=${()=>{const P=ctx.tray.projects.find(p=>p.id===proj);doc.items.forEach(i=>ctx.addToProject(i.pid,1,proj,P.zones[0],null,true));ctx.toast(`${doc.items.length} pieces added to ${P.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>${I('tray',{width:16})} Add room to project</button>
-        </span>
-      </div>
-    </section>
-
-    <aside className="pl-side r">
-      ${R0?html`<div className="pl-sec">
+      ${(selRug||selPiece)&&html`<div className="sx-selbar sx-selbar-pl" role="toolbar" aria-label="Edit selection" onPointerDown=${e=>e.stopPropagation()}>
+        <button className=${pop==='info'?'on':''} aria-expanded=${pop==='info'} onClick=${()=>setPop(pop==='info'?null:'info')}>${selRug?'Rug':byId(selPiece.pid).name}</button>
+        <button aria-label="Rotate left 15°" title="Rotate (Shift+R)" onClick=${()=>patchSel(sel,{rot:(((selRug||selPiece).rot||0)+345)%360})}>↺</button>
+        <button aria-label="Rotate right 15°" title="Rotate (R)" onClick=${()=>patchSel(sel,{rot:(((selRug||selPiece).rot||0)+15)%360})}>↻</button>
+        <button aria-label="Duplicate" title="Duplicate (D)" onClick=${()=>dupItem(sel)}>${I('copy',{width:16})}</button>
+        ${selPiece&&html`<button aria-label=${selPiece.lock?'Unlock':'Lock'} onClick=${()=>patchItem(selPiece.uid,{lock:!selPiece.lock})}>${I(selPiece.lock?'unlock':'lock',{width:16})}</button>`}
+        <button aria-label="Delete" onClick=${()=>removeItem(sel)}>${I('trash',{width:16})}</button>
+        ${pop==='info'&&html`<div className="sx-selpop sx-pl">${selRug?html`<div className="pl-sec" style=${{padding:0}}>
         <span className="eyebrow">Rug · layout guide</span><h3 style=${{fontSize:26}}>${R0.size}</h3>
         <div className="kv"><span className="mono mute">Size</span><span>${R0.round?`${R0.w.toFixed(2)} m across`:`${R0.w.toFixed(2)} × ${R0.d.toFixed(2)} m`}</span><span className="mono mute">Price</span><span>Not priced</span>
           <span className="mono mute">To left wall</span><span>${(R0.x-rugExt(R0)[0]+doc.W/2).toFixed(2)} m</span><span className="mono mute">To right wall</span><span>${(doc.W/2-R0.x-rugExt(R0)[0]).toFixed(2)} m</span><span className="mono mute">To back wall</span><span>${(R0.z-rugExt(R0)[1]+doc.D/2).toFixed(2)} m</span></div>
@@ -2223,38 +2429,27 @@ function Room({ctx}){
         <span className="lbl">Colour</span>
         <div className="swatches">${RUG_COLORS.map(([c,l])=>html`<button key=${l} title=${l} aria-label=${'Rug colour '+l} className=${R0.color===c?'on':''} style=${{background:c||'#CDBB98'}} onClick=${()=>patchRug(R0.uid,{color:c})}></button>`)}</div>
         <div className="pl-dims">${[['x','X (m)'],['z','Z (m)']].map(([k,l])=>html`<label key=${k}><span className="mono mute">${l}</span><input className="field num" type="number" step="0.05" value=${R0[k]} onChange=${e=>patchRug(R0.uid,{[k]:+e.target.value||0})}/></label>`)}<label><span className="mono mute">Rotate</span><input className="field num" type="number" step="15" value=${R0.rot||0} onChange=${e=>patchRug(R0.uid,{rot:((+e.target.value||0)%360+360)%360})}/></label></div>
-        <div className="row" style=${{flexWrap:'wrap',gap:6}}>
-          <button className="btn btn-line btn-sm" onClick=${()=>patchRug(R0.uid,{rot:((R0.rot||0)+90)%360})}>↻ 90°</button>
-          <button className="btn btn-line btn-sm" onClick=${()=>dupItem(R0.uid)}>${I('copy',{width:14})} Duplicate</button>
-          <button className="btn btn-line btn-sm" style=${{color:'var(--bad)'}} onClick=${()=>removeItem(R0.uid)}>${I('trash',{width:14})} Remove</button>
-        </div>
-      </div>`:S0?html`<div className="pl-sec">
+        
+</div>`:html`<div className="pl-sec" style=${{padding:0}}>
         <div className="pl-insp-h"><img src=${cut(S0.pid)} alt=""/><div><span className="mono mute">${SD.p.sku} · ${MAT[SD.p.mat]}</span><h3>${SD.p.name}</h3><p className="mute" style=${{fontSize:13}}>${SD.p.line}</p></div></div>
         <div className="kv"><span className="mono mute">Footprint</span><span>${SD.w.toFixed(2)} × ${SD.d.toFixed(2)} m (approx.)</span><span className="mono mute">Price</span><span>${ctx.mode==='trade'?fmt(tp(SD.p),true):fmt(SD.p.price,true)}</span>
           <span className="mono mute">To left wall</span><span>${(S0.x-SD.w/2+doc.W/2).toFixed(2)} m</span><span className="mono mute">To right wall</span><span>${(doc.W/2-S0.x-SD.w/2).toFixed(2)} m</span><span className="mono mute">To back wall</span><span>${(S0.z-SD.d/2+doc.D/2).toFixed(2)} m</span></div>
         <div className="pl-dims">${[['x','X (m)'],['z','Z (m)']].map(([k,l])=>html`<label key=${k}><span className="mono mute">${l}</span><input className="field num" type="number" step="0.05" value=${S0[k]} onChange=${e=>patchItem(S0.uid,{[k]:+e.target.value||0})}/></label>`)}<label><span className="mono mute">Rotate</span><input className="field num" type="number" step="15" value=${S0.rot||0} onChange=${e=>patchItem(S0.uid,{rot:((+e.target.value||0)%360+360)%360})}/></label></div>
-        <div className="row" style=${{flexWrap:'wrap',gap:6}}>
-          <button className="btn btn-line btn-sm" onClick=${()=>patchItem(S0.uid,{rot:((S0.rot||0)+345)%360})}>↺ 15°</button><button className="btn btn-line btn-sm" onClick=${()=>patchItem(S0.uid,{rot:((S0.rot||0)+15)%360})}>↻ 15°</button>
-          <button className="btn btn-line btn-sm" onClick=${()=>dupItem(S0.uid)}>${I('copy',{width:14})} Duplicate</button>
-          <button className="btn btn-line btn-sm" onClick=${()=>patchItem(S0.uid,{lock:!S0.lock})}>${I(S0.lock?'unlock':'lock',{width:14})} ${S0.lock?'Unlock':'Lock'}</button>
-          <button className="btn btn-line btn-sm" style=${{color:'var(--bad)'}} onClick=${()=>removeItem(S0.uid)}>${I('trash',{width:14})} Remove</button>
-        </div>
+        
         <button className="btn btn-ink btn-sm" onClick=${()=>ctx.openPin(S0.pid)}>View product</button>
-      </div>`:html`<div className="pl-sec">
-        <span className="eyebrow">Space Planner</span><h3 style=${{fontSize:30}}>Plan it, model it, <em style=${{color:'var(--cognac)'}}>render it.</em></h3>
-        <p className="help" style=${{margin:0}}>Draft the room in plan, study the massing in clay, check proportions in line, then walk it in full materials with real light. Select any piece to measure and adjust it.</p>
-        <div className="pl-modes">
-          <div><b>Plan</b><span>Top-down drafting with live dimensions to every wall.</span></div>
-          <div><b>Model</b><span>Orbit the room. Clay mode shows massing with sun and blue shadows.</span></div>
-          <div><b>Walk</b><span>Eye level at 1.5 m, with the ceiling on, to judge scale.</span></div>
-          <div><b>Render brief</b><span>Writes a photoreal render prompt from your exact layout.</span></div>
-        </div>
-        <span className="lbl">In this room</span>
-        ${doc.items.length?[...new Set(doc.items.map(i=>i.pid))].map(pid=>{const n=doc.items.filter(i=>i.pid===pid).length;const p=byId(pid);return html`<div key=${pid} className="sumrow"><span>${n} × ${p.name}</span><span>${fmt(pr(p,ctx.mode)*n)}</span></div>`}):html`<p className="help">Empty. Add pieces from the left.</p>`}
+</div>`}</div>`}
       </div>`}
-    </aside>
-
-    ${shot&&html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&setShot(null)} role="dialog" aria-modal="true" aria-label="Snapshot"><div className="sheet share" style=${{width:'min(1000px,100%)'}}><div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>Snapshot</h2><button className="ib" aria-label="Close" onClick=${()=>setShot(null)}>${I('x')}</button></div><img src=${shot} alt="Snapshot of the room" style=${{borderRadius:12}}/><p className="help">Right-click the image to save it, or attach it to a board.</p></div></div>`}
+      <${SxPill} ctx=${ctx} count=${doc.items.length} total=${pieces.reduce((s,p)=>s+pr(p,ctx.mode),0)} onOpen=${()=>setTraySheet(true)}/>
+    </section>
+    ${traySheet&&html`<${SxTray} ctx=${ctx} rows=${plRows} onClose=${()=>setTraySheet(false)}/>`}
+    ${tplAsk&&html`<${SxDialog} title="Replace this room?" onClose=${()=>setTplAsk(null)}>
+      <p className="sx-note">Starting from <b>${PL_TEMPLATES[tplAsk].label}</b> replaces the room and its ${doc.items.length} piece${doc.items.length===1?'':'s'} with:</p>
+      <div className="sx-tplpre"><b>${PL_TEMPLATES[tplAsk].W} × ${PL_TEMPLATES[tplAsk].D} m</b><span>${PL_TEMPLATES[tplAsk].H} m ceiling · ${PL_FLOORS.find(f=>f[0]===PL_TEMPLATES[tplAsk].floor)?.[1]||'Oak'} floor</span>
+        <span className="sx-tplpcs">${PL_TEMPLATES[tplAsk].items.length?PL_TEMPLATES[tplAsk].items.map((it,i)=>html`<img key=${i} src=${cut(it.pid)} alt=${byId(it.pid).name} title=${byId(it.pid).name}/>`):html`<span className="sx-note">No pieces</span>`}</span></div>
+      <div className="row" style=${{gap:8,justifyContent:'flex-end'}}><button className="btn btn-line btn-sm" onClick=${()=>setTplAsk(null)}>Keep my room</button>
+        <button className="btn btn-cog btn-sm" onClick=${()=>{const k=tplAsk;const t=JSON.parse(JSON.stringify(PL_TEMPLATES[k]));commit(plReflow({...t,tpl:k,items:t.items.map(it=>({...it,uid:uid()})),rugs:[],wallImg:null}));setSel(null);setTplAsk(null);ctx.toast('Room replaced',{label:'Undo',fn:undo})}}>Replace canvas</button></div>
+    <//>`}
+    ${shot&&html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&setShot(null)} role="dialog" aria-modal="true" aria-label="Snapshot"><div className="sheet share" style=${{width:'min(1000px,100%)'}}><div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>Snapshot</h2><button className="ib" aria-label="Close" onClick=${()=>setShot(null)}>${I('x')}</button></div><img src=${shot} alt="Snapshot of the room" style=${{borderRadius:12}}/><div className="row" style=${{gap:8,flexWrap:'wrap'}}><a className="btn btn-cog btn-sm" href=${shot} download=${(title||'room').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.jpg'}>${I('download',{width:15})} Download image</a><span className="sx-note">Saved at the size of your screen. Exports at fixed sizes arrive with the Share sheet.</span></div></div></div>`}
     ${showPrompt&&html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&setShowPrompt(false)} role="dialog" aria-modal="true" aria-label="Render brief"><div className="sheet share" style=${{width:'min(720px,100%)'}}>
       <div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>Render <em style=${{color:'var(--cognac)'}}>brief</em></h2><button className="ib" aria-label="Close" onClick=${()=>setShowPrompt(false)}>${I('x')}</button></div>
       <p className="help" style=${{margin:0}}>Written from your exact layout, materials and light. Use it with a snapshot and the product photos to generate a photoreal render, or send it to the House team to render for you.</p>
@@ -2283,7 +2478,7 @@ function Boards({ctx}){
       <button className="newboard" onClick=${()=>setMk(true)}><span>${I('plus',{width:22})}<br/>New board</span></button>
     </div>`}
     ${tab==='pins'&&html`<${Wall} items=${allPins} ctx=${ctx}/>`}
-    ${tab==='collages'&&html`<div className="boards">${ctx.collages.map((c,i)=>html`<button key=${i} className="bcard" onClick=${()=>{ctx.setStudioSeed({ids:c.els.filter(e=>e.kind==='img').map(e=>e.pid),title:c.title});ctx.go('studio')}}>
+    ${tab==='collages'&&html`<div className="boards">${ctx.collages.map((c,i)=>html`<button key=${i} className="bcard" onClick=${()=>{ctx.setStudioSeed({collage:c});ctx.go('studio')}}>
         <div className="cov" style=${{background:'var(--plaster)'}}>${c.els.filter(e=>e.kind==='img').slice(0,3).map((e,j)=>html`<div key=${j} style=${{backgroundImage:`url(${byId(e.pid).img})`}}></div>`)}</div><h2>${c.title}</h2><p>${c.els.filter(e=>e.kind==='img').length} pieces · Open in Studio</p></button>`)}
       <button className="newboard" onClick=${()=>ctx.go('studio')}><span>${I('brush',{width:22})}<br/>New collage</span></button></div>`}
     ${mk&&html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&setMk(false)} role="dialog" aria-modal="true" aria-label="Create board"><form className="sheet share" onSubmit=${e=>{e.preventDefault();if(!n.trim())return;const id=ctx.createBoard(n.trim(),null,sec);setMk(false);setN('');ctx.setBoard(id);ctx.go('board')}}>
@@ -2337,7 +2532,7 @@ function Profile({ctx}){
     <div className="wrap">
       <div className="tabs">${[['saved','Boards'],['collages','Collages']].map(([k,l])=>html`<button key=${k} className=${tab===k?'on':''} onClick=${()=>setTab(k)}>${l}</button>`)}</div>
       ${tab==='saved'&&(ctx.boards.length?html`<div className="boards">${ctx.boards.map(b=>html`<button key=${b.id} className="bcard" onClick=${()=>{ctx.setBoard(b.id);ctx.go('board')}}><div className="cov">${[0,1,2].map(i=>html`<div key=${i} style=${{backgroundImage:b.pins[i]?`url(${byId(b.pins[i].pid).img})`:'none'}}></div>`)}</div><h2>${b.title}</h2><p>${b.pins.length} pins</p></button>`)}</div>`:html`<div className="empty"><h2>No boards yet</h2><p>Save pieces from the floor to start a board.</p></div>`)}
-      ${tab==='collages'&&(ctx.collages.length?html`<div className="boards">${ctx.collages.map((c,i)=>html`<div key=${i} className="bcard"><div className="cov">${c.els.filter(e=>e.kind==='img').slice(0,3).map((e,j)=>html`<div key=${j} style=${{backgroundImage:`url(${byId(e.pid).img})`}}></div>`)}</div><h2>${c.title}</h2></div>`)}</div>`:html`<div className="empty"><h2>No collages yet</h2><p>Compose one in Studio and save it here.</p><button className="btn btn-line" onClick=${()=>ctx.go('studio')}>Open Studio</button></div>`)}
+      ${tab==='collages'&&(ctx.collages.length?html`<div className="boards">${ctx.collages.map((c,i)=>html`<button key=${i} className="bcard" onClick=${()=>{ctx.setStudioSeed({collage:c});ctx.go('studio')}}><div className="cov">${c.els.filter(e=>e.kind==='img').slice(0,3).map((e,j)=>html`<div key=${j} style=${{backgroundImage:`url(${byId(e.pid).img})`}}></div>`)}</div><h2>${c.title}</h2></button>`)}</div>`:html`<div className="empty"><h2>No collages yet</h2><p>Compose one in Studio and save it here.</p><button className="btn btn-line" onClick=${()=>ctx.go('studio')}>Open Studio</button></div>`)}
     </div>
     <div className="wrap"><${Footer} ctx=${ctx}/></div>
   </main>`;
@@ -2748,7 +2943,9 @@ export function App(){
   const [modePref,setModePref]=useState(()=>load('mode','trade'));const mode=me.verified?modePref:'retail';const setMode=m=>{if(me.verified)setModePref(m)};
   const [boards,setBoards]=useState(()=>load('boards',BOARD_SEED).map(b=>({...b,pins:b.pins.filter(x=>has(x.pid))})));
   const [tray,setTrayState]=useState(()=>{const t=load('tray',TRAY_SEED);const projects=(t.projects||[]).map(p=>({...p,items:(p.items||[]).filter(i=>has(i.pid))}));return projects.length?{...t,taxExempt:false,later:(t.later||[]).filter(x=>has(x.pid)),projects,active:projects.some(p=>p.id===t.active)?t.active:projects[0].id}:TRAY_SEED});
-  const [collages,setCollages]=useState(()=>load('collages',[]).filter(c=>c.els.every(e=>e.kind!=='img'||has(e.pid))));
+  // Collages saved before they carried ids get one as they load, so autosave updates them in place.
+  const withIds=cs=>cs.map(c=>c.id?c:{...c,id:uid()});
+  const [collages,setCollages]=useState(()=>withIds(load('collages',[]).filter(c=>c.els.every(e=>e.kind!=='img'||has(e.pid)))));
   const [likes,setLikes]=useState([]);const [recent,setRecent]=useState([]);
   const [inspo,setInspo]=useState(()=>load('inspo',INSPO_SEED));const [roomWall,setRoomWall]=useState(null);
   useEffect(()=>store('inspo',inspo),[inspo]);
@@ -2772,7 +2969,7 @@ export function App(){
     const localBoards=boards.filter(b=>b.pins.length&&!remoteBoards.some(r=>r.id===b.id));
     if(remoteBoards.length){const merged=[...remoteBoards.map(b=>({...b,pins:b.pins.filter(x=>has(x.pid))})),...localBoards];setBoards(merged);if(localBoards.length)push('boards',merged)}
     else if(localBoards.length)push('boards',boards);
-    if(Array.isArray(remote.collages))setCollages(remote.collages.filter(c=>c.els.every(e=>e.kind!=='img'||has(e.pid))));
+    if(Array.isArray(remote.collages))setCollages(withIds(remote.collages.filter(c=>c.els.every(e=>e.kind!=='img'||has(e.pid)))));
     if(Array.isArray(remote.inspo))setInspo(l=>[...remote.inspo,...l.filter(x=>!/^https?:/.test(x.src)&&!remote.inspo.some(y=>y.id===x.id))]);
     if(!Array.isArray(remote.collages)&&collages.length)push('collages',collages.map(c=>({...c,bg:c.bg?.img?.startsWith('data:')?{color:'#EFE6D8'}:c.bg,els:c.els.filter(e=>!String(e.src||'').startsWith('data:'))})));
   },[me.signedIn,remote]);
@@ -2799,14 +2996,14 @@ export function App(){
   const addZone=(pid,z)=>setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===pid&&!p.zones.includes(z)?{...p,zones:[...p.zones,z]}:p)}));
   const inspoCtx={inspo,addInspo:items=>setInspo(l=>[...items,...l]),removeInspo:id=>setInspo(l=>l.filter(x=>x.id!==id)),updateInspo:(id,o)=>setInspo(l=>l.map(x=>x.id===id?{...x,...o}:x)),roomWall,setRoomWall,inspoToStudio:(x,ids=[])=>{setStudioSeed({inspo:x,ids,title:x.title});setNonce(n=>n+1);go('studio')}};
   const signInThen=r=>{setAfterSignIn(r);go('welcome')};const signOut=async()=>{await authSignOut();synced.current=false;['tray','boards','collages','inspo'].forEach(k=>{try{localStorage.removeItem('hol:'+k)}catch(e){}});setTrayState(TRAY_SEED);setBoards(BOARD_SEED);setCollages([]);setInspo(INSPO_SEED);toast('Signed out');go('home')};
-  const ctx={...inspoCtx,me,afterSignIn,signInThen,signOut,route,go,space,setSpace,mode,setMode,boards,saveTo,createBoard,updateBoard,tray,setTrayState,activeProject,trayCount,addToTray,setTray,setMenu,pin,openPin,recent,createProject,addZone,addToProject,toggleLike:id=>setLikes(l=>l.includes(id)?l.filter(x=>x!==id):[...l,id]),likes,toast,query,setQuery,imgQ,setImgQ,imageSearch,studioSeed,setStudioSeed,roomSeed,setRoomSeed,toStudio,board,setBoard,trend,setTrend,collages,saveCollage:c=>{setCollages(cs=>[c,...cs.filter(x=>x.title!==c.title)]);toast('Collage saved',{label:'View',fn:()=>go('boards')})},setTarget:n=>{setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===t.active?{...p,target:n}:p)}));toast(`Seat target for ${activeProject.name} set to ${n}`,{label:'Open tray',fn:()=>setTray(true)})}};
+  const ctx={...inspoCtx,me,afterSignIn,signInThen,signOut,route,go,space,setSpace,mode,setMode,boards,saveTo,createBoard,updateBoard,tray,setTrayState,activeProject,trayCount,addToTray,setTray,setMenu,pin,openPin,recent,createProject,addZone,addToProject,toggleLike:id=>setLikes(l=>l.includes(id)?l.filter(x=>x!==id):[...l,id]),likes,toast,query,setQuery,imgQ,setImgQ,imageSearch,studioSeed,setStudioSeed,roomSeed,setRoomSeed,toStudio,board,setBoard,trend,setTrend,collages,saveCollage:(c,quiet)=>{setCollages(cs=>[c,...cs.filter(x=>c.id?x.id!==c.id:x.title!==c.title)]);if(!quiet)toast('Collage saved',{label:'View',fn:()=>go('boards')})},setTarget:n=>{setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===t.active?{...p,target:n}:p)}));toast(`Seat target for ${activeProject.name} set to ${n}`,{label:'Open tray',fn:()=>setTray(true)})}};
   const pages={inspo:Inspo,home:Home,discover:Discover,trend:Trend,studio:Studio,room:Room,boards:Boards,board:BoardDetail,profile:Profile,hub:Hub,trade:Trade,quiz:Quiz,account:Account,welcome:Welcome,admin:AdminPage,sourcing:Sourcing};
   const Page=pages[route]||Home;
   if(route.startsWith('q/'))return html`<${React.Fragment}><${ClientQuote} ctx=${ctx} code=${route.slice(2)}/><${Toast} t=${toastS} onClose=${()=>setToastS(null)}/><//>`;
   return html`<${React.Fragment}>
     <${Header} ctx=${ctx}/>
     ${route.startsWith('b/')?html`<${SharedBoard} key=${route} ctx=${ctx} slug=${route.slice(2)}/>`:html`<${Page} key=${route+(route==='studio'?nonce:'')} ctx=${ctx}/>`}
-    <${TabBar} ctx=${ctx}/>
+    ${route!=='studio'&&route!=='room'&&html`<${TabBar} ctx=${ctx}/>`}
     ${pin&&html`<${PinDetail} ctx=${ctx}/>`}
     ${trayOpen&&html`<${Tray} ctx=${ctx}/>`}
     ${menu&&html`<${IndexMenu} ctx=${ctx}/>`}
