@@ -28,7 +28,7 @@ const pinItUrl=(media,desc,link='https://www.louiemae.com/retail-furniture')=>`h
 const PIN_BOARDS=[];
 // three.js loads on demand, the first time a 3D view mounts, so other pages never pay for it.
 let threeP=null;
-const loadThree=()=>window.THREE?Promise.resolve(window.THREE):(threeP||=import('three').then(m=>(window.THREE=m)));
+const loadThree=()=>window.THREE?Promise.resolve(window.THREE):(threeP||=import('three').then(m=>(window.THREE=m),e=>{threeP=null;throw e}));
 // Light values below were tuned in three's legacy units; r155+ lights are physical, so they scale by pi.
 const LX=Math.PI;
 function useThree(){const [T,setT]=useState(()=>window.THREE||null);const [failed,setFailed]=useState(false);
@@ -1981,7 +1981,9 @@ const RUG_COLORS=[['','Natural'],['#F1EADC','Ivory'],['#D9C8A9','Oatmeal'],['#B4
 const rugExt=r=>{if(r.round)return [r.w/2,r.w/2];const a=(r.rot||0)*Math.PI/180,c=Math.abs(Math.cos(a)),sn=Math.abs(Math.sin(a));return [c*r.w/2+sn*r.d/2,sn*r.w/2+c*r.d/2]};
 const rugClamp=(doc,r,x,z)=>{const [ex,ez]=rugExt(r);const lx=Math.max(0,doc.W/2-ex),lz=Math.max(0,doc.D/2-ez);return [r2(Math.max(-lx,Math.min(lx,x))),r2(Math.max(-lz,Math.min(lz,z)))]};
 // Re-seat every piece in order so nothing overlaps or pokes through a wall (after loading or resizing the room).
-const plReflow=doc=>{const placed=[];for(const it of doc.items){const d={...doc,items:placed};const [x,z]=plPlace(d,it,it.x,it.z);placed.push({...it,x:r2(x),z:r2(z)})}return {...doc,items:placed}};
+const plReflow=doc=>{const placed=[];for(const it of doc.items){const d={...doc,items:placed};const [x,z]=plPlace(d,it,it.x,it.z);placed.push({...it,x:r2(x),z:r2(z)})}return {...doc,items:placed,rugs:(doc.rugs||[]).map(r=>{const [x,z]=rugClamp(doc,r,r.x,r.z);return {...r,x,z}})}};
+// Fit a back-wall preset to the room: openings never overlap, cross the wall's ends or rise past the ceiling.
+const plFit=(W,H,ops)=>ops.map((o,i)=>{const near=Math.min(Infinity,...ops.filter((_,j)=>j!==i).map(p=>Math.abs(p.x-o.x)))-.15;let w=Math.max(.3,Math.min(o.w,near,2*(W/2-.1-Math.abs(o.x))));const y=Math.min(o.y,Math.max(.05,H-.5));const h=Math.max(.3,Math.min(o.h,H-y-.1));if(o.t==='arch')w=Math.min(w,2*(h-.05));return {...o,w:r2(w),y:r2(y),h:r2(h)}});
 const plWord=(it,doc)=>`${it.x<-doc.W/6?'left':it.x>doc.W/6?'right':'centre'}${it.z<-doc.D/6?' back':it.z>doc.D/6?' front':''}`;
 
 function Room({ctx}){
@@ -1991,7 +1993,7 @@ function Room({ctx}){
   const [doc,setDoc]=useState(init);const [view,setView]=useState('orbit');const [style,setStyle]=useState('material');const [tod,setTod]=useState(.12);
   const [sel,setSel]=useState(null);const [tab,setTab]=useState('pieces');const [snap,setSnap]=useState(true);const [q,setQ]=useState('');const [cat,setCat]=useState('all');
   const [shot,setShot]=useState(null);const [showPrompt,setShowPrompt]=useState(false);const [proj,setProj]=useState(ctx.tray.active);
-  const [three]=useThree();const [eng,setEng]=useState(0);
+  const [three,threeFailed]=useThree();const [eng,setEng]=useState(0);
   const hist=useRef({past:[],future:[]});const vpRef=useRef(),cvRef=useRef(),labRef=useRef(),E=useRef({}),docRef=useRef(doc);docRef.current=doc;
   const commit=next=>{hist.current.past.push(docRef.current);if(hist.current.past.length>60)hist.current.past.shift();hist.current.future=[];setDoc(next)};
   const undo=()=>{const h=hist.current;if(!h.past.length)return;h.future.push(docRef.current);setDoc(h.past.pop())};
@@ -2108,7 +2110,7 @@ function Room({ctx}){
         for(const v of S.rugs.values()){const r=v.it;const p=proj(r.x,0,r.z+rugExt(r)[1]-.22);out.push(`<span class="pl-lab rug${r.uid===S.sel?' sel':''}" style="left:${p[0]}px;top:${p[1]}px">Rug · ${r.size}</span>`)}
         for(const v of S.items.values()){const p=proj(v.it.x,0,v.it.z);out.push(`<span class="pl-lab${v.it.uid===S.sel?' sel':''}" style="left:${p[0]}px;top:${p[1]}px">${byId(v.it.pid).name}</span>`)}}
       const sv=S.sel&&(S.items.get(S.sel)||S.rugs.get(S.sel));clear(dimG);
-      if(sv&&S.view!=='eye'){const it=sv.it,hw=sv.w/2,hd=sv.d/2;const segs=[[it.x-hw,it.z,-d.W/2,it.z],[it.x+hw,it.z,d.W/2,it.z],[it.x,it.z-hd,it.x,-d.D/2]];
+      if(sv&&S.view!=='eye'){const it=sv.it;const [hw,hd]=S.rugs.has(S.sel)?rugExt(it):[sv.w/2,sv.d/2];const segs=[[it.x-hw,it.z,-d.W/2,it.z],[it.x+hw,it.z,d.W/2,it.z],[it.x,it.z-hd,it.x,-d.D/2]];
         segs.forEach(([x1,z1,x2,z2])=>{const len=Math.hypot(x2-x1,z2-z1);if(len<.02)return;const g=new T.BufferGeometry().setFromPoints([new T.Vector3(x1,.03,z1),new T.Vector3(x2,.03,z2)]);dimG.add(new T.Line(g,dimM));const m=proj((x1+x2)/2,.03,(z1+z2)/2);if(m[2])out.push(`<span class="pl-lab dist" style="left:${m[0]}px;top:${m[1]}px">${len.toFixed(2)} m</span>`)})}
       el.innerHTML=out.join('')}
     const bounce=t=>{const n=7.5625,k=2.75;return t<1/k?n*t*t:t<2/k?n*(t-=1.5/k)*t+.75:t<2.5/k?n*(t-=2.25/k)*t+.9375:n*(t-=2.625/k)*t+.984375};
@@ -2157,7 +2159,7 @@ function Room({ctx}){
         <span className="lbl">Floor colour</span>
         <div className="swatches">${PL_TINTS.map(([c,l])=>html`<button key=${l} title=${l} aria-label=${'Floor colour '+l} className=${(doc.floorTint||'')===c?'on':''} style=${{background:c||'linear-gradient(135deg,#fff 45%,#ccc 55%)'}} onClick=${()=>commit({...doc,floorTint:c})}></button>`)}<label className="pl-color" title="Custom floor colour"><input type="color" value=${doc.floorTint||'#ffffff'} onChange=${e=>commit({...doc,floorTint:e.target.value})} aria-label="Custom floor colour"/></label></div>
         <span className="lbl">Back wall</span>
-        <div className="pl-floors">${PL_BACK.map(([k,l,f])=>html`<button key=${k} onClick=${()=>commit({...doc,openings:[...doc.openings.filter(o=>o.wall!=='back'),...f(doc.W,doc.H).map(o=>({...o,wall:'back'}))]})}>${l}</button>`)}</div>
+        <div className="pl-floors">${PL_BACK.map(([k,l,f])=>html`<button key=${k} onClick=${()=>commit({...doc,openings:[...doc.openings.filter(o=>o.wall!=='back'),...plFit(doc.W,doc.H,f(doc.W,doc.H)).map(o=>({...o,wall:'back'}))]})}>${l}</button>`)}</div>
         <div className="row" style=${{justifyContent:'space-between'}}><span className="lbl" style=${{margin:0}}>Openings</span><button className="lnk" onClick=${()=>commit({...doc,openings:[...doc.openings,{wall:'back',t:'win',x:0,w:1.4,h:1.8,y:.8}]})}>+ Add</button></div>
         ${doc.openings.map((o,i)=>{const L=wallLen(o.wall);return html`<div key=${i} className="pl-open">
           <div className="row" style=${{gap:6}}><select className="field" value=${o.wall} onChange=${e=>setOpening(i,{wall:e.target.value,x:0})} aria-label="Wall">${['back','left','right'].map(w=>html`<option key=${w} value=${w}>${w} wall</option>`)}</select>
@@ -2190,12 +2192,13 @@ function Room({ctx}){
         <span style=${{flex:1}}></span>
         <button className="ib" aria-label="Undo" title="Undo (Ctrl+Z)" onClick=${undo}>${I('undo')}</button>
         <button className="ib" aria-label="Redo" title="Redo (Ctrl+Shift+Z)" onClick=${redo}>${I('redo')}</button>
-        <button className="btn btn-line btn-sm" onClick=${()=>setShot(E.current.snapshot())}>${I('cam',{width:15})} Snapshot</button>
+        <button className="btn btn-line btn-sm" disabled=${!eng} onClick=${()=>setShot(E.current.snapshot())}>${I('cam',{width:15})} Snapshot</button>
         <button className="btn btn-cog btn-sm" onClick=${()=>setShowPrompt(true)}>${I('wand',{width:15})} Render brief</button>
       </div>
       <div className="pl-vp" ref=${vpRef} tabIndex="0" aria-label="Room viewport">
         <canvas ref=${cvRef} className="pl-cv"></canvas>
         <div className="pl-labels" ref=${labRef} aria-hidden="true"></div>
+        ${threeFailed&&html`<div className="pl-fail" role="alert">The 3D view could not load. Check your connection and reload the page to try again.</div>`}
         <div className="pl-hint mono">${view==='plan'?'Drag to pan · scroll to zoom · drag a piece to move it':view==='eye'?'Drag to look around · scroll to walk':'Drag to orbit · shift-drag to pan · scroll to zoom · drag a piece to move it'} · R rotate · D duplicate</div>
         <div className="pl-style-tag mono">${style==='material'?'Render · materials and light':style==='clay'?'Clay · massing study':'Line · drafting'} · ${doc.W}×${doc.D} m</div>
       </div>
@@ -2256,7 +2259,7 @@ function Room({ctx}){
       <div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>Render <em style=${{color:'var(--cognac)'}}>brief</em></h2><button className="ib" aria-label="Close" onClick=${()=>setShowPrompt(false)}>${I('x')}</button></div>
       <p className="help" style=${{margin:0}}>Written from your exact layout, materials and light. Use it with a snapshot and the product photos to generate a photoreal render, or send it to the House team to render for you.</p>
       <pre style=${{whiteSpace:'pre-wrap',background:'var(--plaster)',padding:16,borderRadius:12,fontFamily:'var(--mono)',fontSize:12.5,lineHeight:1.6,margin:0,maxHeight:320,overflow:'auto'}}>${prompt}</pre>
-      <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-ink btn-sm" onClick=${()=>copyText(prompt,ctx.toast)}>${I('copy',{width:14})} Copy brief</button><button className="btn btn-line btn-sm" onClick=${()=>{setShowPrompt(false);setShot(E.current.snapshot())}}>${I('cam',{width:14})} Take snapshot</button><button className="btn btn-line btn-sm" onClick=${()=>{ctx.toast('Render request sent to the House team (prototype).');setShowPrompt(false)}}>Request a render from the House</button></div>
+      <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-ink btn-sm" onClick=${()=>copyText(prompt,ctx.toast)}>${I('copy',{width:14})} Copy brief</button><button className="btn btn-line btn-sm" disabled=${!eng} onClick=${()=>{setShowPrompt(false);setShot(E.current.snapshot())}}>${I('cam',{width:14})} Take snapshot</button><button className="btn btn-line btn-sm" onClick=${()=>{ctx.toast('Render request sent to the House team (prototype).');setShowPrompt(false)}}>Request a render from the House</button></div>
     </div></div>`}
   </main>`;
 }

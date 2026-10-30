@@ -1057,8 +1057,9 @@ a.pin-act{text-decoration:none}
 .pl-labels{position:absolute;inset:0;pointer-events:none}
 .pl-lab{position:absolute;transform:translate(-50%,-50%);font:500 11px/1 var(--sans);background:rgba(251,248,242,.92);color:#2B211A;padding:4px 7px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.12)}
 .pl-lab.sel{background:#E8541E;color:#fff}
-.pl-lab.rug{background:transparent;box-shadow:none;color:#8A6B4E;font-family:var(--mono);font-size:10px;letter-spacing:.03em}
-.pl-lab.rug.sel{background:#E8541E;color:#fff}
+.pl-lab.rug{background:var(--card);box-shadow:0 1px 4px rgba(0,0,0,.12);color:var(--ink);font-family:var(--mono);font-size:10px;letter-spacing:.03em}
+.pl-lab.rug.sel{background:var(--cognac);color:var(--onink)}
+.pl-fail{position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;font-size:15px;color:var(--mute)}
 .pl-lab.dim{font-family:var(--mono);background:transparent;box-shadow:none;color:#6B4A33;letter-spacing:.04em}
 .pl-lab.dist{font-family:var(--mono);background:#E8541E;color:#fff;font-size:10px}
 .pl-hint,.pl-style-tag{position:absolute;left:12px;bottom:12px;font-size:10.5px;letter-spacing:.05em;color:#6B5A4C;background:rgba(251,248,242,.85);padding:6px 10px;border-radius:8px;pointer-events:none}
