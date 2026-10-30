@@ -1764,7 +1764,50 @@ const pieceRows=pids=>{const m=new Map();pids.forEach(([pid,hidden])=>{const k=p
 
 /* ================= STUDIO ================= */
 const BGS=[['Plaster','#EFE6D8'],['Sand','#E1D2BB'],['Limewash','#F4EFE6'],['Olive','#6C6948'],['Cognac','#9A5A2E'],['Espresso','#2B211A']];
-const SHAPES=[['rect','Square'],['arch','Arch'],['circle','Circle'],['pill','Pill']];
+const SHAPES=[['rect','Square'],['arch','Arch'],['circle','Circle'],['pill','Pill'],['rounded','Rounded'],['oval','Oval']];
+// Every piece picks one of four looks. Switching keeps its place, size and layer.
+const LOOKS=[['cutout','Seamless cutout','The piece on the board with a soft contact shadow'],['framed','Framed photo','The product photo in a shape, with an optional border'],['3d','3D cutout','A lit model you can turn to any angle'],['room','In the room','On your room photo at true scale']];
+const styleOf=e=>e.style||(e.room?'room':'framed');
+const borderOf=e=>e.border===true||e.border==null?'white':e.border===false?'none':e.border;
+const hasCutout=pid=>pid<100&&has(pid);
+const cutAR=pid=>{const a=CUT_AR[pid];return a?a[0]/a[1]:(byId(pid).ar||1)};
+const frameAR=(shape,ar)=>shape==='circle'?1:shape==='arch'||shape==='oval'?.8:shape==='pill'?.75:ar;
+const elAR=e=>e.kind==='inspo'?frameAR(e.shape,e.ar||1):styleOf(e)==='framed'?frameAR(e.shape,byId(e.pid).ar||1):cutAR(e.pid);
+// In the room, a piece is drawn at its real width against the photo's measured width.
+const lockW=(e,bg)=>{if(e.kind!=='img'||styleOf(e)!=='room'||!bg?.img||!(bg.widthM>0))return null;const cm=APPROX_CM[e.pid]||byId(e.pid).widthCm;return cm?cm/(bg.widthM*100)*100:null};
+const wOf=(e,bg)=>lockW(e,bg)??e.w;
+const BOARD_SHAPES=[['rect','Rectangle'],['rounded','Rounded'],['arch','Arch'],['circle','Circle'],['oval','Oval'],['scallop','Scalloped'],['torn','Torn paper'],['poly','Free shape']];
+const EDGES=[['none','None'],['hairline','Hairline'],['thick','Thick border'],['deckle','Deckled paper'],['shadow','Drop shadow']];
+const EDGE_COLORS=['#FBF8F2','#2B211A','#A65F2C','#6C6948','#AE884C','#E1D2BB'];
+const POLY0=[[.04,.03],[.96,.06],[.97,.95],[.03,.97]];
+const BW=1000,boardH=page=>{const P=pageOf(page);return BW*P[3]/P[2]};
+// The board's outline as one SVG path in a W × H box. The canvas mask, its edge and every export draw from it.
+function boardPath(shape,W,H,poly){
+  const f=n=>+n.toFixed(1);
+  if(shape==='rounded'){const r=Math.min(W,H)*.06;return `M${r} 0H${W-r}A${r} ${r} 0 0 1 ${W} ${r}V${H-r}A${r} ${r} 0 0 1 ${W-r} ${H}H${r}A${r} ${r} 0 0 1 0 ${H-r}V${r}A${r} ${r} 0 0 1 ${r} 0Z`}
+  if(shape==='arch'){const r=W/2,t=Math.min(r,H);return `M0 ${H}V${t}A${r} ${t} 0 0 1 ${W} ${t}V${H}Z`}
+  if(shape==='circle'){const r=Math.min(W,H)/2,cx=W/2,cy=H/2;return `M${cx-r} ${cy}A${r} ${r} 0 1 1 ${cx+r} ${cy}A${r} ${r} 0 1 1 ${cx-r} ${cy}Z`}
+  if(shape==='oval')return `M0 ${H/2}A${W/2} ${H/2} 0 1 1 ${W} ${H/2}A${W/2} ${H/2} 0 1 1 0 ${H/2}Z`;
+  if(shape==='scallop'){const s=W/28;const side=(x0,y0,x1,y1)=>{const L=Math.hypot(x1-x0,y1-y0),n=Math.max(1,Math.round(L/(2*s))),r=L/n/2;let d='';for(let i=1;i<=n;i++)d+=`A${f(r)} ${f(r)} 0 0 1 ${f(x0+(x1-x0)*i/n)} ${f(y0+(y1-y0)*i/n)}`;return d};
+    return `M${s} ${s}${side(s,s,W-s,s)}${side(W-s,s,W-s,H-s)}${side(W-s,H-s,s,H-s)}${side(s,H-s,s,s)}Z`}
+  if(shape==='torn'){const R=rnd(7);const pts=[];const m=Math.min(W,H)*.02;const edge=(x0,y0,x1,y1,nx,ny)=>{const n=Math.max(4,Math.round(Math.hypot(x1-x0,y1-y0)/(W/70)));for(let i=0;i<n;i++){const t=i/n,j=m*(.25+R()*.75);pts.push([x0+(x1-x0)*t+nx*j,y0+(y1-y0)*t+ny*j])}};
+    edge(0,0,W,0,0,1);edge(W,0,W,H,-1,0);edge(W,H,0,H,0,-1);edge(0,H,0,0,1,0);return 'M'+pts.map(p=>f(p[0])+' '+f(p[1])).join('L')+'Z'}
+  if(shape==='poly')return 'M'+(poly&&poly.length>2?poly:POLY0).map(([x,y])=>f(x*W)+' '+f(y*H)).join('L')+'Z';
+  return `M0 0H${W}V${H}H0Z`;
+}
+const maskOf=(shape,W,H,poly)=>{if(!shape||shape==='rect')return {};const u=`url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${W} ${H}' preserveAspectRatio='none'><path d='${boardPath(shape,W,H,poly)}'/></svg>`)}")`;
+  return {WebkitMaskImage:u,maskImage:u,WebkitMaskSize:'100% 100%',maskSize:'100% 100%',WebkitMaskRepeat:'no-repeat',maskRepeat:'no-repeat'}};
+// The edge sits over the board, unmasked: a hairline on the outline, or a border or deckled paper clipped inside it.
+function BoardEdge({doc}){
+  const id=useMemo(()=>'be'+uid(),[]);const W=BW,H=boardH(doc.page);const d=boardPath(doc.shape,W,H,doc.poly);const e=doc.edge;
+  if(!e||e==='none'||e==='shadow')return null;
+  return html`<svg className="sx-edge" viewBox=${`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+    <defs><clipPath id=${id+'c'}><path d=${d}/></clipPath>${e==='deckle'&&html`<filter id=${id+'f'}><feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="3" seed="3"/><feDisplacementMap in="SourceGraphic" scale="14"/></filter>`}</defs>
+    ${e==='hairline'&&html`<path d=${d} fill="none" stroke="#2B211A" strokeWidth="2.5"/>`}
+    ${e==='thick'&&html`<path d=${d} fill="none" stroke=${doc.edgeColor||'#FBF8F2'} strokeWidth="44" clipPath=${`url(#${id}c)`}/>`}
+    ${e==='deckle'&&html`<g clipPath=${`url(#${id}c)`}><path d=${d} fill="none" stroke="#FBF8F2" strokeWidth="56" filter=${`url(#${id}f)`}/></g>`}
+  </svg>`;
+}
 // Three ways to lay out a composed board, so Compose can offer drafts to choose between.
 const LAYOUTS=[
   [[6,8,52,-3,'arch'],[52,4,42,2,'rect'],[44,40,34,-1.5,'circle'],[6,54,40,2.5,'rect'],[60,66,30,-2,'pill'],[30,74,24,3,'rect']],
@@ -1772,13 +1815,13 @@ const LAYOUTS=[
   [[22,3,56,0,'arch'],[4,52,30,-2,'circle'],[66,52,30,2,'circle'],[37,63,26,0,'rect'],[84,4,12,0,'pill'],[4,4,12,0,'pill']],
 ];
 const SLOTS=LAYOUTS[0];
-function mkImg(pid,i=0,mode='collage',L=SLOTS){const s=L[i%L.length];return {id:uid(),kind:'img',pid,x:s[0],y:s[1],w:s[2],rot:mode==='room'?0:s[3],shape:mode==='room'?'rect':s[4],border:mode!=='room',motion:false,tone:'none',locked:false,hidden:false,room:mode==='room'}}
-function mkInspo(x){return {id:uid(),kind:'inspo',src:x.src,ar:x.ar||1,title:x.title,x:6,y:6,w:48,rot:-2,shape:'rect',border:true,motion:false,tone:'none',locked:false,hidden:false}}
+function mkImg(pid,i=0,mode='collage',L=SLOTS,style){const s=L[i%L.length];const st=style||(mode==='room'?'room':'framed');return {id:uid(),kind:'img',pid,x:s[0],y:s[1],w:s[2],rot:st==='framed'?s[3]:0,shape:s[4],border:'white',style:st,shadow:st==='room'?'floor':'soft',flip:false,motion:false,tone:'none',locked:false,hidden:false}}
+function mkInspo(x){return {id:uid(),kind:'inspo',src:x.src,ar:x.ar||1,title:x.title,x:6,y:6,w:48,rot:-2,shape:'rect',border:'white',motion:false,tone:'none',locked:false,hidden:false}}
 function mkText(t,x=8,y=84,size=7.5){return {id:uid(),kind:'text',text:t,x,y,w:70,rot:0,size,font:'display',color:'#2B211A',locked:false,hidden:false}}
 function compose(prompt,mode,v=0){
   const ps=matchPrompt(prompt).slice(0,5+(v>1?1:0));const base=ps.length?ps:SPACES.cafe.picks.map(byId);
   const use=v===1?[...base].reverse():v===2?[...base.slice(1),base[0]]:base;
-  const els=use.map((p,i)=>mkImg(p.id,i,mode,LAYOUTS[v%LAYOUTS.length]));
+  const els=use.map((p,i)=>mkImg(p.id,i,mode,LAYOUTS[v%LAYOUTS.length],mode==='room'?'room':v===1?'cutout':'framed'));
   const tones=[...new Set(use.map(p=>p.tone))].slice(0,4);
   tones.forEach((c,i)=>els.push({id:uid(),kind:'swatch',color:c,x:70+i*6.5,y:90,w:5.5,rot:0,locked:false,hidden:false}));
   els.push(mkText(prompt.charAt(0).toUpperCase()+prompt.slice(1),6,88,5.2));
@@ -1787,17 +1830,22 @@ function compose(prompt,mode,v=0){
 const toneF={none:'none',warm:'sepia(.25) saturate(1.1)',mono:'grayscale(1) contrast(1.05)',dusk:'brightness(.85) sepia(.3) hue-rotate(-8deg)'};
 const nameOf=e=>e.kind==='img'?byId(e.pid).name:e.kind==='inspo'?'Inspo · '+e.title:e.kind==='text'?e.text:'Swatch';
 // What an item looks like on a board. Sizes are in container units, so the same markup draws the canvas and its previews.
+const cropStyle=c=>c?{objectPosition:`${c.x}% ${c.y}%`,transform:`scale(${c.z})`,transformOrigin:`${c.x}% ${c.y}%`}:{};
 function ElView({e}){
-  if(e.kind==='img')return html`<div className=${'cut shape-'+e.shape+(e.border?' bd':'')+(e.room?' room':'')+(e.motion?' float':'')} style=${{aspectRatio:e.shape==='circle'?'1':e.shape==='arch'?'4/5':e.shape==='pill'?'3/4':byId(e.pid).ar}}><img src=${byId(e.pid).img} alt=${byId(e.pid).name} draggable="false" style=${{filter:toneF[e.tone]}}/></div>`;
-  if(e.kind==='inspo')return html`<div className=${'cut shape-'+e.shape+(e.border?' bd':'')+(e.motion?' float':'')} style=${{aspectRatio:e.shape==='circle'?'1':e.shape==='arch'?'4/5':e.shape==='pill'?'3/4':e.ar}}><img src=${e.src} alt=${e.title} draggable="false" style=${{filter:toneF[e.tone]}}/></div>`;
+  if(e.kind==='img'){const p=byId(e.pid);const st=styleOf(e);
+    if(st==='framed')return html`<div className=${'cut shape-'+e.shape+' bd-'+borderOf(e)+(e.motion?' float':'')} style=${{aspectRatio:elAR(e)}}><img src=${p.img} alt=${p.name} draggable="false" style=${{filter:toneF[e.tone],...cropStyle(e.crop)}}/></div>`;
+    return html`<div className=${'cutout sh-'+(e.shadow||(st==='room'?'floor':'soft'))+(hasCutout(e.pid)?'':' nocut')+(e.motion?' float':'')} style=${{aspectRatio:elAR(e)}}><img src=${cut(e.pid)} alt=${p.name} draggable="false" style=${{filter:toneF[e.tone],transform:e.flip?'scaleX(-1)':undefined}}/></div>`}
+  if(e.kind==='inspo')return html`<div className=${'cut shape-'+e.shape+' bd-'+borderOf(e)+(e.motion?' float':'')} style=${{aspectRatio:elAR(e)}}><img src=${e.src} alt=${e.title} draggable="false" style=${{filter:toneF[e.tone],...cropStyle(e.crop)}}/></div>`;
   if(e.kind==='text')return html`<div className="tx" style=${{fontFamily:`var(--${e.font})`,fontStyle:e.font==='display'?'italic':'normal',color:e.color,fontSize:e.size+'cqw',textTransform:e.font==='mono'?'uppercase':'none',letterSpacing:e.font==='mono'?'.08em':'-.01em'}}>${e.text}</div>`;
   return html`<div className="sw-shape" style=${{background:e.color,borderRadius:'50%',boxShadow:'0 0 0 .6cqw #FFFDF9'}}></div>`;
 }
-const elStyle=(e,i)=>({left:e.x+'%',top:e.y+'%',width:e.kind==='text'?'auto':e.w+'%',maxWidth:e.kind==='text'?'88%':'none',transform:`rotate(${e.rot}deg)`,zIndex:i});
+// A photo without a true cutout multiplies onto the board, so its white studio ground disappears.
+const blends=e=>e.kind==='img'&&styleOf(e)!=='framed'&&!hasCutout(e.pid);
+const elStyle=(e,i,bg)=>({left:e.x+'%',top:e.y+'%',width:e.kind==='text'?'auto':wOf(e,bg)+'%',maxWidth:e.kind==='text'?'88%':'none',transform:`rotate(${e.rot}deg)`,zIndex:i});
 const bgStyle=bg=>bg.img?{backgroundImage:`url(${bg.img})`}:{backgroundColor:bg.color};
 // A read-only board, for Compose drafts and Ideas previews.
-function BoardPreview({els,bg,page}){const P=pageOf(page);
-  return html`<div className=${'canvas sx-preview'+(bg.grid&&!bg.img?' grid':'')} style=${{...bgStyle(bg),aspectRatio:`${P[2]}/${P[3]}`}}>${els.map((e,i)=>e.hidden?null:html`<div key=${e.id} className="el" style=${elStyle(e,i)}><${ElView} e=${e}/></div>`)}</div>`;
+function BoardPreview({els,bg,page,shape,poly}){const P=pageOf(page);
+  return html`<div className=${'canvas sx-preview'+(bg.grid&&!bg.img?' grid':'')} style=${{...bgStyle(bg),aspectRatio:`${P[2]}/${P[3]}`,...maskOf(shape,BW,boardH(page),poly)}}>${els.map((e,i)=>e.hidden?null:html`<div key=${e.id} className=${'el'+(blends(e)?' blend':'')} style=${elStyle(e,i,bg)}><${ElView} e=${e}/></div>`)}</div>`;
 }
 const SAMPLE=()=>[mkImg(2,0),mkImg(12,1),mkImg(9,2),mkImg(13,3),mkText('A corner for slow mornings',6,86,4.6)];
 const SNAP=.8;
@@ -1819,21 +1867,22 @@ const ZMIN=.25,ZMAX=4;
 function Studio({ctx}){
   const seed=ctx.studioSeed;
   const [doc,setDoc]=useState(()=>{
-    const base={id:uid(),title:seed?.title||'New collage',mode:seed?.mode||'collage',page:'portrait',bg:seed?.bg?{img:seed.bg}:{color:'#EFE6D8',grid:true}};
-    if(seed?.collage)return {page:'portrait',mode:'collage',bg:{color:'#EFE6D8',grid:true},...seed.collage,id:seed.collage.id||uid()};
+    const base={id:uid(),title:seed?.title||'New collage',mode:seed?.mode||'collage',page:'portrait',shape:'rect',edge:'shadow',bg:seed?.bg?{img:seed.bg}:{color:'#EFE6D8',grid:true}};
+    if(seed?.collage)return {page:'portrait',mode:'collage',shape:'rect',edge:'shadow',bg:{color:'#EFE6D8',grid:true},...seed.collage,id:seed.collage.id||uid()};
     if(seed?.prompt)return {...base,els:compose(seed.prompt,seed?.mode)};
     if(seed?.inspo)return {...base,els:[mkInspo(seed.inspo),...(seed.ids||[]).map((id,i)=>mkImg(id,i+1))]};
     if(seed?.ids)return {...base,els:seed.ids.map((id,i)=>mkImg(id,i,seed.mode))};
     const last=ctx.collages.find(c=>c.id&&c.id===load('collage',null));
-    if(last)return {page:'portrait',mode:'collage',...last,...(seed?.view?{mode:seed.view}:{})};
+    if(last)return {page:'portrait',mode:'collage',shape:'rect',edge:'shadow',...last,...(seed?.view?{mode:seed.view}:{})};
     return {...base,...(seed?.view?{mode:seed.view}:{}),els:SAMPLE()};
   });
   const {els,bg,mode,page,title}=doc;
-  const [sel,setSel]=useState(null);const [drawer,setDrawer]=useState(null);const [pop,setPop]=useState(null);
+  // Several items can be selected (Shift-click); the last one picked leads.
+  const [sels,setSels]=useState([]);const sel=sels[sels.length-1]||null;const setSel=id=>setSels(id?[id]:[]);const [drawer,setDrawer]=useState(null);const [pop,setPop]=useState(null);
   const [tab,setTab]=useState('pieces');const [pq,setPq]=useState('');const [pf,setPf]=useState('all');
   const [share,setShare]=useState(false);const [traySheet,setTraySheet]=useState(false);const [composeOpen,setComposeOpen]=useState(false);const [idea,setIdea]=useState(null);
   const [dragL,setDragL]=useState(null);const [overL,setOverL]=useState(null);
-  const [zoom,setZoom]=useState(1);const [fitW,setFitW]=useState(480);const [guides,setGuides]=useState(null);const [box,setBox]=useState(null);
+  const [polyEdit,setPolyEdit]=useState(false);const [zoom,setZoom]=useState(1);const [fitW,setFitW]=useState(480);const [guides,setGuides]=useState(null);const [box,setBox]=useState(null);
   const [saved,setSaved]=useState('Saved');
   const hist=useRef({past:[],future:[]});const [steps,setSteps]=useState(0);const docRef=useRef(doc);docRef.current=doc;
   const canvasRef=useRef();const stageRef=useRef();const wrapRef=useRef();const bgRef=useRef();const dirty=useRef(false);
@@ -1845,8 +1894,13 @@ function Studio({ctx}){
   const redo=()=>{const h=hist.current;if(!h.future.length)return;h.past.push(docRef.current);dirty.current=true;setDoc(h.future.pop());setSteps(s=>s+1)};
   const setTitle=t=>{dirty.current=true;setDoc(d=>({...d,title:t.slice(0,TITLE_MAX)}))};
   const setBg=b=>commitDoc({...docRef.current,bg:b});
-  const S=els.find(e=>e.id===sel);
+  const S=sels.length===1?els.find(e=>e.id===sel):null;const multi=sels.length>1;
+  useEffect(()=>setPop(null),[sels.join()]);
   const patch=(id,o)=>commit(els.map(e=>e.id===id?{...e,...o}:e));
+  const patchMany=(ids,f)=>commit(els.map(e=>ids.includes(e.id)?{...e,...f(e)}:e));
+  const groupOf=id=>{const e=els.find(x=>x.id===id);return e?.g?els.filter(x=>x.g===e.g).map(x=>x.id):[id]};
+  const pick=(id,shift)=>{const g=groupOf(id);if(shift){setSels(s=>s.includes(id)?s.filter(x=>!g.includes(x)):[...s.filter(x=>!g.includes(x)),...g.filter(x=>x!==id),id]);return}
+    if(!(sels.includes(id)&&sels.length>1))setSels([...g.filter(x=>x!==id),id])};
   const live=(id,o)=>setDoc(d=>({...d,els:d.els.map(e=>e.id===id?{...e,...o}:e)}));
   // Autosave every change to the account (or this device when signed out).
   useEffect(()=>{store('collage',doc.id);if(!dirty.current)return;setSaved('Saving…');const t=setTimeout(()=>{ctx.saveCollage(docRef.current,true);setSaved('Saved')},600);return()=>clearTimeout(t)},[doc]);
@@ -1865,54 +1919,82 @@ function Studio({ctx}){
   const zoomRef=useRef(zoom);zoomRef.current=zoom;
   const drag=useRef(null);
   const boxOf=n=>{const c=canvasRef.current;return {x:n.offsetLeft/c.offsetWidth*100,y:n.offsetTop/c.offsetHeight*100,w:n.offsetWidth/c.offsetWidth*100,h:n.offsetHeight/c.offsetHeight*100}};
-  const onDown=(e,el,kind='move')=>{e.stopPropagation();setSel(el.id);setPop(null);if(el.locked||e.button>0)return;
+  const onDown=(e,el,kind='move')=>{e.stopPropagation();setPop(null);if(e.shiftKey&&kind==='move'){pick(el.id,true);return}pick(el.id,false);if(el.locked||e.button>0)return;
+    const ids=kind==='move'?(sels.includes(el.id)&&sels.length>1?sels:groupOf(el.id)):[el.id];
     const r=canvasRef.current.getBoundingClientRect();const node=e.currentTarget.closest('.el');const nr=node.getBoundingClientRect();
-    const others=[...canvasRef.current.querySelectorAll('.el')].filter(n=>n!==node).map(boxOf);const me=boxOf(node);
-    const d={kind,id:el.id,sx:e.clientX,sy:e.clientY,o:{...el},me,r,cx:nr.left+nr.width/2,cy:nr.top+nr.height/2,snap:docRef.current,moved:false};
+    const others=[...canvasRef.current.querySelectorAll('.el')].filter(n=>!ids.includes(n.dataset.id)).map(boxOf);const me=boxOf(node);
+    const orig=Object.fromEntries(docRef.current.els.filter(x=>ids.includes(x.id)&&!x.locked).map(x=>[x.id,[x.x,x.y]]));
+    const d={kind,id:el.id,ids,orig,sx:e.clientX,sy:e.clientY,o:{...el},me,r,cx:nr.left+nr.width/2,cy:nr.top+nr.height/2,snap:docRef.current,moved:false};
     d.move=ev=>{const dx=(ev.clientX-d.sx)/d.r.width*100,dy=(ev.clientY-d.sy)/d.r.height*100;if(!d.moved&&Math.hypot(ev.clientX-d.sx,ev.clientY-d.sy)<3)return;d.moved=true;
-      if(d.kind==='move'){let x=d.o.x+dx,y=d.o.y+dy;if(!ev.altKey){const s=snapBox({x,y,w:d.me.w,h:d.me.h},others);x=s.x;y=s.y;setGuides(s.gx.length||s.gy.length||s.gap?s:null)}else setGuides(null);live(d.id,{x,y});return}
-      if(d.kind==='rs'){if(d.o.kind==='text')live(d.id,{size:Math.max(2,d.o.size*(1+dx/40))});else live(d.id,{w:Math.max(5,d.o.w+dx)});return}
+      if(d.kind==='move'){let x=d.me.x+dx,y=d.me.y+dy;if(!ev.altKey){const s=snapBox({x,y,w:d.me.w,h:d.me.h},others);x=s.x;y=s.y;setGuides(s.gx.length||s.gy.length||s.gap?s:null)}else setGuides(null);
+        const ddx=x-d.me.x,ddy=y-d.me.y;setDoc(dd=>({...dd,els:dd.els.map(q=>d.orig[q.id]?{...q,x:d.orig[q.id][0]+ddx,y:d.orig[q.id][1]+ddy}:q)}));return}
+      if(d.kind==='rs'){if(d.o.kind==='text')live(d.id,{size:Math.max(2,d.o.size*(1+dx/40))});else if(!lockW(d.o,docRef.current.bg))live(d.id,{w:Math.max(5,d.o.w+dx)});return}
       if(d.kind==='rot'){const a=Math.atan2(ev.clientY-d.cy,ev.clientX-d.cx)*180/Math.PI+90;live(d.id,{rot:ev.altKey?Math.round(a):Math.round(a/15)*15})}};
     d.up=()=>{removeEventListener('pointermove',d.move);setGuides(null);if(d.moved)record(d.snap);drag.current=null};
     d.cancel=()=>{removeEventListener('pointermove',d.move);setGuides(null);setDoc(d.snap);drag.current=null};
     drag.current=d;addEventListener('pointermove',d.move);addEventListener('pointerup',d.up,{once:true})};
   // Keep the selection bar beside the selected item as it moves, zooms or scrolls.
-  useLayoutEffect(()=>{const n=sel&&canvasRef.current?.querySelector(`[data-id="${sel}"]`);const w=wrapRef.current;if(!n||!w){setBox(null);return}
-    const a=n.getBoundingClientRect(),b=w.getBoundingClientRect();const nb={l:a.left-b.left,t:a.top-b.top,w:a.width,h:a.height,W:b.width};
+  useLayoutEffect(()=>{const ns=sels.map(id=>canvasRef.current?.querySelector(`[data-id="${id}"]`)).filter(Boolean);const w=wrapRef.current;if(!ns.length||!w){setBox(null);return}
+    const rs=ns.map(n=>n.getBoundingClientRect());const a={left:Math.min(...rs.map(r=>r.left)),top:Math.min(...rs.map(r=>r.top))};a.width=Math.max(...rs.map(r=>r.right))-a.left;a.height=Math.max(...rs.map(r=>r.bottom))-a.top;
+    const b=w.getBoundingClientRect();const nb={l:a.left-b.left,t:a.top-b.top,w:a.width,h:a.height,W:b.width};
     setBox(o=>o&&o.l===nb.l&&o.t===nb.t&&o.w===nb.w&&o.h===nb.h&&o.W===nb.W?o:nb)});
   const [,bump]=useState(0);useEffect(()=>{const st=stageRef.current;if(!st)return;const f=()=>bump(n=>n+1);st.addEventListener('scroll',f);addEventListener('resize',f);return()=>{st.removeEventListener('scroll',f);removeEventListener('resize',f)}},[]);
   const centreOf=()=>({x:50,y:42});
   const addEl=n=>{commit([...els,n]);setSel(n.id)};
-  const addProduct=(pid,at)=>{const n=mkImg(pid,els.filter(e=>e.kind==='img').length,mode);n.w=Math.min(n.w,38);const c=at||centreOf();n.x=Math.max(0,Math.min(100-n.w,c.x-n.w/2));n.y=Math.max(0,Math.min(92,c.y-n.w*.4));if(!at)n.rot=0;addEl(n)};
+  const addProduct=(pid,at)=>{const n=mkImg(pid,els.filter(e=>e.kind==='img').length,mode,SLOTS,mode==='room'?'room':'cutout');n.w=Math.min(n.w,38);const c=at||centreOf();n.x=Math.max(0,Math.min(100-n.w,c.x-n.w/2));n.y=Math.max(0,Math.min(92,c.y-n.w*.4));if(!at)n.rot=0;addEl(n)};
   const dropOnCanvas=e=>{e.preventDefault();const pid=+e.dataTransfer.getData('text/pid');if(!pid||!has(pid))return;const r=canvasRef.current.getBoundingClientRect();addProduct(pid,{x:(e.clientX-r.left)/r.width*100,y:(e.clientY-r.top)/r.height*100})};
   const layers=[...els].map((e,i)=>({e,i})).reverse();
   const arrange=(id,to)=>{const a=[...els];const i=a.findIndex(e=>e.id===id);const [m]=a.splice(i,1);const j=to==='front'?a.length:to==='back'?0:Math.max(0,Math.min(a.length,i+(to==='fwd'?1:-1)));a.splice(j,0,m);commit(a)};
   const dropLayer=(fromId,toId)=>{if(!fromId||fromId===toId)return;const a=[...els];const f=a.findIndex(e=>e.id===fromId);const [m]=a.splice(f,1);const t=a.findIndex(e=>e.id===toId);a.splice(t+1,0,m);commit(a)};
-  const dup=()=>{if(!S)return;const n={...S,id:uid(),x:S.x+4,y:S.y+4};addEl(n)};
-  const del=()=>{if(!S)return;commit(els.filter(x=>x.id!==S.id));setSel(null)};
+  const dup=()=>{if(!sels.length)return;const gs={};const copies=els.filter(e=>sels.includes(e.id)).map(e=>({...e,id:uid(),x:e.x+4,y:e.y+4,g:e.g?(gs[e.g]||=uid()):undefined}));commit([...els,...copies]);setSels(copies.map(c=>c.id))};
+  const del=()=>{if(!sels.length)return;commit(els.filter(x=>!sels.includes(x.id)));setSels([])};
+  const group=()=>{const g=uid();patchMany(sels,()=>({g}))};const ungroup=()=>patchMany(sels,()=>({g:undefined}));
+  const grouped=multi&&els.filter(e=>sels.includes(e.id)).every((e,_,a)=>e.g&&e.g===a[0].g);
+  // Align and distribute measure each item's laid-out box, so text and rotated pieces line up as they look.
+  const boxesOf=ids=>ids.map(id=>{const n=canvasRef.current?.querySelector(`[data-id="${id}"]`);return n?{id,...boxOf(n)}:null}).filter(Boolean);
+  const align=k=>{const bs=boxesOf(sels);if(bs.length<2)return;const L=Math.min(...bs.map(b=>b.x)),T=Math.min(...bs.map(b=>b.y)),Rr=Math.max(...bs.map(b=>b.x+b.w)),B=Math.max(...bs.map(b=>b.y+b.h));
+    const at=Object.fromEntries(bs.map(b=>[b.id,k==='left'?{x:L}:k==='centre'?{x:(L+Rr)/2-b.w/2}:k==='right'?{x:Rr-b.w}:k==='top'?{y:T}:k==='middle'?{y:(T+B)/2-b.h/2}:{y:B-b.h}]));
+    commit(els.map(e=>at[e.id]&&!e.locked?{...e,...at[e.id]}:e))};
+  const distribute=axis=>{const bs=boxesOf(sels);if(bs.length<3)return;const X=axis==='x';bs.sort((a,b)=>X?a.x-b.x:a.y-b.y);const first=bs[0],last=bs[bs.length-1];
+    const span=X?last.x+last.w-first.x:last.y+last.h-first.y;const sum=bs.reduce((s,b)=>s+(X?b.w:b.h),0);const gap=(span-sum)/(bs.length-1);let p=X?first.x:first.y;const at={};
+    bs.forEach(b=>{at[b.id]=X?{x:p}:{y:p};p+=(X?b.w:b.h)+gap});commit(els.map(e=>at[e.id]&&!e.locked?{...e,...at[e.id]}:e))};
+  // Switch a piece's look, keeping its centre where it was.
+  const restyle=(e,st)=>{const k=pageOf(docRef.current.page);const ratio=k[2]/k[3];const n={...e,style:st,shadow:st==='room'?'floor':e.shadow==='floor'?'soft':e.shadow};if(st!=='framed')n.rot=0;
+    const w0=wOf(e,bg),w1=wOf(n,bg);n.x=e.x+(w0-w1)/2;n.y=e.y+(w0*ratio/elAR(e)-w1*ratio/elAR(n))/2;return n};
   useEffect(()=>{const k=e=>{const tag=document.activeElement?.tagName;if(['INPUT','TEXTAREA','SELECT'].includes(tag))return;
     if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo();return}
     if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='d'){e.preventDefault();dup();return}
-    if(e.key==='Escape'){if(pop)setPop(null);else if(sel)setSel(null);else setDrawer(null);return}
+    if(e.key==='Escape'){if(pop)setPop(null);else if(sels.length)setSels([]);else setDrawer(null);return}
+    if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='a'){e.preventDefault();setSels(els.filter(x=>!x.hidden).map(x=>x.id));return}
+    if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='g'){e.preventDefault();if(e.shiftKey)ungroup();else if(multi)group();return}
     if(e.key==='0'&&!e.metaKey&&!e.ctrlKey){zoomTo(1);return}
     if((e.key==='+'||e.key==='=')&&!e.metaKey&&!e.ctrlKey){zoomTo(zoomRef.current*1.25);return}
     if(e.key==='-'&&!e.metaKey&&!e.ctrlKey){zoomTo(zoomRef.current/1.25);return}
-    if(!S)return;
+    if(!sels.length)return;
     if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();del();return}
-    const st=e.shiftKey?2:.5;const mv={ArrowLeft:[-st,0],ArrowRight:[st,0],ArrowUp:[0,-st],ArrowDown:[0,st]}[e.key];if(mv&&!S.locked){e.preventDefault();patch(S.id,{x:S.x+mv[0],y:S.y+mv[1]})}};
+    const st=e.shiftKey?2:.5;const mv={ArrowLeft:[-st,0],ArrowRight:[st,0],ArrowUp:[0,-st],ArrowDown:[0,st]}[e.key];if(mv){e.preventDefault();commit(els.map(x=>sels.includes(x.id)&&!x.locked?{...x,x:x.x+mv[0],y:x.y+mv[1]}:x))}};
     addEventListener('keydown',k);return()=>removeEventListener('keydown',k)});
   const pieces=els.filter(e=>e.kind==='img'&&!e.hidden).map(e=>byId(e.pid));
   const total=pieces.reduce((s,p)=>s+pr(p,ctx.mode),0);
   const rows=pieceRows(els.filter(e=>e.kind==='img').map(e=>[e.pid,e.hidden]));
   const openNew=(next,msg)=>{const prev=docRef.current;hist.current={past:[],future:[]};setSteps(0);dirty.current=true;setDoc({id:uid(),page:prev.page,mode:prev.mode,bg:prev.bg,...next});setSel(null);ctx.toast(msg,{label:'Back to '+prev.title,fn:()=>{dirty.current=false;setDoc(prev)}})};
-  const onView=k=>{if(k==='3d'){ctx.setRoomSeed(pieces.map(p=>p.id));ctx.go('room');return}commitDoc({...doc,mode:k,els:els.map(x=>x.kind==='img'?{...x,room:k==='room',border:k==='room'?false:x.border}:x)})};
+  // Room view puts every piece on the room photo at true scale; Collage brings room pieces back as cutouts.
+  const onView=k=>{if(k==='3d'){ctx.setRoomSeed(pieces.map(p=>p.id));ctx.go('room');return}
+    commitDoc({...doc,mode:k,els:els.map(x=>x.kind!=='img'?x:k==='room'?(styleOf(x)==='room'?x:restyle(x,'room')):(styleOf(x)==='room'?restyle(x,'cutout'):x))});
+    if(k==='room'&&!bg.img){setDrawer('bg');ctx.toast('Add a photo of your space to see the pieces in it')}};
   const pickRail=k=>{setPop(null);if(k==='compose'){setComposeOpen(true);return}setDrawer(d=>d===k?null:k)};
+  const W0=BW,H0=boardH(page);
+  const dragPoint=(e,i)=>{e.stopPropagation();e.preventDefault();const r=canvasRef.current.getBoundingClientRect();const snap=docRef.current;const pts=[...(snap.poly||POLY0)];
+    const mv=ev=>{pts[i]=[Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width)),Math.max(0,Math.min(1,(ev.clientY-r.top)/r.height))];setDoc(d=>({...d,shape:'poly',poly:[...pts]}))};
+    const up=()=>{removeEventListener('pointermove',mv);record(snap)};addEventListener('pointermove',mv);addEventListener('pointerup',up,{once:true})};
+  const addPoint=()=>{const p=[...(doc.poly||POLY0)];let best=0,bl=0;p.forEach((a,i)=>{const b=p[(i+1)%p.length];const l=Math.hypot((b[0]-a[0])*W0,(b[1]-a[1])*H0);if(l>bl){bl=l;best=i}});const a=p[best],b=p[(best+1)%p.length];p.splice(best+1,0,[(a[0]+b[0])/2,(a[1]+b[1])/2]);commitDoc({...doc,shape:'poly',poly:p})};
   const MATS={...MAT,wood:'Wood'};const types=[...new Set(PRODUCTS.map(p=>p.type))];const mats=[...new Set(PRODUCTS.map(p=>p.mat))];
   const filters=[['all','All'],...types.map(t=>['t:'+t,TYPE[t]||t[0].toUpperCase()+t.slice(1)+'s']),...mats.map(m=>['m:'+m,MATS[m]||m])];
   const prods=PRODUCTS.filter(p=>(pf==='all'||pf==='t:'+p.type||pf==='m:'+p.mat)&&(p.name+' '+p.line+' '+p.mat+' '+p.type).toLowerCase().includes(pq.toLowerCase()));
-  const kindName=S?(S.kind==='img'?'piece':S.kind==='inspo'?'image':S.kind):'';
-  const selItems=!S?[]:[
-    ...(S.kind==='img'||S.kind==='inspo'?[['style','Style'],['shape','Shape'],['tone','Tone']]:[]),
+  const kindName=multi?`${sels.length} items`:S?(S.kind==='img'?'piece':S.kind==='inspo'?'image':S.kind):'';
+  const framedSel=S&&(S.kind==='inspo'||(S.kind==='img'&&styleOf(S)==='framed'));
+  const selItems=multi?[['align','Align'],...(sels.length>2?[['distribute','Distribute']]:[])]:!S?[]:[
+    ...(S.kind==='img'?[['style','Style']]:[]),...(framedSel?[['shape','Shape'],['crop','Crop']]:[]),...(S.kind==='img'||S.kind==='inspo'?[['tone','Tone']]:[]),
     ...(S.kind==='text'?[['text','Text'],['font','Type'],['color','Colour']]:[]),
     ...(S.kind==='swatch'?[['color','Colour']]:[]),
     ['arrange','Arrange']];
@@ -1928,7 +2010,7 @@ function Studio({ctx}){
           <button className="pop-item" data-close onClick=${()=>openNew({title:'New collage',els:[],mode:'collage',bg:{color:'#EFE6D8',grid:true}},'New collage started')}>${I('plus',{width:16})} New collage</button></div>
       <//>
     <//>
-    <${SxRail} items=${[['add','Add','plus'],['layers','Layers','layers'],['bg','Background','frame'],['compose','Compose','wand']]} open=${drawer} onPick=${pickRail}/>
+    <${SxRail} items=${[['add','Add','plus'],['layers','Layers','layers'],['board','Board','board'],['bg','Background','img'],['compose','Compose','wand']]} open=${drawer} onPick=${pickRail}/>
     ${drawer==='add'&&html`<${SxDrawer} title="Add" onClose=${()=>setDrawer(null)}>
       <div className="row" style=${{gap:6}}>
         <button className="btn btn-line btn-sm" onClick=${()=>addEl(mkText('Add a title',10,10,7))}>${I('text',{width:15})} Text</button>
@@ -1942,58 +2024,89 @@ function Studio({ctx}){
       ${tab==='inspo'&&html`<${React.Fragment}><p className="sx-note">Inspo carries no price or link and never counts in the total. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Library</button></p>
         ${ctx.inspo.length?html`<div className="sx-grid">${ctx.inspo.map(x=>html`<button key=${x.id} className="sx-card" onClick=${()=>addEl({...mkInspo(x),x:26,y:20,w:44,rot:0})} title=${'Add '+x.title}><span className="sx-card-i photo"><img src=${x.src} alt="" loading="lazy"/></span><b>${x.title}</b></button>`)}</div>`
           :html`<p className="sx-note">No inspo yet. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Upload inspiration</button></p>`}<//>`}
-      ${tab==='boards'&&html`<${React.Fragment}><p className="sx-note">Adds to the canvas; never replaces it.</p>${ctx.boards.map(b=>html`<div key=${b.id} className="sx-board"><div className="row" style=${{justifyContent:'space-between'}}><b>${b.title}</b><button className="lnk" disabled=${!b.pins.length} onClick=${()=>{commit([...els,...b.pins.slice(0,6).map((x,i)=>mkImg(x.pid,i+els.length,mode))]);ctx.toast(`${Math.min(6,b.pins.length)} pieces added`)}}>Add all</button></div>
+      ${tab==='boards'&&html`<${React.Fragment}><p className="sx-note">Adds to the canvas; never replaces it.</p>${ctx.boards.map(b=>html`<div key=${b.id} className="sx-board"><div className="row" style=${{justifyContent:'space-between'}}><b>${b.title}</b><button className="lnk" disabled=${!b.pins.length} onClick=${()=>{commit([...els,...b.pins.slice(0,6).map((x,i)=>mkImg(x.pid,i+els.length,mode,SLOTS,mode==='room'?'room':'cutout'))]);ctx.toast(`${Math.min(6,b.pins.length)} pieces added`)}}>Add all</button></div>
         <div className="sx-grid three">${b.pins.map(x=>html`<button key=${x.pid} className="sx-card" onClick=${()=>addProduct(x.pid)} title=${'Add '+byId(x.pid).name}><span className="sx-card-i"><img src=${cut(x.pid)} alt="" loading="lazy"/></span></button>`)}</div></div>`)}<//>`}
       ${tab==='ideas'&&html`${COMMUNITY.length?html`<div className="sx-grid">${COMMUNITY.map(b=>html`<button key=${b.id} className="sx-card" onClick=${()=>setIdea(b)}><span className="sx-card-i photo" style=${{backgroundImage:`url(${byId(b.items[0]).img})`,backgroundSize:'cover'}}></span><b>${b.title}</b><span>${b.by}</span></button>`)}</div>`
         :html`<p className="sx-note">Community boards appear here as members share them. Compose a board of your own from the wand in the rail.</p>`}`}
     <//>`}
     ${drawer==='layers'&&html`<${SxDrawer} title="Layers" onClose=${()=>setDrawer(null)}>
-      <p className="sx-note">Top of the list is in front. Drag to reorder.</p>
-      <div className="sx-layers">${layers.map(({e})=>html`<div key=${e.id} className=${'layer sx-layer'+(sel===e.id?' on':'')+(overL===e.id?' drop':'')} draggable="true" onDragStart=${()=>setDragL(e.id)} onDragOver=${ev=>{ev.preventDefault();setOverL(e.id)}} onDragLeave=${()=>setOverL(null)} onDrop=${()=>{dropLayer(dragL,e.id);setOverL(null)}} onClick=${()=>setSel(e.id)}>
+      <p className="sx-note">Top of the list is in front. Drag to reorder; Shift-click to select several.</p>
+      <div className="sx-layers">${layers.map(({e})=>html`<div key=${e.id} className=${'layer sx-layer'+(sels.includes(e.id)?' on':'')+(overL===e.id?' drop':'')} draggable="true" onDragStart=${()=>setDragL(e.id)} onDragOver=${ev=>{ev.preventDefault();setOverL(e.id)}} onDragLeave=${()=>setOverL(null)} onDrop=${()=>{dropLayer(dragL,e.id);setOverL(null)}} onClick=${ev=>pick(e.id,ev.shiftKey)}>
         <span className="th" style=${e.kind==='img'?{backgroundImage:`url(${cut(e.pid)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat'}:e.kind==='inspo'?{backgroundImage:`url(${e.src})`}:e.kind==='swatch'?{background:e.color}:{}}>${e.kind==='text'?'T':''}</span>
-        <span style=${{opacity:e.hidden?.45:1}}>${nameOf(e)}</span>
+        <span style=${{opacity:e.hidden?.45:1}}>${nameOf(e)}${e.g&&html` <small className="sx-gtag">Group</small>`}</span>
         <button className=${'ib'+(e.hidden?' keep':'')} aria-label=${e.hidden?'Show layer':'Hide layer'} onClick=${ev=>{ev.stopPropagation();patch(e.id,{hidden:!e.hidden})}}>${I(e.hidden?'eyeoff':'eye')}</button>
         <button className=${'ib'+(e.locked?' keep':'')} aria-label=${e.locked?'Unlock layer':'Lock layer'} onClick=${ev=>{ev.stopPropagation();patch(e.id,{locked:!e.locked})}}>${I(e.locked?'lock':'unlock')}</button>
         <span className="sx-grip" aria-hidden="true">⋮⋮</span>
       </div>`)}</div>
       ${!els.length&&html`<p className="sx-note">The board is empty. Add a piece from the rail.</p>`}
     <//>`}
+    ${drawer==='board'&&html`<${SxDrawer} title="Board" onClose=${()=>{setDrawer(null);setPolyEdit(false)}}>
+      <span className="sx-lbl">Shape</span>
+      <div className="sx-shapes">${BOARD_SHAPES.map(([k,l])=>html`<button key=${k} className=${(doc.shape||'rect')===k?'on':''} aria-pressed=${(doc.shape||'rect')===k} onClick=${()=>{commitDoc({...doc,shape:k,poly:k==='poly'?(doc.poly||POLY0):doc.poly});setPolyEdit(k==='poly')}}>
+        <svg viewBox="0 0 80 100" aria-hidden="true"><path d=${boardPath(k,80,100,doc.poly)}/></svg><span>${l}</span></button>`)}</div>
+      ${doc.shape==='poly'&&html`<div className="sx-col" style=${{gap:8}}><span className="sx-note">Drag the points on the board to shape it.</span>
+        <div className="row" style=${{gap:6}}><button className="btn btn-line btn-sm" onClick=${()=>setPolyEdit(!polyEdit)}>${polyEdit?'Done shaping':'Edit points'}</button><button className="btn btn-line btn-sm" onClick=${addPoint}>Add a point</button><button className="lnk" onClick=${()=>commitDoc({...doc,poly:POLY0})}>Reset</button></div></div>`}
+      <span className="sx-lbl">Edge</span>
+      <div className="sx-chips">${EDGES.map(([k,l])=>html`<button key=${k} className=${'chip'+((doc.edge||'none')===k?' on':'')} onClick=${()=>commitDoc({...doc,edge:k})}>${l}</button>`)}</div>
+      ${doc.edge==='thick'&&html`<div className="swatches">${EDGE_COLORS.map(c=>html`<button key=${c} style=${{background:c}} className=${(doc.edgeColor||'#FBF8F2')===c?'on':''} aria-label=${'Border colour '+c} onClick=${()=>commitDoc({...doc,edgeColor:c})}></button>`)}</div>`}
+      <p className="sx-note">The shape and edge are saved with the collage and used by every export. Page size is in the ⋯ menu.</p>
+    <//>`}
     ${drawer==='bg'&&html`<${SxDrawer} title="Background" onClose=${()=>setDrawer(null)}>
       <div className="swatches">${BGS.map(([n,c])=>html`<button key=${c} title=${n} aria-label=${n+' background'} className=${bg.color===c&&!bg.img?'on':''} style=${{background:c}} onClick=${()=>setBg({color:c,grid:bg.grid})}></button>`)}</div>
       <button className="toggle" disabled=${!!bg.img} onClick=${()=>setBg({...bg,grid:!bg.grid})}><span>Dot grid</span><span className=${'sw'+(bg.grid&&!bg.img?' on':'')}></span></button>
       <button className="btn btn-line btn-sm" style=${{justifySelf:'start'}} onClick=${()=>bgRef.current.click()}>${I('upload',{width:15})} Use a photo of my space</button>
-      <input ref=${bgRef} type="file" accept="image/*" hidden onChange=${e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{commitDoc({...docRef.current,bg:{img:r.result},mode:'room',els:docRef.current.els.map(x=>x.kind==='img'?{...x,room:true,border:false,rot:0,shape:'rect'}:x)})};r.readAsDataURL(f);e.target.value=''}}/>
-      ${bg.img&&html`<button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>setBg({color:'#EFE6D8',grid:true})}>Remove photo</button>`}
+      <input ref=${bgRef} type="file" accept="image/*" hidden onChange=${e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{const d=docRef.current;commitDoc({...d,bg:{img:r.result,widthM:d.bg.widthM},mode:'room',els:d.els.map(x=>x.kind==='img'&&styleOf(x)!=='room'?restyle(x,'room'):x)})};r.readAsDataURL(f);e.target.value=''}}/>
+      ${bg.img&&html`<${React.Fragment}><label className="sx-col" style=${{gap:4}}><span className="sx-lbl">How wide is the wall in this photo?</span>
+          <span className="row" style=${{gap:8}}><input className="field num" style=${{height:38,width:110}} type="number" min="0.5" max="40" step="0.1" placeholder="e.g. 4.2" value=${bg.widthM||''} onChange=${e=>setBg({...bg,widthM:+e.target.value||undefined})} aria-label="Photo width in metres"/><span className="sx-note">metres</span></span>
+          <span className="sx-note">${bg.widthM?'Pieces in the room view are drawn at their real width.':'Give the width and pieces in the room view are drawn at true scale.'}</span></label>
+        <button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>setBg({color:'#EFE6D8',grid:true})}>Remove photo</button><//>`}
       ${ctx.inspo.length>0&&html`<${React.Fragment}><span className="sx-lbl">From your inspo</span><div className="sx-grid three">${ctx.inspo.slice(0,9).map(x=>html`<button key=${x.id} className="sx-card" title=${'Use '+x.title} onClick=${()=>setBg({img:x.src})}><span className="sx-card-i photo"><img src=${x.src} alt=""/></span></button>`)}</div><//>`}
     <//>`}
 
     <section className=${'sx-stagewrap'+(S?' has-sel':'')} ref=${wrapRef}>
-      <div className="sx-stage" ref=${stageRef} onPointerDown=${()=>{setSel(null);setPop(null)}}>
-        <div className=${'canvas sx-canvas'+(bg.grid&&!bg.img?' grid':'')} ref=${canvasRef} style=${{...bgStyle(bg),width:fitW*zoom,aspectRatio:`${P[2]}/${P[3]}`}} onDragOver=${e=>e.preventDefault()} onDrop=${dropOnCanvas}>
-          ${els.map((e,i)=>e.hidden?null:html`<div key=${e.id} data-id=${e.id} className=${'el'+(sel===e.id?' sel':'')} style=${{...elStyle(e,i),cursor:e.locked?'default':'move'}} onPointerDown=${ev=>onDown(ev,e)} onDoubleClick=${()=>{if(e.kind==='text')setPop('text')}}>
+      <div className="sx-stage" ref=${stageRef} onPointerDown=${()=>{setSels([]);setPop(null)}}>
+        <div className=${'sx-board edge-'+(doc.edge||'none')} style=${{width:fitW*zoom,aspectRatio:`${P[2]}/${P[3]}`}}>
+        <div className=${'canvas sx-canvas'+(bg.grid&&!bg.img?' grid':'')} ref=${canvasRef} style=${{...bgStyle(bg),...maskOf(doc.shape,W0,H0,doc.poly)}} onDragOver=${e=>e.preventDefault()} onDrop=${dropOnCanvas}>
+          ${els.map((e,i)=>e.hidden?null:html`<div key=${e.id} data-id=${e.id} className=${'el'+(sels.includes(e.id)?' sel':'')+(blends(e)?' blend':'')} style=${{...elStyle(e,i,bg),cursor:e.locked?'default':'move'}} onPointerDown=${ev=>onDown(ev,e)} onDoubleClick=${()=>{if(e.kind==='text')setPop('text')}}>
             <${ElView} e=${e}/>
-            ${sel===e.id&&!e.locked&&html`<${React.Fragment}><span className="h h-rs" onPointerDown=${ev=>onDown(ev,e,'rs')}></span><span className="h h-rot" onPointerDown=${ev=>onDown(ev,e,'rot')}></span><//>`}
+            ${S&&sel===e.id&&!e.locked&&html`<${React.Fragment}>${!lockW(e,bg)&&html`<span className="h h-rs" onPointerDown=${ev=>onDown(ev,e,'rs')}></span>`}<span className="h h-rot" onPointerDown=${ev=>onDown(ev,e,'rot')}></span><//>`}
           </div>`)}
           ${guides&&html`<${React.Fragment}>${guides.gx.map(x=>html`<i key=${'x'+x} className="sx-guide v" style=${{left:x+'%'}}></i>`)}${guides.gy.map(y=>html`<i key=${'y'+y} className="sx-guide h" style=${{top:y+'%'}}></i>`)}
             ${guides.gap&&(guides.gap.kind==='x'?[[guides.gap.a,guides.gap.b],[guides.gap.c,guides.gap.d]].map(([a,b],k)=>html`<i key=${'g'+k} className="sx-gap h" style=${{left:a+'%',width:(b-a)+'%',top:guides.gap.at+'%'}}></i>`)
               :[[guides.gap.a,guides.gap.b],[guides.gap.c,guides.gap.d]].map(([a,b],k)=>html`<i key=${'g'+k} className="sx-gap v" style=${{top:a+'%',height:(b-a)+'%',left:guides.gap.at+'%'}}></i>`))}<//>`}
         </div>
+        <${BoardEdge} doc=${doc}/>
+        ${polyEdit&&doc.shape==='poly'&&html`<svg className="sx-poly" viewBox=${`0 0 ${W0} ${H0}`} preserveAspectRatio="none" aria-hidden="true"><path d=${boardPath('poly',W0,H0,doc.poly)}/></svg>
+          ${(doc.poly||POLY0).map(([x,y],i)=>html`<button key=${i} className="sx-pt" style=${{left:x*100+'%',top:y*100+'%'}} aria-label=${'Corner point '+(i+1)} onPointerDown=${e=>dragPoint(e,i)} onDoubleClick=${()=>{const p=doc.poly||POLY0;if(p.length>3)commitDoc({...doc,poly:p.filter((_,k)=>k!==i)})}}></button>`)}`}
+        </div>
       </div>
-      ${S&&barStyle&&html`<div className="sx-selbar" style=${barStyle} onPointerDown=${e=>e.stopPropagation()} role="toolbar" aria-label=${'Edit '+kindName}>
+      ${(S||multi)&&barStyle&&html`<div className="sx-selbar" style=${barStyle} onPointerDown=${e=>e.stopPropagation()} role="toolbar" aria-label=${'Edit '+kindName}>
         ${selItems.map(([k,l])=>html`<button key=${k} className=${pop===k?'on':''} aria-expanded=${pop===k} onClick=${()=>setPop(pop===k?null:k)}>${l}</button>`)}
+        ${multi&&html`<button onClick=${grouped?ungroup:group} title=${grouped?'Ungroup (Ctrl+Shift+G)':'Group (Ctrl+G)'}>${grouped?'Ungroup':'Group'}</button>`}
         <button onClick=${dup} aria-label="Duplicate" title="Duplicate (Ctrl+D)">${I('copy',{width:16})}</button>
         <button onClick=${del} aria-label="Delete" title="Delete">${I('trash',{width:16})}</button>
-        ${pop&&html`<div className="sx-selpop">
-          ${pop==='style'&&html`<${React.Fragment}><button className="toggle" onClick=${()=>patch(S.id,{border:!S.border})}><span>White border</span><span className=${'sw'+(S.border?' on':'')}></span></button>
+        ${pop&&(S||['align','distribute'].includes(pop))&&html`<div className="sx-selpop">
+          ${pop==='align'&&html`<div className="sx-col">${[['left','Left edges'],['centre','Centres'],['right','Right edges'],['top','Tops'],['middle','Middles'],['bottom','Bottoms']].map(([k,l])=>html`<button key=${k} className="pop-item" onClick=${()=>align(k)}>Align ${l.toLowerCase()}</button>`)}</div>`}
+          ${pop==='distribute'&&html`<div className="sx-col"><button className="pop-item" onClick=${()=>distribute('x')}>Space evenly across</button><button className="pop-item" onClick=${()=>distribute('y')}>Space evenly down</button></div>`}
+          ${pop==='style'&&S?.kind==='img'&&html`<${React.Fragment}>
+            <div className="sx-looks" role="radiogroup" aria-label="Look">${LOOKS.map(([k,l,hint])=>{const off=k==='3d'||(k==='room'&&!bg.img);const on=styleOf(S)===k;
+              return html`<button key=${k} role="radio" aria-checked=${on} className=${on?'on':''} disabled=${off} onClick=${()=>!on&&commit(els.map(x=>x.id===S.id?restyle(x,k):x))}><b>${l}</b><span>${k==='3d'?'Model coming soon':k==='room'&&!bg.img?'Add a room photo in Background':hint}</span></button>`})}</div>
+            ${styleOf(S)!=='framed'?html`<${React.Fragment}><span className="sx-lbl">Shadow</span><div className="seg">${[['none','None'],['soft','Soft'],['floor','Floor']].map(([k,l])=>html`<button key=${k} className=${(S.shadow||'soft')===k?'on':''} onClick=${()=>patch(S.id,{shadow:k})}>${l}</button>`)}</div>
+              <button className="toggle" onClick=${()=>patch(S.id,{flip:!S.flip})}><span>Flip</span><span className=${'sw'+(S.flip?' on':'')}></span></button>
+              ${!hasCutout(S.pid)&&html`<span className="sx-note">This piece has no studio cutout yet, so its photo blends onto the board.</span>`}<//>`
+            :html`<${React.Fragment}><span className="sx-lbl">Border</span><div className="seg">${[['none','None'],['white','White'],['hairline','Hairline']].map(([k,l])=>html`<button key=${k} className=${borderOf(S)===k?'on':''} onClick=${()=>patch(S.id,{border:k})}>${l}</button>`)}</div>
+              <span className="sx-lbl">Tilt</span><div className="seg">${[-4,-2,0,2,4].map(t=>html`<button key=${t} className=${Math.round(S.rot)===t?'on':''} onClick=${()=>patch(S.id,{rot:t})}>${t>0?'+'+t:t}°</button>`)}</div><//>`}
             <button className="toggle" onClick=${()=>patch(S.id,{motion:!S.motion})}><span>Gentle motion</span><span className=${'sw'+(S.motion?' on':'')}></span></button>
-            ${S.kind==='img'&&html`<button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>ctx.openPin(S.pid)}>View ${byId(S.pid).name} details</button>`}<//>`}
+            <button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>ctx.openPin(S.pid)}>View ${byId(S.pid).name} details</button><//>`}
+          ${pop==='crop'&&framedSel&&html`<${React.Fragment}>${[['z','Zoom',1,3,.05,1],['x','Across',0,100,1,50],['y','Up and down',0,100,1,50]].map(([k,l,mn,mx,st,d])=>html`<label key=${k} className="sx-range"><span className="sx-lbl">${l}</span><input type="range" min=${mn} max=${mx} step=${st} value=${(S.crop||{})[k]??d} onPointerDown=${()=>record(docRef.current)} onInput=${e=>live(S.id,{crop:{z:1,x:50,y:50,...S.crop,[k]:+e.target.value}})}/></label>`)}
+            <button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>patch(S.id,{crop:undefined})}>Reset crop</button><//>`}
           ${pop==='shape'&&html`<div className="seg">${SHAPES.map(([k,l])=>html`<button key=${k} className=${S.shape===k?'on':''} onClick=${()=>patch(S.id,{shape:k})}>${l}</button>`)}</div>`}
           ${pop==='tone'&&html`<div className="seg">${['none','warm','mono','dusk'].map(t=>html`<button key=${t} className=${S.tone===t?'on':''} onClick=${()=>patch(S.id,{tone:t})}>${t==='none'?'Original':t[0].toUpperCase()+t.slice(1)}</button>`)}</div>`}
           ${pop==='text'&&html`<textarea className="field" rows="2" aria-label="Text" value=${S.text} onFocus=${()=>record(docRef.current)} onInput=${e=>live(S.id,{text:e.target.value})}></textarea>`}
           ${pop==='font'&&html`<${React.Fragment}><div className="seg">${[['display','Serif'],['sans','Sans'],['mono','Caps']].map(([k,l])=>html`<button key=${k} className=${S.font===k?'on':''} onClick=${()=>patch(S.id,{font:k})}>${l}</button>`)}</div>
             <label className="sx-range"><span className="sx-lbl">Size</span><input type="range" min="2" max="16" step=".2" value=${S.size} onPointerDown=${()=>record(docRef.current)} onInput=${e=>live(S.id,{size:+e.target.value})}/></label><//>`}
           ${pop==='color'&&html`<div className="swatches">${['#2B211A','#FBF8F2','#A65F2C','#6C6948','#AE884C','#B07A4A','#E7DFD0'].map(c=>html`<button key=${c} style=${{background:c}} className=${S.color===c?'on':''} aria-label=${'Colour '+c} onClick=${()=>patch(S.id,{color:c})}></button>`)}</div>`}
-          ${pop==='arrange'&&html`<div className="sx-col">
+          ${pop==='arrange'&&S&&html`<div className="sx-col">
             <button className="pop-item" onClick=${()=>arrange(S.id,'front')}>${I('up',{width:15})} Bring to front</button>
             <button className="pop-item" onClick=${()=>arrange(S.id,'fwd')}>Forward</button>
             <button className="pop-item" onClick=${()=>arrange(S.id,'bwd')}>Backward</button>
