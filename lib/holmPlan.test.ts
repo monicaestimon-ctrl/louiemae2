@@ -35,6 +35,11 @@ describe('cleanPlanRead', () => {
     expect(r.scale).toBeNull();
   });
 
+  it('drops a shape with any corner that is not two finite numbers', () => {
+    const bad = [[[0, 0], [1, 0], [1, null], [0, 1]], [[0, 0], [1, 0], [1, 'x'], [0, 1]], [[0, 0], [1, 0], [1, NaN], [0, 1]]];
+    expect(cleanPlanRead({ rooms: bad.map((points) => ({ points })) }).rooms).toEqual([]);
+  });
+
   it('survives anything', () => {
     expect(cleanPlanRead('nonsense')).toEqual({ rooms: [], blocks: [], scale: null });
     expect(cleanPlanRead(null)).toEqual({ rooms: [], blocks: [], scale: null });

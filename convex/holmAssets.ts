@@ -114,6 +114,9 @@ export const setCutout = mutation({
       await upsert(ctx, a.productId, { cutoutId: undefined, cutoutAspect: undefined, cutoutStatus: undefined });
       return;
     }
+    // An approved cutout always has a file and an aspect, so the Studio can draw it at its true shape.
+    if (a.status === 'approved' && !((a.cutoutId ?? row?.cutoutId) && ((a.aspect ?? 0) > 0 || (row?.cutoutAspect ?? 0) > 0)))
+      throw new Error('Add a cutout before approving it.');
     if (a.cutoutId && row?.cutoutId && row.cutoutId !== a.cutoutId) await ctx.storage.delete(row.cutoutId);
     await upsert(ctx, a.productId, {
       ...(a.cutoutId ? { cutoutId: a.cutoutId } : {}),
@@ -133,6 +136,7 @@ export const setModel = mutation({
   handler: async (ctx, a) => {
     await requireCjAdminIdentity(ctx);
     const row = await assetsFor(ctx, a.productId);
+    if (a.status === 'approved' && !(a.modelId ?? row?.modelId)) throw new Error('Upload a 3D model before approving it.');
     let bytes = row?.modelBytes;
     if (a.modelId) {
       const meta = await ctx.db.system.get(a.modelId);

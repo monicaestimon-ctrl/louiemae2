@@ -30,6 +30,7 @@ describe('parseDims', () => {
 
   it('gives nothing when a dimension is missing', () => {
     expect(parseDims('Width 80 cm')).toBeNull();
+    expect(parseDims('Overall dimensions: 220 x 95 x 80')).toBeNull();
     expect(parseDims('Made to order.')).toBeNull();
     expect(parseDims('')).toBeNull();
     expect(parseDims(undefined)).toBeNull();

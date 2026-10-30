@@ -2030,7 +2030,7 @@ header.top:not(.over){background:color-mix(in srgb,var(--paper) 94%,transparent)
 .sx-render{display:inline-flex;align-items:center;gap:6px}
 .sx-viewbar .seg button[disabled]{opacity:.4}
 .sx-viewbar{flex-wrap:wrap}
-.pl-lab.zone{background:transparent;box-shadow:none;font-family:var(--display);font-size:15px;color:#2B211A}
+.pl-lab.zone{margin:0;background:transparent;box-shadow:none;font-family:var(--display);font-size:15px;color:#2B211A}
 /* Floor plans */
 .pl-plan{display:grid;gap:6px;padding:12px;border-radius:14px;background:color-mix(in oklab,var(--card) 70%,transparent)}.pl-plan b{font-weight:500}.pl-plan .btn{justify-self:start}
 .pl-zones{display:grid;gap:8px}.pl-zone{display:grid;gap:6px;padding:10px;border-radius:12px;border:1px solid var(--line)}.pl-zone b{font-weight:500;font-size:15px}.pl-zone .mono{font-size:11px}

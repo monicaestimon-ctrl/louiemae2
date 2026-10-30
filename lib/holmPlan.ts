@@ -6,9 +6,14 @@ export type PlanRead = {
   scale: { a: Pt; b: Pt; meters: number } | null;
 };
 
-const clamp01 = (n: unknown) => Math.max(0, Math.min(1, Number(n) || 0));
-const pts = (p: unknown): Pt[] =>
-  Array.isArray(p) ? p.filter((q) => Array.isArray(q) && q.length >= 2).slice(0, 64).map((q) => [clamp01(q[0]), clamp01(q[1])] as Pt) : [];
+const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+const isNum = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
+// A shape with any point that is not two finite numbers is dropped whole, never repaired to the corner.
+const pts = (p: unknown): Pt[] => {
+  if (!Array.isArray(p) || p.length > 64) return [];
+  if (!p.every((q) => Array.isArray(q) && isNum(q[0]) && isNum(q[1]))) return [];
+  return p.map((q) => [clamp01(q[0]), clamp01(q[1])] as Pt);
+};
 
 /** Keeps only well-formed shapes from an AI reading: 3 to 64 points each, coordinates within the image. */
 export function cleanPlanRead(raw: unknown): PlanRead {

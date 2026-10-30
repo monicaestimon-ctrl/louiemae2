@@ -17,11 +17,13 @@ export function parseDims(facts: string | null | undefined): DimsCm | null {
   let dims: { w: number; d: number; h: number } | null = null;
   // "a × b × c unit", in the order the label gives (W × D × H by default).
   const triple = text.match(new RegExp(`${NUM}\\s*"?\\s*[×xX*]\\s*${NUM}\\s*"?\\s*[×xX*]\\s*${NUM}\\s*(cm|in|inches|")?`));
-  if (triple) {
+  // A triple with no unit is ambiguous (cm or inches), so it never counts as a true size.
+  const tripleUnit = triple && (triple[4] ?? text.slice(triple.index! + triple[0].length).match(/^\s*(cm|in)/i)?.[1]);
+  if (triple && tripleUnit) {
     const order = (text.match(/\(\s*([WDHL])\s*[×xX*]\s*([WDHL])\s*[×xX*]\s*([WDHL])\s*\)/i)?.slice(1) ?? ['W', 'D', 'H']).map((k) =>
       k.toUpperCase() === 'L' ? 'W' : k.toUpperCase()
     );
-    const unit = unitOf(triple[4] ?? text.slice(triple.index! + triple[0].length).match(/^\s*(cm|in)/i)?.[1]);
+    const unit = unitOf(tripleUnit);
     const v: Record<string, number> = {};
     order.forEach((k, i) => (v[k] = toCm(parseFloat(triple[i + 1]), unit)));
     if (v.W && v.D && v.H) dims = { w: v.W, d: v.D, h: v.H };
