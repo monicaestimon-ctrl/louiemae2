@@ -2326,13 +2326,13 @@ const ROUTES=[['image','Download image','PNG at 2×, ready to print or post','do
 function ShareSheet({ctx,title,doc,image,ids,boardKey,onClose}){
   const [m,setM]=useState('shop');const [links,setLinks]=useState({});const [busy,setBusy]=useState('');const [err,setErr]=useState('');const [view,setView]=useState('routes');
   const [qr,setQr]=useState(false);const [qrFor,setQrFor]=useState(null);
-  const share=useMutation(api.holmSync.shareBoard);const coverUrl=useMutation(api.holmSync.coverUploadUrl);
+  const share=useMutation(api.holmSync.shareBoard);const uploadCover=useAction(api.holmSync.uploadCover);
   const counts={};(ids||[]).forEach(id=>{if(has(id))counts[id]=(counts[id]||0)+1});const pieces=Object.keys(counts).map(Number);
   const shop=m==='shop';const prices=shop;
   const boardCanvas=async w=>{if(doc)return renderBoard(doc,w);const im=await loadImg(image);const c=document.createElement('canvas');c.width=w;c.height=Math.round(w*im.height/im.width);c.getContext('2d').drawImage(im,0,0,c.width,c.height);return c};
   // The link is made once per mode (with the rendered board as its cover) and reused by every route.
   const ensure=async()=>{if(links[m])return links[m];if(!ctx.me.signedIn){onClose();ctx.toast('Sign in to share a link');ctx.signInThen(ctx.route);return null}
-    let coverId;try{const c=await boardCanvas(1200);coverId=await uploadBlob(coverUrl,await canvasBlob(c,'image/jpeg',.88))}catch(e){coverId=undefined}
+    let coverId;try{const c=await boardCanvas(1200);const b=await canvasBlob(c,'image/jpeg',.88);coverId=await uploadCover({bytes:await b.arrayBuffer(),type:'image/jpeg'})}catch(e){coverId=undefined}
     const r=await share({title,mode:shop?'shop':'presentation',items:pieces.map(id=>({productId:byId(id).lid,variantId:byId(id).vid,qty:counts[id]})),boardKey:boardKey||undefined,doc:doc?shareableDoc(doc):undefined,coverId});
     setLinks(l=>({...l,[m]:r}));return r};
   const run=async(k,fn)=>{setBusy(k);setErr('');try{await fn()}catch(e){setErr(errText(e))}finally{setBusy('')}};

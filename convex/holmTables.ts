@@ -212,8 +212,14 @@ export const holmTables = {
   })
     .index('by_slug', ['slug'])
     .index('by_owner', ['ownerId', 'createdAt'])
-    .index('by_owner_key', ['ownerId', 'boardKey', 'mode'])
-    .index('by_cover', ['coverId']),
+    .index('by_owner_key', ['ownerId', 'boardKey', 'mode']),
+
+  // Board covers stored by holmSync.uploadCover, so a board can only adopt an image its owner uploaded.
+  holmCoverUploads: defineTable({
+    userId: v.id('users'),
+    storageId: v.id('_storage'),
+    createdAt: v.number(),
+  }).index('by_storage', ['storageId']),
 
   // A request for the House team to render a planned room.
   holmRenderRequests: defineTable({
