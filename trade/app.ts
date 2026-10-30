@@ -23,7 +23,11 @@ const has = (id: number) => BY_ID.has(id);
 const TRADE = 0.75, COMMISSION = 0.12; // illustrative only (trade section demo); real prices come from the server
 const tp = (p: HolmProduct) => p.trade ?? p.price;
 const pr = (p: HolmProduct, mode: string) => (mode === 'trade' ? tp(p) : p.price);
-const cut = (id: number) => (id < 100 && has(id) ? `c/${id}.webp` : byId(id).img);
+// A piece's seamless cutout when it has one (from its asset record, or the curated studio set), else its photo.
+const cut = (id: number) => byId(id).cutout || byId(id).img;
+// Width / height of what cut() returns, as [w, h]; true size in cm from the product's W × D × H.
+const cutWH = (id: number) => [byId(id).cutAR || byId(id).ar || 1, 1];
+const cmW = (id: number) => byId(id).dimsCm?.w ?? byId(id).widthCm ?? 100;
 const pinItUrl=(media,desc,link='https://www.louiemae.com/retail-furniture')=>`https://www.pinterest.com/pin/create/button/?url=${encodeURIComponent(link)}&media=${encodeURIComponent(media)}&description=${encodeURIComponent(desc)}`;
 const PIN_BOARDS=[];
 // three.js loads on demand, the first time a 3D view mounts, so other pages never pay for it.
@@ -256,7 +260,6 @@ function TabBar({ctx}){
 }
 
 /* ================= ROOM HERO ================= */
-const CUT_AR={1:[1031,308],2:[1084,368],3:[1057,352],4:[1100,379],5:[1100,375],6:[1100,370],7:[1100,552],8:[995,777],9:[941,673],10:[1100,551],11:[383,917],12:[944,889],13:[1100,726],14:[1100,520],15:[1046,641],16:[995,637],17:[1100,478],18:[1100,577],19:[1100,521],20:[1100,504],21:[1100,731],22:[1100,540],23:[956,426],24:[1100,688]};
 const GLOW_AT={8:[50,80],11:[82,10],12:[50,92]};
 const HORIZON=60;
 const MOODS={
@@ -369,7 +372,7 @@ function RoomScene({room,scene,roomCm,onPick,refCb,idx}){
       ${scene.items.filter(i=>i.top!=null&&GLOW_AT[i.id]).map((i,k)=>html`<span key=${'pool'+k} className="rh-pool" style=${{left:i.x+'%'}}></span><span key=${'wpool'+k} className="rh-wpool" style=${{left:i.x+'%'}}></span>`)}${scene.items.filter(i=>i.id===11).map((i,k)=>html`<span key=${'lp'+k} className="rh-wpool lamp" style=${{left:(i.x+1.5)+'%'}}></span>`)}<div className="rh-shaft" style=${{background:`linear-gradient(${M.side==='r'?200:160}deg,${M.shaft},transparent 88%)`,clipPath:M.side==='r'?'polygon(80% 12%,92% 12%,74% 100%,38% 100%)':'polygon(4% 8%,18% 8%,66% 100%,22% 100%)'}}></div>
     </div>
     <div className="rh-objs">
-      ${items.map((it,i)=>{const p=byId(it.id);const ar=CUT_AR[it.id];const hang=it.top!=null;const w=hang?it.cm/roomCm*100:it.cm/roomCm*100*depth(it.b);const g=GLOW_AT[it.id];
+      ${items.map((it,i)=>{const p=byId(it.id);const ar=cutWH(it.id);const hang=it.top!=null;const w=hang?it.cm/roomCm*100:it.cm/roomCm*100*depth(it.b);const g=GLOW_AT[it.id];
         const pos=hang?{left:it.x+'%',top:it.top+'%',width:w+'%'}:{left:it.x+'%',bottom:(100-it.b)+'%',width:w+'%'};
         return html`<button key=${i} className=${'rh-obj'+(hang?' hang':'')} style=${{...pos,zIndex:hang?50:Math.round(it.b)}} onClick=${e=>{e.stopPropagation();onPick(it,e.currentTarget)}} aria-label=${p.name+' '+p.line}>
           ${!hang&&html`<span className="rh-contact"></span><img className="rh-cast" src=${cut(it.id)} alt="" aria-hidden="true" draggable="false"/>`}
@@ -458,7 +461,6 @@ const CHAPTERS=[
 ];
 const FLOOR_TILE={herring:1.3,herringDark:1.3,oak:2.6,oakDark:2.6,oakLight:2.6,oakGrey:2.6,oakWhite:2.6,terrazzo:1.8,marble:2.6,marbleLight:2.6,concrete:2.6,tile:1.2,checker:1.2,carpet:1.5};
 const clamp01=v=>Math.max(0,Math.min(1,v));const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;const seg=(p,a,b)=>ease(clamp01((p-a)/(b-a)));
-const FOOT_D={sofa:.95,sectional:1.7,bench:.45,ottoman:0,lighting:0};
 
 function RoomStudy({ctx}){
   const sp=SPACES[ctx.space];const cfg=STUDY[ctx.space];const room=ROOMS[ctx.space];
@@ -512,17 +514,17 @@ function RoomStudy({ctx}){
     });
     // rug
     const rugAnchor=cfg.items.find(i=>!i.hang&&['sofa','sectional'].includes(byId(i.id).type))||cfg.items[0];
-    const rugW=Math.min(W-1,APPROX_CM[rugAnchor.id]/100+1.2),rugD=2.6;
+    const rugW=Math.min(W-1,cmW(rugAnchor.id)/100+1.2),rugD=2.6;
     const rug=new T.Mesh(new T.PlaneGeometry(rugW,rugD),new T.MeshStandardMaterial({map:tex(texture('jute').url,[rugW*1.6,rugD*1.6]),roughness:1,transparent:true,opacity:0}));rug.rotation.x=-Math.PI/2;rug.position.set(rugAnchor.x,.006,rugAnchor.z+1.1);rug.receiveShadow=true;scene.add(rug);
     // ---------- pieces (billboards with real alpha shadows) ----------
     const blob=(()=>{const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');const gr=g.createRadialGradient(64,64,0,64,64,64);gr.addColorStop(0,'rgba(0,0,0,.55)');gr.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=gr;g.fillRect(0,0,128,128);return new T.CanvasTexture(c)})();
     const glowTex=(()=>{const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');const gr=g.createRadialGradient(64,64,0,64,64,64);gr.addColorStop(0,'rgba(255,214,150,1)');gr.addColorStop(.3,'rgba(255,170,80,.35)');gr.addColorStop(1,'rgba(255,150,60,0)');g.fillStyle=gr;g.fillRect(0,0,128,128);return new T.CanvasTexture(c)})();
     const pieces=[];const lamps=[];
-    cfg.items.forEach((it,i)=>{const p=byId(it.id);const ar=CUT_AR[it.id];const w=APPROX_CM[it.id]/100,h=w*ar[1]/ar[0];const map=tex(cut(it.id));
+    cfg.items.forEach((it,i)=>{const p=byId(it.id);const ar=cutWH(it.id);const w=cmW(it.id)/100,h=w*ar[1]/ar[0];const map=tex(cut(it.id));
       const mat=new T.MeshStandardMaterial({map,transparent:true,alphaTest:.45,side:T.DoubleSide,roughness:.85});
       const mesh=new T.Mesh(new T.PlaneGeometry(w,h),mat);mesh.castShadow=true;mesh.customDepthMaterial=new T.MeshDepthMaterial({depthPacking:T.RGBADepthPacking,map,alphaTest:.45});
       const restY=it.hang?H-h/2-.05:h/2;mesh.position.set(it.x,restY,it.z);mesh.userData={it,restY,i,w,h};scene.add(mesh);
-      let shadow=null;if(!it.hang){shadow=new T.Mesh(new T.PlaneGeometry(w*1.05,Math.max(.5,FOOT_D[p.type]||w*.8)),new T.MeshBasicMaterial({map:blob,transparent:true,depthWrite:false,opacity:0}));shadow.rotation.x=-Math.PI/2;shadow.position.set(it.x,.008,it.z);scene.add(shadow)}
+      let shadow=null;if(!it.hang){shadow=new T.Mesh(new T.PlaneGeometry(w*1.05,Math.max(.5,(p.dimsCm?.d||w*80)/100)),new T.MeshBasicMaterial({map:blob,transparent:true,depthWrite:false,opacity:0}));shadow.rotation.x=-Math.PI/2;shadow.position.set(it.x,.008,it.z);scene.add(shadow)}
       else{const cord=new T.Mesh(new T.CylinderGeometry(.006,.006,.05,6),new T.MeshBasicMaterial({color:'#1E1B19'}));scene.add(cord);mesh.userData.cord=cord}
       if(GLOW_AT[it.id]){const g=GLOW_AT[it.id];const light=new T.PointLight('#FFB868',0,7,2);scene.add(light);const spr=new T.Sprite(new T.SpriteMaterial({map:glowTex,transparent:true,opacity:0,depthWrite:false,blending:T.AdditiveBlending}));spr.scale.set(w*1.4,w*1.4,1);scene.add(spr);lamps.push({light,spr,mesh,g})}
       pieces.push({mesh,shadow,p});
@@ -533,7 +535,7 @@ function RoomStudy({ctx}){
     const bw=-D/2;let cx=-W/2;[...cfg.openings.filter(o=>o.y<1.2)].sort((a,b)=>a.x-b.x).forEach(o=>{L(cx,bw,o.x-o.w/2,bw);L(o.x-o.w/2,bw,o.x-o.w/2,bw-.22);L(o.x+o.w/2,bw,o.x+o.w/2,bw-.22);cx=o.x+o.w/2});L(cx,bw,W/2,bw);
     L(-W/2-.22,bw-.22,W/2+.22,bw-.22);L(-W/2,bw,-W/2,D/2);L(-W/2-.22,bw-.22,-W/2-.22,D/2);L(W/2,bw,W/2,D/2);L(W/2+.22,bw-.22,W/2+.22,D/2);
     const planLines=new T.LineSegments(new T.BufferGeometry().setFromPoints(pts),ink);scene.add(planLines);
-    const fp=[];cfg.items.forEach(it=>{const p=byId(it.id);const w=APPROX_CM[it.id]/100;if(it.hang){const r=w/2;for(let k=0;k<24;k++){const a=k/24*Math.PI*2,b=(k+1)/24*Math.PI*2;fp.push(new T.Vector3(it.x+Math.cos(a)*r,.012,it.z+Math.sin(a)*r),new T.Vector3(it.x+Math.cos(b)*r,.012,it.z+Math.sin(b)*r))}return}const d=FOOT_D[p.type]||w;const x0=it.x-w/2,x1=it.x+w/2,z0=it.z-d/2,z1=it.z+d/2;[[x0,z0,x1,z0],[x1,z0,x1,z1],[x1,z1,x0,z1],[x0,z1,x0,z0]].forEach(([a,b,c,e])=>fp.push(new T.Vector3(a,.012,b),new T.Vector3(c,.012,e)))});
+    const fp=[];cfg.items.forEach(it=>{const p=byId(it.id);const w=cmW(it.id)/100;if(it.hang){const r=w/2;for(let k=0;k<24;k++){const a=k/24*Math.PI*2,b=(k+1)/24*Math.PI*2;fp.push(new T.Vector3(it.x+Math.cos(a)*r,.012,it.z+Math.sin(a)*r),new T.Vector3(it.x+Math.cos(b)*r,.012,it.z+Math.sin(b)*r))}return}const d=(p.dimsCm?.d??w*100)/100||w;const x0=it.x-w/2,x1=it.x+w/2,z0=it.z-d/2,z1=it.z+d/2;[[x0,z0,x1,z0],[x1,z0,x1,z1],[x1,z1,x0,z1],[x0,z1,x0,z0]].forEach(([a,b,c,e])=>fp.push(new T.Vector3(a,.012,b),new T.Vector3(c,.012,e)))});
     const fpMat=new T.LineDashedMaterial({color:'#A65F2C',dashSize:.12,gapSize:.08,transparent:true,opacity:1});const footLines=new T.LineSegments(new T.BufferGeometry().setFromPoints(fp),fpMat);footLines.computeLineDistances();scene.add(footLines);
     // ---------- lights ----------
     const hemi=new T.HemisphereLight('#DDE7F0','#B8A58C',.55*LX);scene.add(hemi);
@@ -546,7 +548,7 @@ function RoomStudy({ctx}){
     const mouse={x:0,y:0,nx:-9,ny:-9,in:false};const ray=new T.Raycaster();const ndc=new T.Vector2();const floorPlane=new T.Plane(new T.Vector3(0,1,0),0);
     let P=0,todT=0,hover=null,dirty=true,running=true,lastChap=-1,lastTod='',lastNight=null,overrideT=null;
     // labels (dimensions + footprints)
-    const labels=[{v:new T.Vector3(0,.02,D/2+.45),t:`${W.toFixed(1)} m`},{v:new T.Vector3(W/2+.6,.02,0),t:`${D.toFixed(1)} m`},...cfg.items.map(it=>{const p=byId(it.id);return {v:new T.Vector3(it.x,.02,it.z),t:`${p.name} · ${APPROX_CM[it.id]} cm`,cog:1}})];
+    const labels=[{v:new T.Vector3(0,.02,D/2+.45),t:`${W.toFixed(1)} m`},{v:new T.Vector3(W/2+.6,.02,0),t:`${D.toFixed(1)} m`},...cfg.items.map(it=>{const p=byId(it.id);return {v:new T.Vector3(it.x,.02,it.z),t:`${p.name} · ${cmW(it.id)} cm`,cog:1}})];
     const labEl=labRef.current;labEl.innerHTML=labels.map(l=>`<span class="rs-lab${l.cog?' cog':''}">${l.t}</span>`).join('');const labNodes=[...labEl.children];
     const resize=()=>{const r=stage.getBoundingClientRect();renderer.setSize(r.width,r.height,false);cam.aspect=r.width/r.height;cam.fov=r.width/r.height<.8?52:36;cam.updateProjectionMatrix();dirty=true};resize();
     const ro=new ResizeObserver(resize);ro.observe(stage);
@@ -639,7 +641,7 @@ function RoomStudy({ctx}){
       <div className=${'rh-hint'+(scrolled?' gone':'')}><span>Scroll to build the room</span><i></i></div>
       ${P0&&html`<div className="rh-card" style=${{left:`clamp(160px, ${pick.x}%, calc(100% - 160px))`,top:`max(250px, ${pick.y}%)`}} onClick=${e=>e.stopPropagation()} role="dialog" aria-label=${P0.name}>
         <button className="rh-x" aria-label="Close" onClick=${()=>setPick(null)}>${I('x',{width:14})}</button>
-        <span className="mono">${P0.sku} · ${MAT[P0.mat]} · ≈ ${APPROX_CM[P0.id]} cm</span><h3>${P0.name}</h3><p>${P0.line}</p>
+        <span className="mono">${P0.sku} · ${MAT[P0.mat]} · ≈ ${cmW(P0.id)} cm</span><h3>${P0.name}</h3><p>${P0.line}</p>
         <div className="rh-price"><b>${ctx.mode==='trade'?fmt(tp(P0),true):fmt(P0.price,true)}</b>${ctx.mode==='trade'&&html`<s>${fmt(P0.price,true)}</s>`}</div>
         <div className="rh-card-act"><button className="rh-btn solid sm" onClick=${()=>ctx.addToTray(P0.id,1,null)}>${I('plus',{width:15})} Add to tray</button><button className="rh-btn sm" onClick=${()=>ctx.openPin(P0.id)}>Details</button></div>
       </div>`}
@@ -877,7 +879,7 @@ function useLux(){
 }
 // A product cutout hovering in space, with a contact shadow that breathes with it.
 function FloatPiece({id,w=150,depth=14,delay=0,className='',style}){
-  const ar=CUT_AR[id]||[1,1];
+  const ar=cutWH(id);
   return html`<span className=${'fp '+className} style=${{'--d':depth+'px','--fd':delay+'s',width:w+'px',...style}} aria-hidden="true">
     <img src=${cut(id)} alt="" loading="lazy" style=${{aspectRatio:ar[0]+'/'+ar[1]}}/><i></i>
   </span>`;
@@ -956,7 +958,7 @@ function Collection({ctx}){
       <div className="lx-grid" key=${cat}>
         ${list.map((p,i)=>html`<article key=${p.id} className="lx-piece" data-r style=${{'--i':i%4+1}}>
           <button className=${"lx-stage"+([8,12].includes(p.id)?" hang":"")} onClick=${()=>ctx.openPin(p.id)} aria-label=${'View '+p.name+' '+p.line}>
-            <span className="lx-cut"><img src=${cut(p.id)} alt="" loading="lazy" style=${{aspectRatio:(CUT_AR[p.id]||[1,1]).join('/')}}/></span><i className="lx-floor"></i>
+            <span className="lx-cut"><img src=${cut(p.id)} alt="" loading="lazy" style=${{aspectRatio:cutWH(p.id).join('/')}}/></span><i className="lx-floor"></i>
             ${p.oos&&html`<span className="lx-tag">Restock on request</span>`}
           </button>
           <div className="lx-chip glass light">
@@ -1159,8 +1161,7 @@ function Trend({ctx}){
 /* ================= PIN DETAIL ================= */
 /* ================= TRAY (cart) ================= */
 /* ================= shared v3 helpers ================= */
-const APPROX_CM={1:245,2:235,3:250,4:240,5:300,6:300,7:290,8:46,9:80,10:88,11:64,12:100,13:150,14:85,15:70,16:80,17:270,18:135,19:130,20:150,21:150,22:122,23:110,24:125};
-const approxH=id=>{const a=CUT_AR[id];return Math.round(APPROX_CM[id]*a[1]/a[0])};
+const approxH=id=>Math.round(byId(id).dimsCm?.h??cmW(id)/(byId(id).cutAR||1));
 const inch=cm=>Math.round(cm/2.54);
 const CARE={
   leather:['Dust weekly with a dry, soft cloth.','Blot spills straight away; never rub.','Condition every 6 to 12 months.','Keep out of direct sun to slow fading.'],
@@ -1259,7 +1260,7 @@ function PinDetail({ctx}){
   const sim=PRODUCTS.filter(x=>x.id!==p.id).filter(x=>simF==='mat'?x.mat===p.mat:simF==='type'?x.type===p.type:true).sort((a,b)=>simF==='tone'?cdist(a.tone,p.tone)-cdist(b.tone,p.tone):0).slice(0,8);
   const onBoards=[...ctx.boards.filter(b=>b.pins.some(x=>x.pid===p.id)).map(b=>({t:b.title,by:'You'})),...COMMUNITY.filter(b=>b.items.includes(p.id)).map(b=>({t:b.title,by:b.by}))];
   const room=ROOMS[ctx.space];const F=texture(room.floor);const L=texture('lime');
-  const cm=APPROX_CM[p.id],hcm=approxH(p.id);
+  const cm=cmW(p.id),hcm=approxH(p.id);
   const projTrade=P.items.reduce((s,i)=>s+tp(byId(i.pid))*i.qty,0);const after=projTrade+tp(p)*qty;
   const add=(el)=>{ctx.addToProject(p.id,qty,P.id,Z,el||stageRef.current?.querySelector('.pp-cut'))};
   const bundleItems=bundle.map(byId);const bundleTot=bundleItems.reduce((s,x)=>s+pr(x,ctx.mode),0);
@@ -1583,7 +1584,7 @@ function Tray({ctx}){
   const restore=x=>{setTrayState(t=>({...t,later:(t.later||[]).filter(y=>y.pid!==x.pid)}));ctx.addToProject(x.pid,x.qty,proj.id,proj.zones[0],null,true)};
   const moveTo=(i,z)=>{if(i.zone===z)return;upd(p=>{const rest=p.items.filter(x=>!(x.pid===i.pid&&x.zone===i.zone));const ex=rest.find(x=>x.pid===i.pid&&x.zone===z);return {...p,items:ex?rest.map(x=>x===ex?{...x,qty:x.qty+i.qty}:x):[...rest,{pid:i.pid,qty:i.qty,zone:z}]}})};
   const suggest=z=>{const zi=items.filter(i=>i.zone===z);if(!zi.length)return null;const have=new Set(items.map(i=>i.pid));const anchor=zi[0].p;return pairsFor(anchor,4).find(x=>!have.has(x.id))};
-  const csv=()=>['Zone,Item,SKU,Material,Approx width (cm),Qty,Unit trade,Line trade,Status',...items.map(i=>[i.zone,`${i.p.name} ${i.p.line}`,i.p.sku,MAT[i.p.mat],APPROX_CM[i.p.id],i.qty,tp(i.p).toFixed(2),(tp(i.p)*i.qty).toFixed(2),i.p.oos?'Restock check':'Ready to quote'].map(v=>`"${v}"`).join(','))].join('\n');
+  const csv=()=>['Zone,Item,SKU,Material,Approx width (cm),Qty,Unit trade,Line trade,Status',...items.map(i=>[i.zone,`${i.p.name} ${i.p.line}`,i.p.sku,MAT[i.p.mat],cmW(i.p.id),i.qty,tp(i.p).toFixed(2),(tp(i.p)*i.qty).toFixed(2),i.p.oos?'Restock check':'Ready to quote'].map(v=>`"${v}"`).join(','))].join('\n');
   const STEPS=['Tray','Delivery','Review','Requested'];
   const contactErr=()=>!del.name.trim()?'Add a contact name for delivery.':!/^\S+@\S+\.\S+$/.test(del.email)?'Add an email for the quote.':!del.line1.trim()||!del.city.trim()||!del.postal.trim()?'Add the delivery address.':'';
   const submit=async()=>{const m=contactErr();if(m){setStep(1);setErr(m);return}setBusy(true);setErr('');
@@ -1593,7 +1594,7 @@ function Tray({ctx}){
       tokRef.current=null;setRef(r.reference);setStep(3)}
     catch(e){setErr(e?.data||String(e?.message||'').replace(/^.*Uncaught Error: /,'').split('\n')[0]||'Something went wrong. Try again.')}finally{setBusy(false)}};
   const fld=(k,label,ph,type='text',auto)=>html`<div><label className="lbl" htmlFor=${'tv-'+k}>${label}</label><input id=${'tv-'+k} className="field" type=${type} autoComplete=${auto} value=${del[k]} placeholder=${ph} onInput=${e=>{setDel({...del,[k]:e.target.value});setErr('')}}/></div>`;
-  const strip=items.flatMap(i=>Array.from({length:Math.min(i.qty,3)},(_,k)=>({...i,k})));const stripCm=strip.reduce((s,i)=>s+APPROX_CM[i.pid]+30,0);
+  const strip=items.flatMap(i=>Array.from({length:Math.min(i.qty,3)},(_,k)=>({...i,k})));const stripCm=strip.reduce((s,i)=>s+cmW(i.pid)+30,0);
   return html`<div className="tray-scrim" onClick=${()=>ctx.setTray(false)}></div>
   ${qc&&html`<${QuoteComposer} ctx=${ctx} onClose=${()=>setQc(false)}/>`}
   <section className="tv" role="dialog" aria-modal="true" aria-label="Project tray">
@@ -1619,7 +1620,7 @@ function Tray({ctx}){
         ${tab==='tray'&&items.length>0&&view==='staged'&&html`
           <div className="tv-stage" aria-label="Your tray, staged">
             <div className="tv-stage-in" style=${{width:`max(100%, ${stripCm*1.15}px)`}}>
-              ${strip.map((i,n)=>html`<button key=${i.pid+i.zone+i.k} className="tv-piece" style=${{width:APPROX_CM[i.pid]*1.15+'px',alignSelf:i.p.type==='lighting'?'flex-start':'flex-end'}} title=${i.p.name+' · '+i.zone} onClick=${()=>document.getElementById('ln-'+i.pid+i.zone.replace(/\W/g,''))?.scrollIntoView({behavior:'smooth',block:'center'})}><img src=${cut(i.pid)} alt=${i.p.name}/>${i.p.type!=='lighting'&&html`<span></span>`}</button>`)}
+              ${strip.map((i,n)=>html`<button key=${i.pid+i.zone+i.k} className="tv-piece" style=${{width:cmW(i.pid)*1.15+'px',alignSelf:i.p.type==='lighting'?'flex-start':'flex-end'}} title=${i.p.name+' · '+i.zone} onClick=${()=>document.getElementById('ln-'+i.pid+i.zone.replace(/\W/g,''))?.scrollIntoView({behavior:'smooth',block:'center'})}><img src=${cut(i.pid)} alt=${i.p.name}/>${i.p.type!=='lighting'&&html`<span></span>`}</button>`)}
             </div>
             <span className="tv-stage-cap mono">Your tray, staged · ${items.reduce((s,i)=>s+i.qty,0)} pieces · scroll sideways</span>
           </div>
@@ -1637,7 +1638,7 @@ function Tray({ctx}){
           </div>`})}
           <button className="btn btn-line btn-sm" style=${{marginTop:16}} onClick=${()=>{const n='Area '+(proj.zones.length+1);upd(p=>({...p,zones:[...p.zones,n]}));ctx.toast(n+' added. Drag pieces into it.')}}>${I('plus',{width:15})} Add an area</button>`}
         ${tab==='tray'&&items.length>0&&view==='schedule'&&html`<div className="tv-sched"><table className="t"><thead><tr><th>Item</th><th>Area</th><th>Material</th><th className="r">≈ W</th><th className="r">Qty</th><th className="r">Unit</th><th className="r">Line</th><th>Status</th></tr></thead><tbody>
-            ${items.map(i=>html`<tr key=${i.pid+i.zone}><td><span className="row" style=${{gap:10}}><span className="tv-th sm" style=${{backgroundImage:`url(${cut(i.pid)})`}}></span><span><b style=${{fontWeight:500}}>${i.p.name}</b><br/><span className="mono mute">${i.p.sku}</span></span></span></td><td>${i.zone}</td><td><span className="row" style=${{gap:6}}><span className="dot" style=${{background:i.p.tone}}></span>${MAT[i.p.mat]}</span></td><td className="r num">${APPROX_CM[i.pid]} cm</td><td className="r num">${i.qty}</td><td className="r num">${fmt(pr(i.p,ctx.mode))}</td><td className="r num">${fmt(pr(i.p,ctx.mode)*i.qty)}</td><td><span className=${'tv-status'+(i.p.oos?' warn':'')}>${i.p.oos?'Restock check':'Ready to quote'}</span></td></tr>`)}
+            ${items.map(i=>html`<tr key=${i.pid+i.zone}><td><span className="row" style=${{gap:10}}><span className="tv-th sm" style=${{backgroundImage:`url(${cut(i.pid)})`}}></span><span><b style=${{fontWeight:500}}>${i.p.name}</b><br/><span className="mono mute">${i.p.sku}</span></span></span></td><td>${i.zone}</td><td><span className="row" style=${{gap:6}}><span className="dot" style=${{background:i.p.tone}}></span>${MAT[i.p.mat]}</span></td><td className="r num">${cmW(i.pid)} cm</td><td className="r num">${i.qty}</td><td className="r num">${fmt(pr(i.p,ctx.mode))}</td><td className="r num">${fmt(pr(i.p,ctx.mode)*i.qty)}</td><td><span className=${'tv-status'+(i.p.oos?' warn':'')}>${i.p.oos?'Restock check':'Ready to quote'}</span></td></tr>`)}
           </tbody></table><div className="row" style=${{marginTop:12,flexWrap:'wrap'}}><button className="btn btn-line btn-sm" onClick=${()=>copyText(csv(),ctx.toast)}>${I('copy',{width:15})} Copy schedule as CSV</button><span className="help" style=${{margin:0}}>Paste into a spreadsheet or your procurement tool. Widths are planning estimates.</span></div></div>`}
       `}
       ${step===1&&html`<div className="tv-form">
@@ -1769,12 +1770,12 @@ const SHAPES=[['rect','Square'],['arch','Arch'],['circle','Circle'],['pill','Pil
 const LOOKS=[['cutout','Seamless cutout','The piece on the board with a soft contact shadow'],['framed','Framed photo','The product photo in a shape, with an optional border'],['3d','3D cutout','A lit model you can turn to any angle'],['room','In the room','On your room photo at true scale']];
 const styleOf=e=>e.style||(e.room?'room':'framed');
 const borderOf=e=>e.border===true||e.border==null?'white':e.border===false?'none':e.border;
-const hasCutout=pid=>pid<100&&has(pid);
-const cutAR=pid=>{const a=CUT_AR[pid];return a?a[0]/a[1]:(byId(pid).ar||1)};
+const hasCutout=pid=>has(pid)&&!!byId(pid).cutout;
+const cutAR=pid=>byId(pid).cutAR||byId(pid).ar||1;
 const frameAR=(shape,ar)=>shape==='circle'?1:shape==='arch'||shape==='oval'?.8:shape==='pill'?.75:ar;
 const elAR=e=>e.kind==='inspo'?frameAR(e.shape,e.ar||1):styleOf(e)==='framed'?frameAR(e.shape,byId(e.pid).ar||1):cutAR(e.pid);
 // In the room, a piece is drawn at its real width against the photo's measured width.
-const lockW=(e,bg)=>{if(e.kind!=='img'||styleOf(e)!=='room'||!bg?.img||!(bg.widthM>0))return null;const cm=APPROX_CM[e.pid]||byId(e.pid).widthCm;return cm?cm/(bg.widthM*100)*100:null};
+const lockW=(e,bg)=>{if(e.kind!=='img'||styleOf(e)!=='room'||!bg?.img||!(bg.widthM>0))return null;const cm=byId(e.pid).dimsCm?.w;return cm?cm/(bg.widthM*100)*100:null};
 const wOf=(e,bg)=>lockW(e,bg)??e.w;
 const BOARD_SHAPES=[['rect','Rectangle'],['rounded','Rounded'],['arch','Arch'],['circle','Circle'],['oval','Oval'],['scallop','Scalloped'],['torn','Torn paper'],['poly','Free shape']];
 const EDGES=[['none','None'],['hairline','Hairline'],['thick','Thick border'],['deckle','Deckled paper'],['shadow','Drop shadow']];
@@ -1992,7 +1993,9 @@ function Studio({ctx}){
   const addPoint=()=>{const p=[...(doc.poly||POLY0)];let best=0,bl=0;p.forEach((a,i)=>{const b=p[(i+1)%p.length];const l=Math.hypot((b[0]-a[0])*W0,(b[1]-a[1])*H0);if(l>bl){bl=l;best=i}});const a=p[best],b=p[(best+1)%p.length];p.splice(best+1,0,[(a[0]+b[0])/2,(a[1]+b[1])/2]);commitDoc({...doc,shape:'poly',poly:p})};
   const MATS={...MAT,wood:'Wood'};const types=[...new Set(PRODUCTS.map(p=>p.type))];const mats=[...new Set(PRODUCTS.map(p=>p.mat))];
   const filters=[['all','All'],...types.map(t=>['t:'+t,TYPE[t]||t[0].toUpperCase()+t.slice(1)+'s']),...mats.map(m=>['m:'+m,MATS[m]||m])];
-  const prods=PRODUCTS.filter(p=>(pf==='all'||pf==='t:'+p.type||pf==='m:'+p.mat)&&(p.name+' '+p.line+' '+p.mat+' '+p.type).toLowerCase().includes(pq.toLowerCase()));
+  // The Studio offers pieces that have dimensions and a seamless cutout; the rest are still being prepared.
+  const ready=PRODUCTS.filter(p=>p.dimsCm&&p.cutout);const preparing=PRODUCTS.length-ready.length;
+  const prods=ready.filter(p=>(pf==='all'||pf==='t:'+p.type||pf==='m:'+p.mat)&&(p.name+' '+p.line+' '+p.mat+' '+p.type).toLowerCase().includes(pq.toLowerCase()));
   const kindName=multi?`${sels.length} items`:S?(S.kind==='img'?'piece':S.kind==='inspo'?'image':S.kind):'';
   const framedSel=S&&(S.kind==='inspo'||(S.kind==='img'&&styleOf(S)==='framed'));
   const selItems=multi?[['align','Align'],...(sels.length>2?[['distribute','Distribute']]:[])]:!S?[]:[
@@ -2022,7 +2025,7 @@ function Studio({ctx}){
         <div className="sx-chips scroll-x">${filters.map(([k,l])=>html`<button key=${k} className=${'chip'+(pf===k?' on':'')} onClick=${()=>setPf(k)}>${l}</button>`)}</div>
         <div className="sx-grid">${prods.map(p=>html`<button key=${p.id} className="sx-card" draggable="true" onDragStart=${e=>e.dataTransfer.setData('text/pid',String(p.id))} onClick=${()=>addProduct(p.id)} title=${'Add '+p.name}>
           <span className="sx-card-i"><img src=${cut(p.id)} alt="" loading="lazy"/></span><b>${p.name}</b><span className="num">${fmt(pr(p,ctx.mode))}</span></button>`)}</div>
-        ${!prods.length&&html`<p className="sx-note">Nothing matches. Try another word.</p>`}<//>`}
+        ${!prods.length&&html`<p className="sx-note">Nothing matches. Try another word.</p>`}${preparing>0&&html`<p className="sx-note">${preparing} more piece${preparing===1?' is':'s are'} being photographed for the Studio.</p>`}<//>`}
       ${tab==='inspo'&&html`<${React.Fragment}><p className="sx-note">Inspo carries no price or link and never counts in the total. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Library</button></p>
         ${ctx.inspo.length?html`<div className="sx-grid">${ctx.inspo.map(x=>html`<button key=${x.id} className="sx-card" onClick=${()=>addEl({...mkInspo(x),x:26,y:20,w:44,rot:0})} title=${'Add '+x.title}><span className="sx-card-i photo"><img src=${x.src} alt="" loading="lazy"/></span><b>${x.title}</b></button>`)}</div>`
           :html`<p className="sx-note">No inspo yet. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Upload inspiration</button></p>`}<//>`}
@@ -2489,14 +2492,14 @@ const PL_TINTS=[['','Natural'],['#C9B9A0','Oatmeal'],['#9FA3A0','Stone grey'],['
 const PL_BACK=[['none','No windows',()=>[]],['one','One window',()=>[{t:'win',x:0,w:2.4,h:1.8,y:.8}]],['two','Two windows',W=>[-W/4,W/4].map(x=>({t:'win',x,w:1.6,h:1.8,y:.8}))],
   ['three','Three windows',W=>[-W/3,0,W/3].map(x=>({t:'win',x,w:1.4,h:1.9,y:.7}))],['arches','Two arches',W=>[-W/4,W/4].map(x=>({t:'arch',x,w:1.6,h:2.5,y:.4}))],['glass','Glass wall',(W,H)=>{const n=Math.max(2,Math.round((W-.6)/1.9));const w=(W-.6)/n-.15;return Array.from({length:n},(_,i)=>({t:'win',x:-W/2+.3+(i+.5)*(W-.6)/n,w,h:H-.6,y:.25}))}]];
 const PL_WALLS=['#F1E9DC','#E9DCC8','#ECE4D1','#D8B4A6','#C9BFA9','#6C6948','#3B2A1E','#1F2A44'];
-const PROXY_H={sofa:.82,sectional:.8,bench:.46,ottoman:.44,lighting:.35,stool:.75,chair:.8,table:.75};
+
 // Pieces outside the curated 24 have no measured cutout: width comes from the listing's facts, the rest from their type.
-const PL_W={sofa:220,sectional:280,bench:130,ottoman:80,lighting:60,stool:45,chair:70,table:120};
-const PL_AR={sofa:[3,1],sectional:[2.2,1],bench:[3,1],ottoman:[2,1],lighting:[1,1],stool:[1,2],chair:[1,1.1],table:[2,1]};
-const plCm=pid=>{const p=byId(pid);return APPROX_CM[pid]||p.widthCm||PL_W[p.type]||100};
+// Every piece is placed from its catalog W × D × H; one without dimensions can't be placed.
+const plCm=pid=>byId(pid).dimsCm?.w
 const PL_TEMPLATES={blank:{label:'Blank room',W:8,D:6,H:3.2,wall:'#F1E9DC',floor:'oak',openings:[{wall:'back',t:'win',x:0,w:2.4,h:1.8,y:.8}],items:[]}};
 SPACE_KEYS.forEach(k=>{const s=STUDY[k];PL_TEMPLATES[k]={label:SPACES[k].label+' study',W:s.W,D:s.D,H:s.H,wall:s.dark?'#3B2A1E':ROOMS[k].wall,floor:ROOMS[k].floor,openings:s.openings.map(o=>({...o,wall:'back'})),items:s.items.map(i=>({pid:i.id,x:i.x,z:i.z,rot:0,hang:!!i.hang}))}});
-const plDims=pid=>{const p=byId(pid);const ar=CUT_AR[pid]||PL_AR[p.type]||[1,1];const w=plCm(pid)/100;return {p,w,d:p.type==='lighting'?w:(FOOT_D[p.type]||Math.min(w,.9)),hp:PROXY_H[p.type]||.8,hb:w*ar[1]/ar[0]}};
+const plDims=pid=>{const p=byId(pid);const D=p.dimsCm||{w:100,d:100,h:80};const w=D.w/100;return {p,w,d:D.d/100,hp:D.h/100,hb:w/(p.cutAR||p.ar||1)}};
+const plReady=pid=>has(pid)&&!!byId(pid).dimsCm;
 // Physical footprint: axis-aligned extents of the rotated piece, used for walls and collisions.
 const plExt=it=>{const {w,d}=plDims(it.pid);const r=(it.rot||0)*Math.PI/180,c=Math.abs(Math.cos(r)),sn=Math.abs(Math.sin(r));return [c*w/2+sn*d/2,sn*w/2+c*d/2]};
 const PL_GAP=.02,PL_SNAP=.12;
@@ -2531,7 +2534,7 @@ function Room({ctx}){
       const added=fresh.map((pid,i)=>({uid:uid(),pid,x:(i-(fresh.length-1)/2)*1.7,z:-saved.D/2+1.3,rot:0,hang:byId(pid).type==='lighting'}));
       return plReflow({...saved,items:[...kept,...added],wallImg:ctx.roomWall||saved.wallImg||null})}
     const key=PL_TEMPLATES[ctx.space]?ctx.space:'blank';const t=JSON.parse(JSON.stringify(PL_TEMPLATES[key]));let items=t.items;
-    if(ctx.roomSeed&&ctx.roomSeed.length){items=ctx.roomSeed.map((pid,i)=>({pid,x:(i-(ctx.roomSeed.length-1)/2)*1.7,z:-t.D/2+1.3,rot:0,hang:byId(pid).type==='lighting'}))}
+    if(ctx.roomSeed&&ctx.roomSeed.length){items=ctx.roomSeed.filter(plReady).map((pid,i,a)=>({pid,x:(i-(a.length-1)/2)*1.7,z:-t.D/2+1.3,rot:0,hang:byId(pid).hangs}))}
     return plReflow({...t,tpl:key,items:items.map(it=>({...it,uid:uid()})),rugs:[],wallImg:ctx.roomWall||null})};
   const [doc,setDoc]=useState(init);const [view,setView]=useState('orbit');const [style,setStyle]=useState('material');const [tod,setTod]=useState(.12);
   const [sel,setSel]=useState(null);const [tab,setTab]=useState('pieces');const [snap,setSnap]=useState(true);const [q,setQ]=useState('');const [cat,setCat]=useState('all');
@@ -2545,7 +2548,7 @@ function Room({ctx}){
   const undo=()=>{const h=hist.current;if(!h.past.length)return;h.future.push(docRef.current);setDoc(h.past.pop())};
   const redo=()=>{const h=hist.current;if(!h.future.length)return;h.past.push(docRef.current);setDoc(h.future.pop())};
   const patchItem=(id,o)=>{const d=docRef.current;commit({...d,items:d.items.map(i=>{if(i.uid!==id)return i;const n={...i,...o};if('x' in o||'z' in o||'rot' in o){const [x,z]=plPlace(d,n,n.x,n.z);n.x=r2(x);n.z=r2(z)}return n})})};
-  const addItem=(pid,x,z)=>{const d=docRef.current;const it={uid:uid(),pid,x:0,z:0,rot:0,hang:byId(pid).type==='lighting'};const [px,pz]=plPlace(d,it,x??0,z??0);it.x=r2(px);it.z=r2(pz);commit({...d,items:[...d.items,it]});setSel(it.uid)};
+  const addItem=(pid,x,z)=>{if(!plReady(pid)){ctx.toast(`Measurements needed: ${byId(pid).name} has no width, depth and height yet`);return}const d=docRef.current;const it={uid:uid(),pid,x:0,z:0,rot:0,hang:byId(pid).hangs};const [px,pz]=plPlace(d,it,x??0,z??0);it.x=r2(px);it.z=r2(pz);commit({...d,items:[...d.items,it]});setSel(it.uid)};
   const removeItem=id=>{const d=docRef.current;commit({...d,items:d.items.filter(i=>i.uid!==id),rugs:(d.rugs||[]).filter(r=>r.uid!==id)});setSel(null)};
   const rugOf=id=>(docRef.current.rugs||[]).find(r=>r.uid===id);
   const patchRug=(id,o)=>{const d=docRef.current;commit({...d,rugs:(d.rugs||[]).map(r=>{if(r.uid!==id)return r;const n={...r,...o};[n.x,n.z]=rugClamp(d,n,n.x,n.z);return n})})};
@@ -2738,7 +2741,7 @@ function Room({ctx}){
         <input className="field" style=${{height:40}} placeholder="Search pieces" aria-label="Search pieces" value=${q} onInput=${e=>setQ(e.target.value)}/>
         <div className="scroll-x">${[['all','All'],...Object.entries(TYPE)].map(([k,l])=>html`<button key=${k} className=${'chip'+(cat===k?' on':'')} style=${{height:30,fontSize:12}} onClick=${()=>setCat(k)}>${l}</button>`)}</div>
         <p className="help" style=${{margin:0}}>Click to place in the middle of the room, or drag onto the floor.</p>
-        <div className="pl-cat">${prods.map(p=>html`<button key=${p.id} draggable="true" onDragStart=${e=>e.dataTransfer.setData('text/pid',String(p.id))} onClick=${()=>addItem(p.id,0,0)} title=${'Place '+p.name}><img src=${cut(p.id)} alt="" loading="lazy"/><b>${p.name}</b><span className="mono">${plCm(p.id)} cm · ${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span></button>`)}</div>
+        <div className="pl-cat">${prods.map(p=>html`<button key=${p.id} draggable="true" onDragStart=${e=>e.dataTransfer.setData('text/pid',String(p.id))} onClick=${()=>addItem(p.id,0,0)} title=${'Place '+p.name}><img src=${cut(p.id)} alt="" loading="lazy"/><b>${p.name}</b><span className="mono">${plCm(p.id)?Math.round(plCm(p.id))+' cm':'Measurements needed'} · ${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span></button>`)}</div>
 </div><//>`}
     ${drawer==='layers'&&html`<${SxDrawer} title="Layers" onClose=${()=>setDrawer(null)}><div className="pl-sec sx-pl">${doc.items.length?doc.items.map(it=>{const p=byId(it.pid);return html`<div key=${it.uid} className=${'layer'+(sel===it.uid?' on':'')} onClick=${()=>setSel(it.uid)}><span className="th" style=${{backgroundImage:`url(${cut(it.pid)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat',backgroundPosition:'center'}}></span><span>${p.name}</span><button className="ib" aria-label=${it.lock?'Unlock':'Lock'} onClick=${e=>{e.stopPropagation();patchItem(it.uid,{lock:!it.lock})}}>${I(it.lock?'lock':'unlock')}</button><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(it.uid)}}>${I('trash')}</button></div>`}):html`<p className="help">No pieces yet. Add some from the Pieces tab.</p>`}
         ${(doc.rugs||[]).map(r=>html`<div key=${r.uid} className=${'layer'+(sel===r.uid?' on':'')} onClick=${()=>setSel(r.uid)}><span className="th" style=${{background:r.color||'#D8C7A6',borderRadius:r.round?'50%':'4px'}}></span><span>Rug · ${r.size}</span><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(r.uid)}}>${I('trash')}</button></div>`)}</div><//>`}
@@ -3082,12 +3085,95 @@ function Trade({ctx}){
   </div></main>`;
 }
 // Team review queue for trade applications (admin accounts only).
+/* ================= 3D MODELS ================= */
+// GLB pieces load on demand with Draco, Meshopt and KTX2 support, then are scaled to the
+// catalog's W × D × H exactly (whatever units the file was made in) with their base on the floor.
+let gltfP=null;
+function gltfLoader(renderer){return gltfP||=Promise.all([loadThree(),import('three/examples/jsm/loaders/GLTFLoader.js'),import('three/examples/jsm/loaders/DRACOLoader.js'),import('three/examples/jsm/loaders/KTX2Loader.js'),import('three/examples/jsm/libs/meshopt_decoder.module.js')]).then(([T,{GLTFLoader},{DRACOLoader},{KTX2Loader},{MeshoptDecoder}])=>{
+  const l=new GLTFLoader();const draco=new DRACOLoader();draco.setDecoderPath('/trade/decoders/draco/');l.setDRACOLoader(draco);l.setMeshoptDecoder(MeshoptDecoder);
+  if(renderer){const k=new KTX2Loader();k.setTranscoderPath('/trade/decoders/basis/');k.detectSupport(renderer);l.setKTX2Loader(k)}return l})}
+const glbCache=new Map();
+async function loadGLB(url,renderer){if(!glbCache.has(url))glbCache.set(url,gltfLoader(renderer).then(l=>l.loadAsync(url)).catch(e=>{glbCache.delete(url);throw e}));const g=await glbCache.get(url);return g.scene.clone(true)}
+// Scale a model so its bounding box is exactly w × d × h metres, centred, standing on y = 0.
+function fitToDims(T,obj,dims){const box=new T.Box3().setFromObject(obj);const size=box.getSize(new T.Vector3());
+  if(size.x>0&&size.y>0&&size.z>0)obj.scale.multiply(new T.Vector3(dims.w/100/size.x,dims.h/100/size.y,dims.d/100/size.z));
+  const b2=new T.Box3().setFromObject(obj);const c=b2.getCenter(new T.Vector3());obj.position.x-=c.x;obj.position.z-=c.z;obj.position.y-=b2.min.y;
+  obj.traverse(o=>{if(o.isMesh){o.castShadow=o.receiveShadow=true}});return obj}
+// A turntable: one model, lit, turning slowly, with its W × D × H beneath.
+function Turntable({url,dims,height=260}){
+  const cv=useRef();const [three,failed]=useThree();const [err,setErr]=useState('');
+  useEffect(()=>{if(!three||!url)return;const T=three;const c=cv.current;const r=new T.WebGLRenderer({canvas:c,antialias:true,alpha:true});r.setPixelRatio(Math.min(devicePixelRatio||1,2));r.outputColorSpace=T.SRGBColorSpace;r.toneMapping=T.ACESFilmicToneMapping;r.shadowMap.enabled=true;
+    const scene=new T.Scene();const cam=new T.PerspectiveCamera(30,1,.01,100);scene.add(new T.HemisphereLight('#FFF6EA','#B8A58C',1.2*LX));const sun=new T.DirectionalLight('#FFF4E5',2.4*LX);sun.position.set(2,4,3);sun.castShadow=true;scene.add(sun);
+    const ground=new T.Mesh(new T.CircleGeometry(4,48),new T.ShadowMaterial({opacity:.18}));ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+    let raf=0,live=true;const g=new T.Group();scene.add(g);
+    loadGLB(url,r).then(obj=>{if(!live)return;fitToDims(T,obj,dims||{w:100,d:100,h:100});g.add(obj);const s=new T.Box3().setFromObject(g).getSize(new T.Vector3());const R=Math.max(s.x,s.y,s.z)*1.9;
+      const tick=t=>{if(!live)return;const w=c.clientWidth,h=c.clientHeight;if(c.width!==w*r.getPixelRatio()){r.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix()}g.rotation.y=t/3000;cam.position.set(R*.9,R*.45,R*.9);cam.lookAt(0,s.y*.45,0);r.render(scene,cam);raf=requestAnimationFrame(tick)};raf=requestAnimationFrame(tick)},()=>live&&setErr('This model could not be read.'));
+    return()=>{live=false;cancelAnimationFrame(raf);r.dispose()}},[three,url]);
+  return html`<div className="tt" style=${{height}}>${failed||err?html`<p className="sx-note">${err||'3D could not load.'}</p>`:html`<canvas ref=${cv}></canvas>`}${dims&&html`<span className="tt-dims mono">${dims.w} × ${dims.d} × ${dims.h} cm</span>`}</div>`;
+}
+/* ================= ADMIN: asset readiness ================= */
+// Background removal for product photos on a light studio ground: flood-fill the ground from the
+// edges, feather the outline, crop to the piece. A person checks the result before approving it.
+async function cutoutFromPhoto(src){const im=await loadImg(absUrl(src));if(!im)throw new Error('The photo could not be loaded.');
+  const s=Math.min(1,2000/Math.max(im.width,im.height));const W=Math.round(im.width*s),H=Math.round(im.height*s);const c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d',{willReadFrequently:true});g.drawImage(im,0,0,W,H);
+  const d=g.getImageData(0,0,W,H);const px=d.data;const edge=[];for(let x=0;x<W;x+=4){edge.push((x)*4,((H-1)*W+x)*4)}for(let y=0;y<H;y+=4){edge.push((y*W)*4,(y*W+W-1)*4)}
+  const med=k=>{const v=edge.map(i=>px[i+k]).sort((a,b)=>a-b);return v[v.length>>1]};const bg=[med(0),med(1),med(2)];const tol=34;
+  const dist=i=>Math.hypot(px[i]-bg[0],px[i+1]-bg[1],px[i+2]-bg[2]);const seen=new Uint8Array(W*H);const stack=[];
+  for(let x=0;x<W;x++){stack.push(x,(H-1)*W+x)}for(let y=0;y<H;y++){stack.push(y*W,y*W+W-1)}
+  while(stack.length){const p=stack.pop();if(seen[p])continue;if(dist(p*4)>tol)continue;seen[p]=1;const x=p%W,y=(p/W)|0;if(x>0)stack.push(p-1);if(x<W-1)stack.push(p+1);if(y>0)stack.push(p-W);if(y<H-1)stack.push(p+W)}
+  let x0=W,y0=H,x1=0,y1=0;for(let p=0;p<W*H;p++){const i=p*4;if(seen[p]){px[i+3]=0;continue}
+    const x=p%W,y=(p/W)|0;const nb=(x>0&&seen[p-1])||(x<W-1&&seen[p+1])||(y>0&&seen[p-W])||(y<H-1&&seen[p+W]);if(nb)px[i+3]=Math.round(255*Math.min(1,dist(i)/(tol*2.2)));
+    if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}
+  if(x1<=x0||y1<=y0)throw new Error('No piece found against the background.');g.putImageData(d,0,0);
+  const m=Math.round(Math.max(W,H)*.01);x0=Math.max(0,x0-m);y0=Math.max(0,y0-m);x1=Math.min(W-1,x1+m);y1=Math.min(H-1,y1+m);
+  const o=document.createElement('canvas');o.width=x1-x0+1;o.height=y1-y0+1;o.getContext('2d').drawImage(c,x0,y0,o.width,o.height,0,0,o.width,o.height);
+  return {blob:await canvasBlob(o,'image/png'),url:o.toDataURL('image/png'),aspect:o.width/o.height}}
+function AssetsAdmin({ctx}){
+  const rows=useQuery(api.holmAssets.readiness);const setDims=useMutation(api.holmAssets.setDims);const upUrl=useMutation(api.holmAssets.uploadUrl);
+  const setCutout=useMutation(api.holmAssets.setCutout);const setModel=useMutation(api.holmAssets.setModel);const setMount=useMutation(api.holmAssets.setMount);
+  const [f,setF]=useState('all');const [open,setOpen]=useState(null);const [draft,setDraft]=useState(null);const [busy,setBusy]=useState('');const [dims,setD]=useState({});
+  if(rows===undefined)return html`<p className="help" style=${{padding:'40px 0'}}>Loading products…</p>`;
+  const ok={d:r=>!!r.dimsCm,c:r=>r.cutoutStatus==='approved',m:r=>r.modelStatus==='approved'};
+  const list=rows.filter(r=>f==='all'||!ok[f](r));const count=k=>rows.filter(ok[k]).length;
+  const act=async(k,fn)=>{setBusy(k);try{await fn()}catch(e){ctx.toast(errText(e))}finally{setBusy('')}};
+  const dot=(on,warn,label)=>html`<span className=${'rd'+(on?' on':warn?' warn':'')} title=${label}></span>`;
+  return html`<section style=${{display:'grid',gap:16,marginTop:20}}>
+    <div className="kpis">${[['Products',rows.length],['With dimensions',count('d')],['With a cutout',count('c')],['With a 3D model',count('m')]].map(([l,v])=>html`<div key=${l} className="kpi"><span className="mono mute">${l}</span><b className="num">${v}</b></div>`)}</div>
+    <p className="help" style=${{margin:0}}>The Studio offers products with dimensions and an approved cutout; 3D options appear only where a model is approved. Work in order: dimensions, then cutouts, then models for the curated pieces first.</p>
+    <div className="seg">${[['all','All'],['d','Missing dimensions'],['c','Missing cutout'],['m','Missing model']].map(([k,l])=>html`<button key=${k} className=${f===k?'on':''} onClick=${()=>setF(k)}>${l}</button>`)}</div>
+    <div className="rd-list">${list.map(r=>{const isOpen=open===r.productId;const dv=dims[r.productId]||r.dimsCm||{};return html`<div key=${r.productId} className=${'rd-row'+(isOpen?' open':'')}>
+      <button className="rd-head" onClick=${()=>{setOpen(isOpen?null:r.productId);setDraft(null)}} aria-expanded=${isOpen}>
+        <span className="rd-th">${r.image&&html`<img src=${r.image} alt="" loading="lazy"/>`}</span><span className="rd-name">${r.name}</span>
+        <span className="rd-dots">${dot(!!r.dimsCm,false,'Dimensions'+(r.dimsSource?' · '+r.dimsSource:''))}${dot(r.cutoutStatus==='approved',r.cutoutStatus==='draft','Cutout'+(r.cutoutStatus?' · '+r.cutoutStatus:''))}${dot(r.modelStatus==='approved',r.modelStatus==='draft','3D model · '+r.modelStatus)}</span></button>
+      ${isOpen&&html`<div className="rd-body">
+        <div className="rd-sec"><h4>Dimensions <small className="mute">${r.dimsSource==='parsed'?'read from the listing':r.dimsSource?r.dimsSource:'needed'}</small></h4>
+          <div className="pl-dims">${[['w','Width'],['d','Depth'],['h','Height'],['seatH','Seat height'],['armH','Arm height']].map(([k,l])=>html`<label key=${k}><span className="mono mute">${l} (cm)</span><input className="field num" type="number" min="0" step="0.5" value=${dv[k]??''} onInput=${e=>setD(o=>({...o,[r.productId]:{...dv,[k]:e.target.value===''?undefined:+e.target.value}}))}/></label>`)}</div>
+          <div className="row" style=${{gap:8,flexWrap:'wrap'}}><button className="btn btn-ink btn-sm" disabled=${busy==='dims'||!(dv.w>0&&dv.d>0&&dv.h>0)} onClick=${()=>act('dims',async()=>{await setDims({productId:r.productId,dimsCm:{w:dv.w,d:dv.d,h:dv.h,...(dv.seatH?{seatH:dv.seatH}:{}),...(dv.armH?{armH:dv.armH}:{})}});ctx.toast('Dimensions saved')})}>Save dimensions</button>
+            ${r.dimsSource==='manual'&&html`<button className="lnk" onClick=${()=>act('dims',()=>setDims({productId:r.productId,dimsCm:null}))}>Use the listing's dimensions</button>`}</div>
+          <label className="toggle" style=${{maxWidth:360}}><span>Hangs from the ceiling or wall</span><input type="checkbox" className="sr" checked=${r.hangs} onChange=${e=>act('mount',()=>setMount({productId:r.productId,hangs:e.target.checked,mountHeightCm:r.mountHeightCm??undefined}))}/><span className=${'sw'+(r.hangs?' on':'')}></span></label></div>
+        <div className="rd-sec"><h4>Seamless cutout <small className="mute">${r.cutoutStatus||'none yet'}</small></h4>
+          <div className="rd-pair"><figure><img src=${r.image} alt="Product photo"/><figcaption className="mono mute">Product photo</figcaption></figure>
+            <figure className="checker">${draft?.url?html`<img src=${draft.url} alt="Cutout preview"/>`:r.cutoutUrl?html`<img src=${r.cutoutUrl} alt="Current cutout"/>`:html`<span className="sx-note">No cutout yet</span>`}<figcaption className="mono mute">${draft?'Check the edges, then approve':'Cutout'}</figcaption></figure></div>
+          <div className="row" style=${{gap:8,flexWrap:'wrap'}}>
+            <button className="btn btn-line btn-sm" disabled=${!!busy} onClick=${()=>act('cut',async()=>setDraft(await cutoutFromPhoto(r.image)))}>${busy==='cut'?'Removing background…':'Remove the background'}</button>
+            <label className="btn btn-line btn-sm" style=${{cursor:'pointer'}}>Upload a cutout<input type="file" accept="image/png,image/webp" hidden onChange=${async e=>{const x=e.target.files[0];if(!x)return;const u=URL.createObjectURL(x);const im=await loadImg(u);setDraft({blob:x,url:u,aspect:im?im.width/im.height:1})}}/></label>
+            ${draft&&html`<button className="btn btn-cog btn-sm" disabled=${!!busy} onClick=${()=>act('save',async()=>{const id=await uploadBlob(upUrl,draft.blob);await setCutout({productId:r.productId,cutoutId:id,aspect:draft.aspect,status:'approved'});setDraft(null);ctx.toast('Cutout approved')})}>Approve cutout</button>`}
+            ${r.cutoutStatus&&!draft&&html`<button className="lnk" style=${{color:'var(--bad)'}} onClick=${()=>act('rm',()=>setCutout({productId:r.productId,status:'removed'}))}>Remove cutout</button>`}</div></div>
+        <div className="rd-sec"><h4>3D model <small className="mute">${r.modelStatus}${r.modelBytes?` · ${(r.modelBytes/1048576).toFixed(1)} MB`:''}</small></h4>
+          ${r.modelUrl?html`<div className="rd-pair"><figure><img src=${r.image} alt="Product photo"/></figure><${Turntable} url=${r.modelUrl} dims=${r.dimsCm}/></div>`:html`<p className="sx-note">Generate a GLB from every angle of the product photos with an image-to-3D tool, swap its painted texture for the shared ${'leather, bouclé, velvet or wood'} material, compress it under 3 MB (Draco or Meshopt, KTX2 textures), then upload it here. It is scaled to the listed W × D × H automatically.</p>`}
+          <div className="row" style=${{gap:8,flexWrap:'wrap'}}>
+            <label className="btn btn-line btn-sm" style=${{cursor:'pointer'}}>${r.modelUrl?'Upload a new model':'Upload a GLB'}<input type="file" accept=".glb,model/gltf-binary" hidden onChange=${e=>{const x=e.target.files[0];if(!x)return;e.target.value='';act('glb',async()=>{if(x.size>3*1048576)throw new Error('Models must be under 3 MB.');const id=await uploadBlob(upUrl,x);await setModel({productId:r.productId,modelId:id,status:'draft'});ctx.toast('Model uploaded for review')})}}/></label>
+            ${r.modelUrl&&r.modelStatus!=='approved'&&html`<button className="btn btn-cog btn-sm" disabled=${!r.dimsCm||!!busy} title=${r.dimsCm?'':'Add dimensions first'} onClick=${()=>act('ok',()=>setModel({productId:r.productId,status:'approved'}))}>Approve</button>`}
+            ${r.modelUrl&&r.modelStatus!=='rejected'&&html`<button className="lnk" style=${{color:'var(--bad)'}} onClick=${()=>act('no',()=>setModel({productId:r.productId,status:'rejected'}))}>Reject</button>`}</div></div>
+      </div>`}</div>`})}</div>
+  </section>`;
+}
 function AdminPage({ctx}){
   const [tab,setTab]=useState('apps');
   if(!ctx.me.admin)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h3>Team only</h3><p>Sign in with an admin account to manage House of Louie Mae.</p></div></main>`;
   return html`<main className="wrap" style=${{paddingBottom:60}}>
-    <div className="seg" style=${{margin:'28px 0 0'}}>${[['apps','Trade applications'],['sourcing','Sourcing'],['partners','Partners'],['pricing','Pricing']].map(([k,l])=>html`<button key=${k} className=${tab===k?'on':''} onClick=${()=>setTab(k)}>${l}</button>`)}</div>
-    ${tab==='apps'?html`<${TradeAdmin} ctx=${ctx}/>`:tab==='sourcing'?html`<${SourcingAdmin} ctx=${ctx}/>`:tab==='pricing'?html`<${PricingAdmin} ctx=${ctx}/>`:html`<${PartnersAdmin} ctx=${ctx}/>`}
+    <div className="seg" style=${{margin:'28px 0 0'}}>${[['apps','Trade applications'],['sourcing','Sourcing'],['partners','Partners'],['pricing','Pricing'],['assets','Asset readiness']].map(([k,l])=>html`<button key=${k} className=${tab===k?'on':''} onClick=${()=>setTab(k)}>${l}</button>`)}</div>
+    ${tab==='assets'?html`<${AssetsAdmin} ctx=${ctx}/>`:tab==='apps'?html`<${TradeAdmin} ctx=${ctx}/>`:tab==='sourcing'?html`<${SourcingAdmin} ctx=${ctx}/>`:tab==='pricing'?html`<${PricingAdmin} ctx=${ctx}/>`:html`<${PartnersAdmin} ctx=${ctx}/>`}
   </main>`;
 }
 function SourcingAdmin({ctx}){
