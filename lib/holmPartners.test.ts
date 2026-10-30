@@ -29,6 +29,8 @@ describe('House partner link channels', () => {
 
   it('counts anything unknown as a plain link', () => {
     expect(holmChannel('')).toBe('link');
+    expect(holmChannel('constructor')).toBe('link');
+    expect(holmChannel('__proto__')).toBe('link');
     expect(holmChannel(undefined)).toBe('link');
     expect(holmChannel('<script>')).toBe('link');
   });

@@ -212,7 +212,8 @@ export const holmTables = {
   })
     .index('by_slug', ['slug'])
     .index('by_owner', ['ownerId', 'createdAt'])
-    .index('by_owner_key', ['ownerId', 'boardKey', 'mode']),
+    .index('by_owner_key', ['ownerId', 'boardKey', 'mode'])
+    .index('by_cover', ['coverId']),
 
   // A request for the House team to render a planned room.
   holmRenderRequests: defineTable({

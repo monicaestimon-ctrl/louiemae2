@@ -26,7 +26,7 @@ const LEGACY_CHANNELS: Record<string, HolmChannel> = {
 export function holmChannel(raw: string | null | undefined): HolmChannel {
   const c = String(raw ?? '').toLowerCase();
   if ((HOLM_PARTNERS.channels as readonly string[]).includes(c)) return c as HolmChannel;
-  return LEGACY_CHANNELS[c] ?? 'link';
+  return Object.prototype.hasOwnProperty.call(LEGACY_CHANNELS, c) ? LEGACY_CHANNELS[c] : 'link';
 }
 
 export function commissionCents(baseCents: number, rateBps: number) {

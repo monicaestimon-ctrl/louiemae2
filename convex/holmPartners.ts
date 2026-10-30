@@ -364,7 +364,8 @@ export const boardStats = query({
     for (const c of commissions) if (c.status !== 'void') earned.set(c.quoteRequestId, (earned.get(c.quoteRequestId) ?? 0) + c.amountCents);
     return Promise.all(
       boards.map(async (b) => {
-        const clicks = await ctx.db.query('holmClicks').withIndex('by_board', (q) => q.eq('board', b.slug)).take(5000);
+        // Recent clicks only: 40 boards x 500 rows stays well inside a query's read limit.
+        const clicks = await ctx.db.query('holmClicks').withIndex('by_board', (q) => q.eq('board', b.slug)).order('desc').take(500);
         const byChannel: Record<string, number> = {};
         for (const c of clicks) if (c.partnerId === me.userId) byChannel[c.channel] = (byChannel[c.channel] ?? 0) + 1;
         const orders = quotes.filter((q) => q.board === b.slug);

@@ -1,5 +1,6 @@
 import { v } from 'convex/values';
-import { query, mutation } from './_generated/server';
+import { query, mutation, type MutationCtx } from './_generated/server';
+import type { Id } from './_generated/dataModel';
 import { requireUser, viewer } from './holmAccess';
 import { insertClick } from './holmPartners';
 
@@ -72,6 +73,19 @@ export const coverUploadUrl = mutation({
 });
 
 const MAX_DOC = 200_000;
+const MAX_COVER = 5 * 1024 * 1024;
+
+/**
+ * A new cover must be an image the sharer has just uploaded and nobody else's board uses,
+ * so a board can never adopt (and later delete) a stored file that belongs to someone else.
+ */
+async function checkCover(ctx: MutationCtx, id: Id<'_storage'>, userId: Id<'users'>) {
+  const file = await ctx.db.system.get(id);
+  if (!file || !file.contentType?.startsWith('image/') || file.size > MAX_COVER || file._creationTime < Date.now() - 30 * 60_000)
+    throw new Error('This board image could not be used. Try sharing again.');
+  const users = await ctx.db.query('holmSharedBoards').withIndex('by_cover', (q) => q.eq('coverId', id)).take(5);
+  if (users.some((b) => b.ownerId !== userId)) throw new Error('This board image could not be used. Try sharing again.');
+}
 // Data URLs (local uploads) never travel with a shared layout; they stay on the sharer's device.
 const docSize = (doc: unknown) => (doc === undefined ? 0 : JSON.stringify(doc).length);
 
@@ -110,6 +124,7 @@ export const shareBoard = mutation({
           .withIndex('by_owner_key', (q) => q.eq('ownerId', me.userId).eq('boardKey', a.boardKey).eq('mode', a.mode))
           .first()
       : null;
+    if (a.coverId && a.coverId !== existing?.coverId) await checkCover(ctx, a.coverId, me.userId);
     if (existing) {
       if (a.coverId && existing.coverId && existing.coverId !== a.coverId) await ctx.storage.delete(existing.coverId);
       await ctx.db.patch(existing._id, { title, items, refCode, doc: a.doc, ...(a.coverId ? { coverId: a.coverId } : {}), updatedAt: now });
