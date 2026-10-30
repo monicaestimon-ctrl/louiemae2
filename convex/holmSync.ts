@@ -1,5 +1,7 @@
 import { v } from 'convex/values';
-import { query, mutation, type MutationCtx } from './_generated/server';
+import { getAuthUserId } from '@convex-dev/auth/server';
+import { query, mutation, action, internalMutation, type MutationCtx } from './_generated/server';
+import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { requireUser, viewer } from './holmAccess';
 import { insertClick } from './holmPartners';
@@ -64,27 +66,46 @@ function boardSlug() {
   return Array.from(globalThis.crypto.getRandomValues(new Uint8Array(12)), (b) => abc[b % abc.length]).join('');
 }
 
-export const coverUploadUrl = mutation({
-  args: {},
-  handler: async (ctx) => {
-    await requireUser(ctx);
-    return await ctx.storage.generateUploadUrl();
+const MAX_COVER = 5 * 1024 * 1024;
+
+/**
+ * Stores a rendered board cover on the server and records who uploaded it. Covers never go
+ * through a bare upload URL, so the owner of every cover is known when a board adopts it.
+ */
+export const uploadCover = action({
+  args: { bytes: v.bytes(), type: v.string() },
+  handler: async (ctx, a): Promise<Id<'_storage'>> => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error('Sign in to share a board.');
+    if (!/^image\/(jpeg|png|webp)$/.test(a.type) || !a.bytes.byteLength || a.bytes.byteLength > MAX_COVER)
+      throw new Error('This board image could not be used.');
+    const storageId = await ctx.storage.store(new Blob([a.bytes], { type: a.type }));
+    await ctx.runMutation(internal.holmSync.claimCover, { userId, storageId });
+    return storageId;
+  },
+});
+
+export const claimCover = internalMutation({
+  args: { userId: v.id('users'), storageId: v.id('_storage') },
+  handler: async (ctx, a) => {
+    await ctx.db.insert('holmCoverUploads', { ...a, createdAt: Date.now() });
   },
 });
 
 const MAX_DOC = 200_000;
-const MAX_COVER = 5 * 1024 * 1024;
 
-/**
- * A new cover must be an image the sharer has just uploaded and nobody else's board uses,
- * so a board can never adopt (and later delete) a stored file that belongs to someone else.
- */
+/** A board only adopts (and later deletes) a cover that its sharer uploaded through uploadCover. */
 async function checkCover(ctx: MutationCtx, id: Id<'_storage'>, userId: Id<'users'>) {
+  const claim = await ctx.db.query('holmCoverUploads').withIndex('by_storage', (q) => q.eq('storageId', id)).first();
   const file = await ctx.db.system.get(id);
-  if (!file || !file.contentType?.startsWith('image/') || file.size > MAX_COVER || file._creationTime < Date.now() - 30 * 60_000)
+  if (!claim || claim.userId !== userId || !file || !file.contentType?.startsWith('image/') || file.size > MAX_COVER)
     throw new Error('This board image could not be used. Try sharing again.');
-  const users = await ctx.db.query('holmSharedBoards').withIndex('by_cover', (q) => q.eq('coverId', id)).take(5);
-  if (users.some((b) => b.ownerId !== userId)) throw new Error('This board image could not be used. Try sharing again.');
+}
+
+async function dropCover(ctx: MutationCtx, id: Id<'_storage'>) {
+  const claim = await ctx.db.query('holmCoverUploads').withIndex('by_storage', (q) => q.eq('storageId', id)).first();
+  if (claim) await ctx.db.delete(claim._id);
+  await ctx.storage.delete(id);
 }
 // Data URLs (local uploads) never travel with a shared layout; they stay on the sharer's device.
 const docSize = (doc: unknown) => (doc === undefined ? 0 : JSON.stringify(doc).length);
@@ -126,7 +147,7 @@ export const shareBoard = mutation({
       : null;
     if (a.coverId && a.coverId !== existing?.coverId) await checkCover(ctx, a.coverId, me.userId);
     if (existing) {
-      if (a.coverId && existing.coverId && existing.coverId !== a.coverId) await ctx.storage.delete(existing.coverId);
+      if (a.coverId && existing.coverId && existing.coverId !== a.coverId) await dropCover(ctx, existing.coverId);
       await ctx.db.patch(existing._id, { title, items, refCode, doc: a.doc, ...(a.coverId ? { coverId: a.coverId } : {}), updatedAt: now });
       return { slug: existing.slug, refCode: refCode ?? null };
     }
