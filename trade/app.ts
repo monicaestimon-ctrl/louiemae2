@@ -8,6 +8,7 @@ import { deliveryCents, DELIVERY_TIERS } from '../lib/holmDelivery';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { phoneCut } from './phoneCut.mjs';
+import { area as polyArea, inside as inPoly, centroid as polyCentre, bounds as polyBounds, setWallLength } from '../lib/holmPlan';
 export const html = htm.bind(React.createElement);
 
 /* ================= data ================= */
@@ -23,7 +24,11 @@ const has = (id: number) => BY_ID.has(id);
 const TRADE = 0.75, COMMISSION = 0.12; // illustrative only (trade section demo); real prices come from the server
 const tp = (p: HolmProduct) => p.trade ?? p.price;
 const pr = (p: HolmProduct, mode: string) => (mode === 'trade' ? tp(p) : p.price);
-const cut = (id: number) => (id < 100 && has(id) ? `c/${id}.webp` : byId(id).img);
+// A piece's seamless cutout when it has one (from its asset record, or the curated studio set), else its photo.
+const cut = (id: number) => byId(id).cutout || byId(id).img;
+// Width / height of what cut() returns, as [w, h]; true size in cm from the product's W × D × H.
+const cutWH = (id: number) => [byId(id).cutAR || byId(id).ar || 1, 1];
+const cmW = (id: number) => byId(id).dimsCm?.w ?? byId(id).widthCm ?? 100;
 const pinItUrl=(media,desc,link='https://www.louiemae.com/retail-furniture')=>`https://www.pinterest.com/pin/create/button/?url=${encodeURIComponent(link)}&media=${encodeURIComponent(media)}&description=${encodeURIComponent(desc)}`;
 const PIN_BOARDS=[];
 // three.js loads on demand, the first time a 3D view mounts, so other pages never pay for it.
@@ -256,7 +261,6 @@ function TabBar({ctx}){
 }
 
 /* ================= ROOM HERO ================= */
-const CUT_AR={1:[1031,308],2:[1084,368],3:[1057,352],4:[1100,379],5:[1100,375],6:[1100,370],7:[1100,552],8:[995,777],9:[941,673],10:[1100,551],11:[383,917],12:[944,889],13:[1100,726],14:[1100,520],15:[1046,641],16:[995,637],17:[1100,478],18:[1100,577],19:[1100,521],20:[1100,504],21:[1100,731],22:[1100,540],23:[956,426],24:[1100,688]};
 const GLOW_AT={8:[50,80],11:[82,10],12:[50,92]};
 const HORIZON=60;
 const MOODS={
@@ -369,7 +373,7 @@ function RoomScene({room,scene,roomCm,onPick,refCb,idx}){
       ${scene.items.filter(i=>i.top!=null&&GLOW_AT[i.id]).map((i,k)=>html`<span key=${'pool'+k} className="rh-pool" style=${{left:i.x+'%'}}></span><span key=${'wpool'+k} className="rh-wpool" style=${{left:i.x+'%'}}></span>`)}${scene.items.filter(i=>i.id===11).map((i,k)=>html`<span key=${'lp'+k} className="rh-wpool lamp" style=${{left:(i.x+1.5)+'%'}}></span>`)}<div className="rh-shaft" style=${{background:`linear-gradient(${M.side==='r'?200:160}deg,${M.shaft},transparent 88%)`,clipPath:M.side==='r'?'polygon(80% 12%,92% 12%,74% 100%,38% 100%)':'polygon(4% 8%,18% 8%,66% 100%,22% 100%)'}}></div>
     </div>
     <div className="rh-objs">
-      ${items.map((it,i)=>{const p=byId(it.id);const ar=CUT_AR[it.id];const hang=it.top!=null;const w=hang?it.cm/roomCm*100:it.cm/roomCm*100*depth(it.b);const g=GLOW_AT[it.id];
+      ${items.map((it,i)=>{const p=byId(it.id);const ar=cutWH(it.id);const hang=it.top!=null;const w=hang?it.cm/roomCm*100:it.cm/roomCm*100*depth(it.b);const g=GLOW_AT[it.id];
         const pos=hang?{left:it.x+'%',top:it.top+'%',width:w+'%'}:{left:it.x+'%',bottom:(100-it.b)+'%',width:w+'%'};
         return html`<button key=${i} className=${'rh-obj'+(hang?' hang':'')} style=${{...pos,zIndex:hang?50:Math.round(it.b)}} onClick=${e=>{e.stopPropagation();onPick(it,e.currentTarget)}} aria-label=${p.name+' '+p.line}>
           ${!hang&&html`<span className="rh-contact"></span><img className="rh-cast" src=${cut(it.id)} alt="" aria-hidden="true" draggable="false"/>`}
@@ -456,9 +460,9 @@ const CHAPTERS=[
   ['The finish','Plaster, oak, linen.','Materials wash over the clay: limewash walls, the floor you specify, a jute rug under the banquette.'],
   ['The light','Morning to last call.','Scroll through the day. Sun moves through the windows, then the pendants take over after dark.'],
 ];
-const FLOOR_TILE={herring:1.3,herringDark:1.3,oak:2.6,oakDark:2.6,oakLight:2.6,oakGrey:2.6,oakWhite:2.6,terrazzo:1.8,marble:2.6,marbleLight:2.6,concrete:2.6,tile:1.2,checker:1.2,carpet:1.5};
+// Metres one floor texture covers. The oak texture holds 8 boards across, so 1.44 m gives 18 cm boards.
+const FLOOR_TILE={herring:1.3,herringDark:1.3,oak:1.44,oakDark:1.44,oakLight:1.44,oakGrey:1.44,oakWhite:1.44,terrazzo:1.8,marble:2.6,marbleLight:2.6,concrete:2.6,tile:1.2,checker:1.2,carpet:1.5};
 const clamp01=v=>Math.max(0,Math.min(1,v));const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;const seg=(p,a,b)=>ease(clamp01((p-a)/(b-a)));
-const FOOT_D={sofa:.95,sectional:1.7,bench:.45,ottoman:0,lighting:0};
 
 function RoomStudy({ctx}){
   const sp=SPACES[ctx.space];const cfg=STUDY[ctx.space];const room=ROOMS[ctx.space];
@@ -512,17 +516,17 @@ function RoomStudy({ctx}){
     });
     // rug
     const rugAnchor=cfg.items.find(i=>!i.hang&&['sofa','sectional'].includes(byId(i.id).type))||cfg.items[0];
-    const rugW=Math.min(W-1,APPROX_CM[rugAnchor.id]/100+1.2),rugD=2.6;
+    const rugW=Math.min(W-1,cmW(rugAnchor.id)/100+1.2),rugD=2.6;
     const rug=new T.Mesh(new T.PlaneGeometry(rugW,rugD),new T.MeshStandardMaterial({map:tex(texture('jute').url,[rugW*1.6,rugD*1.6]),roughness:1,transparent:true,opacity:0}));rug.rotation.x=-Math.PI/2;rug.position.set(rugAnchor.x,.006,rugAnchor.z+1.1);rug.receiveShadow=true;scene.add(rug);
     // ---------- pieces (billboards with real alpha shadows) ----------
     const blob=(()=>{const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');const gr=g.createRadialGradient(64,64,0,64,64,64);gr.addColorStop(0,'rgba(0,0,0,.55)');gr.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=gr;g.fillRect(0,0,128,128);return new T.CanvasTexture(c)})();
     const glowTex=(()=>{const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');const gr=g.createRadialGradient(64,64,0,64,64,64);gr.addColorStop(0,'rgba(255,214,150,1)');gr.addColorStop(.3,'rgba(255,170,80,.35)');gr.addColorStop(1,'rgba(255,150,60,0)');g.fillStyle=gr;g.fillRect(0,0,128,128);return new T.CanvasTexture(c)})();
     const pieces=[];const lamps=[];
-    cfg.items.forEach((it,i)=>{const p=byId(it.id);const ar=CUT_AR[it.id];const w=APPROX_CM[it.id]/100,h=w*ar[1]/ar[0];const map=tex(cut(it.id));
+    cfg.items.forEach((it,i)=>{const p=byId(it.id);const ar=cutWH(it.id);const w=cmW(it.id)/100,h=w*ar[1]/ar[0];const map=tex(cut(it.id));
       const mat=new T.MeshStandardMaterial({map,transparent:true,alphaTest:.45,side:T.DoubleSide,roughness:.85});
       const mesh=new T.Mesh(new T.PlaneGeometry(w,h),mat);mesh.castShadow=true;mesh.customDepthMaterial=new T.MeshDepthMaterial({depthPacking:T.RGBADepthPacking,map,alphaTest:.45});
       const restY=it.hang?H-h/2-.05:h/2;mesh.position.set(it.x,restY,it.z);mesh.userData={it,restY,i,w,h};scene.add(mesh);
-      let shadow=null;if(!it.hang){shadow=new T.Mesh(new T.PlaneGeometry(w*1.05,Math.max(.5,FOOT_D[p.type]||w*.8)),new T.MeshBasicMaterial({map:blob,transparent:true,depthWrite:false,opacity:0}));shadow.rotation.x=-Math.PI/2;shadow.position.set(it.x,.008,it.z);scene.add(shadow)}
+      let shadow=null;if(!it.hang){shadow=new T.Mesh(new T.PlaneGeometry(w*1.05,Math.max(.5,(p.dimsCm?.d||w*80)/100)),new T.MeshBasicMaterial({map:blob,transparent:true,depthWrite:false,opacity:0}));shadow.rotation.x=-Math.PI/2;shadow.position.set(it.x,.008,it.z);scene.add(shadow)}
       else{const cord=new T.Mesh(new T.CylinderGeometry(.006,.006,.05,6),new T.MeshBasicMaterial({color:'#1E1B19'}));scene.add(cord);mesh.userData.cord=cord}
       if(GLOW_AT[it.id]){const g=GLOW_AT[it.id];const light=new T.PointLight('#FFB868',0,7,2);scene.add(light);const spr=new T.Sprite(new T.SpriteMaterial({map:glowTex,transparent:true,opacity:0,depthWrite:false,blending:T.AdditiveBlending}));spr.scale.set(w*1.4,w*1.4,1);scene.add(spr);lamps.push({light,spr,mesh,g})}
       pieces.push({mesh,shadow,p});
@@ -533,7 +537,7 @@ function RoomStudy({ctx}){
     const bw=-D/2;let cx=-W/2;[...cfg.openings.filter(o=>o.y<1.2)].sort((a,b)=>a.x-b.x).forEach(o=>{L(cx,bw,o.x-o.w/2,bw);L(o.x-o.w/2,bw,o.x-o.w/2,bw-.22);L(o.x+o.w/2,bw,o.x+o.w/2,bw-.22);cx=o.x+o.w/2});L(cx,bw,W/2,bw);
     L(-W/2-.22,bw-.22,W/2+.22,bw-.22);L(-W/2,bw,-W/2,D/2);L(-W/2-.22,bw-.22,-W/2-.22,D/2);L(W/2,bw,W/2,D/2);L(W/2+.22,bw-.22,W/2+.22,D/2);
     const planLines=new T.LineSegments(new T.BufferGeometry().setFromPoints(pts),ink);scene.add(planLines);
-    const fp=[];cfg.items.forEach(it=>{const p=byId(it.id);const w=APPROX_CM[it.id]/100;if(it.hang){const r=w/2;for(let k=0;k<24;k++){const a=k/24*Math.PI*2,b=(k+1)/24*Math.PI*2;fp.push(new T.Vector3(it.x+Math.cos(a)*r,.012,it.z+Math.sin(a)*r),new T.Vector3(it.x+Math.cos(b)*r,.012,it.z+Math.sin(b)*r))}return}const d=FOOT_D[p.type]||w;const x0=it.x-w/2,x1=it.x+w/2,z0=it.z-d/2,z1=it.z+d/2;[[x0,z0,x1,z0],[x1,z0,x1,z1],[x1,z1,x0,z1],[x0,z1,x0,z0]].forEach(([a,b,c,e])=>fp.push(new T.Vector3(a,.012,b),new T.Vector3(c,.012,e)))});
+    const fp=[];cfg.items.forEach(it=>{const p=byId(it.id);const w=cmW(it.id)/100;if(it.hang){const r=w/2;for(let k=0;k<24;k++){const a=k/24*Math.PI*2,b=(k+1)/24*Math.PI*2;fp.push(new T.Vector3(it.x+Math.cos(a)*r,.012,it.z+Math.sin(a)*r),new T.Vector3(it.x+Math.cos(b)*r,.012,it.z+Math.sin(b)*r))}return}const d=(p.dimsCm?.d??w*100)/100||w;const x0=it.x-w/2,x1=it.x+w/2,z0=it.z-d/2,z1=it.z+d/2;[[x0,z0,x1,z0],[x1,z0,x1,z1],[x1,z1,x0,z1],[x0,z1,x0,z0]].forEach(([a,b,c,e])=>fp.push(new T.Vector3(a,.012,b),new T.Vector3(c,.012,e)))});
     const fpMat=new T.LineDashedMaterial({color:'#A65F2C',dashSize:.12,gapSize:.08,transparent:true,opacity:1});const footLines=new T.LineSegments(new T.BufferGeometry().setFromPoints(fp),fpMat);footLines.computeLineDistances();scene.add(footLines);
     // ---------- lights ----------
     const hemi=new T.HemisphereLight('#DDE7F0','#B8A58C',.55*LX);scene.add(hemi);
@@ -546,7 +550,7 @@ function RoomStudy({ctx}){
     const mouse={x:0,y:0,nx:-9,ny:-9,in:false};const ray=new T.Raycaster();const ndc=new T.Vector2();const floorPlane=new T.Plane(new T.Vector3(0,1,0),0);
     let P=0,todT=0,hover=null,dirty=true,running=true,lastChap=-1,lastTod='',lastNight=null,overrideT=null;
     // labels (dimensions + footprints)
-    const labels=[{v:new T.Vector3(0,.02,D/2+.45),t:`${W.toFixed(1)} m`},{v:new T.Vector3(W/2+.6,.02,0),t:`${D.toFixed(1)} m`},...cfg.items.map(it=>{const p=byId(it.id);return {v:new T.Vector3(it.x,.02,it.z),t:`${p.name} · ${APPROX_CM[it.id]} cm`,cog:1}})];
+    const labels=[{v:new T.Vector3(0,.02,D/2+.45),t:`${W.toFixed(1)} m`},{v:new T.Vector3(W/2+.6,.02,0),t:`${D.toFixed(1)} m`},...cfg.items.map(it=>{const p=byId(it.id);return {v:new T.Vector3(it.x,.02,it.z),t:`${p.name} · ${cmW(it.id)} cm`,cog:1}})];
     const labEl=labRef.current;labEl.innerHTML=labels.map(l=>`<span class="rs-lab${l.cog?' cog':''}">${l.t}</span>`).join('');const labNodes=[...labEl.children];
     const resize=()=>{const r=stage.getBoundingClientRect();renderer.setSize(r.width,r.height,false);cam.aspect=r.width/r.height;cam.fov=r.width/r.height<.8?52:36;cam.updateProjectionMatrix();dirty=true};resize();
     const ro=new ResizeObserver(resize);ro.observe(stage);
@@ -639,7 +643,7 @@ function RoomStudy({ctx}){
       <div className=${'rh-hint'+(scrolled?' gone':'')}><span>Scroll to build the room</span><i></i></div>
       ${P0&&html`<div className="rh-card" style=${{left:`clamp(160px, ${pick.x}%, calc(100% - 160px))`,top:`max(250px, ${pick.y}%)`}} onClick=${e=>e.stopPropagation()} role="dialog" aria-label=${P0.name}>
         <button className="rh-x" aria-label="Close" onClick=${()=>setPick(null)}>${I('x',{width:14})}</button>
-        <span className="mono">${P0.sku} · ${MAT[P0.mat]} · ≈ ${APPROX_CM[P0.id]} cm</span><h3>${P0.name}</h3><p>${P0.line}</p>
+        <span className="mono">${P0.sku} · ${MAT[P0.mat]} · ≈ ${cmW(P0.id)} cm</span><h3>${P0.name}</h3><p>${P0.line}</p>
         <div className="rh-price"><b>${ctx.mode==='trade'?fmt(tp(P0),true):fmt(P0.price,true)}</b>${ctx.mode==='trade'&&html`<s>${fmt(P0.price,true)}</s>`}</div>
         <div className="rh-card-act"><button className="rh-btn solid sm" onClick=${()=>ctx.addToTray(P0.id,1,null)}>${I('plus',{width:15})} Add to tray</button><button className="rh-btn sm" onClick=${()=>ctx.openPin(P0.id)}>Details</button></div>
       </div>`}
@@ -877,7 +881,7 @@ function useLux(){
 }
 // A product cutout hovering in space, with a contact shadow that breathes with it.
 function FloatPiece({id,w=150,depth=14,delay=0,className='',style}){
-  const ar=CUT_AR[id]||[1,1];
+  const ar=cutWH(id);
   return html`<span className=${'fp '+className} style=${{'--d':depth+'px','--fd':delay+'s',width:w+'px',...style}} aria-hidden="true">
     <img src=${cut(id)} alt="" loading="lazy" style=${{aspectRatio:ar[0]+'/'+ar[1]}}/><i></i>
   </span>`;
@@ -956,7 +960,7 @@ function Collection({ctx}){
       <div className="lx-grid" key=${cat}>
         ${list.map((p,i)=>html`<article key=${p.id} className="lx-piece" data-r style=${{'--i':i%4+1}}>
           <button className=${"lx-stage"+([8,12].includes(p.id)?" hang":"")} onClick=${()=>ctx.openPin(p.id)} aria-label=${'View '+p.name+' '+p.line}>
-            <span className="lx-cut"><img src=${cut(p.id)} alt="" loading="lazy" style=${{aspectRatio:(CUT_AR[p.id]||[1,1]).join('/')}}/></span><i className="lx-floor"></i>
+            <span className="lx-cut"><img src=${cut(p.id)} alt="" loading="lazy" style=${{aspectRatio:cutWH(p.id).join('/')}}/></span><i className="lx-floor"></i>
             ${p.oos&&html`<span className="lx-tag">Restock on request</span>`}
           </button>
           <div className="lx-chip glass light">
@@ -1159,8 +1163,7 @@ function Trend({ctx}){
 /* ================= PIN DETAIL ================= */
 /* ================= TRAY (cart) ================= */
 /* ================= shared v3 helpers ================= */
-const APPROX_CM={1:245,2:235,3:250,4:240,5:300,6:300,7:290,8:46,9:80,10:88,11:64,12:100,13:150,14:85,15:70,16:80,17:270,18:135,19:130,20:150,21:150,22:122,23:110,24:125};
-const approxH=id=>{const a=CUT_AR[id];return Math.round(APPROX_CM[id]*a[1]/a[0])};
+const approxH=id=>Math.round(byId(id).dimsCm?.h??cmW(id)/(byId(id).cutAR||1));
 const inch=cm=>Math.round(cm/2.54);
 const CARE={
   leather:['Dust weekly with a dry, soft cloth.','Blot spills straight away; never rub.','Condition every 6 to 12 months.','Keep out of direct sun to slow fading.'],
@@ -1259,7 +1262,7 @@ function PinDetail({ctx}){
   const sim=PRODUCTS.filter(x=>x.id!==p.id).filter(x=>simF==='mat'?x.mat===p.mat:simF==='type'?x.type===p.type:true).sort((a,b)=>simF==='tone'?cdist(a.tone,p.tone)-cdist(b.tone,p.tone):0).slice(0,8);
   const onBoards=[...ctx.boards.filter(b=>b.pins.some(x=>x.pid===p.id)).map(b=>({t:b.title,by:'You'})),...COMMUNITY.filter(b=>b.items.includes(p.id)).map(b=>({t:b.title,by:b.by}))];
   const room=ROOMS[ctx.space];const F=texture(room.floor);const L=texture('lime');
-  const cm=APPROX_CM[p.id],hcm=approxH(p.id);
+  const cm=cmW(p.id),hcm=approxH(p.id);
   const projTrade=P.items.reduce((s,i)=>s+tp(byId(i.pid))*i.qty,0);const after=projTrade+tp(p)*qty;
   const add=(el)=>{ctx.addToProject(p.id,qty,P.id,Z,el||stageRef.current?.querySelector('.pp-cut'))};
   const bundleItems=bundle.map(byId);const bundleTot=bundleItems.reduce((s,x)=>s+pr(x,ctx.mode),0);
@@ -1583,7 +1586,7 @@ function Tray({ctx}){
   const restore=x=>{setTrayState(t=>({...t,later:(t.later||[]).filter(y=>y.pid!==x.pid)}));ctx.addToProject(x.pid,x.qty,proj.id,proj.zones[0],null,true)};
   const moveTo=(i,z)=>{if(i.zone===z)return;upd(p=>{const rest=p.items.filter(x=>!(x.pid===i.pid&&x.zone===i.zone));const ex=rest.find(x=>x.pid===i.pid&&x.zone===z);return {...p,items:ex?rest.map(x=>x===ex?{...x,qty:x.qty+i.qty}:x):[...rest,{pid:i.pid,qty:i.qty,zone:z}]}})};
   const suggest=z=>{const zi=items.filter(i=>i.zone===z);if(!zi.length)return null;const have=new Set(items.map(i=>i.pid));const anchor=zi[0].p;return pairsFor(anchor,4).find(x=>!have.has(x.id))};
-  const csv=()=>['Zone,Item,SKU,Material,Approx width (cm),Qty,Unit trade,Line trade,Status',...items.map(i=>[i.zone,`${i.p.name} ${i.p.line}`,i.p.sku,MAT[i.p.mat],APPROX_CM[i.p.id],i.qty,tp(i.p).toFixed(2),(tp(i.p)*i.qty).toFixed(2),i.p.oos?'Restock check':'Ready to quote'].map(v=>`"${v}"`).join(','))].join('\n');
+  const csv=()=>['Zone,Item,SKU,Material,Approx width (cm),Qty,Unit trade,Line trade,Status',...items.map(i=>[i.zone,`${i.p.name} ${i.p.line}`,i.p.sku,MAT[i.p.mat],cmW(i.p.id),i.qty,tp(i.p).toFixed(2),(tp(i.p)*i.qty).toFixed(2),i.p.oos?'Restock check':'Ready to quote'].map(v=>`"${v}"`).join(','))].join('\n');
   const STEPS=['Tray','Delivery','Review','Requested'];
   const contactErr=()=>!del.name.trim()?'Add a contact name for delivery.':!/^\S+@\S+\.\S+$/.test(del.email)?'Add an email for the quote.':!del.line1.trim()||!del.city.trim()||!del.postal.trim()?'Add the delivery address.':'';
   const submit=async()=>{const m=contactErr();if(m){setStep(1);setErr(m);return}setBusy(true);setErr('');
@@ -1593,7 +1596,7 @@ function Tray({ctx}){
       tokRef.current=null;setRef(r.reference);setStep(3)}
     catch(e){setErr(e?.data||String(e?.message||'').replace(/^.*Uncaught Error: /,'').split('\n')[0]||'Something went wrong. Try again.')}finally{setBusy(false)}};
   const fld=(k,label,ph,type='text',auto)=>html`<div><label className="lbl" htmlFor=${'tv-'+k}>${label}</label><input id=${'tv-'+k} className="field" type=${type} autoComplete=${auto} value=${del[k]} placeholder=${ph} onInput=${e=>{setDel({...del,[k]:e.target.value});setErr('')}}/></div>`;
-  const strip=items.flatMap(i=>Array.from({length:Math.min(i.qty,3)},(_,k)=>({...i,k})));const stripCm=strip.reduce((s,i)=>s+APPROX_CM[i.pid]+30,0);
+  const strip=items.flatMap(i=>Array.from({length:Math.min(i.qty,3)},(_,k)=>({...i,k})));const stripCm=strip.reduce((s,i)=>s+cmW(i.pid)+30,0);
   return html`<div className="tray-scrim" onClick=${()=>ctx.setTray(false)}></div>
   ${qc&&html`<${QuoteComposer} ctx=${ctx} onClose=${()=>setQc(false)}/>`}
   <section className="tv" role="dialog" aria-modal="true" aria-label="Project tray">
@@ -1619,7 +1622,7 @@ function Tray({ctx}){
         ${tab==='tray'&&items.length>0&&view==='staged'&&html`
           <div className="tv-stage" aria-label="Your tray, staged">
             <div className="tv-stage-in" style=${{width:`max(100%, ${stripCm*1.15}px)`}}>
-              ${strip.map((i,n)=>html`<button key=${i.pid+i.zone+i.k} className="tv-piece" style=${{width:APPROX_CM[i.pid]*1.15+'px',alignSelf:i.p.type==='lighting'?'flex-start':'flex-end'}} title=${i.p.name+' · '+i.zone} onClick=${()=>document.getElementById('ln-'+i.pid+i.zone.replace(/\W/g,''))?.scrollIntoView({behavior:'smooth',block:'center'})}><img src=${cut(i.pid)} alt=${i.p.name}/>${i.p.type!=='lighting'&&html`<span></span>`}</button>`)}
+              ${strip.map((i,n)=>html`<button key=${i.pid+i.zone+i.k} className="tv-piece" style=${{width:cmW(i.pid)*1.15+'px',alignSelf:i.p.type==='lighting'?'flex-start':'flex-end'}} title=${i.p.name+' · '+i.zone} onClick=${()=>document.getElementById('ln-'+i.pid+i.zone.replace(/\W/g,''))?.scrollIntoView({behavior:'smooth',block:'center'})}><img src=${cut(i.pid)} alt=${i.p.name}/>${i.p.type!=='lighting'&&html`<span></span>`}</button>`)}
             </div>
             <span className="tv-stage-cap mono">Your tray, staged · ${items.reduce((s,i)=>s+i.qty,0)} pieces · scroll sideways</span>
           </div>
@@ -1637,7 +1640,7 @@ function Tray({ctx}){
           </div>`})}
           <button className="btn btn-line btn-sm" style=${{marginTop:16}} onClick=${()=>{const n='Area '+(proj.zones.length+1);upd(p=>({...p,zones:[...p.zones,n]}));ctx.toast(n+' added. Drag pieces into it.')}}>${I('plus',{width:15})} Add an area</button>`}
         ${tab==='tray'&&items.length>0&&view==='schedule'&&html`<div className="tv-sched"><table className="t"><thead><tr><th>Item</th><th>Area</th><th>Material</th><th className="r">≈ W</th><th className="r">Qty</th><th className="r">Unit</th><th className="r">Line</th><th>Status</th></tr></thead><tbody>
-            ${items.map(i=>html`<tr key=${i.pid+i.zone}><td><span className="row" style=${{gap:10}}><span className="tv-th sm" style=${{backgroundImage:`url(${cut(i.pid)})`}}></span><span><b style=${{fontWeight:500}}>${i.p.name}</b><br/><span className="mono mute">${i.p.sku}</span></span></span></td><td>${i.zone}</td><td><span className="row" style=${{gap:6}}><span className="dot" style=${{background:i.p.tone}}></span>${MAT[i.p.mat]}</span></td><td className="r num">${APPROX_CM[i.pid]} cm</td><td className="r num">${i.qty}</td><td className="r num">${fmt(pr(i.p,ctx.mode))}</td><td className="r num">${fmt(pr(i.p,ctx.mode)*i.qty)}</td><td><span className=${'tv-status'+(i.p.oos?' warn':'')}>${i.p.oos?'Restock check':'Ready to quote'}</span></td></tr>`)}
+            ${items.map(i=>html`<tr key=${i.pid+i.zone}><td><span className="row" style=${{gap:10}}><span className="tv-th sm" style=${{backgroundImage:`url(${cut(i.pid)})`}}></span><span><b style=${{fontWeight:500}}>${i.p.name}</b><br/><span className="mono mute">${i.p.sku}</span></span></span></td><td>${i.zone}</td><td><span className="row" style=${{gap:6}}><span className="dot" style=${{background:i.p.tone}}></span>${MAT[i.p.mat]}</span></td><td className="r num">${cmW(i.pid)} cm</td><td className="r num">${i.qty}</td><td className="r num">${fmt(pr(i.p,ctx.mode))}</td><td className="r num">${fmt(pr(i.p,ctx.mode)*i.qty)}</td><td><span className=${'tv-status'+(i.p.oos?' warn':'')}>${i.p.oos?'Restock check':'Ready to quote'}</span></td></tr>`)}
           </tbody></table><div className="row" style=${{marginTop:12,flexWrap:'wrap'}}><button className="btn btn-line btn-sm" onClick=${()=>copyText(csv(),ctx.toast)}>${I('copy',{width:15})} Copy schedule as CSV</button><span className="help" style=${{margin:0}}>Paste into a spreadsheet or your procurement tool. Widths are planning estimates.</span></div></div>`}
       `}
       ${step===1&&html`<div className="tv-form">
@@ -1760,6 +1763,10 @@ function SxDialog({title,onClose,wide,children}){
   return html`<div className="scrim sx-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()} role="dialog" aria-modal="true" aria-label=${title}>
     <div className=${'sx-dialog'+(wide?' wide':'')}><div className="sx-drawer-h"><b>${title}</b><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>${children}</div></div>`;
 }
+// The Collage, Room and 3D views show the same pieces: given what a view holds and the pieces the
+// other view has, keep matching items (by index) and list the pieces to add.
+function reconcile(have,want){const need={};want.forEach(p=>need[p]=(need[p]||0)+1);const keep=new Set();have.forEach((p,i)=>{if(need[p]>0){need[p]--;keep.add(i)}});
+  return {keep,add:Object.entries(need).flatMap(([p,n])=>Array(n).fill(+p))}}
 const pieceRows=pids=>{const m=new Map();pids.forEach(([pid,hidden])=>{const k=pid+(hidden?'h':'');const r=m.get(k);if(r)r.qty++;else m.set(k,{pid,qty:1,hidden})});return [...m.values()]};
 
 /* ================= STUDIO ================= */
@@ -1769,12 +1776,12 @@ const SHAPES=[['rect','Square'],['arch','Arch'],['circle','Circle'],['pill','Pil
 const LOOKS=[['cutout','Seamless cutout','The piece on the board with a soft contact shadow'],['framed','Framed photo','The product photo in a shape, with an optional border'],['3d','3D cutout','A lit model you can turn to any angle'],['room','In the room','On your room photo at true scale']];
 const styleOf=e=>e.style||(e.room?'room':'framed');
 const borderOf=e=>e.border===true||e.border==null?'white':e.border===false?'none':e.border;
-const hasCutout=pid=>pid<100&&has(pid);
-const cutAR=pid=>{const a=CUT_AR[pid];return a?a[0]/a[1]:(byId(pid).ar||1)};
+const hasCutout=pid=>has(pid)&&!!byId(pid).cutout;
+const cutAR=pid=>byId(pid).cutAR||byId(pid).ar||1;
 const frameAR=(shape,ar)=>shape==='circle'?1:shape==='arch'||shape==='oval'?.8:shape==='pill'?.75:ar;
 const elAR=e=>e.kind==='inspo'?frameAR(e.shape,e.ar||1):styleOf(e)==='framed'?frameAR(e.shape,byId(e.pid).ar||1):cutAR(e.pid);
 // In the room, a piece is drawn at its real width against the photo's measured width.
-const lockW=(e,bg)=>{if(e.kind!=='img'||styleOf(e)!=='room'||!bg?.img||!(bg.widthM>0))return null;const cm=APPROX_CM[e.pid]||byId(e.pid).widthCm;return cm?cm/(bg.widthM*100)*100:null};
+const lockW=(e,bg)=>{if(e.kind!=='img'||styleOf(e)!=='room'||!bg?.img||!(bg.widthM>0))return null;const cm=byId(e.pid).dimsCm?.w;return cm?cm/(bg.widthM*100)*100:null};
 const wOf=(e,bg)=>lockW(e,bg)??e.w;
 const BOARD_SHAPES=[['rect','Rectangle'],['rounded','Rounded'],['arch','Arch'],['circle','Circle'],['oval','Oval'],['scallop','Scalloped'],['torn','Torn paper'],['poly','Free shape']];
 const EDGES=[['none','None'],['hairline','Hairline'],['thick','Thick border'],['deckle','Deckled paper'],['shadow','Drop shadow']];
@@ -1875,8 +1882,11 @@ function Studio({ctx}){
     if(seed?.inspo)return {...base,els:[mkInspo(seed.inspo),...(seed.ids||[]).map((id,i)=>mkImg(id,i+1))]};
     if(seed?.ids)return {...base,els:seed.ids.map((id,i)=>mkImg(id,i,seed.mode))};
     const last=ctx.collages.find(c=>c.id&&c.id===load('collage',null));
-    if(last)return {page:'portrait',mode:'collage',shape:'rect',edge:'shadow',...last,...(seed?.view?{mode:seed.view}:{})};
-    return {...base,...(seed?.view?{mode:seed.view}:{}),els:SAMPLE()};
+    const d=last?{page:'portrait',mode:'collage',shape:'rect',edge:'shadow',...last,...(seed?.view?{mode:seed.view}:{})}:{...base,...(seed?.view?{mode:seed.view}:{}),els:SAMPLE()};
+    {if(!seed?.sync)return d;
+      // Coming from the 3D room: pieces added there arrive as cutouts; pieces removed there leave the board.
+      const imgs=d.els.filter(e=>e.kind==='img');const {keep,add}=reconcile(imgs.map(e=>e.pid),seed.sync);const drop=new Set(imgs.filter((_,i)=>!keep.has(i)).map(e=>e.id));
+      const st=d.mode==='room'?'room':'cutout';return {...d,els:[...d.els.filter(e=>!drop.has(e.id)),...add.map((pid,i)=>({...mkImg(pid,0,d.mode,SLOTS,st),x:6+(i%4)*23,y:60+Math.floor(i/4)*14,w:20}))]}}
   });
   const {els,bg,mode,page,title}=doc;
   // Several items can be selected (Shift-click); the last one picked leads.
@@ -1887,7 +1897,7 @@ function Studio({ctx}){
   const [polyEdit,setPolyEdit]=useState(false);const [zoom,setZoom]=useState(1);const [fitW,setFitW]=useState(480);const [guides,setGuides]=useState(null);const [box,setBox]=useState(null);
   const [saved,setSaved]=useState('Saved');
   const hist=useRef({past:[],future:[]});const [steps,setSteps]=useState(0);const docRef=useRef(doc);docRef.current=doc;
-  const canvasRef=useRef();const stageRef=useRef();const wrapRef=useRef();const bgRef=useRef();const dirty=useRef(false);
+  const canvasRef=useRef();const stageRef=useRef();const wrapRef=useRef();const bgRef=useRef();const dirty=useRef(!!seed?.sync);
   useEffect(()=>{if(seed)ctx.setStudioSeed(null)},[]);
   const record=prev=>{hist.current.past.push(prev);if(hist.current.past.length>80)hist.current.past.shift();hist.current.future=[];dirty.current=true;setSteps(s=>s+1)};
   const commitDoc=next=>{record(docRef.current);setDoc(next)};
@@ -1905,7 +1915,9 @@ function Studio({ctx}){
     if(!(sels.includes(id)&&sels.length>1))setSels([...g.filter(x=>x!==id),id])};
   const live=(id,o)=>setDoc(d=>({...d,els:d.els.map(e=>e.id===id?{...e,...o}:e)}));
   // Autosave every change to the account (or this device when signed out).
-  useEffect(()=>{store('collage',doc.id);if(!dirty.current)return;setSaved('Saving…');const t=setTimeout(()=>{ctx.saveCollage(docRef.current,true);setSaved('Saved')},600);return()=>clearTimeout(t)},[doc]);
+  useEffect(()=>{store('collage',doc.id);if(!dirty.current)return;setSaved('Saving…');const t=setTimeout(()=>{ctx.saveCollage(docRef.current,true);dirty.current=false;setSaved('Saved')},600);return()=>clearTimeout(t)},[doc]);
+  // Leaving the Studio (for the 3D view, say) saves anything still waiting.
+  useEffect(()=>()=>{if(dirty.current)ctx.saveCollage(docRef.current,true)},[]);
   // The board fits the stage at 100%; zoom scales from there.
   const P=pageOf(page);
   useEffect(()=>{const st=stageRef.current;if(!st)return;const fit=()=>{const r=st.getBoundingClientRect();const pad=innerWidth<761?24:64,padB=innerWidth<761?84:96;setFitW(Math.max(160,Math.min(r.width-pad,(r.height-padB)*P[2]/P[3])))};const ro=new ResizeObserver(fit);ro.observe(st);fit();return()=>ro.disconnect()},[page]);
@@ -1981,7 +1993,7 @@ function Studio({ctx}){
   const rows=pieceRows(els.filter(e=>e.kind==='img').map(e=>[e.pid,e.hidden]));
   const openNew=(next,msg)=>{const prev=docRef.current;hist.current={past:[],future:[]};setSteps(0);dirty.current=true;setDoc({id:uid(),page:prev.page,mode:prev.mode,bg:prev.bg,...next});setSel(null);ctx.toast(msg,{label:'Back to '+prev.title,fn:()=>{dirty.current=false;setDoc(prev)}})};
   // Room view puts every piece on the room photo at true scale; Collage brings room pieces back as cutouts.
-  const onView=k=>{if(k==='3d'){ctx.setRoomSeed(pieces.map(p=>p.id));ctx.go('room');return}
+  const onView=k=>{if(k==='3d'){ctx.setRoomSeed({ids:pieces.map(p=>p.id),sync:true});ctx.go('room');return}
     commitDoc({...doc,mode:k,els:els.map(x=>x.kind!=='img'?x:k==='room'?(styleOf(x)==='room'?x:restyle(x,'room')):(styleOf(x)==='room'?restyle(x,'cutout'):x))});
     if(k==='room'&&!bg.img){setDrawer('bg');ctx.toast('Add a photo of your space to see the pieces in it')}};
   const pickRail=k=>{setPop(null);if(k==='compose'){setComposeOpen(true);return}setDrawer(d=>d===k?null:k)};
@@ -1992,7 +2004,9 @@ function Studio({ctx}){
   const addPoint=()=>{const p=[...(doc.poly||POLY0)];let best=0,bl=0;p.forEach((a,i)=>{const b=p[(i+1)%p.length];const l=Math.hypot((b[0]-a[0])*W0,(b[1]-a[1])*H0);if(l>bl){bl=l;best=i}});const a=p[best],b=p[(best+1)%p.length];p.splice(best+1,0,[(a[0]+b[0])/2,(a[1]+b[1])/2]);commitDoc({...doc,shape:'poly',poly:p})};
   const MATS={...MAT,wood:'Wood'};const types=[...new Set(PRODUCTS.map(p=>p.type))];const mats=[...new Set(PRODUCTS.map(p=>p.mat))];
   const filters=[['all','All'],...types.map(t=>['t:'+t,TYPE[t]||t[0].toUpperCase()+t.slice(1)+'s']),...mats.map(m=>['m:'+m,MATS[m]||m])];
-  const prods=PRODUCTS.filter(p=>(pf==='all'||pf==='t:'+p.type||pf==='m:'+p.mat)&&(p.name+' '+p.line+' '+p.mat+' '+p.type).toLowerCase().includes(pq.toLowerCase()));
+  // The Studio offers pieces that have dimensions and a seamless cutout; the rest are still being prepared.
+  const ready=PRODUCTS.filter(p=>p.dimsCm&&p.cutout);const preparing=PRODUCTS.length-ready.length;
+  const prods=ready.filter(p=>(pf==='all'||pf==='t:'+p.type||pf==='m:'+p.mat)&&(p.name+' '+p.line+' '+p.mat+' '+p.type).toLowerCase().includes(pq.toLowerCase()));
   const kindName=multi?`${sels.length} items`:S?(S.kind==='img'?'piece':S.kind==='inspo'?'image':S.kind):'';
   const framedSel=S&&(S.kind==='inspo'||(S.kind==='img'&&styleOf(S)==='framed'));
   const selItems=multi?[['align','Align'],...(sels.length>2?[['distribute','Distribute']]:[])]:!S?[]:[
@@ -2022,7 +2036,7 @@ function Studio({ctx}){
         <div className="sx-chips scroll-x">${filters.map(([k,l])=>html`<button key=${k} className=${'chip'+(pf===k?' on':'')} onClick=${()=>setPf(k)}>${l}</button>`)}</div>
         <div className="sx-grid">${prods.map(p=>html`<button key=${p.id} className="sx-card" draggable="true" onDragStart=${e=>e.dataTransfer.setData('text/pid',String(p.id))} onClick=${()=>addProduct(p.id)} title=${'Add '+p.name}>
           <span className="sx-card-i"><img src=${cut(p.id)} alt="" loading="lazy"/></span><b>${p.name}</b><span className="num">${fmt(pr(p,ctx.mode))}</span></button>`)}</div>
-        ${!prods.length&&html`<p className="sx-note">Nothing matches. Try another word.</p>`}<//>`}
+        ${!prods.length&&html`<p className="sx-note">Nothing matches. Try another word.</p>`}${preparing>0&&html`<p className="sx-note">${preparing} more piece${preparing===1?' is':'s are'} being photographed for the Studio.</p>`}<//>`}
       ${tab==='inspo'&&html`<${React.Fragment}><p className="sx-note">Inspo carries no price or link and never counts in the total. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Library</button></p>
         ${ctx.inspo.length?html`<div className="sx-grid">${ctx.inspo.map(x=>html`<button key=${x.id} className="sx-card" onClick=${()=>addEl({...mkInspo(x),x:26,y:20,w:44,rot:0})} title=${'Add '+x.title}><span className="sx-card-i photo"><img src=${x.src} alt="" loading="lazy"/></span><b>${x.title}</b></button>`)}</div>`
           :html`<p className="sx-note">No inspo yet. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Upload inspiration</button></p>`}<//>`}
@@ -2323,7 +2337,7 @@ const ROUTES=[['image','Download image','PNG at 2×, ready to print or post','do
  * The Share sheet: every way a board leaves the site, each carrying the same bundle link with the
  * partner's code. `doc` is a collage; the planner passes `image` (its snapshot) and piece ids instead.
  */
-function ShareSheet({ctx,title,doc,image,ids,boardKey,onClose}){
+function ShareSheet({ctx,title,doc,image,ids,boardKey,room,units,onClose}){
   const [m,setM]=useState('shop');const [links,setLinks]=useState({});const [busy,setBusy]=useState('');const [err,setErr]=useState('');const [view,setView]=useState('routes');
   const [qr,setQr]=useState(false);const [qrFor,setQrFor]=useState(null);
   const share=useMutation(api.holmSync.shareBoard);const uploadCover=useAction(api.holmSync.uploadCover);
@@ -2344,6 +2358,7 @@ function ShareSheet({ctx,title,doc,image,ids,boardKey,onClose}){
       const blob=await boardPdf(doc,{title,board:doc?null:await boardCanvas(1600),counts,link:l?bundleUrl(l.slug,'pdf'):null,pieceLink:pid=>l||!ctx.me.signedIn?pieceUrl(pid,l?.refCode,'pdf'):null,prices,mode:m});
       if(blob.size>8e6)ctx.toast('This PDF is large. Fewer uploaded photos make it smaller.');saveBlob(blob,fileName(title,'pdf'));ctx.toast(l?'PDF downloaded, with live links':'PDF downloaded. Sign in to add live links.')});
     if(k==='link')return run(k,async()=>{const l=await ensure();if(l)copyText(bundleUrl(l.slug,'link'),ctx.toast)});
+    if(k==='plan')return run(k,async()=>{const l=ctx.me.signedIn?await ensure():null;saveBlob(await planPdf(room,{title,units,link:l?bundleUrl(l.slug,'pdf'):null}),fileName(title+'-plan','pdf'));ctx.toast(l?'Plan PDF downloaded, with the bundle link':'Plan PDF downloaded. Sign in to add the bundle link.')});
     if(k==='share')return run(k,async()=>{const l=await ensure();if(!l)return;const url=bundleUrl(l.slug,'share');
       if(navigator.share&&isPhone()){try{await navigator.share({title,text:title,url})}catch(e){}}else location.href=`mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(`${title}\n\n${url}`)}`});
     setView(k)};
@@ -2354,7 +2369,7 @@ function ShareSheet({ctx,title,doc,image,ids,boardKey,onClose}){
         <button className=${'modecard'+(shop?' on':'')} onClick=${()=>setM('shop')}><b>Shoppable</b><p>${ctx.me.partner?'Retail prices with your partner code. You earn commission on retail orders for 30 days.':'Retail prices, ready to add to a project.'}</p></button>
         <button className=${'modecard'+(!shop?' on':'')} onClick=${()=>setM('pres')}><b>Presentation</b><p>No prices, for client review. You order at trade.</p></button>
       </div>
-      ${view==='routes'&&html`<${React.Fragment}><div className="sx-routes">${ROUTES.map(([k,l,hint,ic])=>html`<button key=${k} className="sx-route" disabled=${!!busy||!pieces.length&&k!=='image'} onClick=${()=>go(k)}>
+      ${view==='routes'&&html`<${React.Fragment}><div className="sx-routes">${(room?[...ROUTES.slice(0,2),['plan','Plan PDF','The floor plan to scale, every room, piece and seat count','board'],...ROUTES.slice(2)]:ROUTES).map(([k,l,hint,ic])=>html`<button key=${k} className="sx-route" disabled=${!!busy||!pieces.length&&k!=='image'} onClick=${()=>go(k)}>
           <span className="sx-route-i">${I(ic,{width:18})}</span><span><b>${busy===k?'One moment…':l}</b><small>${hint}</small></span></button>`)}</div>
         ${doc&&html`<label className="toggle"><span>Add a QR code to the image's corner</span><input type="checkbox" className="sr" checked=${qr} onChange=${e=>setQr(e.target.checked)}/><span className=${'sw'+(qr?' on':'')}></span></label>`}
         ${links[m]&&html`<div className="linkbox"><code>${bundleUrl(links[m].slug,'link')}</code><button className="btn btn-ink btn-sm" onClick=${()=>copyText(bundleUrl(links[m].slug,'link'),ctx.toast)}>${I('link',{width:15})} Copy</button></div>`}<//>`}
@@ -2489,14 +2504,14 @@ const PL_TINTS=[['','Natural'],['#C9B9A0','Oatmeal'],['#9FA3A0','Stone grey'],['
 const PL_BACK=[['none','No windows',()=>[]],['one','One window',()=>[{t:'win',x:0,w:2.4,h:1.8,y:.8}]],['two','Two windows',W=>[-W/4,W/4].map(x=>({t:'win',x,w:1.6,h:1.8,y:.8}))],
   ['three','Three windows',W=>[-W/3,0,W/3].map(x=>({t:'win',x,w:1.4,h:1.9,y:.7}))],['arches','Two arches',W=>[-W/4,W/4].map(x=>({t:'arch',x,w:1.6,h:2.5,y:.4}))],['glass','Glass wall',(W,H)=>{const n=Math.max(2,Math.round((W-.6)/1.9));const w=(W-.6)/n-.15;return Array.from({length:n},(_,i)=>({t:'win',x:-W/2+.3+(i+.5)*(W-.6)/n,w,h:H-.6,y:.25}))}]];
 const PL_WALLS=['#F1E9DC','#E9DCC8','#ECE4D1','#D8B4A6','#C9BFA9','#6C6948','#3B2A1E','#1F2A44'];
-const PROXY_H={sofa:.82,sectional:.8,bench:.46,ottoman:.44,lighting:.35,stool:.75,chair:.8,table:.75};
+
 // Pieces outside the curated 24 have no measured cutout: width comes from the listing's facts, the rest from their type.
-const PL_W={sofa:220,sectional:280,bench:130,ottoman:80,lighting:60,stool:45,chair:70,table:120};
-const PL_AR={sofa:[3,1],sectional:[2.2,1],bench:[3,1],ottoman:[2,1],lighting:[1,1],stool:[1,2],chair:[1,1.1],table:[2,1]};
-const plCm=pid=>{const p=byId(pid);return APPROX_CM[pid]||p.widthCm||PL_W[p.type]||100};
+// Every piece is placed from its catalog W × D × H; one without dimensions can't be placed.
+const plCm=pid=>byId(pid).dimsCm?.w
 const PL_TEMPLATES={blank:{label:'Blank room',W:8,D:6,H:3.2,wall:'#F1E9DC',floor:'oak',openings:[{wall:'back',t:'win',x:0,w:2.4,h:1.8,y:.8}],items:[]}};
 SPACE_KEYS.forEach(k=>{const s=STUDY[k];PL_TEMPLATES[k]={label:SPACES[k].label+' study',W:s.W,D:s.D,H:s.H,wall:s.dark?'#3B2A1E':ROOMS[k].wall,floor:ROOMS[k].floor,openings:s.openings.map(o=>({...o,wall:'back'})),items:s.items.map(i=>({pid:i.id,x:i.x,z:i.z,rot:0,hang:!!i.hang}))}});
-const plDims=pid=>{const p=byId(pid);const ar=CUT_AR[pid]||PL_AR[p.type]||[1,1];const w=plCm(pid)/100;return {p,w,d:p.type==='lighting'?w:(FOOT_D[p.type]||Math.min(w,.9)),hp:PROXY_H[p.type]||.8,hb:w*ar[1]/ar[0]}};
+const plDims=pid=>{const p=byId(pid);const D=p.dimsCm||{w:100,d:100,h:80};const w=D.w/100;return {p,w,d:D.d/100,hp:D.h/100,hb:D.h/100}};
+const plReady=pid=>has(pid)&&!!byId(pid).dimsCm;
 // Physical footprint: axis-aligned extents of the rotated piece, used for walls and collisions.
 const plExt=it=>{const {w,d}=plDims(it.pid);const r=(it.rot||0)*Math.PI/180,c=Math.abs(Math.cos(r)),sn=Math.abs(Math.sin(r));return [c*w/2+sn*d/2,sn*w/2+c*d/2]};
 const PL_GAP=.02,PL_SNAP=.12;
@@ -2504,12 +2519,22 @@ const PL_GAP=.02,PL_SNAP=.12;
 const plClamp=(doc,it,x,z)=>{const [ex,ez]=plExt(it);const lx=doc.W/2-ex,lz=doc.D/2-ez;x=Math.max(-lx,Math.min(lx,x));z=Math.max(-lz,Math.min(lz,z));
   if(lx-Math.abs(x)<PL_SNAP)x=(x<0?-1:1)*lx;if(z<0&&lz+z<PL_SNAP)z=-lz;return [x,z]};
 // Floor pieces are solid: no two footprints may overlap (hanging lights are in the air and skip this).
-const plHit=(doc,it,x,z)=>{if(it.hang)return false;const [ex,ez]=plExt(it);return doc.items.some(o=>{if(o.uid===it.uid||o.hang)return false;const [ox,oz]=plExt(o);return Math.abs(o.x-x)<ex+ox+PL_GAP-1e-6&&Math.abs(o.z-z)<ez+oz+PL_GAP-1e-6})};
+// A drawn floor plan: every corner of a piece's footprint must sit inside one of the plan's rooms,
+// clear of its columns and fixed blocks.
+const outsidePlan=(doc,x,z,ex,ez)=>{if(!doc.zones?.length)return false;const zs=doc.zones.map(zn=>zn.poly);const pts=[[x-ex,z-ez],[x+ex,z-ez],[x+ex,z+ez],[x-ex,z+ez],[x,z]];
+  return !pts.every(p=>zs.some(pl=>inPoly(p,pl)))||(doc.blocks||[]).some(b=>Math.abs(b.x-x)<b.w/2+ex+PL_GAP&&Math.abs(b.z-z)<b.d/2+ez+PL_GAP)};
+const plHit=(doc,it,x,z)=>{if(it.hang)return false;const [ex,ez]=plExt(it);if(outsidePlan(doc,x,z,ex,ez))return true;return doc.items.some(o=>{if(o.uid===it.uid||o.hang)return false;const [ox,oz]=plExt(o);return Math.abs(o.x-x)<ex+ox+PL_GAP-1e-6&&Math.abs(o.z-z)<ez+oz+PL_GAP-1e-6})};
+// Every room as polygons: a drawn plan's rooms, or the rectangle W × D.
+const roomZones=doc=>doc.zones?.length?doc.zones:[{id:'room',name:'Room',poly:[[-doc.W/2,-doc.D/2],[doc.W/2,-doc.D/2],[doc.W/2,doc.D/2],[-doc.W/2,doc.D/2]],floor:doc.floor,wall:doc.wall}];
+const zoneOf=(doc,x,z)=>roomZones(doc).find(zn=>inPoly([x,z],zn.poly))||null;
 // Nearest free, in-bounds spot to (x, z), searched outward in 5 cm rings.
 const plPlace=(doc,it,x,z)=>{const [cx,cz]=plClamp(doc,it,x,z);if(!plHit(doc,it,cx,cz))return [cx,cz];
   for(let r=.05;r<5;r+=.05){const n=Math.max(8,Math.round(r*40));for(let k=0;k<n;k++){const a=k/n*Math.PI*2;const [px,pz]=plClamp(doc,it,x+Math.cos(a)*r,z+Math.sin(a)*r);if(!plHit(doc,it,px,pz))return [px,pz]}}
   return [cx,cz]};
 const r2=v=>Math.round(v*100)/100;
+// Lengths read in metres or in feet and inches, to the centimetre or half inch.
+const fmtLen=(m,u)=>{if(u!=='ft')return `${m.toFixed(2)} m`;const inch=Math.round(m/.0254*2)/2;const ft=Math.floor(inch/12);const r=inch-ft*12;return `${ft}′ ${String(r).replace('.5','½')}″`};
+const fmtCm=(cm,u)=>u==='ft'?`${String(Math.round(cm/2.54*2)/2).replace('.5','½')}″`:`${Math.round(cm)} cm`;
 // Rugs are layout guides in standard US sizes (metres from feet); they sit under furniture, so they never collide.
 const RUG_SIZES=[['5 × 8 ft',1.52,2.44],['6 × 9 ft',1.83,2.74],['8 × 10 ft',2.44,3.05],['9 × 12 ft',2.74,3.66],['10 × 14 ft',3.05,4.27],['2.5 × 8 ft runner',.76,2.44],['6 ft round',1.83,1.83,1],['8 ft round',2.44,2.44,1]];
 const RUG_MATS=[['jute','Jute'],['wool','Wool']];
@@ -2523,20 +2548,22 @@ const plFit=(W,H,ops)=>ops.map((o,i)=>{const near=Math.min(Infinity,...ops.filte
 const plWord=(it,doc)=>`${it.x<-doc.W/6?'left':it.x>doc.W/6?'right':'centre'}${it.z<-doc.D/6?' back':it.z>doc.D/6?' front':''}`;
 
 function Room({ctx}){
-  const init=()=>{const saved=load('room',null);const seed=ctx.roomSeed||[];
-    // A saved room is never replaced by pieces sent here: they join it.
-    if(saved&&saved.items&&saved.items.length){const kept=saved.items.filter(i=>has(i.pid));
-      // Only pieces the room doesn't already hold are added, so switching back and forth never duplicates them.
-      const have={};kept.forEach(i=>have[i.pid]=(have[i.pid]||0)+1);const fresh=seed.filter(pid=>has(pid)&&!(have[pid]-->0));
-      const added=fresh.map((pid,i)=>({uid:uid(),pid,x:(i-(fresh.length-1)/2)*1.7,z:-saved.D/2+1.3,rot:0,hang:byId(pid).type==='lighting'}));
-      return plReflow({...saved,items:[...kept,...added],wallImg:ctx.roomWall||saved.wallImg||null})}
+  // Pieces sent here join the saved room. From the Studio's 3D switch (sync) the room follows the board
+  // instead: its new pieces arrive and the ones it dropped leave.
+  const init=()=>{const saved=load('room',null);const raw=ctx.roomSeed;const sync=!!raw?.sync;const seed=(Array.isArray(raw)?raw:raw?.ids)||[];
+    if(saved&&saved.items&&saved.items.length){const kept=saved.items.filter(i=>has(i.pid));const place=(pids,z)=>pids.map((pid,i)=>({uid:uid(),pid,x:(i-(pids.length-1)/2)*1.4,z,rot:0,hang:byId(pid).hangs}));
+      if(sync){const {keep,add}=reconcile(kept.map(i=>i.pid),seed.filter(plReady));return plReflow({...saved,items:[...kept.filter((_,i)=>keep.has(i)),...place(add,0)],wallImg:ctx.roomWall||saved.wallImg||null})}
+      // Only pieces the room doesn't already hold are added, so nothing is duplicated.
+      const have={};kept.forEach(i=>have[i.pid]=(have[i.pid]||0)+1);const fresh=seed.filter(pid=>plReady(pid)&&!(have[pid]-->0));
+      return plReflow({...saved,items:[...kept,...place(fresh,-saved.D/2+1.3)],wallImg:ctx.roomWall||saved.wallImg||null})}
     const key=PL_TEMPLATES[ctx.space]?ctx.space:'blank';const t=JSON.parse(JSON.stringify(PL_TEMPLATES[key]));let items=t.items;
-    if(ctx.roomSeed&&ctx.roomSeed.length){items=ctx.roomSeed.map((pid,i)=>({pid,x:(i-(ctx.roomSeed.length-1)/2)*1.7,z:-t.D/2+1.3,rot:0,hang:byId(pid).type==='lighting'}))}
+    if(seed.length){items=seed.filter(plReady).map((pid,i,a)=>({pid,x:(i-(a.length-1)/2)*1.7,z:-t.D/2+1.3,rot:0,hang:byId(pid).hangs}))}
     return plReflow({...t,tpl:key,items:items.map(it=>({...it,uid:uid()})),rugs:[],wallImg:ctx.roomWall||null})};
   const [doc,setDoc]=useState(init);const [view,setView]=useState('orbit');const [style,setStyle]=useState('material');const [tod,setTod]=useState(.12);
   const [sel,setSel]=useState(null);const [tab,setTab]=useState('pieces');const [snap,setSnap]=useState(true);const [q,setQ]=useState('');const [cat,setCat]=useState('all');
   const [shot,setShot]=useState(null);const [showPrompt,setShowPrompt]=useState(false);
   const [drawer,setDrawer]=useState(null);const [pop,setPop]=useState(null);const [traySheet,setTraySheet]=useState(false);const [tplAsk,setTplAsk]=useState(null);const [lookOpen,setLookOpen]=useState(false);
+  const [planOpen,setPlanOpen]=useState(false);const [units,setUnits]=useState(()=>load('units','m'));useEffect(()=>store('units',units),[units]);const [rendering,setRendering]=useState(null);
   const [shareImg,setShareImg]=useState(null);const [roomKey]=useState(()=>{let k=load('roomKey',null);if(!k){k='room-'+uid();store('roomKey',k)}return k});const [renderBusy,setRenderBusy]=useState(false);const renderUrl=useMutation(api.holmRender.snapshotUploadUrl);const requestRender=useMutation(api.holmRender.request);
   const [title,setTitle]=useState(()=>load('roomTitle','Untitled room'));useEffect(()=>store('roomTitle',title),[title]);
   const [three,threeFailed]=useThree();const [eng,setEng]=useState(0);
@@ -2545,7 +2572,7 @@ function Room({ctx}){
   const undo=()=>{const h=hist.current;if(!h.past.length)return;h.future.push(docRef.current);setDoc(h.past.pop())};
   const redo=()=>{const h=hist.current;if(!h.future.length)return;h.past.push(docRef.current);setDoc(h.future.pop())};
   const patchItem=(id,o)=>{const d=docRef.current;commit({...d,items:d.items.map(i=>{if(i.uid!==id)return i;const n={...i,...o};if('x' in o||'z' in o||'rot' in o){const [x,z]=plPlace(d,n,n.x,n.z);n.x=r2(x);n.z=r2(z)}return n})})};
-  const addItem=(pid,x,z)=>{const d=docRef.current;const it={uid:uid(),pid,x:0,z:0,rot:0,hang:byId(pid).type==='lighting'};const [px,pz]=plPlace(d,it,x??0,z??0);it.x=r2(px);it.z=r2(pz);commit({...d,items:[...d.items,it]});setSel(it.uid)};
+  const addItem=(pid,x,z)=>{if(!plReady(pid)){ctx.toast(`Measurements needed: ${byId(pid).name} has no width, depth and height yet`);return}const d=docRef.current;const it={uid:uid(),pid,x:0,z:0,rot:0,hang:byId(pid).hangs};const [px,pz]=plPlace(d,it,x??0,z??0);it.x=r2(px);it.z=r2(pz);commit({...d,items:[...d.items,it]});setSel(it.uid)};
   const removeItem=id=>{const d=docRef.current;commit({...d,items:d.items.filter(i=>i.uid!==id),rugs:(d.rugs||[]).filter(r=>r.uid!==id)});setSel(null)};
   const rugOf=id=>(docRef.current.rugs||[]).find(r=>r.uid===id);
   const patchRug=(id,o)=>{const d=docRef.current;commit({...d,rugs:(d.rugs||[]).map(r=>{if(r.uid!==id)return r;const n={...r,...o};[n.x,n.z]=rugClamp(d,n,n.x,n.z);return n})})};
@@ -2558,6 +2585,7 @@ function Room({ctx}){
   // The room autosaves on this device; a photo on the wall is too large to keep, so it is left out.
   useEffect(()=>{const t=setTimeout(()=>store('room',{...doc,wallImg:doc.wallImg&&doc.wallImg.startsWith('data:')?null:doc.wallImg}),400);return()=>clearTimeout(t)},[doc]);
   useEffect(()=>setPop(null),[sel]);
+  useEffect(()=>{if(view==='product'&&!doc.items.some(i=>i.uid===sel))setView('orbit')},[sel,view]);
 
   // ---------- engine ----------
   useEffect(()=>{
@@ -2572,33 +2600,64 @@ function Room({ctx}){
     const grid=new T.GridHelper(60,120,0x2B211A,0x2B211A);grid.material.transparent=true;grid.material.opacity=.07;scene.add(grid);
     const sky=new T.Mesh(new T.SphereGeometry(60,24,16),new T.MeshBasicMaterial({color:'#CFE0EA',side:T.BackSide}));scene.add(sky);
     const roomG=new T.Group(),itemsG=new T.Group(),rugsG=new T.Group(),dimG=new T.Group();scene.add(roomG,itemsG,rugsG,dimG);
-    const loader=new T.TextureLoader();const cache={};const tex=(url,rep)=>{const k=url+(rep||'');if(cache[k])return cache[k];const t=loader.load(url);t.colorSpace=T.SRGBColorSpace;if(rep){t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(rep[0],rep[1])}t.anisotropy=8;return cache[k]=t};
+    // Image-based light from an interior environment, so materials read as leather, bouclé, velvet and brass.
+    const pmrem=new T.PMREMGenerator(renderer);let envTex=null;import('three/examples/jsm/environments/RoomEnvironment.js').then(({RoomEnvironment})=>{if(!S.alive)return;envTex=pmrem.fromScene(new RoomEnvironment(renderer),.04).texture;applyLook()}).catch(()=>{});
+    // Contact shadows: a soft dark pool under each standing piece.
+    const contactTex=(()=>{const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');const gr=g.createRadialGradient(64,64,0,64,64,64);gr.addColorStop(0,'rgba(0,0,0,.62)');gr.addColorStop(.55,'rgba(0,0,0,.28)');gr.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=gr;g.fillRect(0,0,128,128);return new T.CanvasTexture(c)})();
+    // Ambient occlusion on computers; phones keep the plain renderer for frame rate.
+    let composer=null,aoPass=null;const wantAO=!matchMedia('(pointer:coarse)').matches;
+    if(wantAO)Promise.all([import('three/examples/jsm/postprocessing/EffectComposer.js'),import('three/examples/jsm/postprocessing/RenderPass.js'),import('three/examples/jsm/postprocessing/GTAOPass.js'),import('three/examples/jsm/postprocessing/OutputPass.js')]).then(([{EffectComposer},{RenderPass},{GTAOPass},{OutputPass}])=>{if(!S.alive)return;
+      composer=new EffectComposer(renderer);const rp=new RenderPass(scene,persp);composer.addPass(rp);aoPass=new GTAOPass(scene,persp,size.w,size.h);aoPass.blendIntensity=.85;composer.addPass(aoPass);composer.addPass(new OutputPass());composer.rp=rp;composer.setSize(size.w,size.h)}).catch(()=>{});
+    const loader=new T.TextureLoader();const cache={};const tex=(url,rep)=>{const k=url+(rep||'');if(cache[k])return cache[k];const t=loader.load(url.replace(/#bump$/,''));t.colorSpace=T.SRGBColorSpace;if(rep){t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(rep[0],rep[1])}t.anisotropy=8;return cache[k]=t};
     const CLAY=new T.MeshStandardMaterial({color:'#F0E9DB',roughness:.95});const LINE=new T.MeshBasicMaterial({color:'#FBFAF6',polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1});
     const PLANM=new T.MeshBasicMaterial({color:'#E7D7BF'});const PLANRUG=new T.MeshBasicMaterial({color:'#F3EADB',polygonOffset:true,polygonOffsetFactor:-1});const PLANSEL=new T.MeshBasicMaterial({color:'#F2C4A2'});
     const edgeM=new T.LineBasicMaterial({color:'#1E1B19'});const selM=new T.LineBasicMaterial({color:'#E8541E'});const fpM=new T.LineBasicMaterial({color:'#A65F2C'});const dimM=new T.LineBasicMaterial({color:'#E8541E'});
     const glowTex=(()=>{const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');const gr=g.createRadialGradient(64,64,0,64,64,64);gr.addColorStop(0,'rgba(255,214,150,1)');gr.addColorStop(.3,'rgba(255,170,80,.35)');gr.addColorStop(1,'rgba(255,150,60,0)');g.fillStyle=gr;g.fillRect(0,0,128,128);return new T.CanvasTexture(c)})();
-    const S={doc:null,items:new Map(),rugs:new Map(),surfaces:[],edges:[],ceil:null,cam:{th:-.62,ph:.98,r:13,tx:0,ty:.6,tz:-.4},eye:{yaw:0,pitch:-.06,x:0,z:1.5},plan:{x:0,z:0,zoom:1},view:'orbit',style:'material',tod:.12,sel:null,snap:true,drag:null,dims:[]};
+    const S={alive:true,doc:null,items:new Map(),rugs:new Map(),surfaces:[],edges:[],ceil:null,cam:{th:-.62,ph:.98,r:13,tx:0,ty:.6,tz:-.4},vel:{th:0,ph:0},prod:{th:.6,auto:true},eye:{yaw:0,pitch:-.06,x:0,z:1.5},keys:new Set(),plan:{x:0,z:0,zoom:1},view:'orbit',style:'material',tod:.12,sel:null,snap:true,drag:null,dims:[],units:'m',touches:new Map(),last:performance.now()};
     const clear=g=>{while(g.children.length){const o=g.children.pop();o.traverse(c=>{if(c.geometry)c.geometry.dispose()})}};
     const rect=(w,d)=>{const a=w/2,b=d/2;return new T.BufferGeometry().setFromPoints([[-a,-b,a,-b],[a,-b,a,b],[a,b,-a,b],[-a,b,-a,-b]].flatMap(([x1,z1,x2,z2])=>[new T.Vector3(x1,0,z1),new T.Vector3(x2,0,z2)]))};
-    function buildRoom(d){clear(roomG);S.surfaces=[];S.edges=[];const {W,D,H}=d;
-      const ft=texture(d.floor),tile=FLOOR_TILE[d.floor]||2;const fm=new T.MeshStandardMaterial({map:tex(ft.url,[W/tile,D/tile]),color:new T.Color(d.floorTint||'#ffffff'),roughness:/marble|tile|checker/.test(d.floor)?.35:d.floor==='carpet'?1:.75});
+    // A drawn plan: each room gets its own floor and ceiling, every wall follows its edge at true
+    // thickness with its openings, and columns or fixed blocks stand where they were drawn.
+    function buildPlan(d){const {H}=d;const t=d.wallT||.12;S.underlay=null;
+      for(const zn of d.zones){const poly=zn.poly;const cw=polyArea(poly)>0;
+        const shape=new T.Shape(poly.map(([x,z])=>new T.Vector2(x,-z)));
+        const ft=texture(zn.floor||d.floor),tile=FLOOR_TILE[zn.floor||d.floor]||2;const fmap=tex(ft.url,[1/tile,1/tile]);
+        const fm=new T.MeshStandardMaterial({map:fmap,color:new T.Color(zn.floorTint||d.floorTint||'#ffffff'),roughness:/marble|tile|checker/.test(zn.floor||d.floor)?.35:.75});
+        const floor=new T.Mesh(new T.ShapeGeometry(shape),fm);floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;floor.userData.fin=fm;roomG.add(floor);S.surfaces.push(floor);
+        const ceil=new T.Mesh(new T.ShapeGeometry(shape),new T.MeshStandardMaterial({color:'#F3EEE6',roughness:1,side:T.DoubleSide}));ceil.rotation.x=-Math.PI/2;ceil.position.y=H;roomG.add(ceil);(S.ceils||=[]).push(ceil);
+        const lime=texture('lime');
+        poly.forEach((a,i)=>{const b=poly[(i+1)%poly.length];const dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz);if(len<.05)return;const ux=dx/len,uz=dz/len;const nx=cw?uz:-uz,nz=cw?-ux:ux;
+          const ops=d.openings.filter(o=>o.wall===`${zn.id}:${i}`);const g=new T.ExtrudeGeometry(plShape(len+t,H,ops),{depth:t,bevelEnabled:false});
+          const m=new T.MeshStandardMaterial({color:new T.Color(zn.wall||d.wall),roughness:.92});const bm=tex(lime.url,[len/4,H/4]);bm.colorSpace=T.NoColorSpace;m.bumpMap=bm;m.bumpScale=.012;
+          const place=o=>{o.position.set((a[0]+b[0])/2+nx*t,0,(a[1]+b[1])/2+nz*t);o.rotation.y=Math.atan2(-uz,ux)};
+          const w=new T.Mesh(g,m);place(w);w.castShadow=w.receiveShadow=true;w.userData.fin=m;roomG.add(w);S.surfaces.push(w);const e=new T.LineSegments(new T.EdgesGeometry(g,25),edgeM);place(e);roomG.add(e);S.edges.push(e)})}
+      for(const bk of d.blocks||[]){const g=new T.BoxGeometry(bk.w,bk.h||1.05,bk.d);const m=new T.MeshStandardMaterial({color:'#E6DED1',roughness:.85});const mesh=new T.Mesh(g,m);mesh.position.set(bk.x,(bk.h||1.05)/2,bk.z);mesh.rotation.y=(bk.rot||0)*Math.PI/180;mesh.castShadow=mesh.receiveShadow=true;mesh.userData.fin=m;roomG.add(mesh);S.surfaces.push(mesh);
+        const e=new T.LineSegments(new T.EdgesGeometry(g),edgeM);e.position.copy(mesh.position);e.rotation.copy(mesh.rotation);roomG.add(e);S.edges.push(e)}
+      // The plan drawing sits under Plan view at its own opacity, at true scale.
+      const u=d.underlay;if(u?.img){const um=new T.MeshBasicMaterial({map:tex(u.img),transparent:true,opacity:u.opacity??.5,depthWrite:false});const pw=u.w*u.mPerPx,ph=u.h*u.mPerPx;const plane=new T.Mesh(new T.PlaneGeometry(pw,ph),um);plane.rotation.x=-Math.PI/2;plane.position.set(u.ox+pw/2,.02,u.oz+ph/2);plane.renderOrder=2;roomG.add(plane);S.underlay=plane}
+      S.doc=d;applyLook()}
+    function buildRoom(d){clear(roomG);S.surfaces=[];S.edges=[];S.ceils=[];if(d.zones?.length){S.ceil=null;buildPlan(d);return}const {W,D,H}=d;
+      const ft=texture(d.floor),tile=FLOOR_TILE[d.floor]||2;const fm=new T.MeshStandardMaterial({map:tex(ft.url,[W/tile,D/tile]),color:new T.Color(d.floorTint||'#ffffff'),roughness:/marble|tile|checker/.test(d.floor)?.35:d.floor==='carpet'?1:.75});{const b=tex(ft.url+'#bump',[W/tile,D/tile]);b.colorSpace=T.NoColorSpace;fm.bumpMap=b;fm.bumpScale=d.floor==='carpet'?.02:.006}
       const floor=new T.Mesh(new T.PlaneGeometry(W,D),fm);floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;floor.userData.fin=fm;roomG.add(floor);S.surfaces.push(floor);
       const lime=texture('lime');
-      const mk=(len,ops,place,back)=>{const g=new T.ExtrudeGeometry(plShape(len,H,ops),{depth:.2,bevelEnabled:false});const m=new T.MeshStandardMaterial({color:new T.Color(d.wall),roughness:.92});
+      const t=d.wallT||.12;const mk=(len,ops,place,back)=>{const g=new T.ExtrudeGeometry(plShape(len,H,ops),{depth:t,bevelEnabled:false});const m=new T.MeshStandardMaterial({color:new T.Color(d.wall),roughness:.92});
         if(back&&d.wallImg){m.map=tex(d.wallImg);m.color=new T.Color('#ffffff')}else{const b=tex(lime.url,[len/4,H/4]);b.colorSpace=T.NoColorSpace;m.bumpMap=b;m.bumpScale=.012}
         const w=new T.Mesh(g,m);place(w);w.castShadow=w.receiveShadow=true;w.userData.fin=m;roomG.add(w);S.surfaces.push(w);const e=new T.LineSegments(new T.EdgesGeometry(g,25),edgeM);place(e);roomG.add(e);S.edges.push(e)};
-      mk(W+.4,d.openings.filter(o=>o.wall==='back'),m=>m.position.set(0,0,-D/2-.2),true);
-      mk(D,d.openings.filter(o=>o.wall==='left'),m=>{m.rotation.y=Math.PI/2;m.position.set(-W/2-.2,0,0)});
-      mk(D,d.openings.filter(o=>o.wall==='right'),m=>{m.rotation.y=-Math.PI/2;m.position.set(W/2+.2,0,0)});
-      const ceil=new T.Mesh(new T.PlaneGeometry(W+.4,D),new T.MeshStandardMaterial({color:'#F3EEE6',roughness:1,side:T.DoubleSide}));ceil.rotation.x=Math.PI/2;ceil.position.y=H;roomG.add(ceil);S.ceil=ceil;
+      mk(W+2*t,d.openings.filter(o=>o.wall==='back'),m=>m.position.set(0,0,-D/2-t),true);
+      mk(D,d.openings.filter(o=>o.wall==='left'),m=>{m.rotation.y=Math.PI/2;m.position.set(-W/2-t,0,0)});
+      mk(D,d.openings.filter(o=>o.wall==='right'),m=>{m.rotation.y=-Math.PI/2;m.position.set(W/2+t,0,0)});
+      const ceil=new T.Mesh(new T.PlaneGeometry(W+2*t,D),new T.MeshStandardMaterial({color:'#F3EEE6',roughness:1,side:T.DoubleSide}));ceil.rotation.x=Math.PI/2;ceil.position.y=H;roomG.add(ceil);S.ceil=ceil;
       S.doc=d;applyLook()}
     function makeItem(it){const {p,w,d,hp,hb}=plDims(it.pid);const g=new T.Group();g.userData.uid=it.uid;
       const box=new T.BoxGeometry(w,hp,d);const proxy=new T.Mesh(box,CLAY);proxy.position.y=it.hang?0:hp/2;proxy.castShadow=proxy.receiveShadow=true;proxy.userData.uid=it.uid;g.add(proxy);
       const pe=new T.LineSegments(new T.EdgesGeometry(box),edgeM);pe.position.copy(proxy.position);g.add(pe);
       const map=tex(cut(it.pid));const bm=new T.MeshStandardMaterial({map,transparent:true,alphaTest:.45,side:T.DoubleSide,roughness:.85});const bb=new T.Mesh(new T.PlaneGeometry(w,hb),bm);bb.castShadow=true;bb.customDepthMaterial=new T.MeshDepthMaterial({depthPacking:T.RGBADepthPacking,map,alphaTest:.45});bb.position.y=it.hang?0:hb/2;g.add(bb);
       const fp=new T.LineSegments(rect(w,d),fpM);g.add(fp);
+      const cs=new T.Mesh(new T.PlaneGeometry(w*1.3,d*1.3),new T.MeshBasicMaterial({map:contactTex,transparent:true,depthWrite:false,opacity:.75}));cs.rotation.x=-Math.PI/2;cs.position.y=.006;cs.visible=!it.hang;g.add(cs);
+      const v0={g,proxy,pe,bb,fp,cs,lamp:null,w,d,hp,hb,model:null,modelState:p.model?'loading':'none',hi:false};
+      if(p.model){loadGLB(p.modelLow||p.model,renderer).then(obj=>{if(!S.alive||!S.items.has(it.uid))return;fitToDims(T,obj,p.dimsCm);obj.position.y+=it.hang?-hp/2:0;g.add(obj);v0.model=obj;v0.modelState='ready';applyLook()}).catch(()=>{v0.modelState='failed';applyLook()})}
       let lamp=null;if(GLOW_AT[it.pid]){const gl=GLOW_AT[it.pid];const light=new T.PointLight('#FFB868',0,7,2);const spr=new T.Sprite(new T.SpriteMaterial({map:glowTex,transparent:true,opacity:0,depthWrite:false,blending:T.AdditiveBlending}));spr.scale.set(w*1.4,w*1.4,1);const ly=(.5-gl[1]/100)*hb+(it.hang?0:hb/2);light.position.set((gl[0]/100-.5)*w,ly,.05);spr.position.copy(light.position);g.add(light,spr);lamp={light,spr}}
-      itemsG.add(g);return {g,proxy,pe,bb,fp,lamp,w,d,hp,hb}}
+      itemsG.add(g);v0.lamp=lamp;return v0}
     const circ=r=>{const pts=[];for(let k=0;k<64;k++){const a=k/64*Math.PI*2,b=(k+1)/64*Math.PI*2;pts.push(new T.Vector3(Math.cos(a)*r,0,Math.sin(a)*r),new T.Vector3(Math.cos(b)*r,0,Math.sin(b)*r))}return new T.BufferGeometry().setFromPoints(pts)};
     function makeRug(r){const g=new T.Group();const wool=r.mat==='wool',rep=wool?1.5:.6;
       const fin=new T.MeshStandardMaterial({map:tex(texture(wool?'carpet':'jute').url,[r.w/rep,r.d/rep]),color:new T.Color(r.color||'#ffffff'),roughness:1,polygonOffset:true,polygonOffsetFactor:-1});
@@ -2612,10 +2671,15 @@ function Room({ctx}){
     function placeItem(v){const it=v.it,d=S.doc;const y=it.hang?d.H-v.hb/2-.05:0;v.baseY=y;v.g.position.set(it.x,y,it.z);v.g.rotation.y=(it.rot||0)*Math.PI/180;v.fp.position.y=it.hang?-y+.012:.012}
     function applyLook(){const st=S.style,plan=S.view==='plan';
       S.surfaces.forEach(m=>{m.material=st==='material'?m.userData.fin:st==='clay'?CLAY:LINE});
-      S.edges.forEach(e=>e.visible=st!=='material'||plan);edgeM.color.set(st==='clay'&&!plan?'#9C8E7E':'#1E1B19');if(S.ceil)S.ceil.visible=S.view==='eye';
+      S.edges.forEach(e=>e.visible=st!=='material'||plan);edgeM.color.set(st==='clay'&&!plan?'#9C8E7E':'#1E1B19');if(S.ceil)S.ceil.visible=S.view==='eye';(S.ceils||[]).forEach(c=>c.visible=S.view==='eye');if(S.underlay)S.underlay.visible=plan;
       for(const [k,v] of S.rugs){const isSel=k===S.sel;v.m.material=plan?PLANRUG:st==='material'?v.m.userData.fin:st==='clay'?CLAY:LINE;v.ol.material=isSel?selM:fpM}
-      for(const [k,v] of S.items){const isSel=k===S.sel;const showProxy=plan||st!=='material';v.proxy.visible=showProxy;v.proxy.material=plan?(isSel?PLANSEL:PLANM):st==='line'?LINE:CLAY;
-        v.pe.visible=showProxy&&(st!=='material'||plan||isSel);v.pe.material=isSel?selM:edgeM;v.bb.visible=!plan&&st==='material';v.fp.visible=plan||isSel;v.fp.material=isSel?selM:fpM;
+      scene.environment=st==='material'&&!plan?envTex:null;
+      for(const [k,v] of S.items){const isSel=k===S.sel;const mat=st==='material'&&!plan;const model=v.modelState==='ready',loading=v.modelState==='loading';
+        // Material look: the model when it has one, a clay block of the right size while it loads, else the photo cutout.
+        const showProxy=plan||st!=='material'||loading;v.proxy.visible=showProxy;v.proxy.material=plan?(isSel?PLANSEL:PLANM):st==='line'?LINE:CLAY;
+        if(v.model)v.model.visible=!plan&&st!=='line'&&model;if(v.model&&st==='clay')v.model.traverse(o=>{if(o.isMesh){o.userData.fin??=o.material;o.material=CLAY}});if(v.model&&st==='material')v.model.traverse(o=>{if(o.isMesh&&o.userData.fin)o.material=o.userData.fin});
+        if(v.model&&st==='clay')v.proxy.visible=false;v.cs.visible=!v.it.hang&&!plan&&st!=='line';
+        v.pe.visible=showProxy&&(st!=='material'||plan||isSel);v.pe.material=isSel?selM:edgeM;v.bb.visible=mat&&!model&&!loading;v.fp.visible=plan||isSel;v.fp.material=isSel?selM:fpM;
         v.bb.material.emissive=v.bb.material.emissive||new T.Color(0);v.bb.material.emissive.setScalar(isSel?.06:0)}
       sky.visible=st==='material'&&!plan;grid.visible=st!=='material'||plan;sun.castShadow=st!=='line'&&!plan}
     const C=(a,b,t)=>new T.Color(a).lerp(new T.Color(b),t);const tri=(a,b,c,t)=>t<.5?C(a,b,t*2):C(b,c,(t-.5)*2);const triN=(a,b,c,t)=>t<.5?a+(b-a)*t*2:b+(c-b)*(t-.5)*2;
@@ -2626,10 +2690,12 @@ function Room({ctx}){
       else{renderer.setClearColor('#F6F3EC');ground.material.color.set('#F6F3EC');hemi.intensity=LX*(.6);sun.intensity=LX*(1)}
       const lk=st==='material'?Math.max(0,Math.min(1,(t-.55)/.3)):0;for(const v of S.items.values()){if(v.lamp){v.lamp.light.intensity=LX*(lk*1.6);v.lamp.spr.material.opacity=lk*.9;v.lamp.spr.visible=!(S.view==='plan')}}}
     // cameras
-    const size={w:1,h:1};function resize(){const r=vp.getBoundingClientRect();size.w=r.width;size.h=r.height;renderer.setSize(r.width,r.height,false);persp.aspect=r.width/r.height;persp.updateProjectionMatrix()}
+    const size={w:1,h:1};function resize(){const r=vp.getBoundingClientRect();size.w=r.width;size.h=r.height;renderer.setSize(r.width,r.height,false);persp.aspect=r.width/r.height;persp.updateProjectionMatrix();composer?.setSize(r.width,r.height)}
     const ro=new ResizeObserver(resize);ro.observe(vp);resize();
     function camera(){const d=S.doc;if(S.view==='plan'){const a=size.w/size.h;const half=(Math.max(d.D,d.W/a)/2+1.2)/S.plan.zoom;ortho.left=-half*a;ortho.right=half*a;ortho.top=half;ortho.bottom=-half;ortho.position.set(S.plan.x,30,S.plan.z);ortho.up.set(0,0,-1);ortho.lookAt(S.plan.x,0,S.plan.z);ortho.updateProjectionMatrix();return ortho}
       if(S.view==='eye'){const e=S.eye;persp.fov=60;persp.updateProjectionMatrix();persp.up.set(0,1,0);persp.position.set(e.x,1.5,e.z);persp.lookAt(e.x+Math.sin(e.yaw)*Math.cos(e.pitch),1.5+Math.sin(e.pitch),e.z-Math.cos(e.yaw)*Math.cos(e.pitch));return persp}
+      if(S.view==='product'){const v=S.sel&&S.items.get(S.sel);if(v){const c=v.g.position,R=Math.max(v.w,v.d,v.hp)*2.4+.6,ph=1.1;persp.fov=34;persp.updateProjectionMatrix();persp.up.set(0,1,0);
+        persp.position.set(c.x+R*Math.sin(ph)*Math.sin(S.prod.th),(v.it.hang?c.y:0)+v.hp*.5+R*Math.cos(ph),c.z+R*Math.sin(ph)*Math.cos(S.prod.th));persp.lookAt(c.x,(v.it.hang?c.y:0)+v.hp*.45,c.z);return persp}}
       const c=S.cam;persp.fov=40;persp.updateProjectionMatrix();persp.up.set(0,1,0);persp.position.set(c.tx+c.r*Math.sin(c.ph)*Math.sin(c.th),c.ty+c.r*Math.cos(c.ph),c.tz+c.r*Math.sin(c.ph)*Math.cos(c.th));persp.lookAt(c.tx,c.ty,c.tz);return persp}
     // picking & dragging
     const ray=new T.Raycaster(),ndc=new T.Vector2(),floorP=new T.Plane(new T.Vector3(0,1,0),0),hit=new T.Vector3();
@@ -2637,48 +2703,102 @@ function Room({ctx}){
     const floorAt=e=>{setNdc(e);return ray.ray.intersectPlane(floorP,hit)?hit.clone():null};
     const pickItem=e=>{setNdc(e);const hits=ray.intersectObjects([...S.items.values()].map(v=>v.proxy),false);if(hits.length)return hits[0].object.userData.uid;const rh=ray.intersectObjects([...S.rugs.values()].map(v=>v.m),false);return rh.length?rh[0].object.userData.uid:null};
     const snapV=v=>S.snap?Math.round(v/.05)*.05:v;
-    const onDown=e=>{vp.focus();const id=pickItem(e);if(id&&e.button===0&&S.rugs.has(id)){const v=S.rugs.get(id);const f=floorAt(e);api.select(id);S.drag={kind:'rug',id,off:f?{x:v.it.x-f.x,z:v.it.z-f.z}:{x:0,z:0},moved:false};cv.setPointerCapture(e.pointerId);return}
+    // Orbit stays between 10° and 85° above the floor, all the way round.
+    const PH_MIN=5*Math.PI/180,PH_MAX=80*Math.PI/180;
+    const touch2=()=>{const [a,b]=[...S.touches.values()];return {d:Math.hypot(a.x-b.x,a.y-b.y),x:(a.x+b.x)/2,y:(a.y+b.y)/2}};
+    const onDown=e=>{vp.focus();if(e.pointerType==='touch'){S.touches.set(e.pointerId,{x:e.clientX,y:e.clientY});if(S.touches.size===2){const t=touch2();S.drag={kind:'touch2',...t,r:S.cam.r,zoom:S.plan.zoom};return}if(S.touches.size>2)return}S.vel={th:0,ph:0};const id=pickItem(e);if(id&&e.button===0&&S.rugs.has(id)){const v=S.rugs.get(id);const f=floorAt(e);api.select(id);S.drag={kind:'rug',id,off:f?{x:v.it.x-f.x,z:v.it.z-f.z}:{x:0,z:0},moved:false};cv.setPointerCapture(e.pointerId);return}
       if(id&&e.button===0){const v=S.items.get(id);if(v.it.lock){api.select(id);return}const f=floorAt(e);api.select(id);S.drag={kind:'item',id,off:f?{x:v.it.x-f.x,z:v.it.z-f.z}:{x:0,z:0},moved:false};cv.setPointerCapture(e.pointerId);return}
       if(!id&&e.button===0&&!e.shiftKey)api.select(null);S.drag={kind:e.button===2||e.shiftKey?'pan':'cam',x:e.clientX,y:e.clientY};cv.setPointerCapture(e.pointerId)};
-    const onMove=e=>{const g=S.drag;if(!g)return;const d=S.doc;
+    const onMove=e=>{if(S.touches.has(e.pointerId))S.touches.set(e.pointerId,{x:e.clientX,y:e.clientY});const g=S.drag;if(!g)return;const d=S.doc;
+      if(g.kind==='touch2'){if(S.touches.size<2)return;const t=touch2();const k=g.d/Math.max(1,t.d);if(S.view==='plan')S.plan.zoom=Math.max(.5,Math.min(4,g.zoom/k));else S.cam.r=Math.max(2,Math.min(32,g.r*k));
+        const dx=t.x-g.x,dy=t.y-g.y;g.x=t.x;g.y=t.y;if(S.view==='plan'){const kk=(ortho.right-ortho.left)/size.w;S.plan.x-=dx*kk;S.plan.z-=dy*kk}else{const c=S.cam;const kk=c.r*.0016;c.tx-=Math.cos(c.th)*dx*kk;c.tz+=Math.sin(c.th)*dx*kk;c.ty=Math.max(0,Math.min(3,c.ty+dy*kk))}return}
       if(g.kind==='rug'){const f=floorAt(e);if(!f)return;const v=S.rugs.get(g.id);const [nx,nz]=rugClamp(d,v.it,snapV(f.x+g.off.x),snapV(f.z+g.off.z));v.it={...v.it,x:nx,z:nz};placeRug(v);g.moved=true;return}
       if(g.kind==='item'){const f=floorAt(e);if(!f)return;const v=S.items.get(g.id);const dn={...d,items:[...S.items.values()].map(x=>x.it)};const it=v.it;let [nx,nz]=plClamp(dn,it,snapV(f.x+g.off.x),snapV(f.z+g.off.z));if(!plHit(dn,it,it.x,it.z)&&plHit(dn,it,nx,nz)){const [ax,az]=plClamp(dn,it,nx,it.z),[bx,bz]=plClamp(dn,it,it.x,nz);if(!plHit(dn,it,ax,az)){nx=ax;nz=az}else if(!plHit(dn,it,bx,bz)){nx=bx;nz=bz}else{nx=it.x;nz=it.z}}v.it={...it,x:nx,z:nz};placeItem(v);g.moved=true;return}
       const dx=e.clientX-g.x,dy=e.clientY-g.y;g.x=e.clientX;g.y=e.clientY;
       if(S.view==='plan'){const k=(ortho.right-ortho.left)/size.w;S.plan.x-=dx*k;S.plan.z-=dy*k;return}
       if(S.view==='eye'){S.eye.yaw+=dx*.004;S.eye.pitch=Math.max(-.6,Math.min(.5,S.eye.pitch-dy*.003));return}
       if(g.kind==='pan'){const c=S.cam;const k=c.r*.0016;c.tx-=(Math.cos(c.th)*dx)*k;c.tz-=(-Math.sin(c.th)*dx)*k;c.ty=Math.max(0,Math.min(3,c.ty+dy*k));return}
-      S.cam.th-=dx*.006;S.cam.ph=Math.max(.12,Math.min(1.5,S.cam.ph-dy*.005))};
-    const onUp=e=>{const g=S.drag;S.drag=null;if(g&&(g.kind==='item'||g.kind==='rug')&&g.moved){const v=(g.kind==='rug'?S.rugs:S.items).get(g.id);api.onMoved(g.id,{x:+v.it.x.toFixed(2),z:+v.it.z.toFixed(2)})}};
-    const onWheel=e=>{e.preventDefault();const s=Math.sign(e.deltaY);if(S.view==='plan')S.plan.zoom=Math.max(.5,Math.min(4,S.plan.zoom*(s>0?.9:1.1)));else if(S.view==='eye'){const d=S.doc;S.eye.x=Math.max(-d.W/2+.4,Math.min(d.W/2-.4,S.eye.x-Math.sin(S.eye.yaw)*s*.35));S.eye.z=Math.max(-d.D/2+.4,Math.min(d.D/2+.4,S.eye.z+Math.cos(S.eye.yaw)*s*.35))}else S.cam.r=Math.max(3,Math.min(32,S.cam.r*(s>0?1.08:.93)))};
+      if(S.view==='product'){S.prod.th-=dx*.008;S.prod.auto=false;return}
+      S.vel={th:-dx*.006,ph:-dy*.005};S.cam.th+=S.vel.th;S.cam.ph=Math.max(PH_MIN,Math.min(PH_MAX,S.cam.ph+S.vel.ph))};
+    const onUp=e=>{S.touches.delete(e.pointerId);const g=S.drag;if(g?.kind==='touch2'&&S.touches.size)return;S.drag=null;if(g?.kind!=='cam')S.vel={th:0,ph:0};if(g&&(g.kind==='item'||g.kind==='rug')&&g.moved){const v=(g.kind==='rug'?S.rugs:S.items).get(g.id);api.onMoved(g.id,{x:+v.it.x.toFixed(2),z:+v.it.z.toFixed(2)})}};
+    const onWheel=e=>{e.preventDefault();const s=Math.sign(e.deltaY);if(S.view==='plan')S.plan.zoom=Math.max(.5,Math.min(4,S.plan.zoom*(s>0?.9:1.1)));else if(S.view==='eye'){const d=S.doc;S.eye.x=Math.max(-d.W/2+.4,Math.min(d.W/2-.4,S.eye.x-Math.sin(S.eye.yaw)*s*.35));S.eye.z=Math.max(-d.D/2+.4,Math.min(d.D/2+.4,S.eye.z+Math.cos(S.eye.yaw)*s*.35))}else S.cam.r=Math.max(2,Math.min(32,S.cam.r*(s>0?1.08:.93)))};
+    // Double-click a piece to bring the orbit round to it.
+    const onDbl=e=>{if(S.view!=='orbit')return;const id=pickItem(e);const v=id&&S.items.get(id);if(!v)return;S.focus={tx:v.it.x,ty:Math.min(1.2,v.hp/2),tz:v.it.z,r:Math.max(2.2,Math.max(v.w,v.d)*3)}};
+    const onKey=(e,on)=>{if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))return;const k={w:'f',arrowup:'f',s:'b',arrowdown:'b',a:'l',arrowleft:'l',d:'r',arrowright:'r'}[e.key.toLowerCase()];if(!k||S.view!=='eye')return;if(on){S.keys.add(k);e.preventDefault()}else S.keys.delete(k)};
+    const kd=e=>onKey(e,true),ku=e=>onKey(e,false);addEventListener('keydown',kd);addEventListener('keyup',ku);cv.addEventListener('dblclick',onDbl);
     const onDrop=e=>{e.preventDefault();const pid=+e.dataTransfer.getData('text/pid');if(!pid)return;const f=floorAt(e);api.onDrop(pid,f?snapV(f.x):0,f?snapV(f.z):0)};
-    cv.addEventListener('pointerdown',onDown);cv.addEventListener('pointermove',onMove);cv.addEventListener('pointerup',onUp);cv.addEventListener('wheel',onWheel,{passive:false});cv.addEventListener('contextmenu',e=>e.preventDefault());cv.addEventListener('dragover',e=>e.preventDefault());cv.addEventListener('drop',onDrop);
+    cv.addEventListener('pointerdown',onDown);cv.addEventListener('pointermove',onMove);cv.addEventListener('pointerup',onUp);cv.addEventListener('pointercancel',onUp);cv.addEventListener('wheel',onWheel,{passive:false});cv.addEventListener('contextmenu',e=>e.preventDefault());cv.addEventListener('dragover',e=>e.preventDefault());cv.addEventListener('drop',onDrop);
     // labels (plan names, room dims, distances)
     const tmp=new T.Vector3();
-    function labels(){const el=labRef.current;if(!el)return;const d=S.doc;const out=[];const proj=(x,y,z)=>{tmp.set(x,y,z).project(S.camObj);return [(tmp.x+1)/2*size.w,(1-tmp.y)/2*size.h,tmp.z<1]};
-      if(S.view==='plan'){const a=proj(0,0,d.D/2+.45),b=proj(d.W/2+.55,0,0);out.push(`<span class="pl-lab dim" style="left:${a[0]}px;top:${a[1]}px">${d.W.toFixed(2)} m</span>`,`<span class="pl-lab dim" style="left:${b[0]}px;top:${b[1]}px">${d.D.toFixed(2)} m</span>`);
-        for(const v of S.rugs.values()){const r=v.it;const p=proj(r.x,0,r.z+rugExt(r)[1]-.22);out.push(`<span class="pl-lab rug${r.uid===S.sel?' sel':''}" style="left:${p[0]}px;top:${p[1]}px">Rug · ${r.size}</span>`)}
-        for(const v of S.items.values()){const p=proj(v.it.x,0,v.it.z);out.push(`<span class="pl-lab${v.it.uid===S.sel?' sel':''}" style="left:${p[0]}px;top:${p[1]}px">${byId(v.it.pid).name}</span>`)}}
-      const sv=S.sel&&(S.items.get(S.sel)||S.rugs.get(S.sel));clear(dimG);
-      if(sv&&S.view!=='eye'){const it=sv.it;const [hw,hd]=S.rugs.has(S.sel)?rugExt(it):[sv.w/2,sv.d/2];const segs=[[it.x-hw,it.z,-d.W/2,it.z],[it.x+hw,it.z,d.W/2,it.z],[it.x,it.z-hd,it.x,-d.D/2]];
-        segs.forEach(([x1,z1,x2,z2])=>{const len=Math.hypot(x2-x1,z2-z1);if(len<.02)return;const g=new T.BufferGeometry().setFromPoints([new T.Vector3(x1,.03,z1),new T.Vector3(x2,.03,z2)]);dimG.add(new T.Line(g,dimM));const m=proj((x1+x2)/2,.03,(z1+z2)/2);if(m[2])out.push(`<span class="pl-lab dist" style="left:${m[0]}px;top:${m[1]}px">${len.toFixed(2)} m</span>`)})}
-      el.innerHTML=out.join('')}
+    function labels(){const el=labRef.current;if(!el)return;const d=S.doc;const u=S.units;const out=[];const proj=(x,y,z)=>{tmp.set(x,y,z).project(S.camObj);return [(tmp.x+1)/2*size.w,(1-tmp.y)/2*size.h,tmp.z<1]};
+      const lab=(cls,p,t)=>{if(p[2])out.push(`<span class="pl-lab ${cls}" style="left:${p[0]}px;top:${p[1]}px">${t}</span>`)};
+      if(S.view==='plan'&&d.zones?.length){const t=d.wallT||.12;for(const zn of d.zones){const cw=polyArea(zn.poly)>0;zn.poly.forEach((a,i)=>{const b=zn.poly[(i+1)%zn.poly.length];const len=Math.hypot(b[0]-a[0],b[1]-a[1]);if(len<.3)return;const ux=(b[0]-a[0])/len,uz=(b[1]-a[1])/len;const nx=cw?uz:-uz,nz=cw?-ux:ux;lab('dim',proj((a[0]+b[0])/2+nx*(t+.3),0,(a[1]+b[1])/2+nz*(t+.3)),fmtLen(len,u))});
+          const c=polyCentre(zn.poly);const seats=d.items.filter(it=>!it.hang&&inPoly([it.x,it.z],zn.poly)).reduce((s2,it)=>s2+byId(it.pid).seats,0);lab('zone',proj(c[0],0,c[1]),`${zn.name} · ${seats} seat${seats===1?'':'s'}`)}
+        for(const v of S.rugs.values()){const r=v.it;lab('rug'+(r.uid===S.sel?' sel':''),proj(r.x,0,r.z+rugExt(r)[1]-.22),`Rug · ${r.size}`)}
+        for(const v of S.items.values())lab(v.it.uid===S.sel?'sel':'',proj(v.it.x,0,v.it.z),byId(v.it.pid).name)}
+      else if(S.view==='plan'){const t=d.wallT||.12;lab('dim',proj(0,0,-d.D/2-t-.35),fmtLen(d.W,u));lab('dim',proj(0,0,d.D/2+.45),fmtLen(d.W,u));lab('dim',proj(-d.W/2-t-.45,0,0),fmtLen(d.D,u));lab('dim',proj(d.W/2+t+.55,0,0),fmtLen(d.D,u));
+        for(const v of S.rugs.values()){const r=v.it;lab('rug'+(r.uid===S.sel?' sel':''),proj(r.x,0,r.z+rugExt(r)[1]-.22),`Rug · ${r.size}`)}
+        for(const v of S.items.values())lab(v.it.uid===S.sel?'sel':'',proj(v.it.x,0,v.it.z),byId(v.it.pid).name)}
+      const sv=S.sel&&(S.items.get(S.sel)||S.rugs.get(S.sel));const lines=[];
+      if(sv&&S.view!=='eye'){const it=sv.it;const isRug=S.rugs.has(S.sel);const [hw,hd]=isRug?rugExt(it):plExt(it);
+        // Distances to the nearest wall in each direction; a drawn plan casts against every wall it has.
+        const hitWall=(x,z,dx,dz)=>{if(!d.zones?.length)return dx?[dx>0?d.W/2:-d.W/2,z]:[x,dz>0?d.D/2:-d.D/2];let best=Infinity;for(const zn of d.zones)zn.poly.forEach((a,i)=>{const b=zn.poly[(i+1)%zn.poly.length];
+          const ex=b[0]-a[0],ez=b[1]-a[1],den=dx*ez-dz*ex;if(Math.abs(den)<1e-9)return;const tt=((a[0]-x)*ez-(a[1]-z)*ex)/den,uu=((a[0]-x)*dz-(a[1]-z)*dx)/den;if(tt>=0&&uu>=0&&uu<=1&&tt<best)best=tt});return best<Infinity?[x+dx*best,z+dz*best]:[x,z]};
+        const segs=[[-1,0],[1,0],[0,-1],[0,1]].map(([dx,dz])=>{const sx=it.x+dx*hw,sz=it.z+dz*hd;const [hx,hz]=hitWall(sx,sz,dx,dz);return [sx,sz,hx,hz]});
+        // The nearest other piece, measured edge to edge along whichever axis separates them.
+        if(!isRug){let best=null;for(const o of S.items.values()){if(o.it.uid===it.uid||!!o.it.hang!==!!it.hang)continue;const [ow,od]=plExt(o.it);const gx=Math.abs(o.it.x-it.x)-hw-ow,gz=Math.abs(o.it.z-it.z)-hd-od;
+          const gap=Math.max(gx,gz);if(gap<=0)continue;if(!best||gap<best.gap){const sx=Math.sign(o.it.x-it.x),sz=Math.sign(o.it.z-it.z);best={gap,seg:gx>=gz?[it.x+sx*hw,it.z,it.x+sx*(hw+gx),it.z]:[it.x,it.z+sz*hd,it.x,it.z+sz*(hd+gz)]}}}
+          if(best&&best.gap<4)segs.push(best.seg)}
+        segs.forEach(([x1,z1,x2,z2])=>{const len=Math.hypot(x2-x1,z2-z1);if(len<.01)return;lines.push([x1,z1,x2,z2]);lab('dist',proj((x1+x2)/2,.03,(z1+z2)/2),fmtLen(len,u))});
+        if(!isRug){const D=byId(it.pid).dimsCm;if(D)lab('size',proj(it.x,(it.hang?sv.g.position.y:0)+sv.hp+.18,it.z),`${fmtCm(D.w,u)} W × ${fmtCm(D.d,u)} D × ${fmtCm(D.h,u)} H`)}}
+      // Rebuild the measure lines and labels only when they change, so an idle view costs nothing.
+      const lk=JSON.stringify(lines);if(lk!==S.lineKey){S.lineKey=lk;clear(dimG);lines.forEach(([x1,z1,x2,z2])=>dimG.add(new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(x1,.03,z1),new T.Vector3(x2,.03,z2)]),dimM)))}
+      const html=out.join('');if(html!==S.labHtml){S.labHtml=html;el.innerHTML=html}}
     const bounce=t=>{const n=7.5625,k=2.75;return t<1/k?n*t*t:t<2/k?n*(t-=1.5/k)*t+.75:t<2.5/k?n*(t-=2.25/k)*t+.9375:n*(t-=2.625/k)*t+.984375};
-    let raf=0,run=true;const loop=()=>{if(!run)return;S.camObj=camera();const now=performance.now();for(const v of S.items.values()){if(v.drop!=null){const t=Math.min(1,(now-v.drop)/520);v.g.position.y=v.baseY+.45*(1-bounce(t));if(t>=1)v.drop=null}}for(const v of S.items.values()){if(v.bb.visible){const wp=v.g.position;v.bb.rotation.y=Math.atan2(S.camObj.position.x-wp.x,S.camObj.position.z-wp.z)-v.g.rotation.y}}lights();renderer.render(scene,S.camObj);labels();raf=requestAnimationFrame(loop)};
+    const walk=dt=>{if(!S.keys.size)return;const e=S.eye,d=S.doc,sp=1.4*dt;let f=(S.keys.has('f')?1:0)-(S.keys.has('b')?1:0),st=(S.keys.has('r')?1:0)-(S.keys.has('l')?1:0);
+      const dx=(Math.sin(e.yaw)*f+Math.cos(e.yaw)*st)*sp,dz=(-Math.cos(e.yaw)*f+Math.sin(e.yaw)*st)*sp;const free=(x,z)=>Math.abs(x)<d.W/2-.3&&Math.abs(z)<d.D/2-.3&&![...S.items.values()].some(v=>{if(v.it.hang)return false;const [a,b]=plExt(v.it);return Math.abs(x-v.it.x)<a+.25&&Math.abs(z-v.it.z)<b+.25});
+      if(free(e.x+dx,e.z))e.x+=dx;if(free(e.x,e.z+dz))e.z+=dz};
+    let raf=0,run=true;const loop=()=>{if(!run)return;const now=performance.now();const dt=Math.min(.05,(now-S.last)/1000);S.last=now;
+      if(!S.drag&&S.view==='orbit'&&(Math.abs(S.vel.th)>1e-4||Math.abs(S.vel.ph)>1e-4)){S.cam.th+=S.vel.th;S.cam.ph=Math.max(PH_MIN,Math.min(PH_MAX,S.cam.ph+S.vel.ph));S.vel.th*=.9;S.vel.ph*=.9}
+      if(S.focus){const c=S.cam,f=S.focus,k=1-Math.pow(.001,dt);c.tx+=(f.tx-c.tx)*k;c.ty+=(f.ty-c.ty)*k;c.tz+=(f.tz-c.tz)*k;c.r+=(f.r-c.r)*k;if(Math.abs(f.r-c.r)<.01)S.focus=null}
+      if(S.view==='eye')walk(dt);if(S.view==='product'&&S.prod.auto&&!S.drag)S.prod.th+=dt*.35;
+      S.camObj=camera();
+      // The high-detail model loads once the camera comes within 3.5 m of a piece.
+      for(const v of S.items.values()){const p=byId(v.it.pid);if(v.model&&p.modelLow&&!v.hi&&S.view!=='plan'&&S.camObj.position.distanceTo(v.g.position)<3.5){v.hi=true;loadGLB(p.model,renderer).then(obj=>{if(!S.alive||!v.model)return;fitToDims(T,obj,p.dimsCm);obj.position.y=v.model.position.y;v.g.remove(v.model);v.g.add(obj);v.model=obj;applyLook()}).catch(()=>{})}}for(const v of S.items.values()){if(v.drop!=null){const t=Math.min(1,(now-v.drop)/520);v.g.position.y=v.baseY+.45*(1-bounce(t));if(t>=1)v.drop=null}}for(const v of S.items.values()){if(v.bb.visible){const wp=v.g.position;v.bb.rotation.y=Math.atan2(S.camObj.position.x-wp.x,S.camObj.position.z-wp.z)-v.g.rotation.y}}// Hold frame rate: if frames run long for about a second, ambient occlusion steps aside.
+      {const raw=now-(S.prev??now);S.prev=now;if(raw>24)S.slowT=(S.slowT||0)+raw;else S.slowT=Math.max(0,(S.slowT||0)-raw);if(S.slowT>1500)S.aoOff=true}
+      lights();if(composer&&aoPass&&!S.aoOff&&S.style==='material'&&S.view!=='plan'){composer.rp.camera=S.camObj;aoPass.camera=S.camObj;composer.render()}else renderer.render(scene,S.camObj);labels();raf=requestAnimationFrame(loop)};
     const api={select:id=>{S.sel=id;applyLook();E.current.onSelect&&E.current.onSelect(id)},onMoved:(id,o)=>E.current.onMoved&&E.current.onMoved(id,o),onDrop:(pid,x,z)=>E.current.onDrop&&E.current.onDrop(pid,x,z)};
-    Object.assign(E.current,{S,buildRoom,syncItems,syncRugs,applyLook,api,snapshot:()=>{renderer.render(scene,S.camObj);return cv.toDataURL('image/jpeg',.92)}});
+    // Still render: a progressive path tracer refines the current view into a photograph with real
+    // bounced light, at 2560 × 1440, for up to 18 seconds. Where it can't run, a high-quality raster frame stands in.
+    async function still(onProgress,W=2560,H=1440){if(S.view==='plan')throw new Error('Switch to Orbit or Walk to render.');const cam=S.camObj.clone();cam.aspect=W/H;cam.updateProjectionMatrix();
+      const hidden=[];scene.traverse(o=>{if(o.visible&&(o.isLine||o.isLineSegments||o.isSprite||o===grid||o===sky||o===ground)){hidden.push(o);o.visible=false}});
+      for(const v of S.items.values()){const p=byId(v.it.pid);if(v.model&&p.modelLow&&!v.hi){v.hi=true;try{const obj=await loadGLB(p.model,renderer);fitToDims(T,obj,p.dimsCm);obj.position.y=v.model.position.y;v.g.remove(v.model);v.g.add(obj);v.model=obj}catch(e){}}}
+      const off=new T.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});off.setSize(W,H,false);off.outputColorSpace=T.SRGBColorSpace;off.toneMapping=T.ACESFilmicToneMapping;off.toneMappingExposure=renderer.toneMappingExposure;off.shadowMap.enabled=true;off.shadowMap.type=T.PCFSoftShadowMap;off.setClearColor(renderer.getClearColor(new T.Color()));
+      const restore=()=>{hidden.forEach(o=>o.visible=true);off.dispose()};
+      try{if(!canTrace(renderer)||window.__forceTrace===false)throw new Error('This device renders stills without path tracing.');const {WebGLPathTracer}=await import('three-gpu-pathtracer');const sky=renderer.getClearColor(new T.Color());const env=new T.DataTexture(new Float32Array([sky.r,sky.g,sky.b,1,sky.r,sky.g,sky.b,1,.35,.3,.26,1,.35,.3,.26,1]),2,2,T.RGBAFormat,T.FloatType);env.mapping=T.EquirectangularReflectionMapping;env.needsUpdate=true;
+        const prevEnv=scene.environment,prevBg=scene.background;scene.environment=env;scene.background=sky;
+        // The path tracer reads environmentRotation and backgroundRotation from every scene it makes; three r160 doesn't define them yet.
+        if(!('environmentRotation' in T.Scene.prototype)){T.Scene.prototype.environmentRotation=new T.Euler();T.Scene.prototype.backgroundRotation=new T.Euler()}
+        try{const pt=new WebGLPathTracer(off);pt.tiles.set(2,2);pt.setScene(scene,cam);const t0=performance.now();let n=0;
+          while(performance.now()-t0<18000&&n<600){pt.renderSample();n++;onProgress&&onProgress(Math.min(1,(performance.now()-t0)/18000),n);await new Promise(r=>setTimeout(r,0))}
+          const url=off.domElement.toDataURL('image/jpeg',.94);pt.dispose?.();return {url,samples:n,traced:true}}
+        finally{scene.environment=prevEnv;scene.background=prevBg;env.dispose();restore()}}
+      catch(e){console.warn('Path tracing unavailable; rendering a raster still instead.',e);const o2=new T.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});o2.setSize(W,H,false);o2.outputColorSpace=T.SRGBColorSpace;o2.toneMapping=T.ACESFilmicToneMapping;o2.shadowMap.enabled=true;o2.setClearColor(renderer.getClearColor(new T.Color()));o2.render(scene,cam);const url=o2.domElement.toDataURL('image/jpeg',.94);o2.dispose();return {url,samples:0,traced:false}}}
+    Object.assign(E.current,{S,buildRoom,syncItems,syncRugs,applyLook,api,still,snapshot:()=>{renderer.render(scene,S.camObj);return cv.toDataURL('image/jpeg',.92)}});
     loop();setEng(n=>n+1);
-    return()=>{run=false;cancelAnimationFrame(raf);ro.disconnect();scene.traverse(o=>{if(o.geometry)o.geometry.dispose()});renderer.dispose()};
+    return()=>{run=false;S.alive=false;cancelAnimationFrame(raf);ro.disconnect();removeEventListener('keydown',kd);removeEventListener('keyup',ku);scene.traverse(o=>{if(o.geometry)o.geometry.dispose()});pmrem.dispose();envTex?.dispose();composer?.dispose?.();renderer.dispose()};
   },[three]);
   // wire engine callbacks to React
   useEffect(()=>{Object.assign(E.current,{onSelect:id=>setSel(id),onMoved:(id,o)=>patchSel(id,o),onDrop:(pid,x,z)=>addItem(pid,x,z)})});
-  const geoKey=JSON.stringify([doc.W,doc.D,doc.H,doc.wall,doc.floor,doc.floorTint,doc.openings,doc.wallImg?doc.wallImg.length:0]);
+  const geoKey=JSON.stringify([doc.W,doc.D,doc.H,doc.wallT,doc.wall,doc.floor,doc.floorTint,doc.openings,doc.wallImg?doc.wallImg.length:0,doc.zones,doc.blocks,doc.underlay?{...doc.underlay,img:doc.underlay.img.length}:null]);
   useEffect(()=>{const e=E.current;if(!e.buildRoom)return;e.buildRoom(doc);e.syncItems(doc.items);setTimeout(()=>{if(e.S)e.S.ready=true},50)},[geoKey,eng]);
   useEffect(()=>{const e=E.current;if(e.syncItems)e.syncItems(doc.items)},[doc.items,eng]);
   useEffect(()=>{const e=E.current;if(e.syncRugs)e.syncRugs(doc.rugs||[])},[doc.rugs,eng]);
-  useEffect(()=>{const e=E.current;if(!e.S)return;e.S.view=view;e.S.style=style;e.S.tod=tod;e.S.snap=snap;e.S.sel=sel;e.applyLook()},[view,style,tod,snap,sel,eng]);
+  useEffect(()=>{const e=E.current;if(!e.S)return;e.S.view=view;e.S.style=style;e.S.tod=tod;e.S.snap=snap;e.S.sel=sel;e.S.units=units;if(view==='product')e.S.prod.auto=true;e.applyLook()},[view,style,tod,snap,sel,units,eng]);
   useEffect(()=>{const k=e=>{if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))return;if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();e.shiftKey?redo():undo();return}
       if(e.key==='Escape'&&!sel){setDrawer(null);setLookOpen(false);return}
-      if(e.key==='1')setView('plan');if(e.key==='2')setView('orbit');if(e.key==='3')setView('eye');
+      if(e.key==='1')setView('plan');if(e.key==='2')setView('orbit');if(e.key==='3')setView('eye');if(e.key==='4'&&S0)setView('product');
+      if(view==='eye'&&/^(w|a|s|d|arrow\w+)$/i.test(e.key))return;
       const it=sel&&(docRef.current.items.find(i=>i.uid===sel)||rugOf(sel));if(!it)return;
       if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();removeItem(sel)}if(e.key==='r'||e.key==='R')patchSel(sel,{rot:((it.rot||0)+(e.shiftKey?-15:15)+360)%360});if(e.key==='d'&&!e.ctrlKey)dupItem(sel);if(e.key==='Escape')setSel(null);
       const step=e.shiftKey?.25:.05;const mv={ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]}[e.key];if(mv){e.preventDefault();patchSel(sel,{x:+(it.x+mv[0]).toFixed(2),z:+(it.z+mv[1]).toFixed(2)})}};
@@ -2692,25 +2812,39 @@ function Room({ctx}){
   const prompt=`Photorealistic interior photograph of a ${doc.W} × ${doc.D} m room with a ${doc.H} m ceiling. Walls in ${doc.wall} limewash plaster, ${PL_FLOORS.find(f=>f[0]===doc.floor)?.[1].toLowerCase()} floor. Openings: ${doc.openings.map(o=>`${o.t==='arch'?'an arched window':o.t==='door'?'a doorway':'a window'} on the ${o.wall} wall`).join(', ')||'none'}.\n${(doc.rugs||[]).length?`Rugs: ${doc.rugs.map(r=>`a ${rugName(r)} at ${plWord(r,doc)}`).join('; ')}.\n`:''}Furnished with exactly these Louie Mae pieces, matching their product photos: ${doc.items.map(i=>{const p=byId(i.pid);return `${p.name} ${p.line} at ${plWord(i,doc)}`}).join('; ')||'no furniture yet'}.\nLight: ${tod<.35?'soft morning daylight':tod<.7?'warm golden-hour sun':'after dark, lit by warm lamps'} (${todLabel}). Three-quarter view at 1.3 m height, 26 mm lens, straight verticals, editorial interior photography. No people, no text.`;
   const prods=PRODUCTS.filter(p=>(cat==='all'||p.type===cat)&&(p.name+' '+p.line+' '+p.mat).toLowerCase().includes(q.toLowerCase()));
   const setOpening=(i,o)=>commit({...doc,openings:doc.openings.map((x,k)=>k===i?{...x,...o}:x)});
-  const wallLen=w=>w==='back'?doc.W:doc.D;
+  const planWalls=doc.zones?.length?doc.zones.flatMap(z=>z.poly.map((a,i)=>{const b=z.poly[(i+1)%z.poly.length];return [`${z.id}:${i}`,`${z.name} · wall ${i+1}`,Math.hypot(b[0]-a[0],b[1]-a[1])]})):null;
+  const wallLen=w=>planWalls?(planWalls.find(x=>x[0]===w)?.[2]??4):w==='back'?doc.W:doc.D;
+  const applyPlan=r=>{setPlanOpen(false);if(!r){commit(plReflow({...doc,zones:undefined,blocks:undefined,underlay:undefined,openings:doc.openings.filter(o=>['back','left','right'].includes(o.wall))}));ctx.toast('Back to a rectangular room',{label:'Undo',fn:undo});return}
+    const ok=new Set(r.zones.flatMap(z=>z.poly.map((_,i)=>`${z.id}:${i}`)));commit(plReflow({...doc,...r,openings:doc.openings.filter(o=>ok.has(o.wall))}));ctx.toast('Floor plan in place',{label:'Undo',fn:undo})};
   const plRows=pieceRows(doc.items.map(i=>[i.pid,false]));
   const pickRail=k=>setDrawer(d=>d===k?null:k);
   const selRug=R0,selPiece=S0;
   return html`<main className="sx planner2">
-    <${SxTop} ctx=${ctx} title=${title} setTitle=${t=>setTitle(t.slice(0,TITLE_MAX))} view="3d" onView=${k=>{ctx.setStudioSeed(k==='room'?{view:'room'}:{view:'collage'});ctx.go('studio')}} saved="Saved on this device" onShare=${()=>eng&&setShareImg(E.current.snapshot())}>
+    <${SxTop} ctx=${ctx} title=${title} setTitle=${t=>setTitle(t.slice(0,TITLE_MAX))} view="3d" onView=${k=>{ctx.setStudioSeed({view:k==='room'?'room':'collage',sync:doc.items.map(i=>i.pid)});ctx.go('studio')}} saved="Saved on this device" onShare=${()=>eng&&setShareImg(E.current.snapshot())}>
       <${SxMenu} ctx=${ctx} hist=${{undo,redo,canUndo:hist.current.past.length>0,canRedo:hist.current.future.length>0,steps:hist.current.past.length}}>
         <div className="sx-pop-sec"><span className="sx-lbl">Placing</span>
           <button className="toggle" onClick=${()=>setSnap(!snap)}><span>Snap to 5 cm and walls</span><span className=${'sw'+(snap?' on':'')}></span></button></div>
+        <div className="sx-pop-sec"><span className="sx-lbl">Units</span><div className="seg" role="group" aria-label="Units">${[['m','Metres'],['ft','Feet and inches']].map(([k,l])=>html`<button key=${k} className=${units===k?'on':''} onClick=${()=>setUnits(k)}>${l}</button>`)}</div></div>
         <div className="sx-pop-sec"><span className="sx-lbl">This room</span>
           <button className="pop-item" data-close disabled=${!eng} onClick=${()=>setShot(E.current.snapshot())}>${I('cam',{width:16})} Snapshot</button>
+          <button className="pop-item" data-close onClick=${async()=>{try{saveBlob(await planPdf(doc,{title,units,link:null}),fileName(title+'-plan','pdf'));ctx.toast('Plan PDF downloaded')}catch(e){ctx.toast(errText(e))}}}>${I('board',{width:16})} Download the plan as a PDF</button>
+          <button className="pop-item" data-close disabled=${!eng||!doc.items.length} onClick=${()=>{const img=E.current.snapshot();const ids=doc.items.map(i=>i.pid);const els=ids.slice(0,8).map((pid,i)=>({...mkImg(pid,0,'collage',SLOTS,'cutout'),x:4+i*12,y:84,w:11,rot:0}));ctx.setStudioSeed({collage:{id:uid(),title:(title+' view').slice(0,TITLE_MAX),mode:'collage',page:'landscape',shape:'rect',edge:'shadow',bg:{img},els}});ctx.go('studio')}}>${I('img',{width:16})} Send this view to the Studio</button>
           <button className="pop-item" data-close onClick=${()=>setShowPrompt(true)}>${I('wand',{width:16})} Render brief</button></div>
       <//>
     <//>
     <${SxRail} items=${[['add','Add','plus'],['layers','Layers','layers'],['room','Room','cube']]} open=${drawer} onPick=${pickRail}/>
     ${drawer==='room'&&html`<${SxDrawer} title="Room" onClose=${()=>setDrawer(null)}><div className="pl-sec sx-pl">
-        <label className="lbl" htmlFor="pl-tpl">Start from</label>
-        <select id="pl-tpl" className="field" value=${doc.tpl} onChange=${e=>setTplAsk(e.target.value)}>${Object.entries(PL_TEMPLATES).map(([k,t])=>html`<option key=${k} value=${k}>${t.label}</option>`)}</select>
-        <div className="pl-dims">${[['W','Width',3,30],['D','Depth',3,24],['H','Height',2.4,8]].map(([k,l,mn,mx])=>html`<label key=${k}><span className="mono mute">${l} (m)</span><input className="field num" type="number" step="0.1" min=${mn} max=${mx} value=${doc[k]} onChange=${e=>{const v=Math.max(mn,Math.min(mx,+e.target.value||mn));commit(plReflow({...doc,[k]:v}))}}/></label>`)}</div>
+        <div className="pl-plan"><b>${doc.zones?.length?`Floor plan · ${doc.zones.length} room${doc.zones.length===1?'':'s'}`:'Your own floor plan'}</b><span className="help" style=${{margin:0}}>${doc.zones?.length?'Rooms, walls and columns from your plan.':'Upload a plan, set its scale, then trace L-shapes, alcoves and angled walls.'}</span>
+          <button className="btn btn-line btn-sm" onClick=${()=>setPlanOpen(true)}>${doc.zones?.length?'Edit the floor plan':'Draw a floor plan'}</button></div>
+        ${doc.zones?.length>0&&html`<div className="pl-zones">${doc.zones.map(z=>{const its=doc.items.filter(it=>inPoly([it.x,it.z],z.poly));const seats=its.filter(i=>!i.hang).reduce((s2,i)=>s2+byId(i.pid).seats,0);const sub=its.reduce((s2,i)=>s2+pr(byId(i.pid),ctx.mode),0);
+          const setZ=o=>commit({...doc,zones:doc.zones.map(x=>x.id===z.id?{...x,...o}:x)});
+          return html`<div key=${z.id} className="pl-zone"><div className="row" style=${{justifyContent:'space-between'}}><b>${z.name}</b><span className="mono">${its.length} pieces · ${seats} seats · ${fmt(sub)}</span></div>
+            <div className="row" style=${{gap:6}}><select className="field" style=${{height:34}} value=${z.floor||doc.floor} onChange=${e=>setZ({floor:e.target.value})} aria-label=${z.name+' floor'}>${PL_FLOORS.map(([k,l])=>html`<option key=${k} value=${k}>${l}</option>`)}</select>
+              <label className="pl-color" title="Wall colour" style=${{background:z.wall||doc.wall}}><input type="color" value=${z.wall||doc.wall} onChange=${e=>setZ({wall:e.target.value})} aria-label=${z.name+' wall colour'}/></label></div></div>`})}</div>`}
+        ${!doc.zones?.length&&html`<${React.Fragment}><label className="lbl" htmlFor="pl-tpl">Start from</label>
+        <select id="pl-tpl" className="field" value=${doc.tpl} onChange=${e=>setTplAsk(e.target.value)}>${Object.entries(PL_TEMPLATES).map(([k,t])=>html`<option key=${k} value=${k}>${t.label}</option>`)}</select><//>`}
+        <div className="pl-dims">${(doc.zones?.length?[['H','Height',2.4,8]]:[['W','Width',3,30],['D','Depth',3,24],['H','Height',2.4,8]]).map(([k,l,mn,mx])=>{const ft=units==='ft',f=ft?3.28084:1;return html`<label key=${k}><span className="mono mute">${l} (${ft?'ft':'m'})</span><input className="field num" type="number" step=${ft?.25:.1} min=${+(mn*f).toFixed(2)} max=${+(mx*f).toFixed(2)} value=${+(doc[k]*f).toFixed(2)} onChange=${e=>{const v=Math.max(mn,Math.min(mx,(+e.target.value||mn*f)/f));commit(plReflow({...doc,[k]:r2(v)}))}}/></label>`})}</div>
+        <label className="sx-col" style=${{gap:4}}><span className="mono mute">Wall thickness (${units==='ft'?'in':'cm'})</span><input className="field num" style=${{height:38}} type="number" min=${units==='ft'?2:5} max=${units==='ft'?24:60} step="1" value=${units==='ft'?Math.round((doc.wallT||.12)/.0254):Math.round((doc.wallT||.12)*100)} onChange=${e=>{const n=+e.target.value;if(!(n>0))return;const m=units==='ft'?n*.0254:n/100;commit({...doc,wallT:Math.max(.05,Math.min(.6,m))})}}/></label>
         <span className="lbl">Walls</span>
         <div className="swatches">${PL_WALLS.map(c=>html`<button key=${c} className=${doc.wall===c&&!doc.wallImg?'on':''} style=${{background:c}} aria-label=${'Wall '+c} onClick=${()=>commit({...doc,wall:c,wallImg:null})}></button>`)}<label className="pl-color" title="Custom colour"><input type="color" value=${doc.wall} onChange=${e=>commit({...doc,wall:e.target.value})} aria-label="Custom wall colour"/></label></div>
         <label className="btn btn-line btn-sm" style=${{cursor:'pointer'}}>${I('upload',{width:14})} Photo on back wall<input type="file" accept="image/*" hidden onChange=${e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>commit({...doc,wallImg:r.result});r.readAsDataURL(f)}}/></label>
@@ -2719,11 +2853,11 @@ function Room({ctx}){
         <div className="pl-floors">${PL_FLOORS.map(([k,l])=>html`<button key=${k} className=${doc.floor===k?'on':''} onClick=${()=>commit({...doc,floor:k})}><i style=${{backgroundImage:`url(${texture(k).url})`}}></i>${l}</button>`)}</div>
         <span className="lbl">Floor colour</span>
         <div className="swatches">${PL_TINTS.map(([c,l])=>html`<button key=${l} title=${l} aria-label=${'Floor colour '+l} className=${(doc.floorTint||'')===c?'on':''} style=${{background:c||'linear-gradient(135deg,#fff 45%,#ccc 55%)'}} onClick=${()=>commit({...doc,floorTint:c})}></button>`)}<label className="pl-color" title="Custom floor colour"><input type="color" value=${doc.floorTint||'#ffffff'} onChange=${e=>commit({...doc,floorTint:e.target.value})} aria-label="Custom floor colour"/></label></div>
-        <span className="lbl">Back wall</span>
-        <div className="pl-floors">${PL_BACK.map(([k,l,f])=>html`<button key=${k} onClick=${()=>commit({...doc,openings:[...doc.openings.filter(o=>o.wall!=='back'),...plFit(doc.W,doc.H,f(doc.W,doc.H)).map(o=>({...o,wall:'back'}))]})}>${l}</button>`)}</div>
-        <div className="row" style=${{justifyContent:'space-between'}}><span className="lbl" style=${{margin:0}}>Openings</span><button className="lnk" onClick=${()=>commit({...doc,openings:[...doc.openings,{wall:'back',t:'win',x:0,w:1.4,h:1.8,y:.8}]})}>+ Add</button></div>
+        ${!doc.zones?.length&&html`<span className="lbl">Back wall</span>`}
+        ${!doc.zones?.length&&html`<div className="pl-floors">${PL_BACK.map(([k,l,f])=>html`<button key=${k} onClick=${()=>commit({...doc,openings:[...doc.openings.filter(o=>o.wall!=='back'),...plFit(doc.W,doc.H,f(doc.W,doc.H)).map(o=>({...o,wall:'back'}))]})}>${l}</button>`)}</div>`}
+        <div className="row" style=${{justifyContent:'space-between'}}><span className="lbl" style=${{margin:0}}>Openings</span><button className="lnk" onClick=${()=>commit({...doc,openings:[...doc.openings,{wall:planWalls?planWalls[0][0]:'back',t:'win',x:0,w:1.4,h:1.8,y:.8}]})}>+ Add</button></div>
         ${doc.openings.map((o,i)=>{const L=wallLen(o.wall);return html`<div key=${i} className="pl-open">
-          <div className="row" style=${{gap:6}}><select className="field" value=${o.wall} onChange=${e=>setOpening(i,{wall:e.target.value,x:0})} aria-label="Wall">${['back','left','right'].map(w=>html`<option key=${w} value=${w}>${w} wall</option>`)}</select>
+          <div className="row" style=${{gap:6}}><select className="field" value=${o.wall} onChange=${e=>setOpening(i,{wall:e.target.value,x:0})} aria-label="Wall">${(planWalls||[['back','back wall'],['left','left wall'],['right','right wall']]).map(([w,l])=>html`<option key=${w} value=${w}>${l}</option>`)}</select>
           <select className="field" value=${o.t} onChange=${e=>{const t=e.target.value;setOpening(i,t==='door'?{t,y:.02,h:2.2,w:1}:t==='arch'?{t,y:.5,h:2.4,w:Math.max(1.4,o.w)}:{t,y:.8,h:1.8})}} aria-label="Type"><option value="win">Window</option><option value="arch">Arch</option><option value="door">Door</option></select>
           <button className="ib" aria-label="Remove opening" onClick=${()=>commit({...doc,openings:doc.openings.filter((_,k)=>k!==i)})}>${I('x',{width:14})}</button></div>
           <label className="pl-range"><span className="mono mute">Position</span><input type="range" min=${-L/2+o.w/2+.1} max=${L/2-o.w/2-.1} step="0.05" value=${o.x} onInput=${e=>setOpening(i,{x:+e.target.value})}/></label>
@@ -2738,7 +2872,7 @@ function Room({ctx}){
         <input className="field" style=${{height:40}} placeholder="Search pieces" aria-label="Search pieces" value=${q} onInput=${e=>setQ(e.target.value)}/>
         <div className="scroll-x">${[['all','All'],...Object.entries(TYPE)].map(([k,l])=>html`<button key=${k} className=${'chip'+(cat===k?' on':'')} style=${{height:30,fontSize:12}} onClick=${()=>setCat(k)}>${l}</button>`)}</div>
         <p className="help" style=${{margin:0}}>Click to place in the middle of the room, or drag onto the floor.</p>
-        <div className="pl-cat">${prods.map(p=>html`<button key=${p.id} draggable="true" onDragStart=${e=>e.dataTransfer.setData('text/pid',String(p.id))} onClick=${()=>addItem(p.id,0,0)} title=${'Place '+p.name}><img src=${cut(p.id)} alt="" loading="lazy"/><b>${p.name}</b><span className="mono">${plCm(p.id)} cm · ${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span></button>`)}</div>
+        <div className="pl-cat">${prods.map(p=>html`<button key=${p.id} draggable="true" onDragStart=${e=>e.dataTransfer.setData('text/pid',String(p.id))} onClick=${()=>addItem(p.id,0,0)} title=${'Place '+p.name}><img src=${cut(p.id)} alt="" loading="lazy"/><b>${p.name}</b><span className="mono">${plCm(p.id)?Math.round(plCm(p.id))+' cm':'Measurements needed'} · ${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span></button>`)}</div>
 </div><//>`}
     ${drawer==='layers'&&html`<${SxDrawer} title="Layers" onClose=${()=>setDrawer(null)}><div className="pl-sec sx-pl">${doc.items.length?doc.items.map(it=>{const p=byId(it.pid);return html`<div key=${it.uid} className=${'layer'+(sel===it.uid?' on':'')} onClick=${()=>setSel(it.uid)}><span className="th" style=${{backgroundImage:`url(${cut(it.pid)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat',backgroundPosition:'center'}}></span><span>${p.name}</span><button className="ib" aria-label=${it.lock?'Unlock':'Lock'} onClick=${e=>{e.stopPropagation();patchItem(it.uid,{lock:!it.lock})}}>${I(it.lock?'lock':'unlock')}</button><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(it.uid)}}>${I('trash')}</button></div>`}):html`<p className="help">No pieces yet. Add some from the Pieces tab.</p>`}
         ${(doc.rugs||[]).map(r=>html`<div key=${r.uid} className=${'layer'+(sel===r.uid?' on':'')} onClick=${()=>setSel(r.uid)}><span className="th" style=${{background:r.color||'#D8C7A6',borderRadius:r.round?'50%':'4px'}}></span><span>Rug · ${r.size}</span><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(r.uid)}}>${I('trash')}</button></div>`)}</div><//>`}
@@ -2749,14 +2883,15 @@ function Room({ctx}){
         <div className="pl-labels" ref=${labRef} aria-hidden="true"></div>
         ${threeFailed&&html`<div className="pl-fail" role="alert">The 3D view could not load. Check your connection and reload the page to try again.</div>`}
         <div className="sx-viewbar" role="toolbar" aria-label="View">
-          <div className="seg" role="group" aria-label="Camera">${[['plan','Plan','1'],['orbit','Orbit','2'],['eye','Walk','3']].map(([k,l,n])=>html`<button key=${k} className=${view===k?'on':''} aria-pressed=${view===k} onClick=${()=>setView(k)} title=${l+' ('+n+')'}>${l}</button>`)}</div>
+          <div className="seg" role="group" aria-label="Camera">${[['plan','Plan','1'],['orbit','Orbit','2'],['eye','Walk','3'],['product','Product','4']].map(([k,l,n])=>html`<button key=${k} className=${view===k?'on':''} aria-pressed=${view===k} disabled=${k==='product'&&!S0} onClick=${()=>setView(k)} title=${k==='product'&&!S0?'Select a piece to turn it on its own':l+' ('+n+')'}>${l}</button>`)}</div>
           <div className="sx-more"><button className=${'sx-look'+(lookOpen?' on':'')} aria-expanded=${lookOpen} onClick=${()=>setLookOpen(!lookOpen)}>Look · ${style==='material'?'Render':style==='clay'?'Clay':'Line'}</button>
             ${lookOpen&&html`<div className="pop sx-pop" style=${{left:0,right:'auto'}}>
               <div className="sx-pop-sec"><span className="sx-lbl">Look</span><div className="seg" role="group" aria-label="Look">${[['material','Render'],['clay','Clay'],['line','Line']].map(([k,l])=>html`<button key=${k} className=${style===k?'on':''} onClick=${()=>setStyle(k)}>${l}</button>`)}</div></div>
               <div className="sx-pop-sec"><span className="sx-lbl">Time of day · ${todLabel}</span><input type="range" min="0" max="1" step="0.01" value=${tod} onInput=${e=>setTod(+e.target.value)} aria-label="Time of day" style=${{accentColor:'var(--cognac)'}}/></div>
             </div>`}</div>
+          ${style==='material'&&view!=='plan'&&html`<button className="sx-look sx-render" disabled=${!eng||!!rendering} onClick=${async()=>{setRendering({p:0});try{const r=await E.current.still(pr=>setRendering({p:pr}));setRendering(null);setShareImg(r.url);if(!r.traced)ctx.toast('This device rendered a quick still instead of a path-traced one.')}catch(e){setRendering(null);ctx.toast(errText(e))}}}>${I('cam',{width:14})} ${rendering?`Rendering ${Math.round(rendering.p*100)}%`:'Render'}</button>`}
         </div>
-        <div className="pl-hint sx-hint">${view==='plan'?'Drag to pan · scroll to zoom · drag a piece to move it':view==='eye'?'Drag to look around · scroll to walk':'Drag to orbit · shift-drag to pan · scroll to zoom'} · R rotate · D duplicate</div>
+        <div className="pl-hint sx-hint">${view==='plan'?'Drag to pan · scroll to zoom · drag a piece to move it':view==='eye'?'WASD or arrows to walk · drag to look':view==='product'?'Drag to turn the piece':'Drag to orbit · right-drag or two fingers to pan · scroll to zoom · double-click a piece to focus'}</div>
       </div>
       ${(selRug||selPiece)&&html`<div className="sx-selbar sx-selbar-pl" role="toolbar" aria-label="Edit selection" onPointerDown=${e=>e.stopPropagation()}>
         <button className=${pop==='info'?'on':''} aria-expanded=${pop==='info'} onClick=${()=>setPop(pop==='info'?null:'info')}>${selRug?'Rug':byId(selPiece.pid).name}</button>
@@ -2789,7 +2924,8 @@ function Room({ctx}){
       <${SxPill} ctx=${ctx} count=${doc.items.length} total=${pieces.reduce((s,p)=>s+pr(p,ctx.mode),0)} onOpen=${()=>setTraySheet(true)}/>
     </section>
     ${traySheet&&html`<${SxTray} ctx=${ctx} rows=${plRows} onClose=${()=>setTraySheet(false)}/>`}
-    ${shareImg&&html`<${ShareSheet} ctx=${ctx} title=${title} image=${shareImg} ids=${doc.items.map(i=>i.pid)} boardKey=${roomKey} onClose=${()=>setShareImg(null)}/>`}
+    ${shareImg&&html`<${ShareSheet} ctx=${ctx} title=${title} image=${shareImg} ids=${doc.items.map(i=>i.pid)} boardKey=${roomKey} room=${doc} units=${units} onClose=${()=>setShareImg(null)}/>`}
+    ${planOpen&&html`<${FloorPlanEditor} ctx=${ctx} doc=${doc} units=${units} onClose=${()=>setPlanOpen(false)} onApply=${applyPlan}/>`}
     ${tplAsk&&html`<${SxDialog} title="Replace this room?" onClose=${()=>setTplAsk(null)}>
       <p className="sx-note">Starting from <b>${PL_TEMPLATES[tplAsk].label}</b> replaces the room and its ${doc.items.length} piece${doc.items.length===1?'':'s'} with:</p>
       <div className="sx-tplpre"><b>${PL_TEMPLATES[tplAsk].W} × ${PL_TEMPLATES[tplAsk].D} m</b><span>${PL_TEMPLATES[tplAsk].H} m ceiling · ${PL_FLOORS.find(f=>f[0]===PL_TEMPLATES[tplAsk].floor)?.[1]||'Oak'} floor</span>
@@ -2805,6 +2941,129 @@ function Room({ctx}){
       <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-ink btn-sm" onClick=${()=>copyText(prompt,ctx.toast)}>${I('copy',{width:14})} Copy brief</button><button className="btn btn-line btn-sm" disabled=${!eng} onClick=${()=>{setShowPrompt(false);setShot(E.current.snapshot())}}>${I('cam',{width:14})} Take snapshot</button><button className="btn btn-line btn-sm" disabled=${renderBusy||!eng} onClick=${async()=>{if(!ctx.me.signedIn){setShowPrompt(false);ctx.toast('Sign in to request a render');ctx.signInThen('room');return}setRenderBusy(true);try{let snapshotId;try{snapshotId=await uploadBlob(renderUrl,await dataUrlBlob(E.current.snapshot()))}catch(e){}const S=E.current.S;const ref=await requestRender({title,prompt,snapshotId,camera:S?{view:S.view,orbit:S.cam,walk:S.eye}:undefined,room:{...doc,wallImg:doc.wallImg&&doc.wallImg.startsWith('data:')?null:doc.wallImg}});ctx.toast(`Render request ${ref} sent. The House team will email you.`);setShowPrompt(false)}catch(e){ctx.toast(errText(e))}finally{setRenderBusy(false)}}}>${renderBusy?'Sending…':'Request a render from the House'}</button></div>
     </div></div>`}
   </main>`;
+}
+
+/* ================= FLOOR PLANS ================= */
+// Trade partners trace their real plan: upload it, set its scale from one known wall, draw each
+// room (L-shapes, alcoves, angled walls) and the columns or fixed blocks in it, or let an AI pass
+// propose the walls first. Plans are drawn in image pixels and saved in metres.
+const ZONE_NAMES=['Dining room','Bar','Lobby','Lounge','Terrace','Private room'];
+const BLOCKS=[['Column',.4,.4,2.8],['Bar counter',3,.7,1.05],['Host stand',.9,.6,1.1],['Built-in banquette',2.4,.7,.9]];
+// A PDF plan's first page becomes the underlay (pdf.js, loaded on demand).
+async function pdfFirstPage(file){const pdfjs=await import('pdfjs-dist');pdfjs.GlobalWorkerOptions.workerSrc=new URL('pdfjs-dist/build/pdf.worker.min.mjs',import.meta.url).href;
+  const doc=await pdfjs.getDocument({data:await file.arrayBuffer()}).promise;const page=await doc.getPage(1);const v0=page.getViewport({scale:1});const vp=page.getViewport({scale:Math.min(4,2200/Math.max(v0.width,v0.height))});
+  const c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;return c}
+// Underlays are kept at 2000 px on the long side as JPEG, small enough to save with the room.
+async function planImage(file){let c;if(/pdf$/i.test(file.type)||/\.pdf$/i.test(file.name))c=await pdfFirstPage(file);else{const u=URL.createObjectURL(file);const im=await loadImg(u);if(!im)throw new Error('This image could not be opened.');c=document.createElement('canvas');const s=Math.min(1,2000/Math.max(im.width,im.height));c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u)}
+  return {img:c.toDataURL('image/jpeg',.82),w:c.width,h:c.height}}
+const snap90=(a,b)=>{const dx=b[0]-a[0],dy=b[1]-a[1];const ang=Math.atan2(dy,dx);const q=Math.round(ang/(Math.PI/4))*(Math.PI/4);if(Math.abs(ang-q)<.12){const L=Math.hypot(dx,dy);return [a[0]+Math.cos(q)*L,a[1]+Math.sin(q)*L]}return b};
+function FloorPlanEditor({ctx,doc,units,onClose,onApply}){
+  // Work in image pixels; a plan with no underlay draws on a 20 m × 14 m sheet at 50 px a metre.
+  const init=()=>{const u=doc.underlay;if(doc.zones?.length&&u){const k=1/u.mPerPx;const px=([x,z])=>[(x-u.ox)*k,(z-u.oz)*k];return {img:u.img,w:u.w,h:u.h,mPerPx:u.mPerPx,opacity:u.opacity??.5,zones:doc.zones.map(z=>({...z,poly:z.poly.map(px)})),blocks:(doc.blocks||[]).map(b=>({...b,x:(b.x-u.ox)*k,z:(b.z-u.oz)*k}))}}
+    if(doc.zones?.length){const k=50,ox=-10,oz=-7;return {img:null,w:1000,h:700,mPerPx:1/k,opacity:.5,zones:doc.zones.map(z=>({...z,poly:z.poly.map(([x,y])=>[(x-ox)*k,(y-oz)*k])})),blocks:(doc.blocks||[]).map(b=>({...b,x:(b.x-ox)*k,z:(b.z-oz)*k}))}}
+    return {img:null,w:1000,h:700,mPerPx:.02,opacity:.5,zones:[],blocks:[]}};
+  const [P,setP]=useState(init);const [mode,setMode]=useState(P.zones.length?'select':'upload');const [draft,setDraft]=useState([]);const [cal,setCal]=useState([]);const [calLen,setCalLen]=useState('');
+  const [sel,setSel]=useState(P.zones[0]?.id||null);const [busy,setBusy]=useState('');const [err,setErr]=useState('');const [hover,setHover]=useState(null);const svgRef=useRef();const fileRef=useRef();
+  const readWalls=useAction(api.holmPlans.readWalls);
+  const ft=units==='ft';const toU=m=>ft?m*3.28084:m;const fromU=v=>ft?v/3.28084:v;const uLab=ft?'ft':'m';
+  const at=e=>{const s=svgRef.current;const pt=s.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;const p=pt.matrixTransform(s.getScreenCTM().inverse());return [p.x,p.y]};
+  const lenPx=(a,b)=>Math.hypot(b[0]-a[0],b[1]-a[1]);
+  const upload=async f=>{if(!f)return;setBusy('upload');setErr('');try{const im=await planImage(f);setP(p=>({...p,...im}));setMode('scale');setCal([])}catch(e){setErr(errText(e))}finally{setBusy('')}};
+  const onClick=e=>{const p=at(e);
+    if(mode==='scale'){setCal(c=>c.length>=2?[p]:[...c,p]);return}
+    if(mode==='draw'){if(draft.length>2&&lenPx(p,draft[0])<14){closeDraft();return}setDraft(d=>[...d,d.length?snap90(d[d.length-1],p):p]);return}
+    if(mode==='block'){const [n,w,d,h]=BLOCKS[0];addBlock(p,n,w,d,h);return}};
+  const closeDraft=()=>{if(draft.length<3)return;const id=uid();const name=ZONE_NAMES[P.zones.length%ZONE_NAMES.length];setP(p=>({...p,zones:[...p.zones,{id,name,poly:draft,floor:doc.floor,wall:doc.wall}]}));setDraft([]);setSel(id);setMode('select')};
+  const addBlock=(p,name,w,d,h)=>setP(s=>({...s,blocks:[...s.blocks,{id:uid(),name,x:p[0],z:p[1],w,d,h,rot:0}]}));
+  useEffect(()=>{const k=e=>{if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))return;if(e.key==='Enter'&&mode==='draw')closeDraft();if(e.key==='Escape'){if(draft.length)setDraft([]);else onClose()}if((e.key==='Backspace'||e.key==='Delete')&&mode==='draw'&&draft.length){e.preventDefault();setDraft(d=>d.slice(0,-1))}};addEventListener('keydown',k);return()=>removeEventListener('keydown',k)});
+  // Drag a corner to move it.
+  const dragPt=(e,zid,i)=>{e.stopPropagation();const mv=ev=>{const p=at(ev);setP(s=>({...s,zones:s.zones.map(z=>z.id!==zid?z:{...z,poly:z.poly.map((q,k)=>k===i?p:q)})}))};const up=()=>removeEventListener('pointermove',mv);addEventListener('pointermove',mv);addEventListener('pointerup',up,{once:true})};
+  const dragBlock=(e,id)=>{e.stopPropagation();const mv=ev=>{const p=at(ev);setP(s=>({...s,blocks:s.blocks.map(b=>b.id!==id?b:{...b,x:p[0],z:p[1]})}))};const up=()=>removeEventListener('pointermove',mv);addEventListener('pointermove',mv);addEventListener('pointerup',up,{once:true})};
+  const setScale=()=>{const v=fromU(parseFloat(calLen));if(cal.length<2||!(v>0))return;setP(p=>({...p,mPerPx:v/lenPx(cal[0],cal[1])}));setMode(P.zones.length?'select':'draw')};
+  const ai=async()=>{if(!P.img)return;if(!ctx.me.signedIn){ctx.toast('Sign in to read walls from a plan');return}setBusy('ai');setErr('');
+    try{const r=await readWalls({image:P.img.split(',')[1],mime:'image/jpeg'});const px=([x,y])=>[x*P.w,y*P.h];
+      setP(p=>({...p,zones:r.rooms.map(rm=>({id:uid(),name:rm.name,poly:rm.points.map(px),floor:doc.floor,wall:doc.wall})),blocks:r.blocks.map(b=>{const q=b.points.map(px);const xs=q.map(v=>v[0]),ys=q.map(v=>v[1]);return {id:uid(),name:b.name,x:(Math.min(...xs)+Math.max(...xs))/2,z:(Math.min(...ys)+Math.max(...ys))/2,w:(Math.max(...xs)-Math.min(...xs))*p.mPerPx,d:(Math.max(...ys)-Math.min(...ys))*p.mPerPx,h:1.05,rot:0}})}));
+      if(r.scale){setCal([px(r.scale.a),px(r.scale.b)]);setCalLen(String(+toU(r.scale.meters).toFixed(2)))}
+      setMode(r.scale?'scale':'select');ctx.toast(r.scale?'Walls read. Check the scale against a wall you know, then fix any wall.':'Walls read. Set the scale from a wall you know, then fix any wall.')}
+    catch(e){setErr(errText(e))}finally{setBusy('')}};
+  // Save in metres, centred on the plan, with the underlay placed to match.
+  const apply=()=>{if(!P.zones.length){setErr('Draw at least one room first.');return}const k=P.mPerPx;const all=P.zones.flatMap(z=>z.poly);const xs=all.map(p=>p[0]*k),zs=all.map(p=>p[1]*k);const cx=(Math.min(...xs)+Math.max(...xs))/2,cz=(Math.min(...zs)+Math.max(...zs))/2;
+    const m=([x,y])=>[r2(x*k-cx),r2(y*k-cz)];const zones=P.zones.map(z=>({...z,poly:z.poly.map(m)}));const b=polyBounds(zones.map(z=>z.poly));
+    onApply({zones,blocks:P.blocks.map(bl=>({...bl,x:r2(bl.x*k-cx),z:r2(bl.z*k-cz)})),W:r2(b.maxX-b.minX),D:r2(b.maxZ-b.minZ),underlay:P.img?{img:P.img,w:P.w,h:P.h,mPerPx:k,ox:r2(-cx),oz:r2(-cz),opacity:P.opacity}:null})};
+  const Z=P.zones.find(z=>z.id===sel);const k=P.mPerPx;const fmtM=m=>`${toU(m).toFixed(2)} ${uLab}`;
+  const hint={upload:'Upload the plan as an image or PDF, or draw on the blank sheet.',scale:'Click both ends of a wall you know, then type its real length.',draw:'Click each corner. Click the first corner or press Enter to close the room; Backspace removes the last corner.',block:'Click to place a column; change its size in the list.',select:'Drag corners to adjust. Type a wall length to set it exactly.'}[mode];
+  return html`<div className="scrim sx-scrim" role="dialog" aria-modal="true" aria-label="Floor plan">
+    <div className="sx-dialog fplan">
+      <div className="sx-drawer-h"><b>Floor plan</b><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>
+      <div className="fp-tools">
+        <div className="seg" role="group" aria-label="Step">${[['upload','Plan'],['scale','Scale'],['draw','Draw a room'],['block','Columns'],['select','Adjust']].map(([kk,l])=>html`<button key=${kk} className=${mode===kk?'on':''} onClick=${()=>{setMode(kk);setDraft([])}}>${l}</button>`)}</div>
+        ${mode==='upload'&&html`<${React.Fragment}><button className="btn btn-line btn-sm" disabled=${!!busy} onClick=${()=>fileRef.current.click()}>${I('upload',{width:15})} ${busy==='upload'?'Opening…':'Upload a plan'}</button><input ref=${fileRef} type="file" accept="image/*,application/pdf" hidden onChange=${e=>{upload(e.target.files[0]);e.target.value=''}}/><//>`}
+        ${P.img&&html`<button className="btn btn-line btn-sm" disabled=${!!busy} onClick=${ai}>${I('wand',{width:15})} ${busy==='ai'?'Reading walls…':'Read walls from the image'}</button>`}
+        ${P.img&&html`<label className="fp-op"><span className="sx-lbl">Plan</span><input type="range" min="0" max="1" step=".05" value=${P.opacity} onInput=${e=>setP(p=>({...p,opacity:+e.target.value}))} aria-label="Plan opacity"/></label>`}
+        ${mode==='scale'&&html`<span className="row" style=${{gap:6}}><input className="field num" style=${{height:34,width:90}} type="number" min="0" step="0.01" placeholder=${'Length ('+uLab+')'} value=${calLen} onInput=${e=>setCalLen(e.target.value)} aria-label="Real length of the wall"/><button className="btn btn-cog btn-sm" disabled=${cal.length<2||!(parseFloat(calLen)>0)} onClick=${setScale}>Set scale</button></span>`}
+        ${mode==='block'&&html`<span className="row" style=${{gap:6,flexWrap:'wrap'}}>${BLOCKS.map(([n,w,d,h])=>html`<button key=${n} className="chip" onClick=${()=>addBlock([P.w/2,P.h/2],n,w,d,h)}>${n}</button>`)}</span>`}
+      </div>
+      <p className="sx-note">${hint} <span className="mono">1 px = ${(k*100).toFixed(1)} cm</span></p>
+      <div className="fp-body">
+        <div className="fp-sheet"><svg ref=${svgRef} viewBox=${`0 0 ${P.w} ${P.h}`} onClick=${onClick} onPointerMove=${e=>mode==='draw'&&draft.length&&setHover(snap90(draft[draft.length-1],at(e)))} style=${{cursor:mode==='select'?'default':'crosshair'}}>
+          <rect width=${P.w} height=${P.h} fill="#FBF8F2"/>
+          ${P.img?html`<image href=${P.img} width=${P.w} height=${P.h} opacity=${P.opacity}/>`:html`<path d=${Array.from({length:Math.ceil(P.w/(1/k))},(_,i)=>`M${i/k} 0V${P.h}`).join('')+Array.from({length:Math.ceil(P.h/(1/k))},(_,i)=>`M0 ${i/k}H${P.w}`).join('')} stroke="rgba(43,33,26,.08)"/>`}
+          ${P.zones.map(z=>html`<g key=${z.id} className=${'fp-zone'+(z.id===sel?' on':'')} onClick=${e=>{if(mode==='select'){e.stopPropagation();setSel(z.id)}}}>
+            <polygon points=${z.poly.map(p=>p.join(',')).join(' ')}/>
+            ${z.poly.map((a,i)=>{const b=z.poly[(i+1)%z.poly.length];return html`<text key=${i} x=${(a[0]+b[0])/2} y=${(a[1]+b[1])/2} className="fp-len">${fmtM(lenPx(a,b)*k)}</text>`})}
+            <text x=${polyCentre(z.poly)[0]} y=${polyCentre(z.poly)[1]} className="fp-name">${z.name}</text>
+            ${mode==='select'&&z.poly.map((p,i)=>html`<circle key=${'c'+i} cx=${p[0]} cy=${p[1]} r=${Math.max(5,P.w/180)} className="fp-pt" onPointerDown=${e=>dragPt(e,z.id,i)}/>`)}
+          </g>`)}
+          ${P.blocks.map(b=>html`<rect key=${b.id} className="fp-block" x=${b.x-b.w/k/2} y=${b.z-b.d/k/2} width=${b.w/k} height=${b.d/k} onPointerDown=${e=>mode==='select'&&dragBlock(e,b.id)}/>`)}
+          ${draft.length>0&&html`<polyline className="fp-draft" points=${[...draft,...(hover?[hover]:[])].map(p=>p.join(',')).join(' ')}/>`}
+          ${draft.map((p,i)=>html`<circle key=${'d'+i} cx=${p[0]} cy=${p[1]} r=${Math.max(4,P.w/220)} className=${'fp-pt'+(i===0?' first':'')}/>`)}
+          ${cal.length>0&&html`<g className="fp-cal">${cal.length===2&&html`<line x1=${cal[0][0]} y1=${cal[0][1]} x2=${cal[1][0]} y2=${cal[1][1]}/>`}${cal.map((p,i)=>html`<circle key=${i} cx=${p[0]} cy=${p[1]} r=${Math.max(5,P.w/180)}/>`)}</g>`}
+        </svg></div>
+        <aside className="fp-side">
+          <span className="sx-lbl">Rooms</span>
+          ${P.zones.length?P.zones.map(z=>html`<button key=${z.id} className=${'fp-row'+(z.id===sel?' on':'')} onClick=${()=>{setSel(z.id);setMode('select')}}><b>${z.name}</b><span className="mono">${(Math.abs(polyArea(z.poly))*k*k*(ft?10.7639:1)).toFixed(1)} ${ft?'sq ft':'m²'}</span></button>`):html`<p className="sx-note">No rooms yet. Choose Draw a room${P.img?' or read the walls from the image':''}.</p>`}
+          ${Z&&html`<div className="sx-col" style=${{gap:8}}>
+            <label className="sx-col" style=${{gap:4}}><span className="sx-lbl">Name</span><input className="field" style=${{height:36}} value=${Z.name} maxLength="40" onInput=${e=>setP(p=>({...p,zones:p.zones.map(z=>z.id===Z.id?{...z,name:e.target.value}:z)}))}/></label>
+            <span className="sx-lbl">Walls (${uLab})</span>
+            <div className="fp-walls">${Z.poly.map((a,i)=>{const b=Z.poly[(i+1)%Z.poly.length];return html`<label key=${i}><span className="mono mute">${i+1}</span><input className="field num" type="number" step="0.01" min="0.1" value=${+toU(lenPx(a,b)*k).toFixed(2)} onChange=${e=>{const v=fromU(+e.target.value);if(v>0)setP(p=>({...p,zones:p.zones.map(z=>z.id===Z.id?{...z,poly:setWallLength(z.poly,i,v/k)}:z)}))}}/></label>`})}</div>
+            <button className="lnk" style=${{color:'var(--bad)',justifySelf:'start'}} onClick=${()=>{setP(p=>({...p,zones:p.zones.filter(z=>z.id!==Z.id)}));setSel(null)}}>Delete this room</button></div>`}
+          ${P.blocks.length>0&&html`<${React.Fragment}><span className="sx-lbl">Columns and fixed blocks</span>${P.blocks.map(b=>html`<div key=${b.id} className="fp-brow"><input className="field" style=${{height:32}} value=${b.name} onInput=${e=>setP(p=>({...p,blocks:p.blocks.map(x=>x.id===b.id?{...x,name:e.target.value}:x)}))} aria-label="Name"/>
+            ${['w','d','h'].map(kk=>html`<input key=${kk} className="field num" style=${{height:32}} type="number" step="0.05" min="0.05" title=${{w:'Width',d:'Depth',h:'Height'}[kk]+' ('+uLab+')'} aria-label=${{w:'Width',d:'Depth',h:'Height'}[kk]} value=${+toU(b[kk]).toFixed(2)} onChange=${e=>{const v=fromU(+e.target.value);if(v>0)setP(p=>({...p,blocks:p.blocks.map(x=>x.id===b.id?{...x,[kk]:v}:x)}))}}/>`)}
+            <button className="ib" aria-label="Remove" onClick=${()=>setP(p=>({...p,blocks:p.blocks.filter(x=>x.id!==b.id)}))}>${I('x',{width:14})}</button></div>`)}<//>`}
+        </aside>
+      </div>
+      ${err&&html`<p className="sx-note" style=${{color:'var(--bad)'}}>${err}</p>`}
+      <div className="row" style=${{justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+        ${doc.zones?.length?html`<button className="lnk" onClick=${()=>onApply(null)}>Go back to a rectangular room</button>`:html`<span></span>`}
+        <span className="row" style=${{gap:8}}><button className="btn btn-line btn-sm" onClick=${onClose}>Cancel</button><button className="btn btn-cog btn-sm" disabled=${!P.zones.length} onClick=${apply}>Use this plan</button></span></div>
+    </div></div>`;
+}
+// A dimensioned plan PDF: every room with its wall lengths, each piece, rug and block labelled, a
+// seat count per room, then a piece list per room and the bundle link.
+async function planPdf(doc,{title,units,link}){
+  const {PDFDocument,StandardFonts,rgb,PDFName,PDFString}=await import('pdf-lib');
+  const pdf=await PDFDocument.create();pdf.setTitle(title+' plan');const serif=await pdf.embedFont(StandardFonts.TimesRomanItalic),sans=await pdf.embedFont(StandardFonts.Helvetica),bold=await pdf.embedFont(StandardFonts.HelveticaBold);
+  const ink=rgb(.17,.13,.1),mute=rgb(.44,.39,.34),cog=rgb(.65,.37,.17),line=rgb(.8,.76,.7);
+  const zones=roomZones(doc);const b=polyBounds(zones.map(z=>z.poly));const PW=792,PH=612,M=40;const sc=Math.min((PW-2*M)/(b.maxX-b.minX+1.2),(PH-2*M-50)/(b.maxZ-b.minZ+1.2));
+  const X=x=>M+(x-b.minX+.6)*sc,Y=z=>PH-M-40-(z-b.minZ+.6)*sc;const u=units==='ft'?'ft':'m';const L=m=>fmtLen(m,units).replace('′',"'").replace('″','"').replace('½','.5');
+  const page=pdf.addPage([PW,PH]);page.drawText(`${title} · floor plan`,{x:M,y:PH-M-10,size:18,font:serif,color:ink});
+  const seatsIn=z=>doc.items.filter(it=>!it.hang&&inPoly([it.x,it.z],z.poly)).reduce((s,it)=>s+byId(it.pid).seats,0);
+  for(const z of zones){const p=z.poly;p.forEach((a,i)=>{const c=p[(i+1)%p.length];page.drawLine({start:{x:X(a[0]),y:Y(a[1])},end:{x:X(c[0]),y:Y(c[1])},thickness:2.2,color:ink});
+      const len=Math.hypot(c[0]-a[0],c[1]-a[1]);if(len>.3){const t=L(len);const cw=polyArea(p)>0;const ux=(c[0]-a[0])/len,uz=(c[1]-a[1])/len;const nx=cw?uz:-uz,nz=cw?-ux:ux;page.drawText(t,{x:X((a[0]+c[0])/2+nx*.35)-sans.widthOfTextAtSize(t,7)/2,y:Y((a[1]+c[1])/2+nz*.35)-2,size:7,font:sans,color:mute})}});
+    const c=polyCentre(p);const t=`${z.name} · ${seatsIn(z)} seats`;page.drawText(t,{x:X(c[0])-serif.widthOfTextAtSize(t,11)/2,y:Y(c[1]),size:11,font:serif,color:cog})}
+  for(const bk of doc.blocks||[])page.drawRectangle({x:X(bk.x-bk.w/2),y:Y(bk.z+bk.d/2),width:bk.w*sc,height:bk.d*sc,color:rgb(.9,.87,.82),borderColor:mute,borderWidth:.6});
+  for(const r of doc.rugs||[]){if(r.round)page.drawEllipse({x:X(r.x),y:Y(r.z),xScale:r.w/2*sc,yScale:r.w/2*sc,borderColor:line,borderWidth:.8,borderDashArray:[3,2]});else{const [ex,ez]=rugExt(r);page.drawRectangle({x:X(r.x-ex),y:Y(r.z+ez),width:2*ex*sc,height:2*ez*sc,borderColor:line,borderWidth:.8,borderDashArray:[3,2]})}}
+  for(const it of doc.items){const p=byId(it.pid);const [ex,ez]=plExt(it);page.drawRectangle({x:X(it.x-ex),y:Y(it.z+ez),width:2*ex*sc,height:2*ez*sc,color:rgb(.93,.88,.8),borderColor:ink,borderWidth:.5,opacity:it.hang?.4:1});
+    page.drawText(p.name,{x:X(it.x)-sans.widthOfTextAtSize(p.name,6.5)/2,y:Y(it.z)-2,size:6.5,font:sans,color:ink})}
+  page.drawText(`Measurements in ${u === 'ft' ? 'feet and inches' : 'metres'}. Walls ${fmtCm((doc.wallT||.12)*100,units)} thick, ceiling ${L(doc.H)}.`,{x:M,y:M-14,size:8,font:sans,color:mute});
+  const addLink=(pg,x,y,w,h,url)=>{const ref=pdf.context.register(pdf.context.obj({Type:'Annot',Subtype:'Link',Rect:[x,y,x+w,y+h],Border:[0,0,0],A:{Type:'Action',S:'URI',URI:PDFString.of(url)}}));const a=pg.node.lookup(PDFName.of('Annots'));if(a)a.push(ref);else pg.node.set(PDFName.of('Annots'),pdf.context.obj([ref]))};
+  // Piece list per room
+  let pg=pdf.addPage([612,792]),y=792-M-20;pg.drawText('Pieces by room',{x:M,y,size:20,font:serif,color:ink});y-=16;if(link){pg.drawText(link,{x:M,y,size:9,font:sans,color:cog});addLink(pg,M,y-3,532,13,link)}y-=26;
+  const rows=[...zones.map(z=>({z,items:doc.items.filter(it=>inPoly([it.x,it.z],z.poly))})),{z:{name:'Elsewhere'},items:doc.items.filter(it=>!zones.some(z=>inPoly([it.x,it.z],z.poly)))}].filter(r=>r.items.length);
+  for(const {z,items} of rows){if(y<M+80){pg=pdf.addPage([612,792]);y=792-M}const seats=items.filter(i=>!i.hang).reduce((s,i)=>s+byId(i.pid).seats,0);const sub=items.reduce((s,i)=>s+byId(i.pid).price,0);
+    pg.drawText(`${z.name} · ${seats} seats · ${fmt(sub)} retail`,{x:M,y,size:12,font:bold,color:ink});y-=16;
+    for(const r of pieceRows(items.map(i=>[i.pid,false]))){const p=byId(r.pid);if(y<M){pg=pdf.addPage([612,792]);y=792-M}pg.drawText(`${r.qty} × ${p.name} — ${p.line}`.slice(0,90),{x:M+10,y,size:10,font:sans,color:ink});const t=fmt(p.price*r.qty);pg.drawText(t,{x:572-M-sans.widthOfTextAtSize(t,10),y,size:10,font:sans,color:ink});y-=14}y-=10}
+  return new Blob([await pdf.save()],{type:'application/pdf'});
 }
 
 /* ================= BOARDS ================= */
@@ -3082,12 +3341,97 @@ function Trade({ctx}){
   </div></main>`;
 }
 // Team review queue for trade applications (admin accounts only).
+/* ================= 3D MODELS ================= */
+// Path tracing needs a real GPU: phones and software WebGL (SwiftShader, llvmpipe) get the raster still instead.
+function canTrace(r){if(window.__forceTrace)return true;if(matchMedia('(pointer:coarse)').matches)return false;try{const gl=r.getContext();const ext=gl.getExtension('WEBGL_debug_renderer_info');const name=ext?gl.getParameter(ext.UNMASKED_RENDERER_WEBGL):'';return !/swiftshader|llvmpipe|software|basic render/i.test(String(name))}catch(e){return true}}
+// GLB pieces load on demand with Draco, Meshopt and KTX2 support, then are scaled to the
+// catalog's W × D × H exactly (whatever units the file was made in) with their base on the floor.
+let gltfP=null;
+function gltfLoader(renderer){return gltfP||=Promise.all([loadThree(),import('three/examples/jsm/loaders/GLTFLoader.js'),import('three/examples/jsm/loaders/DRACOLoader.js'),import('three/examples/jsm/loaders/KTX2Loader.js'),import('three/examples/jsm/libs/meshopt_decoder.module.js')]).then(([T,{GLTFLoader},{DRACOLoader},{KTX2Loader},{MeshoptDecoder}])=>{
+  const l=new GLTFLoader();const draco=new DRACOLoader();draco.setDecoderPath('/trade/decoders/draco/');l.setDRACOLoader(draco);l.setMeshoptDecoder(MeshoptDecoder);
+  if(renderer){const k=new KTX2Loader();k.setTranscoderPath('/trade/decoders/basis/');k.detectSupport(renderer);l.setKTX2Loader(k)}return l})}
+const glbCache=new Map();
+async function loadGLB(url,renderer){if(!glbCache.has(url))glbCache.set(url,gltfLoader(renderer).then(l=>l.loadAsync(url)).catch(e=>{glbCache.delete(url);throw e}));const g=await glbCache.get(url);return g.scene.clone(true)}
+// Scale a model so its bounding box is exactly w × d × h metres, centred, standing on y = 0.
+function fitToDims(T,obj,dims){const box=new T.Box3().setFromObject(obj);const size=box.getSize(new T.Vector3());
+  if(size.x>0&&size.y>0&&size.z>0)obj.scale.multiply(new T.Vector3(dims.w/100/size.x,dims.h/100/size.y,dims.d/100/size.z));
+  const b2=new T.Box3().setFromObject(obj);const c=b2.getCenter(new T.Vector3());obj.position.x-=c.x;obj.position.z-=c.z;obj.position.y-=b2.min.y;
+  obj.traverse(o=>{if(o.isMesh){o.castShadow=o.receiveShadow=true}});return obj}
+// A turntable: one model, lit, turning slowly, with its W × D × H beneath.
+function Turntable({url,dims,height=260}){
+  const cv=useRef();const [three,failed]=useThree();const [err,setErr]=useState('');
+  useEffect(()=>{if(!three||!url)return;const T=three;const c=cv.current;const r=new T.WebGLRenderer({canvas:c,antialias:true,alpha:true});r.setPixelRatio(Math.min(devicePixelRatio||1,2));r.outputColorSpace=T.SRGBColorSpace;r.toneMapping=T.ACESFilmicToneMapping;r.shadowMap.enabled=true;
+    const scene=new T.Scene();const cam=new T.PerspectiveCamera(30,1,.01,100);scene.add(new T.HemisphereLight('#FFF6EA','#B8A58C',1.2*LX));const sun=new T.DirectionalLight('#FFF4E5',2.4*LX);sun.position.set(2,4,3);sun.castShadow=true;scene.add(sun);
+    const ground=new T.Mesh(new T.CircleGeometry(4,48),new T.ShadowMaterial({opacity:.18}));ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+    let raf=0,live=true;const g=new T.Group();scene.add(g);
+    loadGLB(url,r).then(obj=>{if(!live)return;fitToDims(T,obj,dims||{w:100,d:100,h:100});g.add(obj);const s=new T.Box3().setFromObject(g).getSize(new T.Vector3());const R=Math.max(s.x,s.y,s.z)*1.9;
+      const tick=t=>{if(!live)return;const w=c.clientWidth,h=c.clientHeight;if(c.width!==w*r.getPixelRatio()){r.setSize(w,h,false);cam.aspect=w/h;cam.updateProjectionMatrix()}g.rotation.y=t/3000;cam.position.set(R*.9,R*.45,R*.9);cam.lookAt(0,s.y*.45,0);r.render(scene,cam);raf=requestAnimationFrame(tick)};raf=requestAnimationFrame(tick)},()=>live&&setErr('This model could not be read.'));
+    return()=>{live=false;cancelAnimationFrame(raf);r.dispose()}},[three,url]);
+  return html`<div className="tt" style=${{height}}>${failed||err?html`<p className="sx-note">${err||'3D could not load.'}</p>`:html`<canvas ref=${cv}></canvas>`}${dims&&html`<span className="tt-dims mono">${dims.w} × ${dims.d} × ${dims.h} cm</span>`}</div>`;
+}
+/* ================= ADMIN: asset readiness ================= */
+// Background removal for product photos on a light studio ground: flood-fill the ground from the
+// edges, feather the outline, crop to the piece. A person checks the result before approving it.
+async function cutoutFromPhoto(src){const im=await loadImg(absUrl(src));if(!im)throw new Error('The photo could not be loaded.');
+  const s=Math.min(1,2000/Math.max(im.width,im.height));const W=Math.round(im.width*s),H=Math.round(im.height*s);const c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d',{willReadFrequently:true});g.drawImage(im,0,0,W,H);
+  const d=g.getImageData(0,0,W,H);const px=d.data;const edge=[];for(let x=0;x<W;x+=4){edge.push((x)*4,((H-1)*W+x)*4)}for(let y=0;y<H;y+=4){edge.push((y*W)*4,(y*W+W-1)*4)}
+  const med=k=>{const v=edge.map(i=>px[i+k]).sort((a,b)=>a-b);return v[v.length>>1]};const bg=[med(0),med(1),med(2)];const tol=34;
+  const dist=i=>Math.hypot(px[i]-bg[0],px[i+1]-bg[1],px[i+2]-bg[2]);const seen=new Uint8Array(W*H);const stack=[];
+  for(let x=0;x<W;x++){stack.push(x,(H-1)*W+x)}for(let y=0;y<H;y++){stack.push(y*W,y*W+W-1)}
+  while(stack.length){const p=stack.pop();if(seen[p])continue;if(dist(p*4)>tol)continue;seen[p]=1;const x=p%W,y=(p/W)|0;if(x>0)stack.push(p-1);if(x<W-1)stack.push(p+1);if(y>0)stack.push(p-W);if(y<H-1)stack.push(p+W)}
+  let x0=W,y0=H,x1=0,y1=0;for(let p=0;p<W*H;p++){const i=p*4;if(seen[p]){px[i+3]=0;continue}
+    const x=p%W,y=(p/W)|0;const nb=(x>0&&seen[p-1])||(x<W-1&&seen[p+1])||(y>0&&seen[p-W])||(y<H-1&&seen[p+W]);if(nb)px[i+3]=Math.round(255*Math.min(1,dist(i)/(tol*2.2)));
+    if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y}
+  if(x1<=x0||y1<=y0)throw new Error('No piece found against the background.');g.putImageData(d,0,0);
+  const m=Math.round(Math.max(W,H)*.01);x0=Math.max(0,x0-m);y0=Math.max(0,y0-m);x1=Math.min(W-1,x1+m);y1=Math.min(H-1,y1+m);
+  const o=document.createElement('canvas');o.width=x1-x0+1;o.height=y1-y0+1;o.getContext('2d').drawImage(c,x0,y0,o.width,o.height,0,0,o.width,o.height);
+  return {blob:await canvasBlob(o,'image/png'),url:o.toDataURL('image/png'),aspect:o.width/o.height}}
+function AssetsAdmin({ctx}){
+  const rows=useQuery(api.holmAssets.readiness);const setDims=useMutation(api.holmAssets.setDims);const upUrl=useMutation(api.holmAssets.uploadUrl);
+  const setCutout=useMutation(api.holmAssets.setCutout);const setModel=useMutation(api.holmAssets.setModel);const setMount=useMutation(api.holmAssets.setMount);
+  const [f,setF]=useState('all');const [open,setOpen]=useState(null);const [draft,setDraft]=useState(null);const [busy,setBusy]=useState('');const [dims,setD]=useState({});
+  if(rows===undefined)return html`<p className="help" style=${{padding:'40px 0'}}>Loading products…</p>`;
+  const ok={d:r=>!!r.dimsCm,c:r=>r.cutoutStatus==='approved',m:r=>r.modelStatus==='approved'};
+  const list=rows.filter(r=>f==='all'||!ok[f](r));const count=k=>rows.filter(ok[k]).length;
+  const act=async(k,fn)=>{setBusy(k);try{await fn()}catch(e){ctx.toast(errText(e))}finally{setBusy('')}};
+  const dot=(on,warn,label)=>html`<span className=${'rd'+(on?' on':warn?' warn':'')} title=${label}></span>`;
+  return html`<section style=${{display:'grid',gap:16,marginTop:20}}>
+    <div className="kpis">${[['Products',rows.length],['With dimensions',count('d')],['With a cutout',count('c')],['With a 3D model',count('m')]].map(([l,v])=>html`<div key=${l} className="kpi"><span className="mono mute">${l}</span><b className="num">${v}</b></div>`)}</div>
+    <p className="help" style=${{margin:0}}>The Studio offers products with dimensions and an approved cutout; 3D options appear only where a model is approved. Work in order: dimensions, then cutouts, then models for the curated pieces first.</p>
+    <div className="seg">${[['all','All'],['d','Missing dimensions'],['c','Missing cutout'],['m','Missing model']].map(([k,l])=>html`<button key=${k} className=${f===k?'on':''} onClick=${()=>setF(k)}>${l}</button>`)}</div>
+    <div className="rd-list">${list.map(r=>{const isOpen=open===r.productId;const dv=dims[r.productId]||r.dimsCm||{};return html`<div key=${r.productId} className=${'rd-row'+(isOpen?' open':'')}>
+      <button className="rd-head" onClick=${()=>{setOpen(isOpen?null:r.productId);setDraft(null)}} aria-expanded=${isOpen}>
+        <span className="rd-th">${r.image&&html`<img src=${r.image} alt="" loading="lazy"/>`}</span><span className="rd-name">${r.name}</span>
+        <span className="rd-dots">${dot(!!r.dimsCm,false,'Dimensions'+(r.dimsSource?' · '+r.dimsSource:''))}${dot(r.cutoutStatus==='approved',r.cutoutStatus==='draft','Cutout'+(r.cutoutStatus?' · '+r.cutoutStatus:''))}${dot(r.modelStatus==='approved',r.modelStatus==='draft','3D model · '+r.modelStatus)}</span></button>
+      ${isOpen&&html`<div className="rd-body">
+        <div className="rd-sec"><h4>Dimensions <small className="mute">${r.dimsSource==='parsed'?'read from the listing':r.dimsSource?r.dimsSource:'needed'}</small></h4>
+          <div className="pl-dims">${[['w','Width'],['d','Depth'],['h','Height'],['seatH','Seat height'],['armH','Arm height']].map(([k,l])=>html`<label key=${k}><span className="mono mute">${l} (cm)</span><input className="field num" type="number" min="0" step="0.5" value=${dv[k]??''} onInput=${e=>setD(o=>({...o,[r.productId]:{...dv,[k]:e.target.value===''?undefined:+e.target.value}}))}/></label>`)}</div>
+          <div className="row" style=${{gap:8,flexWrap:'wrap'}}><button className="btn btn-ink btn-sm" disabled=${busy==='dims'||!(dv.w>0&&dv.d>0&&dv.h>0)} onClick=${()=>act('dims',async()=>{await setDims({productId:r.productId,dimsCm:{w:dv.w,d:dv.d,h:dv.h,...(dv.seatH?{seatH:dv.seatH}:{}),...(dv.armH?{armH:dv.armH}:{})}});ctx.toast('Dimensions saved')})}>Save dimensions</button>
+            ${r.dimsSource==='manual'&&html`<button className="lnk" onClick=${()=>act('dims',()=>setDims({productId:r.productId,dimsCm:null}))}>Use the listing's dimensions</button>`}</div>
+          <label className="toggle" style=${{maxWidth:360}}><span>Hangs from the ceiling or wall</span><input type="checkbox" className="sr" checked=${r.hangs} onChange=${e=>act('mount',()=>setMount({productId:r.productId,hangs:e.target.checked,mountHeightCm:r.mountHeightCm??undefined}))}/><span className=${'sw'+(r.hangs?' on':'')}></span></label></div>
+        <div className="rd-sec"><h4>Seamless cutout <small className="mute">${r.cutoutStatus||'none yet'}</small></h4>
+          <div className="rd-pair"><figure><img src=${r.image} alt="Product photo"/><figcaption className="mono mute">Product photo</figcaption></figure>
+            <figure className="checker">${draft?.url?html`<img src=${draft.url} alt="Cutout preview"/>`:r.cutoutUrl?html`<img src=${r.cutoutUrl} alt="Current cutout"/>`:html`<span className="sx-note">No cutout yet</span>`}<figcaption className="mono mute">${draft?'Check the edges, then approve':'Cutout'}</figcaption></figure></div>
+          <div className="row" style=${{gap:8,flexWrap:'wrap'}}>
+            <button className="btn btn-line btn-sm" disabled=${!!busy} onClick=${()=>act('cut',async()=>setDraft(await cutoutFromPhoto(r.image)))}>${busy==='cut'?'Removing background…':'Remove the background'}</button>
+            <label className="btn btn-line btn-sm" style=${{cursor:'pointer'}}>Upload a cutout<input type="file" accept="image/png,image/webp" hidden onChange=${async e=>{const x=e.target.files[0];if(!x)return;const u=URL.createObjectURL(x);const im=await loadImg(u);setDraft({blob:x,url:u,aspect:im?im.width/im.height:1})}}/></label>
+            ${draft&&html`<button className="btn btn-cog btn-sm" disabled=${!!busy} onClick=${()=>act('save',async()=>{const id=await uploadBlob(upUrl,draft.blob);await setCutout({productId:r.productId,cutoutId:id,aspect:draft.aspect,status:'approved'});setDraft(null);ctx.toast('Cutout approved')})}>Approve cutout</button>`}
+            ${r.cutoutStatus&&!draft&&html`<button className="lnk" style=${{color:'var(--bad)'}} onClick=${()=>act('rm',()=>setCutout({productId:r.productId,status:'removed'}))}>Remove cutout</button>`}</div></div>
+        <div className="rd-sec"><h4>3D model <small className="mute">${r.modelStatus}${r.modelBytes?` · ${(r.modelBytes/1048576).toFixed(1)} MB`:''}</small></h4>
+          ${r.modelUrl?html`<div className="rd-pair"><figure><img src=${r.image} alt="Product photo"/></figure><${Turntable} url=${r.modelUrl} dims=${r.dimsCm}/></div>`:html`<p className="sx-note">Generate a GLB from every angle of the product photos with an image-to-3D tool, swap its painted texture for the shared ${'leather, bouclé, velvet or wood'} material, compress it under 3 MB (Draco or Meshopt, KTX2 textures), then upload it here. It is scaled to the listed W × D × H automatically.</p>`}
+          <div className="row" style=${{gap:8,flexWrap:'wrap'}}>
+            <label className="btn btn-line btn-sm" style=${{cursor:'pointer'}}>${r.modelUrl?'Upload a new model':'Upload a GLB'}<input type="file" accept=".glb,model/gltf-binary" hidden onChange=${e=>{const x=e.target.files[0];if(!x)return;e.target.value='';act('glb',async()=>{if(x.size>3*1048576)throw new Error('Models must be under 3 MB.');const id=await uploadBlob(upUrl,x);const res=await setModel({productId:r.productId,modelId:id,status:'draft'});if(res&&!res.ok)throw new Error(res.error);ctx.toast('Model uploaded for review')})}}/></label>
+            ${r.modelUrl&&r.modelStatus!=='approved'&&html`<button className="btn btn-cog btn-sm" disabled=${!r.dimsCm||!!busy} title=${r.dimsCm?'':'Add dimensions first'} onClick=${()=>act('ok',()=>setModel({productId:r.productId,status:'approved'}))}>Approve</button>`}
+            ${r.modelUrl&&r.modelStatus!=='rejected'&&html`<button className="lnk" style=${{color:'var(--bad)'}} onClick=${()=>act('no',()=>setModel({productId:r.productId,status:'rejected'}))}>Reject</button>`}</div></div>
+      </div>`}</div>`})}</div>
+  </section>`;
+}
 function AdminPage({ctx}){
   const [tab,setTab]=useState('apps');
   if(!ctx.me.admin)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h3>Team only</h3><p>Sign in with an admin account to manage House of Louie Mae.</p></div></main>`;
   return html`<main className="wrap" style=${{paddingBottom:60}}>
-    <div className="seg" style=${{margin:'28px 0 0'}}>${[['apps','Trade applications'],['sourcing','Sourcing'],['partners','Partners'],['pricing','Pricing']].map(([k,l])=>html`<button key=${k} className=${tab===k?'on':''} onClick=${()=>setTab(k)}>${l}</button>`)}</div>
-    ${tab==='apps'?html`<${TradeAdmin} ctx=${ctx}/>`:tab==='sourcing'?html`<${SourcingAdmin} ctx=${ctx}/>`:tab==='pricing'?html`<${PricingAdmin} ctx=${ctx}/>`:html`<${PartnersAdmin} ctx=${ctx}/>`}
+    <div className="seg" style=${{margin:'28px 0 0'}}>${[['apps','Trade applications'],['sourcing','Sourcing'],['partners','Partners'],['pricing','Pricing'],['assets','Asset readiness']].map(([k,l])=>html`<button key=${k} className=${tab===k?'on':''} onClick=${()=>setTab(k)}>${l}</button>`)}</div>
+    ${tab==='assets'?html`<${AssetsAdmin} ctx=${ctx}/>`:tab==='apps'?html`<${TradeAdmin} ctx=${ctx}/>`:tab==='sourcing'?html`<${SourcingAdmin} ctx=${ctx}/>`:tab==='pricing'?html`<${PricingAdmin} ctx=${ctx}/>`:html`<${PartnersAdmin} ctx=${ctx}/>`}
   </main>`;
 }
 function SourcingAdmin({ctx}){

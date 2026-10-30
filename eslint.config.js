@@ -99,6 +99,6 @@ export default [
         },
     },
     {
-        ignores: ['dist/**', 'node_modules/**', '*.config.*'],
+        ignores: ['dist/**', 'node_modules/**', '*.config.*', 'public/trade/decoders/**'],
     },
 ];

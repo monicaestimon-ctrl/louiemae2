@@ -221,6 +221,27 @@ export const holmTables = {
     createdAt: v.number(),
   }).index('by_storage', ['storageId']),
 
+  // What each product needs to work everywhere: true dimensions, a seamless cutout and a 3D model.
+  // One row per product (variantId empty) or per colour variant when materials differ.
+  holmAssets: defineTable({
+    productId: v.id('commerceProducts'),
+    variantId: v.optional(v.string()),
+    dimsCm: v.optional(
+      v.object({ w: v.number(), d: v.number(), h: v.number(), seatH: v.optional(v.number()), armH: v.optional(v.number()) })
+    ),
+    dimsSource: v.optional(v.union(v.literal('parsed'), v.literal('manual'), v.literal('supplier'))),
+    cutoutId: v.optional(v.id('_storage')),
+    cutoutAspect: v.optional(v.number()), // width / height
+    cutoutStatus: v.optional(v.union(v.literal('draft'), v.literal('approved'))),
+    modelId: v.optional(v.id('_storage')),
+    modelLowId: v.optional(v.id('_storage')),
+    modelBytes: v.optional(v.number()),
+    modelStatus: v.optional(v.union(v.literal('none'), v.literal('draft'), v.literal('approved'), v.literal('rejected'))),
+    hangs: v.optional(v.boolean()),
+    mountHeightCm: v.optional(v.number()),
+    updatedAt: v.number(),
+  }).index('by_product', ['productId', 'variantId']),
+
   // A request for the House team to render a planned room.
   holmRenderRequests: defineTable({
     userId: v.id('users'),
