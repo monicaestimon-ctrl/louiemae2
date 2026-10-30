@@ -1,6 +1,7 @@
 import { v } from 'convex/values';
 import { query, mutation } from './_generated/server';
 import { requireUser, viewer } from './holmAccess';
+import { insertClick } from './holmPartners';
 
 // Projects, boards, collages, inspiration and quiz results follow the account across devices.
 const KEYS = ['tray', 'boards', 'collages', 'inspo', 'quiz'] as const;
@@ -62,18 +63,60 @@ function boardSlug() {
   return Array.from(globalThis.crypto.getRandomValues(new Uint8Array(12)), (b) => abc[b % abc.length]).join('');
 }
 
+export const coverUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireUser(ctx);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+const MAX_DOC = 200_000;
+// Data URLs (local uploads) never travel with a shared layout; they stay on the sharer's device.
+const docSize = (doc: unknown) => (doc === undefined ? 0 : JSON.stringify(doc).length);
+
+/**
+ * Shares a board, or updates the board already shared from the same collage in the same mode:
+ * the slug stays the same, so a Story or PDF made last week keeps opening the current board.
+ */
 export const shareBoard = mutation({
   args: {
     title: v.string(),
     mode: v.union(v.literal('shop'), v.literal('presentation')),
-    items: v.array(v.object({ productId: v.id('commerceProducts') })),
+    items: v.array(
+      v.object({ productId: v.id('commerceProducts'), variantId: v.optional(v.string()), qty: v.optional(v.number()) })
+    ),
+    boardKey: v.optional(v.string()),
+    doc: v.optional(v.any()),
+    coverId: v.optional(v.id('_storage')),
   },
   handler: async (ctx, a) => {
     const me = await requireUser(ctx);
     const title = a.title.trim().slice(0, 120) || 'Board';
     if (!a.items.length || a.items.length > 60) throw new Error('Share a board with 1 to 60 pieces.');
+    if (docSize(a.doc) > MAX_DOC) throw new Error('This board is too large to share. Remove a few uploaded images and try again.');
+    if (a.boardKey !== undefined && !/^[\w-]{1,40}$/.test(a.boardKey)) throw new Error('This board could not be shared.');
+    const items = a.items.map((i) => ({
+      productId: i.productId,
+      ...(i.variantId ? { variantId: i.variantId.slice(0, 64) } : {}),
+      qty: Math.max(1, Math.min(99, Math.round(i.qty ?? 1))),
+    }));
+    // Presentation links never carry a partner code.
+    const refCode = a.mode === 'shop' && me.profile?.partnerStatus === 'active' ? me.profile.refCode : undefined;
+    const now = Date.now();
+    const existing = a.boardKey
+      ? await ctx.db
+          .query('holmSharedBoards')
+          .withIndex('by_owner_key', (q) => q.eq('ownerId', me.userId).eq('boardKey', a.boardKey).eq('mode', a.mode))
+          .first()
+      : null;
+    if (existing) {
+      if (a.coverId && existing.coverId && existing.coverId !== a.coverId) await ctx.storage.delete(existing.coverId);
+      await ctx.db.patch(existing._id, { title, items, refCode, doc: a.doc, ...(a.coverId ? { coverId: a.coverId } : {}), updatedAt: now });
+      return { slug: existing.slug, refCode: refCode ?? null };
+    }
     const recent = await ctx.db.query('holmSharedBoards').withIndex('by_owner', (q) => q.eq('ownerId', me.userId)).order('desc').take(30);
-    if (recent.length === 30 && recent[29].createdAt > Date.now() - 86_400_000) throw new Error('You have shared many boards today. Try again tomorrow.');
+    if (recent.length === 30 && recent[29].createdAt > now - 86_400_000) throw new Error('You have shared many boards today. Try again tomorrow.');
     const slug = boardSlug();
     await ctx.db.insert('holmSharedBoards', {
       slug,
@@ -81,21 +124,51 @@ export const shareBoard = mutation({
       title,
       mode: a.mode,
       by: me.profile?.businessName || me.profile?.displayName || 'A House of Louie Mae member',
-      refCode: a.mode === 'shop' && me.profile?.partnerStatus === 'active' ? me.profile.refCode : undefined,
-      items: a.items,
-      createdAt: Date.now(),
+      refCode,
+      items,
+      boardKey: a.boardKey,
+      doc: a.doc,
+      coverId: a.coverId,
+      views: 0,
+      updatedAt: now,
+      createdAt: now,
     });
-    return slug;
+    return { slug, refCode: refCode ?? null };
   },
 });
 
-/** Public view of a shared board: product ids only; prices come from the viewer's own catalog. */
+/** Public view of a shared board: product ids, quantities and layout; prices come from the viewer's own catalog. */
 export const sharedBoard = query({
   args: { slug: v.string() },
   handler: async (ctx, a) => {
     if (!/^[a-z0-9]{12}$/.test(a.slug)) return null;
     const b = await ctx.db.query('holmSharedBoards').withIndex('by_slug', (q) => q.eq('slug', a.slug)).unique();
     if (!b) return null;
-    return { title: b.title, mode: b.mode, by: b.by, refCode: b.refCode ?? null, productIds: b.items.map((i) => i.productId) };
+    return {
+      title: b.title,
+      mode: b.mode,
+      by: b.by,
+      refCode: b.mode === 'shop' ? (b.refCode ?? null) : null,
+      productIds: b.items.map((i) => i.productId),
+      items: b.items.map((i) => ({ productId: i.productId, variantId: i.variantId ?? null, qty: i.qty ?? 1 })),
+      doc: b.doc ?? null,
+      coverUrl: b.coverId ? await ctx.storage.getUrl(b.coverId) : null,
+    };
+  },
+});
+
+/**
+ * Someone opened a board link: count the view and, for a shoppable board from an active
+ * partner, record the visit with its channel so the 30-day attribution window starts.
+ */
+export const boardOpened = mutation({
+  args: { slug: v.string(), channel: v.string(), visitorId: v.string() },
+  handler: async (ctx, a) => {
+    if (!/^[a-z0-9]{12}$/.test(a.slug)) return;
+    const b = await ctx.db.query('holmSharedBoards').withIndex('by_slug', (q) => q.eq('slug', a.slug)).unique();
+    if (!b) return;
+    await ctx.db.patch(b._id, { views: (b.views ?? 0) + 1 });
+    if (b.mode === 'shop' && b.refCode)
+      await insertClick(ctx, { refCode: b.refCode, channel: a.channel, target: 'b/' + b.slug, visitorId: a.visitorId, board: b.slug });
   },
 });

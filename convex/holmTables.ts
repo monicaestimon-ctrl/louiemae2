@@ -96,6 +96,7 @@ export const holmTables = {
     channel: v.optional(v.string()),
     partnerState: v.optional(v.union(v.literal('awaiting_payment'), v.literal('credited'), v.literal('void'))),
     partnerCheckedAt: v.optional(v.number()), // last reconcile pass, so unpaid rows rotate
+    board: v.optional(v.string()), // the shared board whose link the buyer came through
     createdAt: v.number(),
   })
     .index('by_user', ['userId', 'createdAt'])
@@ -109,10 +110,12 @@ export const holmTables = {
     channel: v.string(),
     target: v.string(),
     visitorId: v.string(),
+    board: v.optional(v.string()), // shared-board slug when the visit came through a board link
     at: v.number(),
   })
     .index('by_partner', ['partnerId', 'at'])
-    .index('by_visitor_partner', ['visitorId', 'partnerId', 'at']),
+    .index('by_visitor_partner', ['visitorId', 'partnerId', 'at'])
+    .index('by_board', ['board', 'at']),
 
   holmCommissions: defineTable({
     partnerId: v.id('users'),
@@ -191,11 +194,40 @@ export const holmTables = {
     mode: v.union(v.literal('shop'), v.literal('presentation')),
     by: v.string(),
     refCode: v.optional(v.string()),
-    items: v.array(v.object({ productId: v.id('commerceProducts'), note: v.optional(v.string()) })),
+    items: v.array(
+      v.object({
+        productId: v.id('commerceProducts'),
+        note: v.optional(v.string()),
+        variantId: v.optional(v.string()),
+        qty: v.optional(v.number()),
+      })
+    ),
+    // One stable slug per board and mode: re-sharing updates the same row, so old links keep working.
+    boardKey: v.optional(v.string()),
+    doc: v.optional(v.any()), // the full layout: items, styles, shape, edge, page size
+    coverId: v.optional(v.id('_storage')), // the rendered board, reused for Open Graph and the bundle page
+    views: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_slug', ['slug'])
-    .index('by_owner', ['ownerId', 'createdAt']),
+    .index('by_owner', ['ownerId', 'createdAt'])
+    .index('by_owner_key', ['ownerId', 'boardKey', 'mode']),
+
+  // A request for the House team to render a planned room.
+  holmRenderRequests: defineTable({
+    userId: v.id('users'),
+    title: v.string(),
+    prompt: v.string(),
+    camera: v.optional(v.any()),
+    room: v.optional(v.any()),
+    snapshotId: v.optional(v.id('_storage')),
+    status: v.union(v.literal('new'), v.literal('in_progress'), v.literal('delivered'), v.literal('declined')),
+    emailStatus: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index('by_user', ['userId', 'createdAt'])
+    .index('by_status', ['status', 'createdAt']),
 
   // Projects, boards, collages and inspiration, kept with the account so they follow you.
   holmUserState: defineTable({

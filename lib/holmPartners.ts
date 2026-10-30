@@ -9,8 +9,25 @@ export const HOLM_PARTNERS = {
   quoteHoldDays: 120, // unpaid partner-attributed quotes stop waiting for payment after this
   referralCreditCents: 10_000, // $100 store credit
   referralMinOrderCents: 50_000, // after a first paid order over $500
-  channels: ['pinterest', 'instagram', 'email', 'website', 'tiktok', 'direct'],
+  // Where a partner link was opened from. Every Share-sheet route tags its link with one of these.
+  channels: ['story', 'pin', 'post', 'pdf', 'link', 'share', 'qr'],
 } as const;
+
+export type HolmChannel = (typeof HOLM_PARTNERS.channels)[number];
+// Links shared before the fixed channel list keep counting under the nearest channel.
+const LEGACY_CHANNELS: Record<string, HolmChannel> = {
+  pinterest: 'pin',
+  instagram: 'story',
+  tiktok: 'post',
+  email: 'share',
+  website: 'link',
+  direct: 'link',
+};
+export function holmChannel(raw: string | null | undefined): HolmChannel {
+  const c = String(raw ?? '').toLowerCase();
+  if ((HOLM_PARTNERS.channels as readonly string[]).includes(c)) return c as HolmChannel;
+  return LEGACY_CHANNELS[c] ?? 'link';
+}
 
 export function commissionCents(baseCents: number, rateBps: number) {
   if (!Number.isFinite(baseCents) || baseCents <= 0) return 0;

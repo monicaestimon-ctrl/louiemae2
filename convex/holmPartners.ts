@@ -6,7 +6,7 @@ import { internal } from './_generated/api';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { isPartner, isVerified, profileOf, requireUser, viewer } from './holmAccess';
 import { partnerTier } from './holmTables';
-import { HOLM_PARTNERS, commissionCents } from '../lib/holmPartners';
+import { HOLM_PARTNERS, commissionCents, holmChannel } from '../lib/holmPartners';
 
 const DAY = 86_400_000;
 
@@ -45,28 +45,37 @@ export const join = mutation({
   },
 });
 
-/** A visit through a partner link. Deduplicated per visitor and partner each day. */
+/**
+ * A visit through a partner link, tagged with where it was opened from (story, pin, post, pdf,
+ * link, share or qr) and, for a board link, the board. Deduplicated per visitor and partner each
+ * day; the first visit opens the 30-day attribution window.
+ */
+export async function insertClick(
+  ctx: MutationCtx,
+  a: { refCode: string; channel: string; target: string; visitorId: string; board?: string }
+) {
+  if (!/^[A-Z0-9]{4,16}$/.test(a.refCode) || !/^[\w-]{16,64}$/.test(a.visitorId)) return;
+  const partner = await ctx.db.query('holmProfiles').withIndex('by_refCode', (q) => q.eq('refCode', a.refCode)).first();
+  if (!partner || !isPartner(partner)) return;
+  const recent = await ctx.db
+    .query('holmClicks')
+    .withIndex('by_visitor_partner', (q) => q.eq('visitorId', a.visitorId).eq('partnerId', partner.userId).gte('at', Date.now() - DAY))
+    .first();
+  if (recent) return;
+  await ctx.db.insert('holmClicks', {
+    partnerId: partner.userId,
+    refCode: a.refCode,
+    channel: holmChannel(a.channel),
+    target: a.target.slice(0, 120),
+    visitorId: a.visitorId,
+    ...(a.board ? { board: a.board } : {}),
+    at: Date.now(),
+  });
+}
+
 export const recordClick = mutation({
   args: { refCode: v.string(), channel: v.string(), target: v.string(), visitorId: v.string() },
-  handler: async (ctx, a) => {
-    if (!/^[A-Z0-9]{4,16}$/.test(a.refCode) || !/^[\w-]{16,64}$/.test(a.visitorId)) return;
-    const partner = await ctx.db.query('holmProfiles').withIndex('by_refCode', (q) => q.eq('refCode', a.refCode)).first();
-    if (!partner || !isPartner(partner)) return;
-    const recent = await ctx.db
-      .query('holmClicks')
-      .withIndex('by_visitor_partner', (q) => q.eq('visitorId', a.visitorId).eq('partnerId', partner.userId).gte('at', Date.now() - DAY))
-      .first();
-    if (recent) return;
-    const channel = (HOLM_PARTNERS.channels as readonly string[]).includes(a.channel) ? a.channel : 'direct';
-    await ctx.db.insert('holmClicks', {
-      partnerId: partner.userId,
-      refCode: a.refCode,
-      channel,
-      target: a.target.slice(0, 120),
-      visitorId: a.visitorId,
-      at: Date.now(),
-    });
-  },
+  handler: async (ctx, a) => insertClick(ctx, a),
 });
 
 /**
@@ -92,7 +101,7 @@ export async function resolveAttribution(
     .order('desc')
     .first();
   if (!click) return null;
-  return { partnerId: partner.userId, refCode, channel: click.channel };
+  return { partnerId: partner.userId, refCode, channel: click.channel, board: click.board };
 }
 
 /** Business referral: the account that referred a new account, recorded once at sign-up. */
@@ -339,5 +348,37 @@ export const reconcile = internalMutation({
       await ctx.db.insert('holmCredits', { userId: ref.referrerId, amountCents: HOLM_PARTNERS.referralCreditCents, reason: 'Business referral', at: now });
       await ctx.db.patch(ref._id, { status: 'credited', creditCents: HOLM_PARTNERS.referralCreditCents });
     }
+  },
+});
+
+/** Per-board stats for the partner's shared boards: views, link visits by channel, orders and commission. */
+export const boardStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const me = await viewer(ctx);
+    if (!me || !isPartner(me.profile)) return null;
+    const boards = await ctx.db.query('holmSharedBoards').withIndex('by_owner', (q) => q.eq('ownerId', me.userId)).order('desc').take(40);
+    const quotes = await ctx.db.query('holmQuoteRequests').withIndex('by_partner', (q) => q.eq('partnerId', me.userId)).order('desc').take(500);
+    const commissions = await ctx.db.query('holmCommissions').withIndex('by_partner', (q) => q.eq('partnerId', me.userId)).order('desc').take(1000);
+    const earned = new Map<string, number>();
+    for (const c of commissions) if (c.status !== 'void') earned.set(c.quoteRequestId, (earned.get(c.quoteRequestId) ?? 0) + c.amountCents);
+    return Promise.all(
+      boards.map(async (b) => {
+        const clicks = await ctx.db.query('holmClicks').withIndex('by_board', (q) => q.eq('board', b.slug)).take(5000);
+        const byChannel: Record<string, number> = {};
+        for (const c of clicks) if (c.partnerId === me.userId) byChannel[c.channel] = (byChannel[c.channel] ?? 0) + 1;
+        const orders = quotes.filter((q) => q.board === b.slug);
+        return {
+          slug: b.slug,
+          title: b.title,
+          mode: b.mode,
+          views: b.views ?? 0,
+          byChannel,
+          orders: orders.length,
+          commissionCents: orders.reduce((t, q) => t + (earned.get(q._id) ?? 0), 0),
+          updatedAt: b.updatedAt ?? b.createdAt,
+        };
+      })
+    );
   },
 });
