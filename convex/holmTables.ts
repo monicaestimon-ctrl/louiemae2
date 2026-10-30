@@ -212,7 +212,8 @@ export const holmTables = {
   })
     .index('by_slug', ['slug'])
     .index('by_owner', ['ownerId', 'createdAt'])
-    .index('by_owner_key', ['ownerId', 'boardKey', 'mode']),
+    .index('by_owner_key', ['ownerId', 'boardKey', 'mode'])
+    .index('by_cover', ['coverId']),
 
   // What each product needs to work everywhere: true dimensions, a seamless cutout and a 3D model.
   // One row per product (variantId empty) or per colour variant when materials differ.
