@@ -1764,7 +1764,50 @@ const pieceRows=pids=>{const m=new Map();pids.forEach(([pid,hidden])=>{const k=p
 
 /* ================= STUDIO ================= */
 const BGS=[['Plaster','#EFE6D8'],['Sand','#E1D2BB'],['Limewash','#F4EFE6'],['Olive','#6C6948'],['Cognac','#9A5A2E'],['Espresso','#2B211A']];
-const SHAPES=[['rect','Square'],['arch','Arch'],['circle','Circle'],['pill','Pill']];
+const SHAPES=[['rect','Square'],['arch','Arch'],['circle','Circle'],['pill','Pill'],['rounded','Rounded'],['oval','Oval']];
+// Every piece picks one of four looks. Switching keeps its place, size and layer.
+const LOOKS=[['cutout','Seamless cutout','The piece on the board with a soft contact shadow'],['framed','Framed photo','The product photo in a shape, with an optional border'],['3d','3D cutout','A lit model you can turn to any angle'],['room','In the room','On your room photo at true scale']];
+const styleOf=e=>e.style||(e.room?'room':'framed');
+const borderOf=e=>e.border===true||e.border==null?'white':e.border===false?'none':e.border;
+const hasCutout=pid=>pid<100&&has(pid);
+const cutAR=pid=>{const a=CUT_AR[pid];return a?a[0]/a[1]:(byId(pid).ar||1)};
+const frameAR=(shape,ar)=>shape==='circle'?1:shape==='arch'||shape==='oval'?.8:shape==='pill'?.75:ar;
+const elAR=e=>e.kind==='inspo'?frameAR(e.shape,e.ar||1):styleOf(e)==='framed'?frameAR(e.shape,byId(e.pid).ar||1):cutAR(e.pid);
+// In the room, a piece is drawn at its real width against the photo's measured width.
+const lockW=(e,bg)=>{if(e.kind!=='img'||styleOf(e)!=='room'||!bg?.img||!(bg.widthM>0))return null;const cm=APPROX_CM[e.pid]||byId(e.pid).widthCm;return cm?cm/(bg.widthM*100)*100:null};
+const wOf=(e,bg)=>lockW(e,bg)??e.w;
+const BOARD_SHAPES=[['rect','Rectangle'],['rounded','Rounded'],['arch','Arch'],['circle','Circle'],['oval','Oval'],['scallop','Scalloped'],['torn','Torn paper'],['poly','Free shape']];
+const EDGES=[['none','None'],['hairline','Hairline'],['thick','Thick border'],['deckle','Deckled paper'],['shadow','Drop shadow']];
+const EDGE_COLORS=['#FBF8F2','#2B211A','#A65F2C','#6C6948','#AE884C','#E1D2BB'];
+const POLY0=[[.04,.03],[.96,.06],[.97,.95],[.03,.97]];
+const BW=1000,boardH=page=>{const P=pageOf(page);return BW*P[3]/P[2]};
+// The board's outline as one SVG path in a W × H box. The canvas mask, its edge and every export draw from it.
+function boardPath(shape,W,H,poly){
+  const f=n=>+n.toFixed(1);
+  if(shape==='rounded'){const r=Math.min(W,H)*.06;return `M${r} 0H${W-r}A${r} ${r} 0 0 1 ${W} ${r}V${H-r}A${r} ${r} 0 0 1 ${W-r} ${H}H${r}A${r} ${r} 0 0 1 0 ${H-r}V${r}A${r} ${r} 0 0 1 ${r} 0Z`}
+  if(shape==='arch'){const r=W/2,t=Math.min(r,H);return `M0 ${H}V${t}A${r} ${t} 0 0 1 ${W} ${t}V${H}Z`}
+  if(shape==='circle'){const r=Math.min(W,H)/2,cx=W/2,cy=H/2;return `M${cx-r} ${cy}A${r} ${r} 0 1 1 ${cx+r} ${cy}A${r} ${r} 0 1 1 ${cx-r} ${cy}Z`}
+  if(shape==='oval')return `M0 ${H/2}A${W/2} ${H/2} 0 1 1 ${W} ${H/2}A${W/2} ${H/2} 0 1 1 0 ${H/2}Z`;
+  if(shape==='scallop'){const s=W/28;const side=(x0,y0,x1,y1)=>{const L=Math.hypot(x1-x0,y1-y0),n=Math.max(1,Math.round(L/(2*s))),r=L/n/2;let d='';for(let i=1;i<=n;i++)d+=`A${f(r)} ${f(r)} 0 0 1 ${f(x0+(x1-x0)*i/n)} ${f(y0+(y1-y0)*i/n)}`;return d};
+    return `M${s} ${s}${side(s,s,W-s,s)}${side(W-s,s,W-s,H-s)}${side(W-s,H-s,s,H-s)}${side(s,H-s,s,s)}Z`}
+  if(shape==='torn'){const R=rnd(7);const pts=[];const m=Math.min(W,H)*.02;const edge=(x0,y0,x1,y1,nx,ny)=>{const n=Math.max(4,Math.round(Math.hypot(x1-x0,y1-y0)/(W/70)));for(let i=0;i<n;i++){const t=i/n,j=m*(.25+R()*.75);pts.push([x0+(x1-x0)*t+nx*j,y0+(y1-y0)*t+ny*j])}};
+    edge(0,0,W,0,0,1);edge(W,0,W,H,-1,0);edge(W,H,0,H,0,-1);edge(0,H,0,0,1,0);return 'M'+pts.map(p=>f(p[0])+' '+f(p[1])).join('L')+'Z'}
+  if(shape==='poly')return 'M'+(poly&&poly.length>2?poly:POLY0).map(([x,y])=>f(x*W)+' '+f(y*H)).join('L')+'Z';
+  return `M0 0H${W}V${H}H0Z`;
+}
+const maskOf=(shape,W,H,poly)=>{if(!shape||shape==='rect')return {};const u=`url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${W} ${H}' preserveAspectRatio='none'><path d='${boardPath(shape,W,H,poly)}'/></svg>`)}")`;
+  return {WebkitMaskImage:u,maskImage:u,WebkitMaskSize:'100% 100%',maskSize:'100% 100%',WebkitMaskRepeat:'no-repeat',maskRepeat:'no-repeat'}};
+// The edge sits over the board, unmasked: a hairline on the outline, or a border or deckled paper clipped inside it.
+function BoardEdge({doc}){
+  const id=useMemo(()=>'be'+uid(),[]);const W=BW,H=boardH(doc.page);const d=boardPath(doc.shape,W,H,doc.poly);const e=doc.edge;
+  if(!e||e==='none'||e==='shadow')return null;
+  return html`<svg className="sx-edge" viewBox=${`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
+    <defs><clipPath id=${id+'c'}><path d=${d}/></clipPath>${e==='deckle'&&html`<filter id=${id+'f'}><feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="3" seed="3"/><feDisplacementMap in="SourceGraphic" scale="14"/></filter>`}</defs>
+    ${e==='hairline'&&html`<path d=${d} fill="none" stroke="#2B211A" strokeWidth="2.5"/>`}
+    ${e==='thick'&&html`<path d=${d} fill="none" stroke=${doc.edgeColor||'#FBF8F2'} strokeWidth="44" clipPath=${`url(#${id}c)`}/>`}
+    ${e==='deckle'&&html`<g clipPath=${`url(#${id}c)`}><path d=${d} fill="none" stroke="#FBF8F2" strokeWidth="56" filter=${`url(#${id}f)`}/></g>`}
+  </svg>`;
+}
 // Three ways to lay out a composed board, so Compose can offer drafts to choose between.
 const LAYOUTS=[
   [[6,8,52,-3,'arch'],[52,4,42,2,'rect'],[44,40,34,-1.5,'circle'],[6,54,40,2.5,'rect'],[60,66,30,-2,'pill'],[30,74,24,3,'rect']],
@@ -1772,13 +1815,13 @@ const LAYOUTS=[
   [[22,3,56,0,'arch'],[4,52,30,-2,'circle'],[66,52,30,2,'circle'],[37,63,26,0,'rect'],[84,4,12,0,'pill'],[4,4,12,0,'pill']],
 ];
 const SLOTS=LAYOUTS[0];
-function mkImg(pid,i=0,mode='collage',L=SLOTS){const s=L[i%L.length];return {id:uid(),kind:'img',pid,x:s[0],y:s[1],w:s[2],rot:mode==='room'?0:s[3],shape:mode==='room'?'rect':s[4],border:mode!=='room',motion:false,tone:'none',locked:false,hidden:false,room:mode==='room'}}
-function mkInspo(x){return {id:uid(),kind:'inspo',src:x.src,ar:x.ar||1,title:x.title,x:6,y:6,w:48,rot:-2,shape:'rect',border:true,motion:false,tone:'none',locked:false,hidden:false}}
+function mkImg(pid,i=0,mode='collage',L=SLOTS,style){const s=L[i%L.length];const st=style||(mode==='room'?'room':'framed');return {id:uid(),kind:'img',pid,x:s[0],y:s[1],w:s[2],rot:st==='framed'?s[3]:0,shape:s[4],border:'white',style:st,shadow:st==='room'?'floor':'soft',flip:false,motion:false,tone:'none',locked:false,hidden:false}}
+function mkInspo(x){return {id:uid(),kind:'inspo',src:x.src,ar:x.ar||1,title:x.title,x:6,y:6,w:48,rot:-2,shape:'rect',border:'white',motion:false,tone:'none',locked:false,hidden:false}}
 function mkText(t,x=8,y=84,size=7.5){return {id:uid(),kind:'text',text:t,x,y,w:70,rot:0,size,font:'display',color:'#2B211A',locked:false,hidden:false}}
 function compose(prompt,mode,v=0){
   const ps=matchPrompt(prompt).slice(0,5+(v>1?1:0));const base=ps.length?ps:SPACES.cafe.picks.map(byId);
   const use=v===1?[...base].reverse():v===2?[...base.slice(1),base[0]]:base;
-  const els=use.map((p,i)=>mkImg(p.id,i,mode,LAYOUTS[v%LAYOUTS.length]));
+  const els=use.map((p,i)=>mkImg(p.id,i,mode,LAYOUTS[v%LAYOUTS.length],mode==='room'?'room':v===1?'cutout':'framed'));
   const tones=[...new Set(use.map(p=>p.tone))].slice(0,4);
   tones.forEach((c,i)=>els.push({id:uid(),kind:'swatch',color:c,x:70+i*6.5,y:90,w:5.5,rot:0,locked:false,hidden:false}));
   els.push(mkText(prompt.charAt(0).toUpperCase()+prompt.slice(1),6,88,5.2));
@@ -1787,18 +1830,25 @@ function compose(prompt,mode,v=0){
 const toneF={none:'none',warm:'sepia(.25) saturate(1.1)',mono:'grayscale(1) contrast(1.05)',dusk:'brightness(.85) sepia(.3) hue-rotate(-8deg)'};
 const nameOf=e=>e.kind==='img'?byId(e.pid).name:e.kind==='inspo'?'Inspo · '+e.title:e.kind==='text'?e.text:'Swatch';
 // What an item looks like on a board. Sizes are in container units, so the same markup draws the canvas and its previews.
+const cropStyle=c=>c?{objectPosition:`${c.x}% ${c.y}%`,transform:`scale(${c.z})`,transformOrigin:`${c.x}% ${c.y}%`}:{};
 function ElView({e}){
-  if(e.kind==='img')return html`<div className=${'cut shape-'+e.shape+(e.border?' bd':'')+(e.room?' room':'')+(e.motion?' float':'')} style=${{aspectRatio:e.shape==='circle'?'1':e.shape==='arch'?'4/5':e.shape==='pill'?'3/4':byId(e.pid).ar}}><img src=${byId(e.pid).img} alt=${byId(e.pid).name} draggable="false" style=${{filter:toneF[e.tone]}}/></div>`;
-  if(e.kind==='inspo')return html`<div className=${'cut shape-'+e.shape+(e.border?' bd':'')+(e.motion?' float':'')} style=${{aspectRatio:e.shape==='circle'?'1':e.shape==='arch'?'4/5':e.shape==='pill'?'3/4':e.ar}}><img src=${e.src} alt=${e.title} draggable="false" style=${{filter:toneF[e.tone]}}/></div>`;
+  if(e.kind==='img'){const p=byId(e.pid);const st=styleOf(e);
+    if(st==='framed')return html`<div className=${'cut shape-'+e.shape+' bd-'+borderOf(e)+(e.motion?' float':'')} style=${{aspectRatio:elAR(e)}}><img src=${p.img} alt=${p.name} draggable="false" style=${{filter:toneF[e.tone],...cropStyle(e.crop)}}/></div>`;
+    return html`<div className=${'cutout sh-'+(e.shadow||(st==='room'?'floor':'soft'))+(hasCutout(e.pid)?'':' nocut')+(e.motion?' float':'')} style=${{aspectRatio:elAR(e)}}><img src=${cut(e.pid)} alt=${p.name} draggable="false" style=${{filter:toneF[e.tone],transform:e.flip?'scaleX(-1)':undefined}}/></div>`}
+  if(e.kind==='inspo')return html`<div className=${'cut shape-'+e.shape+' bd-'+borderOf(e)+(e.motion?' float':'')} style=${{aspectRatio:elAR(e)}}><img src=${e.src} alt=${e.title} draggable="false" style=${{filter:toneF[e.tone],...cropStyle(e.crop)}}/></div>`;
   if(e.kind==='text')return html`<div className="tx" style=${{fontFamily:`var(--${e.font})`,fontStyle:e.font==='display'?'italic':'normal',color:e.color,fontSize:e.size+'cqw',textTransform:e.font==='mono'?'uppercase':'none',letterSpacing:e.font==='mono'?'.08em':'-.01em'}}>${e.text}</div>`;
   return html`<div className="sw-shape" style=${{background:e.color,borderRadius:'50%',boxShadow:'0 0 0 .6cqw #FFFDF9'}}></div>`;
 }
-const elStyle=(e,i)=>({left:e.x+'%',top:e.y+'%',width:e.kind==='text'?'auto':e.w+'%',maxWidth:e.kind==='text'?'88%':'none',transform:`rotate(${e.rot}deg)`,zIndex:i});
+// A photo without a true cutout multiplies onto the board, so its white studio ground disappears.
+const blends=e=>e.kind==='img'&&styleOf(e)!=='framed'&&!hasCutout(e.pid);
+const elStyle=(e,i,bg)=>({left:e.x+'%',top:e.y+'%',width:e.kind==='text'?'auto':wOf(e,bg)+'%',maxWidth:e.kind==='text'?'88%':'none',transform:`rotate(${e.rot}deg)`,zIndex:i});
 const bgStyle=bg=>bg.img?{backgroundImage:`url(${bg.img})`}:{backgroundColor:bg.color};
 // A read-only board, for Compose drafts and Ideas previews.
-function BoardPreview({els,bg,page}){const P=pageOf(page);
-  return html`<div className=${'canvas sx-preview'+(bg.grid&&!bg.img?' grid':'')} style=${{...bgStyle(bg),aspectRatio:`${P[2]}/${P[3]}`}}>${els.map((e,i)=>e.hidden?null:html`<div key=${e.id} className="el" style=${elStyle(e,i)}><${ElView} e=${e}/></div>`)}</div>`;
+function BoardPreview({els,bg,page,shape,poly}){const P=pageOf(page);
+  return html`<div className=${'canvas sx-preview'+(bg.grid&&!bg.img?' grid':'')} style=${{...bgStyle(bg),aspectRatio:`${P[2]}/${P[3]}`,...maskOf(shape,BW,boardH(page),poly)}}>${els.map((e,i)=>e.hidden?null:html`<div key=${e.id} className=${'el'+(blends(e)?' blend':'')} style=${elStyle(e,i,bg)}><${ElView} e=${e}/></div>`)}</div>`;
 }
+// A saved board of pins has no layout of its own; exports lay its pieces out as cutouts in a grid.
+const pinsDoc=(title,pids)=>({id:'pins',title,page:'portrait',shape:'rect',edge:'none',mode:'collage',bg:{color:'#EFE6D8'},els:[...pids.slice(0,6).map((pid,i)=>mkImg(pid,i,'collage',LAYOUTS[1],'cutout')),mkText(title,6,88,5.2)]});
 const SAMPLE=()=>[mkImg(2,0),mkImg(12,1),mkImg(9,2),mkImg(13,3),mkText('A corner for slow mornings',6,86,4.6)];
 const SNAP=.8;
 // Smart guides: snap the moving box's edges and centre to the board's centre and to every other item, and
@@ -1819,21 +1869,22 @@ const ZMIN=.25,ZMAX=4;
 function Studio({ctx}){
   const seed=ctx.studioSeed;
   const [doc,setDoc]=useState(()=>{
-    const base={id:uid(),title:seed?.title||'New collage',mode:seed?.mode||'collage',page:'portrait',bg:seed?.bg?{img:seed.bg}:{color:'#EFE6D8',grid:true}};
-    if(seed?.collage)return {page:'portrait',mode:'collage',bg:{color:'#EFE6D8',grid:true},...seed.collage,id:seed.collage.id||uid()};
+    const base={id:uid(),title:seed?.title||'New collage',mode:seed?.mode||'collage',page:'portrait',shape:'rect',edge:'shadow',bg:seed?.bg?{img:seed.bg}:{color:'#EFE6D8',grid:true}};
+    if(seed?.collage)return {page:'portrait',mode:'collage',shape:'rect',edge:'shadow',bg:{color:'#EFE6D8',grid:true},...seed.collage,id:seed.collage.id||uid()};
     if(seed?.prompt)return {...base,els:compose(seed.prompt,seed?.mode)};
     if(seed?.inspo)return {...base,els:[mkInspo(seed.inspo),...(seed.ids||[]).map((id,i)=>mkImg(id,i+1))]};
     if(seed?.ids)return {...base,els:seed.ids.map((id,i)=>mkImg(id,i,seed.mode))};
     const last=ctx.collages.find(c=>c.id&&c.id===load('collage',null));
-    if(last)return {page:'portrait',mode:'collage',...last,...(seed?.view?{mode:seed.view}:{})};
+    if(last)return {page:'portrait',mode:'collage',shape:'rect',edge:'shadow',...last,...(seed?.view?{mode:seed.view}:{})};
     return {...base,...(seed?.view?{mode:seed.view}:{}),els:SAMPLE()};
   });
   const {els,bg,mode,page,title}=doc;
-  const [sel,setSel]=useState(null);const [drawer,setDrawer]=useState(null);const [pop,setPop]=useState(null);
+  // Several items can be selected (Shift-click); the last one picked leads.
+  const [sels,setSels]=useState([]);const sel=sels[sels.length-1]||null;const setSel=id=>setSels(id?[id]:[]);const [drawer,setDrawer]=useState(null);const [pop,setPop]=useState(null);
   const [tab,setTab]=useState('pieces');const [pq,setPq]=useState('');const [pf,setPf]=useState('all');
   const [share,setShare]=useState(false);const [traySheet,setTraySheet]=useState(false);const [composeOpen,setComposeOpen]=useState(false);const [idea,setIdea]=useState(null);
   const [dragL,setDragL]=useState(null);const [overL,setOverL]=useState(null);
-  const [zoom,setZoom]=useState(1);const [fitW,setFitW]=useState(480);const [guides,setGuides]=useState(null);const [box,setBox]=useState(null);
+  const [polyEdit,setPolyEdit]=useState(false);const [zoom,setZoom]=useState(1);const [fitW,setFitW]=useState(480);const [guides,setGuides]=useState(null);const [box,setBox]=useState(null);
   const [saved,setSaved]=useState('Saved');
   const hist=useRef({past:[],future:[]});const [steps,setSteps]=useState(0);const docRef=useRef(doc);docRef.current=doc;
   const canvasRef=useRef();const stageRef=useRef();const wrapRef=useRef();const bgRef=useRef();const dirty=useRef(false);
@@ -1845,8 +1896,13 @@ function Studio({ctx}){
   const redo=()=>{const h=hist.current;if(!h.future.length)return;h.past.push(docRef.current);dirty.current=true;setDoc(h.future.pop());setSteps(s=>s+1)};
   const setTitle=t=>{dirty.current=true;setDoc(d=>({...d,title:t.slice(0,TITLE_MAX)}))};
   const setBg=b=>commitDoc({...docRef.current,bg:b});
-  const S=els.find(e=>e.id===sel);
+  const S=sels.length===1?els.find(e=>e.id===sel):null;const multi=sels.length>1;
+  useEffect(()=>setPop(null),[sels.join()]);
   const patch=(id,o)=>commit(els.map(e=>e.id===id?{...e,...o}:e));
+  const patchMany=(ids,f)=>commit(els.map(e=>ids.includes(e.id)?{...e,...f(e)}:e));
+  const groupOf=id=>{const e=els.find(x=>x.id===id);return e?.g?els.filter(x=>x.g===e.g).map(x=>x.id):[id]};
+  const pick=(id,shift)=>{const g=groupOf(id);if(shift){setSels(s=>s.includes(id)?s.filter(x=>!g.includes(x)):[...s.filter(x=>!g.includes(x)),...g.filter(x=>x!==id),id]);return}
+    if(!(sels.includes(id)&&sels.length>1))setSels([...g.filter(x=>x!==id),id])};
   const live=(id,o)=>setDoc(d=>({...d,els:d.els.map(e=>e.id===id?{...e,...o}:e)}));
   // Autosave every change to the account (or this device when signed out).
   useEffect(()=>{store('collage',doc.id);if(!dirty.current)return;setSaved('Saving…');const t=setTimeout(()=>{ctx.saveCollage(docRef.current,true);setSaved('Saved')},600);return()=>clearTimeout(t)},[doc]);
@@ -1865,54 +1921,82 @@ function Studio({ctx}){
   const zoomRef=useRef(zoom);zoomRef.current=zoom;
   const drag=useRef(null);
   const boxOf=n=>{const c=canvasRef.current;return {x:n.offsetLeft/c.offsetWidth*100,y:n.offsetTop/c.offsetHeight*100,w:n.offsetWidth/c.offsetWidth*100,h:n.offsetHeight/c.offsetHeight*100}};
-  const onDown=(e,el,kind='move')=>{e.stopPropagation();setSel(el.id);setPop(null);if(el.locked||e.button>0)return;
+  const onDown=(e,el,kind='move')=>{e.stopPropagation();setPop(null);if(e.shiftKey&&kind==='move'){pick(el.id,true);return}pick(el.id,false);if(el.locked||e.button>0)return;
+    const ids=kind==='move'?(sels.includes(el.id)&&sels.length>1?sels:groupOf(el.id)):[el.id];
     const r=canvasRef.current.getBoundingClientRect();const node=e.currentTarget.closest('.el');const nr=node.getBoundingClientRect();
-    const others=[...canvasRef.current.querySelectorAll('.el')].filter(n=>n!==node).map(boxOf);const me=boxOf(node);
-    const d={kind,id:el.id,sx:e.clientX,sy:e.clientY,o:{...el},me,r,cx:nr.left+nr.width/2,cy:nr.top+nr.height/2,snap:docRef.current,moved:false};
+    const others=[...canvasRef.current.querySelectorAll('.el')].filter(n=>!ids.includes(n.dataset.id)).map(boxOf);const me=boxOf(node);
+    const orig=Object.fromEntries(docRef.current.els.filter(x=>ids.includes(x.id)&&!x.locked).map(x=>[x.id,[x.x,x.y]]));
+    const d={kind,id:el.id,ids,orig,sx:e.clientX,sy:e.clientY,o:{...el},me,r,cx:nr.left+nr.width/2,cy:nr.top+nr.height/2,snap:docRef.current,moved:false};
     d.move=ev=>{const dx=(ev.clientX-d.sx)/d.r.width*100,dy=(ev.clientY-d.sy)/d.r.height*100;if(!d.moved&&Math.hypot(ev.clientX-d.sx,ev.clientY-d.sy)<3)return;d.moved=true;
-      if(d.kind==='move'){let x=d.o.x+dx,y=d.o.y+dy;if(!ev.altKey){const s=snapBox({x,y,w:d.me.w,h:d.me.h},others);x=s.x;y=s.y;setGuides(s.gx.length||s.gy.length||s.gap?s:null)}else setGuides(null);live(d.id,{x,y});return}
-      if(d.kind==='rs'){if(d.o.kind==='text')live(d.id,{size:Math.max(2,d.o.size*(1+dx/40))});else live(d.id,{w:Math.max(5,d.o.w+dx)});return}
+      if(d.kind==='move'){let x=d.me.x+dx,y=d.me.y+dy;if(!ev.altKey){const s=snapBox({x,y,w:d.me.w,h:d.me.h},others);x=s.x;y=s.y;setGuides(s.gx.length||s.gy.length||s.gap?s:null)}else setGuides(null);
+        const ddx=x-d.me.x,ddy=y-d.me.y;setDoc(dd=>({...dd,els:dd.els.map(q=>d.orig[q.id]?{...q,x:d.orig[q.id][0]+ddx,y:d.orig[q.id][1]+ddy}:q)}));return}
+      if(d.kind==='rs'){if(d.o.kind==='text')live(d.id,{size:Math.max(2,d.o.size*(1+dx/40))});else if(!lockW(d.o,docRef.current.bg))live(d.id,{w:Math.max(5,d.o.w+dx)});return}
       if(d.kind==='rot'){const a=Math.atan2(ev.clientY-d.cy,ev.clientX-d.cx)*180/Math.PI+90;live(d.id,{rot:ev.altKey?Math.round(a):Math.round(a/15)*15})}};
     d.up=()=>{removeEventListener('pointermove',d.move);setGuides(null);if(d.moved)record(d.snap);drag.current=null};
     d.cancel=()=>{removeEventListener('pointermove',d.move);setGuides(null);setDoc(d.snap);drag.current=null};
     drag.current=d;addEventListener('pointermove',d.move);addEventListener('pointerup',d.up,{once:true})};
   // Keep the selection bar beside the selected item as it moves, zooms or scrolls.
-  useLayoutEffect(()=>{const n=sel&&canvasRef.current?.querySelector(`[data-id="${sel}"]`);const w=wrapRef.current;if(!n||!w){setBox(null);return}
-    const a=n.getBoundingClientRect(),b=w.getBoundingClientRect();const nb={l:a.left-b.left,t:a.top-b.top,w:a.width,h:a.height,W:b.width};
+  useLayoutEffect(()=>{const ns=sels.map(id=>canvasRef.current?.querySelector(`[data-id="${id}"]`)).filter(Boolean);const w=wrapRef.current;if(!ns.length||!w){setBox(null);return}
+    const rs=ns.map(n=>n.getBoundingClientRect());const a={left:Math.min(...rs.map(r=>r.left)),top:Math.min(...rs.map(r=>r.top))};a.width=Math.max(...rs.map(r=>r.right))-a.left;a.height=Math.max(...rs.map(r=>r.bottom))-a.top;
+    const b=w.getBoundingClientRect();const nb={l:a.left-b.left,t:a.top-b.top,w:a.width,h:a.height,W:b.width};
     setBox(o=>o&&o.l===nb.l&&o.t===nb.t&&o.w===nb.w&&o.h===nb.h&&o.W===nb.W?o:nb)});
   const [,bump]=useState(0);useEffect(()=>{const st=stageRef.current;if(!st)return;const f=()=>bump(n=>n+1);st.addEventListener('scroll',f);addEventListener('resize',f);return()=>{st.removeEventListener('scroll',f);removeEventListener('resize',f)}},[]);
   const centreOf=()=>({x:50,y:42});
   const addEl=n=>{commit([...els,n]);setSel(n.id)};
-  const addProduct=(pid,at)=>{const n=mkImg(pid,els.filter(e=>e.kind==='img').length,mode);n.w=Math.min(n.w,38);const c=at||centreOf();n.x=Math.max(0,Math.min(100-n.w,c.x-n.w/2));n.y=Math.max(0,Math.min(92,c.y-n.w*.4));if(!at)n.rot=0;addEl(n)};
+  const addProduct=(pid,at)=>{const n=mkImg(pid,els.filter(e=>e.kind==='img').length,mode,SLOTS,mode==='room'?'room':'cutout');n.w=Math.min(n.w,38);const c=at||centreOf();n.x=Math.max(0,Math.min(100-n.w,c.x-n.w/2));n.y=Math.max(0,Math.min(92,c.y-n.w*.4));if(!at)n.rot=0;addEl(n)};
   const dropOnCanvas=e=>{e.preventDefault();const pid=+e.dataTransfer.getData('text/pid');if(!pid||!has(pid))return;const r=canvasRef.current.getBoundingClientRect();addProduct(pid,{x:(e.clientX-r.left)/r.width*100,y:(e.clientY-r.top)/r.height*100})};
   const layers=[...els].map((e,i)=>({e,i})).reverse();
   const arrange=(id,to)=>{const a=[...els];const i=a.findIndex(e=>e.id===id);const [m]=a.splice(i,1);const j=to==='front'?a.length:to==='back'?0:Math.max(0,Math.min(a.length,i+(to==='fwd'?1:-1)));a.splice(j,0,m);commit(a)};
   const dropLayer=(fromId,toId)=>{if(!fromId||fromId===toId)return;const a=[...els];const f=a.findIndex(e=>e.id===fromId);const [m]=a.splice(f,1);const t=a.findIndex(e=>e.id===toId);a.splice(t+1,0,m);commit(a)};
-  const dup=()=>{if(!S)return;const n={...S,id:uid(),x:S.x+4,y:S.y+4};addEl(n)};
-  const del=()=>{if(!S)return;commit(els.filter(x=>x.id!==S.id));setSel(null)};
+  const dup=()=>{if(!sels.length)return;const gs={};const copies=els.filter(e=>sels.includes(e.id)).map(e=>({...e,id:uid(),x:e.x+4,y:e.y+4,g:e.g?(gs[e.g]||=uid()):undefined}));commit([...els,...copies]);setSels(copies.map(c=>c.id))};
+  const del=()=>{if(!sels.length)return;commit(els.filter(x=>!sels.includes(x.id)));setSels([])};
+  const group=()=>{const g=uid();patchMany(sels,()=>({g}))};const ungroup=()=>patchMany(sels,()=>({g:undefined}));
+  const grouped=multi&&els.filter(e=>sels.includes(e.id)).every((e,_,a)=>e.g&&e.g===a[0].g);
+  // Align and distribute measure each item's laid-out box, so text and rotated pieces line up as they look.
+  const boxesOf=ids=>ids.map(id=>{const n=canvasRef.current?.querySelector(`[data-id="${id}"]`);return n?{id,...boxOf(n)}:null}).filter(Boolean);
+  const align=k=>{const bs=boxesOf(sels);if(bs.length<2)return;const L=Math.min(...bs.map(b=>b.x)),T=Math.min(...bs.map(b=>b.y)),Rr=Math.max(...bs.map(b=>b.x+b.w)),B=Math.max(...bs.map(b=>b.y+b.h));
+    const at=Object.fromEntries(bs.map(b=>[b.id,k==='left'?{x:L}:k==='centre'?{x:(L+Rr)/2-b.w/2}:k==='right'?{x:Rr-b.w}:k==='top'?{y:T}:k==='middle'?{y:(T+B)/2-b.h/2}:{y:B-b.h}]));
+    commit(els.map(e=>at[e.id]&&!e.locked?{...e,...at[e.id]}:e))};
+  const distribute=axis=>{const bs=boxesOf(sels);if(bs.length<3)return;const X=axis==='x';bs.sort((a,b)=>X?a.x-b.x:a.y-b.y);const first=bs[0],last=bs[bs.length-1];
+    const span=X?last.x+last.w-first.x:last.y+last.h-first.y;const sum=bs.reduce((s,b)=>s+(X?b.w:b.h),0);const gap=(span-sum)/(bs.length-1);let p=X?first.x:first.y;const at={};
+    bs.forEach(b=>{at[b.id]=X?{x:p}:{y:p};p+=(X?b.w:b.h)+gap});commit(els.map(e=>at[e.id]&&!e.locked?{...e,...at[e.id]}:e))};
+  // Switch a piece's look, keeping its centre where it was.
+  const restyle=(e,st)=>{const k=pageOf(docRef.current.page);const ratio=k[2]/k[3];const n={...e,style:st,shadow:st==='room'?'floor':e.shadow==='floor'?'soft':e.shadow};if(st!=='framed')n.rot=0;
+    const w0=wOf(e,bg),w1=wOf(n,bg);n.x=e.x+(w0-w1)/2;n.y=e.y+(w0*ratio/elAR(e)-w1*ratio/elAR(n))/2;return n};
   useEffect(()=>{const k=e=>{const tag=document.activeElement?.tagName;if(['INPUT','TEXTAREA','SELECT'].includes(tag))return;
     if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo();return}
     if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='d'){e.preventDefault();dup();return}
-    if(e.key==='Escape'){if(pop)setPop(null);else if(sel)setSel(null);else setDrawer(null);return}
+    if(e.key==='Escape'){if(pop)setPop(null);else if(sels.length)setSels([]);else setDrawer(null);return}
+    if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='a'){e.preventDefault();setSels(els.filter(x=>!x.hidden).map(x=>x.id));return}
+    if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='g'){e.preventDefault();if(e.shiftKey)ungroup();else if(multi)group();return}
     if(e.key==='0'&&!e.metaKey&&!e.ctrlKey){zoomTo(1);return}
     if((e.key==='+'||e.key==='=')&&!e.metaKey&&!e.ctrlKey){zoomTo(zoomRef.current*1.25);return}
     if(e.key==='-'&&!e.metaKey&&!e.ctrlKey){zoomTo(zoomRef.current/1.25);return}
-    if(!S)return;
+    if(!sels.length)return;
     if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();del();return}
-    const st=e.shiftKey?2:.5;const mv={ArrowLeft:[-st,0],ArrowRight:[st,0],ArrowUp:[0,-st],ArrowDown:[0,st]}[e.key];if(mv&&!S.locked){e.preventDefault();patch(S.id,{x:S.x+mv[0],y:S.y+mv[1]})}};
+    const st=e.shiftKey?2:.5;const mv={ArrowLeft:[-st,0],ArrowRight:[st,0],ArrowUp:[0,-st],ArrowDown:[0,st]}[e.key];if(mv){e.preventDefault();commit(els.map(x=>sels.includes(x.id)&&!x.locked?{...x,x:x.x+mv[0],y:x.y+mv[1]}:x))}};
     addEventListener('keydown',k);return()=>removeEventListener('keydown',k)});
   const pieces=els.filter(e=>e.kind==='img'&&!e.hidden).map(e=>byId(e.pid));
   const total=pieces.reduce((s,p)=>s+pr(p,ctx.mode),0);
   const rows=pieceRows(els.filter(e=>e.kind==='img').map(e=>[e.pid,e.hidden]));
   const openNew=(next,msg)=>{const prev=docRef.current;hist.current={past:[],future:[]};setSteps(0);dirty.current=true;setDoc({id:uid(),page:prev.page,mode:prev.mode,bg:prev.bg,...next});setSel(null);ctx.toast(msg,{label:'Back to '+prev.title,fn:()=>{dirty.current=false;setDoc(prev)}})};
-  const onView=k=>{if(k==='3d'){ctx.setRoomSeed(pieces.map(p=>p.id));ctx.go('room');return}commitDoc({...doc,mode:k,els:els.map(x=>x.kind==='img'?{...x,room:k==='room',border:k==='room'?false:x.border}:x)})};
+  // Room view puts every piece on the room photo at true scale; Collage brings room pieces back as cutouts.
+  const onView=k=>{if(k==='3d'){ctx.setRoomSeed(pieces.map(p=>p.id));ctx.go('room');return}
+    commitDoc({...doc,mode:k,els:els.map(x=>x.kind!=='img'?x:k==='room'?(styleOf(x)==='room'?x:restyle(x,'room')):(styleOf(x)==='room'?restyle(x,'cutout'):x))});
+    if(k==='room'&&!bg.img){setDrawer('bg');ctx.toast('Add a photo of your space to see the pieces in it')}};
   const pickRail=k=>{setPop(null);if(k==='compose'){setComposeOpen(true);return}setDrawer(d=>d===k?null:k)};
+  const W0=BW,H0=boardH(page);
+  const dragPoint=(e,i)=>{e.stopPropagation();e.preventDefault();const r=canvasRef.current.getBoundingClientRect();const snap=docRef.current;const pts=[...(snap.poly||POLY0)];
+    const mv=ev=>{pts[i]=[Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width)),Math.max(0,Math.min(1,(ev.clientY-r.top)/r.height))];setDoc(d=>({...d,shape:'poly',poly:[...pts]}))};
+    const up=()=>{removeEventListener('pointermove',mv);record(snap)};addEventListener('pointermove',mv);addEventListener('pointerup',up,{once:true})};
+  const addPoint=()=>{const p=[...(doc.poly||POLY0)];let best=0,bl=0;p.forEach((a,i)=>{const b=p[(i+1)%p.length];const l=Math.hypot((b[0]-a[0])*W0,(b[1]-a[1])*H0);if(l>bl){bl=l;best=i}});const a=p[best],b=p[(best+1)%p.length];p.splice(best+1,0,[(a[0]+b[0])/2,(a[1]+b[1])/2]);commitDoc({...doc,shape:'poly',poly:p})};
   const MATS={...MAT,wood:'Wood'};const types=[...new Set(PRODUCTS.map(p=>p.type))];const mats=[...new Set(PRODUCTS.map(p=>p.mat))];
   const filters=[['all','All'],...types.map(t=>['t:'+t,TYPE[t]||t[0].toUpperCase()+t.slice(1)+'s']),...mats.map(m=>['m:'+m,MATS[m]||m])];
   const prods=PRODUCTS.filter(p=>(pf==='all'||pf==='t:'+p.type||pf==='m:'+p.mat)&&(p.name+' '+p.line+' '+p.mat+' '+p.type).toLowerCase().includes(pq.toLowerCase()));
-  const kindName=S?(S.kind==='img'?'piece':S.kind==='inspo'?'image':S.kind):'';
-  const selItems=!S?[]:[
-    ...(S.kind==='img'||S.kind==='inspo'?[['style','Style'],['shape','Shape'],['tone','Tone']]:[]),
+  const kindName=multi?`${sels.length} items`:S?(S.kind==='img'?'piece':S.kind==='inspo'?'image':S.kind):'';
+  const framedSel=S&&(S.kind==='inspo'||(S.kind==='img'&&styleOf(S)==='framed'));
+  const selItems=multi?[['align','Align'],...(sels.length>2?[['distribute','Distribute']]:[])]:!S?[]:[
+    ...(S.kind==='img'?[['style','Style']]:[]),...(framedSel?[['shape','Shape'],['crop','Crop']]:[]),...(S.kind==='img'||S.kind==='inspo'?[['tone','Tone']]:[]),
     ...(S.kind==='text'?[['text','Text'],['font','Type'],['color','Colour']]:[]),
     ...(S.kind==='swatch'?[['color','Colour']]:[]),
     ['arrange','Arrange']];
@@ -1928,7 +2012,7 @@ function Studio({ctx}){
           <button className="pop-item" data-close onClick=${()=>openNew({title:'New collage',els:[],mode:'collage',bg:{color:'#EFE6D8',grid:true}},'New collage started')}>${I('plus',{width:16})} New collage</button></div>
       <//>
     <//>
-    <${SxRail} items=${[['add','Add','plus'],['layers','Layers','layers'],['bg','Background','frame'],['compose','Compose','wand']]} open=${drawer} onPick=${pickRail}/>
+    <${SxRail} items=${[['add','Add','plus'],['layers','Layers','layers'],['board','Board','board'],['bg','Background','img'],['compose','Compose','wand']]} open=${drawer} onPick=${pickRail}/>
     ${drawer==='add'&&html`<${SxDrawer} title="Add" onClose=${()=>setDrawer(null)}>
       <div className="row" style=${{gap:6}}>
         <button className="btn btn-line btn-sm" onClick=${()=>addEl(mkText('Add a title',10,10,7))}>${I('text',{width:15})} Text</button>
@@ -1942,58 +2026,89 @@ function Studio({ctx}){
       ${tab==='inspo'&&html`<${React.Fragment}><p className="sx-note">Inspo carries no price or link and never counts in the total. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Library</button></p>
         ${ctx.inspo.length?html`<div className="sx-grid">${ctx.inspo.map(x=>html`<button key=${x.id} className="sx-card" onClick=${()=>addEl({...mkInspo(x),x:26,y:20,w:44,rot:0})} title=${'Add '+x.title}><span className="sx-card-i photo"><img src=${x.src} alt="" loading="lazy"/></span><b>${x.title}</b></button>`)}</div>`
           :html`<p className="sx-note">No inspo yet. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Upload inspiration</button></p>`}<//>`}
-      ${tab==='boards'&&html`<${React.Fragment}><p className="sx-note">Adds to the canvas; never replaces it.</p>${ctx.boards.map(b=>html`<div key=${b.id} className="sx-board"><div className="row" style=${{justifyContent:'space-between'}}><b>${b.title}</b><button className="lnk" disabled=${!b.pins.length} onClick=${()=>{commit([...els,...b.pins.slice(0,6).map((x,i)=>mkImg(x.pid,i+els.length,mode))]);ctx.toast(`${Math.min(6,b.pins.length)} pieces added`)}}>Add all</button></div>
+      ${tab==='boards'&&html`<${React.Fragment}><p className="sx-note">Adds to the canvas; never replaces it.</p>${ctx.boards.map(b=>html`<div key=${b.id} className="sx-board"><div className="row" style=${{justifyContent:'space-between'}}><b>${b.title}</b><button className="lnk" disabled=${!b.pins.length} onClick=${()=>{commit([...els,...b.pins.slice(0,6).map((x,i)=>mkImg(x.pid,i+els.length,mode,SLOTS,mode==='room'?'room':'cutout'))]);ctx.toast(`${Math.min(6,b.pins.length)} pieces added`)}}>Add all</button></div>
         <div className="sx-grid three">${b.pins.map(x=>html`<button key=${x.pid} className="sx-card" onClick=${()=>addProduct(x.pid)} title=${'Add '+byId(x.pid).name}><span className="sx-card-i"><img src=${cut(x.pid)} alt="" loading="lazy"/></span></button>`)}</div></div>`)}<//>`}
       ${tab==='ideas'&&html`${COMMUNITY.length?html`<div className="sx-grid">${COMMUNITY.map(b=>html`<button key=${b.id} className="sx-card" onClick=${()=>setIdea(b)}><span className="sx-card-i photo" style=${{backgroundImage:`url(${byId(b.items[0]).img})`,backgroundSize:'cover'}}></span><b>${b.title}</b><span>${b.by}</span></button>`)}</div>`
         :html`<p className="sx-note">Community boards appear here as members share them. Compose a board of your own from the wand in the rail.</p>`}`}
     <//>`}
     ${drawer==='layers'&&html`<${SxDrawer} title="Layers" onClose=${()=>setDrawer(null)}>
-      <p className="sx-note">Top of the list is in front. Drag to reorder.</p>
-      <div className="sx-layers">${layers.map(({e})=>html`<div key=${e.id} className=${'layer sx-layer'+(sel===e.id?' on':'')+(overL===e.id?' drop':'')} draggable="true" onDragStart=${()=>setDragL(e.id)} onDragOver=${ev=>{ev.preventDefault();setOverL(e.id)}} onDragLeave=${()=>setOverL(null)} onDrop=${()=>{dropLayer(dragL,e.id);setOverL(null)}} onClick=${()=>setSel(e.id)}>
+      <p className="sx-note">Top of the list is in front. Drag to reorder; Shift-click to select several.</p>
+      <div className="sx-layers">${layers.map(({e})=>html`<div key=${e.id} className=${'layer sx-layer'+(sels.includes(e.id)?' on':'')+(overL===e.id?' drop':'')} draggable="true" onDragStart=${()=>setDragL(e.id)} onDragOver=${ev=>{ev.preventDefault();setOverL(e.id)}} onDragLeave=${()=>setOverL(null)} onDrop=${()=>{dropLayer(dragL,e.id);setOverL(null)}} onClick=${ev=>pick(e.id,ev.shiftKey)}>
         <span className="th" style=${e.kind==='img'?{backgroundImage:`url(${cut(e.pid)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat'}:e.kind==='inspo'?{backgroundImage:`url(${e.src})`}:e.kind==='swatch'?{background:e.color}:{}}>${e.kind==='text'?'T':''}</span>
-        <span style=${{opacity:e.hidden?.45:1}}>${nameOf(e)}</span>
+        <span style=${{opacity:e.hidden?.45:1}}>${nameOf(e)}${e.g&&html` <small className="sx-gtag">Group</small>`}</span>
         <button className=${'ib'+(e.hidden?' keep':'')} aria-label=${e.hidden?'Show layer':'Hide layer'} onClick=${ev=>{ev.stopPropagation();patch(e.id,{hidden:!e.hidden})}}>${I(e.hidden?'eyeoff':'eye')}</button>
         <button className=${'ib'+(e.locked?' keep':'')} aria-label=${e.locked?'Unlock layer':'Lock layer'} onClick=${ev=>{ev.stopPropagation();patch(e.id,{locked:!e.locked})}}>${I(e.locked?'lock':'unlock')}</button>
         <span className="sx-grip" aria-hidden="true">⋮⋮</span>
       </div>`)}</div>
       ${!els.length&&html`<p className="sx-note">The board is empty. Add a piece from the rail.</p>`}
     <//>`}
+    ${drawer==='board'&&html`<${SxDrawer} title="Board" onClose=${()=>{setDrawer(null);setPolyEdit(false)}}>
+      <span className="sx-lbl">Shape</span>
+      <div className="sx-shapes">${BOARD_SHAPES.map(([k,l])=>html`<button key=${k} className=${(doc.shape||'rect')===k?'on':''} aria-pressed=${(doc.shape||'rect')===k} onClick=${()=>{commitDoc({...doc,shape:k,poly:k==='poly'?(doc.poly||POLY0):doc.poly});setPolyEdit(k==='poly')}}>
+        <svg viewBox="0 0 80 100" aria-hidden="true"><path d=${boardPath(k,80,100,doc.poly)}/></svg><span>${l}</span></button>`)}</div>
+      ${doc.shape==='poly'&&html`<div className="sx-col" style=${{gap:8}}><span className="sx-note">Drag the points on the board to shape it.</span>
+        <div className="row" style=${{gap:6}}><button className="btn btn-line btn-sm" onClick=${()=>setPolyEdit(!polyEdit)}>${polyEdit?'Done shaping':'Edit points'}</button><button className="btn btn-line btn-sm" onClick=${addPoint}>Add a point</button><button className="lnk" onClick=${()=>commitDoc({...doc,poly:POLY0})}>Reset</button></div></div>`}
+      <span className="sx-lbl">Edge</span>
+      <div className="sx-chips">${EDGES.map(([k,l])=>html`<button key=${k} className=${'chip'+((doc.edge||'none')===k?' on':'')} onClick=${()=>commitDoc({...doc,edge:k})}>${l}</button>`)}</div>
+      ${doc.edge==='thick'&&html`<div className="swatches">${EDGE_COLORS.map(c=>html`<button key=${c} style=${{background:c}} className=${(doc.edgeColor||'#FBF8F2')===c?'on':''} aria-label=${'Border colour '+c} onClick=${()=>commitDoc({...doc,edgeColor:c})}></button>`)}</div>`}
+      <p className="sx-note">The shape and edge are saved with the collage and used by every export. Page size is in the ⋯ menu.</p>
+    <//>`}
     ${drawer==='bg'&&html`<${SxDrawer} title="Background" onClose=${()=>setDrawer(null)}>
       <div className="swatches">${BGS.map(([n,c])=>html`<button key=${c} title=${n} aria-label=${n+' background'} className=${bg.color===c&&!bg.img?'on':''} style=${{background:c}} onClick=${()=>setBg({color:c,grid:bg.grid})}></button>`)}</div>
       <button className="toggle" disabled=${!!bg.img} onClick=${()=>setBg({...bg,grid:!bg.grid})}><span>Dot grid</span><span className=${'sw'+(bg.grid&&!bg.img?' on':'')}></span></button>
       <button className="btn btn-line btn-sm" style=${{justifySelf:'start'}} onClick=${()=>bgRef.current.click()}>${I('upload',{width:15})} Use a photo of my space</button>
-      <input ref=${bgRef} type="file" accept="image/*" hidden onChange=${e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{commitDoc({...docRef.current,bg:{img:r.result},mode:'room',els:docRef.current.els.map(x=>x.kind==='img'?{...x,room:true,border:false,rot:0,shape:'rect'}:x)})};r.readAsDataURL(f);e.target.value=''}}/>
-      ${bg.img&&html`<button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>setBg({color:'#EFE6D8',grid:true})}>Remove photo</button>`}
+      <input ref=${bgRef} type="file" accept="image/*" hidden onChange=${e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{const d=docRef.current;commitDoc({...d,bg:{img:r.result,widthM:d.bg.widthM},mode:'room',els:d.els.map(x=>x.kind==='img'&&styleOf(x)!=='room'?restyle(x,'room'):x)})};r.readAsDataURL(f);e.target.value=''}}/>
+      ${bg.img&&html`<${React.Fragment}><label className="sx-col" style=${{gap:4}}><span className="sx-lbl">How wide is the wall in this photo?</span>
+          <span className="row" style=${{gap:8}}><input className="field num" style=${{height:38,width:110}} type="number" min="0.5" max="40" step="0.1" placeholder="e.g. 4.2" value=${bg.widthM||''} onChange=${e=>setBg({...bg,widthM:+e.target.value||undefined})} aria-label="Photo width in metres"/><span className="sx-note">metres</span></span>
+          <span className="sx-note">${bg.widthM?'Pieces in the room view are drawn at their real width.':'Give the width and pieces in the room view are drawn at true scale.'}</span></label>
+        <button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>setBg({color:'#EFE6D8',grid:true})}>Remove photo</button><//>`}
       ${ctx.inspo.length>0&&html`<${React.Fragment}><span className="sx-lbl">From your inspo</span><div className="sx-grid three">${ctx.inspo.slice(0,9).map(x=>html`<button key=${x.id} className="sx-card" title=${'Use '+x.title} onClick=${()=>setBg({img:x.src})}><span className="sx-card-i photo"><img src=${x.src} alt=""/></span></button>`)}</div><//>`}
     <//>`}
 
     <section className=${'sx-stagewrap'+(S?' has-sel':'')} ref=${wrapRef}>
-      <div className="sx-stage" ref=${stageRef} onPointerDown=${()=>{setSel(null);setPop(null)}}>
-        <div className=${'canvas sx-canvas'+(bg.grid&&!bg.img?' grid':'')} ref=${canvasRef} style=${{...bgStyle(bg),width:fitW*zoom,aspectRatio:`${P[2]}/${P[3]}`}} onDragOver=${e=>e.preventDefault()} onDrop=${dropOnCanvas}>
-          ${els.map((e,i)=>e.hidden?null:html`<div key=${e.id} data-id=${e.id} className=${'el'+(sel===e.id?' sel':'')} style=${{...elStyle(e,i),cursor:e.locked?'default':'move'}} onPointerDown=${ev=>onDown(ev,e)} onDoubleClick=${()=>{if(e.kind==='text')setPop('text')}}>
+      <div className="sx-stage" ref=${stageRef} onPointerDown=${()=>{setSels([]);setPop(null)}}>
+        <div className=${'sx-board edge-'+(doc.edge||'none')} style=${{width:fitW*zoom,aspectRatio:`${P[2]}/${P[3]}`}}>
+        <div className=${'canvas sx-canvas'+(bg.grid&&!bg.img?' grid':'')} ref=${canvasRef} style=${{...bgStyle(bg),...maskOf(doc.shape,W0,H0,doc.poly)}} onDragOver=${e=>e.preventDefault()} onDrop=${dropOnCanvas}>
+          ${els.map((e,i)=>e.hidden?null:html`<div key=${e.id} data-id=${e.id} className=${'el'+(sels.includes(e.id)?' sel':'')+(blends(e)?' blend':'')} style=${{...elStyle(e,i,bg),cursor:e.locked?'default':'move'}} onPointerDown=${ev=>onDown(ev,e)} onDoubleClick=${()=>{if(e.kind==='text')setPop('text')}}>
             <${ElView} e=${e}/>
-            ${sel===e.id&&!e.locked&&html`<${React.Fragment}><span className="h h-rs" onPointerDown=${ev=>onDown(ev,e,'rs')}></span><span className="h h-rot" onPointerDown=${ev=>onDown(ev,e,'rot')}></span><//>`}
+            ${S&&sel===e.id&&!e.locked&&html`<${React.Fragment}>${!lockW(e,bg)&&html`<span className="h h-rs" onPointerDown=${ev=>onDown(ev,e,'rs')}></span>`}<span className="h h-rot" onPointerDown=${ev=>onDown(ev,e,'rot')}></span><//>`}
           </div>`)}
           ${guides&&html`<${React.Fragment}>${guides.gx.map(x=>html`<i key=${'x'+x} className="sx-guide v" style=${{left:x+'%'}}></i>`)}${guides.gy.map(y=>html`<i key=${'y'+y} className="sx-guide h" style=${{top:y+'%'}}></i>`)}
             ${guides.gap&&(guides.gap.kind==='x'?[[guides.gap.a,guides.gap.b],[guides.gap.c,guides.gap.d]].map(([a,b],k)=>html`<i key=${'g'+k} className="sx-gap h" style=${{left:a+'%',width:(b-a)+'%',top:guides.gap.at+'%'}}></i>`)
               :[[guides.gap.a,guides.gap.b],[guides.gap.c,guides.gap.d]].map(([a,b],k)=>html`<i key=${'g'+k} className="sx-gap v" style=${{top:a+'%',height:(b-a)+'%',left:guides.gap.at+'%'}}></i>`))}<//>`}
         </div>
+        <${BoardEdge} doc=${doc}/>
+        ${polyEdit&&doc.shape==='poly'&&html`<svg className="sx-poly" viewBox=${`0 0 ${W0} ${H0}`} preserveAspectRatio="none" aria-hidden="true"><path d=${boardPath('poly',W0,H0,doc.poly)}/></svg>
+          ${(doc.poly||POLY0).map(([x,y],i)=>html`<button key=${i} className="sx-pt" style=${{left:x*100+'%',top:y*100+'%'}} aria-label=${'Corner point '+(i+1)} onPointerDown=${e=>dragPoint(e,i)} onDoubleClick=${()=>{const p=doc.poly||POLY0;if(p.length>3)commitDoc({...doc,poly:p.filter((_,k)=>k!==i)})}}></button>`)}`}
+        </div>
       </div>
-      ${S&&barStyle&&html`<div className="sx-selbar" style=${barStyle} onPointerDown=${e=>e.stopPropagation()} role="toolbar" aria-label=${'Edit '+kindName}>
+      ${(S||multi)&&barStyle&&html`<div className="sx-selbar" style=${barStyle} onPointerDown=${e=>e.stopPropagation()} role="toolbar" aria-label=${'Edit '+kindName}>
         ${selItems.map(([k,l])=>html`<button key=${k} className=${pop===k?'on':''} aria-expanded=${pop===k} onClick=${()=>setPop(pop===k?null:k)}>${l}</button>`)}
+        ${multi&&html`<button onClick=${grouped?ungroup:group} title=${grouped?'Ungroup (Ctrl+Shift+G)':'Group (Ctrl+G)'}>${grouped?'Ungroup':'Group'}</button>`}
         <button onClick=${dup} aria-label="Duplicate" title="Duplicate (Ctrl+D)">${I('copy',{width:16})}</button>
         <button onClick=${del} aria-label="Delete" title="Delete">${I('trash',{width:16})}</button>
-        ${pop&&html`<div className="sx-selpop">
-          ${pop==='style'&&html`<${React.Fragment}><button className="toggle" onClick=${()=>patch(S.id,{border:!S.border})}><span>White border</span><span className=${'sw'+(S.border?' on':'')}></span></button>
+        ${pop&&(S||['align','distribute'].includes(pop))&&html`<div className="sx-selpop">
+          ${pop==='align'&&html`<div className="sx-col">${[['left','Left edges'],['centre','Centres'],['right','Right edges'],['top','Tops'],['middle','Middles'],['bottom','Bottoms']].map(([k,l])=>html`<button key=${k} className="pop-item" onClick=${()=>align(k)}>Align ${l.toLowerCase()}</button>`)}</div>`}
+          ${pop==='distribute'&&html`<div className="sx-col"><button className="pop-item" onClick=${()=>distribute('x')}>Space evenly across</button><button className="pop-item" onClick=${()=>distribute('y')}>Space evenly down</button></div>`}
+          ${pop==='style'&&S?.kind==='img'&&html`<${React.Fragment}>
+            <div className="sx-looks" role="radiogroup" aria-label="Look">${LOOKS.map(([k,l,hint])=>{const off=k==='3d'||(k==='room'&&!bg.img);const on=styleOf(S)===k;
+              return html`<button key=${k} role="radio" aria-checked=${on} className=${on?'on':''} disabled=${off} onClick=${()=>!on&&commit(els.map(x=>x.id===S.id?restyle(x,k):x))}><b>${l}</b><span>${k==='3d'?'Model coming soon':k==='room'&&!bg.img?'Add a room photo in Background':hint}</span></button>`})}</div>
+            ${styleOf(S)!=='framed'?html`<${React.Fragment}><span className="sx-lbl">Shadow</span><div className="seg">${[['none','None'],['soft','Soft'],['floor','Floor']].map(([k,l])=>html`<button key=${k} className=${(S.shadow||'soft')===k?'on':''} onClick=${()=>patch(S.id,{shadow:k})}>${l}</button>`)}</div>
+              <button className="toggle" onClick=${()=>patch(S.id,{flip:!S.flip})}><span>Flip</span><span className=${'sw'+(S.flip?' on':'')}></span></button>
+              ${!hasCutout(S.pid)&&html`<span className="sx-note">This piece has no studio cutout yet, so its photo blends onto the board.</span>`}<//>`
+            :html`<${React.Fragment}><span className="sx-lbl">Border</span><div className="seg">${[['none','None'],['white','White'],['hairline','Hairline']].map(([k,l])=>html`<button key=${k} className=${borderOf(S)===k?'on':''} onClick=${()=>patch(S.id,{border:k})}>${l}</button>`)}</div>
+              <span className="sx-lbl">Tilt</span><div className="seg">${[-4,-2,0,2,4].map(t=>html`<button key=${t} className=${Math.round(S.rot)===t?'on':''} onClick=${()=>patch(S.id,{rot:t})}>${t>0?'+'+t:t}°</button>`)}</div><//>`}
             <button className="toggle" onClick=${()=>patch(S.id,{motion:!S.motion})}><span>Gentle motion</span><span className=${'sw'+(S.motion?' on':'')}></span></button>
-            ${S.kind==='img'&&html`<button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>ctx.openPin(S.pid)}>View ${byId(S.pid).name} details</button>`}<//>`}
+            <button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>ctx.openPin(S.pid)}>View ${byId(S.pid).name} details</button><//>`}
+          ${pop==='crop'&&framedSel&&html`<${React.Fragment}>${[['z','Zoom',1,3,.05,1],['x','Across',0,100,1,50],['y','Up and down',0,100,1,50]].map(([k,l,mn,mx,st,d])=>html`<label key=${k} className="sx-range"><span className="sx-lbl">${l}</span><input type="range" min=${mn} max=${mx} step=${st} value=${(S.crop||{})[k]??d} onPointerDown=${()=>record(docRef.current)} onInput=${e=>live(S.id,{crop:{z:1,x:50,y:50,...S.crop,[k]:+e.target.value}})}/></label>`)}
+            <button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>patch(S.id,{crop:undefined})}>Reset crop</button><//>`}
           ${pop==='shape'&&html`<div className="seg">${SHAPES.map(([k,l])=>html`<button key=${k} className=${S.shape===k?'on':''} onClick=${()=>patch(S.id,{shape:k})}>${l}</button>`)}</div>`}
           ${pop==='tone'&&html`<div className="seg">${['none','warm','mono','dusk'].map(t=>html`<button key=${t} className=${S.tone===t?'on':''} onClick=${()=>patch(S.id,{tone:t})}>${t==='none'?'Original':t[0].toUpperCase()+t.slice(1)}</button>`)}</div>`}
           ${pop==='text'&&html`<textarea className="field" rows="2" aria-label="Text" value=${S.text} onFocus=${()=>record(docRef.current)} onInput=${e=>live(S.id,{text:e.target.value})}></textarea>`}
           ${pop==='font'&&html`<${React.Fragment}><div className="seg">${[['display','Serif'],['sans','Sans'],['mono','Caps']].map(([k,l])=>html`<button key=${k} className=${S.font===k?'on':''} onClick=${()=>patch(S.id,{font:k})}>${l}</button>`)}</div>
             <label className="sx-range"><span className="sx-lbl">Size</span><input type="range" min="2" max="16" step=".2" value=${S.size} onPointerDown=${()=>record(docRef.current)} onInput=${e=>live(S.id,{size:+e.target.value})}/></label><//>`}
           ${pop==='color'&&html`<div className="swatches">${['#2B211A','#FBF8F2','#A65F2C','#6C6948','#AE884C','#B07A4A','#E7DFD0'].map(c=>html`<button key=${c} style=${{background:c}} className=${S.color===c?'on':''} aria-label=${'Colour '+c} onClick=${()=>patch(S.id,{color:c})}></button>`)}</div>`}
-          ${pop==='arrange'&&html`<div className="sx-col">
+          ${pop==='arrange'&&S&&html`<div className="sx-col">
             <button className="pop-item" onClick=${()=>arrange(S.id,'front')}>${I('up',{width:15})} Bring to front</button>
             <button className="pop-item" onClick=${()=>arrange(S.id,'fwd')}>Forward</button>
             <button className="pop-item" onClick=${()=>arrange(S.id,'bwd')}>Backward</button>
@@ -2016,7 +2131,7 @@ function Studio({ctx}){
       <p className="sx-note">By ${idea.by}. Remixing opens a new collage; this one stays as it is.</p>
       <button className="btn btn-cog btn-sm" style=${{justifySelf:'start'}} onClick=${()=>{const t=idea.title;const items=idea.items;setIdea(null);openNew({title:(t+' (remix)').slice(0,TITLE_MAX),els:items.map((id,i)=>mkImg(id,i,'collage')).concat([mkText(t,6,88,4.6)])},'Opened as a new collage')}}>Remix as a new collage</button>
     <//>`}
-    ${share&&html`<${ShareModal} ctx=${ctx} title=${title} ids=${pieces.map(p=>p.id)} onClose=${()=>setShare(false)}/>`}
+    ${share&&html`<${ShareSheet} ctx=${ctx} title=${title} doc=${doc} ids=${pieces.map(p=>p.id)} boardKey=${doc.id} onClose=${()=>setShare(false)}/>`}
   </main>`;
 }
 // Compose: a prompt, then three drafts to choose from. The chosen one opens as a new collage.
@@ -2040,41 +2155,272 @@ const errText=e=>e?.data||String(e?.message||'').replace(/^.*Uncaught Error: /,'
 async function uploadBlob(getUrl,blob){const url=await getUrl();const r=await fetch(url,{method:'POST',headers:{'Content-Type':blob.type||'application/octet-stream'},body:blob});if(!r.ok)throw new Error('The file did not upload. Try again.');return (await r.json()).storageId}
 const dataUrlBlob=async src=>(await fetch(src)).blob();
 
-function ShareModal({ctx,title,ids,onClose}){
-  const [m,setM]=useState('shop');const [links,setLinks]=useState({});const [busy,setBusy]=useState(false);const [err,setErr]=useState('');
-  const share=useMutation(api.holmSync.shareBoard);
-  const pieces=[...new Set(ids)].filter(has);
-  const make=async()=>{if(links[m])return links[m];if(!ctx.me.signedIn){onClose();ctx.signInThen(ctx.route);return null}
-    setBusy(true);setErr('');try{const slug=await share({title,mode:m==='shop'?'shop':'presentation',items:pieces.map(id=>({productId:byId(id).lid}))});const url=location.origin+'/trade#b/'+slug;setLinks(l=>({...l,[m]:url}));return url}catch(e){setErr(errText(e));return null}finally{setBusy(false)}};
-  const copy=async()=>{const u=await make();if(u)copyText(u,ctx.toast)};
-  return html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&onClose()} role="dialog" aria-modal="true" aria-label="Share">
-    <div className="sheet share">
-      <div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:36}}>Share <em style=${{color:'var(--cognac)'}}>${title}</em></h2><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>
+/* ================= EXPORTS: board images, Story templates, PDF ================= */
+// Exports are drawn in the browser from the same collage the canvas shows, at fixed sizes, so a
+// board looks the same wherever it lands. Catalog photos load with CORS; one that can't is left
+// out rather than tainting the canvas.
+const imgCache=new Map();
+function loadImg(src){if(!src)return Promise.resolve(null);if(imgCache.has(src))return imgCache.get(src);
+  const p=new Promise(res=>{const im=new Image();if(!/^data:|^blob:/.test(src))im.crossOrigin='anonymous';im.decoding='async';im.onload=()=>res(im);im.onerror=()=>res(null);im.src=src});imgCache.set(src,p);return p}
+const absUrl=u=>!u||/^(https?:|data:|blob:)/.test(u)?u:new URL(u,location.origin+'/trade/').href;
+const FONTS={display:'Newsreader, Georgia, serif',sans:'"DM Sans", system-ui, sans-serif',mono:'"DM Sans", system-ui, sans-serif'};
+async function fontsReady(){try{await Promise.all(['italic 400 40px Newsreader','400 40px Newsreader','400 20px "DM Sans"','500 20px "DM Sans"'].map(f=>document.fonts.load(f)));await document.fonts.ready}catch(e){}}
+// Frame outlines for framed photos, matching the CSS shapes.
+function framePath(g,shape,w,h){const r=shape==='circle'||shape==='oval'?null:shape==='arch'?w/2:shape==='pill'?Math.min(w,h)/2:shape==='rounded'?Math.min(w,h)*.12:Math.min(w,h)*.012;
+  g.beginPath();if(shape==='circle'||shape==='oval'){g.ellipse(w/2,h/2,w/2,h/2,0,0,Math.PI*2);return}
+  if(shape==='arch'){g.moveTo(0,h);g.lineTo(0,r);g.arc(w/2,r,w/2,Math.PI,0);g.lineTo(w,h-Math.min(w,h)*.03);g.lineTo(w,h);g.closePath();return}
+  g.roundRect(0,0,w,h,r)}
+function drawCover(g,im,w,h,crop){const z=crop?.z||1,px=(crop?.x??50)/100,py=(crop?.y??50)/100;const s=Math.max(w/im.width,h/im.height)*z;const dw=im.width*s,dh=im.height*s;g.drawImage(im,(w-dw)*px,(h-dh)*py,dw,dh)}
+function wrapLines(g,text,max){const out=[];String(text).split('\n').forEach(par=>{let line='';par.split(/(\s+)/).forEach(word=>{const t=line+word;if(g.measureText(t).width>max&&line.trim()){out.push(line.trimEnd());line=word.trimStart()}else line=t});out.push(line)});return out}
+const svgImg=svg=>loadImg('data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg));
+// The board edge, drawn from the same SVG the canvas shows.
+function edgeSvg(doc,W,H){const d=boardPath(doc.shape,BW,boardH(doc.page),doc.poly);const e=doc.edge;const inner=e==='hairline'?`<path d="${d}" fill="none" stroke="#2B211A" stroke-width="2.5"/>`:e==='thick'?`<path d="${d}" fill="none" stroke="${doc.edgeColor||'#FBF8F2'}" stroke-width="44" clip-path="url(#c)"/>`:e==='deckle'?`<g clip-path="url(#c)"><path d="${d}" fill="none" stroke="#FBF8F2" stroke-width="56" filter="url(#f)"/></g>`:'';
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${BW} ${boardH(doc.page)}" preserveAspectRatio="none"><defs><clipPath id="c"><path d="${d}"/></clipPath><filter id="f"><feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="3" seed="3"/><feDisplacementMap in="SourceGraphic" scale="14"/></filter></defs>${inner}</svg>`}
+/**
+ * Draws a collage at width W (height from its page size). Outside a shaped board stays
+ * transparent unless a ground colour is given.
+ */
+async function renderBoard(doc,W,{ground=null}={}){
+  await fontsReady();const P=pageOf(doc.page);const H=Math.round(W*P[3]/P[2]);const k=W/100;
+  const c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d');
+  if(ground){g.fillStyle=ground;g.fillRect(0,0,W,H)}
+  const sx=W/BW,sy=H/boardH(doc.page);const outline=new Path2D(boardPath(doc.shape,BW,boardH(doc.page),doc.poly));
+  g.save();g.scale(sx,sy);g.clip(outline);g.setTransform(1,0,0,1,0,0);
+  const bg=doc.bg||{color:'#EFE6D8'};
+  if(bg.img){const im=await loadImg(absUrl(bg.img));if(im)drawCover(g,im,W,H)}else{g.fillStyle=bg.color||'#EFE6D8';g.fillRect(0,0,W,H);
+    if(bg.grid){const step=W*18/560,r=Math.max(.6,W*.0018);g.fillStyle='rgba(43,33,26,.18)';for(let y=step/2;y<H;y+=step)for(let x=step/2;x<W;x+=step){g.beginPath();g.arc(x,y,r,0,Math.PI*2);g.fill()}}}
+  for(const e of doc.els){if(e.hidden)continue;const x=e.x/100*W,y=e.y/100*H;g.save();
+    if(e.kind==='text'){const size=e.size*k;g.font=`${e.font==='display'?'italic ':''}400 ${size}px ${FONTS[e.font]||FONTS.display}`;g.fillStyle=e.color;g.textBaseline='top';
+      const txt=e.font==='mono'?String(e.text).toUpperCase():e.text;if('letterSpacing' in g)g.letterSpacing=e.font==='mono'?size*.08+'px':-size*.01+'px';
+      const lines=wrapLines(g,txt,88*k);const tw=Math.max(...lines.map(l=>g.measureText(l).width)),th=lines.length*size;
+      g.translate(x+tw/2,y+th/2);g.rotate((e.rot||0)*Math.PI/180);lines.forEach((l,i)=>g.fillText(l,-tw/2,-th/2+i*size));g.restore();continue}
+    if(e.kind==='swatch'){const d=e.w*k;g.translate(x+d/2,y+d/2);g.beginPath();g.arc(0,0,d/2+.6*k,0,Math.PI*2);g.fillStyle='#FFFDF9';g.fill();g.beginPath();g.arc(0,0,d/2,0,Math.PI*2);g.fillStyle=e.color;g.fill();g.restore();continue}
+    const w=wOf(e,bg)*k,h=w/elAR(e);g.translate(x+w/2,y+h/2);g.rotate((e.rot||0)*Math.PI/180);g.translate(-w/2,-h/2);
+    const framed=e.kind==='inspo'||styleOf(e)==='framed';
+    const src=e.kind==='inspo'?e.src:framed?byId(e.pid).img:cut(e.pid);const im=await loadImg(absUrl(src));
+    if(framed){const b=borderOf(e),ring=b==='white'?1.4*k:b==='hairline'?.25*k:0;
+      g.save();g.shadowColor='rgba(0,0,0,.35)';g.shadowBlur=3*k;g.shadowOffsetY=1.4*k;g.translate(-ring,-ring);framePath(g,e.shape,w+2*ring,h+2*ring);g.fillStyle=b==='hairline'?'#2B211A':b==='white'?'#FFFDF9':'#E5D8C4';g.fill();g.restore();
+      framePath(g,e.shape,w,h);g.clip();g.fillStyle='#E5D8C4';g.fillRect(0,0,w,h);if(im){g.filter=toneF[e.tone]||'none';drawCover(g,im,w,h,e.crop)}}
+    else{const sh=e.shadow||(styleOf(e)==='room'?'floor':'soft');const real=hasCutout(e.pid);
+      if(sh==='floor'||(sh==='soft'&&!real)){const gr=g.createRadialGradient(w/2,h*1.0,0,w/2,h*1.0,w*.43);gr.addColorStop(0,'rgba(35,22,12,.32)');gr.addColorStop(1,'rgba(35,22,12,0)');g.save();g.translate(0,h);g.scale(1,.09);g.translate(0,-h);g.fillStyle=gr;g.fillRect(0,h-w*.43,w,w*.86);g.restore()}
+      if(im){if(!real)g.globalCompositeOperation='multiply';if(sh==='soft'&&real){g.shadowColor='rgba(35,22,12,.26)';g.shadowBlur=2*k;g.shadowOffsetY=1.2*k}
+        g.filter=toneF[e.tone]||'none';if(e.flip){g.translate(w,0);g.scale(-1,1)}const s=Math.min(w/im.width,h/im.height);g.drawImage(im,(w-im.width*s)/2,(h-im.height*s)/2,im.width*s,im.height*s)}}
+    g.restore()}
+  g.restore();
+  if(doc.edge&&!['none','shadow'].includes(doc.edge)){const ed=await svgImg(edgeSvg(doc,W,H));if(ed)g.drawImage(ed,0,0,W,H)}
+  return c;
+}
+// A small QR code (qrcode-generator, loaded on demand) drawn on a white tile.
+async function drawQR(g,text,x,y,size){const {default:qrcode}=await import('qrcode-generator');const q=qrcode(0,'M');q.addData(text);q.make();const n=q.getModuleCount(),pad=size*.08,cell=(size-2*pad)/n;
+  g.fillStyle='#FFFFFF';g.beginPath();g.roundRect(x,y,size,size,size*.06);g.fill();g.fillStyle='#2B211A';for(let r=0;r<n;r++)for(let col=0;col<n;col++)if(q.isDark(r,col))g.fillRect(x+pad+col*cell,y+pad+r*cell,Math.ceil(cell),Math.ceil(cell))}
+const canvasBlob=(c,type='image/png',q=.92)=>new Promise((res,rej)=>{try{c.toBlob(b=>b?res(b):rej(new Error('The image could not be made.')),type,q)}catch(e){rej(new Error('One of the photos blocks downloads. Remove it and try again.'))}});
+function saveBlob(blob,name){const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),4000)}
+const fileName=(t,ext)=>(String(t||'board').replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'').toLowerCase()||'board')+'.'+ext;
+// Dimensions from a listing's facts, "Overall dimensions (W × D × H): 92.5 × 39 × 26.4 in".
+function dimsText(p){const m=String(p.facts||'').match(/(\d+(?:\.\d+)?)\s*[×x]\s*(\d+(?:\.\d+)?)(?:\s*[×x]\s*(\d+(?:\.\d+)?))?\s*(in|cm)/i);if(!m)return '';const u=m[4].toLowerCase();return `${m[1]} × ${m[2]}${m[3]?' × '+m[3]:''} ${u}`}
+
+/* ---------- Story, Pin and post templates ---------- */
+// Instagram draws its own controls over a Story's top 250 px and the link sticker over the bottom 340 px.
+const STORY={w:1080,h:1920,top:250,bottom:340};
+const STORY_SINGLE=[['plaster','Plaster'],['espresso','Espresso'],['arch','Arch frame'],['scene','Room scene']];
+const STORY_BOARD=[['bleed','Full bleed'],['card','Framed card'],['grid','Grid of pieces'],['before','Before / after']];
+const GROUNDS=['#EFE6D8','#E1D2BB','#F4EFE6','#6C6948','#9A5A2E','#2B211A'];
+const isDark=hex=>{const n=parseInt(String(hex).slice(1),16);return ((n>>16)*299+((n>>8)&255)*587+(n&255)*114)/1000<128};
+function pillText(g,text,cx,y,{fg,bg,size=34}){g.font=`500 ${size}px ${FONTS.sans}`;const tw=g.measureText(text).width;const w=tw+size*1.8,h=size*2;g.fillStyle=bg;g.beginPath();g.roundRect(cx-w/2,y,w,h,h/2);g.fill();g.fillStyle=fg;g.textAlign='center';g.textBaseline='middle';g.fillText(text,cx,y+h/2);g.textAlign='left'}
+function centred(g,text,cx,y,font,color,max){g.font=font;g.fillStyle=color;g.textAlign='center';g.textBaseline='top';const lines=wrapLines(g,text,max);const lh=parseFloat(font.match(/(\d+)px/)[1])*1.15;lines.slice(0,3).forEach((l,i)=>g.fillText(l,cx,y+i*lh));g.textAlign='left';return y+Math.min(3,lines.length)*lh}
+async function drawCutout(g,pid,cx,bottom,maxW,maxH,shadow=true){const im=await loadImg(absUrl(cut(pid)));if(!im)return;const s=Math.min(maxW/im.width,maxH/im.height);const w=im.width*s,h=im.height*s;
+  if(shadow){const gr=g.createRadialGradient(cx,bottom,0,cx,bottom,w*.45);gr.addColorStop(0,'rgba(35,22,12,.3)');gr.addColorStop(1,'rgba(35,22,12,0)');g.save();g.translate(0,bottom);g.scale(1,.1);g.translate(0,-bottom);g.fillStyle=gr;g.fillRect(cx-w/2,bottom-w*.45,w,w*.9);g.restore()}
+  g.save();if(!hasCutout(pid))g.globalCompositeOperation='multiply';g.drawImage(im,cx-w/2,bottom-h,w,h);g.restore()}
+/**
+ * Draws a Story (1080 × 1920) or a Pin/post image. `t` is the template, `o` the user's choices:
+ * ground colour, caption, prices on or off, the piece for single-product templates.
+ */
+async function renderStory(doc,o){await fontsReady();
+  const size=o.size||STORY;const {w:W,h:H}=size;const top=size.top||0,bot=size.bottom||0;
+  const c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d');
+  const ground=o.ground||'#EFE6D8';const dark=isDark(ground);const ink=dark?'#FBF8F2':'#2B211A',soft=dark?'rgba(251,248,242,.72)':'rgba(43,33,26,.66)';
+  g.fillStyle=ground;g.fillRect(0,0,W,H);const area={y:top,h:H-top-bot};const cx=W/2;
+  if(o.kind==='single'){const p=byId(o.pid);const t=o.t;
+    if(t==='espresso'){g.fillStyle='#2B211A';g.fillRect(0,0,W,H)}
+    const fg=t==='espresso'?'#FBF8F2':ink,sub=t==='espresso'?'rgba(251,248,242,.72)':soft;
+    if(t==='arch'){const aw=W*.78,ah=area.h*.62,ax=cx-aw/2,ay=area.y+area.h*.04;g.fillStyle=dark?'rgba(255,255,255,.08)':'#E1D2BB';g.beginPath();g.moveTo(ax,ay+ah);g.lineTo(ax,ay+aw/2);g.arc(cx,ay+aw/2,aw/2,Math.PI,0);g.lineTo(ax+aw,ay+ah);g.closePath();g.fill();
+      await drawCutout(g,o.pid,cx,ay+ah-ah*.08,aw*.86,ah*.6)}
+    else if(t==='scene'){const fy=area.y+area.h*.56;if(doc?.bg?.img){const im=await loadImg(absUrl(doc.bg.img));if(im){g.save();g.beginPath();g.rect(0,area.y,W,area.h*.66);g.clip();drawCover(g,im,W,area.h*.66);g.restore()}}
+      else{g.fillStyle=dark?'rgba(255,255,255,.06)':'#E6DBC9';g.fillRect(0,area.y,W,fy-area.y);g.fillStyle=dark?'rgba(0,0,0,.18)':'#D9CBB4';g.fillRect(0,fy,W,area.h*.1)}
+      await drawCutout(g,o.pid,cx,fy+area.h*.05,W*.84,area.h*.44)}
+    else await drawCutout(g,o.pid,cx,area.y+area.h*.6,W*.86,area.h*.52);
+    let y=area.y+area.h*.66;y=centred(g,p.name,cx,y,`italic 400 84px ${FONTS.display}`,fg,W*.86);
+    y=centred(g,o.caption||p.line,cx,y+12,`400 34px ${FONTS.sans}`,sub,W*.8);
+    if(o.prices)y=centred(g,fmt(pr(p,'retail')),cx,y+10,`400 40px ${FONTS.display}`,fg,W);
+    pillText(g,'Shop on Louie Mae',cx,Math.min(y+28,area.y+area.h-80),{fg:t==='espresso'?'#2B211A':dark?'#2B211A':'#FBF8F2',bg:t==='espresso'||dark?'#FBF8F2':'#2B211A'});
+    return c}
+  // Whole collage
+  const t=o.t;const ids=o.ids||doc.els.filter(e=>e.kind==='img'&&!e.hidden).map(e=>e.pid);const n=ids.length;
+  const board=o.board||await renderBoard(doc,1080*2);const bw=board.width,bh=board.height;
+  const titleBlock=async y=>{y=centred(g,o.caption||o.title||doc?.title||'',cx,y,`italic 400 72px ${FONTS.display}`,ink,W*.86);y=centred(g,`${n} piece${n===1?'':'s'}${o.prices&&n?' · '+fmt(ids.map(byId).reduce((s,p)=>s+pr(p,'retail'),0)):''}`,cx,y+8,`400 32px ${FONTS.sans}`,soft,W);return y};
+  if(t==='bleed'){const s=Math.min(W/bw,(area.h*.8)/bh);const dw=bw*s,dh=bh*s;const by=area.y+Math.max(0,(area.h-dh-260)/2);g.drawImage(board,cx-dw/2,by,dw,dh);const y=await titleBlock(by+dh+28);pillText(g,'Shop the board',cx,Math.min(y+22,area.y+area.h-76),{fg:dark?'#2B211A':'#FBF8F2',bg:ink});return c}
+  if(t==='card'){const pad=W*.08;const s=Math.min((W-2*pad-48)/bw,(area.h*.7)/bh);const dw=bw*s,dh=bh*s;const cy=area.y+Math.max(20,(area.h-dh-48-290)/2);
+    g.save();g.shadowColor='rgba(30,20,12,.28)';g.shadowBlur=60;g.shadowOffsetY=24;g.fillStyle='#FFFDF9';g.beginPath();g.roundRect(cx-dw/2-24,cy,dw+48,dh+48,18);g.fill();g.restore();g.drawImage(board,cx-dw/2,cy+24,dw,dh);
+    const y=await titleBlock(cy+dh+48+30);pillText(g,'Shop the board',cx,Math.min(y+22,area.y+area.h-76),{fg:dark?'#2B211A':'#FBF8F2',bg:ink});return c}
+  if(t==='grid'){const s=Math.min(W*.74/bw,(area.h*.5)/bh);const dw=bw*s,dh=bh*s;g.drawImage(board,cx-dw/2,area.y,dw,dh);let y=await titleBlock(area.y+dh+20);
+    const show=[...new Set(ids)].slice(0,6),cols=3,cw=(W*.86)/cols,ch=Math.min(200,(area.y+area.h-y-120)/2);let i=0;
+    for(const pid of show){const col=i%cols,row=Math.floor(i/cols);const x0=W*.07+col*cw,y0=y+24+row*(ch+10);g.fillStyle=dark?'rgba(255,255,255,.07)':'#F4EFE6';g.beginPath();g.roundRect(x0+6,y0,cw-12,ch,14);g.fill();await drawCutout(g,pid,x0+cw/2,y0+ch*.74,cw*.8,ch*.62,false);
+      g.font=`400 22px ${FONTS.sans}`;g.fillStyle=soft;g.textAlign='center';g.textBaseline='alphabetic';g.fillText(byId(pid).name+(o.prices?' · '+fmt(pr(byId(pid),'retail')):''),x0+cw/2,y0+ch-14);g.textAlign='left';i++}
+    pillText(g,'Shop the board',cx,area.y+area.h-76,{fg:dark?'#2B211A':'#FBF8F2',bg:ink});return c}
+  if(t==='before'){const half=(area.h-140)/2;const lab=(txt,y)=>{g.font=`500 26px ${FONTS.sans}`;g.fillStyle=dark?'#2B211A':'#FBF8F2';const tw=g.measureText(txt).width;g.fillStyle=ink;g.beginPath();g.roundRect(W*.07,y+16,tw+36,48,24);g.fill();g.fillStyle=dark?'#2B211A':'#FBF8F2';g.textBaseline='middle';g.fillText(txt,W*.07+18,y+40)};
+    const im=doc?.bg?.img?await loadImg(absUrl(doc.bg.img)):null;
+    g.save();g.translate(W*.06,area.y);g.beginPath();g.roundRect(0,0,W*.88,half,18);g.clip();if(im)drawCover(g,im,W*.88,half);else{g.fillStyle=dark?'rgba(255,255,255,.08)':'#E1D2BB';g.fillRect(0,0,W*.88,half)}g.restore();lab('Before',area.y);
+    g.save();g.beginPath();g.roundRect(W*.06,area.y+half+16,W*.88,half,18);g.clip();g.translate(W*.06,area.y+half+16);const s=Math.max(W*.88/bw,half/bh);g.drawImage(board,(W*.88-bw*s)/2,(half-bh*s)/2,bw*s,bh*s);g.restore();lab('After',area.y+half+16);
+    const y=await titleBlock(area.y+2*half+40);pillText(g,'Shop the board',cx,Math.min(y+12,area.y+area.h-70),{fg:dark?'#2B211A':'#FBF8F2',bg:ink});return c}
+  return c;
+}
+
+/* ---------- PDF: the board, then a product sheet with live links ---------- */
+async function boardPdf(doc,{title,board,counts:given,link,pieceLink,prices,mode}){
+  const {PDFDocument,StandardFonts,rgb,PDFName,PDFString}=await import('pdf-lib');
+  const pdf=await PDFDocument.create();pdf.setTitle(title);pdf.setCreator('House of Louie Mae');
+  const serif=await pdf.embedFont(StandardFonts.TimesRomanItalic),sans=await pdf.embedFont(StandardFonts.Helvetica),sansB=await pdf.embedFont(StandardFonts.HelveticaBold);
+  const ink=rgb(.17,.13,.1),mute=rgb(.44,.39,.34),cognac=rgb(.65,.37,.17);
+  const addLink=(page,x,y,w,h,url)=>{if(!url)return;const ref=pdf.context.register(pdf.context.obj({Type:'Annot',Subtype:'Link',Rect:[x,y,x+w,y+h],Border:[0,0,0],A:{Type:'Action',S:'URI',URI:PDFString.of(url)}}));
+    const ann=page.node.lookup(PDFName.of('Annots'));if(ann)ann.push(ref);else page.node.set(PDFName.of('Annots'),pdf.context.obj([ref]))};
+  const toJpg=async(c,q=.88)=>new Uint8Array(await (await canvasBlob(c,'image/jpeg',q)).arrayBuffer());
+  const toPng=async c=>new Uint8Array(await (await canvasBlob(c,'image/png')).arrayBuffer());
+  const LW=612,LH=792,M=48;
+  // Page 1: the board
+  const shaped=!!doc&&doc.shape&&doc.shape!=='rect';const bc=board||await renderBoard(doc,1600);
+  const bimg=shaped?await pdf.embedPng(await toPng(bc)):await pdf.embedJpg(await toJpg(bc,.9));
+  const p1=pdf.addPage([LW,LH]);p1.drawRectangle({x:0,y:0,width:LW,height:LH,color:rgb(.937,.902,.847)});
+  p1.drawText(title,{x:M,y:LH-M-22,size:26,font:serif,color:ink});
+  const avail={w:LW-2*M,h:LH-2*M-70};const s=Math.min(avail.w/bc.width,avail.h/bc.height);const dw=bc.width*s,dh=bc.height*s;const bx=(LW-dw)/2,by=M+30+(avail.h-dh)/2;
+  p1.drawImage(bimg,{x:bx,y:by,width:dw,height:dh});addLink(p1,bx,by,dw,dh,link);
+  if(link){p1.drawText(mode==='shop'?'Shop the board':'View the board',{x:M,y:M,size:11,font:sansB,color:cognac});p1.drawText(link,{x:M+(mode==='shop'?92:96),y:M,size:10,font:sans,color:mute});addLink(p1,M,M-4,LW-2*M,18,link)}
+  // Page 2+: the product sheet
+  const counts=given||{};if(!given)doc.els.forEach(e=>{if(e.kind==='img'&&!e.hidden)counts[e.pid]=(counts[e.pid]||0)+1});
+  const ids=Object.keys(counts).map(Number).filter(has);
+  let page=null,y=0;const row=96;
+  const newPage=()=>{page=pdf.addPage([LW,LH]);page.drawText('The pieces',{x:M,y:LH-M-22,size:24,font:serif,color:ink});if(link){page.drawText(link,{x:M,y:LH-M-42,size:9,font:sans,color:mute});addLink(page,M,LH-M-46,LW-2*M,14,link)}y=LH-M-70};
+  newPage();let total=0;
+  for(const pid of ids){if(y-row<M+40)newPage();const p=byId(pid);const q=counts[pid]||1;
+    const im=await loadImg(absUrl(cut(pid)));
+    if(im){const tc=document.createElement('canvas');const sz=240;tc.width=tc.height=sz;const tg=tc.getContext('2d');tg.fillStyle='#EFE6D8';tg.fillRect(0,0,sz,sz);const sc=Math.min(sz*.86/im.width,sz*.86/im.height);try{tg.drawImage(im,(sz-im.width*sc)/2,(sz-im.height*sc)/2,im.width*sc,im.height*sc);const ji=await pdf.embedJpg(await toJpg(tc,.85));page.drawImage(ji,{x:M,y:y-row+8,width:row-16,height:row-16})}catch(e){}}
+    const tx=M+row+4;page.drawText(p.name,{x:tx,y:y-24,size:15,font:serif,color:ink});page.drawText(p.line.slice(0,70),{x:tx,y:y-42,size:10,font:sans,color:mute});
+    const dims=dimsText(p);if(dims)page.drawText(dims,{x:tx,y:y-57,size:9,font:sans,color:mute});
+    const pl=pieceLink(pid);if(pl){page.drawText('View piece',{x:tx,y:y-74,size:10,font:sansB,color:cognac});addLink(page,tx,y-78,60,14,pl)}
+    if(prices){const amt=pr(p,'retail')*q;total+=amt;const t=`${q>1?q+' × ':''}${fmt(pr(p,'retail'))}`;page.drawText(t,{x:LW-M-sans.widthOfTextAtSize(t,12),y:y-24,size:12,font:sans,color:ink});if(p.oos)page.drawText('Sold out',{x:LW-M-48,y:y-40,size:9,font:sans,color:cognac})}
+    page.drawLine({start:{x:M,y:y-row},end:{x:LW-M,y:y-row},thickness:.5,color:rgb(.85,.82,.78)});y-=row}
+  if(prices&&ids.length){if(y-40<M)newPage();const t=`Total ${fmt(total)} · retail, before delivery and tax`;page.drawText(t,{x:LW-M-sansB.widthOfTextAtSize(t,11),y:y-26,size:11,font:sansB,color:ink})}
+  return new Blob([await pdf.save()],{type:'application/pdf'});
+}
+
+// Share links: one stable link per board and mode, tagged with the route it left through.
+const bundleUrl=(slug,ch)=>`${location.origin}/b/${slug}?c=${ch}`;
+const pieceUrl=(pid,ref,ch)=>`${location.origin}/trade${ref?`?ref=${ref}&ch=${ch}`:''}#p/${pid}`;
+const isPhone=()=>matchMedia('(pointer:coarse)').matches&&innerWidth<900;
+// Uploaded photos stay on the sharer's device; the shared layout keeps everything else.
+const shareableDoc=doc=>doc&&({...doc,bg:doc.bg?.img?.startsWith('data:')?{color:'#EFE6D8',grid:doc.bg.grid}:doc.bg,els:doc.els.filter(e=>!String(e.src||'').startsWith('data:'))});
+const ROUTES=[['image','Download image','PNG at 2×, ready to print or post','download'],['pdf','Download PDF','The board, then a product sheet with live links','board'],['story','Instagram Story','A 1080 × 1920 template, with the link copied for the sticker','img'],['pin','Pin or post','1000 × 1500 for Pinterest, or 1080 × 1350 for a feed','pin'],['link','Copy link','A short link to the shoppable board','link'],['share','Send to a friend','Your phone\'s share sheet, or email on a computer','send']];
+/**
+ * The Share sheet: every way a board leaves the site, each carrying the same bundle link with the
+ * partner's code. `doc` is a collage; the planner passes `image` (its snapshot) and piece ids instead.
+ */
+function ShareSheet({ctx,title,doc,image,ids,boardKey,onClose}){
+  const [m,setM]=useState('shop');const [links,setLinks]=useState({});const [busy,setBusy]=useState('');const [err,setErr]=useState('');const [view,setView]=useState('routes');
+  const [qr,setQr]=useState(false);const [qrFor,setQrFor]=useState(null);
+  const share=useMutation(api.holmSync.shareBoard);const uploadCover=useAction(api.holmSync.uploadCover);
+  const counts={};(ids||[]).forEach(id=>{if(has(id))counts[id]=(counts[id]||0)+1});const pieces=Object.keys(counts).map(Number);
+  const shop=m==='shop';const prices=shop;
+  const boardCanvas=async w=>{if(doc)return renderBoard(doc,w);const im=await loadImg(image);const c=document.createElement('canvas');c.width=w;c.height=Math.round(w*im.height/im.width);c.getContext('2d').drawImage(im,0,0,c.width,c.height);return c};
+  // The link is made once per mode (with the rendered board as its cover) and reused by every route.
+  const ensure=async()=>{if(links[m])return links[m];if(!ctx.me.signedIn){onClose();ctx.toast('Sign in to share a link');ctx.signInThen(ctx.route);return null}
+    let coverId;try{const c=await boardCanvas(1200);const b=await canvasBlob(c,'image/jpeg',.88);coverId=await uploadCover({bytes:await b.arrayBuffer(),type:'image/jpeg'})}catch(e){coverId=undefined}
+    const r=await share({title,mode:shop?'shop':'presentation',items:pieces.map(id=>({productId:byId(id).lid,variantId:byId(id).vid,qty:counts[id]})),boardKey:boardKey||undefined,doc:doc?shareableDoc(doc):undefined,coverId});
+    setLinks(l=>({...l,[m]:r}));return r};
+  const run=async(k,fn)=>{setBusy(k);setErr('');try{await fn()}catch(e){setErr(errText(e))}finally{setBusy('')}};
+  const go=k=>{
+    if(k==='image')return run(k,async()=>{if(!doc&&image){saveBlob(await (await fetch(image)).blob(),fileName(title,'jpg'));return}
+      const c=await renderBoard(doc,2160);if(qr){const l=await ensure();if(!l)return;await drawQR(c.getContext('2d'),bundleUrl(l.slug,'qr'),c.width-c.width*.15,c.height-c.width*.15,c.width*.12)}
+      saveBlob(await canvasBlob(c),fileName(title,'png'));ctx.toast('Image downloaded')});
+    if(k==='pdf')return run(k,async()=>{const l=ctx.me.signedIn?await ensure():null;
+      const blob=await boardPdf(doc,{title,board:doc?null:await boardCanvas(1600),counts,link:l?bundleUrl(l.slug,'pdf'):null,pieceLink:pid=>l||!ctx.me.signedIn?pieceUrl(pid,l?.refCode,'pdf'):null,prices,mode:m});
+      if(blob.size>8e6)ctx.toast('This PDF is large. Fewer uploaded photos make it smaller.');saveBlob(blob,fileName(title,'pdf'));ctx.toast(l?'PDF downloaded, with live links':'PDF downloaded. Sign in to add live links.')});
+    if(k==='link')return run(k,async()=>{const l=await ensure();if(l)copyText(bundleUrl(l.slug,'link'),ctx.toast)});
+    if(k==='share')return run(k,async()=>{const l=await ensure();if(!l)return;const url=bundleUrl(l.slug,'share');
+      if(navigator.share&&isPhone()){try{await navigator.share({title,text:title,url})}catch(e){}}else location.href=`mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(`${title}\n\n${url}`)}`});
+    setView(k)};
+  return html`<div className="scrim sx-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()} role="dialog" aria-modal="true" aria-label="Share">
+    <div className="sx-dialog wide sx-share">
+      <div className="sx-drawer-h">${view!=='routes'?html`<button className="lnk" onClick=${()=>setView('routes')}>${I('back',{width:15})} Share</button>`:html`<b>Share</b>`}<button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>
       <div className="modecards">
-        <button className=${'modecard'+(m==='shop'?' on':'')} onClick=${()=>setM('shop')}><b>Shoppable</b><p>${ctx.me.partner?'Retail prices with your partner link attached. You earn commission on retail orders for 30 days.':'Retail prices, ready to add to a project. Join the partner program to earn on orders from your links.'}</p></button>
-        <button className=${'modecard'+(m==='pres'?' on':'')} onClick=${()=>setM('pres')}><b>Presentation</b><p>No prices. Your client sees the pieces; you order at trade.</p></button>
+        <button className=${'modecard'+(shop?' on':'')} onClick=${()=>setM('shop')}><b>Shoppable</b><p>${ctx.me.partner?'Retail prices with your partner code. You earn commission on retail orders for 30 days.':'Retail prices, ready to add to a project.'}</p></button>
+        <button className=${'modecard'+(!shop?' on':'')} onClick=${()=>setM('pres')}><b>Presentation</b><p>No prices, for client review. You order at trade.</p></button>
       </div>
-      <div className="row" style=${{gap:6}}>${pieces.slice(0,5).map(id=>html`<span key=${id} style=${{flex:1,aspectRatio:1,borderRadius:10,background:`url(${byId(id).img}) center/cover`}}></span>`)}</div>
-      ${links[m]?html`<div className="linkbox"><code>${links[m]}</code><button className="btn btn-ink btn-sm" onClick=${copy}>${I('link',{width:15})} Copy</button></div>`
-      :html`<button className="btn btn-ink" style=${{justifySelf:'start'}} disabled=${busy||!pieces.length} onClick=${copy}>${I('link',{width:15})} ${busy?'Creating link…':ctx.me.signedIn?'Create and copy link':'Sign in to share'}</button>`}
-      ${err&&html`<p className="help" style=${{color:'var(--bad)'}}>${err}</p>`}
-      ${m==='shop'&&ctx.me.partner&&html`<p className="help">Posting on social? Add #ad or "I earn commission" to the caption. FTC rules require it, and it's in the partner terms.</p>`}
+      ${view==='routes'&&html`<${React.Fragment}><div className="sx-routes">${ROUTES.map(([k,l,hint,ic])=>html`<button key=${k} className="sx-route" disabled=${!!busy||!pieces.length&&k!=='image'} onClick=${()=>go(k)}>
+          <span className="sx-route-i">${I(ic,{width:18})}</span><span><b>${busy===k?'One moment…':l}</b><small>${hint}</small></span></button>`)}</div>
+        ${doc&&html`<label className="toggle"><span>Add a QR code to the image's corner</span><input type="checkbox" className="sr" checked=${qr} onChange=${e=>setQr(e.target.checked)}/><span className=${'sw'+(qr?' on':'')}></span></label>`}
+        ${links[m]&&html`<div className="linkbox"><code>${bundleUrl(links[m].slug,'link')}</code><button className="btn btn-ink btn-sm" onClick=${()=>copyText(bundleUrl(links[m].slug,'link'),ctx.toast)}>${I('link',{width:15})} Copy</button></div>`}<//>`}
+      ${(view==='story'||view==='pin')&&html`<${StoryBuilder} ctx=${ctx} doc=${doc} boardCanvas=${doc?null:boardCanvas} pieces=${pieces} title=${title} pin=${view==='pin'} prices=${prices} ensure=${ensure} onQR=${setQrFor} busy=${busy} run=${run}/>`}
+      ${qrFor&&html`<div className="sx-qr"><canvas ref=${c=>{if(c&&c.dataset.u!==qrFor){c.dataset.u=qrFor;c.width=c.height=220;drawQR(c.getContext('2d'),qrFor,0,0,220)}}} width="220" height="220" aria-label="QR code for the board link"></canvas>
+        <p className="sx-note">Scan with your phone to open the board there, then post the image from your camera roll with a Link sticker.</p></div>`}
+      ${err&&html`<p className="sx-note" style=${{color:'var(--bad)'}}>${err}</p>`}
+      ${shop&&ctx.me.partner&&html`<p className="sx-note">Posting on social? Add #ad or "I earn commission" to the caption. FTC rules require it, and it's in the partner terms.</p>`}
+      ${!shop&&html`<p className="sx-note">Presentation links never carry your partner code and never show prices.</p>`}
     </div></div>`;
 }
-// A board someone shared by link.
+// Story and Pin/post templates: flip between looks with the arrows, then share or download.
+function StoryBuilder({ctx,doc,boardCanvas,pieces,title,pin,prices,ensure,onQR,busy,run}){
+  const [kind,setKind]=useState(pin||!pieces.length?'board':'single');const [ti,setTi]=useState(pin?1:0);const [pid,setPid]=useState(pieces[0]);
+  const [ground,setGround]=useState('#EFE6D8');const [caption,setCaption]=useState('');const [showP,setShowP]=useState(prices);const [size,setSize]=useState('pin');const [url,setUrl]=useState(null);
+  const list=kind==='single'?STORY_SINGLE:STORY_BOARD.filter(([k])=>k!=='before'||doc?.bg?.img);const t=list[((ti%list.length)+list.length)%list.length];
+  const SIZES={pin:{w:1000,h:1500},feed:{w:1080,h:1350}};const dims=pin?SIZES[size]:STORY;
+  useEffect(()=>{let live=true;const tm=setTimeout(async()=>{try{const c=await renderStory(doc,{title,kind,t:t[0],pid,ground,caption,prices:prices&&showP,size:dims,board:boardCanvas?await boardCanvas(2160):null,ids:boardCanvas?pieces:null});if(live)setUrl(c.toDataURL('image/jpeg',.8))}catch(e){}},150);return()=>{live=false;clearTimeout(tm)}},[kind,t[0],pid,ground,caption,showP,size,pin]);
+  const out=()=>run('story',async()=>{const c=await renderStory(doc,{title,kind,t:t[0],pid,ground,caption,prices:prices&&showP,size:dims,board:boardCanvas?await boardCanvas(2160):null,ids:boardCanvas?pieces:null});const blob=await canvasBlob(c);
+    const l=await ensure();if(!l)return;const ch=pin?(size==='pin'?'pin':'post'):'story';const link=bundleUrl(l.slug,ch);const file=new File([blob],fileName(title,'png'),{type:'image/png'});
+    if(isPhone()&&navigator.canShare?.({files:[file]})){await copyText(link,()=>{});ctx.toast(pin?'Link copied. Paste it as the post\'s link.':'Link copied. Add a Link sticker and paste.');try{await navigator.share({files:[file],title})}catch(e){}return}
+    saveBlob(blob,file.name);await copyText(link,()=>{});ctx.toast(pin?'Image downloaded and link copied':'Image downloaded and link copied for the Link sticker');if(!pin)onQR(bundleUrl(l.slug,'qr'))});
+  return html`<div className="sx-story">
+    <div className="sx-story-pre">
+      <button className="ib" aria-label="Previous template" onClick=${()=>setTi(i=>i-1)}>${I('back')}</button>
+      <figure>${url?html`<img src=${url} alt=${t[1]+' template preview'} style=${{aspectRatio:`${dims.w}/${dims.h}`}}/>`:html`<span className="sx-story-wait" style=${{aspectRatio:`${dims.w}/${dims.h}`}}></span>`}<figcaption>${t[1]}</figcaption></figure>
+      <button className="ib" aria-label="Next template" onClick=${()=>setTi(i=>i+1)}>${I('arrow')}</button>
+    </div>
+    <div className="sx-story-opts">
+      ${!pin&&html`<div className="seg" role="group" aria-label="Start from"><button className=${kind==='single'?'on':''} disabled=${!pieces.length} onClick=${()=>{setKind('single');setTi(0)}}>Single product</button><button className=${kind==='board'?'on':''} onClick=${()=>{setKind('board');setTi(0)}}>Whole board</button></div>`}
+      ${pin&&html`<div className="seg" role="group" aria-label="Size"><button className=${size==='pin'?'on':''} title="1000 × 1500" onClick=${()=>setSize('pin')}>Pinterest</button><button className=${size==='feed'?'on':''} title="1080 × 1350" onClick=${()=>setSize('feed')}>Feed post</button></div>`}
+      ${kind==='single'&&html`<label className="sx-col" style=${{gap:4}}><span className="sx-lbl">Piece</span><select className="field" style=${{height:38}} value=${pid} onChange=${e=>setPid(+e.target.value)}>${pieces.map(id=>html`<option key=${id} value=${id}>${byId(id).name} · ${byId(id).line}</option>`)}</select></label>`}
+      <span className="sx-lbl">Ground</span><div className="swatches">${GROUNDS.map(c=>html`<button key=${c} style=${{background:c}} className=${ground===c?'on':''} aria-label=${'Ground '+c} onClick=${()=>setGround(c)}></button>`)}</div>
+      <label className="sx-col" style=${{gap:4}}><span className="sx-lbl">Caption</span><input className="field" style=${{height:38}} maxLength="80" placeholder=${kind==='single'?byId(pid)?.line:title} value=${caption} onInput=${e=>setCaption(e.target.value)}/></label>
+      ${prices&&html`<button className="toggle" onClick=${()=>setShowP(!showP)}><span>Show prices</span><span className=${'sw'+(showP?' on':'')}></span></button>`}
+      <button className="btn btn-cog" disabled=${!!busy} onClick=${out}>${busy==='story'?'One moment…':isPhone()?(pin?'Share':'Share to Story'):'Download and copy link'}</button>
+      <p className="sx-note">${pin?'The link goes with the pin, so every save leads back to the board.':isPhone()?'We copy the link first; add a Link sticker in Instagram and paste.':'Instagram posts Stories from phones. We download the image and show a QR code to open the board on your phone.'}</p>
+    </div></div>`;
+}
+// A board someone shared by link: the board on top, then every piece with live prices.
 function SharedBoard({ctx,slug}){
-  const b=useQuery(api.holmSync.sharedBoard,{slug});const record=useMutation(api.holmPartners.recordClick);
-  useEffect(()=>{if(b?.refCode){store('ref',{code:b.refCode,ch:'direct',at:Date.now()});record({refCode:b.refCode,channel:'direct',target:'b/'+slug,visitorId:visitorId()}).catch(()=>{})}},[b?.refCode]);
+  const b=useQuery(api.holmSync.sharedBoard,{slug});const opened=useMutation(api.holmSync.boardOpened);const seen=useRef(false);
+  const channel=new URLSearchParams(location.search).get('c')||'link';
+  useEffect(()=>{if(!b||seen.current)return;seen.current=true;if(b.refCode)store('ref',{code:b.refCode,ch:channel,at:Date.now()});opened({slug,channel,visitorId:visitorId()}).catch(()=>{})},[b]);
   if(b===undefined)return html`<main className="wrap"><p className="help" style=${{padding:'80px 0'}}>Opening the board…</p></main>`;
   if(!b)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h3>This board link isn't complete</h3><p>Ask for the link again.</p><button className="btn btn-line" onClick=${()=>ctx.go('home')}>Visit House of Louie Mae</button></div></main>`;
-  const pieces=b.productIds.map(lid=>PRODUCTS.find(p=>p.lid===lid)).filter(Boolean);const shop=b.mode==='shop';
-  return html`<main className="wrap" style=${{paddingBottom:60}}>
-    <div className="ph-head"><div><h1>${b.title}</h1><p className="mute" style=${{marginTop:8}}>Shared by ${b.by} · ${pieces.length} pieces</p></div>
-      ${shop&&pieces.length>0&&html`<button className="btn btn-ink" onClick=${()=>{pieces.forEach(p=>ctx.addToTray(p.id,1,null,true));ctx.toast(`${pieces.length} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Add all to a project</button>`}</div>
-    <div className="lx-grid" style=${{marginTop:12}}>${pieces.map(p=>html`<article key=${p.id} className="lx-piece in">
-      <button className="lx-stage" onClick=${()=>ctx.openPin(p.id)} aria-label=${'View '+p.name}><span className="lx-cut"><img src=${cut(p.id)} alt="" loading="lazy"/></span><i className="lx-floor"></i></button>
-      <div className="lx-chip glass light"><div className="lx-chip-t"><b>${p.name}</b><span>${p.line}</span></div>${shop&&html`<span className="lx-chip-p num">${fmt(pr(p,ctx.mode))}</span><button className="lx-ic solid" aria-label=${'Add '+p.name+' to a project'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.lx-piece').querySelector('img'))}>${I('plus',{width:16})}</button>`}</div>
-    </article>`)}</div>
+  const shop=b.mode==='shop';const trade=ctx.mode==='trade';
+  const lines=(b.items||b.productIds.map(productId=>({productId,qty:1}))).map(i=>({p:PRODUCTS.find(p=>p.lid===i.productId),qty:i.qty||1})).filter(l=>l.p);
+  const buyable=lines.filter(l=>!l.p.oos);const total=buyable.reduce((s,l)=>s+pr(l.p,ctx.mode)*l.qty,0);
+  const similar=p=>PRODUCTS.find(x=>x.type===p.type&&x.id!==p.id&&!x.oos);
+  const addAll=()=>{buyable.forEach(l=>ctx.addToTray(l.p.id,l.qty,null,true));ctx.toast(`${buyable.reduce((s,l)=>s+l.qty,0)} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})};
+  return html`<main className="wrap bundle" style=${{paddingBottom:60}}>
+    <div className="bundle-head">
+      <div className="bundle-board">${b.coverUrl?html`<img src=${b.coverUrl} alt=${b.title}/>`:b.doc?html`<${BoardPreview} els=${b.doc.els||[]} bg=${b.doc.bg||{color:'#EFE6D8'}} page=${b.doc.page} shape=${b.doc.shape} poly=${b.doc.poly}/>`:null}</div>
+      <div className="bundle-sum"><span className="eyebrow">Shared by ${b.by}</span><h1>${b.title}</h1><p className="mute">${lines.length} piece${lines.length===1?'':'s'}</p>
+        ${shop&&html`<div className="sumrow total"><span>${trade?'Trade':'Retail'} total</span><span className="num">${fmt(total)}</span></div>
+          <button className="btn btn-ink btn-lg" disabled=${!buyable.length} onClick=${addAll}>${I('tray',{width:17})} ${trade?'Add to project':'Add all to cart'}</button>
+          <p className="help">Prices are live. Delivery and tax are confirmed with your quote.</p>`}</div>
+    </div>
+    <div className="bundle-list">${lines.map(({p,qty})=>{const alt=p.oos&&similar(p);return html`<article key=${p.id} className=${'bundle-row'+(p.oos?' oos':'')}>
+      <button className="bundle-th" onClick=${()=>ctx.openPin(p.id)} aria-label=${'View '+p.name}><img src=${cut(p.id)} alt="" loading="lazy"/></button>
+      <div className="bundle-t"><b>${p.name}</b><span>${p.line}</span>${dimsText(p)&&html`<small className="mute">${dimsText(p)}</small>`}
+        ${p.oos&&html`<small className="bundle-oos">Sold out${alt?html` · try <button className="lnk" onClick=${()=>ctx.openPin(alt.id)}>${alt.name}</button>`:''}</small>`}</div>
+      ${shop&&html`<span className="mono">× ${qty}</span><span className="num bundle-p">${fmt(pr(p,ctx.mode)*qty)}</span>
+        <button className="ib" disabled=${p.oos} aria-label=${'Add '+p.name} onClick=${e=>ctx.addToTray(p.id,qty,e.currentTarget.closest('.bundle-row').querySelector('img'))}>${I('plus',{width:16})}</button>`}
+    </article>`})}</div>
   </main>`;
 }
 
@@ -2191,6 +2537,7 @@ function Room({ctx}){
   const [sel,setSel]=useState(null);const [tab,setTab]=useState('pieces');const [snap,setSnap]=useState(true);const [q,setQ]=useState('');const [cat,setCat]=useState('all');
   const [shot,setShot]=useState(null);const [showPrompt,setShowPrompt]=useState(false);
   const [drawer,setDrawer]=useState(null);const [pop,setPop]=useState(null);const [traySheet,setTraySheet]=useState(false);const [tplAsk,setTplAsk]=useState(null);const [lookOpen,setLookOpen]=useState(false);
+  const [shareImg,setShareImg]=useState(null);const [roomKey]=useState(()=>{let k=load('roomKey',null);if(!k){k='room-'+uid();store('roomKey',k)}return k});const [renderBusy,setRenderBusy]=useState(false);const renderUrl=useMutation(api.holmRender.snapshotUploadUrl);const requestRender=useMutation(api.holmRender.request);
   const [title,setTitle]=useState(()=>load('roomTitle','Untitled room'));useEffect(()=>store('roomTitle',title),[title]);
   const [three,threeFailed]=useThree();const [eng,setEng]=useState(0);
   const hist=useRef({past:[],future:[]});const vpRef=useRef(),cvRef=useRef(),labRef=useRef(),E=useRef({}),docRef=useRef(doc);docRef.current=doc;
@@ -2350,7 +2697,7 @@ function Room({ctx}){
   const pickRail=k=>setDrawer(d=>d===k?null:k);
   const selRug=R0,selPiece=S0;
   return html`<main className="sx planner2">
-    <${SxTop} ctx=${ctx} title=${title} setTitle=${t=>setTitle(t.slice(0,TITLE_MAX))} view="3d" onView=${k=>{ctx.setStudioSeed(k==='room'?{view:'room'}:{view:'collage'});ctx.go('studio')}} saved="Saved on this device" onShare=${()=>eng&&setShot(E.current.snapshot())}>
+    <${SxTop} ctx=${ctx} title=${title} setTitle=${t=>setTitle(t.slice(0,TITLE_MAX))} view="3d" onView=${k=>{ctx.setStudioSeed(k==='room'?{view:'room'}:{view:'collage'});ctx.go('studio')}} saved="Saved on this device" onShare=${()=>eng&&setShareImg(E.current.snapshot())}>
       <${SxMenu} ctx=${ctx} hist=${{undo,redo,canUndo:hist.current.past.length>0,canRedo:hist.current.future.length>0,steps:hist.current.past.length}}>
         <div className="sx-pop-sec"><span className="sx-lbl">Placing</span>
           <button className="toggle" onClick=${()=>setSnap(!snap)}><span>Snap to 5 cm and walls</span><span className=${'sw'+(snap?' on':'')}></span></button></div>
@@ -2442,6 +2789,7 @@ function Room({ctx}){
       <${SxPill} ctx=${ctx} count=${doc.items.length} total=${pieces.reduce((s,p)=>s+pr(p,ctx.mode),0)} onOpen=${()=>setTraySheet(true)}/>
     </section>
     ${traySheet&&html`<${SxTray} ctx=${ctx} rows=${plRows} onClose=${()=>setTraySheet(false)}/>`}
+    ${shareImg&&html`<${ShareSheet} ctx=${ctx} title=${title} image=${shareImg} ids=${doc.items.map(i=>i.pid)} boardKey=${roomKey} onClose=${()=>setShareImg(null)}/>`}
     ${tplAsk&&html`<${SxDialog} title="Replace this room?" onClose=${()=>setTplAsk(null)}>
       <p className="sx-note">Starting from <b>${PL_TEMPLATES[tplAsk].label}</b> replaces the room and its ${doc.items.length} piece${doc.items.length===1?'':'s'} with:</p>
       <div className="sx-tplpre"><b>${PL_TEMPLATES[tplAsk].W} × ${PL_TEMPLATES[tplAsk].D} m</b><span>${PL_TEMPLATES[tplAsk].H} m ceiling · ${PL_FLOORS.find(f=>f[0]===PL_TEMPLATES[tplAsk].floor)?.[1]||'Oak'} floor</span>
@@ -2449,12 +2797,12 @@ function Room({ctx}){
       <div className="row" style=${{gap:8,justifyContent:'flex-end'}}><button className="btn btn-line btn-sm" onClick=${()=>setTplAsk(null)}>Keep my room</button>
         <button className="btn btn-cog btn-sm" onClick=${()=>{const k=tplAsk;const t=JSON.parse(JSON.stringify(PL_TEMPLATES[k]));commit(plReflow({...t,tpl:k,items:t.items.map(it=>({...it,uid:uid()})),rugs:[],wallImg:null}));setSel(null);setTplAsk(null);ctx.toast('Room replaced',{label:'Undo',fn:undo})}}>Replace canvas</button></div>
     <//>`}
-    ${shot&&html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&setShot(null)} role="dialog" aria-modal="true" aria-label="Snapshot"><div className="sheet share" style=${{width:'min(1000px,100%)'}}><div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>Snapshot</h2><button className="ib" aria-label="Close" onClick=${()=>setShot(null)}>${I('x')}</button></div><img src=${shot} alt="Snapshot of the room" style=${{borderRadius:12}}/><div className="row" style=${{gap:8,flexWrap:'wrap'}}><a className="btn btn-cog btn-sm" href=${shot} download=${(title||'room').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.jpg'}>${I('download',{width:15})} Download image</a><span className="sx-note">Saved at the size of your screen. Exports at fixed sizes arrive with the Share sheet.</span></div></div></div>`}
+    ${shot&&html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&setShot(null)} role="dialog" aria-modal="true" aria-label="Snapshot"><div className="sheet share" style=${{width:'min(1000px,100%)'}}><div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>Snapshot</h2><button className="ib" aria-label="Close" onClick=${()=>setShot(null)}>${I('x')}</button></div><img src=${shot} alt="Snapshot of the room" style=${{borderRadius:12}}/><div className="row" style=${{gap:8,flexWrap:'wrap'}}><a className="btn btn-cog btn-sm" href=${shot} download=${(title||'room').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.jpg'}>${I('download',{width:15})} Download image</a><button className="btn btn-line btn-sm" onClick=${()=>{setShareImg(shot);setShot(null)}}>${I('share',{width:15})} Share</button></div></div></div>`}
     ${showPrompt&&html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&setShowPrompt(false)} role="dialog" aria-modal="true" aria-label="Render brief"><div className="sheet share" style=${{width:'min(720px,100%)'}}>
       <div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>Render <em style=${{color:'var(--cognac)'}}>brief</em></h2><button className="ib" aria-label="Close" onClick=${()=>setShowPrompt(false)}>${I('x')}</button></div>
       <p className="help" style=${{margin:0}}>Written from your exact layout, materials and light. Use it with a snapshot and the product photos to generate a photoreal render, or send it to the House team to render for you.</p>
       <pre style=${{whiteSpace:'pre-wrap',background:'var(--plaster)',padding:16,borderRadius:12,fontFamily:'var(--mono)',fontSize:12.5,lineHeight:1.6,margin:0,maxHeight:320,overflow:'auto'}}>${prompt}</pre>
-      <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-ink btn-sm" onClick=${()=>copyText(prompt,ctx.toast)}>${I('copy',{width:14})} Copy brief</button><button className="btn btn-line btn-sm" disabled=${!eng} onClick=${()=>{setShowPrompt(false);setShot(E.current.snapshot())}}>${I('cam',{width:14})} Take snapshot</button><button className="btn btn-line btn-sm" onClick=${()=>{ctx.toast('Render request sent to the House team (prototype).');setShowPrompt(false)}}>Request a render from the House</button></div>
+      <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-ink btn-sm" onClick=${()=>copyText(prompt,ctx.toast)}>${I('copy',{width:14})} Copy brief</button><button className="btn btn-line btn-sm" disabled=${!eng} onClick=${()=>{setShowPrompt(false);setShot(E.current.snapshot())}}>${I('cam',{width:14})} Take snapshot</button><button className="btn btn-line btn-sm" disabled=${renderBusy||!eng} onClick=${async()=>{if(!ctx.me.signedIn){setShowPrompt(false);ctx.toast('Sign in to request a render');ctx.signInThen('room');return}setRenderBusy(true);try{let snapshotId;try{snapshotId=await uploadBlob(renderUrl,await dataUrlBlob(E.current.snapshot()))}catch(e){}const S=E.current.S;const ref=await requestRender({title,prompt,snapshotId,camera:S?{view:S.view,orbit:S.cam,walk:S.eye}:undefined,room:{...doc,wallImg:doc.wallImg&&doc.wallImg.startsWith('data:')?null:doc.wallImg}});ctx.toast(`Render request ${ref} sent. The House team will email you.`);setShowPrompt(false)}catch(e){ctx.toast(errText(e))}finally{setRenderBusy(false)}}}>${renderBusy?'Sending…':'Request a render from the House'}</button></div>
     </div></div>`}
   </main>`;
 }
@@ -2514,7 +2862,7 @@ function BoardDetail({ctx}){
       <div>${b.pins.map(x=>{const p=byId(x.pid);return html`<div key=${p.id} className="line" style=${{gridTemplateColumns:'88px minmax(0,1fr) auto'}}><button className="th" style=${{backgroundImage:`url(${p.img})`}} onClick=${()=>ctx.openPin(p.id)} aria-label=${'View '+p.name}></button><div><b>${p.name} <span className="mute" style=${{fontWeight:400}}>${p.line}</span></b><div className="meta">${x.sec||'No section'} · <span className="mono">${p.sku}</span></div></div><div className="row"><span className="mono">${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span><button className="ib" aria-label=${'Add '+p.name+' to tray'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.line').querySelector('.th'))}>${I('plus')}</button></div></div>`})}</div>
       <div className="panel" style=${{alignSelf:'start',display:'grid',gap:12}}><h3>Shop the board</h3><div className="sumrow"><span>${b.pins.length} pieces</span><span>${fmt(b.pins.reduce((s,x)=>s+pr(byId(x.pid),ctx.mode),0))}</span></div><button className="btn btn-ink" onClick=${()=>{b.pins.forEach(x=>ctx.addToTray(x.pid,1,null,true));ctx.toast(`${b.pins.length} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Add all to tray</button><p className="help">Shared in shoppable mode, this tab is what your client sees, with your partner link attached.</p></div>
     </div>`:html`<div className=${org?'wall organize':'wall'}>${pins.map(p=>org?html`<button key=${p.id} className="pin" onClick=${()=>setPicked(picked.includes(p.id)?picked.filter(x=>x!==p.id):[...picked,p.id])} aria-pressed=${picked.includes(p.id)}><div className="pin-img" style=${{outline:picked.includes(p.id)?'3px solid var(--cognac)':'none',outlineOffset:2}}><img src=${p.img} alt=${p.name} style=${{aspectRatio:p.ar,opacity:picked.includes(p.id)?.75:1}}/>${picked.includes(p.id)&&html`<span className="oos" style=${{left:'auto',right:10,top:10,bottom:'auto',background:'var(--cognac)',color:'#fff'}}>Selected</span>`}</div><div className="pin-meta"><b>${p.name}</b></div></button>`:html`<${PinCard} key=${p.id} p=${p} ctx=${ctx}/>`)}</div>`}
-    ${share&&html`<${ShareModal} ctx=${ctx} title=${b.title} ids=${b.pins.map(x=>x.pid)} onClose=${()=>setShare(false)}/>`}
+    ${share&&html`<${ShareSheet} ctx=${ctx} title=${b.title} doc=${pinsDoc(b.title,b.pins.map(x=>x.pid))} ids=${b.pins.map(x=>x.pid)} boardKey=${'pins-'+b.id} onClose=${()=>setShare(false)}/>`}
   </main>`;
 }
 
@@ -2550,9 +2898,10 @@ function TradePass({name,since}){
     </div></div>`;
 }
 // Partner program panel on the "Your quotes" page.
+const CHANNEL_NAMES=[['story','Instagram Story'],['pin','Pinterest'],['post','Social post'],['pdf','PDF'],['link','Link'],['share','Shared from a phone or email'],['qr','QR code']];
 function PartnerPanel({ctx}){
   const ph=useQuery(api.holmPartners.hub,ctx.me.signedIn?{}:'skip');const join=useMutation(api.holmPartners.join);const w9Url=useMutation(api.holmPartners.w9UploadUrl);const submitW9=useMutation(api.holmPartners.submitW9);
-  const [agree,setAgree]=useState(false);const [busy,setBusy]=useState(false);const [ch,setCh]=useState('pinterest');const [target,setTarget]=useState('home');const w9Ref=useRef();
+  const [agree,setAgree]=useState(false);const [busy,setBusy]=useState(false);const [ch,setCh]=useState('link');const bs=useQuery(api.holmPartners.boardStats,ctx.me.signedIn?{}:'skip');const [target,setTarget]=useState('home');const w9Ref=useRef();
   if(!ctx.me.signedIn||ph===undefined)return null;
   if(!ph)return html`<section className="panel" style=${{marginBottom:24,display:'grid',gap:12}}><h3>Partner program</h3>
     <p className="help" style=${{margin:0}}>Share pieces and boards and earn commission on retail orders placed through your links: 10% to start, up to 18% by tier. Trade-priced orders don't earn commission. Referring a business that's verified and places a first order over $500 earns $100 in store credit.</p>
@@ -2568,7 +2917,7 @@ function PartnerPanel({ctx}){
     <div className="g2">
       <div className="panel" style=${{display:'grid',gap:10,alignContent:'start'}}><h3>Your link</h3>
         <div className="g2f" style=${{gap:8}}><select className="field" aria-label="Link to" value=${target} onChange=${e=>setTarget(e.target.value)}><option value="home">House of Louie Mae home</option><option value="discover">Discover</option><optgroup label="Pieces">${PRODUCTS.slice(0,60).map(p=>html`<option key=${p.id} value=${'p:'+p.id}>${p.name} ${p.line}</option>`)}</optgroup></select>
-          <select className="field" aria-label="Channel" value=${ch} onChange=${e=>setCh(e.target.value)}>${[['pinterest','Pinterest'],['instagram','Instagram'],['email','Email'],['website','Website'],['tiktok','TikTok'],['direct','Direct']].map(([k,l])=>html`<option key=${k} value=${k}>${l}</option>`)}</select></div>
+          <select className="field" aria-label="Channel" value=${ch} onChange=${e=>setCh(e.target.value)}>${CHANNEL_NAMES.map(([k,l])=>html`<option key=${k} value=${k}>${l}</option>`)}</select></div>
         <div className="linkbox"><code>${link}</code><button className="btn btn-ink btn-sm" onClick=${()=>copyText(link,ctx.toast)}>Copy</button></div>
         <div className="kv"><span className="mono mute">Code</span><b style=${{fontWeight:500}}>${ph.refCode}</b><span className="mono mute">Window</span><span>30 days from the first click</span><span className="mono mute">Clearing</span><span>30 days after payment</span><span className="mono mute">Tax form</span><span>${ph.w9Status==='approved'?'W-9 approved':ph.w9Status==='pending'?'W-9 in review':html`<button className="lnk" onClick=${()=>w9Ref.current.click()}>Upload your W-9</button>`}</span></div>
         <input ref=${w9Ref} type="file" accept=".pdf,image/*" hidden onChange=${async e=>{const x=e.target.files[0];if(!x)return;try{const id=await uploadBlob(w9Url,x);await submitW9({fileId:id});ctx.toast('W-9 received')}catch(err){ctx.toast(errText(err))}}}/>
@@ -2579,6 +2928,11 @@ function PartnerPanel({ctx}){
         ${ph.payouts.length>0&&html`<h3 style=${{marginTop:10}}>Payouts</h3>${ph.payouts.map((x,i)=>html`<div key=${i} className="sumrow"><span>${new Date(x.paidAt).toLocaleDateString()}<br/><small className="mute">${x.reference}</small></span><span>${money(x.amountCents)}</span></div>`)}`}
       </div>
     </div>
+    ${bs&&bs.length>0&&html`<div className="panel" style=${{display:'grid',gap:10}}><h3>Your shared boards</h3>
+      <div className="pstats" role="table" aria-label="Shared board stats"><div className="pstats-r head" role="row"><span>Board</span><span>Views</span><span>Visits by channel</span><span>Orders</span><span>Commission</span></div>
+        ${bs.map(x=>html`<div key=${x.slug} className="pstats-r" role="row"><span><b>${x.title}</b><small className="mute">${x.mode==='shop'?'Shoppable':'Presentation'} · <button className="lnk" onClick=${()=>copyText(bundleUrl(x.slug,'link'),ctx.toast)}>Copy link</button></small></span>
+          <span className="num">${x.views}</span><span>${Object.keys(x.byChannel).length?Object.entries(x.byChannel).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${(CHANNEL_NAMES.find(c=>c[0]===k)||[k,k])[1]} ${n}`).join(' · '):html`<span className="mute">None yet</span>`}</span>
+          <span className="num">${x.orders}</span><span className="num">${money(x.commissionCents)}</span></div>`)}</div></div>`}
   </section>`;
 }
 function Hub({ctx}){

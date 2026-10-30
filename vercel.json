@@ -17,6 +17,7 @@
     { "source": "/terms", "destination": "/terms.html" },
     { "source": "/trade", "destination": "/trade/index.html" },
     { "source": "/trade/", "destination": "/trade/index.html" },
+    { "source": "/b/:slug", "destination": "/api/board?slug=:slug" },
     {
       "source": "/story",
       "destination": "/api/og?path=story"

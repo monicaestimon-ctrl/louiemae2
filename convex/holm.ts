@@ -510,7 +510,7 @@ export const requestQuote = mutation({
     const attr = trade ? null : await resolveAttribution(ctx, a.refCode, a.visitorId, { userId: me?.userId, email });
     await ctx.db.insert('holmQuoteRequests', {
       userId: me?.userId,
-      ...(attr ? { partnerId: attr.partnerId, refCode: attr.refCode, channel: attr.channel, partnerState: 'awaiting_payment' as const } : {}),
+      ...(attr ? { partnerId: attr.partnerId, refCode: attr.refCode, channel: attr.channel, partnerState: 'awaiting_payment' as const, ...(attr.board ? { board: attr.board } : {}) } : {}),
       commerceProjectId: id,
       projectName: a.projectName || 'Untitled',
       priceMode: trade ? 'trade' : 'retail',
