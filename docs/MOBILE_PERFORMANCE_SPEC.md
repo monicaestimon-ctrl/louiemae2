@@ -89,13 +89,16 @@ Result (local): mobile 99–100 / 100 / 100 / 100 (FCP 1.1 s, LCP 1.5 s), deskto
 Follow-up: phones get the same one-screen hero as desktop (headline, chapter dots, room
 picker), with the room film playing straight through as one continuous video instead of
 following the scroll (`PhoneFilm` in `trade/app.ts`). The phone cut (`trade/phoneCut.mjs`)
-tells a shorter story, about 17 seconds: the blueprint rises into the clay model, then one
+tells a shorter story, about 15 seconds: the blueprint rises into the clay model, then one
 continuous generated shot pushes the camera down into the clay room while its furniture
 and walls take on their colour in place (no dissolve, no empty room, no furniture arriving
 piece by piece), then the film's own furnished room turns to night. The middle shot is
 generated once per room and kept in `assets/phone-transitions/` (see `SOURCES.md` there);
-it starts and ends on the film's own frames, so both joins are seamless. The cut is a 720×960
-crop, about 2.5–4 MB per room, loaded after the page; the
+it starts and ends on the film's own frames, so both joins are seamless. The generated
+shots ease in and out, so the build retimes each one to a constant camera pace (travel
+measured once per clip by `scripts/measure-transition-pace.py` into `pace.json`, frames
+picked from a motion-interpolated copy), then lets it settle. The cut is a 720×960 crop,
+about 2.3–4 MB per room, loaded after the page; the
 headline and ink follow the film's chapters, and at the end it fades back to its opening
 frame and plays again. Where it can't autoplay (Low Power Mode), the opening frame stays
 with a play button.
