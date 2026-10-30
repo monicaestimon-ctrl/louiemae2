@@ -7,7 +7,7 @@ import { requireCjAdminIdentity } from './cjAdminAccess';
 import { listingReady } from './commerceReadiness';
 import { address } from './commerceTables';
 import { clientShow, holmBusinessType } from './holmTables';
-import { publicAssets } from './holmAssets';
+import { assetIndex, publicAssets } from './holmAssets';
 import { checkQuantity, totalLines } from '../lib/commerce';
 import { deliveryCents, freightFor } from '../lib/holmDelivery';
 import { launchPrice, retailDelivery } from '../lib/retailLaunch';
@@ -131,6 +131,7 @@ export const catalog = query({
       .query('commerceListings')
       .withIndex('by_channel_published', (q) => q.eq('channel', 'house').eq('published', true))
       .take(300);
+    const assets = await assetIndex(ctx);
     const out = [];
     for (const listing of listings) {
       const priced = await pricedListing(ctx, listing);
@@ -143,7 +144,7 @@ export const catalog = query({
         category: s.category,
         images: s.images,
         facts: s.facts,
-        assets: await publicAssets(ctx, listing.productId, s.facts),
+        assets: await publicAssets(ctx, assets.get(listing.productId), s.facts),
         inStock: priced.inStock,
         variants: priced.variants.map((x) => ({
           id: x.id,

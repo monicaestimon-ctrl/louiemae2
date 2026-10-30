@@ -18,9 +18,14 @@ export async function assetsFor(ctx: Ctx, productId: Id<'commerceProducts'>) {
     .first();
 }
 
+/** Every product-level asset row in one read, for the catalog. */
+export async function assetIndex(ctx: Ctx) {
+  const rows = await ctx.db.query('holmAssets').take(2000);
+  return new Map(rows.filter((r) => !r.variantId).map((r) => [r.productId, r]));
+}
+
 /** The asset fields a catalog item carries to the site. Manual dimensions win over parsed ones. */
-export async function publicAssets(ctx: Ctx, productId: Id<'commerceProducts'>, facts: string) {
-  const a = await assetsFor(ctx, productId);
+export async function publicAssets(ctx: Ctx, a: Doc<'holmAssets'> | undefined, facts: string) {
   const parsed = parseDims(facts);
   const dims: DimsCm | null = a?.dimsCm ?? parsed;
   return {
