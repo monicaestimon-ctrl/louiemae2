@@ -39,6 +39,7 @@
     "lucide-react": "^0.563.0",
     "ogl": "^1.0.11",
     "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38",
     "qrcode-generator": "^2.0.4",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",

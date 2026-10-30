@@ -8,6 +8,7 @@ import { deliveryCents, DELIVERY_TIERS } from '../lib/holmDelivery';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { phoneCut } from './phoneCut.mjs';
+import { area as polyArea, inside as inPoly, centroid as polyCentre, bounds as polyBounds, setWallLength } from '../lib/holmPlan';
 export const html = htm.bind(React.createElement);
 
 /* ================= data ================= */
@@ -2336,7 +2337,7 @@ const ROUTES=[['image','Download image','PNG at 2×, ready to print or post','do
  * The Share sheet: every way a board leaves the site, each carrying the same bundle link with the
  * partner's code. `doc` is a collage; the planner passes `image` (its snapshot) and piece ids instead.
  */
-function ShareSheet({ctx,title,doc,image,ids,boardKey,onClose}){
+function ShareSheet({ctx,title,doc,image,ids,boardKey,room,units,onClose}){
   const [m,setM]=useState('shop');const [links,setLinks]=useState({});const [busy,setBusy]=useState('');const [err,setErr]=useState('');const [view,setView]=useState('routes');
   const [qr,setQr]=useState(false);const [qrFor,setQrFor]=useState(null);
   const share=useMutation(api.holmSync.shareBoard);const coverUrl=useMutation(api.holmSync.coverUploadUrl);
@@ -2357,6 +2358,7 @@ function ShareSheet({ctx,title,doc,image,ids,boardKey,onClose}){
       const blob=await boardPdf(doc,{title,board:doc?null:await boardCanvas(1600),counts,link:l?bundleUrl(l.slug,'pdf'):null,pieceLink:pid=>l||!ctx.me.signedIn?pieceUrl(pid,l?.refCode,'pdf'):null,prices,mode:m});
       if(blob.size>8e6)ctx.toast('This PDF is large. Fewer uploaded photos make it smaller.');saveBlob(blob,fileName(title,'pdf'));ctx.toast(l?'PDF downloaded, with live links':'PDF downloaded. Sign in to add live links.')});
     if(k==='link')return run(k,async()=>{const l=await ensure();if(l)copyText(bundleUrl(l.slug,'link'),ctx.toast)});
+    if(k==='plan')return run(k,async()=>{const l=ctx.me.signedIn?await ensure():null;saveBlob(await planPdf(room,{title,units,link:l?bundleUrl(l.slug,'pdf'):null}),fileName(title+'-plan','pdf'));ctx.toast(l?'Plan PDF downloaded, with the bundle link':'Plan PDF downloaded. Sign in to add the bundle link.')});
     if(k==='share')return run(k,async()=>{const l=await ensure();if(!l)return;const url=bundleUrl(l.slug,'share');
       if(navigator.share&&isPhone()){try{await navigator.share({title,text:title,url})}catch(e){}}else location.href=`mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(`${title}\n\n${url}`)}`});
     setView(k)};
@@ -2367,7 +2369,7 @@ function ShareSheet({ctx,title,doc,image,ids,boardKey,onClose}){
         <button className=${'modecard'+(shop?' on':'')} onClick=${()=>setM('shop')}><b>Shoppable</b><p>${ctx.me.partner?'Retail prices with your partner code. You earn commission on retail orders for 30 days.':'Retail prices, ready to add to a project.'}</p></button>
         <button className=${'modecard'+(!shop?' on':'')} onClick=${()=>setM('pres')}><b>Presentation</b><p>No prices, for client review. You order at trade.</p></button>
       </div>
-      ${view==='routes'&&html`<${React.Fragment}><div className="sx-routes">${ROUTES.map(([k,l,hint,ic])=>html`<button key=${k} className="sx-route" disabled=${!!busy||!pieces.length&&k!=='image'} onClick=${()=>go(k)}>
+      ${view==='routes'&&html`<${React.Fragment}><div className="sx-routes">${(room?[...ROUTES.slice(0,2),['plan','Plan PDF','The floor plan to scale, every room, piece and seat count','board'],...ROUTES.slice(2)]:ROUTES).map(([k,l,hint,ic])=>html`<button key=${k} className="sx-route" disabled=${!!busy||!pieces.length&&k!=='image'} onClick=${()=>go(k)}>
           <span className="sx-route-i">${I(ic,{width:18})}</span><span><b>${busy===k?'One moment…':l}</b><small>${hint}</small></span></button>`)}</div>
         ${doc&&html`<label className="toggle"><span>Add a QR code to the image's corner</span><input type="checkbox" className="sr" checked=${qr} onChange=${e=>setQr(e.target.checked)}/><span className=${'sw'+(qr?' on':'')}></span></label>`}
         ${links[m]&&html`<div className="linkbox"><code>${bundleUrl(links[m].slug,'link')}</code><button className="btn btn-ink btn-sm" onClick=${()=>copyText(bundleUrl(links[m].slug,'link'),ctx.toast)}>${I('link',{width:15})} Copy</button></div>`}<//>`}
@@ -2517,7 +2519,14 @@ const PL_GAP=.02,PL_SNAP=.12;
 const plClamp=(doc,it,x,z)=>{const [ex,ez]=plExt(it);const lx=doc.W/2-ex,lz=doc.D/2-ez;x=Math.max(-lx,Math.min(lx,x));z=Math.max(-lz,Math.min(lz,z));
   if(lx-Math.abs(x)<PL_SNAP)x=(x<0?-1:1)*lx;if(z<0&&lz+z<PL_SNAP)z=-lz;return [x,z]};
 // Floor pieces are solid: no two footprints may overlap (hanging lights are in the air and skip this).
-const plHit=(doc,it,x,z)=>{if(it.hang)return false;const [ex,ez]=plExt(it);return doc.items.some(o=>{if(o.uid===it.uid||o.hang)return false;const [ox,oz]=plExt(o);return Math.abs(o.x-x)<ex+ox+PL_GAP-1e-6&&Math.abs(o.z-z)<ez+oz+PL_GAP-1e-6})};
+// A drawn floor plan: every corner of a piece's footprint must sit inside one of the plan's rooms,
+// clear of its columns and fixed blocks.
+const outsidePlan=(doc,x,z,ex,ez)=>{if(!doc.zones?.length)return false;const zs=doc.zones.map(zn=>zn.poly);const pts=[[x-ex,z-ez],[x+ex,z-ez],[x+ex,z+ez],[x-ex,z+ez],[x,z]];
+  return !pts.every(p=>zs.some(pl=>inPoly(p,pl)))||(doc.blocks||[]).some(b=>Math.abs(b.x-x)<b.w/2+ex+PL_GAP&&Math.abs(b.z-z)<b.d/2+ez+PL_GAP)};
+const plHit=(doc,it,x,z)=>{if(it.hang)return false;const [ex,ez]=plExt(it);if(outsidePlan(doc,x,z,ex,ez))return true;return doc.items.some(o=>{if(o.uid===it.uid||o.hang)return false;const [ox,oz]=plExt(o);return Math.abs(o.x-x)<ex+ox+PL_GAP-1e-6&&Math.abs(o.z-z)<ez+oz+PL_GAP-1e-6})};
+// Every room as polygons: a drawn plan's rooms, or the rectangle W × D.
+const roomZones=doc=>doc.zones?.length?doc.zones:[{id:'room',name:'Room',poly:[[-doc.W/2,-doc.D/2],[doc.W/2,-doc.D/2],[doc.W/2,doc.D/2],[-doc.W/2,doc.D/2]],floor:doc.floor,wall:doc.wall}];
+const zoneOf=(doc,x,z)=>roomZones(doc).find(zn=>inPoly([x,z],zn.poly))||null;
 // Nearest free, in-bounds spot to (x, z), searched outward in 5 cm rings.
 const plPlace=(doc,it,x,z)=>{const [cx,cz]=plClamp(doc,it,x,z);if(!plHit(doc,it,cx,cz))return [cx,cz];
   for(let r=.05;r<5;r+=.05){const n=Math.max(8,Math.round(r*40));for(let k=0;k<n;k++){const a=k/n*Math.PI*2;const [px,pz]=plClamp(doc,it,x+Math.cos(a)*r,z+Math.sin(a)*r);if(!plHit(doc,it,px,pz))return [px,pz]}}
@@ -2554,7 +2563,7 @@ function Room({ctx}){
   const [sel,setSel]=useState(null);const [tab,setTab]=useState('pieces');const [snap,setSnap]=useState(true);const [q,setQ]=useState('');const [cat,setCat]=useState('all');
   const [shot,setShot]=useState(null);const [showPrompt,setShowPrompt]=useState(false);
   const [drawer,setDrawer]=useState(null);const [pop,setPop]=useState(null);const [traySheet,setTraySheet]=useState(false);const [tplAsk,setTplAsk]=useState(null);const [lookOpen,setLookOpen]=useState(false);
-  const [units,setUnits]=useState(()=>load('units','m'));useEffect(()=>store('units',units),[units]);const [rendering,setRendering]=useState(null);
+  const [planOpen,setPlanOpen]=useState(false);const [units,setUnits]=useState(()=>load('units','m'));useEffect(()=>store('units',units),[units]);const [rendering,setRendering]=useState(null);
   const [shareImg,setShareImg]=useState(null);const [roomKey]=useState(()=>{let k=load('roomKey',null);if(!k){k='room-'+uid();store('roomKey',k)}return k});const [renderBusy,setRenderBusy]=useState(false);const renderUrl=useMutation(api.holmRender.snapshotUploadUrl);const requestRender=useMutation(api.holmRender.request);
   const [title,setTitle]=useState(()=>load('roomTitle','Untitled room'));useEffect(()=>store('roomTitle',title),[title]);
   const [three,threeFailed]=useThree();const [eng,setEng]=useState(0);
@@ -2607,7 +2616,27 @@ function Room({ctx}){
     const S={alive:true,doc:null,items:new Map(),rugs:new Map(),surfaces:[],edges:[],ceil:null,cam:{th:-.62,ph:.98,r:13,tx:0,ty:.6,tz:-.4},vel:{th:0,ph:0},prod:{th:.6,auto:true},eye:{yaw:0,pitch:-.06,x:0,z:1.5},keys:new Set(),plan:{x:0,z:0,zoom:1},view:'orbit',style:'material',tod:.12,sel:null,snap:true,drag:null,dims:[],units:'m',touches:new Map(),last:performance.now()};
     const clear=g=>{while(g.children.length){const o=g.children.pop();o.traverse(c=>{if(c.geometry)c.geometry.dispose()})}};
     const rect=(w,d)=>{const a=w/2,b=d/2;return new T.BufferGeometry().setFromPoints([[-a,-b,a,-b],[a,-b,a,b],[a,b,-a,b],[-a,b,-a,-b]].flatMap(([x1,z1,x2,z2])=>[new T.Vector3(x1,0,z1),new T.Vector3(x2,0,z2)]))};
-    function buildRoom(d){clear(roomG);S.surfaces=[];S.edges=[];const {W,D,H}=d;
+    // A drawn plan: each room gets its own floor and ceiling, every wall follows its edge at true
+    // thickness with its openings, and columns or fixed blocks stand where they were drawn.
+    function buildPlan(d){const {H}=d;const t=d.wallT||.12;S.underlay=null;
+      for(const zn of d.zones){const poly=zn.poly;const cw=polyArea(poly)>0;
+        const shape=new T.Shape(poly.map(([x,z])=>new T.Vector2(x,-z)));
+        const ft=texture(zn.floor||d.floor),tile=FLOOR_TILE[zn.floor||d.floor]||2;const fmap=tex(ft.url,[1/tile,1/tile]);
+        const fm=new T.MeshStandardMaterial({map:fmap,color:new T.Color(zn.floorTint||d.floorTint||'#ffffff'),roughness:/marble|tile|checker/.test(zn.floor||d.floor)?.35:.75});
+        const floor=new T.Mesh(new T.ShapeGeometry(shape),fm);floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;floor.userData.fin=fm;roomG.add(floor);S.surfaces.push(floor);
+        const ceil=new T.Mesh(new T.ShapeGeometry(shape),new T.MeshStandardMaterial({color:'#F3EEE6',roughness:1,side:T.DoubleSide}));ceil.rotation.x=-Math.PI/2;ceil.position.y=H;roomG.add(ceil);(S.ceils||=[]).push(ceil);
+        const lime=texture('lime');
+        poly.forEach((a,i)=>{const b=poly[(i+1)%poly.length];const dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz);if(len<.05)return;const ux=dx/len,uz=dz/len;const nx=cw?uz:-uz,nz=cw?-ux:ux;
+          const ops=d.openings.filter(o=>o.wall===`${zn.id}:${i}`);const g=new T.ExtrudeGeometry(plShape(len+t,H,ops),{depth:t,bevelEnabled:false});
+          const m=new T.MeshStandardMaterial({color:new T.Color(zn.wall||d.wall),roughness:.92});const bm=tex(lime.url,[len/4,H/4]);bm.colorSpace=T.NoColorSpace;m.bumpMap=bm;m.bumpScale=.012;
+          const place=o=>{o.position.set((a[0]+b[0])/2+nx*t,0,(a[1]+b[1])/2+nz*t);o.rotation.y=Math.atan2(-uz,ux)};
+          const w=new T.Mesh(g,m);place(w);w.castShadow=w.receiveShadow=true;w.userData.fin=m;roomG.add(w);S.surfaces.push(w);const e=new T.LineSegments(new T.EdgesGeometry(g,25),edgeM);place(e);roomG.add(e);S.edges.push(e)})}
+      for(const bk of d.blocks||[]){const g=new T.BoxGeometry(bk.w,bk.h||1.05,bk.d);const m=new T.MeshStandardMaterial({color:'#E6DED1',roughness:.85});const mesh=new T.Mesh(g,m);mesh.position.set(bk.x,(bk.h||1.05)/2,bk.z);mesh.rotation.y=(bk.rot||0)*Math.PI/180;mesh.castShadow=mesh.receiveShadow=true;mesh.userData.fin=m;roomG.add(mesh);S.surfaces.push(mesh);
+        const e=new T.LineSegments(new T.EdgesGeometry(g),edgeM);e.position.copy(mesh.position);e.rotation.copy(mesh.rotation);roomG.add(e);S.edges.push(e)}
+      // The plan drawing sits under Plan view at its own opacity, at true scale.
+      const u=d.underlay;if(u?.img){const um=new T.MeshBasicMaterial({map:tex(u.img),transparent:true,opacity:u.opacity??.5,depthWrite:false});const pw=u.w*u.mPerPx,ph=u.h*u.mPerPx;const plane=new T.Mesh(new T.PlaneGeometry(pw,ph),um);plane.rotation.x=-Math.PI/2;plane.position.set(u.ox+pw/2,.02,u.oz+ph/2);plane.renderOrder=2;roomG.add(plane);S.underlay=plane}
+      S.doc=d;applyLook()}
+    function buildRoom(d){clear(roomG);S.surfaces=[];S.edges=[];S.ceils=[];if(d.zones?.length){S.ceil=null;buildPlan(d);return}const {W,D,H}=d;
       const ft=texture(d.floor),tile=FLOOR_TILE[d.floor]||2;const fm=new T.MeshStandardMaterial({map:tex(ft.url,[W/tile,D/tile]),color:new T.Color(d.floorTint||'#ffffff'),roughness:/marble|tile|checker/.test(d.floor)?.35:d.floor==='carpet'?1:.75});{const b=tex(ft.url+'#bump',[W/tile,D/tile]);b.colorSpace=T.NoColorSpace;fm.bumpMap=b;fm.bumpScale=d.floor==='carpet'?.02:.006}
       const floor=new T.Mesh(new T.PlaneGeometry(W,D),fm);floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;floor.userData.fin=fm;roomG.add(floor);S.surfaces.push(floor);
       const lime=texture('lime');
@@ -2642,7 +2671,7 @@ function Room({ctx}){
     function placeItem(v){const it=v.it,d=S.doc;const y=it.hang?d.H-v.hb/2-.05:0;v.baseY=y;v.g.position.set(it.x,y,it.z);v.g.rotation.y=(it.rot||0)*Math.PI/180;v.fp.position.y=it.hang?-y+.012:.012}
     function applyLook(){const st=S.style,plan=S.view==='plan';
       S.surfaces.forEach(m=>{m.material=st==='material'?m.userData.fin:st==='clay'?CLAY:LINE});
-      S.edges.forEach(e=>e.visible=st!=='material'||plan);edgeM.color.set(st==='clay'&&!plan?'#9C8E7E':'#1E1B19');if(S.ceil)S.ceil.visible=S.view==='eye';
+      S.edges.forEach(e=>e.visible=st!=='material'||plan);edgeM.color.set(st==='clay'&&!plan?'#9C8E7E':'#1E1B19');if(S.ceil)S.ceil.visible=S.view==='eye';(S.ceils||[]).forEach(c=>c.visible=S.view==='eye');if(S.underlay)S.underlay.visible=plan;
       for(const [k,v] of S.rugs){const isSel=k===S.sel;v.m.material=plan?PLANRUG:st==='material'?v.m.userData.fin:st==='clay'?CLAY:LINE;v.ol.material=isSel?selM:fpM}
       scene.environment=st==='material'&&!plan?envTex:null;
       for(const [k,v] of S.items){const isSel=k===S.sel;const mat=st==='material'&&!plan;const model=v.modelState==='ready',loading=v.modelState==='loading';
@@ -2703,12 +2732,19 @@ function Room({ctx}){
     const tmp=new T.Vector3();
     function labels(){const el=labRef.current;if(!el)return;const d=S.doc;const u=S.units;const out=[];const proj=(x,y,z)=>{tmp.set(x,y,z).project(S.camObj);return [(tmp.x+1)/2*size.w,(1-tmp.y)/2*size.h,tmp.z<1]};
       const lab=(cls,p,t)=>{if(p[2])out.push(`<span class="pl-lab ${cls}" style="left:${p[0]}px;top:${p[1]}px">${t}</span>`)};
-      if(S.view==='plan'){const t=d.wallT||.12;lab('dim',proj(0,0,-d.D/2-t-.35),fmtLen(d.W,u));lab('dim',proj(0,0,d.D/2+.45),fmtLen(d.W,u));lab('dim',proj(-d.W/2-t-.45,0,0),fmtLen(d.D,u));lab('dim',proj(d.W/2+t+.55,0,0),fmtLen(d.D,u));
+      if(S.view==='plan'&&d.zones?.length){const t=d.wallT||.12;for(const zn of d.zones){const cw=polyArea(zn.poly)>0;zn.poly.forEach((a,i)=>{const b=zn.poly[(i+1)%zn.poly.length];const len=Math.hypot(b[0]-a[0],b[1]-a[1]);if(len<.3)return;const ux=(b[0]-a[0])/len,uz=(b[1]-a[1])/len;const nx=cw?uz:-uz,nz=cw?-ux:ux;lab('dim',proj((a[0]+b[0])/2+nx*(t+.3),0,(a[1]+b[1])/2+nz*(t+.3)),fmtLen(len,u))});
+          const c=polyCentre(zn.poly);const seats=d.items.filter(it=>!it.hang&&inPoly([it.x,it.z],zn.poly)).reduce((s2,it)=>s2+byId(it.pid).seats,0);lab('zone',proj(c[0],0,c[1]),`${zn.name} · ${seats} seat${seats===1?'':'s'}`)}
+        for(const v of S.rugs.values()){const r=v.it;lab('rug'+(r.uid===S.sel?' sel':''),proj(r.x,0,r.z+rugExt(r)[1]-.22),`Rug · ${r.size}`)}
+        for(const v of S.items.values())lab(v.it.uid===S.sel?'sel':'',proj(v.it.x,0,v.it.z),byId(v.it.pid).name)}
+      else if(S.view==='plan'){const t=d.wallT||.12;lab('dim',proj(0,0,-d.D/2-t-.35),fmtLen(d.W,u));lab('dim',proj(0,0,d.D/2+.45),fmtLen(d.W,u));lab('dim',proj(-d.W/2-t-.45,0,0),fmtLen(d.D,u));lab('dim',proj(d.W/2+t+.55,0,0),fmtLen(d.D,u));
         for(const v of S.rugs.values()){const r=v.it;lab('rug'+(r.uid===S.sel?' sel':''),proj(r.x,0,r.z+rugExt(r)[1]-.22),`Rug · ${r.size}`)}
         for(const v of S.items.values())lab(v.it.uid===S.sel?'sel':'',proj(v.it.x,0,v.it.z),byId(v.it.pid).name)}
       const sv=S.sel&&(S.items.get(S.sel)||S.rugs.get(S.sel));const lines=[];
       if(sv&&S.view!=='eye'){const it=sv.it;const isRug=S.rugs.has(S.sel);const [hw,hd]=isRug?rugExt(it):plExt(it);
-        const segs=[[it.x-hw,it.z,-d.W/2,it.z],[it.x+hw,it.z,d.W/2,it.z],[it.x,it.z-hd,it.x,-d.D/2],[it.x,it.z+hd,it.x,d.D/2]];
+        // Distances to the nearest wall in each direction; a drawn plan casts against every wall it has.
+        const hitWall=(x,z,dx,dz)=>{if(!d.zones?.length)return dx?[dx>0?d.W/2:-d.W/2,z]:[x,dz>0?d.D/2:-d.D/2];let best=Infinity;for(const zn of d.zones)zn.poly.forEach((a,i)=>{const b=zn.poly[(i+1)%zn.poly.length];
+          const ex=b[0]-a[0],ez=b[1]-a[1],den=dx*ez-dz*ex;if(Math.abs(den)<1e-9)return;const tt=((a[0]-x)*ez-(a[1]-z)*ex)/den,uu=((a[0]-x)*dz-(a[1]-z)*dx)/den;if(tt>=0&&uu>=0&&uu<=1&&tt<best)best=tt});return best<Infinity?[x+dx*best,z+dz*best]:[x,z]};
+        const segs=[[-1,0],[1,0],[0,-1],[0,1]].map(([dx,dz])=>{const sx=it.x+dx*hw,sz=it.z+dz*hd;const [hx,hz]=hitWall(sx,sz,dx,dz);return [sx,sz,hx,hz]});
         // The nearest other piece, measured edge to edge along whichever axis separates them.
         if(!isRug){let best=null;for(const o of S.items.values()){if(o.it.uid===it.uid||!!o.it.hang!==!!it.hang)continue;const [ow,od]=plExt(o.it);const gx=Math.abs(o.it.x-it.x)-hw-ow,gz=Math.abs(o.it.z-it.z)-hd-od;
           const gap=Math.max(gx,gz);if(gap<=0)continue;if(!best||gap<best.gap){const sx=Math.sign(o.it.x-it.x),sz=Math.sign(o.it.z-it.z);best={gap,seg:gx>=gz?[it.x+sx*hw,it.z,it.x+sx*(hw+gx),it.z]:[it.x,it.z+sz*hd,it.x,it.z+sz*(hd+gz)]}}}
@@ -2754,7 +2790,7 @@ function Room({ctx}){
   },[three]);
   // wire engine callbacks to React
   useEffect(()=>{Object.assign(E.current,{onSelect:id=>setSel(id),onMoved:(id,o)=>patchSel(id,o),onDrop:(pid,x,z)=>addItem(pid,x,z)})});
-  const geoKey=JSON.stringify([doc.W,doc.D,doc.H,doc.wallT,doc.wall,doc.floor,doc.floorTint,doc.openings,doc.wallImg?doc.wallImg.length:0]);
+  const geoKey=JSON.stringify([doc.W,doc.D,doc.H,doc.wallT,doc.wall,doc.floor,doc.floorTint,doc.openings,doc.wallImg?doc.wallImg.length:0,doc.zones,doc.blocks,doc.underlay?{...doc.underlay,img:doc.underlay.img.length}:null]);
   useEffect(()=>{const e=E.current;if(!e.buildRoom)return;e.buildRoom(doc);e.syncItems(doc.items);setTimeout(()=>{if(e.S)e.S.ready=true},50)},[geoKey,eng]);
   useEffect(()=>{const e=E.current;if(e.syncItems)e.syncItems(doc.items)},[doc.items,eng]);
   useEffect(()=>{const e=E.current;if(e.syncRugs)e.syncRugs(doc.rugs||[])},[doc.rugs,eng]);
@@ -2776,7 +2812,10 @@ function Room({ctx}){
   const prompt=`Photorealistic interior photograph of a ${doc.W} × ${doc.D} m room with a ${doc.H} m ceiling. Walls in ${doc.wall} limewash plaster, ${PL_FLOORS.find(f=>f[0]===doc.floor)?.[1].toLowerCase()} floor. Openings: ${doc.openings.map(o=>`${o.t==='arch'?'an arched window':o.t==='door'?'a doorway':'a window'} on the ${o.wall} wall`).join(', ')||'none'}.\n${(doc.rugs||[]).length?`Rugs: ${doc.rugs.map(r=>`a ${rugName(r)} at ${plWord(r,doc)}`).join('; ')}.\n`:''}Furnished with exactly these Louie Mae pieces, matching their product photos: ${doc.items.map(i=>{const p=byId(i.pid);return `${p.name} ${p.line} at ${plWord(i,doc)}`}).join('; ')||'no furniture yet'}.\nLight: ${tod<.35?'soft morning daylight':tod<.7?'warm golden-hour sun':'after dark, lit by warm lamps'} (${todLabel}). Three-quarter view at 1.3 m height, 26 mm lens, straight verticals, editorial interior photography. No people, no text.`;
   const prods=PRODUCTS.filter(p=>(cat==='all'||p.type===cat)&&(p.name+' '+p.line+' '+p.mat).toLowerCase().includes(q.toLowerCase()));
   const setOpening=(i,o)=>commit({...doc,openings:doc.openings.map((x,k)=>k===i?{...x,...o}:x)});
-  const wallLen=w=>w==='back'?doc.W:doc.D;
+  const planWalls=doc.zones?.length?doc.zones.flatMap(z=>z.poly.map((a,i)=>{const b=z.poly[(i+1)%z.poly.length];return [`${z.id}:${i}`,`${z.name} · wall ${i+1}`,Math.hypot(b[0]-a[0],b[1]-a[1])]})):null;
+  const wallLen=w=>planWalls?(planWalls.find(x=>x[0]===w)?.[2]??4):w==='back'?doc.W:doc.D;
+  const applyPlan=r=>{setPlanOpen(false);if(!r){commit(plReflow({...doc,zones:undefined,blocks:undefined,underlay:undefined,openings:doc.openings.filter(o=>['back','left','right'].includes(o.wall))}));ctx.toast('Back to a rectangular room',{label:'Undo',fn:undo});return}
+    const ok=new Set(r.zones.flatMap(z=>z.poly.map((_,i)=>`${z.id}:${i}`)));commit(plReflow({...doc,...r,openings:doc.openings.filter(o=>ok.has(o.wall))}));ctx.toast('Floor plan in place',{label:'Undo',fn:undo})};
   const plRows=pieceRows(doc.items.map(i=>[i.pid,false]));
   const pickRail=k=>setDrawer(d=>d===k?null:k);
   const selRug=R0,selPiece=S0;
@@ -2788,15 +2827,23 @@ function Room({ctx}){
         <div className="sx-pop-sec"><span className="sx-lbl">Units</span><div className="seg" role="group" aria-label="Units">${[['m','Metres'],['ft','Feet and inches']].map(([k,l])=>html`<button key=${k} className=${units===k?'on':''} onClick=${()=>setUnits(k)}>${l}</button>`)}</div></div>
         <div className="sx-pop-sec"><span className="sx-lbl">This room</span>
           <button className="pop-item" data-close disabled=${!eng} onClick=${()=>setShot(E.current.snapshot())}>${I('cam',{width:16})} Snapshot</button>
+          <button className="pop-item" data-close onClick=${async()=>{try{saveBlob(await planPdf(doc,{title,units,link:null}),fileName(title+'-plan','pdf'));ctx.toast('Plan PDF downloaded')}catch(e){ctx.toast(errText(e))}}}>${I('board',{width:16})} Download the plan as a PDF</button>
           <button className="pop-item" data-close disabled=${!eng||!doc.items.length} onClick=${()=>{const img=E.current.snapshot();const ids=doc.items.map(i=>i.pid);const els=ids.slice(0,8).map((pid,i)=>({...mkImg(pid,0,'collage',SLOTS,'cutout'),x:4+i*12,y:84,w:11,rot:0}));ctx.setStudioSeed({collage:{id:uid(),title:(title+' view').slice(0,TITLE_MAX),mode:'collage',page:'landscape',shape:'rect',edge:'shadow',bg:{img},els}});ctx.go('studio')}}>${I('img',{width:16})} Send this view to the Studio</button>
           <button className="pop-item" data-close onClick=${()=>setShowPrompt(true)}>${I('wand',{width:16})} Render brief</button></div>
       <//>
     <//>
     <${SxRail} items=${[['add','Add','plus'],['layers','Layers','layers'],['room','Room','cube']]} open=${drawer} onPick=${pickRail}/>
     ${drawer==='room'&&html`<${SxDrawer} title="Room" onClose=${()=>setDrawer(null)}><div className="pl-sec sx-pl">
-        <label className="lbl" htmlFor="pl-tpl">Start from</label>
-        <select id="pl-tpl" className="field" value=${doc.tpl} onChange=${e=>setTplAsk(e.target.value)}>${Object.entries(PL_TEMPLATES).map(([k,t])=>html`<option key=${k} value=${k}>${t.label}</option>`)}</select>
-        <div className="pl-dims">${[['W','Width',3,30],['D','Depth',3,24],['H','Height',2.4,8]].map(([k,l,mn,mx])=>{const ft=units==='ft',f=ft?3.28084:1;return html`<label key=${k}><span className="mono mute">${l} (${ft?'ft':'m'})</span><input className="field num" type="number" step=${ft?.25:.1} min=${+(mn*f).toFixed(2)} max=${+(mx*f).toFixed(2)} value=${+(doc[k]*f).toFixed(2)} onChange=${e=>{const v=Math.max(mn,Math.min(mx,(+e.target.value||mn*f)/f));commit(plReflow({...doc,[k]:r2(v)}))}}/></label>`})}</div>
+        <div className="pl-plan"><b>${doc.zones?.length?`Floor plan · ${doc.zones.length} room${doc.zones.length===1?'':'s'}`:'Your own floor plan'}</b><span className="help" style=${{margin:0}}>${doc.zones?.length?'Rooms, walls and columns from your plan.':'Upload a plan, set its scale, then trace L-shapes, alcoves and angled walls.'}</span>
+          <button className="btn btn-line btn-sm" onClick=${()=>setPlanOpen(true)}>${doc.zones?.length?'Edit the floor plan':'Draw a floor plan'}</button></div>
+        ${doc.zones?.length>0&&html`<div className="pl-zones">${doc.zones.map(z=>{const its=doc.items.filter(it=>inPoly([it.x,it.z],z.poly));const seats=its.filter(i=>!i.hang).reduce((s2,i)=>s2+byId(i.pid).seats,0);const sub=its.reduce((s2,i)=>s2+pr(byId(i.pid),ctx.mode),0);
+          const setZ=o=>commit({...doc,zones:doc.zones.map(x=>x.id===z.id?{...x,...o}:x)});
+          return html`<div key=${z.id} className="pl-zone"><div className="row" style=${{justifyContent:'space-between'}}><b>${z.name}</b><span className="mono">${its.length} pieces · ${seats} seats · ${fmt(sub)}</span></div>
+            <div className="row" style=${{gap:6}}><select className="field" style=${{height:34}} value=${z.floor||doc.floor} onChange=${e=>setZ({floor:e.target.value})} aria-label=${z.name+' floor'}>${PL_FLOORS.map(([k,l])=>html`<option key=${k} value=${k}>${l}</option>`)}</select>
+              <label className="pl-color" title="Wall colour" style=${{background:z.wall||doc.wall}}><input type="color" value=${z.wall||doc.wall} onChange=${e=>setZ({wall:e.target.value})} aria-label=${z.name+' wall colour'}/></label></div></div>`})}</div>`}
+        ${!doc.zones?.length&&html`<${React.Fragment}><label className="lbl" htmlFor="pl-tpl">Start from</label>
+        <select id="pl-tpl" className="field" value=${doc.tpl} onChange=${e=>setTplAsk(e.target.value)}>${Object.entries(PL_TEMPLATES).map(([k,t])=>html`<option key=${k} value=${k}>${t.label}</option>`)}</select><//>`}
+        <div className="pl-dims">${(doc.zones?.length?[['H','Height',2.4,8]]:[['W','Width',3,30],['D','Depth',3,24],['H','Height',2.4,8]]).map(([k,l,mn,mx])=>{const ft=units==='ft',f=ft?3.28084:1;return html`<label key=${k}><span className="mono mute">${l} (${ft?'ft':'m'})</span><input className="field num" type="number" step=${ft?.25:.1} min=${+(mn*f).toFixed(2)} max=${+(mx*f).toFixed(2)} value=${+(doc[k]*f).toFixed(2)} onChange=${e=>{const v=Math.max(mn,Math.min(mx,(+e.target.value||mn*f)/f));commit(plReflow({...doc,[k]:r2(v)}))}}/></label>`})}</div>
         <label className="sx-col" style=${{gap:4}}><span className="mono mute">Wall thickness (${units==='ft'?'in':'cm'})</span><input className="field num" style=${{height:38}} type="number" min=${units==='ft'?2:5} max=${units==='ft'?24:60} step="1" value=${units==='ft'?Math.round((doc.wallT||.12)/.0254):Math.round((doc.wallT||.12)*100)} onChange=${e=>{const n=+e.target.value;if(!(n>0))return;const m=units==='ft'?n*.0254:n/100;commit({...doc,wallT:Math.max(.05,Math.min(.6,m))})}}/></label>
         <span className="lbl">Walls</span>
         <div className="swatches">${PL_WALLS.map(c=>html`<button key=${c} className=${doc.wall===c&&!doc.wallImg?'on':''} style=${{background:c}} aria-label=${'Wall '+c} onClick=${()=>commit({...doc,wall:c,wallImg:null})}></button>`)}<label className="pl-color" title="Custom colour"><input type="color" value=${doc.wall} onChange=${e=>commit({...doc,wall:e.target.value})} aria-label="Custom wall colour"/></label></div>
@@ -2806,11 +2853,11 @@ function Room({ctx}){
         <div className="pl-floors">${PL_FLOORS.map(([k,l])=>html`<button key=${k} className=${doc.floor===k?'on':''} onClick=${()=>commit({...doc,floor:k})}><i style=${{backgroundImage:`url(${texture(k).url})`}}></i>${l}</button>`)}</div>
         <span className="lbl">Floor colour</span>
         <div className="swatches">${PL_TINTS.map(([c,l])=>html`<button key=${l} title=${l} aria-label=${'Floor colour '+l} className=${(doc.floorTint||'')===c?'on':''} style=${{background:c||'linear-gradient(135deg,#fff 45%,#ccc 55%)'}} onClick=${()=>commit({...doc,floorTint:c})}></button>`)}<label className="pl-color" title="Custom floor colour"><input type="color" value=${doc.floorTint||'#ffffff'} onChange=${e=>commit({...doc,floorTint:e.target.value})} aria-label="Custom floor colour"/></label></div>
-        <span className="lbl">Back wall</span>
-        <div className="pl-floors">${PL_BACK.map(([k,l,f])=>html`<button key=${k} onClick=${()=>commit({...doc,openings:[...doc.openings.filter(o=>o.wall!=='back'),...plFit(doc.W,doc.H,f(doc.W,doc.H)).map(o=>({...o,wall:'back'}))]})}>${l}</button>`)}</div>
-        <div className="row" style=${{justifyContent:'space-between'}}><span className="lbl" style=${{margin:0}}>Openings</span><button className="lnk" onClick=${()=>commit({...doc,openings:[...doc.openings,{wall:'back',t:'win',x:0,w:1.4,h:1.8,y:.8}]})}>+ Add</button></div>
+        ${!doc.zones?.length&&html`<span className="lbl">Back wall</span>`}
+        ${!doc.zones?.length&&html`<div className="pl-floors">${PL_BACK.map(([k,l,f])=>html`<button key=${k} onClick=${()=>commit({...doc,openings:[...doc.openings.filter(o=>o.wall!=='back'),...plFit(doc.W,doc.H,f(doc.W,doc.H)).map(o=>({...o,wall:'back'}))]})}>${l}</button>`)}</div>`}
+        <div className="row" style=${{justifyContent:'space-between'}}><span className="lbl" style=${{margin:0}}>Openings</span><button className="lnk" onClick=${()=>commit({...doc,openings:[...doc.openings,{wall:planWalls?planWalls[0][0]:'back',t:'win',x:0,w:1.4,h:1.8,y:.8}]})}>+ Add</button></div>
         ${doc.openings.map((o,i)=>{const L=wallLen(o.wall);return html`<div key=${i} className="pl-open">
-          <div className="row" style=${{gap:6}}><select className="field" value=${o.wall} onChange=${e=>setOpening(i,{wall:e.target.value,x:0})} aria-label="Wall">${['back','left','right'].map(w=>html`<option key=${w} value=${w}>${w} wall</option>`)}</select>
+          <div className="row" style=${{gap:6}}><select className="field" value=${o.wall} onChange=${e=>setOpening(i,{wall:e.target.value,x:0})} aria-label="Wall">${(planWalls||[['back','back wall'],['left','left wall'],['right','right wall']]).map(([w,l])=>html`<option key=${w} value=${w}>${l}</option>`)}</select>
           <select className="field" value=${o.t} onChange=${e=>{const t=e.target.value;setOpening(i,t==='door'?{t,y:.02,h:2.2,w:1}:t==='arch'?{t,y:.5,h:2.4,w:Math.max(1.4,o.w)}:{t,y:.8,h:1.8})}} aria-label="Type"><option value="win">Window</option><option value="arch">Arch</option><option value="door">Door</option></select>
           <button className="ib" aria-label="Remove opening" onClick=${()=>commit({...doc,openings:doc.openings.filter((_,k)=>k!==i)})}>${I('x',{width:14})}</button></div>
           <label className="pl-range"><span className="mono mute">Position</span><input type="range" min=${-L/2+o.w/2+.1} max=${L/2-o.w/2-.1} step="0.05" value=${o.x} onInput=${e=>setOpening(i,{x:+e.target.value})}/></label>
@@ -2877,7 +2924,8 @@ function Room({ctx}){
       <${SxPill} ctx=${ctx} count=${doc.items.length} total=${pieces.reduce((s,p)=>s+pr(p,ctx.mode),0)} onOpen=${()=>setTraySheet(true)}/>
     </section>
     ${traySheet&&html`<${SxTray} ctx=${ctx} rows=${plRows} onClose=${()=>setTraySheet(false)}/>`}
-    ${shareImg&&html`<${ShareSheet} ctx=${ctx} title=${title} image=${shareImg} ids=${doc.items.map(i=>i.pid)} boardKey=${roomKey} onClose=${()=>setShareImg(null)}/>`}
+    ${shareImg&&html`<${ShareSheet} ctx=${ctx} title=${title} image=${shareImg} ids=${doc.items.map(i=>i.pid)} boardKey=${roomKey} room=${doc} units=${units} onClose=${()=>setShareImg(null)}/>`}
+    ${planOpen&&html`<${FloorPlanEditor} ctx=${ctx} doc=${doc} units=${units} onClose=${()=>setPlanOpen(false)} onApply=${applyPlan}/>`}
     ${tplAsk&&html`<${SxDialog} title="Replace this room?" onClose=${()=>setTplAsk(null)}>
       <p className="sx-note">Starting from <b>${PL_TEMPLATES[tplAsk].label}</b> replaces the room and its ${doc.items.length} piece${doc.items.length===1?'':'s'} with:</p>
       <div className="sx-tplpre"><b>${PL_TEMPLATES[tplAsk].W} × ${PL_TEMPLATES[tplAsk].D} m</b><span>${PL_TEMPLATES[tplAsk].H} m ceiling · ${PL_FLOORS.find(f=>f[0]===PL_TEMPLATES[tplAsk].floor)?.[1]||'Oak'} floor</span>
@@ -2893,6 +2941,129 @@ function Room({ctx}){
       <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-ink btn-sm" onClick=${()=>copyText(prompt,ctx.toast)}>${I('copy',{width:14})} Copy brief</button><button className="btn btn-line btn-sm" disabled=${!eng} onClick=${()=>{setShowPrompt(false);setShot(E.current.snapshot())}}>${I('cam',{width:14})} Take snapshot</button><button className="btn btn-line btn-sm" disabled=${renderBusy||!eng} onClick=${async()=>{if(!ctx.me.signedIn){setShowPrompt(false);ctx.toast('Sign in to request a render');ctx.signInThen('room');return}setRenderBusy(true);try{let snapshotId;try{snapshotId=await uploadBlob(renderUrl,await dataUrlBlob(E.current.snapshot()))}catch(e){}const S=E.current.S;const ref=await requestRender({title,prompt,snapshotId,camera:S?{view:S.view,orbit:S.cam,walk:S.eye}:undefined,room:{...doc,wallImg:doc.wallImg&&doc.wallImg.startsWith('data:')?null:doc.wallImg}});ctx.toast(`Render request ${ref} sent. The House team will email you.`);setShowPrompt(false)}catch(e){ctx.toast(errText(e))}finally{setRenderBusy(false)}}}>${renderBusy?'Sending…':'Request a render from the House'}</button></div>
     </div></div>`}
   </main>`;
+}
+
+/* ================= FLOOR PLANS ================= */
+// Trade partners trace their real plan: upload it, set its scale from one known wall, draw each
+// room (L-shapes, alcoves, angled walls) and the columns or fixed blocks in it, or let an AI pass
+// propose the walls first. Plans are drawn in image pixels and saved in metres.
+const ZONE_NAMES=['Dining room','Bar','Lobby','Lounge','Terrace','Private room'];
+const BLOCKS=[['Column',.4,.4,2.8],['Bar counter',3,.7,1.05],['Host stand',.9,.6,1.1],['Built-in banquette',2.4,.7,.9]];
+// A PDF plan's first page becomes the underlay (pdf.js, loaded on demand).
+async function pdfFirstPage(file){const pdfjs=await import('pdfjs-dist');pdfjs.GlobalWorkerOptions.workerSrc=new URL('pdfjs-dist/build/pdf.worker.min.mjs',import.meta.url).href;
+  const doc=await pdfjs.getDocument({data:await file.arrayBuffer()}).promise;const page=await doc.getPage(1);const v0=page.getViewport({scale:1});const vp=page.getViewport({scale:Math.min(4,2200/Math.max(v0.width,v0.height))});
+  const c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;return c}
+// Underlays are kept at 2000 px on the long side as JPEG, small enough to save with the room.
+async function planImage(file){let c;if(/pdf$/i.test(file.type)||/\.pdf$/i.test(file.name))c=await pdfFirstPage(file);else{const u=URL.createObjectURL(file);const im=await loadImg(u);if(!im)throw new Error('This image could not be opened.');c=document.createElement('canvas');const s=Math.min(1,2000/Math.max(im.width,im.height));c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u)}
+  return {img:c.toDataURL('image/jpeg',.82),w:c.width,h:c.height}}
+const snap90=(a,b)=>{const dx=b[0]-a[0],dy=b[1]-a[1];const ang=Math.atan2(dy,dx);const q=Math.round(ang/(Math.PI/4))*(Math.PI/4);if(Math.abs(ang-q)<.12){const L=Math.hypot(dx,dy);return [a[0]+Math.cos(q)*L,a[1]+Math.sin(q)*L]}return b};
+function FloorPlanEditor({ctx,doc,units,onClose,onApply}){
+  // Work in image pixels; a plan with no underlay draws on a 20 m × 14 m sheet at 50 px a metre.
+  const init=()=>{const u=doc.underlay;if(doc.zones?.length&&u){const k=1/u.mPerPx;const px=([x,z])=>[(x-u.ox)*k,(z-u.oz)*k];return {img:u.img,w:u.w,h:u.h,mPerPx:u.mPerPx,opacity:u.opacity??.5,zones:doc.zones.map(z=>({...z,poly:z.poly.map(px)})),blocks:(doc.blocks||[]).map(b=>({...b,x:(b.x-u.ox)*k,z:(b.z-u.oz)*k}))}}
+    if(doc.zones?.length){const k=50,ox=-10,oz=-7;return {img:null,w:1000,h:700,mPerPx:1/k,opacity:.5,zones:doc.zones.map(z=>({...z,poly:z.poly.map(([x,y])=>[(x-ox)*k,(y-oz)*k])})),blocks:(doc.blocks||[]).map(b=>({...b,x:(b.x-ox)*k,z:(b.z-oz)*k}))}}
+    return {img:null,w:1000,h:700,mPerPx:.02,opacity:.5,zones:[],blocks:[]}};
+  const [P,setP]=useState(init);const [mode,setMode]=useState(P.zones.length?'select':'upload');const [draft,setDraft]=useState([]);const [cal,setCal]=useState([]);const [calLen,setCalLen]=useState('');
+  const [sel,setSel]=useState(P.zones[0]?.id||null);const [busy,setBusy]=useState('');const [err,setErr]=useState('');const [hover,setHover]=useState(null);const svgRef=useRef();const fileRef=useRef();
+  const readWalls=useAction(api.holmPlans.readWalls);
+  const ft=units==='ft';const toU=m=>ft?m*3.28084:m;const fromU=v=>ft?v/3.28084:v;const uLab=ft?'ft':'m';
+  const at=e=>{const s=svgRef.current;const pt=s.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;const p=pt.matrixTransform(s.getScreenCTM().inverse());return [p.x,p.y]};
+  const lenPx=(a,b)=>Math.hypot(b[0]-a[0],b[1]-a[1]);
+  const upload=async f=>{if(!f)return;setBusy('upload');setErr('');try{const im=await planImage(f);setP(p=>({...p,...im}));setMode('scale');setCal([])}catch(e){setErr(errText(e))}finally{setBusy('')}};
+  const onClick=e=>{const p=at(e);
+    if(mode==='scale'){setCal(c=>c.length>=2?[p]:[...c,p]);return}
+    if(mode==='draw'){if(draft.length>2&&lenPx(p,draft[0])<14){closeDraft();return}setDraft(d=>[...d,d.length?snap90(d[d.length-1],p):p]);return}
+    if(mode==='block'){const [n,w,d,h]=BLOCKS[0];addBlock(p,n,w,d,h);return}};
+  const closeDraft=()=>{if(draft.length<3)return;const id=uid();const name=ZONE_NAMES[P.zones.length%ZONE_NAMES.length];setP(p=>({...p,zones:[...p.zones,{id,name,poly:draft,floor:doc.floor,wall:doc.wall}]}));setDraft([]);setSel(id);setMode('select')};
+  const addBlock=(p,name,w,d,h)=>setP(s=>({...s,blocks:[...s.blocks,{id:uid(),name,x:p[0],z:p[1],w,d,h,rot:0}]}));
+  useEffect(()=>{const k=e=>{if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))return;if(e.key==='Enter'&&mode==='draw')closeDraft();if(e.key==='Escape'){if(draft.length)setDraft([]);else onClose()}if((e.key==='Backspace'||e.key==='Delete')&&mode==='draw'&&draft.length){e.preventDefault();setDraft(d=>d.slice(0,-1))}};addEventListener('keydown',k);return()=>removeEventListener('keydown',k)});
+  // Drag a corner to move it.
+  const dragPt=(e,zid,i)=>{e.stopPropagation();const mv=ev=>{const p=at(ev);setP(s=>({...s,zones:s.zones.map(z=>z.id!==zid?z:{...z,poly:z.poly.map((q,k)=>k===i?p:q)})}))};const up=()=>removeEventListener('pointermove',mv);addEventListener('pointermove',mv);addEventListener('pointerup',up,{once:true})};
+  const dragBlock=(e,id)=>{e.stopPropagation();const mv=ev=>{const p=at(ev);setP(s=>({...s,blocks:s.blocks.map(b=>b.id!==id?b:{...b,x:p[0],z:p[1]})}))};const up=()=>removeEventListener('pointermove',mv);addEventListener('pointermove',mv);addEventListener('pointerup',up,{once:true})};
+  const setScale=()=>{const v=fromU(parseFloat(calLen));if(cal.length<2||!(v>0))return;setP(p=>({...p,mPerPx:v/lenPx(cal[0],cal[1])}));setMode(P.zones.length?'select':'draw')};
+  const ai=async()=>{if(!P.img)return;if(!ctx.me.signedIn){ctx.toast('Sign in to read walls from a plan');return}setBusy('ai');setErr('');
+    try{const r=await readWalls({image:P.img.split(',')[1],mime:'image/jpeg'});const px=([x,y])=>[x*P.w,y*P.h];
+      setP(p=>({...p,zones:r.rooms.map(rm=>({id:uid(),name:rm.name,poly:rm.points.map(px),floor:doc.floor,wall:doc.wall})),blocks:r.blocks.map(b=>{const q=b.points.map(px);const xs=q.map(v=>v[0]),ys=q.map(v=>v[1]);return {id:uid(),name:b.name,x:(Math.min(...xs)+Math.max(...xs))/2,z:(Math.min(...ys)+Math.max(...ys))/2,w:(Math.max(...xs)-Math.min(...xs))*p.mPerPx,d:(Math.max(...ys)-Math.min(...ys))*p.mPerPx,h:1.05,rot:0}})}));
+      if(r.scale){setCal([px(r.scale.a),px(r.scale.b)]);setCalLen(String(+toU(r.scale.meters).toFixed(2)))}
+      setMode(r.scale?'scale':'select');ctx.toast(r.scale?'Walls read. Check the scale against a wall you know, then fix any wall.':'Walls read. Set the scale from a wall you know, then fix any wall.')}
+    catch(e){setErr(errText(e))}finally{setBusy('')}};
+  // Save in metres, centred on the plan, with the underlay placed to match.
+  const apply=()=>{if(!P.zones.length){setErr('Draw at least one room first.');return}const k=P.mPerPx;const all=P.zones.flatMap(z=>z.poly);const xs=all.map(p=>p[0]*k),zs=all.map(p=>p[1]*k);const cx=(Math.min(...xs)+Math.max(...xs))/2,cz=(Math.min(...zs)+Math.max(...zs))/2;
+    const m=([x,y])=>[r2(x*k-cx),r2(y*k-cz)];const zones=P.zones.map(z=>({...z,poly:z.poly.map(m)}));const b=polyBounds(zones.map(z=>z.poly));
+    onApply({zones,blocks:P.blocks.map(bl=>({...bl,x:r2(bl.x*k-cx),z:r2(bl.z*k-cz)})),W:r2(b.maxX-b.minX),D:r2(b.maxZ-b.minZ),underlay:P.img?{img:P.img,w:P.w,h:P.h,mPerPx:k,ox:r2(-cx),oz:r2(-cz),opacity:P.opacity}:null})};
+  const Z=P.zones.find(z=>z.id===sel);const k=P.mPerPx;const fmtM=m=>`${toU(m).toFixed(2)} ${uLab}`;
+  const hint={upload:'Upload the plan as an image or PDF, or draw on the blank sheet.',scale:'Click both ends of a wall you know, then type its real length.',draw:'Click each corner. Click the first corner or press Enter to close the room; Backspace removes the last corner.',block:'Click to place a column; change its size in the list.',select:'Drag corners to adjust. Type a wall length to set it exactly.'}[mode];
+  return html`<div className="scrim sx-scrim" role="dialog" aria-modal="true" aria-label="Floor plan">
+    <div className="sx-dialog fplan">
+      <div className="sx-drawer-h"><b>Floor plan</b><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>
+      <div className="fp-tools">
+        <div className="seg" role="group" aria-label="Step">${[['upload','Plan'],['scale','Scale'],['draw','Draw a room'],['block','Columns'],['select','Adjust']].map(([kk,l])=>html`<button key=${kk} className=${mode===kk?'on':''} onClick=${()=>{setMode(kk);setDraft([])}}>${l}</button>`)}</div>
+        ${mode==='upload'&&html`<${React.Fragment}><button className="btn btn-line btn-sm" disabled=${!!busy} onClick=${()=>fileRef.current.click()}>${I('upload',{width:15})} ${busy==='upload'?'Opening…':'Upload a plan'}</button><input ref=${fileRef} type="file" accept="image/*,application/pdf" hidden onChange=${e=>{upload(e.target.files[0]);e.target.value=''}}/><//>`}
+        ${P.img&&html`<button className="btn btn-line btn-sm" disabled=${!!busy} onClick=${ai}>${I('wand',{width:15})} ${busy==='ai'?'Reading walls…':'Read walls from the image'}</button>`}
+        ${P.img&&html`<label className="fp-op"><span className="sx-lbl">Plan</span><input type="range" min="0" max="1" step=".05" value=${P.opacity} onInput=${e=>setP(p=>({...p,opacity:+e.target.value}))} aria-label="Plan opacity"/></label>`}
+        ${mode==='scale'&&html`<span className="row" style=${{gap:6}}><input className="field num" style=${{height:34,width:90}} type="number" min="0" step="0.01" placeholder=${'Length ('+uLab+')'} value=${calLen} onInput=${e=>setCalLen(e.target.value)} aria-label="Real length of the wall"/><button className="btn btn-cog btn-sm" disabled=${cal.length<2||!(parseFloat(calLen)>0)} onClick=${setScale}>Set scale</button></span>`}
+        ${mode==='block'&&html`<span className="row" style=${{gap:6,flexWrap:'wrap'}}>${BLOCKS.map(([n,w,d,h])=>html`<button key=${n} className="chip" onClick=${()=>addBlock([P.w/2,P.h/2],n,w,d,h)}>${n}</button>`)}</span>`}
+      </div>
+      <p className="sx-note">${hint} <span className="mono">1 px = ${(k*100).toFixed(1)} cm</span></p>
+      <div className="fp-body">
+        <div className="fp-sheet"><svg ref=${svgRef} viewBox=${`0 0 ${P.w} ${P.h}`} onClick=${onClick} onPointerMove=${e=>mode==='draw'&&draft.length&&setHover(snap90(draft[draft.length-1],at(e)))} style=${{cursor:mode==='select'?'default':'crosshair'}}>
+          <rect width=${P.w} height=${P.h} fill="#FBF8F2"/>
+          ${P.img?html`<image href=${P.img} width=${P.w} height=${P.h} opacity=${P.opacity}/>`:html`<path d=${Array.from({length:Math.ceil(P.w/(1/k))},(_,i)=>`M${i/k} 0V${P.h}`).join('')+Array.from({length:Math.ceil(P.h/(1/k))},(_,i)=>`M0 ${i/k}H${P.w}`).join('')} stroke="rgba(43,33,26,.08)"/>`}
+          ${P.zones.map(z=>html`<g key=${z.id} className=${'fp-zone'+(z.id===sel?' on':'')} onClick=${e=>{if(mode==='select'){e.stopPropagation();setSel(z.id)}}}>
+            <polygon points=${z.poly.map(p=>p.join(',')).join(' ')}/>
+            ${z.poly.map((a,i)=>{const b=z.poly[(i+1)%z.poly.length];return html`<text key=${i} x=${(a[0]+b[0])/2} y=${(a[1]+b[1])/2} className="fp-len">${fmtM(lenPx(a,b)*k)}</text>`})}
+            <text x=${polyCentre(z.poly)[0]} y=${polyCentre(z.poly)[1]} className="fp-name">${z.name}</text>
+            ${mode==='select'&&z.poly.map((p,i)=>html`<circle key=${'c'+i} cx=${p[0]} cy=${p[1]} r=${Math.max(5,P.w/180)} className="fp-pt" onPointerDown=${e=>dragPt(e,z.id,i)}/>`)}
+          </g>`)}
+          ${P.blocks.map(b=>html`<rect key=${b.id} className="fp-block" x=${b.x-b.w/k/2} y=${b.z-b.d/k/2} width=${b.w/k} height=${b.d/k} onPointerDown=${e=>mode==='select'&&dragBlock(e,b.id)}/>`)}
+          ${draft.length>0&&html`<polyline className="fp-draft" points=${[...draft,...(hover?[hover]:[])].map(p=>p.join(',')).join(' ')}/>`}
+          ${draft.map((p,i)=>html`<circle key=${'d'+i} cx=${p[0]} cy=${p[1]} r=${Math.max(4,P.w/220)} className=${'fp-pt'+(i===0?' first':'')}/>`)}
+          ${cal.length>0&&html`<g className="fp-cal">${cal.length===2&&html`<line x1=${cal[0][0]} y1=${cal[0][1]} x2=${cal[1][0]} y2=${cal[1][1]}/>`}${cal.map((p,i)=>html`<circle key=${i} cx=${p[0]} cy=${p[1]} r=${Math.max(5,P.w/180)}/>`)}</g>`}
+        </svg></div>
+        <aside className="fp-side">
+          <span className="sx-lbl">Rooms</span>
+          ${P.zones.length?P.zones.map(z=>html`<button key=${z.id} className=${'fp-row'+(z.id===sel?' on':'')} onClick=${()=>{setSel(z.id);setMode('select')}}><b>${z.name}</b><span className="mono">${(Math.abs(polyArea(z.poly))*k*k*(ft?10.7639:1)).toFixed(1)} ${ft?'sq ft':'m²'}</span></button>`):html`<p className="sx-note">No rooms yet. Choose Draw a room${P.img?' or read the walls from the image':''}.</p>`}
+          ${Z&&html`<div className="sx-col" style=${{gap:8}}>
+            <label className="sx-col" style=${{gap:4}}><span className="sx-lbl">Name</span><input className="field" style=${{height:36}} value=${Z.name} maxLength="40" onInput=${e=>setP(p=>({...p,zones:p.zones.map(z=>z.id===Z.id?{...z,name:e.target.value}:z)}))}/></label>
+            <span className="sx-lbl">Walls (${uLab})</span>
+            <div className="fp-walls">${Z.poly.map((a,i)=>{const b=Z.poly[(i+1)%Z.poly.length];return html`<label key=${i}><span className="mono mute">${i+1}</span><input className="field num" type="number" step="0.01" min="0.1" value=${+toU(lenPx(a,b)*k).toFixed(2)} onChange=${e=>{const v=fromU(+e.target.value);if(v>0)setP(p=>({...p,zones:p.zones.map(z=>z.id===Z.id?{...z,poly:setWallLength(z.poly,i,v/k)}:z)}))}}/></label>`})}</div>
+            <button className="lnk" style=${{color:'var(--bad)',justifySelf:'start'}} onClick=${()=>{setP(p=>({...p,zones:p.zones.filter(z=>z.id!==Z.id)}));setSel(null)}}>Delete this room</button></div>`}
+          ${P.blocks.length>0&&html`<${React.Fragment}><span className="sx-lbl">Columns and fixed blocks</span>${P.blocks.map(b=>html`<div key=${b.id} className="fp-brow"><input className="field" style=${{height:32}} value=${b.name} onInput=${e=>setP(p=>({...p,blocks:p.blocks.map(x=>x.id===b.id?{...x,name:e.target.value}:x)}))} aria-label="Name"/>
+            ${['w','d','h'].map(kk=>html`<input key=${kk} className="field num" style=${{height:32}} type="number" step="0.05" min="0.05" title=${{w:'Width',d:'Depth',h:'Height'}[kk]+' ('+uLab+')'} aria-label=${{w:'Width',d:'Depth',h:'Height'}[kk]} value=${+toU(b[kk]).toFixed(2)} onChange=${e=>{const v=fromU(+e.target.value);if(v>0)setP(p=>({...p,blocks:p.blocks.map(x=>x.id===b.id?{...x,[kk]:v}:x)}))}}/>`)}
+            <button className="ib" aria-label="Remove" onClick=${()=>setP(p=>({...p,blocks:p.blocks.filter(x=>x.id!==b.id)}))}>${I('x',{width:14})}</button></div>`)}<//>`}
+        </aside>
+      </div>
+      ${err&&html`<p className="sx-note" style=${{color:'var(--bad)'}}>${err}</p>`}
+      <div className="row" style=${{justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+        ${doc.zones?.length?html`<button className="lnk" onClick=${()=>onApply(null)}>Go back to a rectangular room</button>`:html`<span></span>`}
+        <span className="row" style=${{gap:8}}><button className="btn btn-line btn-sm" onClick=${onClose}>Cancel</button><button className="btn btn-cog btn-sm" disabled=${!P.zones.length} onClick=${apply}>Use this plan</button></span></div>
+    </div></div>`;
+}
+// A dimensioned plan PDF: every room with its wall lengths, each piece, rug and block labelled, a
+// seat count per room, then a piece list per room and the bundle link.
+async function planPdf(doc,{title,units,link}){
+  const {PDFDocument,StandardFonts,rgb,PDFName,PDFString}=await import('pdf-lib');
+  const pdf=await PDFDocument.create();pdf.setTitle(title+' plan');const serif=await pdf.embedFont(StandardFonts.TimesRomanItalic),sans=await pdf.embedFont(StandardFonts.Helvetica),bold=await pdf.embedFont(StandardFonts.HelveticaBold);
+  const ink=rgb(.17,.13,.1),mute=rgb(.44,.39,.34),cog=rgb(.65,.37,.17),line=rgb(.8,.76,.7);
+  const zones=roomZones(doc);const b=polyBounds(zones.map(z=>z.poly));const PW=792,PH=612,M=40;const sc=Math.min((PW-2*M)/(b.maxX-b.minX+1.2),(PH-2*M-50)/(b.maxZ-b.minZ+1.2));
+  const X=x=>M+(x-b.minX+.6)*sc,Y=z=>PH-M-40-(z-b.minZ+.6)*sc;const u=units==='ft'?'ft':'m';const L=m=>fmtLen(m,units).replace('′',"'").replace('″','"').replace('½','.5');
+  const page=pdf.addPage([PW,PH]);page.drawText(`${title} · floor plan`,{x:M,y:PH-M-10,size:18,font:serif,color:ink});
+  const seatsIn=z=>doc.items.filter(it=>!it.hang&&inPoly([it.x,it.z],z.poly)).reduce((s,it)=>s+byId(it.pid).seats,0);
+  for(const z of zones){const p=z.poly;p.forEach((a,i)=>{const c=p[(i+1)%p.length];page.drawLine({start:{x:X(a[0]),y:Y(a[1])},end:{x:X(c[0]),y:Y(c[1])},thickness:2.2,color:ink});
+      const len=Math.hypot(c[0]-a[0],c[1]-a[1]);if(len>.3){const t=L(len);const cw=polyArea(p)>0;const ux=(c[0]-a[0])/len,uz=(c[1]-a[1])/len;const nx=cw?uz:-uz,nz=cw?-ux:ux;page.drawText(t,{x:X((a[0]+c[0])/2+nx*.35)-sans.widthOfTextAtSize(t,7)/2,y:Y((a[1]+c[1])/2+nz*.35)-2,size:7,font:sans,color:mute})}});
+    const c=polyCentre(p);const t=`${z.name} · ${seatsIn(z)} seats`;page.drawText(t,{x:X(c[0])-serif.widthOfTextAtSize(t,11)/2,y:Y(c[1]),size:11,font:serif,color:cog})}
+  for(const bk of doc.blocks||[])page.drawRectangle({x:X(bk.x-bk.w/2),y:Y(bk.z+bk.d/2),width:bk.w*sc,height:bk.d*sc,color:rgb(.9,.87,.82),borderColor:mute,borderWidth:.6});
+  for(const r of doc.rugs||[]){if(r.round)page.drawEllipse({x:X(r.x),y:Y(r.z),xScale:r.w/2*sc,yScale:r.w/2*sc,borderColor:line,borderWidth:.8,borderDashArray:[3,2]});else{const [ex,ez]=rugExt(r);page.drawRectangle({x:X(r.x-ex),y:Y(r.z+ez),width:2*ex*sc,height:2*ez*sc,borderColor:line,borderWidth:.8,borderDashArray:[3,2]})}}
+  for(const it of doc.items){const p=byId(it.pid);const [ex,ez]=plExt(it);page.drawRectangle({x:X(it.x-ex),y:Y(it.z+ez),width:2*ex*sc,height:2*ez*sc,color:rgb(.93,.88,.8),borderColor:ink,borderWidth:.5,opacity:it.hang?.4:1});
+    page.drawText(p.name,{x:X(it.x)-sans.widthOfTextAtSize(p.name,6.5)/2,y:Y(it.z)-2,size:6.5,font:sans,color:ink})}
+  page.drawText(`Measurements in ${u === 'ft' ? 'feet and inches' : 'metres'}. Walls ${fmtCm((doc.wallT||.12)*100,units)} thick, ceiling ${L(doc.H)}.`,{x:M,y:M-14,size:8,font:sans,color:mute});
+  const addLink=(pg,x,y,w,h,url)=>{const ref=pdf.context.register(pdf.context.obj({Type:'Annot',Subtype:'Link',Rect:[x,y,x+w,y+h],Border:[0,0,0],A:{Type:'Action',S:'URI',URI:PDFString.of(url)}}));const a=pg.node.lookup(PDFName.of('Annots'));if(a)a.push(ref);else pg.node.set(PDFName.of('Annots'),pdf.context.obj([ref]))};
+  // Piece list per room
+  let pg=pdf.addPage([612,792]),y=792-M-20;pg.drawText('Pieces by room',{x:M,y,size:20,font:serif,color:ink});y-=16;if(link){pg.drawText(link,{x:M,y,size:9,font:sans,color:cog});addLink(pg,M,y-3,532,13,link)}y-=26;
+  const rows=[...zones.map(z=>({z,items:doc.items.filter(it=>inPoly([it.x,it.z],z.poly))})),{z:{name:'Elsewhere'},items:doc.items.filter(it=>!zones.some(z=>inPoly([it.x,it.z],z.poly)))}].filter(r=>r.items.length);
+  for(const {z,items} of rows){if(y<M+80){pg=pdf.addPage([612,792]);y=792-M}const seats=items.filter(i=>!i.hang).reduce((s,i)=>s+byId(i.pid).seats,0);const sub=items.reduce((s,i)=>s+byId(i.pid).price,0);
+    pg.drawText(`${z.name} · ${seats} seats · ${fmt(sub)} retail`,{x:M,y,size:12,font:bold,color:ink});y-=16;
+    for(const r of pieceRows(items.map(i=>[i.pid,false]))){const p=byId(r.pid);if(y<M){pg=pdf.addPage([612,792]);y=792-M}pg.drawText(`${r.qty} × ${p.name} — ${p.line}`.slice(0,90),{x:M+10,y,size:10,font:sans,color:ink});const t=fmt(p.price*r.qty);pg.drawText(t,{x:572-M-sans.widthOfTextAtSize(t,10),y,size:10,font:sans,color:ink});y-=14}y-=10}
+  return new Blob([await pdf.save()],{type:'application/pdf'});
 }
 
 /* ================= BOARDS ================= */
