@@ -2177,7 +2177,13 @@ const plFit=(W,H,ops)=>ops.map((o,i)=>{const near=Math.min(Infinity,...ops.filte
 const plWord=(it,doc)=>`${it.x<-doc.W/6?'left':it.x>doc.W/6?'right':'centre'}${it.z<-doc.D/6?' back':it.z>doc.D/6?' front':''}`;
 
 function Room({ctx}){
-  const init=()=>{const saved=load('room',null);if(saved&&saved.items&&!(ctx.roomSeed&&ctx.roomSeed.length))return plReflow({...saved,items:saved.items.filter(i=>has(i.pid)),wallImg:ctx.roomWall||saved.wallImg||null});
+  const init=()=>{const saved=load('room',null);const seed=ctx.roomSeed||[];
+    // A saved room is never replaced by pieces sent here: they join it.
+    if(saved&&saved.items&&saved.items.length){const kept=saved.items.filter(i=>has(i.pid));
+      // Only pieces the room doesn't already hold are added, so switching back and forth never duplicates them.
+      const have={};kept.forEach(i=>have[i.pid]=(have[i.pid]||0)+1);const fresh=seed.filter(pid=>has(pid)&&!(have[pid]-->0));
+      const added=fresh.map((pid,i)=>({uid:uid(),pid,x:(i-(fresh.length-1)/2)*1.7,z:-saved.D/2+1.3,rot:0,hang:byId(pid).type==='lighting'}));
+      return plReflow({...saved,items:[...kept,...added],wallImg:ctx.roomWall||saved.wallImg||null})}
     const key=PL_TEMPLATES[ctx.space]?ctx.space:'blank';const t=JSON.parse(JSON.stringify(PL_TEMPLATES[key]));let items=t.items;
     if(ctx.roomSeed&&ctx.roomSeed.length){items=ctx.roomSeed.map((pid,i)=>({pid,x:(i-(ctx.roomSeed.length-1)/2)*1.7,z:-t.D/2+1.3,rot:0,hang:byId(pid).type==='lighting'}))}
     return plReflow({...t,tpl:key,items:items.map(it=>({...it,uid:uid()})),rugs:[],wallImg:ctx.roomWall||null})};
@@ -2937,7 +2943,9 @@ export function App(){
   const [modePref,setModePref]=useState(()=>load('mode','trade'));const mode=me.verified?modePref:'retail';const setMode=m=>{if(me.verified)setModePref(m)};
   const [boards,setBoards]=useState(()=>load('boards',BOARD_SEED).map(b=>({...b,pins:b.pins.filter(x=>has(x.pid))})));
   const [tray,setTrayState]=useState(()=>{const t=load('tray',TRAY_SEED);const projects=(t.projects||[]).map(p=>({...p,items:(p.items||[]).filter(i=>has(i.pid))}));return projects.length?{...t,taxExempt:false,later:(t.later||[]).filter(x=>has(x.pid)),projects,active:projects.some(p=>p.id===t.active)?t.active:projects[0].id}:TRAY_SEED});
-  const [collages,setCollages]=useState(()=>load('collages',[]).filter(c=>c.els.every(e=>e.kind!=='img'||has(e.pid))));
+  // Collages saved before they carried ids get one as they load, so autosave updates them in place.
+  const withIds=cs=>cs.map(c=>c.id?c:{...c,id:uid()});
+  const [collages,setCollages]=useState(()=>withIds(load('collages',[]).filter(c=>c.els.every(e=>e.kind!=='img'||has(e.pid)))));
   const [likes,setLikes]=useState([]);const [recent,setRecent]=useState([]);
   const [inspo,setInspo]=useState(()=>load('inspo',INSPO_SEED));const [roomWall,setRoomWall]=useState(null);
   useEffect(()=>store('inspo',inspo),[inspo]);
@@ -2961,7 +2969,7 @@ export function App(){
     const localBoards=boards.filter(b=>b.pins.length&&!remoteBoards.some(r=>r.id===b.id));
     if(remoteBoards.length){const merged=[...remoteBoards.map(b=>({...b,pins:b.pins.filter(x=>has(x.pid))})),...localBoards];setBoards(merged);if(localBoards.length)push('boards',merged)}
     else if(localBoards.length)push('boards',boards);
-    if(Array.isArray(remote.collages))setCollages(remote.collages.filter(c=>c.els.every(e=>e.kind!=='img'||has(e.pid))));
+    if(Array.isArray(remote.collages))setCollages(withIds(remote.collages.filter(c=>c.els.every(e=>e.kind!=='img'||has(e.pid)))));
     if(Array.isArray(remote.inspo))setInspo(l=>[...remote.inspo,...l.filter(x=>!/^https?:/.test(x.src)&&!remote.inspo.some(y=>y.id===x.id))]);
     if(!Array.isArray(remote.collages)&&collages.length)push('collages',collages.map(c=>({...c,bg:c.bg?.img?.startsWith('data:')?{color:'#EFE6D8'}:c.bg,els:c.els.filter(e=>!String(e.src||'').startsWith('data:'))})));
   },[me.signedIn,remote]);
