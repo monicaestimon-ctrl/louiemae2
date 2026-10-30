@@ -1,11 +1,11 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, act } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { AdminPage } from '../AdminPage';
 const mocks = vi.hoisted(() => ({ demand: vi.fn(), loadDetail: vi.fn(), batch: vi.fn(), health: undefined as unknown, query: vi.fn(),
   inventory: { products: [] as unknown[], loading: false, unavailable: false, complete: false,
     loadingMore: false, canLoadMore: true, updating: false, loadMore: vi.fn() },
-  site: { isAuthenticated: true, isAuthLoading: false, posts: [], products: [], updateCustomPage: vi.fn(),
+  site: { updateProduct: vi.fn(), deleteProduct: vi.fn(), isAuthenticated: true, isAuthLoading: false, posts: [], products: [], updateCustomPage: vi.fn(),
     siteContent: { collections: [], customPages: [] as unknown[], navLinks: [] } },
 }));
 vi.mock('../useAdminInventoryPage', () => ({ useAdminInventoryPage: () => mocks.inventory }));
@@ -98,4 +98,48 @@ it('edits a saved off-page content product through the picker without requesting
   expect(mocks.site.updateCustomPage).toHaveBeenCalledWith('lookbook', { sections: [
     { id: 'feature', type: 'product-feature', title: 'Featured piece', productId: 'later-product' },
   ] });
+});
+
+const inventoryProduct = { id: 'chair', name: 'Chair', category: 'chairs', collection: 'furniture', price: 90,
+  images: [], storefrontStatus: 'hidden', imageCount: 0, variantCount: 0, variantImageCount: 0,
+  connectionStatus: { state: 'not_linked', label: 'Not linked', detail: '', isApproved: false, isMappingComplete: false, mappedVariantCount: 0, sellableVariantCount: 0 } };
+
+it('awaits publishing, prevents duplicate/conflicting clicks and confirms the saved status', async () => {
+  mocks.inventory.products = [inventoryProduct];
+  let resolve!: () => void;
+  mocks.site.updateProduct.mockImplementationOnce(() => new Promise<void>(done => { resolve = done; }));
+  render(<AdminPage />);
+  fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+  expect(screen.getByRole('button', { name: 'Publish' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Hide' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+  expect(mocks.site.updateProduct).toHaveBeenCalledTimes(1);
+  expect(mocks.site.updateProduct).toHaveBeenCalledWith('chair', expect.objectContaining({ storefrontStatus: 'published', publishedAt: expect.any(String) }));
+  await act(async () => resolve());
+  expect(screen.getByText('Product status saved: Published.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Publish' })).toBeEnabled();
+});
+
+it('shows structured publishing errors and allows retry without claiming success', async () => {
+  mocks.inventory.products = [inventoryProduct];
+  mocks.site.updateProduct.mockRejectedValueOnce({ data: { message: 'Refresh CJ prices and shipping before publishing.' } });
+  render(<AdminPage />);
+  fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Refresh CJ prices and shipping before publishing.');
+  expect(screen.queryByText('Product status saved: Published.')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Publish' })).toBeEnabled();
+  mocks.site.updateProduct.mockResolvedValueOnce(undefined);
+  fireEvent.click(screen.getByRole('button', { name: 'Hide' }));
+  expect(await screen.findByText('Product status saved: Hidden.')).toBeInTheDocument();
+});
+
+it('reports a failed delete instead of discarding its promise', async () => {
+  mocks.inventory.products = [inventoryProduct];
+  const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  mocks.site.deleteProduct.mockRejectedValueOnce(new Error('Delete failed. Try again.'));
+  render(<AdminPage />);
+  fireEvent.click(screen.getByRole('button', { name: 'Delete Chair' }));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Delete failed. Try again.'));
+  expect(screen.getByRole('button', { name: 'Delete Chair' })).toBeEnabled();
+  confirm.mockRestore();
 });
