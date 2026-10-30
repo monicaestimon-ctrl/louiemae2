@@ -2026,3 +2026,7 @@ header.top:not(.over){background:color-mix(in srgb,var(--paper) 94%,transparent)
 .tt{position:relative;border-radius:12px;background:#EFE6D8;overflow:hidden}.tt canvas{width:100%;height:100%;display:block}
 .tt-dims{position:absolute;left:10px;bottom:8px;font-size:11px;color:var(--mute)}
 @media (max-width:640px){.rd-pair{grid-template-columns:1fr}}
+.pl-lab.size{background:var(--ink);color:var(--onink);font-size:11px}
+.sx-render{display:inline-flex;align-items:center;gap:6px}
+.sx-viewbar .seg button[disabled]{opacity:.4}
+.sx-viewbar{flex-wrap:wrap}
