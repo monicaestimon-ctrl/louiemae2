@@ -137,13 +137,22 @@ export const setModel = mutation({
     await requireCjAdminIdentity(ctx);
     const row = await assetsFor(ctx, a.productId);
     if (a.status === 'approved' && !(a.modelId ?? row?.modelId)) throw new Error('Upload a 3D model before approving it.');
+    // An oversized upload is deleted and reported as a result, not thrown: a throw would roll the delete back.
+    const tooBig = { ok: false as const, error: 'Models must be under 3 MB. Compress it (Draco or Meshopt, KTX2 textures) and upload again.' };
     let bytes = row?.modelBytes;
+    if (a.modelLowId) {
+      const low = await ctx.db.system.get(a.modelLowId);
+      if (!low || low.size > MAX_MODEL_BYTES) {
+        if (low) await ctx.storage.delete(a.modelLowId);
+        return tooBig;
+      }
+    }
     if (a.modelId) {
       const meta = await ctx.db.system.get(a.modelId);
       bytes = meta?.size;
       if (!meta || meta.size > MAX_MODEL_BYTES) {
-        await ctx.storage.delete(a.modelId);
-        throw new Error('Models must be under 3 MB. Compress it (Draco or Meshopt, KTX2 textures) and upload again.');
+        if (meta) await ctx.storage.delete(a.modelId);
+        return tooBig;
       }
       if (row?.modelId && row.modelId !== a.modelId) await ctx.storage.delete(row.modelId);
     }
@@ -153,6 +162,7 @@ export const setModel = mutation({
       ...(a.modelLowId ? { modelLowId: a.modelLowId } : {}),
       modelStatus: a.status,
     });
+    return { ok: true as const };
   },
 });
 
