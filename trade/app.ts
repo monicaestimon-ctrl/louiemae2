@@ -26,6 +26,11 @@ const pr = (p: HolmProduct, mode: string) => (mode === 'trade' ? tp(p) : p.price
 const cut = (id: number) => (id < 100 && has(id) ? `c/${id}.webp` : byId(id).img);
 const pinItUrl=(media,desc,link='https://www.louiemae.com/retail-furniture')=>`https://www.pinterest.com/pin/create/button/?url=${encodeURIComponent(link)}&media=${encodeURIComponent(media)}&description=${encodeURIComponent(desc)}`;
 const PIN_BOARDS=[];
+// three.js loads on demand, the first time a 3D view mounts, so other pages never pay for it.
+let threeP=null;
+const loadThree=()=>window.THREE?Promise.resolve(window.THREE):(threeP||=import('three').then(m=>(window.THREE=m)));
+function useThree(){const [T,setT]=useState(()=>window.THREE||null);const [failed,setFailed]=useState(false);
+  useEffect(()=>{if(T)return;let live=true;loadThree().then(m=>live&&setT(m),()=>live&&setFailed(true));return()=>{live=false}},[]);return [T,failed]}
 const INSPO_SEED=[];
 
 const SPACES = {
@@ -455,16 +460,16 @@ const FOOT_D={sofa:.95,sectional:1.7,bench:.45,ottoman:0,lighting:0};
 function RoomStudy({ctx}){
   const sp=SPACES[ctx.space];const cfg=STUDY[ctx.space];const room=ROOMS[ctx.space];
   const secRef=useRef(),cvRef=useRef(),stageRef=useRef(),labRef=useRef(),xhRef=useRef(),coordRef=useRef(),tipRef=useRef(),api=useRef({});
-  const [chap,setChap]=useState(0);const [tod,setTod]=useState('');const [pick,setPick]=useState(null);const [night,setNight]=useState(false);const [ok,setOk]=useState(true);const [scrolled,setScrolled]=useState(false);
+  const [chap,setChap]=useState(0);const [tod,setTod]=useState('');const [pick,setPick]=useState(null);const [night,setNight]=useState(false);const [ok,setOk]=useState(true);const [three,threeFailed]=useThree();const [scrolled,setScrolled]=useState(false);
   useEffect(()=>{
-    if(!window.THREE){setOk(false);return}
-    const T=window.THREE;const cv=cvRef.current,stage=stageRef.current;
+    if(threeFailed){setOk(false);return}if(!three)return;
+    const T=three;const cv=cvRef.current,stage=stageRef.current;
     const renderer=new T.WebGLRenderer({canvas:cv,antialias:true,alpha:false});
     renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.75));renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;
-    renderer.outputEncoding=T.sRGBEncoding;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;
+    renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;
     const scene=new T.Scene();const cam=new T.PerspectiveCamera(36,1,.05,200);
     const {W,D,H}=cfg;const loader=new T.TextureLoader();
-    const tex=(url,rep)=>{const t=loader.load(url);t.encoding=T.sRGBEncoding;if(rep){t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(rep[0],rep[1])}t.anisotropy=8;return t};
+    const tex=(url,rep)=>{const t=loader.load(url);t.colorSpace=T.SRGBColorSpace;if(rep){t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(rep[0],rep[1])}t.anisotropy=8;return t};
     const CLAY=new T.Color('#EEE9E1');
     const wallCol=new T.Color(cfg.dark?'#3B2A1E':room.wall);
     // ---------- ground + grid ----------
@@ -478,7 +483,7 @@ function RoomStudy({ctx}){
     const shapeWithHoles=(w,h,ops)=>{const s=new T.Shape();s.moveTo(-w/2,0);s.lineTo(w/2,0);s.lineTo(w/2,h);s.lineTo(-w/2,h);s.lineTo(-w/2,0);
       ops.forEach(o=>{const p=new T.Path();const l=o.x-o.w/2,r=o.x+o.w/2;if(o.t==='arch'){const top=o.y+o.h-o.w/2;p.moveTo(l,o.y);p.lineTo(r,o.y);p.lineTo(r,top);p.absarc(o.x,top,o.w/2,0,Math.PI,false);p.lineTo(l,o.y)}else{p.moveTo(l,o.y);p.lineTo(r,o.y);p.lineTo(r,o.y+o.h);p.lineTo(l,o.y+o.h);p.lineTo(l,o.y)}s.holes.push(p)});return s};
     const walls=new T.Group();scene.add(walls);const wallFins=[];
-    const limeT=tex(texture('lime').url,[2,1]);limeT.encoding=T.LinearEncoding;
+    const limeT=tex(texture('lime').url,[2,1]);limeT.colorSpace=T.NoColorSpace;
     const mkWall=(shape,place)=>{const g=new T.ExtrudeGeometry(shape,{depth:.22,bevelEnabled:false});const clay=new T.Mesh(g,new T.MeshStandardMaterial({color:CLAY,roughness:.95}));clay.castShadow=clay.receiveShadow=true;
       const fin=new T.Mesh(g,new T.MeshStandardMaterial({color:wallCol,bumpMap:cfg.dark?null:limeT,bumpScale:.012,roughness:.92,transparent:true,opacity:0,polygonOffset:true,polygonOffsetFactor:-2}));fin.receiveShadow=true;
       [clay,fin].forEach(m=>{place(m);walls.add(m)});wallFins.push(fin)};
@@ -602,7 +607,7 @@ function RoomStudy({ctx}){
     let raf=0;function loop(){cancelAnimationFrame(raf);const tick=()=>{if(!running)return;if(dirty||mouse.in||(P>.36&&P<.56)){frame();dirty=false}raf=requestAnimationFrame(tick)};tick()}
     loop();
     return()=>{running=false;cancelAnimationFrame(raf);removeEventListener('scroll',onScroll);ro.disconnect();io.disconnect();stage.removeEventListener('pointermove',onMove);stage.removeEventListener('pointerleave',onLeave);stage.removeEventListener('click',onClick);scene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){(Array.isArray(o.material)?o.material:[o.material]).forEach(m=>{if(m.map)m.map.dispose();m.dispose()})}});renderer.dispose()};
-  },[ctx.space]);
+  },[ctx.space,three,threeFailed]);
   useEffect(()=>setPick(null),[ctx.space]);
   const goChap=i=>{const sec=secRef.current,st=stageRef.current;const top=sec.getBoundingClientRect().top+scrollY;const total=sec.offsetHeight-st.offsetHeight;scrollTo({top:top+total*[.06,.25,.47,.62,.8][i],behavior:'smooth'})};
   const pickSpace=k=>{ctx.setSpace(k);const sec=secRef.current;if(sec&&sec.getBoundingClientRect().top<0)scrollTo({top:sec.getBoundingClientRect().top+scrollY,behavior:'smooth'})};
@@ -1937,10 +1942,14 @@ const plShape=(w,h,ops)=>{const T=window.THREE;const s=new T.Shape();s.moveTo(-w
 /* ================= SPACE PLANNER: plan · model · walk, rendered as material, clay or line ================= */
 const PL_FLOORS=[['herring','Light herringbone'],['herringDark','Dark herringbone'],['oak','Wide oak'],['terrazzo','Terrazzo'],['marble','Dark marble'],['concrete','Concrete']];
 const PL_WALLS=['#F1E9DC','#E9DCC8','#ECE4D1','#D8B4A6','#C9BFA9','#6C6948','#3B2A1E','#1F2A44'];
-const PROXY_H={sofa:.82,sectional:.8,bench:.46,ottoman:.44,lighting:.35};
+const PROXY_H={sofa:.82,sectional:.8,bench:.46,ottoman:.44,lighting:.35,stool:.75,chair:.8,table:.75};
+// Pieces outside the curated 24 have no measured cutout: width comes from the listing's facts, the rest from their type.
+const PL_W={sofa:220,sectional:280,bench:130,ottoman:80,lighting:60,stool:45,chair:70,table:120};
+const PL_AR={sofa:[3,1],sectional:[2.2,1],bench:[3,1],ottoman:[2,1],lighting:[1,1],stool:[1,2],chair:[1,1.1],table:[2,1]};
+const plCm=pid=>{const p=byId(pid);return APPROX_CM[pid]||p.widthCm||PL_W[p.type]||100};
 const PL_TEMPLATES={blank:{label:'Blank room',W:8,D:6,H:3.2,wall:'#F1E9DC',floor:'oak',openings:[{wall:'back',t:'win',x:0,w:2.4,h:1.8,y:.8}],items:[]}};
 SPACE_KEYS.forEach(k=>{const s=STUDY[k];PL_TEMPLATES[k]={label:SPACES[k].label+' study',W:s.W,D:s.D,H:s.H,wall:s.dark?'#3B2A1E':ROOMS[k].wall,floor:ROOMS[k].floor,openings:s.openings.map(o=>({...o,wall:'back'})),items:s.items.map(i=>({pid:i.id,x:i.x,z:i.z,rot:0,hang:!!i.hang}))}});
-const plDims=pid=>{const p=byId(pid);const ar=CUT_AR[pid];const w=APPROX_CM[pid]/100;return {p,w,d:p.type==='lighting'?w:(FOOT_D[p.type]||w),hp:PROXY_H[p.type],hb:w*ar[1]/ar[0]}};
+const plDims=pid=>{const p=byId(pid);const ar=CUT_AR[pid]||PL_AR[p.type]||[1,1];const w=plCm(pid)/100;return {p,w,d:p.type==='lighting'?w:(FOOT_D[p.type]||Math.min(w,.9)),hp:PROXY_H[p.type]||.8,hb:w*ar[1]/ar[0]}};
 // Physical footprint: axis-aligned extents of the rotated piece, used for walls and collisions.
 const plExt=it=>{const {w,d}=plDims(it.pid);const r=(it.rot||0)*Math.PI/180,c=Math.abs(Math.cos(r)),sn=Math.abs(Math.sin(r));return [c*w/2+sn*d/2,sn*w/2+c*d/2]};
 const PL_GAP=.02,PL_SNAP=.12;
@@ -1965,6 +1974,7 @@ function Room({ctx}){
   const [doc,setDoc]=useState(init);const [view,setView]=useState('orbit');const [style,setStyle]=useState('material');const [tod,setTod]=useState(.12);
   const [sel,setSel]=useState(null);const [tab,setTab]=useState('pieces');const [snap,setSnap]=useState(true);const [q,setQ]=useState('');const [cat,setCat]=useState('all');
   const [shot,setShot]=useState(null);const [showPrompt,setShowPrompt]=useState(false);const [proj,setProj]=useState(ctx.tray.active);
+  const [three]=useThree();const [eng,setEng]=useState(0);
   const hist=useRef({past:[],future:[]});const vpRef=useRef(),cvRef=useRef(),labRef=useRef(),E=useRef({}),docRef=useRef(doc);docRef.current=doc;
   const commit=next=>{hist.current.past.push(docRef.current);if(hist.current.past.length>60)hist.current.past.shift();hist.current.future=[];setDoc(next)};
   const undo=()=>{const h=hist.current;if(!h.past.length)return;h.future.push(docRef.current);setDoc(h.past.pop())};
@@ -1977,9 +1987,9 @@ function Room({ctx}){
 
   // ---------- engine ----------
   useEffect(()=>{
-    if(!window.THREE)return;const T=window.THREE;const cv=cvRef.current,vp=vpRef.current;
+    if(!three)return;const T=three;const cv=cvRef.current,vp=vpRef.current;
     const renderer=new T.WebGLRenderer({canvas:cv,antialias:true,preserveDrawingBuffer:true});renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.75));
-    renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;renderer.outputEncoding=T.sRGBEncoding;renderer.toneMapping=T.ACESFilmicToneMapping;
+    renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;renderer.outputColorSpace=T.SRGBColorSpace;renderer.toneMapping=T.ACESFilmicToneMapping;
     const scene=new T.Scene();const persp=new T.PerspectiveCamera(42,1,.05,200);const ortho=new T.OrthographicCamera(-5,5,5,-5,.1,100);
     const hemi=new T.HemisphereLight('#DDE7F0','#B8A58C',.6);scene.add(hemi);
     const sun=new T.DirectionalLight('#FFF4E5',2.2);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-14,right:14,top:14,bottom:-14,near:1,far:60});sun.shadow.bias=-.0004;sun.shadow.normalBias=.02;scene.add(sun,sun.target);
@@ -1988,7 +1998,7 @@ function Room({ctx}){
     const grid=new T.GridHelper(60,120,0x2B211A,0x2B211A);grid.material.transparent=true;grid.material.opacity=.07;scene.add(grid);
     const sky=new T.Mesh(new T.SphereGeometry(60,24,16),new T.MeshBasicMaterial({color:'#CFE0EA',side:T.BackSide}));scene.add(sky);
     const roomG=new T.Group(),itemsG=new T.Group(),dimG=new T.Group();scene.add(roomG,itemsG,dimG);
-    const loader=new T.TextureLoader();const cache={};const tex=(url,rep)=>{const k=url+(rep||'');if(cache[k])return cache[k];const t=loader.load(url);t.encoding=T.sRGBEncoding;if(rep){t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(rep[0],rep[1])}t.anisotropy=8;return cache[k]=t};
+    const loader=new T.TextureLoader();const cache={};const tex=(url,rep)=>{const k=url+(rep||'');if(cache[k])return cache[k];const t=loader.load(url);t.colorSpace=T.SRGBColorSpace;if(rep){t.wrapS=t.wrapT=T.RepeatWrapping;t.repeat.set(rep[0],rep[1])}t.anisotropy=8;return cache[k]=t};
     const CLAY=new T.MeshStandardMaterial({color:'#F0E9DB',roughness:.95});const LINE=new T.MeshBasicMaterial({color:'#FBFAF6',polygonOffset:true,polygonOffsetFactor:1,polygonOffsetUnits:1});
     const PLANM=new T.MeshBasicMaterial({color:'#E7D7BF'});const PLANSEL=new T.MeshBasicMaterial({color:'#F2C4A2'});
     const edgeM=new T.LineBasicMaterial({color:'#1E1B19'});const selM=new T.LineBasicMaterial({color:'#E8541E'});const fpM=new T.LineBasicMaterial({color:'#A65F2C'});const dimM=new T.LineBasicMaterial({color:'#E8541E'});
@@ -2001,7 +2011,7 @@ function Room({ctx}){
       const floor=new T.Mesh(new T.PlaneGeometry(W,D),fm);floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;floor.userData.fin=fm;roomG.add(floor);S.surfaces.push(floor);
       const lime=texture('lime');
       const mk=(len,ops,place,back)=>{const g=new T.ExtrudeGeometry(plShape(len,H,ops),{depth:.2,bevelEnabled:false});const m=new T.MeshStandardMaterial({color:new T.Color(d.wall),roughness:.92});
-        if(back&&d.wallImg){m.map=tex(d.wallImg);m.color=new T.Color('#ffffff')}else{const b=tex(lime.url,[len/4,H/4]);b.encoding=T.LinearEncoding;m.bumpMap=b;m.bumpScale=.012}
+        if(back&&d.wallImg){m.map=tex(d.wallImg);m.color=new T.Color('#ffffff')}else{const b=tex(lime.url,[len/4,H/4]);b.colorSpace=T.NoColorSpace;m.bumpMap=b;m.bumpScale=.012}
         const w=new T.Mesh(g,m);place(w);w.castShadow=w.receiveShadow=true;w.userData.fin=m;roomG.add(w);S.surfaces.push(w);const e=new T.LineSegments(new T.EdgesGeometry(g,25),edgeM);place(e);roomG.add(e);S.edges.push(e)};
       mk(W+.4,d.openings.filter(o=>o.wall==='back'),m=>m.position.set(0,0,-D/2-.2),true);
       mk(D,d.openings.filter(o=>o.wall==='left'),m=>{m.rotation.y=Math.PI/2;m.position.set(-W/2-.2,0,0)});
@@ -2070,15 +2080,15 @@ function Room({ctx}){
     let raf=0,run=true;const loop=()=>{if(!run)return;S.camObj=camera();const now=performance.now();for(const v of S.items.values()){if(v.drop!=null){const t=Math.min(1,(now-v.drop)/520);v.g.position.y=v.baseY+.45*(1-bounce(t));if(t>=1)v.drop=null}}for(const v of S.items.values()){if(v.bb.visible){const wp=v.g.position;v.bb.rotation.y=Math.atan2(S.camObj.position.x-wp.x,S.camObj.position.z-wp.z)-v.g.rotation.y}}lights();renderer.render(scene,S.camObj);labels();raf=requestAnimationFrame(loop)};
     const api={select:id=>{S.sel=id;applyLook();E.current.onSelect&&E.current.onSelect(id)},onMoved:(id,o)=>E.current.onMoved&&E.current.onMoved(id,o),onDrop:(pid,x,z)=>E.current.onDrop&&E.current.onDrop(pid,x,z)};
     Object.assign(E.current,{S,buildRoom,syncItems,applyLook,api,snapshot:()=>{renderer.render(scene,S.camObj);return cv.toDataURL('image/jpeg',.92)}});
-    loop();
+    loop();setEng(n=>n+1);
     return()=>{run=false;cancelAnimationFrame(raf);ro.disconnect();scene.traverse(o=>{if(o.geometry)o.geometry.dispose()});renderer.dispose()};
-  },[]);
+  },[three]);
   // wire engine callbacks to React
   useEffect(()=>{Object.assign(E.current,{onSelect:id=>setSel(id),onMoved:(id,o)=>patchItem(id,o),onDrop:(pid,x,z)=>addItem(pid,x,z)})});
   const geoKey=JSON.stringify([doc.W,doc.D,doc.H,doc.wall,doc.floor,doc.openings,doc.wallImg?doc.wallImg.length:0]);
-  useEffect(()=>{const e=E.current;if(!e.buildRoom)return;e.buildRoom(doc);e.syncItems(doc.items);setTimeout(()=>{if(e.S)e.S.ready=true},50)},[geoKey]);
-  useEffect(()=>{const e=E.current;if(e.syncItems)e.syncItems(doc.items)},[doc.items]);
-  useEffect(()=>{const e=E.current;if(!e.S)return;e.S.view=view;e.S.style=style;e.S.tod=tod;e.S.snap=snap;e.S.sel=sel;e.applyLook()},[view,style,tod,snap,sel]);
+  useEffect(()=>{const e=E.current;if(!e.buildRoom)return;e.buildRoom(doc);e.syncItems(doc.items);setTimeout(()=>{if(e.S)e.S.ready=true},50)},[geoKey,eng]);
+  useEffect(()=>{const e=E.current;if(e.syncItems)e.syncItems(doc.items)},[doc.items,eng]);
+  useEffect(()=>{const e=E.current;if(!e.S)return;e.S.view=view;e.S.style=style;e.S.tod=tod;e.S.snap=snap;e.S.sel=sel;e.applyLook()},[view,style,tod,snap,sel,eng]);
   useEffect(()=>{const k=e=>{if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))return;if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();e.shiftKey?redo():undo();return}
       if(e.key==='1')setView('plan');if(e.key==='2')setView('orbit');if(e.key==='3')setView('eye');
       const it=sel&&docRef.current.items.find(i=>i.uid===sel);if(!it)return;
@@ -2120,7 +2130,7 @@ function Room({ctx}){
         <input className="field" style=${{height:40}} placeholder="Search pieces" aria-label="Search pieces" value=${q} onInput=${e=>setQ(e.target.value)}/>
         <div className="scroll-x">${[['all','All'],...Object.entries(TYPE)].map(([k,l])=>html`<button key=${k} className=${'chip'+(cat===k?' on':'')} style=${{height:30,fontSize:12}} onClick=${()=>setCat(k)}>${l}</button>`)}</div>
         <p className="help" style=${{margin:0}}>Click to place in the middle of the room, or drag onto the floor.</p>
-        <div className="pl-cat">${prods.map(p=>html`<button key=${p.id} draggable="true" onDragStart=${e=>e.dataTransfer.setData('text/pid',String(p.id))} onClick=${()=>addItem(p.id,0,0)} title=${'Place '+p.name}><img src=${cut(p.id)} alt="" loading="lazy"/><b>${p.name}</b><span className="mono">${APPROX_CM[p.id]} cm · ${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span></button>`)}</div>
+        <div className="pl-cat">${prods.map(p=>html`<button key=${p.id} draggable="true" onDragStart=${e=>e.dataTransfer.setData('text/pid',String(p.id))} onClick=${()=>addItem(p.id,0,0)} title=${'Place '+p.name}><img src=${cut(p.id)} alt="" loading="lazy"/><b>${p.name}</b><span className="mono">${plCm(p.id)} cm · ${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span></button>`)}</div>
       </div>`}
       ${tab==='layers'&&html`<div className="pl-sec">${doc.items.length?doc.items.map(it=>{const p=byId(it.pid);return html`<div key=${it.uid} className=${'layer'+(sel===it.uid?' on':'')} onClick=${()=>setSel(it.uid)}><span className="th" style=${{backgroundImage:`url(${cut(it.pid)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat',backgroundPosition:'center'}}></span><span>${p.name}</span><button className="ib" aria-label=${it.lock?'Unlock':'Lock'} onClick=${e=>{e.stopPropagation();patchItem(it.uid,{lock:!it.lock})}}>${I(it.lock?'lock':'unlock')}</button><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(it.uid)}}>${I('trash')}</button></div>`}):html`<p className="help">No pieces yet. Add some from the Pieces tab.</p>`}</div>`}
     </aside>
