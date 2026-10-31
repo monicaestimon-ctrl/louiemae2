@@ -122,4 +122,8 @@ with a play button.
   `trade/index.html` mirrors `Header`/`FilmStudy` in `trade/app.ts`; change them together.
 - New or re-cut hero films: run `node scripts/build-film-frames.mjs <film>` and commit the
   phone cut (`trade/filmFrames.test.ts` fails until you do).
+- Desktop plays its own shorter cut of each room, `f/<film>/desk.mp4` with `desk-poster.jpg`,
+  timed by `DESK` in `trade/app.ts`; `film.mp4` stays as the source of the phone cut, so
+  replacing a desktop cut never touches the phone films. The shell in `trade/index.html` uses
+  the bar's desk poster and its section height (`1 + total / 3.5` screens).
 - New pages: import them with `lazy()` in `App.tsx`.
