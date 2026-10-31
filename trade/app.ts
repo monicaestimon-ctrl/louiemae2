@@ -2822,6 +2822,7 @@ function Room({ctx}){
   // AI render: the current view and its written brief go to an image model; the member sees the
   // result here when it's ready and gets it by email too.
   const startAi=async()=>{if(!eng)return;if(!ctx.me.signedIn){setShowPrompt(false);ctx.toast('Sign in to make an AI render');ctx.signInThen('room');return}
+    if(view==='plan'){ctx.toast('Switch to Orbit or Walk to make an AI render.');return}
     setAiBusy(true);try{const S=E.current.S;const snap=await dataUrlBlob(E.current.snapshot());
       const pieces=[...new Set(doc.items.map(i=>byId(i.pid)?.lid).filter(Boolean))].slice(0,6);
       const id=await createRender({title,prompt,snapshot:await snap.arrayBuffer(),camera:S?{view:S.view,orbit:S.cam,walk:S.eye}:undefined,pieces});
