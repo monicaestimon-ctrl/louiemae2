@@ -242,7 +242,7 @@ export const holmTables = {
     updatedAt: v.number(),
   }).index('by_product', ['productId', 'variantId']),
 
-  // A request for the House team to render a planned room.
+  // An AI render of a planned room, made from the planner's snapshot and the pieces' photos.
   holmRenderRequests: defineTable({
     userId: v.id('users'),
     title: v.string(),
@@ -250,8 +250,21 @@ export const holmTables = {
     camera: v.optional(v.any()),
     room: v.optional(v.any()),
     snapshotId: v.optional(v.id('_storage')),
-    status: v.union(v.literal('new'), v.literal('in_progress'), v.literal('delivered'), v.literal('declined')),
+    // 'new' to 'declined' are requests from before renders were made by AI.
+    status: v.union(
+      v.literal('new'),
+      v.literal('in_progress'),
+      v.literal('delivered'),
+      v.literal('declined'),
+      v.literal('rendering'),
+      v.literal('ready'),
+      v.literal('failed')
+    ),
+    pieces: v.optional(v.array(v.id('commerceProducts'))),
+    resultId: v.optional(v.id('_storage')),
+    error: v.optional(v.string()),
     emailStatus: v.optional(v.string()),
+    updatedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_user', ['userId', 'createdAt'])

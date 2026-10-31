@@ -2053,3 +2053,9 @@ header.top:not(.over){background:color-mix(in srgb,var(--paper) 94%,transparent)
 .fp-walls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.fp-walls label{display:grid;gap:2px;font-size:11px}.fp-walls .field{height:32px;padding:0 6px}
 .fp-brow{display:grid;grid-template-columns:minmax(0,1.6fr) repeat(3,minmax(0,1fr)) 28px;gap:4px;align-items:center}.fp-brow .field{padding:0 6px;font-size:13px}
 @media (max-width:860px){.fp-body{grid-template-columns:1fr}.fp-sheet{max-height:48svh}}
+/* AI render: waiting state */
+.ai-wait{display:flex;flex-direction:column;align-items:center;gap:6px;padding:48px 16px;text-align:center}
+.ai-wait p{margin:0}
+.ai-spin{width:36px;height:36px;border-radius:50%;border:3px solid var(--plaster,#EFE8DD);border-top-color:var(--cognac,#A0612F);animation:ai-spin 1s linear infinite;margin-bottom:10px}
+@keyframes ai-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.ai-spin{animation-duration:3s}}

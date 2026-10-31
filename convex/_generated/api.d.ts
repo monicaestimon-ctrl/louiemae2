@@ -68,6 +68,7 @@ import type * as holmPartners from "../holmPartners.js";
 import type * as holmPins from "../holmPins.js";
 import type * as holmPlans from "../holmPlans.js";
 import type * as holmRender from "../holmRender.js";
+import type * as holmRenderAI from "../holmRenderAI.js";
 import type * as holmRenderEmail from "../holmRenderEmail.js";
 import type * as holmSourcing from "../holmSourcing.js";
 import type * as holmSync from "../holmSync.js";
@@ -178,6 +179,7 @@ declare const fullApi: ApiFromModules<{
   holmPins: typeof holmPins;
   holmPlans: typeof holmPlans;
   holmRender: typeof holmRender;
+  holmRenderAI: typeof holmRenderAI;
   holmRenderEmail: typeof holmRenderEmail;
   holmSourcing: typeof holmSourcing;
   holmSync: typeof holmSync;
