@@ -680,6 +680,20 @@ const FILMS={
     hot:[{id:6,x:.58,y:.62},{id:10,x:.8,y:.83},{id:13,x:.3,y:.47}],
     ch:[['A great room, to scale.','Sixteen by eleven metres around a limestone hearth.'],['Double height in clay.','Steel windows, an arched niche, the range hood.'],['Limestone and bronze.','Honed stone, warm plaster, walnut and aged bronze.'],['Cognac velvet on jute.','The Osborne, the Kensley and the Montrose. Tap any piece.'],['Firelight and the niche glow.','The house after dark.']]},
 };
+// Desktop plays its own cut of each room (f/<film>/desk.mp4, desk-poster.jpg): the plan, the
+// clay model rising from it, colour spreading across that model in place, then the film's
+// furnished room into night. Its chapter, hotspot and night times (TL) and hotspot positions
+// (hot, same order as FILMS[].hot) are its own; film.mp4 stays the source of the phone cut.
+const DESK={
+  bar:{TL:{"total":9.5,"ch":[0,1.0,4.5,7.8,8.7],"hot":[[8.0,8.6],[8.7,9.5]],"dark":8.7},hot:[[0.734,0.747],[0.159,0.567],[0.772,0.471],[0.084,0.627]]},
+  'cafe-paris':{TL:{"total":15.0,"ch":[0,2.4,6.8,9.15,11.25],"hot":[[9.35,11.15],[13.6,15.0]],"dark":12.19},hot:[[0.52,0.46],[0.485,0.555],[0.615,0.27]]},
+  'cafe-provence':{TL:{"total":12.46,"ch":[0,1.0,5.0,7.7,9.64],"hot":[[7.9,9.54],[11.06,12.46]],"dark":10.35},hot:[[0.9,0.53],[0.79,0.6],[0.05,0.58],[0.27,0.17]]},
+  'coffee-riviera':{TL:{"total":9.42,"ch":[0,2.3,3.5,5.82,7.92],"hot":[[6.02,7.82],[8.12,9.42]],"dark":8.28},hot:[[0.5,0.61],[0.26,0.8],[0.74,0.8],[0.88,0.62]]},
+  'home-estate':{TL:{"total":11.83,"ch":[0,1.0,5.0,7.36,9.46],"hot":[[7.56,9.36],[10.43,11.83]],"dark":10.04},hot:[[0.58,0.62],[0.8,0.83],[0.3,0.47]]},
+  'resto-orangerie':{TL:{"total":15.0,"ch":[0,2.4,5.0,8.56,10.66],"hot":[[8.76,10.56],[13.6,15.0]],"dark":11.73},hot:[[0.25,0.58],[0.33,0.75],[0.76,0.69]]},
+  'work-library':{TL:{"total":15.0,"ch":[0,2.4,8.3,9.9,11.23],"hot":[[10.1,11.13],[13.6,15.0]],"dark":12.16},hot:[[0.2,0.7],[0.79,0.7],[0.31,0.45],[0.57,0.85]]},
+  'work-loft':{TL:{"total":13.96,"ch":[0,2.4,7.5,9.81,11.91],"hot":[[10.01,11.81],[12.56,13.96]],"dark":12.33},hot:[[0.27,0.6],[0.45,0.73],[0.82,0.7]]},
+};
 const filmsFor=space=>Object.keys(FILMS).filter(k=>FILMS[k].space===space);
 const FILM_AR=16/9;
 // Phones (any screen narrower than 3:4) get the film playing straight through (PhoneFilm)
@@ -689,7 +703,8 @@ const PHONE_FRAMES='(max-aspect-ratio: 3/4)';
 function useMedia(q){const [m,setM]=useState(()=>matchMedia(q).matches);useEffect(()=>{const mq=matchMedia(q);const f=()=>setM(mq.matches);mq.addEventListener('change',f);return()=>mq.removeEventListener('change',f)},[q]);return m}
 
 function FilmStudy({ctx,fk,setFk}){
-  const F=FILMS[fk],TL=F.TL;const siblings=filmsFor(ctx.space);
+  const F=FILMS[fk],D=DESK[fk],TL=D?D.TL:F.TL;const siblings=filmsFor(ctx.space);
+  const HOTS=D?F.hot.map((h,i)=>({...h,x:D.hot[i][0],y:D.hot[i][1]})):F.hot;
   const secRef=useRef(),stageRef=useRef(),vidRef=useRef(),cur=useRef(0),last=useRef({ch:-1,hot:-1,dark:null});
   const [chi,setChi]=useState(0);const [hot,setHot]=useState(-1);const [dark,setDark]=useState(!!F.darkRoom&&false);
   const [box,setBox]=useState({w:1,h:1});const [pick,setPick]=useState(null);const [started,setStarted]=useState(false);const [ready,setReady]=useState(false);
@@ -725,12 +740,12 @@ function FilmStudy({ctx,fk,setFk}){
   const goChap=i=>{const sec=secRef.current,st=stageRef.current;const top=sec.getBoundingClientRect().top+scrollY;const total=sec.offsetHeight-st.offsetHeight;const t=i===3?TL.hot[0][0]+0.3:i===4?TL.hot[1][0]+0.3:TL.ch[i]+0.4;scrollTo({top:top+total*(t/TL.total),behavior:'smooth'})};
   const toTop=()=>{const sec=secRef.current;if(sec&&sec.getBoundingClientRect().top<0)scrollTo({top:sec.getBoundingClientRect().top+scrollY,behavior:'smooth'})};
   const P0=pick&&byId(pick.id);const ids=[...new Set(F.hot.map(h=>h.id))];
-  return html`<section className="rh hf" ref=${secRef} style=${{height:'calc(7.5 * var(--app-h, 100svh))'}} aria-label=${F.name+' film'}>
+  return html`<section className="rh hf" ref=${secRef} style=${{height:`calc(${D?(1+TL.total/3.5).toFixed(2):7.5} * var(--app-h, 100svh))`}} aria-label=${F.name+' film'}>
     <div className=${'hf-stage'+(dark?' night':'')} ref=${stageRef} onClick=${()=>setPick(null)}>
-      <img className="hf-video" src=${`f/${fk}/poster.jpg`} alt="" fetchpriority="high" aria-hidden="true"/>
-      <video ref=${vidRef} className=${'hf-video hf-fade'+(ready?' on':'')} src=${`f/${fk}/film.mp4`} muted playsInline preload="none" aria-hidden="true" onLoadedData=${()=>setReady(true)}></video>
+      <img className="hf-video" src=${`f/${fk}/${D?'desk-poster':'poster'}.jpg`} alt="" fetchpriority="high" aria-hidden="true"/>
+      <video ref=${vidRef} className=${'hf-video hf-fade'+(ready?' on':'')} src=${`f/${fk}/${D?'desk':'film'}.mp4`} muted playsInline preload="none" aria-hidden="true" onLoadedData=${()=>setReady(true)}></video>
       <div className="hf-scrim" aria-hidden="true"></div>
-      ${hot>=0&&F.hot.map((h,i)=>{const x=ox+h.x*mw,y=oy+h.y*mh;if(x<12||x>box.w-12||y<90||y>box.h-12)return null;const p=byId(h.id);return html`<button key=${hot+'-'+i} className="fs-hot" style=${{left:x+'px',top:y+'px',animationDelay:i*90+'ms'}} aria-label=${'View '+p.name} onClick=${e=>{e.stopPropagation();setPick({id:h.id,x:x/box.w*100,y:y/box.h*100})}}><i></i><span>${p.name}</span></button>`})}
+      ${hot>=0&&HOTS.map((h,i)=>{const x=ox+h.x*mw,y=oy+h.y*mh;if(x<12||x>box.w-12||y<90||y>box.h-12)return null;const p=byId(h.id);return html`<button key=${hot+'-'+i} className="fs-hot" style=${{left:x+'px',top:y+'px',animationDelay:i*90+'ms'}} aria-label=${'View '+p.name} onClick=${e=>{e.stopPropagation();setPick({id:h.id,x:x/box.w*100,y:y/box.h*100})}}><i></i><span>${p.name}</span></button>`})}
       <div className=${'hf-copy'+(fromShell&&chi===0?' still':'')} onClick=${e=>e.stopPropagation()}>
         <h1 key=${'h'+fk+chi}>${ch[0]}</h1>
         <p key=${'p'+fk+chi}>${ch[1]}</p>
