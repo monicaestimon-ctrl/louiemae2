@@ -4,11 +4,11 @@ import { v } from 'convex/values';
 import { internalAction } from './_generated/server';
 import { internal } from './_generated/api';
 
-// Until email is configured, check again every hour for two days so no request is lost.
+// Until email is configured, check again every hour for two days so no render goes unannounced.
 const CONFIG_WAIT = 60 * 60_000;
 const CONFIG_CHECKS = 48;
 
-/** Emails the House team a new render request, retrying twice once email is configured. */
+/** Emails the member that their AI render is ready, retrying twice once email is configured. */
 export const notify = internalAction({
   args: { id: v.id('holmRenderRequests'), attempt: v.number(), waits: v.optional(v.number()) },
   handler: async (ctx, a) => {
@@ -22,37 +22,30 @@ export const notify = internalAction({
     } catch {
       return retry();
     }
-    if (!r || r.emailStatus === 'sent') return;
-    const to = process.env.FURNITURE_QUOTE_EMAIL,
-      key = process.env.RESEND_API_KEY;
-    if (!to || !key) {
+    if (!r || r.emailStatus === 'sent' || !r.email || !r.resultUrl) return;
+    const key = process.env.RESEND_API_KEY;
+    if (!key) {
       await ctx.runMutation(internal.holmRender.emailStatus, { id: a.id, status: 'configuration_required' });
       const waits = (a.waits ?? 0) + 1;
       if (waits < CONFIG_CHECKS) await ctx.scheduler.runAfter(CONFIG_WAIT, internal.holmRenderEmail.notify, { id: a.id, attempt: a.attempt, waits });
       return;
     }
-    const reference = String(r._id).slice(-8).toUpperCase();
+    const site = (process.env.SITE_URL || 'https://www.louiemae.com').replace(/\/$/, '');
     const text = [
-      `House of Louie Mae — render request ${reference}`,
+      `Your render of ${r.title} is ready.`,
       '',
-      `Room: ${r.title}`,
-      `From: ${r.email || 'a signed-in member'}`,
-      r.snapshotUrl ? `Snapshot: ${r.snapshotUrl}` : 'No snapshot attached.',
+      `See it and download it here: ${r.resultUrl}`,
       '',
-      'Brief:',
-      r.prompt,
+      `It's also in the Space Planner: ${site}/trade`,
       '',
-      r.camera ? `Camera: ${JSON.stringify(r.camera)}` : '',
-    ]
-      .filter((l) => l !== undefined)
-      .join('\n');
+      'House of Louie Mae',
+    ].join('\n');
     try {
       const result = await new Resend(key).emails.send(
         {
           from: process.env.FURNITURE_EMAIL_FROM || 'Louie Mae <withlove@louiemae.com>',
-          to,
-          ...(r.email ? { replyTo: r.email } : {}),
-          subject: `House of Louie Mae — render request ${reference}`,
+          to: r.email,
+          subject: `Your render of ${r.title} is ready`,
           text,
         },
         { idempotencyKey: `render:${r._id}` }

@@ -2564,7 +2564,7 @@ function Room({ctx}){
   const [shot,setShot]=useState(null);const [showPrompt,setShowPrompt]=useState(false);
   const [drawer,setDrawer]=useState(null);const [pop,setPop]=useState(null);const [traySheet,setTraySheet]=useState(false);const [tplAsk,setTplAsk]=useState(null);const [lookOpen,setLookOpen]=useState(false);
   const [planOpen,setPlanOpen]=useState(false);const [units,setUnits]=useState(()=>load('units','m'));useEffect(()=>store('units',units),[units]);const [rendering,setRendering]=useState(null);
-  const [shareImg,setShareImg]=useState(null);const [roomKey]=useState(()=>{let k=load('roomKey',null);if(!k){k='room-'+uid();store('roomKey',k)}return k});const [renderBusy,setRenderBusy]=useState(false);const renderUrl=useMutation(api.holmRender.snapshotUploadUrl);const requestRender=useMutation(api.holmRender.request);
+  const [shareImg,setShareImg]=useState(null);const [roomKey]=useState(()=>{let k=load('roomKey',null);if(!k){k='room-'+uid();store('roomKey',k)}return k});const createRender=useAction(api.holmRender.create);const [aiJob,setAiJob]=useState(null);const [aiBusy,setAiBusy]=useState(false);
   const [title,setTitle]=useState(()=>load('roomTitle','Untitled room'));useEffect(()=>store('roomTitle',title),[title]);
   const [three,threeFailed]=useThree();const [eng,setEng]=useState(0);
   const hist=useRef({past:[],future:[]});const vpRef=useRef(),cvRef=useRef(),labRef=useRef(),E=useRef({}),docRef=useRef(doc);docRef.current=doc;
@@ -2819,6 +2819,13 @@ function Room({ctx}){
   const plRows=pieceRows(doc.items.map(i=>[i.pid,false]));
   const pickRail=k=>setDrawer(d=>d===k?null:k);
   const selRug=R0,selPiece=S0;
+  // AI render: the current view and its written brief go to an image model; the member sees the
+  // result here when it's ready and gets it by email too.
+  const startAi=async()=>{if(!eng)return;if(!ctx.me.signedIn){setShowPrompt(false);ctx.toast('Sign in to make an AI render');ctx.signInThen('room');return}
+    setAiBusy(true);try{const S=E.current.S;const snap=await dataUrlBlob(E.current.snapshot());
+      const pieces=[...new Set(doc.items.map(i=>byId(i.pid)?.lid).filter(Boolean))].slice(0,6);
+      const id=await createRender({title,prompt,snapshot:await snap.arrayBuffer(),camera:S?{view:S.view,orbit:S.cam,walk:S.eye}:undefined,pieces});
+      setShowPrompt(false);setAiJob(id)}catch(e){ctx.toast(errText(e))}finally{setAiBusy(false)}};
   return html`<main className="sx planner2">
     <${SxTop} ctx=${ctx} title=${title} setTitle=${t=>setTitle(t.slice(0,TITLE_MAX))} view="3d" onView=${k=>{ctx.setStudioSeed({view:k==='room'?'room':'collage',sync:doc.items.map(i=>i.pid)});ctx.go('studio')}} saved="Saved on this device" onShare=${()=>eng&&setShareImg(E.current.snapshot())}>
       <${SxMenu} ctx=${ctx} hist=${{undo,redo,canUndo:hist.current.past.length>0,canRedo:hist.current.future.length>0,steps:hist.current.past.length}}>
@@ -2890,6 +2897,7 @@ function Room({ctx}){
               <div className="sx-pop-sec"><span className="sx-lbl">Time of day · ${todLabel}</span><input type="range" min="0" max="1" step="0.01" value=${tod} onInput=${e=>setTod(+e.target.value)} aria-label="Time of day" style=${{accentColor:'var(--cognac)'}}/></div>
             </div>`}</div>
           ${style==='material'&&view!=='plan'&&html`<button className="sx-look sx-render" disabled=${!eng||!!rendering} onClick=${async()=>{setRendering({p:0});try{const r=await E.current.still(pr=>setRendering({p:pr}));setRendering(null);setShareImg(r.url);if(!r.traced)ctx.toast('This device rendered a quick still instead of a path-traced one.')}catch(e){setRendering(null);ctx.toast(errText(e))}}}>${I('cam',{width:14})} ${rendering?`Rendering ${Math.round(rendering.p*100)}%`:'Render'}</button>`}
+          ${view!=='plan'&&html`<button className="sx-look sx-render" disabled=${!eng||aiBusy} onClick=${startAi} title="A photoreal picture of this view, made by AI">${I('wand',{width:14})} ${aiBusy?'Sending…':'AI render'}</button>`}
         </div>
         <div className="pl-hint sx-hint">${view==='plan'?'Drag to pan · scroll to zoom · drag a piece to move it':view==='eye'?'WASD or arrows to walk · drag to look':view==='product'?'Drag to turn the piece':'Drag to orbit · right-drag or two fingers to pan · scroll to zoom · double-click a piece to focus'}</div>
       </div>
@@ -2936,11 +2944,29 @@ function Room({ctx}){
     ${shot&&html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&setShot(null)} role="dialog" aria-modal="true" aria-label="Snapshot"><div className="sheet share" style=${{width:'min(1000px,100%)'}}><div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>Snapshot</h2><button className="ib" aria-label="Close" onClick=${()=>setShot(null)}>${I('x')}</button></div><img src=${shot} alt="Snapshot of the room" style=${{borderRadius:12}}/><div className="row" style=${{gap:8,flexWrap:'wrap'}}><a className="btn btn-cog btn-sm" href=${shot} download=${(title||'room').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.jpg'}>${I('download',{width:15})} Download image</a><button className="btn btn-line btn-sm" onClick=${()=>{setShareImg(shot);setShot(null)}}>${I('share',{width:15})} Share</button></div></div></div>`}
     ${showPrompt&&html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&setShowPrompt(false)} role="dialog" aria-modal="true" aria-label="Render brief"><div className="sheet share" style=${{width:'min(720px,100%)'}}>
       <div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>Render <em style=${{color:'var(--cognac)'}}>brief</em></h2><button className="ib" aria-label="Close" onClick=${()=>setShowPrompt(false)}>${I('x')}</button></div>
-      <p className="help" style=${{margin:0}}>Written from your exact layout, materials and light. Use it with a snapshot and the product photos to generate a photoreal render, or send it to the House team to render for you.</p>
+      <p className="help" style=${{margin:0}}>Written from your exact layout, materials and light. AI render turns this view into a photoreal picture from the brief, keeping your exact layout and pieces.</p>
       <pre style=${{whiteSpace:'pre-wrap',background:'var(--plaster)',padding:16,borderRadius:12,fontFamily:'var(--mono)',fontSize:12.5,lineHeight:1.6,margin:0,maxHeight:320,overflow:'auto'}}>${prompt}</pre>
-      <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-ink btn-sm" onClick=${()=>copyText(prompt,ctx.toast)}>${I('copy',{width:14})} Copy brief</button><button className="btn btn-line btn-sm" disabled=${!eng} onClick=${()=>{setShowPrompt(false);setShot(E.current.snapshot())}}>${I('cam',{width:14})} Take snapshot</button><button className="btn btn-line btn-sm" disabled=${renderBusy||!eng} onClick=${async()=>{if(!ctx.me.signedIn){setShowPrompt(false);ctx.toast('Sign in to request a render');ctx.signInThen('room');return}setRenderBusy(true);try{let snapshotId;try{snapshotId=await uploadBlob(renderUrl,await dataUrlBlob(E.current.snapshot()))}catch(e){}const S=E.current.S;const ref=await requestRender({title,prompt,snapshotId,camera:S?{view:S.view,orbit:S.cam,walk:S.eye}:undefined,room:{...doc,wallImg:doc.wallImg&&doc.wallImg.startsWith('data:')?null:doc.wallImg}});ctx.toast(`Render request ${ref} sent. The House team will email you.`);setShowPrompt(false)}catch(e){ctx.toast(errText(e))}finally{setRenderBusy(false)}}}>${renderBusy?'Sending…':'Request a render from the House'}</button></div>
+      <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-ink btn-sm" onClick=${()=>copyText(prompt,ctx.toast)}>${I('copy',{width:14})} Copy brief</button><button className="btn btn-line btn-sm" disabled=${!eng} onClick=${()=>{setShowPrompt(false);setShot(E.current.snapshot())}}>${I('cam',{width:14})} Take snapshot</button><button className="btn btn-cog btn-sm" disabled=${aiBusy||!eng} onClick=${startAi}>${I('wand',{width:14})} ${aiBusy?'Sending…':'Make an AI render'}</button></div>
     </div></div>`}
+    ${aiJob&&html`<${AiRender} ctx=${ctx} id=${aiJob} onClose=${()=>setAiJob(null)} onShare=${u=>{setShareImg(u);setAiJob(null)}} onRetry=${()=>{setAiJob(null);startAi()}}/>`}
   </main>`;
+}
+
+/** Shows an AI render while it's made and when it's ready: download, share or try again. */
+function AiRender({ctx,id,onClose,onShare,onRetry}){
+  const r=useQuery(api.holmRender.one,{id});const [busy,setBusy]=useState(false);
+  const blobOf=async()=>await (await fetch(r.url)).blob();
+  return html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&onClose()} role="dialog" aria-modal="true" aria-label="AI render"><div className="sheet share" style=${{width:'min(1000px,100%)'}}>
+    <div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>AI <em style=${{color:'var(--cognac)'}}>render</em></h2><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>
+    ${!r||r.status==='rendering'?html`<div className="ai-wait" role="status"><span className="ai-spin" aria-hidden="true"></span><p>Making your render. It takes about a minute.</p><p className="help">You can close this and keep planning. We'll email it to you when it's ready.</p></div>`
+    :r.status==='ready'&&r.url?html`<img src=${r.url} alt=${'AI render of '+r.title} style=${{borderRadius:12,width:'100%'}}/>
+      <p className="help" style=${{margin:0}}>Made by AI from your layout. Details can differ slightly from the real pieces.</p>
+      <div className="row" style=${{gap:8,flexWrap:'wrap'}}>
+        <button className="btn btn-cog btn-sm" disabled=${busy} onClick=${async()=>{setBusy(true);try{saveBlob(await blobOf(),fileName(r.title+'-render','png'))}catch(e){ctx.toast(errText(e))}finally{setBusy(false)}}}>${I('download',{width:15})} Download</button>
+        <button className="btn btn-line btn-sm" disabled=${busy} onClick=${async()=>{setBusy(true);try{onShare(URL.createObjectURL(await blobOf()))}catch(e){ctx.toast(errText(e))}finally{setBusy(false)}}}>${I('share',{width:15})} Share</button>
+        <button className="btn btn-line btn-sm" onClick=${onRetry}>${I('wand',{width:15})} Make another</button></div>`
+    :html`<p role="alert">${r.error||'The render could not be made.'}</p><div className="row"><button className="btn btn-cog btn-sm" onClick=${onRetry}>Try again</button></div>`}
+  </div></div>`;
 }
 
 /* ================= FLOOR PLANS ================= */
