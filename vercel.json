@@ -6,7 +6,8 @@
     { "source": "/images/opt/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=2592000, stale-while-revalidate=604800" }] },
     { "source": "/images/brand/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=604800, stale-while-revalidate=604800" }] },
     { "source": "/trade/decoders/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=2592000, stale-while-revalidate=604800" }] },
-    { "source": "/trade/(c|f)/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=2592000, stale-while-revalidate=604800" }] }
+    { "source": "/trade/(c|f)/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=2592000, stale-while-revalidate=604800" }] },
+    { "source": "/trade/m/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }] }
   ],
   "redirects": [
     { "source": "/furniture", "destination": "/trade", "permanent": false },

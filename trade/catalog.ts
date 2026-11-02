@@ -101,6 +101,10 @@ const CURATED: [number, string, string, string, string, string, number][] = [
 // The curated pieces ship with studio cutouts in public/trade/c/ (each cutout's pixel size) and
 // measured widths. Their asset rows override these once they carry approved cutouts and dimensions.
 const CURATED_CUT: Record<number, [number, number]> = {1:[1031,308],2:[1084,368],3:[1057,352],4:[1100,379],5:[1100,375],6:[1100,370],7:[1100,552],8:[995,777],9:[941,673],10:[1100,551],11:[383,917],12:[944,889],13:[1100,726],14:[1100,520],15:[1046,641],16:[995,637],17:[1100,478],18:[1100,577],19:[1100,521],20:[1100,504],21:[1100,731],22:[1100,540],23:[956,426],24:[1100,688]};
+// Curated pieces listed here ship a TRELLIS image-to-3D model in public/trade/m/ (full and low detail,
+// Meshopt geometry and WebP textures, width on X, front facing +Z; see scripts/trellis/). The planner
+// scales it to W × D × H. An uploaded model on the piece's asset row takes its place.
+const CURATED_MODEL = new Set([1, 2, 5, 6, 7, 8, 9, 10, 12, 13]);
 const CURATED_W: Record<number, number> = {1:245,2:235,3:250,4:240,5:300,6:300,7:290,8:46,9:80,10:88,11:64,12:100,13:150,14:85,15:70,16:80,17:270,18:135,19:130,20:150,21:150,22:122,23:110,24:125};
 // Typical depth by type, for a curated piece whose listing gives only a width. Zero means as deep as wide.
 const TYPE_DEPTH: Record<string, number> = { sofa: 95, sectional: 170, bench: 45, ottoman: 0, lighting: 0, stool: 45, chair: 75, table: 90 };
@@ -193,6 +197,7 @@ export function liveProducts(items: LiveItem[]): HolmProduct[] {
     const parsed = a?.dimsCm ?? parseDims(item.facts);
     const dims = parsed ?? (best ? curatedEstimate(id, type) : null);
     const curatedCut = best && CURATED_CUT[id];
+    const curatedModel = !!best && CURATED_MODEL.has(id);
     out.push({
       id,
       lid: item.id,
@@ -220,8 +225,8 @@ export function liveProducts(items: LiveItem[]): HolmProduct[] {
       dimsSource: parsed ? (a?.dimsSource ?? 'parsed') : dims ? 'estimate' : null,
       cutout: a?.cutoutUrl ?? (curatedCut ? `c/${id}.webp` : null),
       cutAR: a?.cutoutUrl ? a.cutoutAspect : curatedCut ? curatedCut[0] / curatedCut[1] : null,
-      model: a?.modelUrl ?? null,
-      modelLow: a?.modelLowUrl ?? null,
+      model: a?.modelUrl ?? (curatedModel ? `/trade/m/${id}.glb` : null),
+      modelLow: a?.modelUrl ? (a.modelLowUrl ?? null) : curatedModel ? `/trade/m/${id}-low.glb` : null,
       hangs: a?.hangs ?? (type === 'lighting' && HANGS.test(text)),
       mountCm: a?.mountHeightCm ?? null,
       minimum: v0.minimum,
