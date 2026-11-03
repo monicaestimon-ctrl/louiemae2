@@ -39,6 +39,7 @@ export const me = query({
       tradeStatus: admin ? ('approved' as const) : me.profile?.tradeStatus || ('none' as const),
       verified: admin || isVerified(me.profile),
       partner: isPartner(me.profile),
+      partnerTier: isPartner(me.profile) ? me.profile?.partnerTier ?? ('base' as const) : null,
       admin,
     };
   },

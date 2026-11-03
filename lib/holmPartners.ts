@@ -8,7 +8,7 @@ export const HOLM_PARTNERS = {
   clearingDays: 30,
   quoteHoldDays: 120, // unpaid partner-attributed quotes stop waiting for payment after this
   referralCreditCents: 10_000, // $100 store credit
-  referralMinOrderCents: 50_000, // after a first paid order over $500
+  referralMinOrderCents: 50_000, // once the referred business pays an order of $500 or more
   // Where a partner link was opened from. Every Share-sheet route tags its link with one of these.
   channels: ['story', 'pin', 'post', 'pdf', 'link', 'share', 'qr'],
 } as const;
@@ -32,4 +32,31 @@ export function holmChannel(raw: string | null | undefined): HolmChannel {
 export function commissionCents(baseCents: number, rateBps: number) {
   if (!Number.isFinite(baseCents) || baseCents <= 0) return 0;
   return Math.round((baseCents * Math.min(rateBps, HOLM_PARTNERS.ceilingBps)) / 10000);
+}
+
+export type HolmTier = keyof typeof HOLM_PARTNERS.tiers;
+const pct = (bps: number) => `${bps / 100}%`;
+const dollars = (cents: number) => `$${(cents / 100).toLocaleString('en-US')}`;
+
+/**
+ * What the site may say about the program, built from the rules above so the copy can't
+ * promise more than the program pays. Commission is earned on furniture today (House quotes);
+ * other product types are added to the copy only when their sales are tracked.
+ */
+export function partnerCopy(tier?: HolmTier | null) {
+  const t = HOLM_PARTNERS.tiers;
+  const rateBps = tier ? t[tier] : t.base;
+  return {
+    rateBps,
+    rateLabel: tier ? `your ${pct(rateBps)} rate` : `the ${pct(rateBps)} starting rate`,
+    range: `${pct(t.base)}–${pct(t.elite)}`,
+    commissionHeadline: tier ? pct(rateBps) : `${pct(t.base)}–${pct(t.elite)}`,
+    referralHeadline: dollars(HOLM_PARTNERS.referralCreditCents),
+    referralLine: `credit when a business you refer is verified and pays an order of ${dollars(HOLM_PARTNERS.referralMinOrderCents)} or more`,
+    // Short forms for the trade pass card, which has room for a few words; the footnote
+    // carries the full conditions next to it.
+    cardCommission: 'commission on House orders via your links',
+    cardReferral: 'credit per business you refer*',
+    referralFootnote: `*Once the business is verified and pays an order of ${dollars(HOLM_PARTNERS.referralMinOrderCents)} or more.`,
+  };
 }
