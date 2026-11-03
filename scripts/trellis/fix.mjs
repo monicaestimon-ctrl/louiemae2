@@ -1,12 +1,19 @@
 // fix.mjs <in> <out>: TRELLIS GLBs omit normals and metallicFactor (which then defaults to 1, fully metal).
 // Adds smooth, area-weighted vertex normals, averaged across UV seams by position, keeping the mesh indexed.
 import { NodeIO } from '@gltf-transform/core';
+// ROT_Y=<degrees> turns a model that TRELLIS built facing away from +Z (the planner's front).
 const [src, dst] = process.argv.slice(2);
+const rot = (Number(process.env.ROT_Y) || 0) * Math.PI / 180;
 const io = new NodeIO();
 const doc = await io.read(src);
 for (const m of doc.getRoot().listMaterials()) m.setMetallicFactor(0).setRoughnessFactor(0.85);
 for (const mesh of doc.getRoot().listMeshes()) for (const prim of mesh.listPrimitives()) {
   const pos = prim.getAttribute('POSITION').getArray(), idx = prim.getIndices().getArray();
+  if (rot) {
+    const c = Math.cos(rot), s = Math.sin(rot);
+    for (let v = 0; v < pos.length; v += 3) { const x = pos[v], z = pos[v+2]; pos[v] = c*x + s*z; pos[v+2] = -s*x + c*z; }
+    prim.getAttribute('POSITION').setArray(pos);
+  }
   let idx2 = idx;
   const n = pos.length / 3, key = new Array(n), acc = new Map();
   for (let v = 0; v < n; v++) key[v] = `${Math.round(pos[3*v]*1e5)},${Math.round(pos[3*v+1]*1e5)},${Math.round(pos[3*v+2]*1e5)}`;
