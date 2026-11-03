@@ -88,7 +88,7 @@ export async function captureRefFromUrl(
   target: string
 ): Promise<StoredRef | null> {
   const url = new URL(window.location.href);
-  const { ref, ch: rawCh, hashQuery } = readParams(url);
+  const { ref, ch: rawCh } = readParams(url);
   const code = normalizeCode(ref);
   if (!code) return null;
   const ch = (rawCh || 'link').toLowerCase().slice(0, 20);
@@ -101,7 +101,10 @@ export async function captureRefFromUrl(
   if (!confirmed) return null;
   const now = Date.now();
   rememberRef(code, ch, now);
-  stripParams(url, hashQuery);
+  // Re-read the address: the visitor may have moved on while the visit was being recorded.
+  const current = new URL(window.location.href);
+  const latest = readParams(current);
+  if (normalizeCode(latest.ref) === code) stripParams(current, latest.hashQuery);
   return { code, ch, at: now };
 }
 

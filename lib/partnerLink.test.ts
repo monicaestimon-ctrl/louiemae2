@@ -30,6 +30,17 @@ describe('partner links in the browser', () => {
     expect(window.location.hash).toBe('#collection/kids?cat=Girls');
   });
 
+  it('leaves the address alone when the visitor moved on before the visit was confirmed', async () => {
+    go('/?ref=MAE1234#shop');
+    const record = vi.fn(async () => {
+      go('/#collection/kids');
+      return true;
+    });
+    expect((await captureRefFromUrl(record, 'site:/'))?.code).toBe('MAE1234');
+    expect(window.location.hash).toBe('#collection/kids');
+    expect(window.location.search).toBe('');
+  });
+
   it('never lets an unknown ?ref= replace a real partner’s code, and leaves that tag alone', async () => {
     rememberRef('PARTNERA', 'pin');
     go('/?utm_source=mail&ref=newsletter');

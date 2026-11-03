@@ -3693,7 +3693,8 @@ export function App(){
   // back from Google sign-in: continue to the page that asked for it
   useEffect(()=>{if(!me.signedIn)return;let r=null;try{r=sessionStorage.getItem('hol:after');sessionStorage.removeItem('hol:after')}catch(x){}if(r&&r!=='welcome')location.hash=r},[me.signedIn]);
   const [afterSignIn,setAfterSignIn]=useState(null);
-  const getRoute=()=>(location.hash.replace('#','')||'home');
+  // The route is the hash up to any '?': partner links may add ?ref=…&ch=… after it (#p/7?ref=…).
+  const getRoute=()=>(location.hash.replace('#','').split('?')[0]||'home');
   const [route,setRoute]=useState(getRoute());
   const [space,setSpace]=useState(()=>load('space','bar'));
   const [modePref,setModePref]=useState(()=>load('mode','trade'));const mode=me.verified?modePref:'retail';const setMode=m=>{if(me.verified)setModePref(m)};
