@@ -1,6 +1,6 @@
 # House of Louie Mae partner program: remaining build spec
 
-Version 0.1 · November 3, 2026 · Draft for owner review. Decisions marked **DECISION** need an answer before that part is built.
+Version 0.1 · November 3, 2026 · Draft for owner review. All decisions in this draft were answered by the owner on November 3, 2026.
 
 ## 1. What this covers
 
@@ -87,7 +87,7 @@ Client quotes (the designer's marked-up quote to their own client) **do not** ca
 
 The `holmCommissions` table gets a `source` field (`house_quote` or `storefront_order`) and an order reference, so both kinds sit in one ledger.
 
-**DECISION 1: which storefront products earn commission?** Everything on louiemae.com (kids clothing, décor, furniture, Ashcroft pieces), or only some collections? Recommendation: all products, with an admin exclusion list for sale items, gift cards and any thin-margin category.
+**Decided (November 3, 2026):** every product on louiemae.com earns commission, except products or collections on an admin exclusion list (for sale items, gift cards and thin-margin categories).
 
 ### 4.5 Partner Hub additions
 
@@ -126,7 +126,7 @@ Based on the partner's **attributed paid sales in the last 12 months** (commissi
 
 Thresholds confirmed by the owner on November 3, 2026.
 
-**DECISION 3:** keep the 23% ceiling as headroom for future promotions, or remove it? Recommendation: keep it.
+**Decided:** keep the 23% ceiling as room for future promotions.
 
 ### 5.3 Margin check
 
@@ -161,7 +161,7 @@ At checkout (storefront cart) and in the quote request (/trade tray), the partne
 - **Storefront order:** when the Checkout session is created, reserve the amount and add a one-off Stripe discount for it. Mark it used when the session completes, or release it if the session expires.
 - **/trade quote:** reserve the amount on the quote request and show it as a "Store credit" line on the project. The Stripe invoice gets a matching negative line. Mark it used when the invoice is paid, or release it if the quote is cancelled or expires.
 
-**DECISION 4:** does credit expire? Recommendation: no expiry while the account is active.
+**Decided:** credit doesn't expire while the account is active.
 
 ## 7. Trade (B2B) buying
 
@@ -187,20 +187,47 @@ Publish `/trade#partner-terms`, linked from the join checkbox, the Hub footer an
 - rates and tiers (section 5), and that rates are locked per order;
 - what counts: paid orders at retail price through the partner's link within 30 days, last click wins, no self-purchases, no trade-priced orders;
 - clearing (30 days), voids on refunds and disputes, and clawback after payout;
-- payouts: after an approved W-9, how often, minimum amount, and method;
+- payouts: monthly on the 15th for cleared balances of $50 or more, by Stripe to the bank account the partner connects (section 9.1);
 - store credit rules (section 6);
 - disclosure: partners must label paid posts ("#ad" or "I earn a commission"), as the FTC requires;
 - tax: partners paid $600 or more in a year receive a 1099-NEC.
 
-**DECISION 5:** payout schedule and minimum. Recommendation: monthly, on the 15th, for cleared balances of $50 or more.
+**Decided:** monthly payouts on the 15th, for cleared balances of $50 or more, paid automatically through Stripe Connect.
 
-**DECISION 6:** payout method. Keep paying by hand and recording it (works today), or add automatic bank payouts later through Stripe Connect? Recommendation: by hand for now, plus a CSV export in Admin → Partners of everything due.
+### 9.1 Automatic payouts through Stripe Connect
+
+Customers already pay through the owner's Stripe account (storefront Checkout and quote invoices). Stripe Connect lets the same account send money out to partners, so incoming sales and outgoing commissions are both in one Stripe dashboard.
+
+**Partner setup (once):**
+
+1. In the Partner Hub, the partner clicks **Set up payouts**.
+2. The site creates a Stripe Connect **Express** account for them and sends them to Stripe's own sign-up page. Stripe collects their legal name, tax ID (the W-9 information) and bank account. Louie Mae never sees or stores bank details.
+3. They come back to the Hub, which shows "Payouts ready" or what Stripe still needs.
+
+**Each month on the 15th (scheduled job):**
+
+1. For each partner with payouts ready and $50 or more cleared, the job sends one Stripe **transfer** from the Louie Mae balance to the partner's connected account, with an idempotency key per partner per month, so a retry can never pay twice.
+2. The cleared commissions are marked paid against that transfer, and the partner is emailed.
+3. Stripe then pays the money into the partner's bank on its normal schedule.
+4. Partners under $50, or who haven't finished setup, carry their balance to the next month. The Hub tells them why.
+
+**Refunds after payout:** a negative adjustment comes off the next transfer. If the partner has no further earnings, the team can reverse the transfer in Stripe or settle it by hand.
+
+**Taxes:** Stripe Connect can file and deliver 1099-NEC forms for connected accounts, which replaces the W-9 upload and manual 1099s. The W-9 upload stays only for partners paid by hand.
+
+**Fallback:** the existing **Record payout** (pay outside the site, record the reference) stays for partners who can't use Stripe.
+
+**Owner setup before building:**
+
+- Turn on Connect in the Stripe dashboard, choose Express accounts, and complete Stripe's platform questions.
+- Keep enough available balance on the 15th to cover the month's transfers. Commissions only clear 30 days after the sale, so that money has normally arrived.
+- Check the current Connect fees on Stripe's pricing page. Stripe charges per active connected account and per payout, and separately for 1099 filing.
 
 ## 10. Admin additions
 
-- **Partners tab:** tier override with reason and end date; each partner's 12-month sales and next-tier threshold; a commission ledger with source, order, rate and status; manual adjustments (with a required note); a "Due this month" total and CSV export.
+- **Partners tab:** tier override with reason and end date; each partner's 12-month sales and next-tier threshold; a commission ledger with source, order, rate and status; manual adjustments (with a required note); each partner's Stripe payout status; a "Due on the 15th" total; transfer history with Stripe links; and a CSV export.
 - **Pricing tab:** the margin-after-Elite-commission column (section 5.3).
-- **Exclusions:** the list of products or collections that don't earn commission (decision 1).
+- **Exclusions:** the list of products or collections that don't earn commission (section 4.4).
 
 ## 11. Other open work on the trade site (not partner program)
 
@@ -217,7 +244,8 @@ Publish `/trade#partner-terms`, linked from the join checkbox, the Hub footer an
 4. **Partner terms page** (section 9).
 5. **Automatic tiers** (section 5) and tier progress in the Hub.
 6. **Credit toggle and spending** (section 6).
-7. **Admin additions** (section 10).
+7. **Stripe Connect payouts** (section 9.1).
+8. **Admin additions** (section 10).
 
 Each step ships as its own PR with tests.
 
@@ -231,6 +259,7 @@ Each step ships as its own PR with tests.
 - A visitor clicks a link on their phone, signs in, and buys on a laptop within 30 days: credited.
 - The **Copy link**, **Save to Pinterest** and every Share sheet route include the code for partners and not for others.
 - Crossing $15,000 in 12-month sales moves a partner to Active the next night; $50,000 to Top; $100,000 to Elite. Earlier commissions keep their old rate.
+- On the 15th, a partner with $50+ cleared and payouts set up receives exactly one Stripe transfer; a rerun of the job pays nothing extra; a partner under $50 carries the balance over.
 - With **Apply to my next order** on, $100 credit comes off the next order's merchandise, never off delivery or tax. With it off, the balance grows. Cancelling the order restores the credit.
 - The Trade page shows 10% to signed-out visitors and the partner's own rate to partners, and no page says "12%" or "for every referral" unless that's true.
 - Public queries never expose buyer names, emails or other partners' data.
