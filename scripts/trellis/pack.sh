@@ -1,7 +1,8 @@
 #!/bin/bash
 # pack.sh <id>...: turn .trellis/raw/<id>.glb into public/trade/m/<id>.glb (1024px WebP texture) and
 # <id>-low.glb (512px, ~35% of the triangles), Meshopt-compressed. Then add the id to CURATED_MODEL
-# in trade/catalog.ts. Check the model first: it must face +Z with its width on X.
+# in trade/catalog.ts. Check the model first: it must face +Z with its width on X
+# (ROT_Y=180 scripts/trellis/pack.sh <id> turns one that faces the other way).
 set -e
 cd "$(dirname "$0")/../.."
 # Tools install once into .trellis/tools (git-ignored); fix.mjs runs from there to resolve its import.
