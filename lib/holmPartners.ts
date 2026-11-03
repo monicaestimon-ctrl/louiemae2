@@ -33,3 +33,31 @@ export function commissionCents(baseCents: number, rateBps: number) {
   if (!Number.isFinite(baseCents) || baseCents <= 0) return 0;
   return Math.round((baseCents * Math.min(rateBps, HOLM_PARTNERS.ceilingBps)) / 10000);
 }
+
+export type HolmTier = keyof typeof HOLM_PARTNERS.tiers;
+const pct = (bps: number) => `${bps / 100}%`;
+const dollars = (cents: number) => `$${(cents / 100).toLocaleString('en-US')}`;
+
+/**
+ * What the site may say about the program, built from the rules above so the copy can't
+ * promise more than the program pays. Commission is earned on furniture today (House quotes);
+ * other product types are added to the copy only when their sales are tracked.
+ */
+export function partnerCopy(tier?: HolmTier | null) {
+  const t = HOLM_PARTNERS.tiers;
+  const rateBps = tier ? t[tier] : t.base;
+  return {
+    rateBps,
+    rateLabel: tier ? `your ${pct(rateBps)} rate` : `the ${pct(rateBps)} starting rate`,
+    range: `${pct(t.base)}–${pct(t.elite)}`,
+    commissionHeadline: tier ? pct(rateBps) : `${pct(t.base)}–${pct(t.elite)}`,
+    commissionLine: tier ? 'your commission on furniture sold through your links' : 'commission on furniture sold through your links',
+    referralHeadline: dollars(HOLM_PARTNERS.referralCreditCents),
+    referralLine: `credit when a business you refer is verified and its first order over ${dollars(HOLM_PARTNERS.referralMinOrderCents)} is paid`,
+    // Short forms for the trade pass card, which has room for a few words; the footnote
+    // carries the full conditions next to it.
+    cardCommission: 'commission on furniture via your links',
+    cardReferral: 'credit per business you refer*',
+    referralFootnote: `*Once the business is verified and its first order over ${dollars(HOLM_PARTNERS.referralMinOrderCents)} is paid.`,
+  };
+}

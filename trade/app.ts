@@ -5,6 +5,7 @@ import htm from 'htm';
 import type { HolmProduct } from './catalog';
 import { useQuery, useMutation, useAction } from 'convex/react';
 import { deliveryCents, DELIVERY_TIERS } from '../lib/holmDelivery';
+import { partnerCopy } from '../lib/holmPartners';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { phoneCut } from './phoneCut.mjs';
@@ -21,7 +22,7 @@ const BY_ID = new Map<number, HolmProduct>();
 export function setProducts(list: HolmProduct[]) { PRODUCTS = list; BY_ID.clear(); list.forEach(p => BY_ID.set(p.id, p)); }
 const byId = (id: number): HolmProduct => BY_ID.get(id) || PRODUCTS[0];
 const has = (id: number) => BY_ID.has(id);
-const TRADE = 0.75, COMMISSION = 0.12; // illustrative only (trade section demo); real prices come from the server
+const TRADE = 0.75; // illustrative only (trade section demo); real prices come from the server
 const tp = (p: HolmProduct) => p.trade ?? p.price;
 const pr = (p: HolmProduct, mode: string) => (mode === 'trade' ? tp(p) : p.price);
 // A piece's seamless cutout when it has one (from its asset record, or the curated studio set), else its photo.
@@ -1040,7 +1041,8 @@ function TradeBand({ctx}){
   // card-local tilt so the light follows the cursor across the metal
   const tilt=e=>{const el=cardRef.current;if(!el)return;const r=el.getBoundingClientRect();el.style.setProperty('--tx',((e.clientX-r.left)/r.width*2-1).toFixed(3));el.style.setProperty('--ty',((e.clientY-r.top)/r.height*2-1).toFixed(3))};
   const rest=()=>{const el=cardRef.current;if(el){el.style.setProperty('--tx',0);el.style.setProperty('--ty',0)}};
-  const trade=amt*TRADE,save=amt-trade,proj=Math.round(trade*tierOf(trade).rate),earn=Math.round(amt*COMMISSION);
+  const pc=partnerCopy(ctx.me.partnerTier);
+  const trade=amt*TRADE,save=amt-trade,proj=Math.round(trade*tierOf(trade).rate),earn=Math.round(amt*pc.rateBps/10000);
   const tSave=useTween(save+proj),tEarn=useTween(earn),tProj=useTween(proj);
   const shown=(name.trim()||'Your studio').slice(0,26);
   const money=v=>'$'+Math.round(v).toLocaleString('en-US');
@@ -1048,14 +1050,14 @@ function TradeBand({ctx}){
     <div className="tc-spot" aria-hidden="true"></div>
     <div className="lx-in tc-grid">
       <div className="tc-copy">
-        <header data-r style=${{'--i':0}}><h2>Built for the trade.</h2><p>One verified account opens trade pricing on every piece, project pricing on big orders, sourcing on request and commission on what your clients buy.</p></header>
+        <header data-r style=${{'--i':0}}><h2>Built for the trade.</h2><p>One verified account opens trade pricing on every piece, project pricing on big orders, sourcing on request, and commission when people buy through your links.</p></header>
         <label className="tc-engrave" data-r style=${{'--i':1}}><span>Preview your trade pass</span><input value=${name} maxLength="26" onInput=${e=>setName(e.target.value)} placeholder="Your studio name"/></label>
         <div className="tc-lens" data-r style=${{'--i':2}}>
           <div className="tc-lens-h"><span>Project size</span><b className="num">${money(amt)}</b></div>
           <input type="range" min="5000" max="250000" step="1000" value=${amt} onInput=${e=>setAmt(+e.target.value)} aria-label="Project size in dollars"/>
           <div className="tc-figs">
             <div><b className="num">${money(tSave)}</b><span>you save at trade${proj?html`, including <em className="num">${money(tProj)}</em> project pricing`:''}</span></div>
-            <div><b className="num">${money(tEarn)}</b><span>you earn if clients buy it from your boards</span></div>
+            <div><b className="num">${money(tEarn)}</b><span>you earn at ${pc.rateLabel} if clients buy it at retail through your links</span></div>
           </div>
         </div>
         <div className="tc-actions" data-r style=${{'--i':3}}><button className="btn btn-lg lx-cream" onClick=${()=>ctx.go('trade')}>Apply for trade</button><button className="btn btn-lg lx-ghost" onClick=${()=>ctx.go('hub')}>Your quotes</button></div>
@@ -1077,14 +1079,14 @@ function TradeBand({ctx}){
             <span className="tc-benefits">
               <span><b className="foil">25%</b>off retail on every piece</span>
               <span><b className="foil">+3–5%</b>project pricing over $10,000 and $25,000</span>
-              <span><b className="foil">12%</b>commission on client orders</span>
-              <span><b className="foil">$100</b>credit for every referral</span>
+              <span><b className="foil">${pc.commissionHeadline}</b>${pc.cardCommission}</span>
+              <span><b className="foil">${pc.referralHeadline}</b>${pc.cardReferral}</span>
             </span>
             <span className="tc-meta"><span>Sourcing on request</span><span>Tax-exempt with a resale certificate</span></span>
           </span>
         </button>
         <i className="tc-floor" aria-hidden="true"></i>
-        <span className="tc-hint">${flip?'Tap to turn back':'Your digital trade pass. It appears in your account the moment you are approved. Nothing to print or mail.'}</span>
+        <span className="tc-hint">${flip?`${pc.referralFootnote} Tap to turn back.`:'Your digital trade pass. It appears in your account the moment you are approved. Nothing to print or mail.'}</span>
       </div>
     </div>
   </section>`;
@@ -3219,7 +3221,7 @@ function PartnerPanel({ctx}){
   const [agree,setAgree]=useState(false);const [busy,setBusy]=useState(false);const [ch,setCh]=useState('link');const bs=useQuery(api.holmPartners.boardStats,ctx.me.signedIn?{}:'skip');const [target,setTarget]=useState('home');const w9Ref=useRef();
   if(!ctx.me.signedIn||ph===undefined)return null;
   if(!ph)return html`<section className="panel" style=${{marginBottom:24,display:'grid',gap:12}}><h3>Partner program</h3>
-    <p className="help" style=${{margin:0}}>Share pieces and boards and earn commission on retail orders placed through your links: 10% to start, up to 18% by tier. Trade-priced orders don't earn commission. Referring a business that's verified and places a first order over $500 earns $100 in store credit.</p>
+    <p className="help" style=${{margin:0}}>Share pieces and boards and earn commission on retail orders placed through your links: ${partnerCopy().commissionHeadline} by tier, starting at ${partnerCopy().range.split('–')[0]}. Trade-priced orders don't earn commission. You also earn ${partnerCopy().referralHeadline} in store ${partnerCopy().referralLine}.</p>
     <label className="cq-check"><input type="checkbox" checked=${agree} onChange=${e=>setAgree(e.target.checked)}/><span>I agree to the partner terms: commission on retail orders through my links within 30 days, payouts after an approved W-9, and disclosure on social posts.</span></label>
     <button className="btn btn-ink" style=${{justifySelf:'start'}} disabled=${!agree||busy} onClick=${async()=>{setBusy(true);try{await join({acceptTerms:true});ctx.toast('Welcome to the partner program')}catch(e){ctx.toast(errText(e))}finally{setBusy(false)}}}>Join the partner program</button></section>`;
   const base=location.origin+'/trade';const hash=target==='home'?'':target.startsWith('p:')?'#p/'+target.slice(2):'#'+target;

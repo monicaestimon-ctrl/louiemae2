@@ -1598,6 +1598,8 @@ header.top:not(.over){background:color-mix(in srgb,var(--paper) 94%,transparent)
 @keyframes tcShadow{0%,100%{transform:scaleX(1);opacity:.9}50%{transform:scaleX(.86);opacity:.6}}
 .tc-hint{position:absolute;bottom:0;font-size:13px;color:rgba(247,238,226,.5)}
 @media (max-width:980px){.tc-grid{grid-template-columns:1fr}.tc-stage{order:-1;padding-top:0}.tc-figs{grid-template-columns:1fr}}
+@media (max-width:560px){.tc-back .tc-strip{top:7%;height:10%}.tc-benefits{top:21%;gap:8px 16px}.tc-benefits span{font-size:11px;line-height:1.3}.tc-benefits b{font-size:21px}.tc-back .tc-meta{bottom:6%;font-size:10.5px}}
+@media (max-width:360px){.tc-benefits{top:20%;gap:6px 12px}.tc-benefits span{font-size:10px}.tc-benefits b{font-size:18px}.tc-back .tc-meta{font-size:9.5px;bottom:5%}}
 @media (prefers-reduced-motion:reduce){.tc-card,.tc-floor{animation:none}.tc-name{animation:none}}
 .tc-card{width:min(600px,100%)}
 .tc-strip{background:linear-gradient(180deg,#000,#1E1915);box-shadow:inset 0 1px 0 rgba(255,230,190,.12),inset 0 -1px 0 rgba(255,230,190,.06)}
