@@ -1209,8 +1209,15 @@ function pairsFor(p,n=3){
 // are left to those pages.
 const IX_MAIN=[['home','The Floor'],['discover','Discover'],['studio','Studio'],['room','Space Planner']];
 const IX_MORE=[['boards','Boards'],['inspo','My Inspo'],['hub','Your quotes'],['sourcing','Sourcing'],['quiz','Style Quiz']];
+// The piece that floats beside the panel on wide screens: [room photo behind it, cut-out piece].
+const IX_PIECE={home:[2,2],discover:[7,7],studio:[13,13],room:[5,5],boards:[12,12],inspo:[4,4],hub:[17,17],sourcing:[9,9],quiz:[21,21]};
+const IX_LABEL=Object.fromEntries([...IX_MAIN,...IX_MORE]);
 function IndexMenu({ctx}){
   const [q,setQ]=useState('');const [spaces,setSpaces]=useState(false);const panel=useRef();
+  // Which link the floating piece is showing: the hovered or focused one, else the current page.
+  const [hi,setHi]=useState(IX_PIECE[ctx.route]?ctx.route:'home');
+  const [bg,piece]=IX_PIECE[hi];
+  const show=r=>({onMouseEnter:()=>setHi(r),onFocus:()=>setHi(r)});
   const close=()=>ctx.setMenu(false);const run=fn=>{close();fn()};
   useEffect(()=>{
     panel.current?.querySelector('.ix-main button')?.focus();
@@ -1224,28 +1231,43 @@ function IndexMenu({ctx}){
   },[]);
   const on=r=>ctx.route===r?'on':'';
   const sp=SPACES[ctx.space];
+  const P=ctx.activeProject;const items=P.items.map(i=>({...i,p:byId(i.pid)}));
+  const seats=items.reduce((s,i)=>s+i.p.seats*i.qty,0);const tot=items.reduce((s,i)=>s+pr(i.p,ctx.mode)*i.qty,0);
   return html`<div className="ix" role="dialog" aria-modal="true" aria-label="Menu">
-    <div className="ix-scrim" onClick=${close}></div>
+    <div className="ix-scrim" onClick=${close}>
+      <div className="ix-stage" aria-hidden="true">
+        <img key=${'bg'+bg} className="ix-bgimg" src=${byId(bg).img} alt=""/>
+        <img key=${'c'+piece} className="ix-cut" src=${cut(piece)} alt=""/>
+        <div className="ix-shadow"></div>
+        <div className="ix-cap"><b>${IX_LABEL[hi]}</b><span>${byId(piece).name} · ${byId(piece).line}</span></div>
+      </div>
+    </div>
     <div className="ix-panel" ref=${panel}>
       <div className="ix-top"><span className="logo"><b>House of Louie Mae</b></span><button className="ib" onClick=${close} aria-label="Close menu">${I('x')}</button></div>
       <div className="ix-body">
         <form className="ix-search" role="search" onSubmit=${e=>{e.preventDefault();run(()=>{ctx.setQuery(q);ctx.setImgQ(null);ctx.go('discover')})}}>${I('search',{width:17})}<input aria-label="Search the House" placeholder="Search pieces, materials, rooms" value=${q} onInput=${e=>setQ(e.target.value)}/></form>
-        <nav className="ix-main" aria-label="Shop">${IX_MAIN.map(([r,l])=>html`<button key=${r} className=${on(r)} aria-current=${ctx.route===r?'page':undefined} onClick=${()=>run(()=>ctx.go(r))}>${l}</button>`)}</nav>
-        <nav className="ix-more" aria-label="Your work">${IX_MORE.map(([r,l])=>html`<button key=${r} className=${on(r)} aria-current=${ctx.route===r?'page':undefined} onClick=${()=>run(()=>ctx.go(r))}>${l}</button>`)}</nav>
+        <nav className="ix-main" aria-label="Shop">${IX_MAIN.map(([r,l])=>html`<button key=${r} ...${show(r)} className=${on(r)} aria-current=${ctx.route===r?'page':undefined} onClick=${()=>run(()=>ctx.go(r))}>${l}</button>`)}</nav>
+        <nav className="ix-more" aria-label="Your work">${IX_MORE.map(([r,l])=>html`<button key=${r} ...${show(r)} className=${on(r)} aria-current=${ctx.route===r?'page':undefined} onClick=${()=>run(()=>ctx.go(r))}>${l}</button>`)}</nav>
+        <button className="ix-proj" onClick=${()=>run(()=>ctx.setTray(true))}>
+          <span className="ix-proj-h"><span>Active project</span><b>${P.name}</b></span>
+          ${items.length>0&&html`<span className="ix-thumbs">${items.slice(0,5).map(i=>html`<span key=${i.pid} style=${{backgroundImage:`url(${cut(i.pid)})`}}></span>`)}</span>`}
+          <span className="ix-meter"><i style=${{width:Math.min(100,seats/P.target*100)+'%'}}></i></span>
+          <span className="ix-proj-f"><span>${seats} of ${P.target} seats</span><span className="num">${fmt(tot)}</span></span>
+        </button>
         <div className="ix-set">
           <button className="ix-row" aria-expanded=${spaces} onClick=${()=>setSpaces(!spaces)}><span>Furnishing</span><span className="ix-val"><i style=${{background:sp.accent}}></i>${sp.label} ${I('down',{width:14,style:{transform:spaces?'rotate(180deg)':''}})}</span></button>
           ${spaces&&html`<div className="ix-chips" role="group" aria-label="Furnishing">${SPACE_KEYS.map(k=>html`<button key=${k} className=${k===ctx.space?'on':''} aria-pressed=${k===ctx.space} onClick=${()=>{ctx.setSpace(k);setSpaces(false)}}>${SPACES[k].label}</button>`)}</div>`}
           ${ctx.me.verified
             ?html`<div className="ix-row"><span>Show prices as</span><div className="ix-seg" role="group" aria-label="Show prices as"><button className=${ctx.mode==='trade'?'on':''} onClick=${()=>ctx.setMode('trade')}>Trade</button><button className=${ctx.mode==='retail'?'on':''} onClick=${()=>ctx.setMode('retail')}>Retail</button></div></div>`
-            :html`<button className="ix-row" onClick=${()=>run(()=>ctx.go('trade'))}><span>${ctx.me.tradeStatus==='pending'?'Trade application in review':'Apply for trade pricing'}</span><span className="ix-val">${ctx.me.tradeStatus==='pending'?'':'25% off'} ${I('arrow',{width:14})}</span></button>`}
+            :html`<button className="ix-row ix-trade" onClick=${()=>run(()=>ctx.go('trade'))}><span><b>${ctx.me.tradeStatus==='pending'?'Trade application in review':'Apply for trade pricing'}</b><small>25% off retail for verified businesses</small></span>${I('arrow',{width:14})}</button>`}
         </div>
+        <a className="ix-retail" href="https://www.louiemae.com" title="Louie Mae, our retail site for your home">Shopping for your home? Louie Mae retail ${I('arrow',{width:13})}</a>
         ${ctx.recent.length>0&&html`<div className="ix-recent"><span>Recently viewed</span><div>${ctx.recent.slice(0,4).map(id=>html`<button key=${id} onClick=${()=>{close();ctx.openPin(id)}} title=${byId(id).name} aria-label=${byId(id).name}><img src=${cut(id)} alt=""/></button>`)}</div></div>`}
       </div>
       <div className="ix-foot">
         <span className="ix-acct">${ctx.me.signedIn
           ?html`<button onClick=${()=>run(()=>ctx.go('profile'))}>Profile</button><button onClick=${()=>run(()=>ctx.go('account'))}>Account</button><button onClick=${()=>run(ctx.signOut)}>Log out</button>`
           :html`<button onClick=${()=>run(()=>ctx.go('welcome'))}>Sign in</button><button onClick=${()=>run(()=>ctx.go('account'))}>Account</button>`}</span>
-        <a href="https://www.louiemae.com">Louie Mae retail ${I('arrow',{width:13})}</a>
       </div>
     </div>
   </div>`;

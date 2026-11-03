@@ -76,8 +76,6 @@ p{margin:0}
 .site-switch a{height:30px;padding:0 12px;border-radius:999px;font-size:12.5px;color:var(--mute);font-weight:500;display:inline-flex;align-items:center;text-decoration:none;transition:color .2s,background .2s}
 .site-switch a:hover{color:var(--ink)}
 .site-switch a.on{background:var(--card);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.12)}
-.ix-retail{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font-size:13px;color:inherit;opacity:.75;text-decoration:none}
-.ix-retail:hover{opacity:1}
 .row{display:flex;align-items:center;gap:10px}
 .scroll-x{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
 .scroll-x::-webkit-scrollbar{display:none}
@@ -770,12 +768,24 @@ a.pin-act{text-decoration:none}
 
 /* ---------- menu v4: one quiet side panel ---------- */
 .ix{position:fixed;inset:0;z-index:80;display:flex;justify-content:flex-end}
-.ix-scrim{position:absolute;inset:0;background:rgba(23,17,13,.38);animation:fade .3s both}
+.ix-scrim{position:absolute;inset:0;background:rgba(23,17,13,.42);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);animation:fade .3s both}
+/* The floating piece, in the space beside the panel (wide screens only). */
+.ix-stage{position:absolute;top:24px;bottom:24px;left:clamp(24px,4vw,64px);right:calc(min(400px,100%) + clamp(24px,4vw,64px));overflow:hidden;border-radius:24px;background:#2A2018;color:#F3EADD;pointer-events:none}
+.ix-bgimg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:blur(16px) brightness(.55) saturate(.9);transform:scale(1.15);animation:fade .6s}
+.ix-cut{position:absolute;left:50%;top:50%;width:min(72%,620px);max-height:58%;object-fit:contain;transform:translate(-50%,-56%);filter:drop-shadow(0 40px 30px rgba(0,0,0,.45));animation:ixcut .7s var(--ease),bob 6s ease-in-out .7s infinite}
+@keyframes ixcut{from{opacity:0;transform:translate(-50%,-46%) scale(.94)}}
+@keyframes bob{50%{transform:translate(-50%,-59%)}}
+.ix-shadow{position:absolute;left:28%;right:28%;top:77%;height:6%;background:radial-gradient(ellipse,rgba(0,0,0,.45),transparent 70%);filter:blur(6px)}
+.ix-cap{position:absolute;left:24px;right:24px;bottom:22px;display:flex;flex-direction:column;gap:2px}
+.ix-cap b{font-family:var(--display);font-style:italic;font-weight:400;font-size:32px}
+.ix-cap span{font-size:12.5px;opacity:.7}
+@media (max-width:900px){.ix-stage{display:none}}
+@media (prefers-reduced-motion:reduce){.ix-cut{animation:none}}
 .ix-panel{position:relative;width:min(400px,100%);height:100%;display:flex;flex-direction:column;background:var(--paper);color:var(--ink);box-shadow:var(--shadow);animation:ixin .35s var(--ease) both}
 @keyframes ixin{from{transform:translateX(100%)}}
 @media (prefers-reduced-motion:reduce){.ix-scrim,.ix-panel{animation:none}}
 .ix-top{display:flex;align-items:center;justify-content:space-between;height:64px;padding:0 16px 0 24px;flex:none}
-.ix-body{flex:1;overflow:auto;padding:4px 24px 24px;display:flex;flex-direction:column;gap:22px}
+.ix-body{flex:1;overflow:auto;padding:4px 24px 24px;display:flex;flex-direction:column;gap:20px}
 .ix-search{display:flex;align-items:center;gap:8px;height:44px;border-radius:999px;background:var(--plaster);padding:0 16px;flex:none;color:var(--mute)}
 .ix-search input{flex:1;background:none;border:0;outline:none;color:var(--ink);min-width:0;font-size:15px}
 .ix-search input::placeholder{color:var(--mute)}
@@ -800,10 +810,23 @@ a.pin-act{text-decoration:none}
 .ix-recent div{display:flex;gap:6px}
 .ix-recent button{width:44px;height:38px;border-radius:8px;background:var(--plaster);padding:3px}
 .ix-recent img{width:100%;height:100%;object-fit:contain}
+.ix-proj{display:grid;gap:8px;text-align:left;padding:14px 16px;border-radius:16px;background:var(--plaster);color:var(--ink);transition:background .2s}
+.ix-proj:hover{background:var(--sand)}
+.ix-proj-h{display:flex;flex-direction:column;gap:1px}
+.ix-proj-h span,.ix-proj-f{font-size:12.5px;color:var(--mute)}
+.ix-proj-h b{font-family:var(--display);font-size:22px;font-weight:500}
+.ix-proj-f{display:flex;justify-content:space-between}
+.ix-thumbs{display:flex;gap:6px}
+.ix-thumbs span{width:42px;height:32px;background:var(--card) center/contain no-repeat;border-radius:7px}
+.ix-trade{padding:8px 0}
+.ix-trade b{display:block;font-weight:500;color:var(--ink)}
+.ix-trade small{display:block;font-size:12.5px;color:var(--mute)}
 .ix-meter{height:4px;border-radius:2px;background:rgba(127,127,127,.25);overflow:hidden}
 .ix-meter i{display:block;height:100%;background:#C9A36B;border-radius:2px;transition:width .6s var(--ease)}
 .ix-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 24px calc(14px + env(safe-area-inset-bottom));border-top:1px solid var(--line);font-size:13px;color:var(--mute);flex:none}
-.ix-acct{display:flex;gap:16px}
+.ix-acct{display:flex;gap:20px;white-space:nowrap}
+.ix-retail{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--mute);text-decoration:none;margin-top:-10px}
+.ix-retail:hover{color:var(--ink)}
 .ix-foot button,.ix-foot a{color:var(--mute);text-decoration:none;display:inline-flex;align-items:center;gap:5px}
 .ix-foot button:hover,.ix-foot a:hover{color:var(--ink)}
 
