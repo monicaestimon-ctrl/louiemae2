@@ -819,6 +819,10 @@ a.pin-act{text-decoration:none}
 .ix-thumbs{display:flex;gap:6px}
 .ix-thumbs span{width:42px;height:32px;background:var(--card) center/contain no-repeat;border-radius:7px}
 .ix-trade{padding:8px 0}
+.ix-acctlink{text-align:left;color:inherit}
+.ix-acctlink b{display:block;font-weight:500;color:var(--ink)}
+.ix-acctlink small{display:block;font-size:12.5px;color:var(--mute)}
+.ix-acctlink:hover b{color:var(--cognac)}
 .ix-trade b{display:block;font-weight:500;color:var(--ink)}
 .ix-trade small{display:block;font-size:12.5px;color:var(--mute)}
 .ix-meter{height:4px;border-radius:2px;background:rgba(127,127,127,.25);overflow:hidden}
