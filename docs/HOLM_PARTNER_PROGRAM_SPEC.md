@@ -1,10 +1,10 @@
 # House of Louie Mae partner program: remaining build spec
 
-Version 0.1 · November 3, 2026 · Draft for owner review. Decisions 1–6 were answered by the owner on November 3, 2026. Decision 7 (creator rates by product type) is open.
+Version 1.0 · November 3, 2026 · Approved for implementation. All decisions were answered by the owner on November 3, 2026. This spec is ready to implement.
 
 ## 1. What this covers
 
-Partners promote Louie Mae pieces through their own links (boards, product posts, stories, pins, PDFs, QR codes, plain links). When someone they sent buys, the sale is credited to that partner and they earn a commission. Verified trade businesses can also buy at trade (B2B) pricing. One account can be both.
+Partners promote Louie Mae products through their own links (boards, product posts, stories, pins, PDFs, QR codes, plain links). When someone they sent buys, the sale is credited to that partner and they earn a commission at a rate set by their tier and the type of product (furniture, home décor or clothing). Partners are either **creators** (anyone, no business needed) or **trade partners** (verified businesses, who also buy at trade/B2B pricing).
 
 This spec lists what is already built, what is missing, how each missing part should work, and the order to build it in.
 
@@ -37,7 +37,8 @@ This spec lists what is already built, what is missing, how each missing part sh
 
 ## 3. Definitions
 
-- **Partner:** any member who joined the program. They don't need to be a business.
+- **Partner:** any member who joined the program. **Creators** are partners who aren't verified businesses; **trade partners** are partners with a verified trade account.
+- **Product type:** furniture, home décor or clothing. It sets the commission rate column (section 5A.3).
 - **Trade account:** a business verified by the team (certificate or licence). Gets trade pricing and client quotes.
 - **Partner link:** any louiemae.com URL with `?ref=CODE` (and optionally `&ch=channel`), or a shared board or bundle link that carries the owner's code.
 - **Attributed order:** a paid order whose buyer arrived through a partner link within the attribution window.
@@ -80,18 +81,18 @@ Client quotes (the designer's marked-up quote to their own client) **do not** ca
 ### 4.4 Storefront checkout (new)
 
 1. When the cart creates a Stripe Checkout session (`convex/http.ts`), send the stored code and visitor id with it. The server resolves attribution with the existing `resolveAttribution` and stores the partner, code, channel and board on the order. Never trust a partner id from the browser.
-2. On `checkout.session.completed`, create a **pending** commission for the order at the partner's current tier rate. Lock the rate on the commission.
+2. On `checkout.session.completed`, create a **pending** commission for the order, worked out line by line: each line's rate comes from the partner's current tier and the line's product type (section 5A.3), capped by the margin guard (section 5A.4). Lock the type, rate and amount on each line.
 3. On `charge.refunded` or `charge.dispute.created`, void the pending commission. A partial refund reduces it pro rata.
 4. After 30 days, the same hourly job clears it, as it does for /trade.
 5. If an order is refunded **after** the commission was paid, record a negative adjustment that comes off the partner's next payout.
 
-The `holmCommissions` table gets a `source` field (`house_quote` or `storefront_order`) and an order reference, so both kinds sit in one ledger.
+The `holmCommissions` table gets a `source` field (`house_quote` or `storefront_order`), an order reference and per-line detail (product, type, rate, amount), so both kinds sit in one ledger. The existing /trade quote reconciliation switches to the same line-by-line calculation.
 
 **Decided (November 3, 2026):** every product on louiemae.com earns commission, except products or collections on an admin exclusion list (for sale items, gift cards and thin-margin categories).
 
 ### 4.5 Partner Hub additions
 
-- **Orders list:** every attributed order (storefront and /trade) with date, amount, commission, status (pending, cleared, paid, void) and the channel and board it came from. No buyer names or emails.
+- **Orders list:** every attributed order (storefront and /trade) with date, amount, commission, status (pending, cleared, paid, void) and the channel and board it came from. Each order can expand to its lines with product type and rate. No buyer names or emails.
 - **Totals:** pending, cleared (ready to pay) and paid to date.
 - **Link builder for any page:** paste any louiemae.com URL and get it back with the partner's code and a chosen channel, plus a QR code.
 - **Tier progress** (section 5) and the **credit toggle** (section 6).
@@ -100,29 +101,26 @@ The `holmCommissions` table gets a `source` field (`house_quote` or `storefront_
 
 ### 5.1 Today's tiers
 
-| Tier | Rate |
-| --- | --- |
-| Base | 10% |
-| Active | 12% |
-| Top | 15% |
-| Elite | 18% |
+Today there's one rate per tier, used for everything: Base 10%, Active 12%, Top 15%, Elite 18%. Under this spec those become the **furniture** rates, and home décor and clothing get their own columns (section 5A.3).
 
 ### 5.2 Rules for moving between tiers
 
 Based on the partner's **attributed paid sales in the last 12 months** (commissionable amount, after refunds):
 
-| Tier | Rate | Sales in the last 12 months |
-| --- | --- | --- |
-| Base | 10% | $0 – $14,999 |
-| Active | 12% | $15,000 – $49,999 |
-| Top | 15% | $50,000 – $99,999 |
-| Elite | 18% | $100,000 and up |
+| Tier | Sales in the last 12 months |
+| --- | --- |
+| Base | $0 – $14,999 |
+| Active | $15,000 – $49,999 |
+| Top | $50,000 – $99,999 |
+| Elite | $100,000 and up |
+
+Sales of every product type count toward the tier. The rates for each tier are in section 5A.3.
 
 - **Moving up:** checked nightly. A partner moves up as soon as they cross a threshold, and orders paid from then on earn the new rate.
 - **Moving down:** checked once a quarter, at most one tier at a time, so a slow month never cuts a rate suddenly.
 - **Rate is locked per order** at the moment it's paid. A later tier change never changes past commissions.
 - **Admin override:** the team can set a tier by hand (for example to start a well-known designer at Top) with a reason and an optional end date. While an override is active, automatic changes don't apply.
-- **Hub display:** "Active · 12% commission · $3,200 more in sales to reach Top (15%)".
+- **Hub display:** "Active · 12% furniture, 9% décor, 6% clothing · $3,200 more in sales to reach Top".
 
 Thresholds confirmed by the owner on November 3, 2026.
 
@@ -130,9 +128,9 @@ Thresholds confirmed by the owner on November 3, 2026.
 
 ### 5.3 Margin check
 
-Commission comes out of retail margin. House starting estimates are at least 2× supplier cost, so 18% commission still leaves a positive margin. Ashcroft and storefront margins vary. Add a column to Admin → Pricing: **margin after Elite commission**, and flag any piece under 20%, so the team can exclude it or reprice it.
+Commission comes out of retail margin. The margin guard (section 5A.4) protects every line automatically. Add a column to Admin → Pricing: **margin after Elite commission** for the product's type, and flag any product under 20%, so the team can exclude it or reprice it.
 
-## 5A. Creators, and rates by product type (proposal)
+## 5A. Creators, and rates by product type
 
 ### 5A.1 Two kinds of partner, one program
 
@@ -160,20 +158,18 @@ Clothing and décor examples, using the CJ formula:
 
 Clothing also has the most returns, and a refunded order voids its commission.
 
-### 5A.3 Proposed rates
+### 5A.3 Rates
 
 | Tier (12-month sales) | Furniture | Home décor | Clothing |
 | --- | --- | --- | --- |
-| Base ($0–$14,999) | 10% | 6% | 5% |
-| Active ($15,000+) | 12% | 7% | 6% |
-| Top ($50,000+) | 15% | 8% | 7% |
-| Elite ($100,000+) | 18% | 10% | 8% |
-
-Sales of every product type count toward the tier.
+| Base ($0–$14,999) | 10% | 8% | 5% |
+| Active ($15,000+) | 12% | 9% | 6% |
+| Top ($50,000+) | 15% | 10% | 7% |
+| Elite ($100,000+) | 18% | 12% | 8% |
 
 ### 5A.4 Margin guard
 
-On any order line, commission never exceeds **40% of our profit on that line** (price minus supplier cost, shipping, supplier fees and card fees). We always keep at least 60% of the profit. This only affects thin items. For example, the $8 bulky décor piece above earns at most $2.71 (8.5%), even at a higher tier. Lines with no known cost earn the base rate for their type, and the Pricing tab flags them.
+On any order line, commission never exceeds **40% of our profit on that line** (price minus supplier cost, shipping, supplier fees and card fees). We always keep at least 60% of the profit. This only affects thin items. For example, the $8 bulky décor piece above earns $2.56 at the 8% Base rate, but at most $2.71 (8.5%) at any higher tier. Lines with no known cost earn the base rate for their type, and the Pricing tab flags them.
 
 Example: a Base creator sends a $31.99 dress. They earn $1.60 (5%), and we keep $9.17 of the $10.77 profit.
 
@@ -183,9 +179,9 @@ Example: a Base creator sends a $31.99 dress. They earn $1.60 (5%), and we keep 
 - The rate table in `lib/holmPartners.ts`, keyed by tier and type.
 - Commission worked out per order line, with the guard, and the type and rate stored on each line.
 - **Creator Hub on louiemae.com:** join (terms and disclosure), link builder for any page, QR codes, earnings by order, tier progress, credit toggle and Stripe payouts. It's the same Hub as /trade, without the trade tools.
-- **Copy:** "Earn 5–10% on clothing and décor and 10–18% on furniture", with the viewer's own rates once they join.
+- **Copy:** "Earn 10–18% on furniture, 8–12% on home décor and 5–8% on clothing", with the viewer's own rates once they join.
 
-**DECISION 7:** confirm the rate table and the 40% guard.
+**Decided (November 3, 2026):** the rate table above (décor 8–12%, clothing 5–8%) and the 40% guard.
 
 **Note:** clothing and décor commission starts when those products can be bought on louiemae.com. Today the cart only accepts Ashcroft furniture and shows everything else as Coming Soon.
 
@@ -230,10 +226,10 @@ The existing trade buying (25% off, project pricing, client quotes with the desi
 ## 8. Truthful copy (fixes gap 5)
 
 - Replace the fixed "12%" and "$100 for every referral" text on the Trade page's membership card and the earnings calculator with values from `lib/holmPartners.ts`:
-  - **Signed-out visitors and new partners:** "10% commission to start, up to 18%".
-  - **Signed-in partners:** "Your rate: 12% (Active)".
+  - **Signed-out visitors and new partners:** "Earn 10–18% on furniture, 8–12% on home décor and 5–8% on clothing".
+  - **Signed-in partners:** their own rates, for example "Your rates (Active): 12% furniture, 9% décor, 6% clothing".
   - **Referral line:** "$100 credit when a business you refer is verified and places its first order over $500".
-- Remove the hard-coded `COMMISSION = 0.12` in `trade/app.ts`. The calculator uses the viewer's rate, or 10% labelled "starting rate".
+- Remove the hard-coded `COMMISSION = 0.12` in `trade/app.ts`. The /trade calculator is about furniture, so it uses the viewer's furniture rate, or 10% labelled "starting rate".
 - Add a check (a test) that the copy reads its numbers from the config, so the page and the program can't drift apart again.
 
 ## 9. Partner terms page (fixes gap 6)
@@ -241,7 +237,7 @@ The existing trade buying (25% off, project pricing, client quotes with the desi
 Publish `/trade#partner-terms`, linked from the join checkbox, the Hub footer and the payout email. It covers:
 
 - who can join, and that the team can remove a partner for misuse;
-- rates and tiers (section 5), and that rates are locked per order;
+- rates by tier and product type (sections 5 and 5A), the margin guard, and that rates are locked per order line;
 - what counts: paid orders at retail price through the partner's link within 30 days, last click wins, no self-purchases, no trade-priced orders;
 - clearing (30 days), voids on refunds and disputes, and clawback after payout;
 - payouts: monthly on the 15th for cleared balances of $50 or more, by Stripe to the bank account the partner connects (section 9.1);
@@ -297,18 +293,24 @@ Customers already pay through the owner's Stripe account (storefront Checkout an
 
 1. **Truthful copy** (section 8). Small, and fixes a misleading claim right away.
 2. **Share buttons carry the code** (section 4.2) and **shared storage across both apps** (section 4.1).
-3. **Storefront attribution and commission** (sections 4.3–4.5), with the Hub orders list.
-4. **Partner terms page** (section 9).
-5. **Automatic tiers** (section 5) and tier progress in the Hub.
-6. **Credit toggle and spending** (section 6).
-7. **Stripe Connect payouts** (section 9.1).
-8. **Admin additions** (section 10).
+3. **Rates by product type and the margin guard** (section 5A.3–5A.5): product types, the rate table, line-by-line commission (also for /trade quotes).
+4. **Storefront attribution and commission** (sections 4.3–4.5), with the Hub orders list.
+5. **Creator Hub on louiemae.com** (section 5A.5) and the **partner terms page** (section 9).
+6. **Automatic tiers** (section 5) and tier progress in the Hub.
+7. **Credit toggle and spending** (section 6).
+8. **Stripe Connect payouts** (section 9.1). Needs Connect turned on first.
+9. **Admin additions** (section 10).
 
 Each step ships as its own PR with tests.
+
+Clothing and décor commission only starts once those products can be bought on louiemae.com. Opening the storefront cart to them is separate work, not part of this spec.
 
 ## 13. Acceptance tests
 
 - A visitor opens a partner's product link on louiemae.com, buys from the cart, and the partner's Hub shows a pending commission at their rate on the merchandise amount only.
+- An order with a sofa, a vase and a dress from a Base partner's link earns 10% on the sofa, 8% on the vase and 5% on the dress.
+- A thin-margin line never earns more than 40% of our profit on it. A line with no known cost earns its type's base rate and is flagged.
+- Someone with no business joins as a creator from louiemae.com, gets links and sees their own rates without ever seeing trade pricing.
 - The same visitor buys again 31 days after the click: no commission.
 - Two partners' links clicked: the later one is credited.
 - The partner buys through their own link: no commission.
@@ -318,5 +320,5 @@ Each step ships as its own PR with tests.
 - Crossing $15,000 in 12-month sales moves a partner to Active the next night; $50,000 to Top; $100,000 to Elite. Earlier commissions keep their old rate.
 - On the 15th, a partner with $50+ cleared and payouts set up receives exactly one Stripe transfer; a rerun of the job pays nothing extra; a partner under $50 carries the balance over.
 - With **Apply to my next order** on, $100 credit comes off the next order's merchandise, never off delivery or tax. With it off, the balance grows. Cancelling the order restores the credit.
-- The Trade page shows 10% to signed-out visitors and the partner's own rate to partners, and no page says "12%" or "for every referral" unless that's true.
+- Signed-out visitors see the real rate ranges (10–18% furniture, 8–12% décor, 5–8% clothing), partners see their own rates, and no page says "12%" or "for every referral" unless that's true.
 - Public queries never expose buyer names, emails or other partners' data.
