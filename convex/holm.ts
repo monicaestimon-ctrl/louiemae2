@@ -95,9 +95,9 @@ function retailCents(variant: FulfillmentVariant) {
   return Math.round(variant.commercial / 0.75);
 }
 
-async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>) {
-  const product = await ctx.db.get(listing.productId);
-  if (!product || !(await listingReady(ctx, product, listing))) return null;
+/** What pricing a House listing needs besides the listing itself: the CJ product and, for
+ * Ashcroft, the louiemae.com listing and its freight/delivery rate. */
+async function pricingParts(ctx: Ctx, product: Doc<'commerceProducts'>, listing: Doc<'commerceListings'>) {
   const linked = product.cjProductId ? await ctx.db.get(product.cjProductId) : null;
   // Ashcroft pieces use the louiemae.com price as retail: the storefront builds the freight
   // allowance into it (see storefrontListing), so trade at 25% off carries freight too.
@@ -110,18 +110,51 @@ async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>) {
       : null;
   const named = store?.snapshot ?? listing.snapshot;
   const rate = product.provider === 'ashcroft' ? retailDelivery(named.category, named.name) : null;
+  return { linked, store, rate };
+}
+
+function variantFreight(route: FulfillmentVariant, rate: ReturnType<typeof retailDelivery>) {
+  return rate ? { cents: rate.freight, known: true } : freightFor(route.sku);
+}
+
+async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>) {
+  const product = await ctx.db.get(listing.productId);
+  if (!product || !(await listingReady(ctx, product, listing))) return null;
+  const { linked, store, rate } = await pricingParts(ctx, product, listing);
   const variants = listing.snapshot.variants.flatMap((sv) => {
     const route = listing.fulfillment?.find((f) => f.id === sv.id);
     if (!route) return [];
     const base = store?.snapshot.variants.find((v) => v.id === sv.id)?.price || retailCents(route);
     if (base <= 0) return [];
     const retail = rate ? launchPrice(base, rate.freight, rate.delivery) : base;
-    const byPrefix = freightFor(route.sku);
-    const freight = rate ? { cents: rate.freight, known: true } : byPrefix;
+    const freight = variantFreight(route, rate);
     const cost = costCents(product, route, linked, freight.cents);
     return [{ ...sv, retail, cost, sku: route.sku, freightKnown: freight.known, trade: tradeCents(retail, cost), floor: floorCents(cost) }];
   });
   return variants.length ? { product, listing, variants, inStock: linked?.inStock !== false } : null;
+}
+
+/**
+ * Landed cost of one unit for each House project line, keyed productId:variantId, worked out
+ * the way the catalog prices it. It reads the product's supplier data directly, so a piece that
+ * has since been unpublished or gone out of stock still has its cost. Null when unknown.
+ */
+export async function houseUnitCosts(ctx: Ctx, lines: { productId: Id<'commerceProducts'>; variantId: string }[]) {
+  const costs = new Map<string, number | null>();
+  for (const productId of new Set(lines.map((l) => l.productId))) {
+    const product = await ctx.db.get(productId);
+    const listing = await ctx.db
+      .query('commerceListings')
+      .withIndex('by_product_channel', (q) => q.eq('productId', productId).eq('channel', 'house'))
+      .unique();
+    if (!product || !listing) continue;
+    const { linked, rate } = await pricingParts(ctx, product, listing);
+    for (const route of listing.fulfillment ?? []) {
+      const cost = costCents(product, route, linked, variantFreight(route, rate).cents);
+      costs.set(`${productId}:${route.id}`, cost > 0 ? cost : null);
+    }
+  }
+  return costs;
 }
 
 // ---------- catalog ----------

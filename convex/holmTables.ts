@@ -21,6 +21,16 @@ export const holmBusinessType = v.union(
 );
 export const clientShow = v.union(v.literal('cost'), v.literal('markup'), v.literal('retail'));
 export const partnerTier = v.union(v.literal('base'), v.literal('active'), v.literal('top'), v.literal('elite'));
+export const productType = v.union(v.literal('furniture'), v.literal('decor'), v.literal('clothing'));
+export const commissionLine = v.object({
+  key: v.string(),
+  type: productType,
+  baseCents: v.number(),
+  rateBps: v.number(),
+  amountCents: v.number(),
+  capped: v.boolean(),
+  costKnown: v.boolean(),
+});
 export const sourcingStatus = v.union(
   v.literal('received'),
   v.literal('sourcing'),
@@ -122,8 +132,10 @@ export const holmTables = {
     quoteRequestId: v.id('holmQuoteRequests'),
     commerceProjectId: v.id('commerceProjects'),
     baseCents: v.number(),
-    rateBps: v.number(),
+    rateBps: v.number(), // the rate earned across the order (amount ÷ base); lines hold each line's rate
     amountCents: v.number(),
+    tier: v.optional(partnerTier), // the tier in effect when the order was paid
+    lines: v.optional(v.array(commissionLine)), // per line: product type, rate, amount, margin guard
     status: v.union(v.literal('pending'), v.literal('cleared'), v.literal('paid'), v.literal('void')),
     clearsAt: v.number(),
     payoutId: v.optional(v.id('holmPayouts')),
@@ -132,6 +144,17 @@ export const holmTables = {
     .index('by_partner', ['partnerId', 'createdAt'])
     .index('by_status_clears', ['status', 'clearsAt'])
     .index('by_partner_status', ['partnerId', 'status']),
+
+  // Every tier a partner has held and when it started, so an order is paid at the tier in
+  // effect when it was paid, whatever changes later.
+  holmTierChanges: defineTable({
+    partnerId: v.id('users'),
+    tier: partnerTier,
+    from: v.optional(partnerTier),
+    at: v.number(),
+    reason: v.string(),
+    by: v.optional(v.string()),
+  }).index('by_partner', ['partnerId', 'at']),
 
   holmReferrals: defineTable({
     referrerId: v.id('users'),

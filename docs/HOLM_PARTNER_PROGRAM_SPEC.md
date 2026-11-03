@@ -145,17 +145,17 @@ Both share the same tier ladder (section 5.2). What changes the rate is **the ty
 | Product type | How it's priced | Profit after supplier and shipping | After card fees (2.9% + 30¢) |
 | --- | --- | --- | --- |
 | Furniture (House, Ashcroft) | House: 2–6× supplier cost; Ashcroft: retail price including freight | about 45–80% of price | about 42–77% |
-| Clothing (CJ) | 2 × item cost + shipping + supplier fees | about 26–40% of price | about 22–37% |
-| Home décor (CJ) | same as clothing | about 26–40% of price | about 22–37% |
+| Clothing (CJ) | 2 × item cost + shipping + supplier fees, rounded up to .99 | about 28–41% of price | about 24–38% |
+| Home décor (CJ) | same as clothing | about 28–41% of price | about 24–38% |
 
 Clothing and décor examples, using the CJ formula:
 
 | Item cost | Shipping | Price | Our profit | After card fees | Share of price |
 | --- | --- | --- | --- | --- | --- |
-| $6 | $7 | $19.99 | $6.00 | $5.12 | 26% |
-| $12 | $7 | $31.99 | $12.00 | $10.77 | 34% |
-| $8 (bulky décor) | $15 | $31.99 | $8.00 | $6.77 | 21% |
-| $25 (décor) | $12 | $62.99 | $25.00 | $22.87 | 36% |
+| $6 | $7 | $19.99 | $6.99 | $6.11 | 31% |
+| $12 | $7 | $31.99 | $12.99 | $11.76 | 37% |
+| $8 (bulky décor) | $15 | $31.99 | $8.99 | $7.76 | 24% |
+| $25 (décor) | $12 | $62.99 | $25.99 | $23.86 | 38% |
 
 Clothing also has the most returns, and a refunded order voids its commission.
 
@@ -170,9 +170,9 @@ Clothing also has the most returns, and a refunded order voids its commission.
 
 ### 5A.4 Margin guard
 
-On any order line, commission never exceeds **40% of our profit on that line** (price minus supplier cost, shipping, supplier fees and card fees). We always keep at least 60% of the profit. This only affects thin items. For example, the $8 bulky décor piece above earns $2.56 at the 8% Base rate, but at most $2.71 (8.5%) at any higher tier. Lines with no known cost earn the base rate for their type, and the Pricing tab flags them.
+On any order line, commission never exceeds **40% of our profit on that line** (price minus supplier cost, shipping, supplier fees and card fees). We always keep at least 60% of the profit. This only affects thin items. For example, the $8 bulky décor piece above earns $2.56 at the 8% Base rate, but at most $3.10 (9.7%) at any tier, so the 10% and 12% rates are held to $3.10. Lines with no known cost earn the base rate for their type, and the Pricing tab flags them.
 
-Example: a Base creator sends a $31.99 dress. They earn $1.60 (5%), and we keep $9.17 of the $10.77 profit.
+Example: a Base creator sends a $31.99 dress. They earn $1.60 (5%), and we keep $10.16 of the $11.76 profit.
 
 ### 5A.5 What it needs
 
