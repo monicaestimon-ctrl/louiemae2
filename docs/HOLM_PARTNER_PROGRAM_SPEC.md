@@ -20,10 +20,10 @@ This spec lists what is already built, what is missing, how each missing part sh
 | Attribution | Only on **/trade quote requests at retail price**. The last partner link clicked in the last 30 days wins. Self-referral is blocked (same account or same email). |
 | Commission | Created when the project is paid, at the partner's tier rate on merchandise (not delivery or tax). It clears after 30 days and is voided if the project is cancelled, refunded or disputed. An hourly job does this. |
 | Tiers | Base 10%, Active 12%, Top 15%, Elite 18%, with a 23% ceiling. **Set by hand only** in Admin → Partners. |
-| Referral credit | $100 store credit when a business that signed up through the partner's link is verified and pays a first order over $500. **Recorded and shown, but it cannot be spent.** |
+| Referral credit | $100 store credit when a business that signed up through the partner's link is verified and pays an order of $500 or more. **Recorded and shown, but it cannot be spent.** |
 | Payouts | The partner uploads a W-9. The admin approves it, pays outside the site and records the payout with a reference. The partner is emailed. |
 | Hub stats | Clicks by channel, per-board views, visits, orders and commission, referrals, credit balance, payout history. |
-| Trade (B2B) | Verified trade accounts see 25% off retail (held at a margin floor), plus 3% off over $10,000 and 5% off over $25,000 per project. They can send their own clients marked-up quotes. Trade-priced orders never earn commission. |
+| Trade (B2B) | Verified trade accounts see 25% off retail (held at a margin floor), plus a further 3% off when a project's trade subtotal is $10,000 or more and 5% when it's $25,000 or more. They can send their own clients marked-up quotes. Trade-priced orders never earn commission. |
 
 ### Missing or wrong
 
@@ -31,7 +31,7 @@ This spec lists what is already built, what is missing, how each missing part sh
 2. **Some share buttons drop the partner code.** The product page's **Copy link** and **Save to Pinterest** buttons never include the code, even for partners.
 3. **Referral credit can't be used**, and there's no choice between spending and saving it.
 4. **Tiers never change on their own.** There are no rules for moving up or down.
-5. **The copy doesn't match the program.** The Trade page's on-screen membership card (the card graphic with the member's name, not a physical card) says "12% commission on client orders" and "$100 credit for every referral", and its earnings calculator uses 12%. The real program starts at 10%, and the $100 needs a verified referral's first paid order over $500.
+5. **The copy doesn't match the program.** The Trade page's on-screen membership card (the card graphic with the member's name, not a physical card) says "12% commission on client orders" and "$100 credit for every referral", and its earnings calculator uses 12%. The real program starts at 10%, and the $100 needs the referred business to be verified and to pay an order of $500 or more.
 6. **No published partner terms.** Partners agree to one sentence. There's no terms page covering rates, attribution, clearing, clawbacks, disclosure and payouts.
 7. **The Hub only counts /trade quotes**, so it can't show earnings from storefront orders.
 
@@ -80,11 +80,12 @@ Client quotes (the designer's marked-up quote to their own client) **do not** ca
 
 ### 4.4 Storefront checkout (new)
 
-1. When the cart creates a Stripe Checkout session (`convex/http.ts`), send the stored code and visitor id with it. The server resolves attribution with the existing `resolveAttribution` and stores the partner, code, channel and board on the order. Never trust a partner id from the browser.
-2. On `checkout.session.completed`, create a **pending** commission for the order, worked out line by line: each line's rate comes from the partner's current tier and the line's product type (section 5A.3), capped by the margin guard (section 5A.4). Lock the type, rate and amount on each line.
-3. On `charge.refunded` or `charge.dispute.created`, void the pending commission. A partial refund reduces it pro rata.
-4. After 30 days, the same hourly job clears it, as it does for /trade.
-5. If an order is refunded **after** the commission was paid, record a negative adjustment that comes off the partner's next payout.
+1. When the cart creates a Stripe Checkout session (`convex/http.ts`), send the stored code and visitor id with it, and keep them on the checkout record (and in the session metadata). The server resolves attribution with the existing `resolveAttribution` and stores the partner, code, channel and board on the order. Never trust a partner id from the browser.
+2. On `checkout.session.completed`, run `resolveAttribution` again with the buyer's email from the session (`customer_details.email`) and any signed-in user id, because a guest's email is only known after checkout. Create a **pending** commission only if attribution still resolves to the same partner. Work it out line by line: each line's rate comes from the partner's tier at that moment and the line's product type (section 5A.3), capped by the margin guard (section 5A.4). Lock the tier, type, rate and amount on each line.
+3. **Exactly once per order:** commission creation is keyed by the Checkout session id (one commission per session). A repeated or late webhook delivery finds the existing record and changes nothing.
+4. On `charge.refunded` or `charge.dispute.created`, void the pending commission. A partial refund reduces it pro rata.
+5. After 30 days, the same hourly job clears it, as it does for /trade.
+6. If an order is refunded **after** the commission was paid, record a negative adjustment that comes off the partner's next payout.
 
 The `holmCommissions` table gets a `source` field (`house_quote` or `storefront_order`), an order reference and per-line detail (product, type, rate, amount), so both kinds sit in one ledger. The existing /trade quote reconciliation switches to the same line-by-line calculation.
 
@@ -118,7 +119,7 @@ Sales of every product type count toward the tier. The rates for each tier are i
 
 - **Moving up:** checked nightly. A partner moves up as soon as they cross a threshold, and orders paid from then on earn the new rate.
 - **Moving down:** checked once a quarter, at most one tier at a time, so a slow month never cuts a rate suddenly.
-- **Rate is locked per order** at the moment it's paid. A later tier change never changes past commissions.
+- **Rate is locked per order** when it's paid. The tier in effect at payment is stored on the order (for /trade quotes, when the invoice payment is verified; for storefront orders, in the checkout webhook), so a tier change before the hourly job runs can't change it. The order that crosses a threshold is paid at the tier held before it; the new tier applies from the next order. A later tier change never changes past commissions.
 - **Admin override:** the team can set a tier by hand (for example to start a well-known designer at Top) with a reason and an optional end date. While an override is active, automatic changes don't apply.
 - **Hub display:** "Active · 12% furniture, 9% décor, 6% clothing · $3,200 more in sales to reach Top".
 
@@ -189,7 +190,7 @@ Example: a Base creator sends a $31.99 dress. They earn $1.60 (5%), and we keep 
 
 ### 6.1 How partners earn it (unchanged)
 
-$100 when a business that signed up through the partner's link is verified and its first paid order is over $500.
+$100 when a business that signed up through the partner's link is verified and pays an order of $500 or more.
 
 ### 6.2 The toggle
 
@@ -228,7 +229,7 @@ The existing trade buying (25% off, project pricing, client quotes with the desi
 - Replace the fixed "12%" and "$100 for every referral" text on the Trade page's membership card and the earnings calculator with values from `lib/holmPartners.ts`:
   - **Signed-out visitors and new partners:** "Earn 10–18% on furniture, 8–12% on home décor and 5–8% on clothing".
   - **Signed-in partners:** their own rates, for example "Your rates (Active): 12% furniture, 9% décor, 6% clothing".
-  - **Referral line:** "$100 credit when a business you refer is verified and places its first order over $500".
+  - **Referral line:** "$100 credit when a business you refer is verified and pays an order of $500 or more".
 - Remove the hard-coded `COMMISSION = 0.12` in `trade/app.ts`. The /trade calculator is about furniture, so it uses the viewer's furniture rate, or 10% labelled "starting rate".
 - Add a check (a test) that the copy reads its numbers from the config, so the page and the program can't drift apart again.
 
@@ -243,7 +244,7 @@ Publish `/trade#partner-terms`, linked from the join checkbox, the Hub footer an
 - payouts: monthly on the 15th for cleared balances of $50 or more, by Stripe to the bank account the partner connects (section 9.1);
 - store credit rules (section 6);
 - disclosure: partners must label paid posts ("#ad" or "I earn a commission"), as the FTC requires;
-- tax: partners paid $600 or more in a year receive a 1099-NEC.
+- tax: commissions are reported as nonemployee compensation on Form 1099-NEC. For payments made in 2026 and later the federal threshold is $2,000 a year (it was $600 before 2026, and may be adjusted for inflation from 2027). Confirm with an accountant before the first filing.
 
 **Decided:** monthly payouts on the 15th, for cleared balances of $50 or more, paid automatically through Stripe Connect.
 
@@ -313,6 +314,8 @@ Clothing and décor commission only starts once those products can be bought on 
 - Someone with no business joins as a creator from louiemae.com, gets links and sees their own rates without ever seeing trade pricing.
 - The same visitor buys again 31 days after the click: no commission.
 - Two partners' links clicked: the later one is credited.
+- Stripe delivers `checkout.session.completed` twice for the same order: exactly one commission exists.
+- A partner checks out as a guest with their own email through their own link: no commission.
 - The partner buys through their own link: no commission.
 - A storefront order is fully refunded before clearing: the commission is voided. A partial refund reduces it pro rata. A refund after payout creates a negative adjustment on the next payout.
 - A visitor clicks a link on their phone, signs in, and buys on a laptop within 30 days: credited.

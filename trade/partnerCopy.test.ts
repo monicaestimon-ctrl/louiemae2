@@ -21,7 +21,7 @@ describe('Partner program copy', () => {
   });
 
   it('states the referral credit conditions', () => {
-    expect(partnerCopy().referralLine).toBe('credit when a business you refer is verified and its first order over $500 is paid');
+    expect(partnerCopy().referralLine).toBe('credit when a business you refer is verified and pays an order of $500 or more');
     expect(partnerCopy().referralHeadline).toBe('$100');
   });
 

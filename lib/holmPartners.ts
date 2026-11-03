@@ -8,7 +8,7 @@ export const HOLM_PARTNERS = {
   clearingDays: 30,
   quoteHoldDays: 120, // unpaid partner-attributed quotes stop waiting for payment after this
   referralCreditCents: 10_000, // $100 store credit
-  referralMinOrderCents: 50_000, // after a first paid order over $500
+  referralMinOrderCents: 50_000, // once the referred business pays an order of $500 or more
   // Where a partner link was opened from. Every Share-sheet route tags its link with one of these.
   channels: ['story', 'pin', 'post', 'pdf', 'link', 'share', 'qr'],
 } as const;
@@ -52,11 +52,11 @@ export function partnerCopy(tier?: HolmTier | null) {
     range: `${pct(t.base)}–${pct(t.elite)}`,
     commissionHeadline: tier ? pct(rateBps) : `${pct(t.base)}–${pct(t.elite)}`,
     referralHeadline: dollars(HOLM_PARTNERS.referralCreditCents),
-    referralLine: `credit when a business you refer is verified and its first order over ${dollars(HOLM_PARTNERS.referralMinOrderCents)} is paid`,
+    referralLine: `credit when a business you refer is verified and pays an order of ${dollars(HOLM_PARTNERS.referralMinOrderCents)} or more`,
     // Short forms for the trade pass card, which has room for a few words; the footnote
     // carries the full conditions next to it.
-    cardCommission: 'commission on furniture via your links',
+    cardCommission: 'commission on House orders via your links',
     cardReferral: 'credit per business you refer*',
-    referralFootnote: `*Once the business is verified and its first order over ${dollars(HOLM_PARTNERS.referralMinOrderCents)} is paid.`,
+    referralFootnote: `*Once the business is verified and pays an order of ${dollars(HOLM_PARTNERS.referralMinOrderCents)} or more.`,
   };
 }

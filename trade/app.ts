@@ -1050,14 +1050,14 @@ function TradeBand({ctx}){
     <div className="tc-spot" aria-hidden="true"></div>
     <div className="lx-in tc-grid">
       <div className="tc-copy">
-        <header data-r style=${{'--i':0}}><h2>Built for the trade.</h2><p>One verified account opens trade pricing on every piece, project pricing on big orders, sourcing on request, and commission when people buy through your links.</p></header>
+        <header data-r style=${{'--i':0}}><h2>Built for the trade.</h2><p>One verified account opens trade pricing on every piece, project pricing on big orders, and sourcing on request. Join the partner program to earn commission when people order through your links.</p></header>
         <label className="tc-engrave" data-r style=${{'--i':1}}><span>Preview your trade pass</span><input value=${name} maxLength="26" onInput=${e=>setName(e.target.value)} placeholder="Your studio name"/></label>
         <div className="tc-lens" data-r style=${{'--i':2}}>
           <div className="tc-lens-h"><span>Project size</span><b className="num">${money(amt)}</b></div>
           <input type="range" min="5000" max="250000" step="1000" value=${amt} onInput=${e=>setAmt(+e.target.value)} aria-label="Project size in dollars"/>
           <div className="tc-figs">
             <div><b className="num">${money(tSave)}</b><span>you save at trade${proj?html`, including <em className="num">${money(tProj)}</em> project pricing`:''}</span></div>
-            <div><b className="num">${money(tEarn)}</b><span>you earn at ${pc.rateLabel} if clients buy it at retail through your links</span></div>
+            <div><b className="num">${money(tEarn)}</b><span>you earn at ${pc.rateLabel} if clients order it at retail through your links</span></div>
           </div>
         </div>
         <div className="tc-actions" data-r style=${{'--i':3}}><button className="btn btn-lg lx-cream" onClick=${()=>ctx.go('trade')}>Apply for trade</button><button className="btn btn-lg lx-ghost" onClick=${()=>ctx.go('hub')}>Your quotes</button></div>
@@ -3221,7 +3221,7 @@ function PartnerPanel({ctx}){
   const [agree,setAgree]=useState(false);const [busy,setBusy]=useState(false);const [ch,setCh]=useState('link');const bs=useQuery(api.holmPartners.boardStats,ctx.me.signedIn?{}:'skip');const [target,setTarget]=useState('home');const w9Ref=useRef();
   if(!ctx.me.signedIn||ph===undefined)return null;
   if(!ph)return html`<section className="panel" style=${{marginBottom:24,display:'grid',gap:12}}><h3>Partner program</h3>
-    <p className="help" style=${{margin:0}}>Share pieces and boards and earn commission on retail orders placed through your links: ${partnerCopy().commissionHeadline} by tier, starting at ${partnerCopy().range.split('–')[0]}. Trade-priced orders don't earn commission. You also earn ${partnerCopy().referralHeadline} in store ${partnerCopy().referralLine}.</p>
+    <p className="help" style=${{margin:0}}>Share pieces and boards and earn commission on retail-priced House of Louie Mae orders requested through your links: ${partnerCopy().commissionHeadline} by tier, starting at ${partnerCopy().range.split('–')[0]}. Trade-priced orders don't earn commission. You also earn ${partnerCopy().referralHeadline} in store ${partnerCopy().referralLine}.</p>
     <label className="cq-check"><input type="checkbox" checked=${agree} onChange=${e=>setAgree(e.target.checked)}/><span>I agree to the partner terms: commission on retail orders through my links within 30 days, payouts after an approved W-9, and disclosure on social posts.</span></label>
     <button className="btn btn-ink" style=${{justifySelf:'start'}} disabled=${!agree||busy} onClick=${async()=>{setBusy(true);try{await join({acceptTerms:true});ctx.toast('Welcome to the partner program')}catch(e){ctx.toast(errText(e))}finally{setBusy(false)}}}>Join the partner program</button></section>`;
   const base=location.origin+'/trade';const hash=target==='home'?'':target.startsWith('p:')?'#p/'+target.slice(2):'#'+target;
