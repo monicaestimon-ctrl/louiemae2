@@ -1,6 +1,6 @@
 # House of Louie Mae partner program: remaining build spec
 
-Version 0.1 · November 3, 2026 · Draft for owner review. All decisions in this draft were answered by the owner on November 3, 2026.
+Version 0.1 · November 3, 2026 · Draft for owner review. Decisions 1–6 were answered by the owner on November 3, 2026. Decision 7 (creator rates by product type) is open.
 
 ## 1. What this covers
 
@@ -131,6 +131,63 @@ Thresholds confirmed by the owner on November 3, 2026.
 ### 5.3 Margin check
 
 Commission comes out of retail margin. House starting estimates are at least 2× supplier cost, so 18% commission still leaves a positive margin. Ashcroft and storefront margins vary. Add a column to Admin → Pricing: **margin after Elite commission**, and flag any piece under 20%, so the team can exclude it or reprice it.
+
+## 5A. Creators, and rates by product type (proposal)
+
+### 5A.1 Two kinds of partner, one program
+
+- **Creators:** anyone who promotes Louie Mae on their socials, blog or links, without being a business. They join from louiemae.com (not only /trade), get a **Creator Hub** with links, earnings, credit and payouts, and earn commission on everything they send, including clothing and home décor.
+- **Trade partners (dealers):** verified businesses. They have everything a creator has, plus trade (B2B) pricing, project pricing and client quotes on /trade.
+
+Both share the same tier ladder (section 5.2). What changes the rate is **the type of product sold**, because margins differ by product type.
+
+### 5A.2 Margins by product type
+
+| Product type | How it's priced | Profit after supplier and shipping | After card fees (2.9% + 30¢) |
+| --- | --- | --- | --- |
+| Furniture (House, Ashcroft) | House: 2–6× supplier cost; Ashcroft: retail price including freight | about 45–80% of price | about 42–77% |
+| Clothing (CJ) | 2 × item cost + shipping + supplier fees | about 26–40% of price | about 22–37% |
+| Home décor (CJ) | same as clothing | about 26–40% of price | about 22–37% |
+
+Clothing and décor examples, using the CJ formula:
+
+| Item cost | Shipping | Price | Our profit | After card fees | Share of price |
+| --- | --- | --- | --- | --- | --- |
+| $6 | $7 | $19.99 | $6.00 | $5.12 | 26% |
+| $12 | $7 | $31.99 | $12.00 | $10.77 | 34% |
+| $8 (bulky décor) | $15 | $31.99 | $8.00 | $6.77 | 21% |
+| $25 (décor) | $12 | $62.99 | $25.00 | $22.87 | 36% |
+
+Clothing also has the most returns, and a refunded order voids its commission.
+
+### 5A.3 Proposed rates
+
+| Tier (12-month sales) | Furniture | Home décor | Clothing |
+| --- | --- | --- | --- |
+| Base ($0–$14,999) | 10% | 6% | 5% |
+| Active ($15,000+) | 12% | 7% | 6% |
+| Top ($50,000+) | 15% | 8% | 7% |
+| Elite ($100,000+) | 18% | 10% | 8% |
+
+Sales of every product type count toward the tier.
+
+### 5A.4 Margin guard
+
+On any order line, commission never exceeds **40% of our profit on that line** (price minus supplier cost, shipping, supplier fees and card fees). We always keep at least 60% of the profit. This only affects thin items. For example, the $8 bulky décor piece above earns at most $2.71 (8.5%), even at a higher tier. Lines with no known cost earn the base rate for their type, and the Pricing tab flags them.
+
+Example: a Base creator sends a $31.99 dress. They earn $1.60 (5%), and we keep $9.17 of the $10.77 profit.
+
+### 5A.5 What it needs
+
+- Each product's type (furniture, décor or clothing) from its collection, with an admin override.
+- The rate table in `lib/holmPartners.ts`, keyed by tier and type.
+- Commission worked out per order line, with the guard, and the type and rate stored on each line.
+- **Creator Hub on louiemae.com:** join (terms and disclosure), link builder for any page, QR codes, earnings by order, tier progress, credit toggle and Stripe payouts. It's the same Hub as /trade, without the trade tools.
+- **Copy:** "Earn 5–10% on clothing and décor and 10–18% on furniture", with the viewer's own rates once they join.
+
+**DECISION 7:** confirm the rate table and the 40% guard.
+
+**Note:** clothing and décor commission starts when those products can be bought on louiemae.com. Today the cart only accepts Ashcroft furniture and shows everything else as Coming Soon.
 
 ## 6. Referral credit (fixes gap 3)
 
