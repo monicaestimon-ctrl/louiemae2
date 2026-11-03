@@ -1,7 +1,8 @@
 
-import React, { useState, useEffect, lazy, Suspense, useSyncExternalStore } from 'react';
-import { Menu, Search, X, Instagram, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, useCallback, lazy, Suspense, useSyncExternalStore } from 'react';
+import { Menu, Search, Instagram, ChevronDown } from 'lucide-react';
 import { AiConcierge } from './components/AiConcierge';
+import { SiteMenu } from './components/SiteMenu';
 import { NavLink } from './types';
 import { HomePage } from './components/HomePage';
 import { DynamicPage } from './components/DynamicPage';
@@ -39,84 +40,6 @@ const subscribeWideNav = (onChange: () => void) => {
 };
 const isWideNav = () => window.matchMedia(WIDE_NAV).matches;
 
-
-interface MobileNavLinkProps {
-  link: NavLink;
-  handleNavigation: (href: string) => void;
-  depth?: number;
-}
-
-// Recursively render mobile navigation links - Fully expanded when opened
-const MobileNavLink: React.FC<MobileNavLinkProps> = ({ link, handleNavigation, depth = 0 }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const hasChildren = link.children && link.children.length > 0;
-
-  // Recursive function to render all nested children at once (fully expanded)
-  const renderAllChildren = (children: NavLink[], currentDepth: number) => {
-    return children.map((child) => (
-      <div key={child.label} className="w-full">
-        <button
-          onClick={() => handleNavigation(child.href)}
-          className={`w-full text-left font-serif transition-all duration-300 hover:text-bronze py-2 ${currentDepth === 1
-            ? 'text-lg pl-4 font-medium text-cream'
-            : currentDepth === 2
-              ? 'text-base pl-6 text-cream/80'
-              : 'text-sm pl-8 text-cream/70'
-            }`}
-        >
-          {child.label}
-        </button>
-        {/* Render nested children immediately if they exist */}
-        {child.children && child.children.length > 0 && (
-          <div className="border-l border-bronze/15 ml-4">
-            {renderAllChildren(child.children, currentDepth + 1)}
-          </div>
-        )}
-      </div>
-    ));
-  };
-
-  return (
-    <div className="w-full">
-      <div className={`flex items-center justify-between group w-full ${depth > 0 ? 'pl-4' : ''}`}>
-        <button
-          onClick={() => {
-            if (hasChildren) {
-              setIsOpen(!isOpen);
-            } else {
-              handleNavigation(link.href);
-            }
-          }}
-          className={`flex-1 text-left font-serif text-cream transition-all duration-300 hover:text-bronze group-hover:text-bronze ${depth === 0 ? 'text-4xl md:text-5xl drop-shadow-md' : 'text-xl md:text-2xl mt-4'}`}
-        >
-          {link.label}
-        </button>
-        {hasChildren && (
-          <button onClick={() => setIsOpen(!isOpen)} aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${link.label}`} aria-expanded={isOpen} className="p-2 text-cream/50 hover:text-cream transition-colors">
-            <ChevronDown className={`w-5 h-5 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
-          </button>
-        )}
-      </div>
-
-      {/* Show ALL nested children when expanded - no separate collapsing */}
-      {hasChildren && (
-        <div className={`overflow-hidden transition-all duration-500 ease-in-out ${isOpen ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
-          <div className="flex flex-col mt-2 border-l border-bronze/20 ml-2">
-            {/* Clickable Parent Link inside submenu if it has separate destination */}
-            <button
-              onClick={() => handleNavigation(link.href)}
-              className="block text-left text-xs uppercase tracking-[0.25em] text-bronze/80 hover:text-white transition-colors py-2 pl-4 italic"
-            >
-              View All {link.label}
-            </button>
-            {/* Render all children and grandchildren at once */}
-            {renderAllChildren(link.children!, 1)}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
 
 /** Reusable glassmorphic dropdown for desktop nav links */
 const NavDropdown: React.FC<{ links: NavLink[]; handleNavigation: (href: string) => void }> = ({ links, handleNavigation }) => (
@@ -223,6 +146,8 @@ const AppContent = () => {
       document.body.style.overflow = 'unset';
     };
   }, [mobileMenuOpen]);
+
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
 
   const handleNavigation = (href: string) => {
     setMobileMenuOpen(false);
@@ -355,64 +280,15 @@ const AppContent = () => {
       {/* Only show Header/Footer if NOT in admin mode */}
       {activePage !== 'admin' && (
         <>
-          {/* Mobile Menu Overlay - Hyper Glassmorphic. While closed its contents are skipped for
-              layout (content-visibility); allow-discrete keeps them shown until the fade ends. */}
-          <div
-            inert={!mobileMenuOpen}
-            aria-hidden={!mobileMenuOpen}
-            className={`fixed inset-0 z-50 flex flex-col backdrop-blur-3xl bg-gradient-to-br from-[#3a2a1a]/95 via-[#2d1f12]/95 to-[#1a130a]/95 transition-all [transition-behavior:allow-discrete] duration-[800ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${mobileMenuOpen ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-[20px] pointer-events-none [content-visibility:hidden]'
-              }`}
-          >
-            {mobileMenuBuilt && <>
-            {/* Inner Sheen overlay */}
-            <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent pointer-events-none" />
-            {/* Mobile Header */}
-            <div className="flex justify-between items-center px-6 py-6 md:px-12 relative z-10 border-b border-white/10">
-              <div className="flex flex-col drop-shadow-lg">
-                <span className="font-serif text-3xl text-cream italic tracking-tight">Louie Mae</span>
-                <span className="text-[0.55rem] uppercase tracking-[0.3em] text-bronze">Navigation</span>
-              </div>
-              <button
-                onClick={() => setMobileMenuOpen(false)}
-                aria-label="Close menu"
-                className="group relative w-10 h-10 flex items-center justify-center rounded-full border border-white/20 bg-white/5 backdrop-blur-sm hover:bg-white/10 hover:border-white/40 transition-all duration-300 shadow-lg"
-              >
-                <X className="w-5 h-5 text-cream group-hover:rotate-90 transition-transform duration-500" />
-              </button>
-            </div>
-
-            {/* Mobile Links */}
-            <div className="flex-1 flex flex-col px-8 md:px-16 overflow-y-auto no-scrollbar relative z-10">
-              <div className="space-y-6 md:space-y-8 flex flex-col items-start max-w-lg mx-auto w-full py-10">
-                {extendedNavLinks.map((link) => (
-                  <MobileNavLink key={link.label} link={link} handleNavigation={handleNavigation} />
-                ))}
-                <a href="/trade/" className="font-serif text-3xl md:text-4xl text-cream/70 hover:text-bronze transition-colors">
-                  Trade <span className="text-[0.6rem] uppercase tracking-[0.2em] text-bronze align-middle">House of Louie Mae</span>
-                </a>
-              </div>
-            </div>
-
-            {/* Mobile Footer */}
-            <div className="px-8 py-8 md:px-12 border-t border-white/10 relative z-10 bg-black/20">
-              <div className="flex justify-between items-end">
-                <div className="space-y-2">
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-cream/40">Connect</p>
-                  <div className="flex gap-6">
-                    <a href="https://www.instagram.com/itslouiemae/" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><Instagram className="w-5 h-5 text-cream/60 hover:text-white transition-colors" /></a>
-                  </div>
-                </div>
-                <div className="flex flex-col items-end gap-3">
-                  <button onClick={() => handleNavigation('#admin')} className="text-[10px] uppercase tracking-[0.2em] text-cream/40 hover:text-bronze transition-colors flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                    Atelier
-                  </button>
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-cream/30">Est. 2021</p>
-                </div>
-              </div>
-            </div>
-            </>}
-          </div>
+          {/* Side menu (all widths below the full desktop nav). Built on first open, then kept. */}
+          {mobileMenuBuilt && (
+            <SiteMenu
+              open={mobileMenuOpen}
+              links={extendedNavLinks}
+              onClose={closeMobileMenu}
+              onNavigate={handleNavigation}
+            />
+          )}
 
           {/* Desktop Header */}
           <header

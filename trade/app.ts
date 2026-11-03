@@ -1201,61 +1201,75 @@ function pairsFor(p,n=3){
   const picked=[];want.forEach(t=>{const c=PRODUCTS.filter(x=>x.type===t&&x.id!==p.id&&!picked.includes(x)).sort((a,b)=>(a.mat===p.mat?-40:0)+cdist(a.tone,p.tone)-((b.mat===p.mat?-40:0)+cdist(b.tone,p.tone)))[0];if(c&&picked.length<n)picked.push(c)});
   return picked;
 }
-function useClock(){const [t,setT]=useState(()=>new Date());useEffect(()=>{const i=setInterval(()=>setT(new Date()),15000);return()=>clearInterval(i)},[]);return t}
 
-/* ================= MENU v3: The Index ================= */
+/* ================= MENU v4: a quiet side panel ================= */
+// One column, read top to bottom: search, the four places to shop, your own things, then
+// the few settings that matter (which business you're furnishing, trade pricing) and account
+// links. Shortcuts that live on the pages themselves (piece types, studio starters, boards)
+// are left to those pages.
+const IX_MAIN=[['home','The Floor'],['discover','Discover'],['studio','Studio'],['room','Space Planner']];
+const IX_MORE=[['boards','Boards'],['inspo','My Inspo'],['hub','Your quotes'],['sourcing','Sourcing'],['quiz','Style Quiz']];
+// The piece that floats beside the panel on wide screens: [room photo behind it, cut-out piece].
+const IX_PIECE={home:[2,2],discover:[7,7],studio:[13,13],room:[5,5],boards:[12,12],inspo:[4,4],hub:[17,17],sourcing:[9,9],quiz:[21,21]};
+const IX_LABEL=Object.fromEntries([...IX_MAIN,...IX_MORE]);
 function IndexMenu({ctx}){
-  const now=useClock();
-  const counts=Object.fromEntries(Object.keys(TYPE).map(k=>[k,PRODUCTS.filter(p=>p.type===k).length]));
-  const NAV=[
-    {r:'home',l:'The Floor',d:'Rooms by business',img:2,cut:2,sub:SPACE_KEYS.map(k=>({l:SPACES[k].label,n:ROOMS[k].scenes.length+' rooms',go:()=>{ctx.setSpace(k);ctx.go('home')}}))},
-    {r:'discover',l:'Discover',d:PRODUCTS.length+' pieces',img:7,cut:7,sub:Object.entries(TYPE).map(([k,v])=>({l:v,n:counts[k],cut:PRODUCTS.find(p=>p.type===k).id,go:()=>{ctx.setQuery(k);ctx.setImgQ(null);ctx.go('discover')}}))},
-    {r:'studio',l:'Studio',d:'Collage & room',img:13,cut:13,sub:[{l:'New collage',go:()=>ctx.toStudio([2,12,9],'New collage')},{l:'Compose from a mood',go:()=>{ctx.setStudioSeed({prompt:'cognac leather and rattan for a café'});ctx.go('studio')}},{l:'Use a photo of my space',go:()=>ctx.go('studio')}]},
-    {r:'room',l:'Space Planner',d:'Plan · model · render',img:5,cut:5},
-    {r:'boards',l:'Boards',d:ctx.boards.length+' boards',img:12,cut:12,sub:ctx.boards.slice(0,4).map(b=>({l:b.title,n:b.pins.length,go:()=>{ctx.setBoard(b.id);ctx.go('board')}}))},
-    {r:'inspo',l:'My Inspo',d:ctx.inspo.length+' images',img:4,cut:4},
-    {r:'hub',l:'Your quotes',d:'Quotes, client links, trade pass',img:17,cut:17},
-    {r:'trade',l:'Trade Account',d:'Verified',img:3,cut:3},
-    {r:'sourcing',l:'Sourcing',d:'We find it for you',img:9,cut:9},
-    {r:'quiz',l:'Style Quiz',d:'Find your blend',img:21,cut:21},
-  ];
-  const [hi,setHi]=useState(0);const [sub,setSub]=useState(null);const [q,setQ]=useState('');const refs=useRef([]);
-  const H=NAV[hi];const cutId=sub!=null&&H.sub&&H.sub[sub]&&H.sub[sub].cut?H.sub[sub].cut:H.cut;
+  const [q,setQ]=useState('');const [spaces,setSpaces]=useState(false);const panel=useRef();
+  // Which link the floating piece is showing: the hovered or focused one, else the current page.
+  const [hi,setHi]=useState(IX_PIECE[ctx.route]?ctx.route:'home');
+  const [bg,piece]=IX_PIECE[hi];
+  const show=r=>({onMouseEnter:()=>setHi(r),onFocus:()=>setHi(r)});
   const close=()=>ctx.setMenu(false);const run=fn=>{close();fn()};
-  useEffect(()=>{refs.current[0]?.focus();const k=e=>{if(e.key==='Escape')close();if(document.activeElement?.tagName==='INPUT')return;if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();setHi(h=>{const n=(h+(e.key==='ArrowDown'?1:-1)+NAV.length)%NAV.length;refs.current[n]?.focus();return n});setSub(null)}};addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[]);
-  const P=ctx.activeProject;const items=P.items.map(i=>({...i,p:byId(i.pid)}));const seats=items.reduce((s,i)=>s+i.p.seats*i.qty,0);const tot=items.reduce((s,i)=>s+pr(i.p,ctx.mode)*i.qty,0);
-  return html`<div className="ix" role="dialog" aria-modal="true" aria-label="Site index">
-    <div className="ix-top"><span className="logo"><b>House of Louie Mae</b></span><span className="mono ix-dim">Index</span><button className="ix-close" onClick=${close} aria-label="Close menu">Close ${I('x',{width:16})}</button></div>
-    <div className="ix-grid">
-      <nav className="ix-nav" aria-label="Sections">
-        ${NAV.map((n,i)=>html`<div key=${n.r} className=${'ix-item'+(i===hi?' on':'')} onMouseEnter=${()=>{setHi(i);setSub(null)}}>
-          <button ref=${el=>refs.current[i]=el} className="ix-link" onFocus=${()=>{setHi(i);setSub(null)}} onClick=${()=>run(()=>ctx.go(n.r))}><b>${n.l}</b><span>${n.d}</span></button>
-          ${n.sub&&i===hi&&html`<div className="ix-sub">${n.sub.map((s,j)=>html`<button key=${j} onMouseEnter=${()=>setSub(j)} onFocus=${()=>setSub(j)} onClick=${()=>run(s.go)}>${s.l}${s.n!=null&&html`<sup>${s.n}</sup>`}</button>`)}</div>`}
-        </div>`)}
-      </nav>
-      <div className="ix-preview" aria-hidden="true">
-        <img key=${'bg'+H.img} className="ix-bgimg" src=${byId(H.img).img} alt=""/>
-        <div className="ix-veil"></div>
-        <img key=${'c'+cutId} className="ix-cut" src=${cut(cutId)} alt=""/>
+  useEffect(()=>{
+    panel.current?.querySelector('.ix-main button')?.focus();
+    const k=e=>{
+      if(e.key==='Escape'){close();return}
+      if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return;
+      const links=[...(panel.current?.querySelectorAll('.ix-main button,.ix-more button')||[])];const i=links.indexOf(document.activeElement);
+      if(i<0)return;e.preventDefault();links[(i+(e.key==='ArrowDown'?1:-1)+links.length)%links.length].focus();
+    };
+    addEventListener('keydown',k);return()=>removeEventListener('keydown',k);
+  },[]);
+  const on=r=>ctx.route===r?'on':'';
+  const sp=SPACES[ctx.space];
+  const P=ctx.activeProject;const items=P.items.map(i=>({...i,p:byId(i.pid)}));
+  const seats=items.reduce((s,i)=>s+i.p.seats*i.qty,0);const tot=items.reduce((s,i)=>s+pr(i.p,ctx.mode)*i.qty,0);
+  return html`<div className="ix" role="dialog" aria-modal="true" aria-label="Menu">
+    <div className="ix-scrim" onClick=${close}>
+      <div className="ix-stage" aria-hidden="true">
+        <img key=${'bg'+bg} className="ix-bgimg" src=${byId(bg).img} alt=""/>
+        <img key=${'c'+piece} className="ix-cut" src=${cut(piece)} alt=""/>
         <div className="ix-shadow"></div>
-        <div className="ix-cap"><span className="mono">${String(hi+1).padStart(2,'0')} / ${String(NAV.length).padStart(2,'0')}</span><b>${sub!=null&&H.sub?H.sub[sub].l:H.l}</b><span>${byId(cutId).name} · ${byId(cutId).line}</span></div>
+        <div className="ix-cap"><b>${IX_LABEL[hi]}</b><span>${byId(piece).name} · ${byId(piece).line}</span></div>
       </div>
-      <aside className="ix-side">
-        <form className="ix-search" onSubmit=${e=>{e.preventDefault();run(()=>{ctx.setQuery(q);ctx.setImgQ(null);ctx.go('discover')})}}>${I('search',{width:17})}<input aria-label="Search the House" placeholder="Search pieces, materials, rooms" value=${q} onInput=${e=>setQ(e.target.value)}/></form>
-        <button className="ix-card" onClick=${()=>run(()=>ctx.setTray(true))}>
-          <span className="mono ix-dim">Active project</span><b>${P.name}</b>
-          <div className="ix-thumbs">${items.slice(0,5).map(i=>html`<span key=${i.pid} style=${{backgroundImage:`url(${cut(i.pid)})`}}></span>`)}</div>
-          <div className="ix-meter"><i style=${{width:Math.min(100,seats/P.target*100)+'%'}}></i></div>
-          <span className="ix-row"><span>${seats} of ${P.target} seats</span><span className="mono">${fmt(tot)}</span></span>
-        </button>
-        ${ctx.recent.length>0&&html`<div><span className="mono ix-dim">Recently viewed</span><div className="ix-recent">${ctx.recent.slice(0,6).map(id=>html`<button key=${id} onClick=${()=>{close();ctx.openPin(id)}} title=${byId(id).name}><img src=${cut(id)} alt=${byId(id).name}/></button>`)}</div></div>`}
-        <div><span className="mono ix-dim">Furnishing</span><div className="ix-chips">${SPACE_KEYS.map(k=>html`<button key=${k} className=${k===ctx.space?'on':''} onClick=${()=>ctx.setSpace(k)}>${SPACES[k].label}</button>`)}</div></div>
-        ${ctx.me.verified?html`<div className="ix-trade"><span><b>${ctx.me.businessName||ctx.me.displayName}</b><small>Trade verified · show prices as</small></span><div className="ix-seg" role="group" aria-label="Show prices as"><button className=${ctx.mode==='trade'?'on':''} onClick=${()=>ctx.setMode('trade')}>Trade</button><button className=${ctx.mode==='retail'?'on':''} onClick=${()=>ctx.setMode('retail')}>Retail</button></div></div>`:html`<button className="ix-card" onClick=${()=>run(()=>ctx.go('trade'))}><span className="mono ix-dim">Trade pricing</span><b>${ctx.me.tradeStatus==='pending'?'Your application is in review':'Apply for trade pricing'}</b><span className="ix-row"><span>25% off retail for verified businesses</span></span></button>`}
-        <a className="ix-retail" href="https://www.louiemae.com">Shopping for your home? Louie Mae retail ${I('arrow',{width:14})}</a>
-        
-      </aside>
     </div>
-    <div className="ix-foot"><span className="mono">House of Louie Mae · ${now.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}</span><span className="mono ix-dim hide-sm">↑ ↓ to move · Enter to open · Esc to close</span><span className="row"><button onClick=${()=>run(()=>ctx.go('account'))}>Account</button><button onClick=${()=>run(()=>ctx.go('profile'))}>Profile</button>${ctx.me.signedIn?html`<button onClick=${()=>run(ctx.signOut)}>Log out</button>`:html`<button onClick=${()=>run(()=>ctx.go('welcome'))}>Sign in</button>`}</span></div>
+    <div className="ix-panel" ref=${panel}>
+      <div className="ix-top"><span className="logo"><b>House of Louie Mae</b></span><button className="ib" onClick=${close} aria-label="Close menu">${I('x')}</button></div>
+      <div className="ix-body">
+        <form className="ix-search" role="search" onSubmit=${e=>{e.preventDefault();run(()=>{ctx.setQuery(q);ctx.setImgQ(null);ctx.go('discover')})}}>${I('search',{width:17})}<input aria-label="Search the House" placeholder="Search pieces, materials, rooms" value=${q} onInput=${e=>setQ(e.target.value)}/></form>
+        <nav className="ix-main" aria-label="Shop">${IX_MAIN.map(([r,l])=>html`<button key=${r} ...${show(r)} className=${on(r)} aria-current=${ctx.route===r?'page':undefined} onClick=${()=>run(()=>ctx.go(r))}>${l}</button>`)}</nav>
+        <nav className="ix-more" aria-label="Your work">${IX_MORE.map(([r,l])=>html`<button key=${r} ...${show(r)} className=${on(r)} aria-current=${ctx.route===r?'page':undefined} onClick=${()=>run(()=>ctx.go(r))}>${l}</button>`)}</nav>
+        <button className="ix-proj" onClick=${()=>run(()=>ctx.setTray(true))}>
+          <span className="ix-proj-h"><span>Active project</span><b>${P.name}</b></span>
+          ${items.length>0&&html`<span className="ix-thumbs">${items.slice(0,5).map(i=>html`<span key=${i.pid} style=${{backgroundImage:`url(${cut(i.pid)})`}}></span>`)}</span>`}
+          <span className="ix-meter"><i style=${{width:Math.min(100,seats/P.target*100)+'%'}}></i></span>
+          <span className="ix-proj-f"><span>${seats} of ${P.target} seats</span><span className="num">${fmt(tot)}</span></span>
+        </button>
+        <div className="ix-set">
+          <button className="ix-row" aria-expanded=${spaces} onClick=${()=>setSpaces(!spaces)}><span>Furnishing</span><span className="ix-val"><i style=${{background:sp.accent}}></i>${sp.label} ${I('down',{width:14,style:{transform:spaces?'rotate(180deg)':''}})}</span></button>
+          ${spaces&&html`<div className="ix-chips" role="group" aria-label="Furnishing">${SPACE_KEYS.map(k=>html`<button key=${k} className=${k===ctx.space?'on':''} aria-pressed=${k===ctx.space} onClick=${()=>{ctx.setSpace(k);setSpaces(false)}}>${SPACES[k].label}</button>`)}</div>`}
+          ${ctx.me.verified
+            ?html`<div className="ix-row"><button className="ix-acctlink" onClick=${()=>run(()=>ctx.go('trade'))}><b>Trade account</b><small>Verified · show prices as</small></button><div className="ix-seg" role="group" aria-label="Show prices as"><button className=${ctx.mode==='trade'?'on':''} onClick=${()=>ctx.setMode('trade')}>Trade</button><button className=${ctx.mode==='retail'?'on':''} onClick=${()=>ctx.setMode('retail')}>Retail</button></div></div>`
+            :html`<button className="ix-row ix-trade" onClick=${()=>run(()=>ctx.go('trade'))}><span><b>${ctx.me.tradeStatus==='pending'?'Trade application in review':'Apply for trade pricing'}</b><small>25% off retail for verified businesses</small></span>${I('arrow',{width:14})}</button>`}
+        </div>
+        <a className="ix-retail" href="https://www.louiemae.com" title="Louie Mae, our retail site for your home">Shopping for your home? Louie Mae retail ${I('arrow',{width:13})}</a>
+        ${ctx.recent.length>0&&html`<div className="ix-recent"><span>Recently viewed</span><div>${ctx.recent.slice(0,4).map(id=>html`<button key=${id} onClick=${()=>{close();ctx.openPin(id)}} title=${byId(id).name} aria-label=${byId(id).name}><img src=${cut(id)} alt=""/></button>`)}</div></div>`}
+      </div>
+      <div className="ix-foot">
+        <span className="ix-acct">${ctx.me.signedIn
+          ?html`<button onClick=${()=>run(()=>ctx.go('profile'))}>Profile</button><button onClick=${()=>run(()=>ctx.go('account'))}>Account</button><button onClick=${()=>run(ctx.signOut)}>Log out</button>`
+          :html`<button onClick=${()=>run(()=>ctx.go('welcome'))}>Sign in</button><button onClick=${()=>run(()=>ctx.go('account'))}>Account</button>`}</span>
+      </div>
+    </div>
   </div>`;
 }
 
