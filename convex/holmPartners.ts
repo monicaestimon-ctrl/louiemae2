@@ -6,7 +6,7 @@ import { internal } from './_generated/api';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { isPartner, isVerified, profileOf, requireUser, viewer } from './holmAccess';
 import { partnerTier } from './holmTables';
-import { HOLM_PARTNERS, commissionCents, holmChannel } from '../lib/holmPartners';
+import { HOLM_PARTNERS, REF_CODE, commissionCents, holmChannel } from '../lib/holmPartners';
 
 const DAY = 86_400_000;
 
@@ -48,20 +48,21 @@ export const join = mutation({
 /**
  * A visit through a partner link, tagged with where it was opened from (story, pin, post, pdf,
  * link, share or qr) and, for a board link, the board. Deduplicated per visitor and partner each
- * day; the first visit opens the 30-day attribution window.
+ * day; the first visit opens the 30-day attribution window. Returns whether the code belongs to
+ * an active partner, so the browser only keeps (and replaces a saved code with) real ones.
  */
 export async function insertClick(
   ctx: MutationCtx,
   a: { refCode: string; channel: string; target: string; visitorId: string; board?: string }
-) {
-  if (!/^[A-Z0-9]{4,16}$/.test(a.refCode) || !/^[\w-]{16,64}$/.test(a.visitorId)) return;
+): Promise<boolean> {
+  if (!REF_CODE.test(a.refCode) || !/^[\w-]{16,64}$/.test(a.visitorId)) return false;
   const partner = await ctx.db.query('holmProfiles').withIndex('by_refCode', (q) => q.eq('refCode', a.refCode)).first();
-  if (!partner || !isPartner(partner)) return;
+  if (!partner || !isPartner(partner)) return false;
   const recent = await ctx.db
     .query('holmClicks')
     .withIndex('by_visitor_partner', (q) => q.eq('visitorId', a.visitorId).eq('partnerId', partner.userId).gte('at', Date.now() - DAY))
     .first();
-  if (recent) return;
+  if (recent) return true;
   await ctx.db.insert('holmClicks', {
     partnerId: partner.userId,
     refCode: a.refCode,
@@ -71,6 +72,7 @@ export async function insertClick(
     ...(a.board ? { board: a.board } : {}),
     at: Date.now(),
   });
+  return true;
 }
 
 export const recordClick = mutation({

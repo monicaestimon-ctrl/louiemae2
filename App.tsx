@@ -100,7 +100,9 @@ const AppContent = () => {
   // 30 days and shared with /trade, then taken out of the address bar.
   const recordPartnerClick = useMutation(api.holmPartners.recordClick);
   useEffect(() => {
-    captureRefFromUrl(recordPartnerClick, `site:${window.location.pathname}${window.location.hash}`);
+    // Not on the admin pages: the team's own visits shouldn't count as partner traffic.
+    const admin = window.location.pathname.replace(/\/+$/, '') === '/admin' || /^#admin/.test(window.location.hash);
+    if (!admin) void captureRefFromUrl(recordPartnerClick, `site:${window.location.pathname}${window.location.hash}`);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per page load
   }, []);
   const [scrolled, setScrolled] = useState(false);

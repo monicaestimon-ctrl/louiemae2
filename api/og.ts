@@ -45,18 +45,31 @@ const DEFAULT_META = {
     image: '/lm3.jpg',
 };
 
+/**
+ * A partner link (?ref=CODE&ch=channel) must survive the hop to the app, or the visit is never
+ * credited. Only well-formed values are passed on, so nothing user-supplied reaches the HTML.
+ */
+export function partnerQuery(query: VercelRequest['query']): string {
+    const one = (v: unknown) => (Array.isArray(v) ? v[0] : v);
+    const ref = String(one(query.ref) ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!/^[A-Z0-9]{4,16}$/.test(ref)) return '';
+    const ch = String(one(query.ch) ?? '').toLowerCase();
+    return `?ref=${ref}${/^[a-z]{1,20}$/.test(ch) ? `&ch=${ch}` : ''}`;
+}
+
 export default function handler(req: VercelRequest, res: VercelResponse) {
+    const partner = partnerQuery(req.query);
     // Keep old shared store URLs on the same temporary landing page.
     if (process.env.VITE_PRELAUNCH_MODE === 'true') {
         res.setHeader('Cache-Control', 'no-store');
-        return res.redirect(307, '/');
+        return res.redirect(307, `/${partner}`);
     }
     const path = (req.query.path as string) || '';
     const meta = PAGE_META[path] || DEFAULT_META;
     const BASE_URL = 'https://louiemae.com';
     const imageUrl = `${BASE_URL}${meta.image}`;
     const pageUrl = `${BASE_URL}/${path}`;
-    const hashUrl = `${BASE_URL}/#${path}`;
+    const hashUrl = `${BASE_URL}/${partner}#${path}`;
 
     const html = `<!DOCTYPE html>
 <html lang="en">

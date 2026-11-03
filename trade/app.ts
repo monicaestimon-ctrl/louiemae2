@@ -6,7 +6,7 @@ import type { HolmProduct } from './catalog';
 import { useQuery, useMutation, useAction } from 'convex/react';
 import { deliveryCents, DELIVERY_TIERS } from '../lib/holmDelivery';
 import { partnerCopy } from '../lib/holmPartners';
-import { activeRef, captureRefFromUrl, pieceShareUrl, rememberRef, visitorId } from '../lib/partnerLink';
+import { activeRef, captureRefFromUrl, pieceShareUrl, rememberRef, shareOrigin, visitorId } from '../lib/partnerLink';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { phoneCut } from './phoneCut.mjs';
@@ -198,7 +198,7 @@ function PinCard({p,ctx}){
         <div className="r2" onClick=${e=>e.stopPropagation()}>
           <span className="pin-board" style=${{fontFamily:'var(--mono)',fontSize:11.5}}>${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span>
           <span className="row" style=${{gap:6}}>
-            <a className="pin-act" title="Save to Pinterest" aria-label="Save to Pinterest" href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(location.origin,p.id,ctx.me.refCode,'pin'))} target="_blank" rel="noopener">${I('pint')}</a>
+            <a className="pin-act" title="Save to Pinterest" aria-label="Save to Pinterest" href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'pin'))} target="_blank" rel="noopener">${I('pint')}</a>
             <button className="pin-act" title="Place in Studio" aria-label="Place in Studio" onClick=${()=>ctx.toStudio([p.id])}>${I('brush')}</button>
             <button className="pin-act" title="Add to project tray" aria-label="Add to project tray" onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.pin').querySelector('img'))}>${I('plus')}</button>
           </span>
@@ -1387,8 +1387,8 @@ function PinDetail({ctx}){
             <button className="btn btn-line btn-sm" onClick=${()=>ctx.toStudio([p.id])}>${I('brush',{width:15})} Studio</button>
             <button className="btn btn-line btn-sm" onClick=${()=>{ctx.setRoomSeed([p.id]);ctx.openPin(null);ctx.go('room')}}>${I('cube',{width:15})} 3D</button>
             <button className="ib" aria-pressed=${liked} aria-label="Like" onClick=${()=>ctx.toggleLike(p.id)} style=${{color:liked?'var(--cognac)':''}}>${I('heart',liked?{fill:'currentColor'}:{})}</button>
-            <button className="ib" aria-label="Copy link" onClick=${()=>copyText(pieceShareUrl(location.origin,p.id,ctx.me.refCode,'link'),ctx.toast)}>${I('share')}</button>
-            <a className="ib" aria-label="Save to Pinterest" href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(location.origin,p.id,ctx.me.refCode,'pin'))} target="_blank" rel="noopener">${I('pint')}</a>
+            <button className="ib" aria-label="Copy link" onClick=${()=>copyText(pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'link'),ctx.toast)}>${I('share')}</button>
+            <a className="ib" aria-label="Save to Pinterest" href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'pin'))} target="_blank" rel="noopener">${I('pint')}</a>
           </div>
         </div>
 
@@ -2359,7 +2359,7 @@ async function boardPdf(doc,{title,board,counts:given,link,pieceLink,prices,mode
 
 // Share links: one stable link per board and mode, tagged with the route it left through.
 const bundleUrl=(slug,ch)=>`${location.origin}/b/${slug}?c=${ch}`;
-const pieceUrl=(pid,ref,ch)=>pieceShareUrl(location.origin,pid,ref,ch);
+const pieceUrl=(pid,ref,ch)=>pieceShareUrl(shareOrigin(),pid,ref,ch);
 const isPhone=()=>matchMedia('(pointer:coarse)').matches&&innerWidth<900;
 // Uploaded photos stay on the sharer's device; the shared layout keeps everything else.
 const shareableDoc=doc=>doc&&({...doc,bg:doc.bg?.img?.startsWith('data:')?{color:'#EFE6D8',grid:doc.bg.grid}:doc.bg,els:doc.els.filter(e=>!String(e.src||'').startsWith('data:'))});
@@ -3711,7 +3711,7 @@ export function App(){
   useEffect(()=>{const h=()=>{const r=getRoute();if(r.startsWith('p/')){const id=+r.slice(2);if(has(id)){setPin(id);return}}setRoute(r);setPin(null);scrollTo(0,0)};h();addEventListener('hashchange',h);return()=>removeEventListener('hashchange',h)},[]);
   // a visit through a partner link (?ref=CODE&ch=channel)
   const recordClick=useMutation(api.holmPartners.recordClick);
-  useEffect(()=>{captureRefFromUrl(recordClick,getRoute())},[]);
+  useEffect(()=>{if(!/^#?admin/.test(location.hash))captureRefFromUrl(recordClick,getRoute())},[]);
   // projects, boards, collages and inspiration follow the account
   const remote=useQuery(api.holmSync.load,me.signedIn?{}:'skip');const saveState=useMutation(api.holmSync.save);const synced=useRef(false);
   useEffect(()=>{if(!me.signedIn)synced.current=false},[me.signedIn]);
