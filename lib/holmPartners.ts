@@ -13,6 +13,9 @@ export const HOLM_PARTNERS = {
   channels: ['story', 'pin', 'post', 'pdf', 'link', 'share', 'qr'],
 } as const;
 
+/** The shape of a partner's referral code. */
+export const REF_CODE = /^[A-Z0-9]{4,16}$/;
+
 export type HolmChannel = (typeof HOLM_PARTNERS.channels)[number];
 // Links shared before the fixed channel list keep counting under the nearest channel.
 const LEGACY_CHANNELS: Record<string, HolmChannel> = {
