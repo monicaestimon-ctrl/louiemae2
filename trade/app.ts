@@ -6,6 +6,7 @@ import type { HolmProduct } from './catalog';
 import { useQuery, useMutation, useAction } from 'convex/react';
 import { deliveryCents, DELIVERY_TIERS } from '../lib/holmDelivery';
 import { partnerCopy } from '../lib/holmPartners';
+import { activeRef, captureRefFromUrl, pieceShareUrl, rememberRef, visitorId } from '../lib/partnerLink';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { phoneCut } from './phoneCut.mjs';
@@ -197,7 +198,7 @@ function PinCard({p,ctx}){
         <div className="r2" onClick=${e=>e.stopPropagation()}>
           <span className="pin-board" style=${{fontFamily:'var(--mono)',fontSize:11.5}}>${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span>
           <span className="row" style=${{gap:6}}>
-            <a className="pin-act" title="Save to Pinterest" aria-label="Save to Pinterest" href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae')} target="_blank" rel="noopener">${I('pint')}</a>
+            <a className="pin-act" title="Save to Pinterest" aria-label="Save to Pinterest" href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(location.origin,p.id,ctx.me.refCode,'pin'))} target="_blank" rel="noopener">${I('pint')}</a>
             <button className="pin-act" title="Place in Studio" aria-label="Place in Studio" onClick=${()=>ctx.toStudio([p.id])}>${I('brush')}</button>
             <button className="pin-act" title="Add to project tray" aria-label="Add to project tray" onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.pin').querySelector('img'))}>${I('plus')}</button>
           </span>
@@ -1386,8 +1387,8 @@ function PinDetail({ctx}){
             <button className="btn btn-line btn-sm" onClick=${()=>ctx.toStudio([p.id])}>${I('brush',{width:15})} Studio</button>
             <button className="btn btn-line btn-sm" onClick=${()=>{ctx.setRoomSeed([p.id]);ctx.openPin(null);ctx.go('room')}}>${I('cube',{width:15})} 3D</button>
             <button className="ib" aria-pressed=${liked} aria-label="Like" onClick=${()=>ctx.toggleLike(p.id)} style=${{color:liked?'var(--cognac)':''}}>${I('heart',liked?{fill:'currentColor'}:{})}</button>
-            <button className="ib" aria-label="Copy link" onClick=${()=>copyText(location.origin+'/trade#p/'+p.id,ctx.toast)}>${I('share')}</button>
-            <a className="ib" aria-label="Save to Pinterest" href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae')} target="_blank" rel="noopener">${I('pint')}</a>
+            <button className="ib" aria-label="Copy link" onClick=${()=>copyText(pieceShareUrl(location.origin,p.id,ctx.me.refCode,'link'),ctx.toast)}>${I('share')}</button>
+            <a className="ib" aria-label="Save to Pinterest" href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(location.origin,p.id,ctx.me.refCode,'pin'))} target="_blank" rel="noopener">${I('pint')}</a>
           </div>
         </div>
 
@@ -2194,8 +2195,7 @@ function ComposeDialog({mode,page,bg,onClose,onUse}){
   <//>`;
 }
 // Partner links: a visitor id stays on this device; a partner code is remembered for 30 days.
-function visitorId(){let v=load('visitor',null);if(!v){v=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');store('visitor',v)}return v}
-function activeRef(){const r=load('ref',null);return r&&Date.now()-r.at<30*864e5?r:null}
+// visitorId, activeRef and the saved partner code live in lib/partnerLink.ts, shared with the storefront.
 const errText=e=>e?.data||String(e?.message||'').replace(/^.*Uncaught Error: /,'').split('\n')[0]||'Something went wrong. Try again.';
 async function uploadBlob(getUrl,blob){const url=await getUrl();const r=await fetch(url,{method:'POST',headers:{'Content-Type':blob.type||'application/octet-stream'},body:blob});if(!r.ok)throw new Error('The file did not upload. Try again.');return (await r.json()).storageId}
 const dataUrlBlob=async src=>(await fetch(src)).blob();
@@ -2359,7 +2359,7 @@ async function boardPdf(doc,{title,board,counts:given,link,pieceLink,prices,mode
 
 // Share links: one stable link per board and mode, tagged with the route it left through.
 const bundleUrl=(slug,ch)=>`${location.origin}/b/${slug}?c=${ch}`;
-const pieceUrl=(pid,ref,ch)=>`${location.origin}/trade${ref?`?ref=${ref}&ch=${ch}`:''}#p/${pid}`;
+const pieceUrl=(pid,ref,ch)=>pieceShareUrl(location.origin,pid,ref,ch);
 const isPhone=()=>matchMedia('(pointer:coarse)').matches&&innerWidth<900;
 // Uploaded photos stay on the sharer's device; the shared layout keeps everything else.
 const shareableDoc=doc=>doc&&({...doc,bg:doc.bg?.img?.startsWith('data:')?{color:'#EFE6D8',grid:doc.bg.grid}:doc.bg,els:doc.els.filter(e=>!String(e.src||'').startsWith('data:'))});
@@ -2444,7 +2444,7 @@ function StoryBuilder({ctx,doc,boardCanvas,pieces,title,pin,prices,ensure,onQR,b
 function SharedBoard({ctx,slug}){
   const b=useQuery(api.holmSync.sharedBoard,{slug});const opened=useMutation(api.holmSync.boardOpened);const seen=useRef(false);
   const channel=new URLSearchParams(location.search).get('c')||'link';
-  useEffect(()=>{if(!b||seen.current)return;seen.current=true;if(b.refCode)store('ref',{code:b.refCode,ch:channel,at:Date.now()});opened({slug,channel,visitorId:visitorId()}).catch(()=>{})},[b]);
+  useEffect(()=>{if(!b||seen.current)return;seen.current=true;if(b.refCode)rememberRef(b.refCode,channel);opened({slug,channel,visitorId:visitorId()}).catch(()=>{})},[b]);
   if(b===undefined)return html`<main className="wrap"><p className="help" style=${{padding:'80px 0'}}>Opening the board…</p></main>`;
   if(!b)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h3>This board link isn't complete</h3><p>Ask for the link again.</p><button className="btn btn-line" onClick=${()=>ctx.go('home')}>Visit House of Louie Mae</button></div></main>`;
   const shop=b.mode==='shop';const trade=ctx.mode==='trade';
@@ -3711,7 +3711,7 @@ export function App(){
   useEffect(()=>{const h=()=>{const r=getRoute();if(r.startsWith('p/')){const id=+r.slice(2);if(has(id)){setPin(id);return}}setRoute(r);setPin(null);scrollTo(0,0)};h();addEventListener('hashchange',h);return()=>removeEventListener('hashchange',h)},[]);
   // a visit through a partner link (?ref=CODE&ch=channel)
   const recordClick=useMutation(api.holmPartners.recordClick);
-  useEffect(()=>{const q=new URLSearchParams(location.search);const code=(q.get('ref')||'').toUpperCase().replace(/[^A-Z0-9]/g,'');if(!code)return;const ch=(q.get('ch')||'direct').toLowerCase();store('ref',{code,ch,at:Date.now()});recordClick({refCode:code,channel:ch,target:getRoute(),visitorId:visitorId()}).catch(()=>{})},[]);
+  useEffect(()=>{captureRefFromUrl(recordClick,getRoute())},[]);
   // projects, boards, collages and inspiration follow the account
   const remote=useQuery(api.holmSync.load,me.signedIn?{}:'skip');const saveState=useMutation(api.holmSync.save);const synced=useRef(false);
   useEffect(()=>{if(!me.signedIn)synced.current=false},[me.signedIn]);

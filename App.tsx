@@ -11,6 +11,9 @@ import { SiteProvider, useSite } from './contexts/BlogContext';
 import { NewsletterProvider } from './contexts/NewsletterContext';
 import { CartProvider } from './contexts/CartContext';
 import { CartIcon, CartDrawer } from './components/cart';
+import { useMutation } from 'convex/react';
+import { api } from './convex/_generated/api';
+import { captureRefFromUrl } from './lib/partnerLink';
 
 // Everything past the home page loads on demand so the first visit only downloads
 // what it shows. Each page keeps its named export; lazy() needs a default.
@@ -93,6 +96,13 @@ const NavDropdown: React.FC<{ links: NavLink[]; handleNavigation: (href: string)
 // We need a wrapper component to use the context inside App
 const AppContent = () => {
   const { siteContent } = useSite();
+  // A visit through a partner link (?ref=CODE&ch=channel) on any storefront page: saved for
+  // 30 days and shared with /trade, then taken out of the address bar.
+  const recordPartnerClick = useMutation(api.holmPartners.recordClick);
+  useEffect(() => {
+    captureRefFromUrl(recordPartnerClick, `site:${window.location.pathname}${window.location.hash}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per page load
+  }, []);
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   // The menu's contents are built the first time it opens, then kept for the fade.

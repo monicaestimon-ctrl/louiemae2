@@ -40,6 +40,8 @@ export const me = query({
       verified: admin || isVerified(me.profile),
       partner: isPartner(me.profile),
       partnerTier: isPartner(me.profile) ? me.profile?.partnerTier ?? ('base' as const) : null,
+      // the partner's own code, so share buttons can add it to the links they copy
+      refCode: isPartner(me.profile) ? me.profile?.refCode ?? null : null,
       admin,
     };
   },
