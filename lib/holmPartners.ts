@@ -51,7 +51,6 @@ export function partnerCopy(tier?: HolmTier | null) {
     rateLabel: tier ? `your ${pct(rateBps)} rate` : `the ${pct(rateBps)} starting rate`,
     range: `${pct(t.base)}–${pct(t.elite)}`,
     commissionHeadline: tier ? pct(rateBps) : `${pct(t.base)}–${pct(t.elite)}`,
-    commissionLine: tier ? 'your commission on furniture sold through your links' : 'commission on furniture sold through your links',
     referralHeadline: dollars(HOLM_PARTNERS.referralCreditCents),
     referralLine: `credit when a business you refer is verified and its first order over ${dollars(HOLM_PARTNERS.referralMinOrderCents)} is paid`,
     // Short forms for the trade pass card, which has room for a few words; the footnote
