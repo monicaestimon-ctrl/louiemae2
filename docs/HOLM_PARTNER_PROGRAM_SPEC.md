@@ -107,16 +107,16 @@ The `holmCommissions` table gets a `source` field (`house_quote` or `storefront_
 | Top | 15% |
 | Elite | 18% |
 
-### 5.2 Proposed rules for moving between tiers
+### 5.2 Rules for moving between tiers
 
 Based on the partner's **attributed paid sales in the last 12 months** (commissionable amount, after refunds):
 
 | Tier | Rate | Sales in the last 12 months |
 | --- | --- | --- |
-| Base | 10% | $0 – $4,999 |
-| Active | 12% | $5,000 – $24,999 |
-| Top | 15% | $25,000 – $74,999 |
-| Elite | 18% | $75,000 and up |
+| Base | 10% | $0 – $14,999 |
+| Active | 12% | $15,000 – $49,999 |
+| Top | 15% | $50,000 – $99,999 |
+| Elite | 18% | $100,000 and up |
 
 - **Moving up:** checked nightly. A partner moves up as soon as they cross a threshold, and orders paid from then on earn the new rate.
 - **Moving down:** checked once a quarter, at most one tier at a time, so a slow month never cuts a rate suddenly.
@@ -124,7 +124,7 @@ Based on the partner's **attributed paid sales in the last 12 months** (commissi
 - **Admin override:** the team can set a tier by hand (for example to start a well-known designer at Top) with a reason and an optional end date. While an override is active, automatic changes don't apply.
 - **Hub display:** "Active · 12% commission · $3,200 more in sales to reach Top (15%)".
 
-**DECISION 2:** confirm or change the four thresholds ($5,000 / $25,000 / $75,000).
+Thresholds confirmed by the owner on November 3, 2026.
 
 **DECISION 3:** keep the 23% ceiling as headroom for future promotions, or remove it? Recommendation: keep it.
 
@@ -230,7 +230,7 @@ Each step ships as its own PR with tests.
 - A storefront order is fully refunded before clearing: the commission is voided. A partial refund reduces it pro rata. A refund after payout creates a negative adjustment on the next payout.
 - A visitor clicks a link on their phone, signs in, and buys on a laptop within 30 days: credited.
 - The **Copy link**, **Save to Pinterest** and every Share sheet route include the code for partners and not for others.
-- Crossing $5,000 in 12-month sales moves a partner to Active the next night. Earlier commissions keep their old rate.
+- Crossing $15,000 in 12-month sales moves a partner to Active the next night; $50,000 to Top; $100,000 to Elite. Earlier commissions keep their old rate.
 - With **Apply to my next order** on, $100 credit comes off the next order's merchandise, never off delivery or tax. With it off, the balance grows. Cancelling the order restores the credit.
 - The Trade page shows 10% to signed-out visitors and the partner's own rate to partners, and no page says "12%" or "for every referral" unless that's true.
 - Public queries never expose buyer names, emails or other partners' data.
