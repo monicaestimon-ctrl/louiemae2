@@ -301,6 +301,9 @@ export const reconcile = internalMutation({
       .query('holmQuoteRequests')
       .withIndex('by_partner_state', (q) => q.eq('partnerState', 'awaiting_payment'))
       .take(100); // least recently checked first, so unpaid quotes never block newer ones
+    // Pricing a paid order reads its products and listings, so a run prices at most this many;
+    // the rest stay awaiting payment (and first in line) for the next run.
+    let priced = 0;
     for (const r of waiting) {
       const project = await ctx.db.get(r.commerceProjectId);
       if (!project || project.status === 'cancelled' || project.status === 'payment_review') {
@@ -313,6 +316,8 @@ export const reconcile = internalMutation({
         await ctx.db.patch(r._id, expired ? { partnerState: 'void' } : { partnerCheckedAt: now });
         continue;
       }
+      if (priced >= 25) continue;
+      priced++;
       const partner = await profileOf(ctx, r.partnerId);
       const tier = await partnerTierAt(ctx, r.partnerId, project.paidAt, partner?.partnerTier ?? 'base');
       // House orders are furniture; each line is held to 40% of our profit on it.
