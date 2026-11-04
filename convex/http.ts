@@ -203,7 +203,15 @@ http.route({
             }
 
             if (webhookSecret && signature) {
-                event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
+                // Partners' connected-account events (account.updated) come from a separate Connect
+                // endpoint in Stripe, which has its own signing secret.
+                const connectSecret = process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
+                try {
+                    event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
+                } catch (err) {
+                    if (!connectSecret) throw err;
+                    event = await stripe.webhooks.constructEventAsync(body, signature, connectSecret);
+                }
             } else if (shouldAllowUnsignedStripeWebhook(process.env)) {
                 event = JSON.parse(body) as Stripe.Event;
             } else {
@@ -233,6 +241,10 @@ http.route({
         // A partner's Stripe Connect account changed (for example, finished setup): keep their status current.
         if (event.type === 'account.updated') {
             if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            // A live Connect endpoint also receives test-mode events for connected accounts: only
+            // events in the same mode as this deployment's key may change a partner's status.
+            const liveKey = /^(sk|rk)_live_/.test(stripeSecretKey);
+            if (event.livemode !== liveKey) return new Response(JSON.stringify({ received: true, ignored: 'mode' }), { status: 200 });
             const account = event.data.object as Stripe.Account;
             await ctx.runMutation(internal.holmPayouts.setConnectStatus, {
                 accountId: account.id,
