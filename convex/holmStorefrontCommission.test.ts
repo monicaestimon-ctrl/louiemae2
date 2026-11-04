@@ -119,6 +119,18 @@ describe('partner commission on a louiemae.com order', () => {
     expect(adj).toMatchObject({ board: 'living-room', amountCents: -20_000 });
   });
 
+  it('pays nothing on a product the team excluded from commission', async () => {
+    const t = convexTest(schema, modules);
+    const { checkoutId } = await setup(t);
+    await t.run(async (ctx) => {
+      const product = (await ctx.db.query('commerceProducts').first())!;
+      await ctx.db.insert('holmCommissionExclusions', { kind: 'category', value: 'accent', label: 'accent', reason: 'Thin margin', by: 'team', at: 0 });
+      void product;
+    });
+    await t.mutation(internal.holmPartners.storefrontCommission, paid(checkoutId));
+    expect(await commissions(t)).toHaveLength(0);
+  });
+
   it('pays nothing when the buyer email is missing', async () => {
     const t = convexTest(schema, modules);
     const { checkoutId } = await setup(t);

@@ -24,7 +24,7 @@ type Ctx = QueryCtx | MutationCtx;
 
 // ---------- who is viewing ----------
 import { viewer, isVerified, isAdmin, isPartner, requireUser } from './holmAccess';
-import { productTypeFor, type ProductType } from '../lib/holmPartners';
+import { HOLM_RATES, MARGIN_GUARD_BPS, productTypeFor, type ProductType } from '../lib/holmPartners';
 import { markReferralVerified, recordReferral, resolveAttribution } from './holmPartners';
 
 export const me = query({
@@ -148,6 +148,8 @@ export async function houseUnitCosts(
 ) {
   const costs = new Map<string, number | null>();
   const types = new Map<string, ProductType>();
+  const excluded = new Set<string>();
+  const exclusions = await ctx.db.query('holmCommissionExclusions').take(500);
   for (const productId of new Set(lines.map((l) => l.productId))) {
     const product = await ctx.db.get(productId);
     const listing = await ctx.db
@@ -156,13 +158,16 @@ export async function houseUnitCosts(
       .unique();
     if (!product || !listing) continue;
     types.set(productId, productTypeFor(product.provider, listing.snapshot.category));
+    const category = (listing.snapshot.category || '').toLowerCase();
+    if (exclusions.some((e) => (e.kind === 'product' ? e.value === productId : !!e.value && category.includes(e.value.toLowerCase()))))
+      excluded.add(productId);
     const { linked, rate } = await pricingParts(ctx, product, listing);
     for (const route of listing.fulfillment ?? []) {
       const cost = costCents(product, route, linked, variantFreight(route, rate).cents);
       costs.set(`${productId}:${route.id}`, cost > 0 ? cost : null);
     }
   }
-  return Object.assign(costs, { types });
+  return Object.assign(costs, { types, excluded });
 }
 
 // ---------- catalog ----------
@@ -235,6 +240,12 @@ export const adminPricing = query({
         if (x.cost > 0 && x.trade > listedTrade) flags.push(`Floor holds trade at ${Math.round((1 - x.trade / x.retail) * 100)}% off`);
         if (priced.product.provider === 'ashcroft' && !x.freightKnown) flags.push('Freight allowance estimated');
         if (x.cost > 0 && marginBps(project, x.cost) < HOLM_RULES.minMarginBps - 5) flags.push('Below margin floor');
+        // Retail margin left after the top (Elite) commission rate, held to 40% of profit.
+        const type = productTypeFor(priced.product.provider, listing.snapshot.category);
+        const profit = x.cost > 0 ? (x.retail * marginBps(x.retail, x.cost)) / 10000 : 0;
+        const elite = x.cost > 0 ? Math.min((x.retail * HOLM_RATES.elite[type]) / 10000, (profit * MARGIN_GUARD_BPS) / 10000) : 0;
+        const afterEliteBps = x.cost > 0 ? Math.round(((profit - elite) / x.retail) * 10000) : null;
+        if (afterEliteBps !== null && afterEliteBps < 2000) flags.push('Under 20% after Elite commission');
         rows.push({
           productId: priced.product._id,
           name: listing.snapshot.name,
@@ -247,6 +258,8 @@ export const adminPricing = query({
           retailMarginBps: x.cost > 0 ? marginBps(x.retail, x.cost) : null,
           tradeMarginBps: x.cost > 0 ? marginBps(x.trade, x.cost) : null,
           projectMarginBps: x.cost > 0 ? marginBps(project, x.cost) : null,
+          afterEliteBps,
+          type,
           flags,
         });
       }

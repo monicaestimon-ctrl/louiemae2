@@ -386,6 +386,10 @@ export const adminPartners = query({
           refCode: p.refCode,
           tier: p.partnerTier ?? 'base',
           sales12Cents: p.sales12Cents ?? 0, // as of the last nightly update
+          nextTier: tierProgress(p.partnerTier ?? 'base', p.sales12Cents ?? 0).line,
+          payouts: { connected: !!p.stripeAccountId, ready: !!p.payoutsReady, due: (p.payoutsDue ?? []).length },
+          // Cleared and not already in a payout: paid on the 15th if $50 or more.
+          unpaidCents: rows.filter((r) => r.status === 'cleared' && !r.payoutId).reduce((t, r) => t + r.amountCents, 0),
           override: p.tierOverride && overrideActive(p, Date.now()) ? { reason: p.tierOverride.reason, until: p.tierOverride.until ?? null } : null,
           w9Status: p.w9Status ?? 'none',
           w9Url: p.w9FileId ? await ctx.storage.getUrl(p.w9FileId) : null,
@@ -496,16 +500,20 @@ export const reconcile = internalMutation({
       // Commission is worked out after store credit, shared across the lines by value.
       const merch = project.lines.reduce((t, l) => t + l.unitPrice * l.quantity, 0);
       const keep = merch > 0 ? 1 - projectCredit(project) / merch : 1;
+      const all = project.lines.map((l, i) => ({
+        key: `${i}:${l.productId}:${l.variantId}`,
+        excluded: costs.excluded.has(l.productId),
+        type: costs.types.get(l.productId) ?? ('furniture' as const),
+        unitCents: Math.round(l.unitPrice * keep),
+        quantity: l.quantity,
+        unitCostCents: costs.get(`${l.productId}:${l.variantId}`) ?? null,
+      }));
+      // Excluded products earn nothing; their value still counts toward the card fee.
+      const excludedCents = all.filter((l) => l.excluded).reduce((t, l) => t + l.unitCents * l.quantity, 0);
       const result = lineCommissions(
-        project.lines.map((l, i) => ({
-          key: `${i}:${l.productId}:${l.variantId}`,
-          type: costs.types.get(l.productId) ?? ('furniture' as const),
-          unitCents: Math.round(l.unitPrice * keep),
-          quantity: l.quantity,
-          unitCostCents: costs.get(`${l.productId}:${l.variantId}`) ?? null,
-        })),
+        all.filter((l) => !l.excluded),
         tier,
-        (project.delivery ?? 0) + (project.tax ?? 0)
+        (project.delivery ?? 0) + (project.tax ?? 0) + excludedCents
       );
       if (result.amountCents > 0)
         await ctx.db.insert('holmCommissions', {
@@ -658,8 +666,11 @@ export const storefrontCommission = internalMutation({
     }));
     const known = lines.filter((l): l is typeof l & { productId: Id<'commerceProducts'> } => l.productId !== null);
     const costs = await houseUnitCosts(ctx, known, 'retail');
+    // Excluded products earn nothing; their value still counts toward the card fee.
+    const isExcluded = (l: (typeof lines)[number]) => !!l.productId && costs.excluded.has(l.productId);
+    const excludedCents = lines.filter(isExcluded).reduce((t, l) => t + l.unitCents * l.quantity, 0);
     const result = lineCommissions(
-      lines.map((l) => ({
+      lines.filter((l) => !isExcluded(l)).map((l) => ({
         key: l.key,
         type: (l.productId && costs.types.get(l.productId)) || 'furniture',
         unitCents: l.unitCents,
@@ -667,7 +678,7 @@ export const storefrontCommission = internalMutation({
         unitCostCents: (l.productId && costs.get(`${l.productId}:${l.variantId}`)) ?? null,
       })),
       tier,
-      a.deliveryCents + a.taxCents
+      a.deliveryCents + a.taxCents + excludedCents
     );
     if (result.amountCents <= 0) return null;
     const id = await ctx.db.insert('holmCommissions', {
