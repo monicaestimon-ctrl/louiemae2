@@ -113,6 +113,7 @@ describe('partner link to any louiemae.com page', () => {
     const { partnerPageUrl } = await import('./partnerLink');
     expect(partnerPageUrl(O, 'https://evil.com/louiemae.com', 'STUDIO42')).toBeNull();
     expect(partnerPageUrl(O, 'javascript:alert(1)', 'STUDIO42')).toBeNull();
+    expect(new URL(partnerPageUrl(O, 'https://louiemae.com//evil.com/x', 'STUDIO42')!).hostname).toBe('www.louiemae.com');
     expect(partnerPageUrl(O, '#shop', 'x')).toBeNull();
   });
 });

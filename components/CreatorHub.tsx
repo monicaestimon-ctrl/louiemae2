@@ -171,7 +171,6 @@ function Dashboard({ hub }: { hub: Hub }) {
     if (!link) return;
     try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* the link is on screen to copy by hand */ }
   };
-  const orders = hub.commissions.filter((c) => c.source !== 'adjustment');
   const statusLabel = (c: Hub['commissions'][number]) =>
     ({ pending: `Pending · clears ${new Date(c.clearsAt).toLocaleDateString()}`, cleared: 'Cleared', paid: 'Paid', void: 'Void' })[c.status];
   return (
@@ -180,7 +179,7 @@ function Dashboard({ hub }: { hub: Hub }) {
         <p className="text-xs uppercase tracking-[0.2em] text-bronze">{TIER_NAMES[tier]} tier · code {hub.refCode}</p>
         <h2 className="font-serif text-4xl text-earth mt-2">Your Creator Hub</h2>
         <p className="text-earth/80 mt-2">{partnerCopy(tier).ratesLine}.</p>
-        <p className="text-sm text-earth/60 mt-1">{partnerCopy().typesNote} Commission on an item never takes more than 40% of our profit on it.</p>
+        <p className="text-sm text-earth/60 mt-1">{partnerCopy().typesNote} Commission on an item never takes more than {partnerCopy().profitCap} of our profit on it.</p>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
@@ -211,12 +210,12 @@ function Dashboard({ hub }: { hub: Hub }) {
           <p className="text-sm text-red-700">Paste an address on louiemae.com.</p>
         )}
         {link && ch === 'qr' && <QrCode text={link} label="QR code for your link" />}
-        <p className="text-sm text-earth/60">Visits through your link count for 30 days. Label posts with "#ad" or "I earn a commission". Orders you place yourself don't earn commission.</p>
+        <p className="text-sm text-earth/60">Visits through your link count for {partnerCopy().attributionDays} days. Label posts with "#ad" or "I earn a commission". Orders you place yourself don't earn commission.</p>
       </section>
 
       <section className="grid gap-3">
         <h3 className="font-serif text-2xl text-earth">Orders through your links</h3>
-        {orders.length ? (
+        {hub.commissions.length ? (
           <div className="overflow-x-auto rounded-2xl border border-sand bg-white/70">
             <table className="w-full text-sm text-left">
               <thead className="text-xs uppercase tracking-[0.15em] text-earth/60"><tr><th className="p-3 font-medium">Date</th><th className="p-3 font-medium">Items</th><th className="p-3 font-medium">Order</th><th className="p-3 font-medium">You earn</th><th className="p-3 font-medium">Status</th></tr></thead>
@@ -224,7 +223,7 @@ function Dashboard({ hub }: { hub: Hub }) {
                 {hub.commissions.map((c, i) => (
                   <tr key={i} className="border-t border-sand align-top">
                     <td className="p-3 whitespace-nowrap">{new Date(c.createdAt).toLocaleDateString()}</td>
-                    <td className="p-3 text-earth/70">{c.lines.length ? c.lines.map((l) => `${l.type === 'decor' ? 'Décor' : l.type[0].toUpperCase() + l.type.slice(1)} ${l.rateBps / 100}%${l.capped ? ' (capped)' : ''}`).join(' · ') : c.note || '—'}</td>
+                    <td className="p-3 text-earth/70">{c.source === 'adjustment' ? 'Adjustment: ' : ''}{c.lines.length ? c.lines.map((l) => `${l.type === 'decor' ? 'Décor' : l.type[0].toUpperCase() + l.type.slice(1)} ${l.rateBps / 100}%${l.capped ? ' (capped)' : ''}`).join(' · ') : c.note || '—'}</td>
                     <td className="p-3 tabular-nums">{c.baseCents ? money(c.baseCents) : ''}</td>
                     <td className="p-3 tabular-nums">{money(c.amountCents)}</td>
                     <td className="p-3">{statusLabel(c)}</td>
@@ -236,7 +235,7 @@ function Dashboard({ hub }: { hub: Hub }) {
         ) : (
           <p className="text-sm text-earth/60">Orders people place through your links show up here, with what you earned on each. We never show buyers' names.</p>
         )}
-        <p className="text-sm text-earth/60">Commission is pending for 30 days after payment, then clears. Store credit: {money(hub.creditCents)}.</p>
+        <p className="text-sm text-earth/60">Commission is pending for {partnerCopy().clearingDays} days after payment, then clears. Store credit: {money(hub.creditCents)}.</p>
       </section>
 
       <p className="text-sm text-earth/70 flex flex-wrap gap-x-6 gap-y-2">
@@ -263,7 +262,7 @@ export default function CreatorHub() {
           <header className="grid gap-4">
             <p className="text-xs uppercase tracking-[0.25em] text-bronze">Louie Mae creators</p>
             <h1 className="font-serif text-5xl md:text-6xl text-earth leading-tight">Share what you love. Earn when it sells.</h1>
-            <p className="text-lg text-earth/80 max-w-2xl">{c.ratesLine}, on orders placed through your links within 30 days. Your rate rises with your sales.</p>
+            <p className="text-lg text-earth/80 max-w-2xl">{c.ratesLine}, on orders placed through your links within {c.attributionDays} days. Your rate rises with your sales.</p>
             <p className="text-sm text-earth/60 max-w-2xl">{c.typesNote}</p>
           </header>
         )}
@@ -279,7 +278,7 @@ export default function CreatorHub() {
         <section className="grid gap-3">
           <h3 className="font-serif text-2xl text-earth">Rates</h3>
           <RateTable tier={hub ? (hub.tier as HolmTier) : null} />
-          <p className="text-sm text-earth/60">Commission on any item never takes more than 40% of our profit on it, so a few low-margin items earn a little less. <a href={TERMS_URL} className="underline">Read the partner terms</a>.</p>
+          <p className="text-sm text-earth/60">Commission on any item never takes more than {c.profitCap} of our profit on it, so a few low-margin items earn a little less. <a href={TERMS_URL} className="underline">Read the partner terms</a>.</p>
         </section>
       </div>
     </main>

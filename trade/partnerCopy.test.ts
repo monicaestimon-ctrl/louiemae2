@@ -57,6 +57,8 @@ describe('partner terms', () => {
     expect(text).toMatch(/do not earn commission/);
     expect(text).toMatch(/#ad/);
     expect(text).toMatch(/1099-NEC/);
+    expect(text).toContain('Base rate for its product type applies');
+    expect(partnerCopy().profitCap).toBe('40%');
   });
   it('are published on /trade and linked from the join checkbox', () => {
     expect(app).toContain("'partner-terms':PartnerTerms");

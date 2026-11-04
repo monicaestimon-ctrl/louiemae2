@@ -151,6 +151,10 @@ export function partnerCopy(tier?: HolmTier | null) {
       : `Earn ${typeRange('furniture')} on furniture, ${typeRange('decor')} on home décor and ${typeRange('clothing')} on clothing`,
     // Only Ashcroft furniture can be bought on louiemae.com today; say so next to the décor and clothing rates.
     typesNote: 'Home décor and clothing earn commission as they become available to order on louiemae.com.',
+    // Program numbers for copy, so pages can't drift from the rules.
+    profitCap: pct(MARGIN_GUARD_BPS),
+    attributionDays: HOLM_PARTNERS.attributionDays,
+    clearingDays: HOLM_PARTNERS.clearingDays,
   };
 }
 
@@ -197,6 +201,7 @@ export function partnerTerms() {
         `Your tier comes from attributed sales over the last 12 months: ${rateRows().map((r) => `${r.name} ${r.sales}`).join(', ')}.`,
         `Commission on any order line never exceeds ${MARGIN_GUARD_BPS / 100}% of our profit on that line (price minus supplier cost, shipping, supplier fees and card fees). This only lowers commission on low-margin items.`,
         'The rate is fixed for each order line when the order is paid.',
+        'If we do not yet have our cost for an item, the Base rate for its product type applies and the profit limit is not used.',
         'Home décor and clothing earn commission as they become available to order on louiemae.com.',
       ],
     },

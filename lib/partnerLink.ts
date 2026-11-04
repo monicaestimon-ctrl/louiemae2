@@ -137,7 +137,10 @@ export function partnerPageUrl(origin: string, page: string, refCode: string, ch
   const host = url.hostname.replace(/^www\./, '');
   const own = new URL(origin).hostname.replace(/^www\./, '');
   if (!/^https?:$/.test(url.protocol) || (host !== 'louiemae.com' && host !== own)) return null;
-  const out = new URL(url.pathname + url.search, origin);
+  // Set the path on a copy of our origin: a path such as "//other.site" must never become the host.
+  const out = new URL(origin);
+  out.pathname = url.pathname;
+  out.search = url.search;
   // A code after the hash would compete with this one, so drop it.
   const [hashPath, hashQuery] = url.hash.split('?');
   const hq = new URLSearchParams(hashQuery || '');
