@@ -77,6 +77,9 @@ export const commerceTables = {
     subtotal: v.number(), shipping: v.number(), createdAt: v.number(),
     // the partner whose link brought this buyer (checked again when the payment completes)
     partner: v.optional(v.object({ partnerId: v.id('users'), refCode: v.string(), visitorId: v.string(), channel: v.string(), board: v.optional(v.string()) })),
+    // store credit held for this checkout (taken off as a one-time Stripe discount)
+    creditCents: v.optional(v.number()),
+    creditUserId: v.optional(v.id('users')),
   }),
   commercePaymentLinks: defineTable({
     paymentIntentId: v.string(),
@@ -84,6 +87,7 @@ export const commerceTables = {
   }).index('by_payment', ['paymentIntentId']),
   commerceProjects: defineTable({
     token: v.string(),
+    creditCents: v.optional(v.number()), // store credit held for this quote; comes off the invoice as its own line
     channel,
     name: v.string(),
     email: v.string(),

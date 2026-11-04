@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, ShoppingBag, Loader2 } from 'lucide-react';
+import { useQuery } from 'convex/react';
+import { useAuthToken } from '@convex-dev/auth/react';
+import { api } from '../../convex/_generated/api';
 import { useCart } from '../../contexts/CartContext';
 import CartItem from './CartItem';
 import { activeRef, visitorId } from '../../lib/partnerLink';
@@ -8,6 +11,12 @@ export const CartDrawer: React.FC = () => {
     const { isOpen, closeCart, items, subtotal, itemCount, removeFromCart } = useCart();
     const delivery = items.reduce((sum, item) => sum + (item.product.deliveryFee ?? 0) * item.quantity, 0);
     const [isCheckingOut, setIsCheckingOut] = useState(false);
+    // Store credit (signed-in members): pre-set from their Hub setting, changeable per order.
+    const authToken = useAuthToken();
+    const credit = useQuery(api.holmCredit.myCredit);
+    const [useCredit, setUseCredit] = useState(false);
+    useEffect(() => { if (credit) setUseCredit(credit.autoApply); }, [credit?.autoApply]);
+    const creditOff = credit && useCredit ? Math.min(credit.balanceCents / 100, subtotal) : 0;
     const [error, setError] = useState<string | null>(null);
     const [checkoutBlock, setCheckoutBlock] = useState<{
         message: string;
@@ -64,11 +73,14 @@ export const CartDrawer: React.FC = () => {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    // signed in: lets the server use this member's store credit
+                    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
                 },
                 body: JSON.stringify({
                     items: checkoutItems,
                     // the partner link this visitor arrived through, if any (checked on the server)
                     ...(activeRef() ? { refCode: activeRef()!.code, visitorId: visitorId() } : {}),
+                    ...(creditOff > 0 ? { useCredit: true } : {}),
                     successUrl: `${window.location.origin}/#checkout/success?session_id={CHECKOUT_SESSION_ID}`,
                     cancelUrl: `${window.location.origin}/#checkout/cancel`,
                 }),
@@ -179,8 +191,18 @@ export const CartDrawer: React.FC = () => {
                             <span className="font-serif text-xl text-earth">${subtotal.toFixed(2)}</span>
                         </div>
 
+                        {credit && credit.balanceCents > 0 && (
+                            <label className="flex items-center justify-between gap-3 mb-3 text-xs text-earth">
+                                <span className="flex items-center gap-2">
+                                    <input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} />
+                                    Use my ${(credit.balanceCents / 100).toFixed(2)} store credit
+                                </span>
+                                {creditOff > 0 && <span className="font-serif text-base">−${creditOff.toFixed(2)}</span>}
+                            </label>
+                        )}
+
                         <p className="text-[10px] text-earth/40 mb-4 text-center">
-                            Economy delivery: ${delivery.toFixed(2)} · Total before tax: ${(subtotal + delivery).toFixed(2)}. Delivery is charged per item; tax is calculated at checkout.
+                            Economy delivery: ${delivery.toFixed(2)} · Total before tax: ${(subtotal - creditOff + delivery).toFixed(2)}. Delivery is charged per item; tax is calculated at checkout.{creditOff > 0 ? ' Store credit comes off the items, not delivery or tax.' : ''}
                         </p>
 
                         {/* Error Message */}

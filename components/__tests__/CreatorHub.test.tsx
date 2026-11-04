@@ -15,6 +15,7 @@ vi.mock('../../convex/_generated/api', () => {
     api: {
       holm: { me: ref('holm.me'), ensureProfile: ref('holm.ensureProfile'), signInOptions: ref('holm.signInOptions') },
       holmPartners: { hub: ref('holmPartners.hub'), join: ref('holmPartners.join') },
+      holmCredit: { myCredit: ref('holmCredit.myCredit'), setCreditAutoApply: ref('holmCredit.setCreditAutoApply') },
     },
   };
 });

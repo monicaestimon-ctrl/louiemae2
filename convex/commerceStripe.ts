@@ -4,7 +4,7 @@ import { v } from 'convex/values';
 import { action, internalAction } from './_generated/server';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { totalLines } from '../lib/commerce';
+import { projectCredit, projectTotal } from '../lib/commerce';
 function stripeClient(requireSending = false) {
   if (!process.env.STRIPE_SECRET_KEY) throw new Error('Stripe is not configured.');
   if (requireSending && process.env.COMMERCE_INVOICES_ENABLED !== 'true')
@@ -105,6 +105,10 @@ export const sendInvoice = action({
                 },
               ]
             : []),
+          // Store credit: never more than the merchandise.
+          ...(projectCredit(p) > 0
+            ? [{ description: 'Store credit', amount: -projectCredit(p), quantity: 1, unitAmount: -projectCredit(p) }]
+            : []),
         ];
         const existingLines = await stripe.invoices.listLineItems(invoiceId, { limit: 100 });
         if (existingLines.has_more) throw new Error('Unexpected invoice lines require review.');
@@ -136,7 +140,7 @@ export const sendInvoice = action({
             );
         }
         const checked = await stripe.invoices.retrieve(invoiceId);
-        if (checked.total !== totalLines(p.lines, p.delivery, p.tax))
+        if (checked.total !== projectTotal(p))
           throw new Error('Invoice total does not match the reviewed quote.');
         invoice = await stripe.invoices.finalizeInvoice(
           invoiceId,
@@ -182,7 +186,7 @@ export const reconcilePayment = internalAction({
       invoice.status !== 'paid' ||
       invoice.amount_remaining !== 0 ||
       invoice.currency !== 'usd' ||
-      invoice.amount_paid !== totalLines(p.lines, p.delivery, p.tax) ||
+      invoice.amount_paid !== projectTotal(p) ||
       invoice.total !== invoice.amount_paid
     )
       throw new Error('Invoice payment requires review.');

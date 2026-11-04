@@ -287,6 +287,17 @@ export function blankCommerceDraft(): CommerceDraft {
     referencePermission: false,
   };
 }
+/**
+ * What the customer pays for a project: lines, delivery and tax, less any store credit. Credit
+ * only comes off merchandise, so it can never make the total negative.
+ */
+export function projectTotal(p: { lines: { quantity: number; unitPrice: number }[]; delivery: number; tax: number; creditCents?: number }) {
+  return totalLines(p.lines, p.delivery, p.tax) - projectCredit(p);
+}
+/** The store credit a project's invoice takes off: never more than its merchandise. */
+export function projectCredit(p: { lines: { quantity: number; unitPrice: number }[]; creditCents?: number }) {
+  return Math.max(0, Math.min(Math.floor(p.creditCents ?? 0), totalLines(p.lines, 0, 0)));
+}
 export function totalLines(
   lines: { quantity: number; unitPrice: number }[],
   delivery: number,
