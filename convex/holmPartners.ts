@@ -92,21 +92,51 @@ export async function resolveAttribution(
   visitorId: string | undefined,
   buyer: { userId?: Id<'users'>; email: string }
 ) {
-  if (!refCode || !visitorId || !/^[A-Z0-9]{4,16}$/.test(refCode)) return null;
+  // A signed-in buyer on another device: the partner visit their account remembers.
+  const own = buyer.userId ? await profileOf(ctx, buyer.userId) : null;
+  if (!refCode && own?.refVisitCode && own.refVisitorId) refCode = own.refVisitCode;
+  if (!visitorId && own?.refVisitorId) visitorId = own.refVisitorId;
+  if (!refCode || !visitorId || !REF_CODE.test(refCode)) return null;
   const partner = await ctx.db.query('holmProfiles').withIndex('by_refCode', (q) => q.eq('refCode', refCode)).first();
   if (!partner || !isPartner(partner) || partner.userId === buyer.userId) return null;
   const partnerUser = await ctx.db.get(partner.userId);
   if (typeof partnerUser?.email === 'string' && partnerUser.email.toLowerCase() === buyer.email) return null;
-  const click = await ctx.db
-    .query('holmClicks')
-    .withIndex('by_visitor_partner', (q) =>
-      q.eq('visitorId', visitorId).eq('partnerId', partner.userId).gte('at', Date.now() - HOLM_PARTNERS.attributionDays * DAY)
-    )
-    .order('desc')
-    .first();
+  const since = Date.now() - HOLM_PARTNERS.attributionDays * DAY;
+  const clickFrom = (vid: string) =>
+    ctx.db
+      .query('holmClicks')
+      .withIndex('by_visitor_partner', (q) => q.eq('visitorId', vid).eq('partnerId', partner.userId).gte('at', since))
+      .order('desc')
+      .first();
+  // This browser's visit, or for a signed-in buyer the visit their account remembers from another device.
+  let click = await clickFrom(visitorId);
+  if (!click && own?.refVisitorId && own.refVisitorId !== visitorId) click = await clickFrom(own.refVisitorId);
   if (!click) return null;
   return { partnerId: partner.userId, refCode, channel: click.channel, board: click.board };
 }
+
+/**
+ * A signed-in member arrived through a partner link on this browser: remember the browser on
+ * their account, so an order they place on another device within the window is still credited.
+ * Only a browser with a real partner-link visit in the window is kept.
+ */
+export const linkVisit = mutation({
+  args: { visitorId: v.string(), refCode: v.string() },
+  handler: async (ctx, a) => {
+    const me = await requireUser(ctx);
+    if (!me.profile || !/^[\w-]{16,64}$/.test(a.visitorId) || !REF_CODE.test(a.refCode)) return;
+    if (me.profile.refVisitorId === a.visitorId && me.profile.refVisitCode === a.refCode) return;
+    const partner = await ctx.db.query('holmProfiles').withIndex('by_refCode', (q) => q.eq('refCode', a.refCode)).first();
+    if (!partner || !isPartner(partner) || partner.userId === me.userId) return;
+    const since = Date.now() - HOLM_PARTNERS.attributionDays * DAY;
+    const click = await ctx.db
+      .query('holmClicks')
+      .withIndex('by_visitor_partner', (q) => q.eq('visitorId', a.visitorId).eq('partnerId', partner.userId).gte('at', since))
+      .first();
+    if (!click) return;
+    await ctx.db.patch(me.profile._id, { refVisitorId: a.visitorId, refVisitCode: a.refCode, updatedAt: Date.now() });
+  },
+});
 
 /** Business referral: the account that referred a new account, recorded once at sign-up. */
 export async function recordReferral(ctx: MutationCtx, referredUserId: Id<'users'>, refCode: string | undefined) {
@@ -177,11 +207,24 @@ export const hub = query({
       clicks30: clicks.length,
       byChannel,
       quotes: quotes.length,
+      orders: commissions.filter((c) => c.status !== 'void' && c.source !== 'adjustment').length,
       pendingCents: sum(commissions, 'pending'),
       clearedCents: sum(commissions, 'cleared'),
       paidCents: sum(commissions, 'paid'),
       creditCents: credits.reduce((t, c) => t + c.amountCents, 0),
-      commissions: commissions.slice(0, 20).map((c) => ({ amountCents: c.amountCents, status: c.status, clearsAt: c.clearsAt, createdAt: c.createdAt })),
+      // The orders list: no buyer names or emails, only what the partner needs to follow their earnings.
+      commissions: commissions.slice(0, 50).map((c) => ({
+        source: c.source ?? ('house_quote' as const),
+        baseCents: c.baseCents,
+        amountCents: c.amountCents,
+        status: c.status,
+        clearsAt: c.clearsAt,
+        createdAt: c.createdAt,
+        channel: c.channel ?? null,
+        board: c.board ?? null,
+        note: c.note ?? null,
+        lines: (c.lines ?? []).map((l) => ({ type: l.type, baseCents: l.baseCents, rateBps: l.rateBps, amountCents: l.amountCents, capped: l.capped })),
+      })),
       referrals: await Promise.all(
         referrals.map(async (r) => {
           const prof = await profileOf(ctx, r.referredUserId);
@@ -276,7 +319,7 @@ export const adminRecordPayout = mutation({
       .withIndex('by_partner_status', (q) => q.eq('partnerId', a.userId).eq('status', 'cleared'))
       .collect();
     const amount = cleared.reduce((t, c) => t + c.amountCents, 0);
-    if (!amount) throw new Error('Nothing has cleared for this partner yet.');
+    if (amount <= 0) throw new Error('Nothing has cleared for this partner yet.');
     const now = Date.now();
     const payoutId = await ctx.db.insert('holmPayouts', { partnerId: a.userId, amountCents: amount, reference, paidBy: admin.email, paidAt: now });
     for (const c of cleared) await ctx.db.patch(c._id, { status: 'paid', payoutId });
@@ -320,12 +363,12 @@ export const reconcile = internalMutation({
       priced++;
       const partner = await profileOf(ctx, r.partnerId);
       const tier = await partnerTierAt(ctx, r.partnerId, project.paidAt, partner?.partnerTier ?? 'base');
-      // House orders are furniture; each line is held to 40% of our profit on it.
+      // Each line at its product type's rate, held to 40% of our profit on it.
       const costs = await houseUnitCosts(ctx, project.lines);
       const result = lineCommissions(
         project.lines.map((l, i) => ({
           key: `${i}:${l.productId}:${l.variantId}`,
-          type: 'furniture' as const,
+          type: costs.types.get(l.productId) ?? ('furniture' as const),
           unitCents: l.unitPrice,
           quantity: l.quantity,
           unitCostCents: costs.get(`${l.productId}:${l.variantId}`) ?? null,
@@ -336,9 +379,13 @@ export const reconcile = internalMutation({
       if (result.amountCents > 0)
         await ctx.db.insert('holmCommissions', {
           partnerId: r.partnerId,
+          source: 'house_quote',
           quoteRequestId: r._id,
           commerceProjectId: r.commerceProjectId,
+          ...(r.channel ? { channel: r.channel } : {}),
+          ...(r.board ? { board: r.board } : {}),
           baseCents: result.baseCents,
+          originalCents: result.amountCents,
           // the rate actually earned across the order; each line keeps its own rate
           rateBps: result.baseCents ? Math.round((result.amountCents * 10000) / result.baseCents) : 0,
           amountCents: result.amountCents,
@@ -356,6 +403,11 @@ export const reconcile = internalMutation({
       .withIndex('by_status_clears', (q) => q.eq('status', 'pending').lte('clearsAt', now))
       .take(100);
     for (const c of due) {
+      // Storefront refunds and disputes are applied as they happen (storefrontReversal).
+      if (!c.commerceProjectId) {
+        await ctx.db.patch(c._id, { status: c.amountCents > 0 ? 'cleared' : 'void' });
+        continue;
+      }
       const project = await ctx.db.get(c.commerceProjectId);
       await ctx.db.patch(c._id, { status: project && project.status !== 'payment_review' && project.status !== 'cancelled' ? 'cleared' : 'void' });
     }
@@ -404,7 +456,17 @@ export const boardStats = query({
     const quotes = await ctx.db.query('holmQuoteRequests').withIndex('by_partner', (q) => q.eq('partnerId', me.userId)).order('desc').take(500);
     const commissions = await ctx.db.query('holmCommissions').withIndex('by_partner', (q) => q.eq('partnerId', me.userId)).order('desc').take(1000);
     const earned = new Map<string, number>();
-    for (const c of commissions) if (c.status !== 'void') earned.set(c.quoteRequestId, (earned.get(c.quoteRequestId) ?? 0) + c.amountCents);
+    const boardOrders = new Map<string, number>();
+    for (const c of commissions) {
+      if (c.status === 'void') continue;
+      if (c.quoteRequestId) earned.set(c.quoteRequestId, (earned.get(c.quoteRequestId) ?? 0) + c.amountCents);
+      // storefront orders carry the board on the commission itself
+      // (and refunds or disputes after payout come back as adjustments on the same board)
+      else if (c.board && (c.source === 'storefront_order' || c.source === 'adjustment')) {
+        earned.set('board:' + c.board, (earned.get('board:' + c.board) ?? 0) + c.amountCents);
+        if (c.source === 'storefront_order') boardOrders.set(c.board, (boardOrders.get(c.board) ?? 0) + 1);
+      }
+    }
     return Promise.all(
       boards.map(async (b) => {
         // Recent clicks only: 40 boards x 500 rows stays well inside a query's read limit.
@@ -418,11 +480,155 @@ export const boardStats = query({
           mode: b.mode,
           views: b.views ?? 0,
           byChannel,
-          orders: orders.length,
-          commissionCents: orders.reduce((t, q) => t + (earned.get(q._id) ?? 0), 0),
+          orders: orders.length + (boardOrders.get(b.slug) ?? 0),
+          commissionCents: orders.reduce((t, q) => t + (earned.get(q._id) ?? 0), 0) + (earned.get('board:' + b.slug) ?? 0),
           updatedAt: b.updatedAt ?? b.createdAt,
         };
       })
     );
   },
 });
+
+// ---------- storefront (louiemae.com) orders ----------
+
+/**
+ * A louiemae.com checkout was paid. If a partner's link brought this buyer, create one pending
+ * commission for the session (a repeated or late webhook changes nothing). Self-referral is
+ * checked again now that the buyer's email is known.
+ */
+export const storefrontCommission = internalMutation({
+  args: {
+    retailCheckoutId: v.id('retailCheckouts'),
+    stripeSessionId: v.string(),
+    paymentIntentId: v.optional(v.string()),
+    email: v.string(),
+    deliveryCents: v.number(),
+    taxCents: v.number(),
+  },
+  handler: async (ctx, a) => {
+    const checkout = await ctx.db.get(a.retailCheckoutId);
+    // Without the buyer's email, self-referral can't be ruled out.
+    if (!checkout?.partner || !a.email.trim()) return null;
+    const existing = await ctx.db.query('holmCommissions').withIndex('by_session', (q) => q.eq('stripeSessionId', a.stripeSessionId)).first();
+    if (existing) return existing._id;
+    const p = checkout.partner;
+    const attr = await resolveAttribution(ctx, p.refCode, p.visitorId, { email: a.email.trim().toLowerCase() });
+    if (!attr || attr.partnerId !== p.partnerId) return null;
+    const now = Date.now();
+    const partner = await profileOf(ctx, p.partnerId);
+    const tier = await partnerTierAt(ctx, p.partnerId, now, partner?.partnerTier ?? 'base');
+    const lines = checkout.items.map((item, i) => ({
+      key: `${i}:${item.productId}:${item.variantId}`,
+      productId: ctx.db.normalizeId('commerceProducts', item.productId),
+      variantId: item.variantId,
+      unitCents: Math.round(item.price * 100),
+      quantity: item.quantity,
+    }));
+    const known = lines.filter((l): l is typeof l & { productId: Id<'commerceProducts'> } => l.productId !== null);
+    const costs = await houseUnitCosts(ctx, known, 'retail');
+    const result = lineCommissions(
+      lines.map((l) => ({
+        key: l.key,
+        type: (l.productId && costs.types.get(l.productId)) || 'furniture',
+        unitCents: l.unitCents,
+        quantity: l.quantity,
+        unitCostCents: (l.productId && costs.get(`${l.productId}:${l.variantId}`)) ?? null,
+      })),
+      tier,
+      a.deliveryCents + a.taxCents
+    );
+    if (result.amountCents <= 0) return null;
+    const id = await ctx.db.insert('holmCommissions', {
+      partnerId: p.partnerId,
+      source: 'storefront_order',
+      retailCheckoutId: checkout._id,
+      stripeSessionId: a.stripeSessionId,
+      ...(a.paymentIntentId ? { paymentIntentId: a.paymentIntentId } : {}),
+      channel: attr.channel,
+      ...(attr.board ? { board: attr.board } : {}),
+      baseCents: result.baseCents,
+      rateBps: result.baseCents ? Math.round((result.amountCents * 10000) / result.baseCents) : 0,
+      amountCents: result.amountCents,
+      originalCents: result.amountCents,
+      reversedCents: 0,
+      tier,
+      lines: result.lines,
+      status: 'pending',
+      clearsAt: now + HOLM_PARTNERS.clearingDays * DAY,
+      createdAt: now,
+    });
+    // A refund or dispute that reached us before this order's payment event.
+    if (a.paymentIntentId) {
+      const early = await ctx.db.query('holmPaymentStates').withIndex('by_payment', (q) => q.eq('paymentIntentId', a.paymentIntentId!)).first();
+      const row = early && (await ctx.db.get(id));
+      if (early && row) await applyPaymentState(ctx, row, { refundedCents: early.refundedCents, chargeCents: early.chargeCents, disputed: early.disputed });
+    }
+    return id;
+  },
+});
+
+/**
+ * A storefront payment was refunded (fully or partly), disputed, or a dispute was won. The
+ * commission follows: a refund takes back its share, a dispute takes it all, a won dispute gives
+ * back what the dispute took. Before payout the amount changes; after payout an adjustment
+ * (negative or positive) goes on the partner's next payout. Stripe reports the total refunded so
+ * far, so replays and repeated events are applied once.
+ */
+export const storefrontReversal = internalMutation({
+  args: {
+    paymentIntentId: v.string(),
+    kind: v.union(v.literal('refund'), v.literal('dispute'), v.literal('dispute_won')),
+    refundedCents: v.optional(v.number()),
+    chargeCents: v.optional(v.number()),
+  },
+  handler: async (ctx, a) => {
+    const now = Date.now();
+    const saved = await ctx.db.query('holmPaymentStates').withIndex('by_payment', (q) => q.eq('paymentIntentId', a.paymentIntentId)).first();
+    const state: PaymentState = {
+      // Stripe reports the running refund total, so the larger figure is the latest.
+      refundedCents: a.kind === 'refund' ? Math.max(saved?.refundedCents ?? 0, a.refundedCents ?? 0) : (saved?.refundedCents ?? 0),
+      chargeCents: a.kind === 'refund' && a.chargeCents ? a.chargeCents : (saved?.chargeCents ?? 0),
+      disputed: a.kind === 'dispute' ? true : a.kind === 'dispute_won' ? false : (saved?.disputed ?? false),
+    };
+    if (saved) await ctx.db.patch(saved._id, { ...state, updatedAt: now });
+    else await ctx.db.insert('holmPaymentStates', { paymentIntentId: a.paymentIntentId, ...state, updatedAt: now });
+    const rows = await ctx.db.query('holmCommissions').withIndex('by_payment', (q) => q.eq('paymentIntentId', a.paymentIntentId)).take(10);
+    for (const c of rows) if (c.source === 'storefront_order') await applyPaymentState(ctx, c, state);
+  },
+});
+
+type PaymentState = { refundedCents: number; chargeCents: number; disputed: boolean };
+
+/** Brings a storefront commission in line with its payment's refunds and disputes. Safe to repeat. */
+async function applyPaymentState(ctx: MutationCtx, c: Doc<'holmCommissions'>, state: PaymentState) {
+  const now = Date.now();
+  const original = c.originalCents ?? c.amountCents;
+  const kept = state.disputed
+    ? 0
+    : state.chargeCents > 0
+      ? Math.round(original * Math.max(0, 1 - state.refundedCents / state.chargeCents))
+      : original;
+  const target = original - kept; // total that should be taken back
+  const delta = target - (c.reversedCents ?? 0);
+  const fields = { reversedCents: target, ...state };
+  if (delta === 0) return ctx.db.patch(c._id, fields);
+  if (c.status === 'paid') {
+    await ctx.db.insert('holmCommissions', {
+      partnerId: c.partnerId,
+      source: 'adjustment',
+      adjustsId: c._id,
+      ...(c.board ? { board: c.board } : {}),
+      baseCents: 0,
+      rateBps: 0,
+      amountCents: -delta,
+      status: 'cleared',
+      clearsAt: now,
+      createdAt: now,
+      note: delta < 0 ? 'Dispute won after payout' : state.disputed ? 'Payment disputed after payout' : 'Refunded after payout',
+    });
+    return ctx.db.patch(c._id, fields);
+  }
+  const amount = Math.max(0, c.amountCents - delta);
+  const status = amount === 0 ? ('void' as const) : c.status === 'void' ? (now >= c.clearsAt ? ('cleared' as const) : ('pending' as const)) : c.status;
+  return ctx.db.patch(c._id, { ...fields, amountCents: amount, status });
+}

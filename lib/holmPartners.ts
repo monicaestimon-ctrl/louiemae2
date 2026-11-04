@@ -51,6 +51,20 @@ export const HOLM_RATES: Record<HolmTier, Record<ProductType, number>> = {
   top: { furniture: HOLM_PARTNERS.tiers.top, decor: 1000, clothing: 700 },
   elite: { furniture: HOLM_PARTNERS.tiers.elite, decor: 1200, clothing: 800 },
 };
+/**
+ * The product type that sets a line's rate. House and Ashcroft pieces are furniture (lighting
+ * included); other storefront products go by their collection or category.
+ */
+export function productTypeFor(provider: string, category = '', collection = ''): ProductType {
+  if (provider === 'ashcroft' || provider === 'owner_managed') return 'furniture';
+  const text = `${collection} ${category}`.toLowerCase();
+  // Whole words only, furniture first, so a dresser or a shoe cabinet stays furniture.
+  if (/\b(furniture|sofas?|chairs?|tables?|dressers?|cabinets?|beds?|benches?|stools?|desks?|shelv(?:es|ing)|consoles?|sideboards?|nightstands?|lighting|lamps?)\b/.test(text)) return 'furniture';
+  if (/\b(fashion|kids|cloth(?:es|ing)?|apparel|wear|dress(?:es)?|outfits?|rompers?|tops?|bottoms?|leggings?|footwear|shoes?)\b/.test(text)) return 'clothing';
+  if (/\b(d[eé]cor|vases?|candles?|pillows?|throws?|rugs?|art|mirrors?|baskets?|tabletop|frames?)\b/.test(text)) return 'decor';
+  return 'furniture';
+}
+
 /** Commission on a line never takes more than this share of our profit on it. */
 export const MARGIN_GUARD_BPS = 4000;
 /** Card processing on the order: 2.9% plus 30¢, shared across lines by value. */
