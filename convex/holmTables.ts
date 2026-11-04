@@ -238,6 +238,9 @@ export const holmTables = {
     period: v.optional(v.string()), // YYYY-MM of the monthly run
     accountId: v.optional(v.string()),
     error: v.optional(v.string()),
+    // One run at a time may send or settle a Stripe payout: it holds this lease (see holmPayouts.ts).
+    leaseToken: v.optional(v.string()),
+    leaseAt: v.optional(v.number()),
   })
     .index('by_partner', ['partnerId', 'paidAt'])
     .index('by_partner_period', ['partnerId', 'period'])

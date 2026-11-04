@@ -35,8 +35,13 @@ describe('monthly payout records', () => {
     const userId = await partner(t2, [8_000, -2_000]);
     const claim = await t2.mutation(internal.holmPayouts.claimPayout, { partnerId: userId, period: '2026-11', accountId: 'acct_1' });
     expect(claim!.amountCents).toBe(6_000);
-    // a retry resumes the same payout instead of claiming again
-    expect(await t2.mutation(internal.holmPayouts.claimPayout, { partnerId: userId, period: '2026-11', accountId: 'acct_1' })).toEqual(claim);
+    // while the first run may still be sending it, no other run can touch it
+    expect(await t2.mutation(internal.holmPayouts.claimPayout, { partnerId: userId, period: '2026-11', accountId: 'acct_1' })).toBeNull();
+    // once that run can no longer be alive, a retry resumes the same payout (same idempotency key)
+    vi.setSystemTime(Date.now() + 61 * 60e3);
+    const resumed = await t2.mutation(internal.holmPayouts.claimPayout, { partnerId: userId, period: '2026-11', accountId: 'acct_1' });
+    expect(resumed!.payoutId).toBe(claim!.payoutId);
+    expect(resumed!.token).not.toBe(claim!.token);
     await t2.mutation(internal.holmPayouts.completePayout, { payoutId: claim!.payoutId, transferId: 'tr_1' });
     expect((await rows(t2)).every((r) => r.status === 'paid')).toBe(true);
     expect(await t2.mutation(internal.holmPayouts.claimPayout, { partnerId: userId, period: '2026-11', accountId: 'acct_1' })).toBeNull();
@@ -46,12 +51,30 @@ describe('monthly payout records', () => {
     const t = convexTest(schema, modules);
     const userId = await partner(t, [9_000]);
     const claim = await t.mutation(internal.holmPayouts.claimPayout, { partnerId: userId, period: '2026-11', accountId: 'acct_1' });
-    await t.mutation(internal.holmPayouts.failPayout, { payoutId: claim!.payoutId, error: 'Insufficient funds' });
+    // a run that no longer holds the lease can't free it
+    await t.mutation(internal.holmPayouts.failPayout, { payoutId: claim!.payoutId, token: 'stale', error: 'x' });
+    expect((await rows(t))[0].payoutId).toBe(claim!.payoutId);
+    await t.mutation(internal.holmPayouts.failPayout, { payoutId: claim!.payoutId, token: claim!.token, error: 'Insufficient funds' });
     const [r] = await rows(t);
     expect(r.status).toBe('cleared');
     expect(r.payoutId).toBeUndefined();
     const again = await t.mutation(internal.holmPayouts.claimPayout, { partnerId: userId, period: '2026-11', accountId: 'acct_1' });
     expect(again!.amountCents).toBe(9_000);
+  });
+
+  it('lets only one run hold a payout: a resume near the hour mark blocks settling it', async () => {
+    const t = convexTest(schema, modules);
+    const userId = await partner(t, [9_000]);
+    const first = await t.mutation(internal.holmPayouts.claimPayout, { partnerId: userId, period: '2026-11', accountId: 'acct_1' });
+    vi.setSystemTime(Date.now() + 61 * 60e3);
+    // run A resumes it (takes the lease) and is now sending the transfer...
+    const runA = await t.mutation(internal.holmPayouts.claimPayout, { partnerId: userId, period: '2026-11', accountId: 'acct_1' });
+    expect(runA!.payoutId).toBe(first!.payoutId);
+    // ...so run B, a moment later, can neither settle nor resume it
+    vi.setSystemTime(Date.now() + 1000);
+    expect(await t.mutation(internal.holmPayouts.leasePayout, { payoutId: first!.payoutId })).toBeNull();
+    expect(await t.mutation(internal.holmPayouts.claimPayout, { partnerId: userId, period: '2026-11', accountId: 'acct_1' })).toBeNull();
+    expect((await rows(t))[0].payoutId).toBe(first!.payoutId);
   });
 
   it('keeps commission in an automatic payout out of a manual one', async () => {
@@ -69,16 +92,18 @@ describe('monthly payout run', () => {
   const ctx = (claim: { payoutId: string; amountCents: number } | null, open: any[] = [], completeThrows = false) => ({
     runQuery: vi.fn(async (_ref: unknown, _args: any) => (ctx.calls++ === 0 ? open : [{ userId: 'u1', accountId: 'acct_1' }])),
     runMutation: vi.fn(async (_ref: unknown, args: any) => {
-      if ('period' in args) return claim;
+      if ('period' in args) return claim && { ...claim, token: 'tok' };
       if ('transferId' in args && completeThrows) throw new Error('write conflict');
+      if (Object.keys(args).length === 1 && 'payoutId' in args) return ctx.lease; // leasePayout
       return undefined;
     }),
   });
   ctx.calls = 0;
+  ctx.lease = 'tok' as string | null;
   const failed = (c: ReturnType<typeof ctx>) => c.runMutation.mock.calls.filter(([, a]: any) => 'error' in a);
   const completed = (c: ReturnType<typeof ctx>) => c.runMutation.mock.calls.filter(([, a]: any) => 'transferId' in a);
   const ready = () => stripe.accounts.retrieve.mockResolvedValue({ id: 'acct_1', payouts_enabled: true, capabilities: { transfers: 'active' }, requirements: { currently_due: [] } });
-  beforeEach(() => { ctx.calls = 0; stripe.transfers.create.mockReset(); stripe.transfers.list.mockReset(); });
+  beforeEach(() => { ctx.calls = 0; ctx.lease = 'tok'; stripe.transfers.create.mockReset(); stripe.transfers.list.mockReset(); });
 
   it('does nothing until automatic payouts are switched on', async () => {
     vi.stubEnv('PARTNER_PAYOUTS_ENABLED', '');
@@ -151,12 +176,13 @@ describe('monthly payout run', () => {
     expect(failed(c)).toHaveLength(0);
   });
 
-  it('leaves a payout started in the last hour alone (its request may still be in flight)', async () => {
+  it('leaves a payout alone while another run holds it (its request may still be in flight)', async () => {
     vi.stubEnv('PARTNER_PAYOUTS_ENABLED', 'true');
     vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_fixture');
     ready();
     stripe.transfers.list.mockResolvedValue({ data: [], has_more: false });
-    const c = ctx(null, [{ payoutId: 'pay_new', accountId: 'acct_1', startedAt: Date.now() - 5 * 60e3 }]);
+    ctx.lease = null; // another run holds the lease
+    const c = ctx(null, [{ payoutId: 'pay_new', accountId: 'acct_1', startedAt: Date.now() - 59 * 60e3 }]);
     await handler(c, {});
     expect(stripe.transfers.list).not.toHaveBeenCalled();
     expect(failed(c)).toHaveLength(0);

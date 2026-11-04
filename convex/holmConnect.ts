@@ -13,8 +13,7 @@ function stripe() {
   return new Stripe(process.env.STRIPE_SECRET_KEY);
 }
 const SITE = 'https://www.louiemae.com';
-/** An unfinished payout is checked against Stripe only once it's this old (no request is still in flight). */
-const SETTLE_AFTER_MS = 3600e3;
+
 const statusOf = (a: Stripe.Account) => ({
   ready: !!a.payouts_enabled && a.capabilities?.transfers === 'active',
   due: [...(a.requirements?.currently_due ?? []), ...(a.requirements?.past_due ?? [])],
@@ -83,10 +82,10 @@ export const runMonthlyPayouts = internalAction({
     let paid = 0;
     // First, settle any payout an earlier run left unfinished: find its transfer in Stripe by
     // the payout id it carries. Found: it was paid. Not found: Stripe never made it, so free it.
-    // Only payouts started over an hour ago: a younger one may still have its transfer request in
-    // flight in another run, so it stays processing and is resumed with the same idempotency key.
+    // A run may only settle a payout whose lease it takes: no other run can still be sending it.
     for (const open of await ctx.runQuery(internal.holmPayouts.openPayouts, {})) {
-      if (Date.now() - open.startedAt < SETTLE_AFTER_MS) continue;
+      const token = await ctx.runMutation(internal.holmPayouts.leasePayout, { payoutId: open.payoutId });
+      if (!token) continue;
       try {
         let found: Stripe.Transfer | undefined;
         let after: string | undefined;
@@ -103,7 +102,7 @@ export const runMonthlyPayouts = internalAction({
           after = page.data[page.data.length - 1].id;
         }
         if (found) await ctx.runMutation(internal.holmPayouts.completePayout, { payoutId: open.payoutId, transferId: found.id });
-        else await ctx.runMutation(internal.holmPayouts.failPayout, { payoutId: open.payoutId, error: 'No transfer was made; the commission goes in this run.' });
+        else await ctx.runMutation(internal.holmPayouts.failPayout, { payoutId: open.payoutId, token, error: 'No transfer was made; the commission goes in this run.' });
       } catch (err) {
         console.error('Could not check an unfinished payout', open.payoutId, (err as Error)?.message);
       }
@@ -135,7 +134,7 @@ export const runMonthlyPayouts = internalAction({
         transferId = transfer.id;
       } catch (err) {
         if (definitelyRejected(err))
-          await ctx.runMutation(internal.holmPayouts.failPayout, { payoutId: claim.payoutId, error: String((err as Error)?.message || err) });
+          await ctx.runMutation(internal.holmPayouts.failPayout, { payoutId: claim.payoutId, token: claim.token, error: String((err as Error)?.message || err) });
         else console.error('Transfer outcome unknown; the payout stays processing for the next run', claim.payoutId, (err as Error)?.message);
         continue;
       }

@@ -11,6 +11,17 @@ import { HOLM_PARTNERS } from '../lib/holmPartners';
 
 export const payoutsEnabled = () => process.env.PARTNER_PAYOUTS_ENABLED === 'true';
 
+/**
+ * A run must hold a payout's lease to send its transfer or to free it. Convex stops any action
+ * after 10 minutes, so once a lease is an hour old its holder can no longer be running: only
+ * then can another run take it over. Taking a lease is a mutation, so two runs can't both win.
+ */
+export const LEASE_MS = 3600e3;
+const newToken = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+function takeLease(p: Doc<'holmPayouts'>, now: number) {
+  return p.status === 'processing' && (!p.leaseAt || now - p.leaseAt >= LEASE_MS);
+}
+
 /** Cleared commission (and adjustments) for a partner that isn't already in a payout. */
 export async function unpaidCleared(ctx: MutationCtx, partnerId: Id<'users'>) {
   const rows = await ctx.db
@@ -52,7 +63,20 @@ export const openPayouts = internalQuery({
   args: {},
   handler: async (ctx) => {
     const rows = await ctx.db.query('holmPayouts').withIndex('by_status', (q) => q.eq('status', 'processing')).take(500);
-    return rows.filter((p) => p.accountId).map((p) => ({ payoutId: p._id, accountId: p.accountId!, startedAt: p.paidAt }));
+    return rows.filter((p) => p.accountId).map((p) => ({ payoutId: p._id, accountId: p.accountId!, startedAt: p.paidAt, leaseAt: p.leaseAt ?? 0 }));
+  },
+});
+
+/** Take an unfinished payout's lease to settle it, if no other run can still be working on it. */
+export const leasePayout = internalMutation({
+  args: { payoutId: v.id('holmPayouts') },
+  handler: async (ctx, a) => {
+    const p = await ctx.db.get(a.payoutId);
+    const now = Date.now();
+    if (!p || !takeLease(p, now)) return null;
+    const token = newToken();
+    await ctx.db.patch(p._id, { leaseToken: token, leaseAt: now });
+    return token;
   },
 });
 
@@ -79,11 +103,18 @@ export const claimPayout = internalMutation({
       .take(10);
     if (month.some((x) => x.status === 'paid')) return null;
     const open = month.find((x) => x.status === 'processing');
-    if (open) return { payoutId: open._id, amountCents: open.amountCents };
+    if (open) {
+      // Resume it only if no other run can still be sending it.
+      if (!takeLease(open, Date.now())) return null;
+      const token = newToken();
+      await ctx.db.patch(open._id, { leaseToken: token, leaseAt: Date.now() });
+      return { payoutId: open._id, amountCents: open.amountCents, token };
+    }
     // (a failed attempt this month leaves its rows free, so it can be tried again)
     const rows = await unpaidCleared(ctx, a.partnerId);
     const amount = rows.reduce((t, c) => t + c.amountCents, 0);
     if (amount < HOLM_PARTNERS.payoutMinCents) return null; // carries over to next month
+    const token = newToken();
     const payoutId = await ctx.db.insert('holmPayouts', {
       partnerId: a.partnerId,
       amountCents: amount,
@@ -94,9 +125,11 @@ export const claimPayout = internalMutation({
       status: 'processing',
       period: a.period,
       accountId: a.accountId,
+      leaseToken: token,
+      leaseAt: Date.now(),
     });
     for (const c of rows) await ctx.db.patch(c._id, { payoutId });
-    return { payoutId, amountCents: amount };
+    return { payoutId, amountCents: amount, token };
   },
 });
 
@@ -119,12 +152,15 @@ export const completePayout = internalMutation({
   },
 });
 
-/** The transfer failed: the commission is free again and goes in the next run. */
+/**
+ * No transfer was made: the commission is free again. Only the run holding the payout's lease
+ * can do this, so it can never happen while another run may still be sending the transfer.
+ */
 export const failPayout = internalMutation({
-  args: { payoutId: v.id('holmPayouts'), error: v.string() },
+  args: { payoutId: v.id('holmPayouts'), error: v.string(), token: v.string() },
   handler: async (ctx, a) => {
     const payout = await ctx.db.get(a.payoutId);
-    if (!payout || payout.status !== 'processing') return;
+    if (!payout || payout.status !== 'processing' || payout.leaseToken !== a.token) return;
     for (const c of await rowsOf(ctx, payout)) await ctx.db.patch(c._id, { payoutId: undefined });
     await ctx.db.patch(payout._id, { status: 'failed', error: a.error.slice(0, 300) });
   },
