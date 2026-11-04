@@ -48,6 +48,10 @@ export const holmTables = {
     tradeStatus,
     taxExempt: v.optional(v.boolean()),
     defaultSpace: v.optional(v.string()),
+    // The browser a partner-link visit came from, kept on the account so an order placed on
+    // another device within the window still counts.
+    refVisitorId: v.optional(v.string()),
+    refVisitCode: v.optional(v.string()), // the partner code that visit came through
     // Partner program
     partnerStatus: v.optional(v.literal('active')),
     partnerTier: v.optional(partnerTier),
@@ -129,8 +133,22 @@ export const holmTables = {
 
   holmCommissions: defineTable({
     partnerId: v.id('users'),
-    quoteRequestId: v.id('holmQuoteRequests'),
-    commerceProjectId: v.id('commerceProjects'),
+    // where it came from: a /trade quote, a louiemae.com checkout, or a later adjustment
+    source: v.optional(v.union(v.literal('house_quote'), v.literal('storefront_order'), v.literal('adjustment'))),
+    quoteRequestId: v.optional(v.id('holmQuoteRequests')),
+    commerceProjectId: v.optional(v.id('commerceProjects')),
+    retailCheckoutId: v.optional(v.id('retailCheckouts')),
+    stripeSessionId: v.optional(v.string()),
+    paymentIntentId: v.optional(v.string()),
+    channel: v.optional(v.string()),
+    board: v.optional(v.string()),
+    originalCents: v.optional(v.number()), // before any refund
+    reversedCents: v.optional(v.number()), // taken back for refunds and disputes so far
+    refundedCents: v.optional(v.number()), // Stripe's running refund total on the payment
+    chargeCents: v.optional(v.number()), // the payment's charged amount
+    disputed: v.optional(v.boolean()), // an open or lost dispute
+    adjustsId: v.optional(v.id('holmCommissions')), // for an adjustment: the commission it corrects
+    note: v.optional(v.string()),
     baseCents: v.number(),
     rateBps: v.number(), // the rate earned across the order (amount ÷ base); lines hold each line's rate
     amountCents: v.number(),
@@ -143,7 +161,9 @@ export const holmTables = {
   })
     .index('by_partner', ['partnerId', 'createdAt'])
     .index('by_status_clears', ['status', 'clearsAt'])
-    .index('by_partner_status', ['partnerId', 'status']),
+    .index('by_partner_status', ['partnerId', 'status'])
+    .index('by_session', ['stripeSessionId'])
+    .index('by_payment', ['paymentIntentId']),
 
   // Every tier a partner has held and when it started, so an order is paid at the tier in
   // effect when it was paid, whatever changes later.

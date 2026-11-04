@@ -116,7 +116,10 @@ http.route({
                 }
                 let snapshot;
                 try {
-                    snapshot = await ctx.runMutation(internal.retailLaunch.createSnapshot, { items: items.map((i: any) => ({ productId: String(i.productId || ''), variantId: String(i.variantId || ''), quantity: i.quantity })) });
+                    snapshot = await ctx.runMutation(internal.retailLaunch.createSnapshot, {
+                        items: items.map((i: any) => ({ productId: String(i.productId || ''), variantId: String(i.variantId || ''), quantity: i.quantity })),
+                        ...(typeof body.refCode === 'string' && typeof body.visitorId === 'string' ? { refCode: body.refCode.slice(0, 32), visitorId: body.visitorId.slice(0, 64) } : {}),
+                    });
                 } catch {
                     return new Response(JSON.stringify({ code: 'OUT_OF_STOCK', error: 'This item is Coming Soon or no longer available. Please remove it from your cart.' }), { status: 409, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
                 }
@@ -205,6 +208,21 @@ http.route({
             const payment = (event.data.object as Stripe.Charge | Stripe.Dispute).payment_intent;
             const paymentIntentId = typeof payment === 'string' ? payment : payment?.id;
             if (paymentIntentId) await ctx.runAction(internal.commerceStripe.reconcileReversal, { paymentIntentId });
+            // A partner's commission on a storefront order shrinks with a refund and is taken back for a dispute.
+            if (paymentIntentId) {
+                const charge = event.data.object as Stripe.Charge;
+                await ctx.runMutation(internal.holmPartners.storefrontReversal, event.type === 'charge.dispute.created'
+                    ? { paymentIntentId, kind: 'dispute' }
+                    : { paymentIntentId, kind: 'refund', refundedCents: charge.amount_refunded || 0, chargeCents: charge.amount || 0 });
+            }
+        }
+        // A won dispute gives the partner's storefront commission back.
+        if (event.type === 'charge.dispute.closed' && (event.data.object as Stripe.Dispute).status === 'won') {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            const payment = (event.data.object as Stripe.Dispute).payment_intent;
+            const paymentIntentId = typeof payment === 'string' ? payment : payment?.id;
+            if (paymentIntentId) await ctx.runMutation(internal.holmPartners.storefrontReversal, { paymentIntentId, kind: 'dispute_won' });
+            return new Response(JSON.stringify({ received: true }), { status: 200 });
         }
         if (event.type === 'invoice.paid' && (event.data.object as Stripe.Invoice).metadata?.commerceProjectId) {
             if (!webhookSecret || !signature) return new Response('Signed invoice webhook required', { status: 400 });
@@ -285,6 +303,22 @@ http.route({
                 }
             }
 
+            // Partner commission on the order, if a partner's link brought this buyer.
+            if (session.metadata?.retailCheckoutId) {
+                // The order is already saved; a commission problem must not fail the webhook.
+                try {
+                    await ctx.runMutation(internal.holmPartners.storefrontCommission, {
+                        retailCheckoutId: session.metadata.retailCheckoutId as Id<'retailCheckouts'>,
+                        stripeSessionId: session.id,
+                        paymentIntentId: typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id,
+                        email: (session.customer_details?.email || '').toLowerCase(),
+                        deliveryCents: session.shipping_cost?.amount_total || 0,
+                        taxCents: session.total_details?.amount_tax || 0,
+                    });
+                } catch (err: any) {
+                    console.error('Partner commission failed for session', session.id, err?.message);
+                }
+            }
             // Ashcroft payments are saved for manual dealer ordering, never sent to CJ.
             if (session.metadata?.retailCheckoutId) return new Response(JSON.stringify({ received: true }), { status: 200 });
             // Forward order to CJ Dropshipping if items have CJ mapping

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, ShoppingBag, Loader2 } from 'lucide-react';
 import { useCart } from '../../contexts/CartContext';
 import CartItem from './CartItem';
+import { activeRef, visitorId } from '../../lib/partnerLink';
 
 export const CartDrawer: React.FC = () => {
     const { isOpen, closeCart, items, subtotal, itemCount, removeFromCart } = useCart();
@@ -66,6 +67,8 @@ export const CartDrawer: React.FC = () => {
                 },
                 body: JSON.stringify({
                     items: checkoutItems,
+                    // the partner link this visitor arrived through, if any (checked on the server)
+                    ...(activeRef() ? { refCode: activeRef()!.code, visitorId: visitorId() } : {}),
                     successUrl: `${window.location.origin}/#checkout/success?session_id={CHECKOUT_SESSION_ID}`,
                     cancelUrl: `${window.location.origin}/#checkout/cancel`,
                 }),

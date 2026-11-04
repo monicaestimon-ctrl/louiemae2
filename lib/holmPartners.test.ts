@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { HOLM_PARTNERS, HOLM_RATES, commissionCents, holmChannel, lineCommissions } from './holmPartners';
+import { HOLM_PARTNERS, HOLM_RATES, commissionCents, holmChannel, lineCommissions, productTypeFor } from './holmPartners';
 
 describe('House partner commission', () => {
   it('pays the tier rate on the retail amount', () => {
@@ -76,5 +76,17 @@ describe('commission by product type', () => {
 
   it('ignores empty or malformed lines', () => {
     expect(lineCommissions([line({ quantity: 0 }), line({ unitCents: -5 })], 'base').amountCents).toBe(0);
+  });
+});
+
+describe('product type from category', () => {
+  it('matches whole words, furniture first', () => {
+    expect(productTypeFor('cj', 'Dressers')).toBe('furniture');
+    expect(productTypeFor('cj', 'shoe cabinet')).toBe('furniture');
+    expect(productTypeFor('cj', 'tabletop')).toBe('decor');
+    expect(productTypeFor('cj', 'Linen dress', 'Fashion')).toBe('clothing');
+    expect(productTypeFor('cj', 'Throw pillows')).toBe('decor');
+    expect(productTypeFor('cj', 'Cartoon print')).toBe('furniture');
+    expect(productTypeFor('ashcroft', 'mirror')).toBe('furniture');
   });
 });

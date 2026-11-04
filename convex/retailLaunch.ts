@@ -4,6 +4,7 @@ import { paginationOptsValidator } from 'convex/server';
 import { checkQuantity } from '../lib/commerce';
 import { launchPrice, retailDelivery, supplierAvailable, retailDescription } from '../lib/retailLaunch';
 import { storefrontListing } from './retailStorefront';
+import { resolveAttribution } from './holmPartners';
 
 export const storefrontPage = query({
   args: { paginationOpts: paginationOptsValidator },
@@ -53,8 +54,10 @@ export const createSnapshot = internalMutation({
     items: v.array(
       v.object({ productId: v.string(), variantId: v.string(), quantity: v.number() })
     ),
+    refCode: v.optional(v.string()),
+    visitorId: v.optional(v.string()),
   },
-  handler: async (ctx, { items }) => {
+  handler: async (ctx, { items, refCode, visitorId }) => {
     if (!items.length || items.length > 30) throw new Error('Choose between 1 and 30 items.');
     const lines = [];
     const seen = new Set<string>();
@@ -97,11 +100,17 @@ export const createSnapshot = internalMutation({
       });
     }
     const subtotal = Math.round(lines.reduce((sum, l) => sum + l.price * l.quantity * 100, 0));
+    // A partner link this visitor followed in the last 30 days. The buyer's email isn't known
+    // yet, so self-referral is checked again when the payment completes.
+    const attr = await resolveAttribution(ctx, refCode, visitorId, { email: '' });
     const id = await ctx.db.insert('retailCheckouts', {
       items: lines,
       subtotal,
       shipping,
       createdAt: Date.now(),
+      ...(attr && visitorId
+        ? { partner: { partnerId: attr.partnerId, refCode: attr.refCode, visitorId, channel: attr.channel, ...(attr.board ? { board: attr.board } : {}) } }
+        : {}),
     });
     return { id, items: lines, subtotal, shipping };
   },

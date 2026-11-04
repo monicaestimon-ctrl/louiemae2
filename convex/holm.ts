@@ -23,6 +23,7 @@ type Ctx = QueryCtx | MutationCtx;
 
 // ---------- who is viewing ----------
 import { viewer, isVerified, isAdmin, isPartner, requireUser } from './holmAccess';
+import { productTypeFor, type ProductType } from '../lib/holmPartners';
 import { markReferralVerified, recordReferral, resolveAttribution } from './holmPartners';
 
 export const me = query({
@@ -139,22 +140,28 @@ async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>) {
  * the way the catalog prices it. It reads the product's supplier data directly, so a piece that
  * has since been unpublished or gone out of stock still has its cost. Null when unknown.
  */
-export async function houseUnitCosts(ctx: Ctx, lines: { productId: Id<'commerceProducts'>; variantId: string }[]) {
+export async function houseUnitCosts(
+  ctx: Ctx,
+  lines: { productId: Id<'commerceProducts'>; variantId: string }[],
+  channel: 'house' | 'retail' = 'house'
+) {
   const costs = new Map<string, number | null>();
+  const types = new Map<string, ProductType>();
   for (const productId of new Set(lines.map((l) => l.productId))) {
     const product = await ctx.db.get(productId);
     const listing = await ctx.db
       .query('commerceListings')
-      .withIndex('by_product_channel', (q) => q.eq('productId', productId).eq('channel', 'house'))
+      .withIndex('by_product_channel', (q) => q.eq('productId', productId).eq('channel', channel))
       .unique();
     if (!product || !listing) continue;
+    types.set(productId, productTypeFor(product.provider, listing.snapshot.category));
     const { linked, rate } = await pricingParts(ctx, product, listing);
     for (const route of listing.fulfillment ?? []) {
       const cost = costCents(product, route, linked, variantFreight(route, rate).cents);
       costs.set(`${productId}:${route.id}`, cost > 0 ? cost : null);
     }
   }
-  return costs;
+  return Object.assign(costs, { types });
 }
 
 // ---------- catalog ----------

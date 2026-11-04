@@ -3230,7 +3230,7 @@ function PartnerPanel({ctx}){
   const status={signed_up:'Signed up',verified:'Verified, awaiting first order',credited:'Credit earned'};
   return html`<section style=${{display:'grid',gap:18,marginBottom:24}}>
     <div className="ph-head" style=${{margin:0}}><div><h2 style=${{fontSize:38}}>Partner Hub</h2><p className="mute">${(ph.rateBps/100)}% commission on furniture · ${ph.tier[0].toUpperCase()+ph.tier.slice(1)} tier</p><p className="help" style=${{margin:'4px 0 0'}}>Commission on each piece is capped at 40% of our profit on it.</p></div></div>
-    <div className="kpis">${[['Link visits · 30 days',ph.clicks30],['Quote requests from your links',ph.quotes],['Pending',money(ph.pendingCents)],['Cleared, ready to pay',money(ph.clearedCents)],['Paid',money(ph.paidCents)]].map(([l,v])=>html`<div key=${l} className="kpi"><span className="mono mute">${l}</span><div className="v">${v}</div></div>`)}</div>
+    <div className="kpis">${[['Link visits · 30 days',ph.clicks30],['Quote requests',ph.quotes],['Orders',ph.orders],['Pending',money(ph.pendingCents)],['Cleared, ready to pay',money(ph.clearedCents)],['Paid',money(ph.paidCents)]].map(([l,v])=>html`<div key=${l} className="kpi"><span className="mono mute">${l}</span><div className="v">${v}</div></div>`)}</div>
     <div className="g2">
       <div className="panel" style=${{display:'grid',gap:10,alignContent:'start'}}><h3>Your link</h3>
         <div className="g2f" style=${{gap:8}}><select className="field" aria-label="Link to" value=${target} onChange=${e=>setTarget(e.target.value)}><option value="home">House of Louie Mae home</option><option value="discover">Discover</option><optgroup label="Pieces">${PRODUCTS.slice(0,60).map(p=>html`<option key=${p.id} value=${'p:'+p.id}>${p.name} ${p.line}</option>`)}</optgroup></select>
@@ -3245,6 +3245,13 @@ function PartnerPanel({ctx}){
         ${ph.payouts.length>0&&html`<h3 style=${{marginTop:10}}>Payouts</h3>${ph.payouts.map((x,i)=>html`<div key=${i} className="sumrow"><span>${new Date(x.paidAt).toLocaleDateString()}<br/><small className="mute">${x.reference}</small></span><span>${money(x.amountCents)}</span></div>`)}`}
       </div>
     </div>
+    <div className="panel" style=${{display:'grid',gap:10}}><h3>Orders through your links</h3>
+      ${ph.commissions.length?html`<div className="pstats" role="table" aria-label="Orders through your links"><div className="pstats-r head" role="row"><span>Order</span><span>From</span><span>Order total</span><span>Commission</span><span>Status</span></div>
+        ${ph.commissions.map((c,i)=>html`<div key=${i} className="pstats-r" role="row"><span><b>${new Date(c.createdAt).toLocaleDateString()}</b><small className="mute">${c.lines.length?c.lines.map(l=>`${l.type==='decor'?'Décor':l.type[0].toUpperCase()+l.type.slice(1)} ${l.rateBps/100}%${l.capped?' (capped)':''}`).join(' · '):c.note||''}</small></span>
+          <span>${c.source==='storefront_order'?'louiemae.com':c.source==='adjustment'?'Adjustment':'House quote'}${c.channel?html`<small className="mute">${(CHANNEL_NAMES.find(x=>x[0]===c.channel)||[c.channel,c.channel])[1]}${c.board?' · board':''}</small>`:''}</span>
+          <span className="num">${c.baseCents?money(c.baseCents):''}</span><span className="num">${money(c.amountCents)}</span>
+          <span>${{pending:`Pending · clears ${new Date(c.clearsAt).toLocaleDateString()}`,cleared:'Cleared',paid:'Paid',void:'Void'}[c.status]}</span></div>`)}</div>`
+        :html`<p className="help" style=${{margin:0}}>Orders people place through your links show up here, with what you earned on each.</p>`}</div>
     ${bs&&bs.length>0&&html`<div className="panel" style=${{display:'grid',gap:10}}><h3>Your shared boards</h3>
       <div className="pstats" role="table" aria-label="Shared board stats"><div className="pstats-r head" role="row"><span>Board</span><span>Views</span><span>Visits by channel</span><span>Orders</span><span>Commission</span></div>
         ${bs.map(x=>html`<div key=${x.slug} className="pstats-r" role="row"><span><b>${x.title}</b><small className="mute">${x.mode==='shop'?'Shoppable':'Presentation'} · <button className="lnk" onClick=${()=>copyText(bundleUrl(x.slug,'link'),ctx.toast)}>Copy link</button></small></span>
@@ -3689,7 +3696,8 @@ function Welcome({ctx}){
 export function App(){
   const me0=useQuery(api.holm.me);const me=me0||{signedIn:false,verified:false,admin:false,tradeStatus:'none'};
   const {signOut:authSignOut}=useAuthActions();const ensureProfile=useMutation(api.holm.ensureProfile);
-  useEffect(()=>{if(me.signedIn)ensureProfile({ref:activeRef()?.code}).catch(()=>{})},[me.signedIn]);
+  const linkVisit=useMutation(api.holmPartners.linkVisit);
+  useEffect(()=>{if(!me.signedIn)return;ensureProfile({ref:activeRef()?.code}).then(()=>{const r=activeRef();if(r)return linkVisit({visitorId:visitorId(),refCode:r.code})}).catch(()=>{})},[me.signedIn]);
   // back from Google sign-in: continue to the page that asked for it
   useEffect(()=>{if(!me.signedIn)return;let r=null;try{r=sessionStorage.getItem('hol:after');sessionStorage.removeItem('hol:after')}catch(x){}if(r&&r!=='welcome')location.hash=r},[me.signedIn]);
   const [afterSignIn,setAfterSignIn]=useState(null);
