@@ -104,7 +104,7 @@ const CURATED_CUT: Record<number, [number, number]> = {1:[1031,308],2:[1084,368]
 // Curated pieces listed here ship a TRELLIS image-to-3D model in public/trade/m/ (full and low detail,
 // Meshopt geometry and WebP textures, width on X, front facing +Z; see scripts/trellis/). The planner
 // scales it to W × D × H. An uploaded model on the piece's asset row takes its place.
-const CURATED_MODEL = new Set([1, 2, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 18]);
+const CURATED_MODEL = new Set([1, 2, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 24]);
 const CURATED_W: Record<number, number> = {1:245,2:235,3:250,4:240,5:300,6:300,7:290,8:46,9:80,10:88,11:64,12:100,13:150,14:85,15:70,16:80,17:270,18:135,19:130,20:150,21:150,22:122,23:110,24:125};
 // Typical depth by type, for a curated piece whose listing gives only a width. Zero means as deep as wide.
 const TYPE_DEPTH: Record<string, number> = { sofa: 95, sectional: 170, bench: 45, ottoman: 0, lighting: 0, stool: 45, chair: 75, table: 90 };
