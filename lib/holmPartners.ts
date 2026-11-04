@@ -166,6 +166,35 @@ const typeRange = (p: ProductType) => `${pct(HOLM_RATES.base[p])}–${pct(HOLM_R
 /** The 12-month attributed sales that start each tier, in cents (spec section 5). */
 export const TIER_THRESHOLDS_CENTS: Record<HolmTier, number> = { base: 0, active: 1_500_000, top: 5_000_000, elite: 10_000_000 };
 
+/** The tier that 12-month attributed sales (in cents) earn. */
+export function tierForSales(salesCents: number): HolmTier {
+  let tier: HolmTier = 'base';
+  for (const t of HOLM_TIER_ORDER) if (salesCents >= TIER_THRESHOLDS_CENTS[t]) tier = t;
+  return tier;
+}
+export const tierRank = (t: HolmTier) => HOLM_TIER_ORDER.indexOf(t);
+
+/** How far a partner is from the next tier, for the Hub. */
+export function tierProgress(tier: HolmTier, salesCents: number) {
+  const next = HOLM_TIER_ORDER[tierRank(tier) + 1] ?? null;
+  const toNextCents = next ? Math.max(0, TIER_THRESHOLDS_CENTS[next] - Math.max(0, salesCents)) : 0;
+  return {
+    next,
+    toNextCents,
+    line: next
+      ? toNextCents > 0
+        ? `${dollars(Math.ceil(toNextCents / 100) * 100)} more in sales to reach ${TIER_NAMES[next]}`
+        : `${TIER_NAMES[next]} starts with your next order, once tonight's update runs`
+      : 'Top of the program',
+  };
+}
+
+/** Calendar quarter (UTC) of a moment, as a number that changes once a quarter. */
+export const quarterOf = (t: number) => {
+  const d = new Date(t);
+  return d.getUTCFullYear() * 4 + Math.floor(d.getUTCMonth() / 3);
+};
+
 /** The rate table as rows for display: tier, the sales that start it, and its rate per product type. */
 export function rateRows() {
   return HOLM_TIER_ORDER.map((tier, i) => {

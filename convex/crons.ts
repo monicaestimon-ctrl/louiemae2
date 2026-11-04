@@ -15,6 +15,9 @@ crons.interval('reconcile-klaviyo-consent', { minutes: 15 }, internal.klaviyoWai
 
 // House of Louie Mae: partner commissions on paid retail projects, clearing and referral credit.
 crons.interval('reconcile-house-partners', { hours: 1 }, internal.holmPartners.reconcile, {});
+// Partner tiers from 12-month sales: up nightly, down at most one tier a quarter. 07:17 UTC is
+// just after midnight in California.
+crons.cron('update-partner-tiers', '17 7 * * *', internal.holmPartners.updateTiers, {});
 
 // Sync CJ tracking information every 4 hours
 // This checks orders with CJ status "confirmed" or "processing" for tracking updates

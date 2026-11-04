@@ -179,6 +179,7 @@ function Dashboard({ hub }: { hub: Hub }) {
         <p className="text-xs uppercase tracking-[0.2em] text-bronze">{TIER_NAMES[tier]} tier · code {hub.refCode}</p>
         <h2 className="font-serif text-4xl text-earth mt-2">Your Creator Hub</h2>
         <p className="text-earth/80 mt-2">{partnerCopy(tier).ratesLine}.</p>
+        {hub.tierProgress && <p className="text-sm text-bronze mt-1">{hub.tierProgress}.</p>}
         <p className="text-sm text-earth/60 mt-1">{partnerCopy().typesNote} Commission on an item never takes more than {partnerCopy().profitCap} of our profit on it.</p>
       </div>
 
