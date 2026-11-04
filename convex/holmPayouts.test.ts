@@ -129,12 +129,37 @@ describe('monthly payout run', () => {
     vi.stubEnv('PARTNER_PAYOUTS_ENABLED', 'true');
     vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_fixture');
     ready();
-    stripe.transfers.list.mockResolvedValue({ data: [{ id: 'tr_old', metadata: { payoutId: 'pay_0' } }] });
+    stripe.transfers.list.mockResolvedValue({ data: [{ id: 'tr_old', metadata: { payoutId: 'pay_0' } }], has_more: false });
     const c = ctx(null, [{ payoutId: 'pay_0', accountId: 'acct_1', startedAt: 0 }, { payoutId: 'pay_9', accountId: 'acct_1', startedAt: 0 }]);
     await handler(c, {});
     expect(completed(c).map(([, a]: any) => a)).toEqual([{ payoutId: 'pay_0', transferId: 'tr_old' }]); // found: paid
     expect(failed(c).map(([, a]: any) => a.payoutId)).toEqual(['pay_9']); // never made: freed
     expect(stripe.transfers.create).not.toHaveBeenCalled();
+  });
+
+  it('looks through every page of transfers before deciding none was made', async () => {
+    vi.stubEnv('PARTNER_PAYOUTS_ENABLED', 'true');
+    vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_fixture');
+    ready();
+    stripe.transfers.list
+      .mockResolvedValueOnce({ data: [{ id: 'tr_a', metadata: { payoutId: 'other' } }], has_more: true })
+      .mockResolvedValueOnce({ data: [{ id: 'tr_b', metadata: { payoutId: 'pay_0' } }], has_more: false });
+    const c = ctx(null, [{ payoutId: 'pay_0', accountId: 'acct_1', startedAt: 0 }]);
+    await handler(c, {});
+    expect(stripe.transfers.list).toHaveBeenLastCalledWith(expect.objectContaining({ starting_after: 'tr_a' }));
+    expect(completed(c).map(([, a]: any) => a)).toEqual([{ payoutId: 'pay_0', transferId: 'tr_b' }]);
+    expect(failed(c)).toHaveLength(0);
+  });
+
+  it('leaves a payout started in the last hour alone (its request may still be in flight)', async () => {
+    vi.stubEnv('PARTNER_PAYOUTS_ENABLED', 'true');
+    vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_fixture');
+    ready();
+    stripe.transfers.list.mockResolvedValue({ data: [], has_more: false });
+    const c = ctx(null, [{ payoutId: 'pay_new', accountId: 'acct_1', startedAt: Date.now() - 5 * 60e3 }]);
+    await handler(c, {});
+    expect(stripe.transfers.list).not.toHaveBeenCalled();
+    expect(failed(c)).toHaveLength(0);
   });
 
   it('skips a partner whose Stripe setup is unfinished', async () => {

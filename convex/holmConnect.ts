@@ -13,6 +13,8 @@ function stripe() {
   return new Stripe(process.env.STRIPE_SECRET_KEY);
 }
 const SITE = 'https://www.louiemae.com';
+/** An unfinished payout is checked against Stripe only once it's this old (no request is still in flight). */
+const SETTLE_AFTER_MS = 3600e3;
 const statusOf = (a: Stripe.Account) => ({
   ready: !!a.payouts_enabled && a.capabilities?.transfers === 'active',
   due: [...(a.requirements?.currently_due ?? []), ...(a.requirements?.past_due ?? [])],
@@ -81,10 +83,25 @@ export const runMonthlyPayouts = internalAction({
     let paid = 0;
     // First, settle any payout an earlier run left unfinished: find its transfer in Stripe by
     // the payout id it carries. Found: it was paid. Not found: Stripe never made it, so free it.
+    // Only payouts started over an hour ago: a younger one may still have its transfer request in
+    // flight in another run, so it stays processing and is resumed with the same idempotency key.
     for (const open of await ctx.runQuery(internal.holmPayouts.openPayouts, {})) {
+      if (Date.now() - open.startedAt < SETTLE_AFTER_MS) continue;
       try {
-        const list = await s.transfers.list({ destination: open.accountId, created: { gte: Math.floor(open.startedAt / 1000) - 3600 }, limit: 100 });
-        const found = list.data.find((tr) => tr.metadata?.payoutId === open.payoutId);
+        let found: Stripe.Transfer | undefined;
+        let after: string | undefined;
+        // Every page of the account's transfers since the payout started.
+        for (;;) {
+          const page = await s.transfers.list({
+            destination: open.accountId,
+            created: { gte: Math.floor(open.startedAt / 1000) - 3600 },
+            limit: 100,
+            ...(after ? { starting_after: after } : {}),
+          });
+          found = page.data.find((tr) => tr.metadata?.payoutId === open.payoutId);
+          if (found || !page.has_more || !page.data.length) break;
+          after = page.data[page.data.length - 1].id;
+        }
         if (found) await ctx.runMutation(internal.holmPayouts.completePayout, { payoutId: open.payoutId, transferId: found.id });
         else await ctx.runMutation(internal.holmPayouts.failPayout, { payoutId: open.payoutId, error: 'No transfer was made; the commission goes in this run.' });
       } catch (err) {
