@@ -15,6 +15,13 @@ crons.interval('reconcile-klaviyo-consent', { minutes: 15 }, internal.klaviyoWai
 
 // House of Louie Mae: partner commissions on paid retail projects, clearing and referral credit.
 crons.interval('reconcile-house-partners', { hours: 1 }, internal.holmPartners.reconcile, {});
+// Partner tiers from 12-month sales: up nightly, down at most one tier a quarter. 07:17 UTC is
+// just after midnight in California.
+crons.cron('update-partner-tiers', '17 7 * * *', internal.holmPartners.updateTiers, {});
+// Store credit held for checkouts and quotes that ended without payment goes back to the balance.
+crons.interval('settle-store-credit-holds', { hours: 1 }, internal.holmCredit.settleStaleHolds, {});
+// Partner payouts through Stripe Connect on the 15th (does nothing until PARTNER_PAYOUTS_ENABLED is on).
+crons.monthly('partner-payouts', { day: 15, hourUTC: 17, minuteUTC: 11 }, internal.holmConnect.runMonthlyPayouts, {});
 
 // Sync CJ tracking information every 4 hours
 // This checks orders with CJ status "confirmed" or "processing" for tracking updates

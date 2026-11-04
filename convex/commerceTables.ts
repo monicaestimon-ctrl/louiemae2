@@ -75,6 +75,11 @@ export const commerceTables = {
   retailCheckouts: defineTable({
     items: v.array(v.object({ productId: v.string(), variantId: v.string(), variantName: v.string(), name: v.string(), price: v.number(), quantity: v.number(), image: v.optional(v.string()), supplierSku: v.string(), fulfillmentProvider: v.literal('ashcroft') })),
     subtotal: v.number(), shipping: v.number(), createdAt: v.number(),
+    // the partner whose link brought this buyer (checked again when the payment completes)
+    partner: v.optional(v.object({ partnerId: v.id('users'), refCode: v.string(), visitorId: v.string(), channel: v.string(), board: v.optional(v.string()) })),
+    // store credit held for this checkout (taken off as a one-time Stripe discount)
+    creditCents: v.optional(v.number()),
+    creditUserId: v.optional(v.id('users')),
   }),
   commercePaymentLinks: defineTable({
     paymentIntentId: v.string(),
@@ -82,6 +87,7 @@ export const commerceTables = {
   }).index('by_payment', ['paymentIntentId']),
   commerceProjects: defineTable({
     token: v.string(),
+    creditCents: v.optional(v.number()), // store credit held for this quote; comes off the invoice as its own line
     channel,
     name: v.string(),
     email: v.string(),

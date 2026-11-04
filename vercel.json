@@ -5,7 +5,9 @@
     { "source": "/fonts/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
     { "source": "/images/opt/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=2592000, stale-while-revalidate=604800" }] },
     { "source": "/images/brand/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=604800, stale-while-revalidate=604800" }] },
-    { "source": "/trade/(c|f)/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=2592000, stale-while-revalidate=604800" }] }
+    { "source": "/trade/decoders/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=2592000, stale-while-revalidate=604800" }] },
+    { "source": "/trade/(c|f)/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=2592000, stale-while-revalidate=604800" }] },
+    { "source": "/trade/m/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }] }
   ],
   "redirects": [
     { "source": "/furniture", "destination": "/trade", "permanent": false },
@@ -17,6 +19,7 @@
     { "source": "/terms", "destination": "/terms.html" },
     { "source": "/trade", "destination": "/trade/index.html" },
     { "source": "/trade/", "destination": "/trade/index.html" },
+    { "source": "/b/:slug", "destination": "/api/board?slug=:slug" },
     {
       "source": "/story",
       "destination": "/api/og?path=story"

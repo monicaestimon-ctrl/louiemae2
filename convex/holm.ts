@@ -7,7 +7,9 @@ import { requireCjAdminIdentity } from './cjAdminAccess';
 import { listingReady } from './commerceReadiness';
 import { address } from './commerceTables';
 import { clientShow, holmBusinessType } from './holmTables';
+import { assetIndex, publicAssets } from './holmAssets';
 import { checkQuantity, totalLines } from '../lib/commerce';
+import { reserveCredit } from './holmCredit';
 import { deliveryCents, freightFor } from '../lib/holmDelivery';
 import { launchPrice, retailDelivery } from '../lib/retailLaunch';
 import {
@@ -22,6 +24,7 @@ type Ctx = QueryCtx | MutationCtx;
 
 // ---------- who is viewing ----------
 import { viewer, isVerified, isAdmin, isPartner, requireUser } from './holmAccess';
+import { HOLM_RATES, MARGIN_GUARD_BPS, productTypeFor, type ProductType } from '../lib/holmPartners';
 import { markReferralVerified, recordReferral, resolveAttribution } from './holmPartners';
 
 export const me = query({
@@ -38,6 +41,9 @@ export const me = query({
       tradeStatus: admin ? ('approved' as const) : me.profile?.tradeStatus || ('none' as const),
       verified: admin || isVerified(me.profile),
       partner: isPartner(me.profile),
+      partnerTier: isPartner(me.profile) ? me.profile?.partnerTier ?? ('base' as const) : null,
+      // the partner's own code, so share buttons can add it to the links they copy
+      refCode: isPartner(me.profile) ? me.profile?.refCode ?? null : null,
       admin,
     };
   },
@@ -91,9 +97,9 @@ function retailCents(variant: FulfillmentVariant) {
   return Math.round(variant.commercial / 0.75);
 }
 
-async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>) {
-  const product = await ctx.db.get(listing.productId);
-  if (!product || !(await listingReady(ctx, product, listing))) return null;
+/** What pricing a House listing needs besides the listing itself: the CJ product and, for
+ * Ashcroft, the louiemae.com listing and its freight/delivery rate. */
+async function pricingParts(ctx: Ctx, product: Doc<'commerceProducts'>, listing: Doc<'commerceListings'>) {
   const linked = product.cjProductId ? await ctx.db.get(product.cjProductId) : null;
   // Ashcroft pieces use the louiemae.com price as retail: the storefront builds the freight
   // allowance into it (see storefrontListing), so trade at 25% off carries freight too.
@@ -106,18 +112,69 @@ async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>) {
       : null;
   const named = store?.snapshot ?? listing.snapshot;
   const rate = product.provider === 'ashcroft' ? retailDelivery(named.category, named.name) : null;
+  return { linked, store, rate };
+}
+
+function variantFreight(route: FulfillmentVariant, rate: ReturnType<typeof retailDelivery>) {
+  return rate ? { cents: rate.freight, known: true } : freightFor(route.sku);
+}
+
+async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>) {
+  const product = await ctx.db.get(listing.productId);
+  if (!product || !(await listingReady(ctx, product, listing))) return null;
+  const { linked, store, rate } = await pricingParts(ctx, product, listing);
   const variants = listing.snapshot.variants.flatMap((sv) => {
     const route = listing.fulfillment?.find((f) => f.id === sv.id);
     if (!route) return [];
     const base = store?.snapshot.variants.find((v) => v.id === sv.id)?.price || retailCents(route);
     if (base <= 0) return [];
     const retail = rate ? launchPrice(base, rate.freight, rate.delivery) : base;
-    const byPrefix = freightFor(route.sku);
-    const freight = rate ? { cents: rate.freight, known: true } : byPrefix;
+    const freight = variantFreight(route, rate);
     const cost = costCents(product, route, linked, freight.cents);
     return [{ ...sv, retail, cost, sku: route.sku, freightKnown: freight.known, trade: tradeCents(retail, cost), floor: floorCents(cost) }];
   });
   return variants.length ? { product, listing, variants, inStock: linked?.inStock !== false } : null;
+}
+
+/**
+ * Landed cost of one unit for each House project line, keyed productId:variantId, worked out
+ * the way the catalog prices it. It reads the product's supplier data directly, so a piece that
+ * has since been unpublished or gone out of stock still has its cost. Null when unknown.
+ */
+export async function houseUnitCosts(
+  ctx: Ctx,
+  lines: { productId: Id<'commerceProducts'>; variantId: string }[],
+  channel: 'house' | 'retail' = 'house',
+  /** The moment of payment: exclusions apply to orders paid while they were in place. */
+  at = Date.now()
+) {
+  const costs = new Map<string, number | null>();
+  const types = new Map<string, ProductType>();
+  const excluded = new Set<string>();
+  const inForce = (e: { at: number; removedAt?: number }) => e.at <= at && (e.removedAt === undefined || e.removedAt > at);
+  // Category exclusions are a short list; product exclusions are looked up by product below.
+  const categories = (await ctx.db.query('holmCommissionExclusions').withIndex('by_kind_value', (q) => q.eq('kind', 'category')).collect()).filter(inForce);
+  for (const productId of new Set(lines.map((l) => l.productId))) {
+    const product = await ctx.db.get(productId);
+    const listing = await ctx.db
+      .query('commerceListings')
+      .withIndex('by_product_channel', (q) => q.eq('productId', productId).eq('channel', channel))
+      .unique();
+    if (!product || !listing) continue;
+    types.set(productId, productTypeFor(product.provider, listing.snapshot.category));
+    const category = (listing.snapshot.category || '').toLowerCase();
+    const byProduct = await ctx.db
+      .query('holmCommissionExclusions')
+      .withIndex('by_kind_value', (q) => q.eq('kind', 'product').eq('value', productId))
+      .collect();
+    if (byProduct.some(inForce) || categories.some((e) => !!e.value && category.includes(e.value.toLowerCase()))) excluded.add(productId);
+    const { linked, rate } = await pricingParts(ctx, product, listing);
+    for (const route of listing.fulfillment ?? []) {
+      const cost = costCents(product, route, linked, variantFreight(route, rate).cents);
+      costs.set(`${productId}:${route.id}`, cost > 0 ? cost : null);
+    }
+  }
+  return Object.assign(costs, { types, excluded });
 }
 
 // ---------- catalog ----------
@@ -130,6 +187,7 @@ export const catalog = query({
       .query('commerceListings')
       .withIndex('by_channel_published', (q) => q.eq('channel', 'house').eq('published', true))
       .take(300);
+    const assets = await assetIndex(ctx);
     const out = [];
     for (const listing of listings) {
       const priced = await pricedListing(ctx, listing);
@@ -142,6 +200,7 @@ export const catalog = query({
         category: s.category,
         images: s.images,
         facts: s.facts,
+        assets: await publicAssets(ctx, assets.get(listing.productId), s.facts),
         inStock: priced.inStock,
         variants: priced.variants.map((x) => ({
           id: x.id,
@@ -188,6 +247,13 @@ export const adminPricing = query({
         if (x.cost > 0 && x.trade > listedTrade) flags.push(`Floor holds trade at ${Math.round((1 - x.trade / x.retail) * 100)}% off`);
         if (priced.product.provider === 'ashcroft' && !x.freightKnown) flags.push('Freight allowance estimated');
         if (x.cost > 0 && marginBps(project, x.cost) < HOLM_RULES.minMarginBps - 5) flags.push('Below margin floor');
+        // Retail margin left after the top (Elite) commission rate, held to 40% of profit.
+        const type = productTypeFor(priced.product.provider, listing.snapshot.category);
+        const profit = x.cost > 0 ? (x.retail * marginBps(x.retail, x.cost)) / 10000 : 0;
+        // never below zero: a line with no profit earns no commission (as in lineCommissions)
+        const elite = x.cost > 0 ? Math.max(0, Math.min((x.retail * HOLM_RATES.elite[type]) / 10000, (profit * MARGIN_GUARD_BPS) / 10000)) : 0;
+        const afterEliteBps = x.cost > 0 ? Math.round(((profit - elite) / x.retail) * 10000) : null;
+        if (afterEliteBps !== null && afterEliteBps < 2000) flags.push('Under 20% after Elite commission');
         rows.push({
           productId: priced.product._id,
           name: listing.snapshot.name,
@@ -200,6 +266,8 @@ export const adminPricing = query({
           retailMarginBps: x.cost > 0 ? marginBps(x.retail, x.cost) : null,
           tradeMarginBps: x.cost > 0 ? marginBps(x.trade, x.cost) : null,
           projectMarginBps: x.cost > 0 ? marginBps(project, x.cost) : null,
+          afterEliteBps,
+          type,
           flags,
         });
       }
@@ -432,6 +500,7 @@ export const requestQuote = mutation({
     items: v.array(quoteItem),
     refCode: v.optional(v.string()),
     visitorId: v.optional(v.string()),
+    useCredit: v.optional(v.boolean()),
   },
   handler: async (ctx, a) => {
     const me = await viewer(ctx);
@@ -506,11 +575,16 @@ export const requestQuote = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    // Store credit comes off the merchandise and shows as its own line on the invoice.
+    if (me && a.useCredit) {
+      const creditCents = await reserveCredit(ctx, me.userId, priced.subtotal, `project:${id}`);
+      if (creditCents > 0) await ctx.db.patch(id, { creditCents });
+    }
     // Partner commission is earned on retail-priced requests only.
     const attr = trade ? null : await resolveAttribution(ctx, a.refCode, a.visitorId, { userId: me?.userId, email });
     await ctx.db.insert('holmQuoteRequests', {
       userId: me?.userId,
-      ...(attr ? { partnerId: attr.partnerId, refCode: attr.refCode, channel: attr.channel, partnerState: 'awaiting_payment' as const } : {}),
+      ...(attr ? { partnerId: attr.partnerId, refCode: attr.refCode, channel: attr.channel, partnerState: 'awaiting_payment' as const, ...(attr.board ? { board: attr.board } : {}) } : {}),
       commerceProjectId: id,
       projectName: a.projectName || 'Untitled',
       priceMode: trade ? 'trade' : 'retail',
