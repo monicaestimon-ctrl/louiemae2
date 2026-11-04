@@ -77,6 +77,18 @@ function ProjectEditor({ project: p }: { project: Doc<'commerceProjects'> }) {
       setBusy(false);
     }
   };
+  // Store credit on this quote, previewed from the draft; invalid draft values hide it (saving reports them).
+  const creditPreview = (() => {
+    if (!(p.creditCents && p.creditCents > 0)) return null;
+    try {
+      return {
+        credit: projectCredit({ lines, creditCents: p.creditCents }),
+        total: projectTotal({ lines, delivery, tax, creditCents: p.creditCents }),
+      };
+    } catch {
+      return null;
+    }
+  })();
   return (
     <div>
       <h3>
@@ -206,11 +218,10 @@ function ProjectEditor({ project: p }: { project: Doc<'commerceProjects'> }) {
               onChange={(e) => setTax(Math.round(Number(e.target.value) * 100))}
             />
           </label>
-          {projectCredit({ lines, creditCents: p.creditCents }) > 0 && (
+          {creditPreview && creditPreview.credit > 0 && (
             <p>
-              Store credit: −${usd(projectCredit({ lines, creditCents: p.creditCents }))} comes off the
-              invoice as its own line. Invoice total: $
-              {usd(projectTotal({ lines, delivery, tax, creditCents: p.creditCents }))}.
+              Store credit: −${usd(creditPreview.credit)} comes off the invoice as its own line.
+              Invoice total: ${usd(creditPreview.total)}.
             </p>
           )}
           {(Object.keys(address) as (keyof typeof address)[]).map((k) => (
