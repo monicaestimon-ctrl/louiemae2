@@ -25,6 +25,7 @@ const BlogPostView = named(() => import('./components/BlogPostView'), 'BlogPostV
 const AdminPage = named(() => import('./components/AdminPage'), 'AdminPage');
 const StorePage = named(() => import('./components/StorePage'), 'StorePage');
 const SupportPage = named(() => import('./components/SupportPage'), 'SupportPage');
+const CreatorHub = lazy(() => import('./components/CreatorHub'));
 const NewArrivalsPage = named(() => import('./components/NewArrivalsPage'), 'NewArrivalsPage');
 const NewCollectionPage = named(() => import('./components/NewCollectionPage'), 'NewCollectionPage');
 const ShopLandingPage = named(() => import('./components/ShopLandingPage'), 'ShopLandingPage');
@@ -103,6 +104,16 @@ const AppContent = () => {
     // Not on the admin pages: the team's own visits shouldn't count as partner traffic.
     const admin = window.location.pathname.replace(/\/+$/, '') === '/admin' || /^#admin/.test(window.location.hash);
     if (!admin) void captureRefFromUrl(recordPartnerClick, `site:${window.location.pathname}${window.location.hash}`);
+    // Back from Google sign-in on the Creator Hub, which returns to the home page.
+    try {
+      const after = sessionStorage.getItem('lm:after');
+      if (after) {
+        sessionStorage.removeItem('lm:after');
+        if (!window.location.hash && /^#[\w/-]+$/.test(after)) window.location.hash = after;
+      }
+    } catch {
+      /* storage blocked: stay on the home page */
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per page load
   }, []);
   const [scrolled, setScrolled] = useState(false);
@@ -139,6 +150,7 @@ const AppContent = () => {
       else if (baseHash === '#story') setActivePage('story');
       else if (baseHash === '#shop') setActivePage('shop');
       else if (baseHash === '#new-arrivals') setActivePage('new-arrivals');
+      else if (baseHash === '#creators') setActivePage('creators');
       else if (baseHash.startsWith('#support')) setActivePage(fullHash);
 
       else if (baseHash === '#checkout/success') setActivePage('checkout-success');
@@ -173,6 +185,7 @@ const AppContent = () => {
     else if (baseHash === '#admin') setActivePage('admin');
     else if (baseHash === '#shop') setActivePage('shop');
     else if (baseHash === '#new-arrivals') setActivePage('new-arrivals');
+    else if (baseHash === '#creators') setActivePage('creators');
     else if (baseHash.startsWith('#support')) setActivePage(href);
     else if (baseHash.startsWith('#pages/')) setActivePage(baseHash);
     else if (baseHash === '#collection/new') setActivePage('new-collection');
@@ -211,6 +224,10 @@ const AppContent = () => {
       description = 'Stories, inspiration, and behind-the-scenes moments from the Louie Mae journey.';
       image = `${BASE_URL}/images/brand/blog-main-v2.png`;
       url = `${BASE_URL}/blog`;
+    } else if (activePage === 'creators') {
+      title = 'Earn as a creator | Louie Mae';
+      description = 'Share Louie Mae on your socials, blog or links and earn commission on orders placed through your links.';
+      url = `${BASE_URL}/#creators`;
     } else if (activePage === 'shop') {
       title = 'Shop | Louie Mae';
       description = 'Browse our curated collections of elevated home décor, modern furniture, children\'s clothing, and lifestyle essentials.';
@@ -258,6 +275,7 @@ const AppContent = () => {
   else if (activePage === 'shop') currentView = <ShopLandingPage />;
   else if (activePage === 'new-arrivals') currentView = <NewArrivalsPage />;
   else if (activePage === 'new-collection') currentView = <NewCollectionPage />;
+  else if (activePage === 'creators') currentView = <CreatorHub />;
 
   else if (activePage === 'checkout-success') currentView = <CheckoutSuccess />;
   else if (activePage === 'checkout-cancel') currentView = <CheckoutCancel />;
@@ -453,6 +471,7 @@ const AppContent = () => {
                   <li><button onClick={() => handleNavigation('#support/shipping')} className="hover:text-white transition-colors cursor-pointer w-full text-left">Shipping & Returns</button></li>
                   <li><button onClick={() => handleNavigation('#support/faq')} className="hover:text-white transition-colors cursor-pointer w-full text-left">FAQ</button></li>
                   <li><button onClick={() => handleNavigation('#support/contact')} className="hover:text-white transition-colors cursor-pointer w-full text-left">Contact Us</button></li>
+                  <li><button onClick={() => handleNavigation('#creators')} className="hover:text-white transition-colors cursor-pointer w-full text-left">Earn as a creator</button></li>
                   <li><a href="/privacy" className="hover:text-white transition-colors">Privacy Policy</a></li>
                   <li><a href="/terms" className="hover:text-white transition-colors">Terms of Service</a></li>
                 </ul>

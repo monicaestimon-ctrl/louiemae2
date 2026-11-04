@@ -145,5 +145,102 @@ export function partnerCopy(tier?: HolmTier | null) {
     cardCommission: 'commission on House orders via your links',
     cardReferral: 'credit per business you refer*',
     referralFootnote: `*Once the business is verified and pays an order of ${dollars(HOLM_PARTNERS.referralMinOrderCents)} or more.`,
+    // Rates by product type, from the rate table.
+    ratesLine: tier
+      ? `Your rates (${TIER_NAMES[tier]}): ${PRODUCT_TYPES.map((p) => `${pct(HOLM_RATES[tier][p])} ${TYPE_SHORT[p]}`).join(', ')}`
+      : `Earn ${typeRange('furniture')} on furniture, ${typeRange('decor')} on home décor and ${typeRange('clothing')} on clothing`,
+    // Only Ashcroft furniture can be bought on louiemae.com today; say so next to the décor and clothing rates.
+    typesNote: 'Home décor and clothing earn commission as they become available to order on louiemae.com.',
   };
+}
+
+export const TIER_NAMES: Record<HolmTier, string> = { base: 'Base', active: 'Active', top: 'Top', elite: 'Elite' };
+const TYPE_SHORT: Record<ProductType, string> = { furniture: 'furniture', decor: 'décor', clothing: 'clothing' };
+const TYPE_NAMES: Record<ProductType, string> = { furniture: 'Furniture', decor: 'Home décor', clothing: 'Clothing' };
+const typeRange = (p: ProductType) => `${pct(HOLM_RATES.base[p])}–${pct(HOLM_RATES.elite[p])}`;
+
+/** The 12-month attributed sales that start each tier, in cents (spec section 5). */
+export const TIER_THRESHOLDS_CENTS: Record<HolmTier, number> = { base: 0, active: 1_500_000, top: 5_000_000, elite: 10_000_000 };
+
+/** The rate table as rows for display: tier, the sales that start it, and its rate per product type. */
+export function rateRows() {
+  return HOLM_TIER_ORDER.map((tier, i) => {
+    const next = HOLM_TIER_ORDER[i + 1];
+    const from = dollars(TIER_THRESHOLDS_CENTS[tier]);
+    return {
+      tier,
+      name: TIER_NAMES[tier],
+      sales: next ? `${from}–${dollars(TIER_THRESHOLDS_CENTS[next] - 100)}` : `${from}+`,
+      rates: PRODUCT_TYPES.map((p) => ({ type: p, label: TYPE_NAMES[p], rate: pct(HOLM_RATES[tier][p]) })),
+    };
+  });
+}
+
+/**
+ * The partner terms (spec section 9), written from the program rules so the terms can't say
+ * something the code doesn't do.
+ */
+export function partnerTerms() {
+  const P = HOLM_PARTNERS;
+  return [
+    {
+      title: 'Who can join',
+      items: [
+        'Anyone with a Louie Mae account can join: creators who share Louie Mae on their socials, blog or links, and verified trade businesses.',
+        'We may pause or remove a partner account for misuse, such as misleading posts, buying through your own link or spam.',
+      ],
+    },
+    {
+      title: 'What you earn',
+      items: [
+        `Rates are set by your tier and the type of product: ${PRODUCT_TYPES.map((p) => `${TYPE_SHORT[p]} ${typeRange(p)}`).join(', ')}.`,
+        `Your tier comes from attributed sales over the last 12 months: ${rateRows().map((r) => `${r.name} ${r.sales}`).join(', ')}.`,
+        `Commission on any order line never exceeds ${MARGIN_GUARD_BPS / 100}% of our profit on that line (price minus supplier cost, shipping, supplier fees and card fees). This only lowers commission on low-margin items.`,
+        'The rate is fixed for each order line when the order is paid.',
+        'Home décor and clothing earn commission as they become available to order on louiemae.com.',
+      ],
+    },
+    {
+      title: 'What counts',
+      items: [
+        `Paid orders at retail price, placed within ${P.attributionDays} days of a visit through your link. If someone visits through more than one partner's link, the most recent one counts.`,
+        'Orders you place yourself, or for your own account, do not earn commission.',
+        'Trade-priced orders do not earn commission.',
+      ],
+    },
+    {
+      title: 'Clearing, refunds and disputes',
+      items: [
+        `Commission is pending for ${P.clearingDays} days after payment, then clears.`,
+        'A refund lowers the commission by the refunded share, and a disputed payment voids it. If the dispute is decided in our favour, the commission comes back.',
+        'If a refund or dispute happens after you were paid, the amount comes off your next payout.',
+      ],
+    },
+    {
+      title: 'Payouts',
+      items: [
+        'Cleared commission is paid monthly, on the 15th, once your cleared balance is $50 or more. Smaller balances carry over to the next month.',
+        'Payouts go by Stripe to the bank account you connect, or by another method we agree with you. We never see or store your bank details.',
+      ],
+    },
+    {
+      title: 'Store credit',
+      items: [
+        `You earn ${dollars(P.referralCreditCents)} in store credit when a business you refer is verified and pays an order of ${dollars(P.referralMinOrderCents)} or more.`,
+        'Store credit has no cash value and does not expire.',
+      ],
+    },
+    {
+      title: 'Disclosure',
+      items: [
+        'Label every post that includes your link, for example "#ad" or "I earn a commission". The FTC requires this.',
+      ],
+    },
+    {
+      title: 'Tax',
+      items: [
+        'Commission is reported as nonemployee compensation on Form 1099-NEC when your payments for the year reach the federal reporting threshold. We need your tax details (a W-9, or the details Stripe collects) before we pay you.',
+      ],
+    },
+  ];
 }

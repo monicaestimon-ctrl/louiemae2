@@ -99,3 +99,20 @@ describe('shared-page redirect (api/og)', () => {
     expect(partnerQuery({})).toBe('');
   });
 });
+
+describe('partner link to any louiemae.com page', () => {
+  const O = 'https://www.louiemae.com';
+  it('adds the code to a pasted page or a site path', async () => {
+    const { partnerPageUrl } = await import('./partnerLink');
+    expect(partnerPageUrl(O, 'https://louiemae.com/#collection/furniture', 'studio42', 'story')).toBe('https://www.louiemae.com/?ref=STUDIO42&ch=story#collection/furniture');
+    expect(partnerPageUrl(O, '#new-arrivals', 'STUDIO42')).toBe('https://www.louiemae.com/?ref=STUDIO42&ch=link#new-arrivals');
+    expect(partnerPageUrl(O, '', 'STUDIO42', 'qr')).toBe('https://www.louiemae.com/?ref=STUDIO42&ch=qr');
+    expect(partnerPageUrl(O, '/trade#p/12?ref=OTHER1', 'STUDIO42')).toBe('https://www.louiemae.com/trade?ref=STUDIO42&ch=link#p/12');
+  });
+  it('refuses other sites and bad codes', async () => {
+    const { partnerPageUrl } = await import('./partnerLink');
+    expect(partnerPageUrl(O, 'https://evil.com/louiemae.com', 'STUDIO42')).toBeNull();
+    expect(partnerPageUrl(O, 'javascript:alert(1)', 'STUDIO42')).toBeNull();
+    expect(partnerPageUrl(O, '#shop', 'x')).toBeNull();
+  });
+});

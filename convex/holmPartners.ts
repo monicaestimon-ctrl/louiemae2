@@ -329,7 +329,7 @@ export const adminRecordPayout = mutation({
         key: `payout:${payoutId}`,
         to: user.email,
         subject: 'Your House of Louie Mae commission has been paid',
-        text: `We sent $${(amount / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })} in partner commission (reference ${reference}).`,
+        text: `We sent $${(amount / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })} in partner commission (reference ${reference}).\n\nPartner terms: https://www.louiemae.com/trade#partner-terms`,
       });
   },
 });
