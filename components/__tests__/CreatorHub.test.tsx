@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const { answers, join } = vi.hoisted(() => ({ answers: new Map<string, unknown>(), join: vi.fn() }));
 vi.mock('convex/react', () => ({
   useQuery: (ref: unknown, args: unknown) => (args === 'skip' ? undefined : answers.get(String((ref as { _name?: string })?._name ?? ref))),
+  useAction: () => vi.fn(() => Promise.resolve(null)),
   useMutation: (ref: unknown) => (String((ref as { _name?: string })?._name ?? ref).endsWith('join') ? join : vi.fn(() => Promise.resolve())),
 }));
 vi.mock('@convex-dev/auth/react', () => ({ useAuthActions: () => ({ signIn: vi.fn(), signOut: vi.fn() }) }));
@@ -15,6 +16,7 @@ vi.mock('../../convex/_generated/api', () => {
     api: {
       holm: { me: ref('holm.me'), ensureProfile: ref('holm.ensureProfile'), signInOptions: ref('holm.signInOptions') },
       holmPartners: { hub: ref('holmPartners.hub'), join: ref('holmPartners.join') },
+      holmConnect: { startPayoutSetup: ref('holmConnect.startPayoutSetup'), refreshPayoutStatus: ref('holmConnect.refreshPayoutStatus') },
       holmCredit: { myCredit: ref('holmCredit.myCredit'), setCreditAutoApply: ref('holmCredit.setCreditAutoApply') },
     },
   };
@@ -23,6 +25,7 @@ import CreatorHub from '../CreatorHub';
 
 const hub = {
   refCode: 'STUDIO42', tier: 'active', clicks30: 12, orders: 1, quotes: 0,
+  payoutSetup: { enabled: false, connected: false, ready: false, due: 0 }, payoutMinCents: 5_000,
   pendingCents: 20_000, clearedCents: 0, paidCents: 0, creditCents: 0,
   commissions: [{ source: 'storefront_order', baseCents: 200_000, amountCents: 20_000, status: 'pending', clearsAt: Date.now(), createdAt: Date.now(), channel: 'pin', board: null, note: null, lines: [{ type: 'furniture', baseCents: 200_000, rateBps: 1200, amountCents: 20_000, capped: false }] }],
 };

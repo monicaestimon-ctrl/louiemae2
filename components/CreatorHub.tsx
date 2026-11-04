@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useMutation, useQuery } from 'convex/react';
+import { useAction, useMutation, useQuery } from 'convex/react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { Copy, Download, Check, ArrowUpRight } from 'lucide-react';
 import { api } from '../convex/_generated/api';
@@ -175,6 +175,53 @@ function CreditSetting({ balanceCents }: { balanceCents: number }) {
 }
 
 type Hub = NonNullable<ReturnType<typeof useHub>>;
+
+/** Payouts: monthly on the 15th through Stripe once set up; by hand until automatic payouts are on. */
+function PayoutSetup({ hub }: { hub: Hub }) {
+  const start = useAction(api.holmConnect.startPayoutSetup);
+  const refresh = useAction(api.holmConnect.refreshPayoutStatus);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const s = hub.payoutSetup;
+  const min = money(hub.payoutMinCents);
+  useEffect(() => {
+    if (s.enabled && s.connected && !s.ready) refresh().catch(() => {});
+  }, [s.enabled, s.connected, s.ready, refresh]);
+  const go = async () => {
+    setBusy(true);
+    setErr('');
+    try {
+      window.location.href = await start({ returnTo: 'creators' });
+    } catch (e) {
+      setErr(errText(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="rounded-xl border border-sand bg-white/70 p-4 grid gap-2 text-sm text-earth">
+      <b className="font-medium">Payouts</b>
+      {!s.enabled ? (
+        <span className="text-earth/70">Commission is paid monthly once your cleared balance is {min} or more. Until automatic payouts open, we pay by hand once we have your tax details.</span>
+      ) : s.ready ? (
+        <span className="text-earth/70">Payouts ready. Paid on the 15th to your bank through Stripe when your cleared balance is {min} or more; smaller balances carry over.</span>
+      ) : (
+        <>
+          <span className="text-earth/70">
+            {s.connected
+              ? s.due
+                ? 'Stripe needs a few more details before it can pay you.'
+                : 'Finishing setup with Stripe.'
+              : 'Connect a bank account through Stripe to be paid automatically on the 15th. Stripe collects your tax details; we never see your bank information.'}
+          </span>
+          <button onClick={go} disabled={busy} className="justify-self-start bg-earth text-cream rounded-full px-6 py-2 text-sm disabled:opacity-60">
+            {s.connected ? 'Continue with Stripe' : 'Set up payouts'}
+          </button>
+          {err && <span className="text-red-700" role="alert">{err}</span>}
+        </>
+      )}
+    </div>
+  );
+}
 function useHub(signedIn: boolean) {
   return useQuery(api.holmPartners.hub, signedIn ? {} : 'skip');
 }
@@ -257,6 +304,7 @@ function Dashboard({ hub }: { hub: Hub }) {
         )}
         <p className="text-sm text-earth/60">Commission is pending for {partnerCopy().clearingDays} days after payment, then clears.</p>
         <CreditSetting balanceCents={hub.creditCents} />
+        <PayoutSetup hub={hub} />
       </section>
 
       <p className="text-sm text-earth/70 flex flex-wrap gap-x-6 gap-y-2">
