@@ -98,6 +98,27 @@ describe('partner commission on a louiemae.com order', () => {
     expect((await commissions(t))[0]).toMatchObject({ amountCents: 10_000, status: 'pending' });
   });
 
+  it('applies a refund that arrived before the payment event', async () => {
+    const t = convexTest(schema, modules);
+    const { checkoutId } = await setup(t);
+    await t.mutation(internal.holmPartners.storefrontReversal, { paymentIntentId: 'pi_1', kind: 'refund', refundedCents: 102_450, chargeCents: 204_900 });
+    await t.mutation(internal.holmPartners.storefrontCommission, paid(checkoutId));
+    expect((await commissions(t))[0]).toMatchObject({ amountCents: 10_000, status: 'pending', reversedCents: 10_000 });
+  });
+
+  it('keeps the board on a refund after payout', async () => {
+    const t = convexTest(schema, modules);
+    const { checkoutId } = await setup(t);
+    await t.mutation(internal.holmPartners.storefrontCommission, paid(checkoutId));
+    await t.run(async (ctx) => {
+      const [c] = await ctx.db.query('holmCommissions').collect();
+      await ctx.db.patch(c._id, { status: 'paid', board: 'living-room' });
+    });
+    await t.mutation(internal.holmPartners.storefrontReversal, { paymentIntentId: 'pi_1', kind: 'refund', refundedCents: 204_900, chargeCents: 204_900 });
+    const adj = (await commissions(t)).find((r) => r.source === 'adjustment');
+    expect(adj).toMatchObject({ board: 'living-room', amountCents: -20_000 });
+  });
+
   it('pays nothing when the buyer email is missing', async () => {
     const t = convexTest(schema, modules);
     const { checkoutId } = await setup(t);

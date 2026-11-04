@@ -165,6 +165,16 @@ export const holmTables = {
     .index('by_session', ['stripeSessionId'])
     .index('by_payment', ['paymentIntentId']),
 
+  // Refund and dispute state of a storefront payment, kept even when the event arrives before
+  // the order's commission exists (Stripe doesn't promise event order).
+  holmPaymentStates: defineTable({
+    paymentIntentId: v.string(),
+    refundedCents: v.number(),
+    chargeCents: v.number(),
+    disputed: v.boolean(),
+    updatedAt: v.number(),
+  }).index('by_payment', ['paymentIntentId']),
+
   // Every tier a partner has held and when it started, so an order is paid at the tier in
   // effect when it was paid, whatever changes later.
   holmTierChanges: defineTable({

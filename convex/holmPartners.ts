@@ -461,9 +461,10 @@ export const boardStats = query({
       if (c.status === 'void') continue;
       if (c.quoteRequestId) earned.set(c.quoteRequestId, (earned.get(c.quoteRequestId) ?? 0) + c.amountCents);
       // storefront orders carry the board on the commission itself
-      else if (c.board && c.source === 'storefront_order') {
+      // (and refunds or disputes after payout come back as adjustments on the same board)
+      else if (c.board && (c.source === 'storefront_order' || c.source === 'adjustment')) {
         earned.set('board:' + c.board, (earned.get('board:' + c.board) ?? 0) + c.amountCents);
-        boardOrders.set(c.board, (boardOrders.get(c.board) ?? 0) + 1);
+        if (c.source === 'storefront_order') boardOrders.set(c.board, (boardOrders.get(c.board) ?? 0) + 1);
       }
     }
     return Promise.all(
@@ -537,7 +538,7 @@ export const storefrontCommission = internalMutation({
       a.deliveryCents + a.taxCents
     );
     if (result.amountCents <= 0) return null;
-    return ctx.db.insert('holmCommissions', {
+    const id = await ctx.db.insert('holmCommissions', {
       partnerId: p.partnerId,
       source: 'storefront_order',
       retailCheckoutId: checkout._id,
@@ -556,6 +557,13 @@ export const storefrontCommission = internalMutation({
       clearsAt: now + HOLM_PARTNERS.clearingDays * DAY,
       createdAt: now,
     });
+    // A refund or dispute that reached us before this order's payment event.
+    if (a.paymentIntentId) {
+      const early = await ctx.db.query('holmPaymentStates').withIndex('by_payment', (q) => q.eq('paymentIntentId', a.paymentIntentId!)).first();
+      const row = early && (await ctx.db.get(id));
+      if (early && row) await applyPaymentState(ctx, row, { refundedCents: early.refundedCents, chargeCents: early.chargeCents, disputed: early.disputed });
+    }
+    return id;
   },
 });
 
@@ -574,41 +582,53 @@ export const storefrontReversal = internalMutation({
     chargeCents: v.optional(v.number()),
   },
   handler: async (ctx, a) => {
-    const rows = await ctx.db.query('holmCommissions').withIndex('by_payment', (q) => q.eq('paymentIntentId', a.paymentIntentId)).take(10);
     const now = Date.now();
-    for (const c of rows) {
-      if (c.source !== 'storefront_order') continue;
-      const refundedCents = a.kind === 'refund' ? Math.max(c.refundedCents ?? 0, a.refundedCents ?? 0) : (c.refundedCents ?? 0);
-      const chargeCents = a.kind === 'refund' && a.chargeCents ? a.chargeCents : (c.chargeCents ?? 0);
-      const disputed = a.kind === 'dispute' ? true : a.kind === 'dispute_won' ? false : (c.disputed ?? false);
-      const original = c.originalCents ?? c.amountCents;
-      const kept = disputed ? 0 : chargeCents > 0 ? Math.round(original * Math.max(0, 1 - refundedCents / chargeCents)) : original;
-      const target = original - kept; // total that should be taken back
-      const delta = target - (c.reversedCents ?? 0);
-      const state = { reversedCents: target, refundedCents, chargeCents, disputed };
-      if (delta === 0) {
-        await ctx.db.patch(c._id, state);
-        continue;
-      }
-      if (c.status === 'paid') {
-        await ctx.db.insert('holmCommissions', {
-          partnerId: c.partnerId,
-          source: 'adjustment',
-          adjustsId: c._id,
-          baseCents: 0,
-          rateBps: 0,
-          amountCents: -delta,
-          status: 'cleared',
-          clearsAt: now,
-          createdAt: now,
-          note: delta < 0 ? 'Dispute won after payout' : a.kind === 'dispute' ? 'Payment disputed after payout' : 'Refunded after payout',
-        });
-        await ctx.db.patch(c._id, state);
-      } else {
-        const amount = Math.max(0, c.amountCents - delta);
-        const status = amount === 0 ? ('void' as const) : c.status === 'void' ? (now >= c.clearsAt ? ('cleared' as const) : ('pending' as const)) : c.status;
-        await ctx.db.patch(c._id, { ...state, amountCents: amount, status });
-      }
-    }
+    const saved = await ctx.db.query('holmPaymentStates').withIndex('by_payment', (q) => q.eq('paymentIntentId', a.paymentIntentId)).first();
+    const state: PaymentState = {
+      // Stripe reports the running refund total, so the larger figure is the latest.
+      refundedCents: a.kind === 'refund' ? Math.max(saved?.refundedCents ?? 0, a.refundedCents ?? 0) : (saved?.refundedCents ?? 0),
+      chargeCents: a.kind === 'refund' && a.chargeCents ? a.chargeCents : (saved?.chargeCents ?? 0),
+      disputed: a.kind === 'dispute' ? true : a.kind === 'dispute_won' ? false : (saved?.disputed ?? false),
+    };
+    if (saved) await ctx.db.patch(saved._id, { ...state, updatedAt: now });
+    else await ctx.db.insert('holmPaymentStates', { paymentIntentId: a.paymentIntentId, ...state, updatedAt: now });
+    const rows = await ctx.db.query('holmCommissions').withIndex('by_payment', (q) => q.eq('paymentIntentId', a.paymentIntentId)).take(10);
+    for (const c of rows) if (c.source === 'storefront_order') await applyPaymentState(ctx, c, state);
   },
 });
+
+type PaymentState = { refundedCents: number; chargeCents: number; disputed: boolean };
+
+/** Brings a storefront commission in line with its payment's refunds and disputes. Safe to repeat. */
+async function applyPaymentState(ctx: MutationCtx, c: Doc<'holmCommissions'>, state: PaymentState) {
+  const now = Date.now();
+  const original = c.originalCents ?? c.amountCents;
+  const kept = state.disputed
+    ? 0
+    : state.chargeCents > 0
+      ? Math.round(original * Math.max(0, 1 - state.refundedCents / state.chargeCents))
+      : original;
+  const target = original - kept; // total that should be taken back
+  const delta = target - (c.reversedCents ?? 0);
+  const fields = { reversedCents: target, ...state };
+  if (delta === 0) return ctx.db.patch(c._id, fields);
+  if (c.status === 'paid') {
+    await ctx.db.insert('holmCommissions', {
+      partnerId: c.partnerId,
+      source: 'adjustment',
+      adjustsId: c._id,
+      ...(c.board ? { board: c.board } : {}),
+      baseCents: 0,
+      rateBps: 0,
+      amountCents: -delta,
+      status: 'cleared',
+      clearsAt: now,
+      createdAt: now,
+      note: delta < 0 ? 'Dispute won after payout' : state.disputed ? 'Payment disputed after payout' : 'Refunded after payout',
+    });
+    return ctx.db.patch(c._id, fields);
+  }
+  const amount = Math.max(0, c.amountCents - delta);
+  const status = amount === 0 ? ('void' as const) : c.status === 'void' ? (now >= c.clearsAt ? ('cleared' as const) : ('pending' as const)) : c.status;
+  return ctx.db.patch(c._id, { ...fields, amountCents: amount, status });
+}
