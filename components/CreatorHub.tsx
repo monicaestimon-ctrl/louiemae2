@@ -27,7 +27,7 @@ const CHANNELS: [string, string][] = [
   ['qr', 'QR code'],
 ];
 const TERMS_URL = '/trade#partner-terms';
-const money = (cents: number) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const money = (cents: number) => `${cents < 0 ? '−' : ''}$${(Math.abs(cents) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const errText = (e: unknown) => String((e as Error)?.message || e).replace(/^.*Uncaught Error:\s*/s, '').split('\n')[0];
 
 function QrCode({ text, label }: { text: string; label: string }) {
@@ -70,18 +70,19 @@ function RateTable({ tier }: { tier?: HolmTier | null }) {
     <div className="overflow-x-auto">
       <table className="w-full text-sm text-left">
         <caption className="sr-only">Commission rates by tier and product type</caption>
-        <thead className="text-xs uppercase tracking-[0.15em] text-earth/60">
-          <tr><th className="py-2 pr-3 font-medium">Tier · 12-month sales</th>{rows[0].rates.map((r) => <th key={r.type} className="py-2 px-3 font-medium">{r.label}</th>)}</tr>
+        <thead className="text-xs sm:uppercase sm:tracking-[0.15em] text-earth/60">
+          <tr><th className="py-2 pr-2 font-medium">Tier</th>{rows[0].rates.map((r) => <th key={r.type} className="py-2 px-2 sm:px-3 font-medium">{r.label}</th>)}</tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.tier} className={`border-t border-sand ${tier === r.tier ? 'bg-cream-dark font-medium' : ''}`}>
-              <td className="py-2 pr-3"><span className="text-earth">{r.name}</span> <span className="text-earth/60">{r.sales}</span></td>
-              {r.rates.map((x) => <td key={x.type} className="py-2 px-3 tabular-nums">{x.rate}</td>)}
+              <td className="py-2 pr-2"><span className="text-earth">{r.name}</span> <span className="block sm:inline text-xs sm:text-sm text-earth/60">{r.sales}</span></td>
+              {r.rates.map((x) => <td key={x.type} className="py-2 px-2 sm:px-3 tabular-nums">{x.rate}</td>)}
             </tr>
           ))}
         </tbody>
       </table>
+      <p className="text-xs text-earth/60 mt-2">Tiers are set by attributed sales over the last 12 months.</p>
     </div>
   );
 }
