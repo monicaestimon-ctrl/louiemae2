@@ -9,6 +9,8 @@ export const HOLM_PARTNERS = {
   quoteHoldDays: 120, // unpaid partner-attributed quotes stop waiting for payment after this
   referralCreditCents: 10_000, // $100 store credit
   referralMinOrderCents: 50_000, // once the referred business pays an order of $500 or more
+  payoutMinCents: 5_000, // monthly payouts on the 15th once the cleared balance is $50 or more
+  payoutDay: 15,
   // Where a partner link was opened from. Every Share-sheet route tags its link with one of these.
   channels: ['story', 'pin', 'post', 'pdf', 'link', 'share', 'qr'],
 } as const;

@@ -9,6 +9,7 @@ import { partnerTier } from './holmTables';
 import { HOLM_PARTNERS, HOLM_RATES, HOLM_TIER_ORDER, REF_CODE, TIER_NAMES, holmChannel, lineCommissions, quarterOf, tierForSales, tierProgress, tierRank, type HolmTier } from '../lib/holmPartners';
 import { houseUnitCosts } from './holm';
 import { projectCredit } from '../lib/commerce';
+import { payoutsEnabled, unpaidCleared } from './holmPayouts';
 
 const DAY = 86_400_000;
 
@@ -286,7 +287,13 @@ export const hub = query({
     const commissions = await ctx.db.query('holmCommissions').withIndex('by_partner', (q) => q.eq('partnerId', me.userId)).order('desc').take(500);
     const referrals = await ctx.db.query('holmReferrals').withIndex('by_referrer', (q) => q.eq('referrerId', me.userId)).order('desc').take(100);
     const credits = await ctx.db.query('holmCredits').withIndex('by_user', (q) => q.eq('userId', me.userId)).take(500);
-    const payouts = await ctx.db.query('holmPayouts').withIndex('by_partner', (q) => q.eq('partnerId', me.userId)).order('desc').take(24);
+    // Completed payouts only: a failed or unfinished Stripe transfer isn't money the partner has.
+    const payouts = await ctx.db
+      .query('holmPayouts')
+      .withIndex('by_partner', (q) => q.eq('partnerId', me.userId))
+      .order('desc')
+      .filter((q) => q.and(q.neq(q.field('status'), 'failed'), q.neq(q.field('status'), 'processing')))
+      .take(24);
     const tier = p.partnerTier ?? 'base';
     const sales12Cents = await salesLast12Months(ctx, me.userId);
     return {
@@ -325,7 +332,15 @@ export const hub = query({
           return { name: prof?.businessName || prof?.displayName || 'New account', status: r.status, creditCents: r.creditCents, createdAt: r.createdAt };
         })
       ),
-      payouts: payouts.map((x) => ({ amountCents: x.amountCents, reference: x.reference, paidAt: x.paidAt })),
+      payouts: payouts.map((x) => ({ amountCents: x.amountCents, reference: x.method === 'stripe' ? 'Stripe transfer' : x.reference, paidAt: x.paidAt, status: x.status ?? 'paid' })),
+      // Automatic payouts: whether they're switched on, and this partner's Stripe setup.
+      payoutSetup: {
+        enabled: payoutsEnabled(),
+        connected: !!p.stripeAccountId,
+        ready: !!p.payoutsReady,
+        due: (p.payoutsDue ?? []).length,
+      },
+      payoutMinCents: HOLM_PARTNERS.payoutMinCents,
     };
   },
 });
@@ -429,10 +444,8 @@ export const adminRecordPayout = mutation({
     if (p.w9Status !== 'approved') throw new Error('Approve the partner’s W-9 before paying commission.');
     const reference = a.reference.trim().slice(0, 120);
     if (!reference) throw new Error('Add the payment reference.');
-    const cleared = await ctx.db
-      .query('holmCommissions')
-      .withIndex('by_partner_status', (q) => q.eq('partnerId', a.userId).eq('status', 'cleared'))
-      .collect();
+    // Not anything an automatic Stripe payout is already sending.
+    const cleared = await unpaidCleared(ctx, a.userId);
     const amount = cleared.reduce((t, c) => t + c.amountCents, 0);
     if (amount <= 0) throw new Error('Nothing has cleared for this partner yet.');
     const now = Date.now();

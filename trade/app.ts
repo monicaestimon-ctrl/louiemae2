@@ -3246,6 +3246,7 @@ function PartnerPanel({ctx}){
         ${ph.referrals.length?ph.referrals.map((r,i)=>html`<div key=${i} className="sumrow" style=${{borderBottom:'1px solid var(--line)',padding:'8px 0'}}><span>${r.name}<br/><small className="mute">${status[r.status]}</small></span><span>${r.creditCents?money(r.creditCents):''}</span></div>`):html`<p className="help" style=${{margin:0}}>Businesses who sign up through your link appear here.</p>`}
         <div className="sumrow total"><span>Store credit</span><span>${money(ph.creditCents)}</span></div>
         <${CreditToggle} ctx=${ctx}/>
+        <${PayoutSetup} ctx=${ctx} ph=${ph}/>
         ${ph.payouts.length>0&&html`<h3 style=${{marginTop:10}}>Payouts</h3>${ph.payouts.map((x,i)=>html`<div key=${i} className="sumrow"><span>${new Date(x.paidAt).toLocaleDateString()}<br/><small className="mute">${x.reference}</small></span><span>${money(x.amountCents)}</span></div>`)}`}
       </div>
     </div>
@@ -3284,6 +3285,18 @@ function Hub({ctx}){
     <${PartnerPanel} ctx=${ctx}/>
     <div style=${{height:40}}></div>
   </main>`;
+}
+// Payouts: monthly on the 15th through Stripe once set up; by hand until automatic payouts are on.
+function PayoutSetup({ctx,ph}){
+  const start=useAction(api.holmConnect.startPayoutSetup);const refresh=useAction(api.holmConnect.refreshPayoutStatus);const [busy,setBusy]=useState(false);
+  const s=ph.payoutSetup;const min=fmt(ph.payoutMinCents/100,true);
+  useEffect(()=>{if(s.enabled&&s.connected&&!s.ready)refresh().catch(()=>{})},[s.enabled,s.connected,s.ready]);
+  const go=async()=>{setBusy(true);try{location.href=await start({returnTo:'trade'})}catch(e){ctx.toast(errText(e));setBusy(false)}};
+  return html`<div style=${{marginTop:12,display:'grid',gap:6}}><h3>Payouts</h3>
+    ${!s.enabled?html`<p className="help" style=${{margin:0}}>Commission is paid monthly once your cleared balance is ${min} or more. Until automatic payouts open, we pay by hand after your W-9 is approved.</p>`
+    :s.ready?html`<p className="help" style=${{margin:0}}>Payouts ready. Paid on the 15th to your bank through Stripe when your cleared balance is ${min} or more; smaller balances carry over.</p>`
+    :html`<p className="help" style=${{margin:0}}>${s.connected?(s.due?'Stripe needs a few more details before it can pay you.':'Finishing setup with Stripe.'):'Connect a bank account through Stripe to be paid automatically on the 15th. Stripe collects your tax details; we never see your bank information.'}</p>
+      <button className="btn btn-ink btn-sm" style=${{justifySelf:'start'}} disabled=${busy} onClick=${go}>${s.connected?'Continue with Stripe':'Set up payouts'}</button>`}</div>`;
 }
 // The store-credit setting: apply it to the next order automatically, or save it up.
 function CreditToggle({ctx}){

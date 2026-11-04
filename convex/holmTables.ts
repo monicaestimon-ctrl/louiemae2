@@ -61,6 +61,10 @@ export const holmTables = {
     tierDownCheckedAt: v.optional(v.number()), // the last quarterly check for moving down
     sales12Cents: v.optional(v.number()), // 12-month attributed sales, as of the last nightly update
     creditAutoApply: v.optional(v.boolean()), // apply store credit to the next order automatically
+    // Stripe Connect Express account for automatic payouts
+    stripeAccountId: v.optional(v.string()),
+    payoutsReady: v.optional(v.boolean()),
+    payoutsDue: v.optional(v.array(v.string())), // what Stripe still needs, if anything
     refCode: v.optional(v.string()),
     w9Status: v.optional(v.union(v.literal('pending'), v.literal('approved'))),
     w9FileId: v.optional(v.id('_storage')),
@@ -71,7 +75,8 @@ export const holmTables = {
     .index('by_user', ['userId'])
     .index('by_trade_status', ['tradeStatus', 'updatedAt'])
     .index('by_refCode', ['refCode'])
-    .index('by_partner_status', ['partnerStatus', 'updatedAt']),
+    .index('by_partner_status', ['partnerStatus', 'updatedAt'])
+    .index('by_stripe_account', ['stripeAccountId']),
 
   holmTradeApplications: defineTable({
     userId: v.id('users'),
@@ -224,10 +229,22 @@ export const holmTables = {
   holmPayouts: defineTable({
     partnerId: v.id('users'),
     amountCents: v.number(),
-    reference: v.string(),
+    reference: v.string(), // the payment reference, or the Stripe transfer id
     paidBy: v.string(),
     paidAt: v.number(),
-  }).index('by_partner', ['partnerId', 'paidAt']),
+    // Automatic payouts through Stripe Connect (manual payouts leave these empty)
+    method: v.optional(v.union(v.literal('manual'), v.literal('stripe'))),
+    status: v.optional(v.union(v.literal('processing'), v.literal('paid'), v.literal('failed'))),
+    period: v.optional(v.string()), // YYYY-MM of the monthly run
+    accountId: v.optional(v.string()),
+    error: v.optional(v.string()),
+    // One run at a time may send or settle a Stripe payout: it holds this lease (see holmPayouts.ts).
+    leaseToken: v.optional(v.string()),
+    leaseAt: v.optional(v.number()),
+  })
+    .index('by_partner', ['partnerId', 'paidAt'])
+    .index('by_partner_period', ['partnerId', 'period'])
+    .index('by_status', ['status']),
 
   holmSourcing: defineTable({
     number: v.string(),

@@ -230,6 +230,17 @@ http.route({
                     await ctx.runMutation(internal.holmCredit.restoreOnRefund, { paymentIntentId, refundedCents: charge.amount_refunded || 0, chargeCents: charge.amount || 0 });
             }
         }
+        // A partner's Stripe Connect account changed (for example, finished setup): keep their status current.
+        if (event.type === 'account.updated') {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            const account = event.data.object as Stripe.Account;
+            await ctx.runMutation(internal.holmPayouts.setConnectStatus, {
+                accountId: account.id,
+                ready: !!account.payouts_enabled && account.capabilities?.transfers === 'active',
+                due: [...(account.requirements?.currently_due ?? []), ...(account.requirements?.past_due ?? [])],
+            });
+            return new Response(JSON.stringify({ received: true }), { status: 200 });
+        }
         // An abandoned storefront checkout gives its store-credit hold back.
         if (event.type === 'checkout.session.expired') {
             if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
