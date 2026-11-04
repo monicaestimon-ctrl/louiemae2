@@ -203,7 +203,15 @@ http.route({
             }
 
             if (webhookSecret && signature) {
-                event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
+                // Partners' connected-account events (account.updated) come from a separate Connect
+                // endpoint in Stripe, which has its own signing secret.
+                const connectSecret = process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
+                try {
+                    event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
+                } catch (err) {
+                    if (!connectSecret) throw err;
+                    event = await stripe.webhooks.constructEventAsync(body, signature, connectSecret);
+                }
             } else if (shouldAllowUnsignedStripeWebhook(process.env)) {
                 event = JSON.parse(body) as Stripe.Event;
             } else {
