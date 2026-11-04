@@ -9,6 +9,7 @@ import { address } from './commerceTables';
 import { clientShow, holmBusinessType } from './holmTables';
 import { assetIndex, publicAssets } from './holmAssets';
 import { checkQuantity, totalLines } from '../lib/commerce';
+import { reserveCredit } from './holmCredit';
 import { deliveryCents, freightFor } from '../lib/holmDelivery';
 import { launchPrice, retailDelivery } from '../lib/retailLaunch';
 import {
@@ -478,6 +479,7 @@ export const requestQuote = mutation({
     items: v.array(quoteItem),
     refCode: v.optional(v.string()),
     visitorId: v.optional(v.string()),
+    useCredit: v.optional(v.boolean()),
   },
   handler: async (ctx, a) => {
     const me = await viewer(ctx);
@@ -552,6 +554,11 @@ export const requestQuote = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    // Store credit comes off the merchandise and shows as its own line on the invoice.
+    if (me && a.useCredit) {
+      const creditCents = await reserveCredit(ctx, me.userId, priced.subtotal, `project:${id}`);
+      if (creditCents > 0) await ctx.db.patch(id, { creditCents });
+    }
     // Partner commission is earned on retail-priced requests only.
     const attr = trade ? null : await resolveAttribution(ctx, a.refCode, a.visitorId, { userId: me?.userId, email });
     await ctx.db.insert('holmQuoteRequests', {

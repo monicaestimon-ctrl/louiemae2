@@ -155,6 +155,25 @@ function Join() {
   );
 }
 
+/** Store credit: apply it to the next order automatically, or save it up. */
+function CreditSetting({ balanceCents }: { balanceCents: number }) {
+  const c = useQuery(api.holmCredit.myCredit);
+  const set = useMutation(api.holmCredit.setCreditAutoApply);
+  if (!c) return null;
+  return (
+    <label className="flex items-start justify-between gap-4 rounded-xl border border-sand bg-white/70 p-4">
+      <span className="text-sm text-earth">
+        Store credit <b className="font-medium">{money(balanceCents)}</b>
+        <span className="block text-earth/60">{c.autoApply ? 'Applied to your next order.' : 'Saved for later.'} It comes off merchandise only, never delivery or tax, and is never paid out as cash.</span>
+      </span>
+      <span className="flex items-center gap-2 text-sm text-earth/80 whitespace-nowrap">
+        <input type="checkbox" checked={c.autoApply} onChange={(e) => void set({ on: e.target.checked })} />
+        Apply to my next order
+      </span>
+    </label>
+  );
+}
+
 type Hub = NonNullable<ReturnType<typeof useHub>>;
 function useHub(signedIn: boolean) {
   return useQuery(api.holmPartners.hub, signedIn ? {} : 'skip');
@@ -236,7 +255,8 @@ function Dashboard({ hub }: { hub: Hub }) {
         ) : (
           <p className="text-sm text-earth/60">Orders people place through your links show up here, with what you earned on each. We never show buyers' names.</p>
         )}
-        <p className="text-sm text-earth/60">Commission is pending for {partnerCopy().clearingDays} days after payment, then clears. Store credit: {money(hub.creditCents)}.</p>
+        <p className="text-sm text-earth/60">Commission is pending for {partnerCopy().clearingDays} days after payment, then clears.</p>
+        <CreditSetting balanceCents={hub.creditCents} />
       </section>
 
       <p className="text-sm text-earth/70 flex flex-wrap gap-x-6 gap-y-2">

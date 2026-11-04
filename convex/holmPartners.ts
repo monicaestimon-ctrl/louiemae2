@@ -8,6 +8,7 @@ import { isPartner, isVerified, profileOf, requireUser, viewer } from './holmAcc
 import { partnerTier } from './holmTables';
 import { HOLM_PARTNERS, HOLM_RATES, HOLM_TIER_ORDER, REF_CODE, TIER_NAMES, holmChannel, lineCommissions, quarterOf, tierForSales, tierProgress, tierRank, type HolmTier } from '../lib/holmPartners';
 import { houseUnitCosts } from './holm';
+import { projectCredit } from '../lib/commerce';
 
 const DAY = 86_400_000;
 
@@ -479,11 +480,14 @@ export const reconcile = internalMutation({
       const tier = await partnerTierAt(ctx, r.partnerId, project.paidAt, partner?.partnerTier ?? 'base');
       // Each line at its product type's rate, held to 40% of our profit on it.
       const costs = await houseUnitCosts(ctx, project.lines);
+      // Commission is worked out after store credit, shared across the lines by value.
+      const merch = project.lines.reduce((t, l) => t + l.unitPrice * l.quantity, 0);
+      const keep = merch > 0 ? 1 - projectCredit(project) / merch : 1;
       const result = lineCommissions(
         project.lines.map((l, i) => ({
           key: `${i}:${l.productId}:${l.variantId}`,
           type: costs.types.get(l.productId) ?? ('furniture' as const),
-          unitCents: l.unitPrice,
+          unitCents: Math.round(l.unitPrice * keep),
           quantity: l.quantity,
           unitCostCents: costs.get(`${l.productId}:${l.variantId}`) ?? null,
         })),
@@ -554,7 +558,7 @@ export const reconcile = internalMutation({
         await ctx.db.patch(ref._id, { checkedAt: now });
         continue;
       }
-      await ctx.db.insert('holmCredits', { userId: ref.referrerId, amountCents: HOLM_PARTNERS.referralCreditCents, reason: 'Business referral', at: now });
+      await ctx.db.insert('holmCredits', { userId: ref.referrerId, amountCents: HOLM_PARTNERS.referralCreditCents, kind: 'earned', reason: 'Business referral', at: now });
       await ctx.db.patch(ref._id, { status: 'credited', creditCents: HOLM_PARTNERS.referralCreditCents });
     }
   },
@@ -635,7 +639,8 @@ export const storefrontCommission = internalMutation({
       key: `${i}:${item.productId}:${item.variantId}`,
       productId: ctx.db.normalizeId('commerceProducts', item.productId),
       variantId: item.variantId,
-      unitCents: Math.round(item.price * 100),
+      // after store credit, shared across the items by value
+      unitCents: Math.round(item.price * 100 * (checkout.subtotal > 0 ? 1 - Math.min(checkout.creditCents ?? 0, checkout.subtotal) / checkout.subtotal : 1)),
       quantity: item.quantity,
     }));
     const known = lines.filter((l): l is typeof l & { productId: Id<'commerceProducts'> } => l.productId !== null);

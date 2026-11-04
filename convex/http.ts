@@ -43,7 +43,7 @@ const getAllowedOrigin = (requestOrigin?: string | null) => {
 const corsHeaders = {
     "Access-Control-Allow-Origin": "*", // Will be set dynamically in handlers
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
 const getConfiguredCjOpenId = async (ctx: any): Promise<string | null> => {
@@ -119,12 +119,20 @@ http.route({
                     snapshot = await ctx.runMutation(internal.retailLaunch.createSnapshot, {
                         items: items.map((i: any) => ({ productId: String(i.productId || ''), variantId: String(i.variantId || ''), quantity: i.quantity })),
                         ...(typeof body.refCode === 'string' && typeof body.visitorId === 'string' ? { refCode: body.refCode.slice(0, 32), visitorId: body.visitorId.slice(0, 64) } : {}),
+                        ...(body.useCredit === true ? { useCredit: true } : {}),
                     });
                 } catch {
                     return new Response(JSON.stringify({ code: 'OUT_OF_STOCK', error: 'This item is Coming Soon or no longer available. Please remove it from your cart.' }), { status: 409, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
                 }
-                const session = await stripe.checkout.sessions.create({
+                // Store credit: a one-time discount on the items (Stripe never applies it to delivery).
+                let session;
+                try {
+                const discounts = snapshot.creditCents > 0
+                    ? [{ coupon: (await stripe.coupons.create({ amount_off: snapshot.creditCents, currency: 'usd', duration: 'once', max_redemptions: 1, name: 'Store credit' }, { idempotencyKey: `credit:${snapshot.id}` })).id }]
+                    : undefined;
+                session = await stripe.checkout.sessions.create({
                     mode: 'payment', payment_method_types: ['card'],
+                    ...(discounts ? { discounts } : {}),
                     line_items: snapshot.items.map(i => ({ price_data: { currency: 'usd', product_data: { name: i.name, images: i.image ? [i.image] : [] }, unit_amount: Math.round(i.price * 100) }, quantity: i.quantity })),
                     success_url: 'https://www.louiemae.com/#checkout/success?session_id={CHECKOUT_SESSION_ID}',
                     cancel_url: 'https://www.louiemae.com/#checkout/cancel',
@@ -134,6 +142,10 @@ http.route({
                     shipping_options: [{ shipping_rate_data: { type: 'fixed_amount', fixed_amount: { amount: snapshot.shipping, currency: 'usd' }, display_name: 'Economy delivery (per item)' } }],
                     metadata: { retailCheckoutId: snapshot.id },
                 });
+                } catch (error) {
+                    if (snapshot.creditCents > 0) await ctx.runMutation(internal.holmCredit.releaseCheckout, { retailCheckoutId: snapshot.id });
+                    throw error;
+                }
                 return new Response(JSON.stringify({ sessionId: session.id, url: session.url }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
             }
         } catch (error: any) {
@@ -214,7 +226,16 @@ http.route({
                 await ctx.runMutation(internal.holmPartners.storefrontReversal, event.type === 'charge.dispute.created'
                     ? { paymentIntentId, kind: 'dispute' }
                     : { paymentIntentId, kind: 'refund', refundedCents: charge.amount_refunded || 0, chargeCents: charge.amount || 0 });
+                if (event.type === 'charge.refunded')
+                    await ctx.runMutation(internal.holmCredit.restoreOnRefund, { paymentIntentId, refundedCents: charge.amount_refunded || 0, chargeCents: charge.amount || 0 });
             }
+        }
+        // An abandoned storefront checkout gives its store-credit hold back.
+        if (event.type === 'checkout.session.expired') {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            const id = (event.data.object as Stripe.Checkout.Session).metadata?.retailCheckoutId;
+            if (id) await ctx.runMutation(internal.holmCredit.releaseCheckout, { retailCheckoutId: id });
+            return new Response(JSON.stringify({ received: true }), { status: 200 });
         }
         // A won dispute gives the partner's storefront commission back.
         if (event.type === 'charge.dispute.closed' && (event.data.object as Stripe.Dispute).status === 'won') {
@@ -305,7 +326,15 @@ http.route({
 
             // Partner commission on the order, if a partner's link brought this buyer.
             if (session.metadata?.retailCheckoutId) {
-                // The order is already saved; a commission problem must not fail the webhook.
+                // The order is already saved; a credit or commission problem must not fail the webhook.
+                try {
+                    await ctx.runMutation(internal.holmCredit.useCheckout, {
+                        retailCheckoutId: session.metadata.retailCheckoutId as Id<'retailCheckouts'>,
+                        paymentIntentId: typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id,
+                    });
+                } catch (err: any) {
+                    console.error('Store credit settlement failed for session', session.id, err?.message);
+                }
                 try {
                     await ctx.runMutation(internal.holmPartners.storefrontCommission, {
                         retailCheckoutId: session.metadata.retailCheckoutId as Id<'retailCheckouts'>,

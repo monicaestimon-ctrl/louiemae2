@@ -60,6 +60,7 @@ export const holmTables = {
     tierOverride: v.optional(v.object({ reason: v.string(), until: v.optional(v.number()), by: v.string(), at: v.number() })),
     tierDownCheckedAt: v.optional(v.number()), // the last quarterly check for moving down
     sales12Cents: v.optional(v.number()), // 12-month attributed sales, as of the last nightly update
+    creditAutoApply: v.optional(v.boolean()), // apply store credit to the next order automatically
     refCode: v.optional(v.string()),
     w9Status: v.optional(v.union(v.literal('pending'), v.literal('approved'))),
     w9FileId: v.optional(v.id('_storage')),
@@ -203,12 +204,22 @@ export const holmTables = {
     .index('by_referred', ['referredUserId'])
     .index('by_status_checked', ['status', 'checkedAt']),
 
+  // Store credit ledger (see holmCredit.ts). The balance is the sum of amountCents.
   holmCredits: defineTable({
     userId: v.id('users'),
-    amountCents: v.number(), // positive = credit, negative = redemption
+    amountCents: v.number(), // positive = credit, negative = held or used
+    kind: v.optional(v.union(v.literal('earned'), v.literal('reserved'), v.literal('used'), v.literal('released'), v.literal('restored'))),
+    ref: v.optional(v.string()), // the order a hold belongs to: checkout:<id> or project:<id>
+    heldCents: v.optional(v.number()), // the amount first held
+    paymentIntentId: v.optional(v.string()), // the payment that used it (storefront)
+    restoredCents: v.optional(v.number()), // returned so far after refunds
     reason: v.string(),
     at: v.number(),
-  }).index('by_user', ['userId', 'at']),
+  })
+    .index('by_user', ['userId', 'at'])
+    .index('by_ref', ['ref'])
+    .index('by_kind', ['kind', 'at'])
+    .index('by_payment', ['paymentIntentId']),
 
   holmPayouts: defineTable({
     partnerId: v.id('users'),

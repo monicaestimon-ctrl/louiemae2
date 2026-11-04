@@ -4,7 +4,8 @@ import { query, mutation, internalQuery, internalMutation } from './_generated/s
 import { internal } from './_generated/api';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { address, channel } from './commerceTables';
-import { checkQuantity, totalLines, cents } from '../lib/commerce';
+import { checkQuantity, totalLines, cents, projectCredit, projectTotal } from '../lib/commerce';
+import { settleCredit } from './holmCredit';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
 import { listingReady } from './commerceReadiness';
@@ -275,7 +276,7 @@ export const accept = mutation({
       throw new Error(
         'Complete delivery address, two-letter country code and customer phone before invoicing.'
       );
-    const total = totalLines(p.lines, p.delivery, p.tax);
+    const total = projectTotal(p);
     if (total <= 0) throw new Error('Invoice total must be positive.');
     if (
       p.lines.some((l) => l.provider === 'cj') &&
@@ -398,7 +399,7 @@ export const paid = internalMutation({
       p.stripeInvoiceId !== args.invoiceId ||
       p.revision !== args.revision ||
       args.currency !== 'usd' ||
-      args.amount !== totalLines(p.lines, p.delivery, p.tax) ||
+      args.amount !== projectTotal(p) ||
       !args.paymentIntentIds.length
     )
       throw new Error('Payment does not match the active approved invoice.');
@@ -411,6 +412,8 @@ export const paid = internalMutation({
       paymentIntentIds: args.paymentIntentIds,
       updatedAt: Date.now(),
     });
+    // The credit on the invoice is now used; any part the final quote couldn't take goes back.
+    if (p.creditCents) await settleCredit(ctx, `project:${p._id}`, 'used', projectCredit(p));
     for (const provider of [...new Set(p.lines.map((l) => l.provider))]) {
       const groupId = await ctx.db.insert('commerceFulfillments', {
         projectId: p._id,

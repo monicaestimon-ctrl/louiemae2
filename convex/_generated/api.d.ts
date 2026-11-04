@@ -63,6 +63,7 @@ import type * as geminiNameClient from "../geminiNameClient.js";
 import type * as holm from "../holm.js";
 import type * as holmAccess from "../holmAccess.js";
 import type * as holmAssets from "../holmAssets.js";
+import type * as holmCredit from "../holmCredit.js";
 import type * as holmEmail from "../holmEmail.js";
 import type * as holmPartners from "../holmPartners.js";
 import type * as holmPins from "../holmPins.js";
@@ -174,6 +175,7 @@ declare const fullApi: ApiFromModules<{
   holm: typeof holm;
   holmAccess: typeof holmAccess;
   holmAssets: typeof holmAssets;
+  holmCredit: typeof holmCredit;
   holmEmail: typeof holmEmail;
   holmPartners: typeof holmPartners;
   holmPins: typeof holmPins;

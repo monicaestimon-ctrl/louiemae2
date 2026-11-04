@@ -1604,6 +1604,8 @@ function Tray({ctx}){
   const [qc,setQc]=useState(false);
   const [del,setDel]=useState(()=>{const d=load('del',{});return {when:'asap',date:'',recv:d.recv||'white',notes:'',teamNote:'',name:d.name||'',email:ctx.me.email||d.email||'',phone:d.phone||'',business:ctx.me.businessName||d.business||'',line1:d.line1||'',city:d.city||'',state:d.state||'',postal:d.postal||''}});
   const [ref,setRef]=useState('');const [busy,setBusy]=useState(false);const [err,setErr]=useState('');const tokRef=useRef(null);const requestQuote=useMutation(api.holm.requestQuote);
+  // Store credit: pre-set from the Hub setting, changeable for this request.
+  const credit=useQuery(api.holmCredit.myCredit,ctx.me.signedIn?{}:'skip');const [useCredit,setUseCredit]=useState(false);useEffect(()=>{if(credit)setUseCredit(credit.autoApply)},[credit?.autoApply]);
   useEffect(()=>{const {name,email,phone,business,line1,city,state,postal,recv}=del;store('del',{name,email,phone,business,line1,city,state,postal,recv})},[del]);
   useEffect(()=>{const k=e=>e.key==='Escape'&&ctx.setTray(false);addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[]);
   useEffect(()=>{setStep(0)},[tray.active]);
@@ -1624,7 +1626,7 @@ function Tray({ctx}){
   const submit=async()=>{const m=contactErr();if(m){setStep(1);setErr(m);return}setBusy(true);setErr('');
     try{tokRef.current=tokRef.current||Array.from(crypto.getRandomValues(new Uint8Array(24)),b=>'abcdefghijklmnopqrstuvwxyz0123456789'[b%36]).join('');
       const merged=[];items.forEach(i=>{const ex=merged.find(x=>x.productId===i.p.lid&&x.variantId===i.p.vid);if(ex)ex.quantity+=i.qty;else merged.push({productId:i.p.lid,variantId:i.p.vid,quantity:i.qty,zone:i.zone})});
-      const r=await requestQuote({token:tokRef.current,projectName:proj.name,name:del.name.trim(),email:del.email.trim(),phone:del.phone.trim(),business:del.business.trim(),address:{line1:del.line1.trim(),city:del.city.trim(),state:del.state.trim(),postalCode:del.postal.trim(),country:'US'},timing:del.when,date:del.date,receiving:del.recv,notes:(del.teamNote+(del.notes?'\nAccess: '+del.notes:'')).trim(),website:'',items:merged,refCode:activeRef()?.code,visitorId:visitorId()});
+      const r=await requestQuote({token:tokRef.current,projectName:proj.name,name:del.name.trim(),email:del.email.trim(),phone:del.phone.trim(),business:del.business.trim(),address:{line1:del.line1.trim(),city:del.city.trim(),state:del.state.trim(),postalCode:del.postal.trim(),country:'US'},timing:del.when,date:del.date,receiving:del.recv,notes:(del.teamNote+(del.notes?'\nAccess: '+del.notes:'')).trim(),website:'',items:merged,refCode:activeRef()?.code,visitorId:visitorId(),...(useCredit&&credit?.balanceCents>0?{useCredit:true}:{})});
       tokRef.current=null;setRef(r.reference);setStep(3)}
     catch(e){setErr(e?.data||String(e?.message||'').replace(/^.*Uncaught Error: /,'').split('\n')[0]||'Something went wrong. Try again.')}finally{setBusy(false)}};
   const fld=(k,label,ph,type='text',auto)=>html`<div><label className="lbl" htmlFor=${'tv-'+k}>${label}</label><input id=${'tv-'+k} className="field" type=${type} autoComplete=${auto} value=${del[k]} placeholder=${ph} onInput=${e=>{setDel({...del,[k]:e.target.value});setErr('')}}/></div>`;
@@ -1715,7 +1717,8 @@ function Tray({ctx}){
           ${tierOn&&html`<div className="sumrow" style=${{color:'var(--ok)'}}><span>Project pricing · ${pct(tier.rate)}</span><span>−${fmt(tierSave,true)}</span></div>`}
           <div className="sumrow"><span>Delivery · flat rate</span><span>${fmt(deliveryOf(sub),true)}</span></div>
           <div className="sumrow"><span>Sales tax</span><span>${tray.taxExempt?'Exempt':'On final quote'}</span></div>
-          <div className="sumrow total"><span>Estimated total</span><span>${fmt(sub+deliveryOf(sub),true)}</span></div>
+          ${credit?.balanceCents>0&&html`<label className="sumrow" style=${{cursor:'pointer'}}><span><input type="checkbox" checked=${useCredit} onChange=${e=>setUseCredit(e.target.checked)} style=${{marginRight:8}}/>Use my ${fmt(credit.balanceCents/100,true)} credit</span><span>${useCredit?'−'+fmt(Math.min(credit.balanceCents/100,sub),true):''}</span></label>`}
+          <div className="sumrow total"><span>Estimated total</span><span>${fmt(sub-(useCredit&&credit?Math.min(credit.balanceCents/100,sub):0)+deliveryOf(sub),true)}</span></div>
           <p className="help" style=${{marginTop:8}}>One delivery fee per order: ${deliveryText()}.</p>
         </div>
         ${step<2&&html`<button className="btn btn-ink btn-lg" disabled=${!items.length} onClick=${()=>{if(step===1){const m=contactErr();if(m){setErr(m);return}}setErr('');setStep(step+1)}}>${step===0?'Continue to delivery':'Review request'} ${I('arrow',{width:17})}</button>`}
@@ -3242,6 +3245,7 @@ function PartnerPanel({ctx}){
       <div className="panel" style=${{display:'grid',gap:8,alignContent:'start'}}><h3>Referrals and credit</h3>
         ${ph.referrals.length?ph.referrals.map((r,i)=>html`<div key=${i} className="sumrow" style=${{borderBottom:'1px solid var(--line)',padding:'8px 0'}}><span>${r.name}<br/><small className="mute">${status[r.status]}</small></span><span>${r.creditCents?money(r.creditCents):''}</span></div>`):html`<p className="help" style=${{margin:0}}>Businesses who sign up through your link appear here.</p>`}
         <div className="sumrow total"><span>Store credit</span><span>${money(ph.creditCents)}</span></div>
+        <${CreditToggle} ctx=${ctx}/>
         ${ph.payouts.length>0&&html`<h3 style=${{marginTop:10}}>Payouts</h3>${ph.payouts.map((x,i)=>html`<div key=${i} className="sumrow"><span>${new Date(x.paidAt).toLocaleDateString()}<br/><small className="mute">${x.reference}</small></span><span>${money(x.amountCents)}</span></div>`)}`}
       </div>
     </div>
@@ -3280,6 +3284,13 @@ function Hub({ctx}){
     <${PartnerPanel} ctx=${ctx}/>
     <div style=${{height:40}}></div>
   </main>`;
+}
+// The store-credit setting: apply it to the next order automatically, or save it up.
+function CreditToggle({ctx}){
+  const c=useQuery(api.holmCredit.myCredit);const set=useMutation(api.holmCredit.setCreditAutoApply);
+  if(!c)return null;
+  return html`<label className="toggle" style=${{marginTop:6}}><span>${c.autoApply?'Apply to my next order':'Save it for later'}<br/><small className="mute">Credit comes off merchandise only, never delivery or tax, and is never paid out as cash.</small></span>
+    <input type="checkbox" className="sr" checked=${c.autoApply} onChange=${e=>set({on:e.target.checked}).catch(x=>ctx.toast(errText(x)))}/><span className=${'sw'+(c.autoApply?' on':'')}></span></label>`;
 }
 /* ================= PARTNER TERMS ================= */
 // Written from the program rules (lib/holmPartners), so the terms can't promise what the code doesn't do.

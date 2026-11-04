@@ -113,6 +113,29 @@ describe('Stripe online payment verification', () => {
       { idempotencyKey: 'house:project:v2:send' }
     );
   });
+  it('takes store credit off the invoice as its own line, never more than the merchandise', async () => {
+    vi.stubEnv('COMMERCE_INVOICE_DUE_DAYS', '3');
+    stripe.invoiceItems.create.mockClear();
+    const p = {
+      _id: 'project', revision: 3, status: 'accepted', name: 'Buyer', email: 'buyer@example.com', phone: '5551234567', channel: 'house', notes: '',
+      address: { line1: '1 Main St', city: 'Austin', state: 'TX', postalCode: '78701', country: 'US' },
+      lines: [{ name: 'Chair', variantName: 'Walnut', quantity: 1, unitPrice: 10000 }],
+      delivery: 2000, tax: 0, creditCents: 15000,
+    };
+    stripe.customers.create.mockResolvedValue({ id: 'cus_test' });
+    stripe.invoices.create.mockResolvedValue({ id: 'in_test' });
+    // lines 10,000 + delivery 2,000 − credit 10,000 (capped at the merchandise) = 2,000
+    stripe.invoices.retrieve.mockResolvedValue({ ...invoice, status: 'draft', total: 2000 });
+    stripe.invoices.listLineItems.mockResolvedValue({ data: [], has_more: false });
+    stripe.invoices.finalizeInvoice.mockResolvedValue({ ...invoice, status: 'open', hosted_invoice_url: 'https://invoice.stripe.com/test' });
+    const c = { runQuery: vi.fn(async () => ({})), runMutation: vi.fn(async () => p) };
+    const send = (sendInvoice as unknown as { _handler: (ctx: any, args: any) => Promise<any> })._handler;
+    await send(c, { id: 'project', revision: 3 });
+    expect(stripe.invoiceItems.create).toHaveBeenCalledWith(
+      expect.objectContaining({ description: 'Store credit', quantity: 1, unit_amount_decimal: '-10000' }),
+      { idempotencyKey: 'house:project:v3:line:2' }
+    );
+  });
   it('passes only the verified amount, invoice revision and payment IDs to fulfillment', async () => {
     const c = ctx();
     await handler(c, { invoiceId: 'in_test' });

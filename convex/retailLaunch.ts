@@ -1,4 +1,6 @@
 import { v } from 'convex/values';
+import { viewer } from './holmAccess';
+import { reserveCredit } from './holmCredit';
 import { internalMutation, internalQuery, query } from './_generated/server';
 import { paginationOptsValidator } from 'convex/server';
 import { checkQuantity } from '../lib/commerce';
@@ -56,8 +58,12 @@ export const createSnapshot = internalMutation({
     ),
     refCode: v.optional(v.string()),
     visitorId: v.optional(v.string()),
+    useCredit: v.optional(v.boolean()),
   },
-  handler: async (ctx, { items, refCode, visitorId }) => {
+  handler: async (ctx, { items, refCode, visitorId, useCredit }) => {
+    // Signed in (the cart sends the member's token): their credit can be used, and their own
+    // partner link never counts.
+    const me = await viewer(ctx);
     if (!items.length || items.length > 30) throw new Error('Choose between 1 and 30 items.');
     const lines = [];
     const seen = new Set<string>();
@@ -102,7 +108,7 @@ export const createSnapshot = internalMutation({
     const subtotal = Math.round(lines.reduce((sum, l) => sum + l.price * l.quantity * 100, 0));
     // A partner link this visitor followed in the last 30 days. The buyer's email isn't known
     // yet, so self-referral is checked again when the payment completes.
-    const attr = await resolveAttribution(ctx, refCode, visitorId, { email: '' });
+    const attr = await resolveAttribution(ctx, refCode, visitorId, { userId: me?.userId, email: me?.email.toLowerCase() ?? '' });
     const id = await ctx.db.insert('retailCheckouts', {
       items: lines,
       subtotal,
@@ -112,7 +118,10 @@ export const createSnapshot = internalMutation({
         ? { partner: { partnerId: attr.partnerId, refCode: attr.refCode, visitorId, channel: attr.channel, ...(attr.board ? { board: attr.board } : {}) } }
         : {}),
     });
-    return { id, items: lines, subtotal, shipping };
+    // Credit comes off merchandise only, never delivery or tax.
+    const creditCents = me && useCredit ? await reserveCredit(ctx, me.userId, subtotal, `checkout:${id}`) : 0;
+    if (creditCents > 0) await ctx.db.patch(id, { creditCents, creditUserId: me!.userId });
+    return { id, items: lines, subtotal, shipping, creditCents };
   },
 });
 export const snapshot = internalQuery({
