@@ -38,6 +38,76 @@ export function commissionCents(baseCents: number, rateBps: number) {
 }
 
 export type HolmTier = keyof typeof HOLM_PARTNERS.tiers;
+export const HOLM_TIER_ORDER: readonly HolmTier[] = ['base', 'active', 'top', 'elite'];
+
+// ---------- rates by product type (spec section 5A) ----------
+// Margins differ by what's sold, so each tier has a rate per product type. The furniture
+// column is the original single rate (HOLM_PARTNERS.tiers).
+export type ProductType = 'furniture' | 'decor' | 'clothing';
+export const PRODUCT_TYPES: readonly ProductType[] = ['furniture', 'decor', 'clothing'];
+export const HOLM_RATES: Record<HolmTier, Record<ProductType, number>> = {
+  base: { furniture: HOLM_PARTNERS.tiers.base, decor: 800, clothing: 500 },
+  active: { furniture: HOLM_PARTNERS.tiers.active, decor: 900, clothing: 600 },
+  top: { furniture: HOLM_PARTNERS.tiers.top, decor: 1000, clothing: 700 },
+  elite: { furniture: HOLM_PARTNERS.tiers.elite, decor: 1200, clothing: 800 },
+};
+/** Commission on a line never takes more than this share of our profit on it. */
+export const MARGIN_GUARD_BPS = 4000;
+/** Card processing on the order: 2.9% plus 30¢, shared across lines by value. */
+export const CARD_FEE = { bps: 290, fixedCents: 30 } as const;
+
+export type CommissionLineInput = {
+  key: string;
+  type: ProductType;
+  /** Unit price the customer paid, in cents. */
+  unitCents: number;
+  quantity: number;
+  /** Our landed cost for one unit (supplier, shipping, supplier fees), or null when unknown. */
+  unitCostCents: number | null;
+};
+export type CommissionLine = {
+  key: string;
+  type: ProductType;
+  baseCents: number;
+  rateBps: number;
+  amountCents: number;
+  /** True when the margin guard lowered the amount. */
+  capped: boolean;
+  /** False when we had no cost for the line, so the base rate for its type was used. */
+  costKnown: boolean;
+};
+
+/**
+ * Commission on an order, line by line: the tier's rate for each line's product type, capped
+ * so it never exceeds 40% of our profit on that line (price minus landed cost and that line's
+ * share of card fees). A line with no known cost earns the base rate for its type.
+ */
+export function lineCommissions(lines: CommissionLineInput[], tier: HolmTier, otherChargesCents = 0) {
+  const valid = lines.filter((l) => Number.isFinite(l.unitCents) && l.unitCents > 0 && Number.isInteger(l.quantity) && l.quantity > 0);
+  const linesCents = valid.reduce((t, l) => t + l.unitCents * l.quantity, 0);
+  // Card fees are charged on the whole payment (delivery and tax too); each line carries its share.
+  const paymentCents = linesCents + Math.max(0, otherChargesCents || 0);
+  const feeCents = linesCents ? (paymentCents * CARD_FEE.bps) / 10000 + CARD_FEE.fixedCents : 0;
+  const out: CommissionLine[] = valid.map((l) => {
+    const baseCents = l.unitCents * l.quantity;
+    const costKnown = l.unitCostCents !== null && Number.isFinite(l.unitCostCents) && l.unitCostCents > 0;
+    const rateBps = Math.min(HOLM_RATES[costKnown ? tier : 'base'][l.type], HOLM_PARTNERS.ceilingBps);
+    const byRate = commissionCents(baseCents, rateBps);
+    if (!costKnown) return { key: l.key, type: l.type, baseCents, rateBps, amountCents: byRate, capped: false, costKnown };
+    const fee = (feeCents * baseCents) / linesCents;
+    const profit = baseCents - l.unitCostCents! * l.quantity - fee;
+    const cap = Math.max(0, Math.floor((profit * MARGIN_GUARD_BPS) / 10000));
+    const amountCents = Math.min(byRate, cap);
+    return { key: l.key, type: l.type, baseCents, rateBps, amountCents, capped: amountCents < byRate, costKnown };
+  });
+  return {
+    lines: out,
+    baseCents: out.reduce((t, l) => t + l.baseCents, 0),
+    amountCents: out.reduce((t, l) => t + l.amountCents, 0),
+  };
+}
+
+
 const pct = (bps: number) => `${bps / 100}%`;
 const dollars = (cents: number) => `$${(cents / 100).toLocaleString('en-US')}`;
 

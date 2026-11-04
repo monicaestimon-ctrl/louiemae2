@@ -6,7 +6,8 @@ import { internal } from './_generated/api';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { isPartner, isVerified, profileOf, requireUser, viewer } from './holmAccess';
 import { partnerTier } from './holmTables';
-import { HOLM_PARTNERS, REF_CODE, commissionCents, holmChannel } from '../lib/holmPartners';
+import { HOLM_PARTNERS, HOLM_RATES, REF_CODE, holmChannel, lineCommissions, type HolmTier } from '../lib/holmPartners';
+import { houseUnitCosts } from './holm';
 
 const DAY = 86_400_000;
 
@@ -41,6 +42,7 @@ export const join = mutation({
         createdAt: now,
         ...patch,
       });
+    await ctx.db.insert('holmTierChanges', { partnerId: me.userId, tier: 'base', at: now, reason: 'joined' });
     return code;
   },
 });
@@ -127,6 +129,22 @@ export async function markReferralVerified(ctx: MutationCtx, userId: Id<'users'>
   if (ref?.status === 'signed_up') await ctx.db.patch(ref._id, { status: 'verified' });
 }
 
+/**
+ * The tier a partner held at a moment (for commission, the moment the order was paid): the
+ * latest change at or before it; before the first recorded change, the tier that change moved
+ * from; with no history at all, their current tier.
+ */
+export async function partnerTierAt(ctx: MutationCtx, partnerId: Id<'users'>, at: number, current: HolmTier): Promise<HolmTier> {
+  const latest = await ctx.db
+    .query('holmTierChanges')
+    .withIndex('by_partner', (q) => q.eq('partnerId', partnerId).lte('at', at))
+    .order('desc')
+    .first();
+  if (latest) return latest.tier;
+  const first = await ctx.db.query('holmTierChanges').withIndex('by_partner', (q) => q.eq('partnerId', partnerId)).first();
+  return first ? first.from ?? 'base' : current;
+}
+
 // ---------- the Partner Hub ----------
 const sum = (rows: Doc<'holmCommissions'>[], status: Doc<'holmCommissions'>['status']) =>
   rows.filter((r) => r.status === status).reduce((t, r) => t + r.amountCents, 0);
@@ -154,6 +172,7 @@ export const hub = query({
       refCode: p.refCode!,
       tier,
       rateBps: HOLM_PARTNERS.tiers[tier],
+      rates: HOLM_RATES[tier],
       w9Status: p.w9Status ?? 'none',
       clicks30: clicks.length,
       byChannel,
@@ -228,9 +247,12 @@ export const adminPartners = query({
 export const adminSetPartner = mutation({
   args: { userId: v.id('users'), tier: v.optional(partnerTier), w9Approved: v.optional(v.boolean()) },
   handler: async (ctx, a) => {
-    await requireCjAdminIdentity(ctx);
+    const admin = await requireCjAdminIdentity(ctx);
     const p = await profileOf(ctx, a.userId);
     if (!p || !isPartner(p)) throw new Error('Partner not found.');
+    const from = p.partnerTier ?? 'base';
+    if (a.tier && a.tier !== from)
+      await ctx.db.insert('holmTierChanges', { partnerId: a.userId, tier: a.tier, from, at: Date.now(), reason: 'set by the team', by: admin.email });
     await ctx.db.patch(p._id, {
       ...(a.tier ? { partnerTier: a.tier } : {}),
       ...(a.w9Approved !== undefined ? { w9Status: a.w9Approved ? ('approved' as const) : undefined } : {}),
@@ -279,6 +301,9 @@ export const reconcile = internalMutation({
       .query('holmQuoteRequests')
       .withIndex('by_partner_state', (q) => q.eq('partnerState', 'awaiting_payment'))
       .take(100); // least recently checked first, so unpaid quotes never block newer ones
+    // Pricing a paid order reads its products and listings, so a run prices at most this many;
+    // the rest stay awaiting payment (and first in line) for the next run.
+    let priced = 0;
     for (const r of waiting) {
       const project = await ctx.db.get(r.commerceProjectId);
       if (!project || project.status === 'cancelled' || project.status === 'payment_review') {
@@ -291,18 +316,34 @@ export const reconcile = internalMutation({
         await ctx.db.patch(r._id, expired ? { partnerState: 'void' } : { partnerCheckedAt: now });
         continue;
       }
+      if (priced >= 25) continue;
+      priced++;
       const partner = await profileOf(ctx, r.partnerId);
-      const rate = HOLM_PARTNERS.tiers[partner?.partnerTier ?? 'base'];
-      const base = project.lines.reduce((t, l) => t + l.unitPrice * l.quantity, 0);
-      const amount = commissionCents(base, rate);
-      if (amount > 0)
+      const tier = await partnerTierAt(ctx, r.partnerId, project.paidAt, partner?.partnerTier ?? 'base');
+      // House orders are furniture; each line is held to 40% of our profit on it.
+      const costs = await houseUnitCosts(ctx, project.lines);
+      const result = lineCommissions(
+        project.lines.map((l, i) => ({
+          key: `${i}:${l.productId}:${l.variantId}`,
+          type: 'furniture' as const,
+          unitCents: l.unitPrice,
+          quantity: l.quantity,
+          unitCostCents: costs.get(`${l.productId}:${l.variantId}`) ?? null,
+        })),
+        tier,
+        (project.delivery ?? 0) + (project.tax ?? 0)
+      );
+      if (result.amountCents > 0)
         await ctx.db.insert('holmCommissions', {
           partnerId: r.partnerId,
           quoteRequestId: r._id,
           commerceProjectId: r.commerceProjectId,
-          baseCents: base,
-          rateBps: Math.min(rate, HOLM_PARTNERS.ceilingBps),
-          amountCents: amount,
+          baseCents: result.baseCents,
+          // the rate actually earned across the order; each line keeps its own rate
+          rateBps: result.baseCents ? Math.round((result.amountCents * 10000) / result.baseCents) : 0,
+          amountCents: result.amountCents,
+          tier,
+          lines: result.lines,
           status: 'pending',
           clearsAt: project.paidAt + HOLM_PARTNERS.clearingDays * DAY,
           createdAt: now,

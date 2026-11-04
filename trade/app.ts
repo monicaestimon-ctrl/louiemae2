@@ -3229,7 +3229,7 @@ function PartnerPanel({ctx}){
   const money=c=>fmt(c/100,true);
   const status={signed_up:'Signed up',verified:'Verified, awaiting first order',credited:'Credit earned'};
   return html`<section style=${{display:'grid',gap:18,marginBottom:24}}>
-    <div className="ph-head" style=${{margin:0}}><div><h2 style=${{fontSize:38}}>Partner Hub</h2><p className="mute">${(ph.rateBps/100)}% commission on retail orders · ${ph.tier[0].toUpperCase()+ph.tier.slice(1)} tier</p></div></div>
+    <div className="ph-head" style=${{margin:0}}><div><h2 style=${{fontSize:38}}>Partner Hub</h2><p className="mute">${(ph.rateBps/100)}% commission on furniture · ${ph.tier[0].toUpperCase()+ph.tier.slice(1)} tier</p><p className="help" style=${{margin:'4px 0 0'}}>Commission on each piece is capped at 40% of our profit on it.</p></div></div>
     <div className="kpis">${[['Link visits · 30 days',ph.clicks30],['Quote requests from your links',ph.quotes],['Pending',money(ph.pendingCents)],['Cleared, ready to pay',money(ph.clearedCents)],['Paid',money(ph.paidCents)]].map(([l,v])=>html`<div key=${l} className="kpi"><span className="mono mute">${l}</span><div className="v">${v}</div></div>`)}</div>
     <div className="g2">
       <div className="panel" style=${{display:'grid',gap:10,alignContent:'start'}}><h3>Your link</h3>
