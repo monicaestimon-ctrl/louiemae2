@@ -204,44 +204,63 @@ const overrideActive = (p: Doc<'holmProfiles'>, now: number) => !!p.tierOverride
  * end date. Orders already paid keep the tier they were paid at.
  */
 export const updateTiers = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const now = Date.now();
-    const partners = await ctx.db.query('holmProfiles').withIndex('by_partner_status', (q) => q.eq('partnerStatus', 'active')).take(1000);
-    for (const p of partners) {
-      if (overrideActive(p, now)) continue;
-      const current = p.partnerTier ?? 'base';
-      const patch: Partial<Doc<'holmProfiles'>> = {};
-      if (p.tierOverride) patch.tierOverride = undefined; // ended: automatic tiers resume
-      const sales = await salesLast12Months(ctx, p.userId, now);
-      const earned = tierForSales(sales);
-      let next = current;
-      if (tierRank(earned) > tierRank(current)) next = earned;
-      else if (quarterOf(now) !== quarterOf(p.tierDownCheckedAt ?? 0)) {
-        patch.tierDownCheckedAt = now;
-        if (tierRank(earned) < tierRank(current)) next = HOLM_TIER_ORDER[tierRank(current) - 1];
-      }
-      if (next !== current) {
-        patch.partnerTier = next;
-        const up = tierRank(next) > tierRank(current);
-        await ctx.db.insert('holmTierChanges', {
-          partnerId: p.userId,
-          tier: next,
-          from: current,
-          at: now,
-          reason: `${up ? 'moved up' : 'quarterly review'}: $${Math.round(sales / 100).toLocaleString('en-US')} in sales over 12 months`,
-        });
-        const user = await ctx.db.get(p.userId);
-        if (up && typeof user?.email === 'string')
-          await ctx.scheduler.runAfter(0, internal.holmEmail.send, {
-            key: `tier:${p.userId}:${next}:${now}`,
-            to: user.email,
-            subject: `You've reached ${TIER_NAMES[next]} in the Louie Mae partner program`,
-            text: `Your sales through your links passed $${Math.round(sales / 100).toLocaleString('en-US')} over the last 12 months, so you're now ${TIER_NAMES[next]}: ${(HOLM_RATES[next].furniture / 100)}% on furniture, ${(HOLM_RATES[next].decor / 100)}% on home décor and ${(HOLM_RATES[next].clothing / 100)}% on clothing, on orders paid from today.\n\nPartner terms: https://www.louiemae.com/trade#partner-terms`,
-          });
-      }
-      if (Object.keys(patch).length) await ctx.db.patch(p._id, { ...patch, updatedAt: now });
+  args: { cursor: v.optional(v.string()), now: v.optional(v.number()) },
+  handler: async (ctx, a) => {
+    // One page of partners per run, and one small job per partner, so no single transaction
+    // reads more than one partner's 12 months of orders. Every page uses the same moment.
+    const now = a.now ?? Date.now();
+    const page = await ctx.db
+      .query('holmProfiles')
+      .withIndex('by_partner_status', (q) => q.eq('partnerStatus', 'active'))
+      .paginate({ cursor: a.cursor ?? null, numItems: 50 });
+    for (const p of page.page) await ctx.scheduler.runAfter(0, internal.holmPartners.updatePartnerTier, { profileId: p._id, now });
+    if (!page.isDone) await ctx.scheduler.runAfter(0, internal.holmPartners.updateTiers, { cursor: page.continueCursor, now });
+  },
+});
+
+/** The nightly tier rules for one partner (see updateTiers). */
+export const updatePartnerTier = internalMutation({
+  args: { profileId: v.id('holmProfiles'), now: v.number() },
+  handler: async (ctx, { profileId, now }) => {
+    const p = await ctx.db.get(profileId);
+    if (!p || !isPartner(p)) return;
+    // Kept on the profile for the admin list, which shows every partner at once.
+    const sales = await salesLast12Months(ctx, p.userId, now);
+    // Leaves updatedAt alone: the nightly pages walk partners in updatedAt order.
+    const patch: Partial<Doc<'holmProfiles'>> = p.sales12Cents === sales ? {} : { sales12Cents: sales };
+    if (overrideActive(p, now)) {
+      if (Object.keys(patch).length) await ctx.db.patch(p._id, patch);
+      return;
     }
+    const current = p.partnerTier ?? 'base';
+    if (p.tierOverride) patch.tierOverride = undefined; // ended: automatic tiers resume
+    const earned = tierForSales(sales);
+    let next = current;
+    if (tierRank(earned) > tierRank(current)) next = earned;
+    else if (quarterOf(now) !== quarterOf(p.tierDownCheckedAt ?? 0)) {
+      patch.tierDownCheckedAt = now;
+      if (tierRank(earned) < tierRank(current)) next = HOLM_TIER_ORDER[tierRank(current) - 1];
+    }
+    if (next !== current) {
+      patch.partnerTier = next;
+      const up = tierRank(next) > tierRank(current);
+      await ctx.db.insert('holmTierChanges', {
+        partnerId: p.userId,
+        tier: next,
+        from: current,
+        at: now,
+        reason: `${up ? 'moved up' : 'quarterly review'}: $${Math.round(sales / 100).toLocaleString('en-US')} in sales over 12 months`,
+      });
+      const user = await ctx.db.get(p.userId);
+      if (up && typeof user?.email === 'string')
+        await ctx.scheduler.runAfter(0, internal.holmEmail.send, {
+          key: `tier:${p.userId}:${next}:${now}`,
+          to: user.email,
+          subject: `You've reached ${TIER_NAMES[next]} in the Louie Mae partner program`,
+          text: `Your sales through your links passed $${Math.round(sales / 100).toLocaleString('en-US')} over the last 12 months, so you're now ${TIER_NAMES[next]}: ${(HOLM_RATES[next].furniture / 100)}% on furniture, ${(HOLM_RATES[next].decor / 100)}% on home décor and ${(HOLM_RATES[next].clothing / 100)}% on clothing, on orders paid from today.\n\nPartner terms: https://www.louiemae.com/trade#partner-terms`,
+        });
+    }
+    if (Object.keys(patch).length) await ctx.db.patch(p._id, patch);
   },
 });
 
@@ -350,7 +369,7 @@ export const adminPartners = query({
           email: typeof user?.email === 'string' ? user.email : '',
           refCode: p.refCode,
           tier: p.partnerTier ?? 'base',
-          sales12Cents: await salesLast12Months(ctx, p.userId),
+          sales12Cents: p.sales12Cents ?? 0, // as of the last nightly update
           override: p.tierOverride && overrideActive(p, Date.now()) ? { reason: p.tierOverride.reason, until: p.tierOverride.until ?? null } : null,
           w9Status: p.w9Status ?? 'none',
           w9Url: p.w9FileId ? await ctx.storage.getUrl(p.w9FileId) : null,

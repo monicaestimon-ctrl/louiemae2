@@ -59,6 +59,7 @@ export const holmTables = {
     // tier update leaves this partner alone.
     tierOverride: v.optional(v.object({ reason: v.string(), until: v.optional(v.number()), by: v.string(), at: v.number() })),
     tierDownCheckedAt: v.optional(v.number()), // the last quarterly check for moving down
+    sales12Cents: v.optional(v.number()), // 12-month attributed sales, as of the last nightly update
     refCode: v.optional(v.string()),
     w9Status: v.optional(v.union(v.literal('pending'), v.literal('approved'))),
     w9FileId: v.optional(v.id('_storage')),
