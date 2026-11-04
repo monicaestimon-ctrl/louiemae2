@@ -3560,7 +3560,8 @@ function SourcingAdmin({ctx}){
   </div>`;
 }
 function PricingAdmin({ctx}){
-  const rows=useQuery(api.holm.adminPricing);const [only,setOnly]=useState(true);
+  const rows=useQuery(api.holm.adminPricing);const [only,setOnly]=useState(true);const exclude=useMutation(api.holmAdmin.addExclusion);
+  const excludePiece=r=>{const reason=prompt(`Exclude ${r.name} from partner commission? Give a reason:`);if(reason&&reason.trim())exclude({kind:'product',value:r.productId,reason}).then(()=>ctx.toast(`${r.name} excluded from commission`)).catch(e=>ctx.toast(errText(e)))};
   if(rows===undefined)return html`<p className="help" style=${{marginTop:18}}>Loading…</p>`;
   const flagged=rows.filter(r=>r.flags.length);const list=only?flagged:rows;const m=b=>b==null?'—':(b/100).toFixed(1)+'%';const $=c=>fmt(c/100,true);
   return html`<div style=${{marginTop:18,display:'grid',gap:14}}>
@@ -3572,7 +3573,7 @@ function PricingAdmin({ctx}){
         <td style=${{padding:'8px 10px',borderBottom:'1px solid var(--line)'}}>${r.name}${r.variant&&r.variant!=='Default'?html`<span className="mute"> · ${r.variant}</span>`:''}</td>
         <td className="mono" style=${{padding:'8px 10px',borderBottom:'1px solid var(--line)'}}>${r.sku}</td>
         ${[r.costCents?$(r.costCents):'Missing',$(r.retailCents),$(r.tradeCents),$(r.projectCents),m(r.tradeMarginBps),m(r.projectMarginBps),m(r.afterEliteBps)].map((v,i)=>html`<td key=${i} className="num" style=${{padding:'8px 10px',borderBottom:'1px solid var(--line)',whiteSpace:'nowrap'}}>${v}</td>`)}
-        <td style=${{padding:'8px 10px',borderBottom:'1px solid var(--line)',color:r.flags.length?'var(--cognac)':'inherit'}}>${r.flags.join(' · ')||'OK'}</td></tr>`)}</tbody></table></div>`
+        <td style=${{padding:'8px 10px',borderBottom:'1px solid var(--line)',color:r.flags.length?'var(--cognac)':'inherit'}}>${r.flags.join(' · ')||'OK'} <button className="lnk" style=${{marginLeft:6}} onClick=${()=>excludePiece(r)}>Exclude from commission</button></td></tr>`)}</tbody></table></div>`
       :html`<div className="empty"><h3>Nothing flagged</h3><p>Every piece keeps the full trade discount above the margin floor.</p></div>`}
   </div>`;
 }
@@ -3603,7 +3604,7 @@ function ExclusionsAdmin({ctx}){
     <div style=${{display:'grid',gap:10,marginTop:10}}>
       <p className="help" style=${{margin:0}}>Excluded products earn no partner commission on orders paid from now on. A category matches any listing whose category contains the text.</p>
       ${(rows||[]).map(r=>html`<div key=${r.id} className="sumrow"><span>${r.kind==='product'?'Product':'Category'}: <b style=${{fontWeight:500}}>${r.label}</b><br/><small className="mute">${r.reason} · ${r.by}</small></span><button className="lnk" onClick=${()=>remove({id:r.id}).catch(e=>ctx.toast(errText(e)))}>Remove</button></div>`)}
-      <div className="row" style=${{flexWrap:'wrap',gap:8}}><select className="field" style=${{maxWidth:150}} aria-label="Exclude by" value=${kind} onChange=${e=>setKind(e.target.value)}><option value="category">Category</option><option value="product">Product id</option></select>
+      <div className="row" style=${{flexWrap:'wrap',gap:8}}><select className="field" style=${{maxWidth:150}} aria-label="Exclude by" value=${kind} onChange=${e=>setKind(e.target.value)}><option value="category">Category</option><option value="product">Product id (or use the Pricing tab)</option></select>
         <input className="field" style=${{maxWidth:240}} placeholder=${kind==='product'?'Product id':'e.g. clearance'} aria-label="What to exclude" value=${value} onInput=${e=>setValue(e.target.value)}/>
         <input className="field" style=${{maxWidth:260}} placeholder="Reason (required)" aria-label="Reason" value=${reason} onInput=${e=>setReason(e.target.value)}/>
         <button className="btn btn-line" disabled=${!value.trim()||!reason.trim()} onClick=${save}>Exclude</button></div></div></details>`;
@@ -3611,7 +3612,9 @@ function ExclusionsAdmin({ctx}){
 // The last 12 months of commission as a CSV file.
 function CommissionsCsv({ctx}){
   const [on,setOn]=useState(false);const data=useQuery(api.holmAdmin.commissionsCsv,on?{}:'skip');
-  useEffect(()=>{if(on&&data){const csv=data.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');saveBlob(new Blob([csv],{type:'text/csv'}),`partner-commissions-${new Date().toISOString().slice(0,10)}.csv`);setOn(false);ctx.toast('CSV downloaded')}},[on,data]);
+  // Text that starts like a formula (= + - @, tab, return) is prefixed with ' so a spreadsheet shows it as text; numbers stay numbers.
+  const cell=v=>{let s=String(v);if(typeof v!=='number'&&!/^-?\d+(\.\d+)?$/.test(s)&&/^[=+\-@\t\r]/.test(s))s="'"+s;return `"${s.replace(/"/g,'""')}"`};
+  useEffect(()=>{if(on&&data){const csv=data.rows.map(r=>r.map(cell).join(',')).join('\n');saveBlob(new Blob([csv],{type:'text/csv'}),`partner-commissions-${new Date().toISOString().slice(0,10)}.csv`);setOn(false);ctx.toast(data.complete?'CSV downloaded':'CSV downloaded, but it is incomplete: there are more partners or rows than one export holds')}},[on,data]);
   return html`<button className="btn btn-line btn-sm" disabled=${on} onClick=${()=>setOn(true)}>${on?'Preparing…':'Export CSV · 12 months'}</button>`;
 }
 // Setting a tier by hand holds it (with a reason, until an optional end date); the nightly update leaves it alone until then.
@@ -3632,10 +3635,12 @@ function PartnersAdmin({ctx}){
   const run=(p,ok)=>p.then(()=>ctx.toast(ok)).catch(e=>ctx.toast(errText(e)));
   if(rows===undefined)return html`<p className="help" style=${{marginTop:18}}>Loading…</p>`;
   if(!rows.length)return html`<div style=${{display:'grid',gap:14,marginTop:18}}><div className="empty"><h3>No partners yet</h3><p>Accounts that join the partner program appear here.</p></div><${ExclusionsAdmin} ctx=${ctx}/></div>`;
-  const due=rows.filter(p=>p.unpaidCents>=5000);
+  // Payable on the 15th: $50 or more cleared and unpaid, and a way to pay them (Stripe ready
+  // with automatic payouts on, or an approved W-9 for paying by hand).
+  const auto=p=>p.autoPayouts&&p.payouts.ready;const payable=rows.filter(p=>p.unpaidCents>=5000&&(auto(p)||p.w9Approved));const waiting=rows.filter(p=>p.unpaidCents>=5000&&!auto(p)&&!p.w9Approved);
   return html`<div style=${{display:'grid',gap:14,marginTop:18}}>
     <div className="panel row" style=${{justifyContent:'space-between',flexWrap:'wrap',gap:10}}>
-      <span><b style=${{fontWeight:500}}>Due on the 15th: ${fmt(due.reduce((t,p)=>t+p.unpaidCents,0)/100,true)}</b> <span className="mute">· ${due.length} partner${due.length===1?'':'s'} at $50 or more; ${due.filter(p=>p.payouts.ready).length} paid automatically through Stripe</span></span>
+      <span><b style=${{fontWeight:500}}>Cleared and unpaid, due on the 15th: ${fmt(payable.reduce((t,p)=>t+p.unpaidCents,0)/100,true)}</b> <span className="mute">· ${payable.length} partner${payable.length===1?'':'s'}: ${payable.filter(auto).length} through Stripe automatically, ${payable.length-payable.filter(auto).length} by hand${waiting.length?` · ${waiting.length} more waiting on a W-9 or Stripe setup`:''}</span></span>
       <${CommissionsCsv} ctx=${ctx}/></div>
     <${ExclusionsAdmin} ctx=${ctx}/>
     ${rows.map(p=>html`<div key=${p.userId} className="panel" style=${{display:'grid',gap:10}}>

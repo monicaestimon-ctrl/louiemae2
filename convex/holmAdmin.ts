@@ -12,7 +12,8 @@ export const exclusions = query({
   args: {},
   handler: async (ctx) => {
     await requireCjAdminIdentity(ctx);
-    const rows = await ctx.db.query('holmCommissionExclusions').take(500);
+    // Every exclusion in force: the same set the commission code reads.
+    const rows = (await ctx.db.query('holmCommissionExclusions').collect()).filter((r) => r.removedAt === undefined);
     return rows.map((r) => ({ id: r._id, kind: r.kind, label: r.label, reason: r.reason, by: r.by, at: r.at }));
   },
 });
@@ -38,7 +39,9 @@ export const addExclusion = mutation({
       if (value.length < 3) throw new Error('Enter at least three letters of the category.');
       label = value;
     }
-    const existing = await ctx.db.query('holmCommissionExclusions').withIndex('by_kind_value', (q) => q.eq('kind', a.kind).eq('value', value)).first();
+    const existing = (await ctx.db.query('holmCommissionExclusions').withIndex('by_kind_value', (q) => q.eq('kind', a.kind).eq('value', value)).collect()).find(
+      (e) => e.removedAt === undefined
+    );
     if (existing) return existing._id;
     return ctx.db.insert('holmCommissionExclusions', { kind: a.kind, value, label, reason, by: admin.email, at: Date.now() });
   },
@@ -48,7 +51,9 @@ export const removeExclusion = mutation({
   args: { id: v.id('holmCommissionExclusions') },
   handler: async (ctx, a) => {
     await requireCjAdminIdentity(ctx);
-    await ctx.db.delete(a.id);
+    // Kept with its dates: orders paid while it was in place stay excluded.
+    const e = await ctx.db.get(a.id);
+    if (e && e.removedAt === undefined) await ctx.db.patch(e._id, { removedAt: Date.now() });
   },
 });
 
@@ -120,13 +125,19 @@ export const commissionsCsv = query({
   handler: async (ctx) => {
     await requireCjAdminIdentity(ctx);
     const since = Date.now() - 365 * DAY;
-    const partners = await ctx.db.query('holmProfiles').withIndex('by_partner_status', (q) => q.eq('partnerStatus', 'active')).take(500);
+    const PARTNERS = 500, ROWS = 2000;
+    const partners = await ctx.db.query('holmProfiles').withIndex('by_partner_status', (q) => q.eq('partnerStatus', 'active')).take(PARTNERS + 1);
+    let complete = partners.length <= PARTNERS;
     const out: (string | number)[][] = [['Date', 'Partner', 'Code', 'Source', 'Order value', 'Rate %', 'Commission', 'Status', 'Channel', 'Note']];
-    for (const p of partners) {
+    for (const p of partners.slice(0, PARTNERS)) {
       const rows = await ctx.db
         .query('holmCommissions')
         .withIndex('by_partner', (q) => q.eq('partnerId', p.userId).gte('createdAt', since))
-        .take(2000);
+        .take(ROWS + 1);
+      if (rows.length > ROWS) {
+        complete = false;
+        rows.length = ROWS;
+      }
       for (const c of rows)
         out.push([
           new Date(c.createdAt).toISOString().slice(0, 10),
@@ -141,6 +152,7 @@ export const commissionsCsv = query({
           c.note ?? '',
         ]);
     }
-    return out;
+    // Never a file that looks whole when it isn't.
+    return { rows: out, complete };
   },
 });

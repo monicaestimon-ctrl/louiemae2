@@ -131,6 +131,21 @@ describe('partner commission on a louiemae.com order', () => {
     expect(await commissions(t)).toHaveLength(0);
   });
 
+  it('applies an exclusion only to orders paid while it was in place', async () => {
+    const t = convexTest(schema, modules);
+    await setup(t);
+    const excludedAt = await t.run(async (ctx) => {
+      const product = (await ctx.db.query('commerceProducts').first())!;
+      await ctx.db.insert('holmCommissionExclusions', { kind: 'product', value: product._id, label: 'Ansel', reason: 'Thin margin', by: 'team', at: 1_000, removedAt: 2_000 });
+      const { houseUnitCosts } = await import('./holm');
+      const lines = [{ productId: product._id, variantId: 'v1' }];
+      const out: boolean[] = [];
+      for (const at of [500, 1_500, 2_500]) out.push((await houseUnitCosts(ctx as never, lines, 'retail', at)).excluded.has(product._id));
+      return out;
+    });
+    expect(excludedAt).toEqual([false, true, false]); // before, during, after
+  });
+
   it('pays nothing when the buyer email is missing', async () => {
     const t = convexTest(schema, modules);
     const { checkoutId } = await setup(t);

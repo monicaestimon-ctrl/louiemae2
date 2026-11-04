@@ -233,7 +233,8 @@ export const holmTables = {
     label: v.string(), // what the team sees: the product name or the category
     reason: v.string(),
     by: v.string(),
-    at: v.number(),
+    at: v.number(), // applies to orders paid from this moment
+    removedAt: v.optional(v.number()), // and stops applying from this one
   }).index('by_kind_value', ['kind', 'value']),
 
   holmPayouts: defineTable({

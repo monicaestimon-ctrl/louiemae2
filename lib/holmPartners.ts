@@ -98,11 +98,14 @@ export type CommissionLine = {
  * so it never exceeds 40% of our profit on that line (price minus landed cost and that line's
  * share of card fees). A line with no known cost earns the base rate for its type.
  */
-export function lineCommissions(lines: CommissionLineInput[], tier: HolmTier, otherChargesCents = 0) {
+export function lineCommissions(lines: CommissionLineInput[], tier: HolmTier, otherChargesCents = 0, excludedLinesCents = 0) {
   const valid = lines.filter((l) => Number.isFinite(l.unitCents) && l.unitCents > 0 && Number.isInteger(l.quantity) && l.quantity > 0);
   const linesCents = valid.reduce((t, l) => t + l.unitCents * l.quantity, 0);
-  // Card fees are charged on the whole payment (delivery and tax too); each line carries its share.
-  const paymentCents = linesCents + Math.max(0, otherChargesCents || 0);
+  // Card fees are charged on the whole payment (delivery and tax too); each line, including
+  // lines that earn no commission, carries its share by value.
+  const excluded = Math.max(0, excludedLinesCents || 0);
+  const paymentCents = linesCents + excluded + Math.max(0, otherChargesCents || 0);
+  const shareBase = linesCents + excluded;
   const feeCents = linesCents ? (paymentCents * CARD_FEE.bps) / 10000 + CARD_FEE.fixedCents : 0;
   const out: CommissionLine[] = valid.map((l) => {
     const baseCents = l.unitCents * l.quantity;
@@ -110,7 +113,7 @@ export function lineCommissions(lines: CommissionLineInput[], tier: HolmTier, ot
     const rateBps = Math.min(HOLM_RATES[costKnown ? tier : 'base'][l.type], HOLM_PARTNERS.ceilingBps);
     const byRate = commissionCents(baseCents, rateBps);
     if (!costKnown) return { key: l.key, type: l.type, baseCents, rateBps, amountCents: byRate, capped: false, costKnown };
-    const fee = (feeCents * baseCents) / linesCents;
+    const fee = (feeCents * baseCents) / shareBase;
     const profit = baseCents - l.unitCostCents! * l.quantity - fee;
     const cap = Math.max(0, Math.floor((profit * MARGIN_GUARD_BPS) / 10000));
     const amountCents = Math.min(byRate, cap);

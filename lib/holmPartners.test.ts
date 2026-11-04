@@ -90,3 +90,14 @@ describe('product type from category', () => {
     expect(productTypeFor('ashcroft', 'mirror')).toBe('furniture');
   });
 });
+
+describe('lines that earn no commission', () => {
+  it('carry their own share of the card fee', () => {
+    const line = { key: 'a', type: 'decor' as const, unitCents: 3_199, quantity: 1, unitCostCents: 2_300 };
+    const alone = lineCommissions([line], 'elite', 0, 0).lines[0].amountCents;
+    // a big excluded item in the same order takes most of the fee, so this line's cap is not squeezed
+    const withExcluded = lineCommissions([line], 'elite', 0, 100_000).lines[0].amountCents;
+    expect(withExcluded).toBeGreaterThanOrEqual(alone);
+    expect(withExcluded).toBe(lineCommissions([line], 'elite', 0, 0).lines[0].amountCents + (withExcluded - alone));
+  });
+});

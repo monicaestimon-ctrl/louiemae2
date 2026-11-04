@@ -144,12 +144,16 @@ async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>) {
 export async function houseUnitCosts(
   ctx: Ctx,
   lines: { productId: Id<'commerceProducts'>; variantId: string }[],
-  channel: 'house' | 'retail' = 'house'
+  channel: 'house' | 'retail' = 'house',
+  /** The moment of payment: exclusions apply to orders paid while they were in place. */
+  at = Date.now()
 ) {
   const costs = new Map<string, number | null>();
   const types = new Map<string, ProductType>();
   const excluded = new Set<string>();
-  const exclusions = await ctx.db.query('holmCommissionExclusions').take(500);
+  const inForce = (e: { at: number; removedAt?: number }) => e.at <= at && (e.removedAt === undefined || e.removedAt > at);
+  // Category exclusions are a short list; product exclusions are looked up by product below.
+  const categories = (await ctx.db.query('holmCommissionExclusions').withIndex('by_kind_value', (q) => q.eq('kind', 'category')).collect()).filter(inForce);
   for (const productId of new Set(lines.map((l) => l.productId))) {
     const product = await ctx.db.get(productId);
     const listing = await ctx.db
@@ -159,8 +163,11 @@ export async function houseUnitCosts(
     if (!product || !listing) continue;
     types.set(productId, productTypeFor(product.provider, listing.snapshot.category));
     const category = (listing.snapshot.category || '').toLowerCase();
-    if (exclusions.some((e) => (e.kind === 'product' ? e.value === productId : !!e.value && category.includes(e.value.toLowerCase()))))
-      excluded.add(productId);
+    const byProduct = await ctx.db
+      .query('holmCommissionExclusions')
+      .withIndex('by_kind_value', (q) => q.eq('kind', 'product').eq('value', productId))
+      .collect();
+    if (byProduct.some(inForce) || categories.some((e) => !!e.value && category.includes(e.value.toLowerCase()))) excluded.add(productId);
     const { linked, rate } = await pricingParts(ctx, product, listing);
     for (const route of listing.fulfillment ?? []) {
       const cost = costCents(product, route, linked, variantFreight(route, rate).cents);
@@ -243,7 +250,8 @@ export const adminPricing = query({
         // Retail margin left after the top (Elite) commission rate, held to 40% of profit.
         const type = productTypeFor(priced.product.provider, listing.snapshot.category);
         const profit = x.cost > 0 ? (x.retail * marginBps(x.retail, x.cost)) / 10000 : 0;
-        const elite = x.cost > 0 ? Math.min((x.retail * HOLM_RATES.elite[type]) / 10000, (profit * MARGIN_GUARD_BPS) / 10000) : 0;
+        // never below zero: a line with no profit earns no commission (as in lineCommissions)
+        const elite = x.cost > 0 ? Math.max(0, Math.min((x.retail * HOLM_RATES.elite[type]) / 10000, (profit * MARGIN_GUARD_BPS) / 10000)) : 0;
         const afterEliteBps = x.cost > 0 ? Math.round(((profit - elite) / x.retail) * 10000) : null;
         if (afterEliteBps !== null && afterEliteBps < 2000) flags.push('Under 20% after Elite commission');
         rows.push({

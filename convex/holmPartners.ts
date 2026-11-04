@@ -389,7 +389,9 @@ export const adminPartners = query({
           nextTier: tierProgress(p.partnerTier ?? 'base', p.sales12Cents ?? 0).line,
           payouts: { connected: !!p.stripeAccountId, ready: !!p.payoutsReady, due: (p.payoutsDue ?? []).length },
           // Cleared and not already in a payout: paid on the 15th if $50 or more.
-          unpaidCents: rows.filter((r) => r.status === 'cleared' && !r.payoutId).reduce((t, r) => t + r.amountCents, 0),
+          unpaidCents: (await unpaidCleared(ctx, p.userId)).reduce((t, r) => t + r.amountCents, 0),
+          w9Approved: p.w9Status === 'approved',
+          autoPayouts: payoutsEnabled(),
           override: p.tierOverride && overrideActive(p, Date.now()) ? { reason: p.tierOverride.reason, until: p.tierOverride.until ?? null } : null,
           w9Status: p.w9Status ?? 'none',
           w9Url: p.w9FileId ? await ctx.storage.getUrl(p.w9FileId) : null,
@@ -496,7 +498,7 @@ export const reconcile = internalMutation({
       const partner = await profileOf(ctx, r.partnerId);
       const tier = await partnerTierAt(ctx, r.partnerId, project.paidAt, partner?.partnerTier ?? 'base');
       // Each line at its product type's rate, held to 40% of our profit on it.
-      const costs = await houseUnitCosts(ctx, project.lines);
+      const costs = await houseUnitCosts(ctx, project.lines, 'house', project.paidAt);
       // Commission is worked out after store credit, shared across the lines by value.
       const merch = project.lines.reduce((t, l) => t + l.unitPrice * l.quantity, 0);
       const keep = merch > 0 ? 1 - projectCredit(project) / merch : 1;
@@ -510,11 +512,7 @@ export const reconcile = internalMutation({
       }));
       // Excluded products earn nothing; their value still counts toward the card fee.
       const excludedCents = all.filter((l) => l.excluded).reduce((t, l) => t + l.unitCents * l.quantity, 0);
-      const result = lineCommissions(
-        all.filter((l) => !l.excluded),
-        tier,
-        (project.delivery ?? 0) + (project.tax ?? 0) + excludedCents
-      );
+      const result = lineCommissions(all.filter((l) => !l.excluded), tier, (project.delivery ?? 0) + (project.tax ?? 0), excludedCents);
       if (result.amountCents > 0)
         await ctx.db.insert('holmCommissions', {
           partnerId: r.partnerId,
@@ -678,7 +676,8 @@ export const storefrontCommission = internalMutation({
         unitCostCents: (l.productId && costs.get(`${l.productId}:${l.variantId}`)) ?? null,
       })),
       tier,
-      a.deliveryCents + a.taxCents + excludedCents
+      a.deliveryCents + a.taxCents,
+      excludedCents
     );
     if (result.amountCents <= 0) return null;
     const id = await ctx.db.insert('holmCommissions', {
