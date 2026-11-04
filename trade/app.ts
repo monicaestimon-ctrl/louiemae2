@@ -3309,12 +3309,12 @@ function CreditToggle({ctx}){
 // Written from the program rules (lib/holmPartners), so the terms can't promise what the code doesn't do.
 function PartnerTerms(){
   const rows=rateRows();
-  return html`<main className="wrap" style=${{maxWidth:820,padding:'48px 0 80px'}}>
+  return html`<main className="wrap" style=${{maxWidth:820,marginInline:'auto',paddingTop:48,paddingBottom:80}}>
     <h1 style=${{fontSize:'clamp(40px,5vw,64px)'}}>Partner terms</h1>
     <p className="mute" style=${{marginTop:10}}>For creators and trade partners who share Louie Mae and House of Louie Mae through their own links.</p>
     <table className="t" style=${{margin:'28px 0'}}><caption className="sr">Rates by tier and product type</caption><thead><tr><th>Tier · 12-month sales</th>${rows[0].rates.map(r=>html`<th key=${r.type} className="r">${r.label}</th>`)}</tr></thead>
       <tbody>${rows.map(r=>html`<tr key=${r.tier}><td><b style=${{fontWeight:500}}>${r.name}</b> <span className="mute">${r.sales}</span></td>${r.rates.map(x=>html`<td key=${x.type} className="r num">${x.rate}</td>`)}</tr>`)}</tbody></table>
-    ${partnerTerms().map(s=>html`<section key=${s.title} style=${{margin:'26px 0'}}><h3>${s.title}</h3><ul style=${{margin:'8px 0 0',paddingLeft:20,display:'grid',gap:6}}>${s.items.map((t,i)=>html`<li key=${i}>${t}</li>`)}</ul></section>`)}
+    ${partnerTerms().map(s=>html`<section key=${s.title} style=${{margin:'30px 0'}}><h3 style=${{fontSize:24}}>${s.title}</h3><ul style=${{margin:'8px 0 0',paddingLeft:20,display:'grid',gap:6}}>${s.items.map((t,i)=>html`<li key=${i}>${t}</li>`)}</ul></section>`)}
     <p className="help">Questions: <a href="mailto:withlove@louiemae.com">withlove@louiemae.com</a>.</p>
   </main>`;
 }
