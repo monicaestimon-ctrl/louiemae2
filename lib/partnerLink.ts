@@ -118,3 +118,36 @@ export function pieceShareUrl(origin: string, pieceId: number | string, refCode?
   const code = normalizeCode(refCode);
   return `${origin}/trade${code ? `?ref=${code}&ch=${encodeURIComponent(ch)}` : ''}#p/${pieceId}`;
 }
+
+/**
+ * A partner link to any louiemae.com page. Takes a pasted louiemae.com address (or a path such
+ * as "#collection/furniture") and adds the partner's code and channel. Returns null for an
+ * address on another site, so a creator can't make a tracked link that leads elsewhere.
+ */
+export function partnerPageUrl(origin: string, page: string, refCode: string, ch = 'link'): string | null {
+  const code = normalizeCode(refCode);
+  if (!code) return null;
+  const raw = (page || '').trim() || '/';
+  let url: URL;
+  try {
+    url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : raw.startsWith('#') ? '/' + raw : raw, origin);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.replace(/^www\./, '');
+  const own = new URL(origin).hostname.replace(/^www\./, '');
+  if (!/^https?:$/.test(url.protocol) || (host !== 'louiemae.com' && host !== own)) return null;
+  // Set the path on a copy of our origin: a path such as "//other.site" must never become the host.
+  const out = new URL(origin);
+  out.pathname = url.pathname;
+  out.search = url.search;
+  // A code after the hash would compete with this one, so drop it.
+  const [hashPath, hashQuery] = url.hash.split('?');
+  const hq = new URLSearchParams(hashQuery || '');
+  hq.delete('ref');
+  hq.delete('ch');
+  out.hash = hashPath + (hq.toString() ? '?' + hq.toString() : '');
+  out.searchParams.set('ref', code);
+  out.searchParams.set('ch', ch);
+  return out.toString();
+}

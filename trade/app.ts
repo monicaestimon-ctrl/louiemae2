@@ -5,7 +5,7 @@ import htm from 'htm';
 import type { HolmProduct } from './catalog';
 import { useQuery, useMutation, useAction } from 'convex/react';
 import { deliveryCents, DELIVERY_TIERS } from '../lib/holmDelivery';
-import { partnerCopy } from '../lib/holmPartners';
+import { partnerCopy, partnerTerms, rateRows } from '../lib/holmPartners';
 import { activeRef, captureRefFromUrl, pieceShareUrl, rememberRef, shareOrigin, visitorId } from '../lib/partnerLink';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
@@ -3221,22 +3221,22 @@ function PartnerPanel({ctx}){
   const [agree,setAgree]=useState(false);const [busy,setBusy]=useState(false);const [ch,setCh]=useState('link');const bs=useQuery(api.holmPartners.boardStats,ctx.me.signedIn?{}:'skip');const [target,setTarget]=useState('home');const w9Ref=useRef();
   if(!ctx.me.signedIn||ph===undefined)return null;
   if(!ph)return html`<section className="panel" style=${{marginBottom:24,display:'grid',gap:12}}><h3>Partner program</h3>
-    <p className="help" style=${{margin:0}}>Share pieces and boards and earn commission on retail-priced House of Louie Mae orders requested through your links: ${partnerCopy().commissionHeadline} by tier, starting at ${partnerCopy().range.split('–')[0]}. Trade-priced orders don't earn commission. You also earn ${partnerCopy().referralHeadline} in store ${partnerCopy().referralLine}.</p>
-    <label className="cq-check"><input type="checkbox" checked=${agree} onChange=${e=>setAgree(e.target.checked)}/><span>I agree to the partner terms: commission on retail orders through my links within 30 days, payouts after an approved W-9, and disclosure on social posts.</span></label>
+    <p className="help" style=${{margin:0}}>Share pieces and boards and earn commission on retail-priced orders placed through your links. ${partnerCopy().ratesLine}, rising with your sales. Trade-priced orders don't earn commission. You also earn ${partnerCopy().referralHeadline} in store ${partnerCopy().referralLine}.</p>
+    <label className="cq-check"><input type="checkbox" checked=${agree} onChange=${e=>setAgree(e.target.checked)}/><span>I agree to the <a href="#partner-terms" target="_blank" rel="noopener">partner terms</a>, and I'll label posts that include my link, for example "#ad" or "I earn a commission".</span></label>
     <button className="btn btn-ink" style=${{justifySelf:'start'}} disabled=${!agree||busy} onClick=${async()=>{setBusy(true);try{await join({acceptTerms:true});ctx.toast('Welcome to the partner program')}catch(e){ctx.toast(errText(e))}finally{setBusy(false)}}}>Join the partner program</button></section>`;
   const base=location.origin+'/trade';const hash=target==='home'?'':target.startsWith('p:')?'#p/'+target.slice(2):'#'+target;
   const link=`${base}?ref=${ph.refCode}&ch=${ch}${hash}`;
   const money=c=>fmt(c/100,true);
   const status={signed_up:'Signed up',verified:'Verified, awaiting first order',credited:'Credit earned'};
   return html`<section style=${{display:'grid',gap:18,marginBottom:24}}>
-    <div className="ph-head" style=${{margin:0}}><div><h2 style=${{fontSize:38}}>Partner Hub</h2><p className="mute">${(ph.rateBps/100)}% commission on furniture · ${ph.tier[0].toUpperCase()+ph.tier.slice(1)} tier</p><p className="help" style=${{margin:'4px 0 0'}}>Commission on each piece is capped at 40% of our profit on it.</p></div></div>
+    <div className="ph-head" style=${{margin:0}}><div><h2 style=${{fontSize:38}}>Partner Hub</h2><p className="mute">${partnerCopy(ph.tier).ratesLine}</p><p className="help" style=${{margin:'4px 0 0'}}>Commission on each piece is capped at ${partnerCopy().profitCap} of our profit on it. ${partnerCopy().typesNote}</p></div></div>
     <div className="kpis">${[['Link visits · 30 days',ph.clicks30],['Quote requests',ph.quotes],['Orders',ph.orders],['Pending',money(ph.pendingCents)],['Cleared, ready to pay',money(ph.clearedCents)],['Paid',money(ph.paidCents)]].map(([l,v])=>html`<div key=${l} className="kpi"><span className="mono mute">${l}</span><div className="v">${v}</div></div>`)}</div>
     <div className="g2">
       <div className="panel" style=${{display:'grid',gap:10,alignContent:'start'}}><h3>Your link</h3>
         <div className="g2f" style=${{gap:8}}><select className="field" aria-label="Link to" value=${target} onChange=${e=>setTarget(e.target.value)}><option value="home">House of Louie Mae home</option><option value="discover">Discover</option><optgroup label="Pieces">${PRODUCTS.slice(0,60).map(p=>html`<option key=${p.id} value=${'p:'+p.id}>${p.name} ${p.line}</option>`)}</optgroup></select>
           <select className="field" aria-label="Channel" value=${ch} onChange=${e=>setCh(e.target.value)}>${CHANNEL_NAMES.map(([k,l])=>html`<option key=${k} value=${k}>${l}</option>`)}</select></div>
         <div className="linkbox"><code>${link}</code><button className="btn btn-ink btn-sm" onClick=${()=>copyText(link,ctx.toast)}>Copy</button></div>
-        <div className="kv"><span className="mono mute">Code</span><b style=${{fontWeight:500}}>${ph.refCode}</b><span className="mono mute">Window</span><span>30 days from the first click</span><span className="mono mute">Clearing</span><span>30 days after payment</span><span className="mono mute">Tax form</span><span>${ph.w9Status==='approved'?'W-9 approved':ph.w9Status==='pending'?'W-9 in review':html`<button className="lnk" onClick=${()=>w9Ref.current.click()}>Upload your W-9</button>`}</span></div>
+        <div className="kv"><span className="mono mute">Code</span><b style=${{fontWeight:500}}>${ph.refCode}</b><span className="mono mute">Window</span><span>${partnerCopy().attributionDays} days from a visit through your link</span><span className="mono mute">Clearing</span><span>${partnerCopy().clearingDays} days after payment</span><span className="mono mute">Tax form</span><span>${ph.w9Status==='approved'?'W-9 approved':ph.w9Status==='pending'?'W-9 in review':html`<button className="lnk" onClick=${()=>w9Ref.current.click()}>Upload your W-9</button>`}</span></div>
         <input ref=${w9Ref} type="file" accept=".pdf,image/*" hidden onChange=${async e=>{const x=e.target.files[0];if(!x)return;try{const id=await uploadBlob(w9Url,x);await submitW9({fileId:id});ctx.toast('W-9 received')}catch(err){ctx.toast(errText(err))}}}/>
         <p className="help" style=${{margin:0}}>Add "I earn a commission" or #ad when you post. Orders you place yourself don't earn commission; your trade account is always the better price.</p></div>
       <div className="panel" style=${{display:'grid',gap:8,alignContent:'start'}}><h3>Referrals and credit</h3>
@@ -3257,6 +3257,7 @@ function PartnerPanel({ctx}){
         ${bs.map(x=>html`<div key=${x.slug} className="pstats-r" role="row"><span><b>${x.title}</b><small className="mute">${x.mode==='shop'?'Shoppable':'Presentation'} · <button className="lnk" onClick=${()=>copyText(bundleUrl(x.slug,'link'),ctx.toast)}>Copy link</button></small></span>
           <span className="num">${x.views}</span><span>${Object.keys(x.byChannel).length?Object.entries(x.byChannel).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`${(CHANNEL_NAMES.find(c=>c[0]===k)||[k,k])[1]} ${n}`).join(' · '):html`<span className="mute">None yet</span>`}</span>
           <span className="num">${x.orders}</span><span className="num">${money(x.commissionCents)}</span></div>`)}</div></div>`}
+    <p className="help" style=${{margin:0}}><a href="#partner-terms">Partner terms</a> · Share any louiemae.com page from the <a href="/#creators">Creator Hub</a>.</p>
   </section>`;
 }
 function Hub({ctx}){
@@ -3278,6 +3279,19 @@ function Hub({ctx}){
     </div>
     <${PartnerPanel} ctx=${ctx}/>
     <div style=${{height:40}}></div>
+  </main>`;
+}
+/* ================= PARTNER TERMS ================= */
+// Written from the program rules (lib/holmPartners), so the terms can't promise what the code doesn't do.
+function PartnerTerms(){
+  const rows=rateRows();
+  return html`<main className="wrap" style=${{maxWidth:820,padding:'48px 0 80px'}}>
+    <h1 style=${{fontSize:'clamp(40px,5vw,64px)'}}>Partner terms</h1>
+    <p className="mute" style=${{marginTop:10}}>For creators and trade partners who share Louie Mae and House of Louie Mae through their own links.</p>
+    <table className="t" style=${{margin:'28px 0'}}><caption className="sr">Rates by tier and product type</caption><thead><tr><th>Tier · 12-month sales</th>${rows[0].rates.map(r=>html`<th key=${r.type} className="r">${r.label}</th>`)}</tr></thead>
+      <tbody>${rows.map(r=>html`<tr key=${r.tier}><td><b style=${{fontWeight:500}}>${r.name}</b> <span className="mute">${r.sales}</span></td>${r.rates.map(x=>html`<td key=${x.type} className="r num">${x.rate}</td>`)}</tr>`)}</tbody></table>
+    ${partnerTerms().map(s=>html`<section key=${s.title} style=${{margin:'26px 0'}}><h3>${s.title}</h3><ul style=${{margin:'8px 0 0',paddingLeft:20,display:'grid',gap:6}}>${s.items.map((t,i)=>html`<li key=${i}>${t}</li>`)}</ul></section>`)}
+    <p className="help">Questions: <a href="mailto:withlove@louiemae.com">withlove@louiemae.com</a>.</p>
   </main>`;
 }
 /* ================= SOURCING REQUESTS ================= */
@@ -3762,7 +3776,7 @@ export function App(){
   const inspoCtx={inspo,addInspo:items=>setInspo(l=>[...items,...l]),removeInspo:id=>setInspo(l=>l.filter(x=>x.id!==id)),updateInspo:(id,o)=>setInspo(l=>l.map(x=>x.id===id?{...x,...o}:x)),roomWall,setRoomWall,inspoToStudio:(x,ids=[])=>{setStudioSeed({inspo:x,ids,title:x.title});setNonce(n=>n+1);go('studio')}};
   const signInThen=r=>{setAfterSignIn(r);go('welcome')};const signOut=async()=>{await authSignOut();synced.current=false;['tray','boards','collages','inspo'].forEach(k=>{try{localStorage.removeItem('hol:'+k)}catch(e){}});setTrayState(TRAY_SEED);setBoards(BOARD_SEED);setCollages([]);setInspo(INSPO_SEED);toast('Signed out');go('home')};
   const ctx={...inspoCtx,me,afterSignIn,signInThen,signOut,route,go,space,setSpace,mode,setMode,boards,saveTo,createBoard,updateBoard,tray,setTrayState,activeProject,trayCount,addToTray,setTray,setMenu,pin,openPin,recent,createProject,addZone,addToProject,toggleLike:id=>setLikes(l=>l.includes(id)?l.filter(x=>x!==id):[...l,id]),likes,toast,query,setQuery,imgQ,setImgQ,imageSearch,studioSeed,setStudioSeed,roomSeed,setRoomSeed,toStudio,board,setBoard,trend,setTrend,collages,saveCollage:(c,quiet)=>{setCollages(cs=>[c,...cs.filter(x=>c.id?x.id!==c.id:x.title!==c.title)]);if(!quiet)toast('Collage saved',{label:'View',fn:()=>go('boards')})},setTarget:n=>{setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===t.active?{...p,target:n}:p)}));toast(`Seat target for ${activeProject.name} set to ${n}`,{label:'Open tray',fn:()=>setTray(true)})}};
-  const pages={inspo:Inspo,home:Home,discover:Discover,trend:Trend,studio:Studio,room:Room,boards:Boards,board:BoardDetail,profile:Profile,hub:Hub,trade:Trade,quiz:Quiz,account:Account,welcome:Welcome,admin:AdminPage,sourcing:Sourcing};
+  const pages={inspo:Inspo,home:Home,discover:Discover,trend:Trend,studio:Studio,room:Room,boards:Boards,board:BoardDetail,profile:Profile,hub:Hub,trade:Trade,quiz:Quiz,account:Account,welcome:Welcome,admin:AdminPage,sourcing:Sourcing,'partner-terms':PartnerTerms};
   const Page=pages[route]||Home;
   if(route.startsWith('q/'))return html`<${React.Fragment}><${ClientQuote} ctx=${ctx} code=${route.slice(2)}/><${Toast} t=${toastS} onClose=${()=>setToastS(null)}/><//>`;
   return html`<${React.Fragment}>
