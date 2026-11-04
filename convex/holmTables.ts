@@ -55,6 +55,10 @@ export const holmTables = {
     // Partner program
     partnerStatus: v.optional(v.literal('active')),
     partnerTier: v.optional(partnerTier),
+    // A tier the team set by hand. While it's in force (no end date, or before it), the nightly
+    // tier update leaves this partner alone.
+    tierOverride: v.optional(v.object({ reason: v.string(), until: v.optional(v.number()), by: v.string(), at: v.number() })),
+    tierDownCheckedAt: v.optional(v.number()), // the last quarterly check for moving down
     refCode: v.optional(v.string()),
     w9Status: v.optional(v.union(v.literal('pending'), v.literal('approved'))),
     w9FileId: v.optional(v.id('_storage')),

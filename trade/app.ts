@@ -3229,7 +3229,7 @@ function PartnerPanel({ctx}){
   const money=c=>fmt(c/100,true);
   const status={signed_up:'Signed up',verified:'Verified, awaiting first order',credited:'Credit earned'};
   return html`<section style=${{display:'grid',gap:18,marginBottom:24}}>
-    <div className="ph-head" style=${{margin:0}}><div><h2 style=${{fontSize:38}}>Partner Hub</h2><p className="mute">${partnerCopy(ph.tier).ratesLine}</p><p className="help" style=${{margin:'4px 0 0'}}>Commission on each piece is capped at ${partnerCopy().profitCap} of our profit on it. ${partnerCopy().typesNote}</p></div></div>
+    <div className="ph-head" style=${{margin:0}}><div><h2 style=${{fontSize:38}}>Partner Hub</h2><p className="mute">${partnerCopy(ph.tier).ratesLine}${ph.tierProgress?` · ${ph.tierProgress}`:''}</p><p className="help" style=${{margin:'4px 0 0'}}>Commission on each piece is capped at ${partnerCopy().profitCap} of our profit on it. ${partnerCopy().typesNote}</p></div></div>
     <div className="kpis">${[['Link visits · 30 days',ph.clicks30],['Quote requests',ph.quotes],['Orders',ph.orders],['Pending',money(ph.pendingCents)],['Cleared, ready to pay',money(ph.clearedCents)],['Paid',money(ph.paidCents)]].map(([l,v])=>html`<div key=${l} className="kpi"><span className="mono mute">${l}</span><div className="v">${v}</div></div>`)}</div>
     <div className="g2">
       <div className="panel" style=${{display:'grid',gap:10,alignContent:'start'}}><h3>Your link</h3>
@@ -3552,6 +3552,19 @@ function PricingAdmin({ctx}){
       :html`<div className="empty"><h3>Nothing flagged</h3><p>Every piece keeps the full trade discount above the margin floor.</p></div>`}
   </div>`;
 }
+// Setting a tier by hand holds it (with a reason, until an optional end date); the nightly update leaves it alone until then.
+function TierOverride({p,setP,run}){
+  const [tier,setTier]=useState(p.tier);const [reason,setReason]=useState('');const [until,setUntil]=useState('');
+  const save=()=>run(setP({userId:p.userId,tier,reason,...(until?{until:new Date(until+'T23:59:59').getTime()}:{})}),'Tier saved');
+  return html`<div style=${{display:'grid',gap:8}}>
+    <p className="help" style=${{margin:0}}>${fmt(p.sales12Cents/100,true)} in sales over 12 months. ${p.override?`Tier held by the team: ${p.override.reason}${p.override.until?`, until ${new Date(p.override.until).toLocaleDateString()}`:''}.`:'Tier follows sales automatically.'}
+      ${p.override&&html` <button className="lnk" onClick=${()=>run(setP({userId:p.userId,clearOverride:true}),'Automatic tier resumes tonight')}>End the hold</button>`}</p>
+    <div className="row" style=${{flexWrap:'wrap',gap:8}}>
+      <select className="field" style=${{maxWidth:170}} aria-label="Tier" value=${tier} onChange=${e=>setTier(e.target.value)}>${[['base','Base'],['active','Active'],['top','Top'],['elite','Elite']].map(([k,l])=>html`<option key=${k} value=${k}>${l}</option>`)}</select>
+      <input className="field" style=${{maxWidth:260}} placeholder="Reason (required)" aria-label="Reason" value=${reason} onInput=${e=>setReason(e.target.value)}/>
+      <input className="field" style=${{maxWidth:170}} type="date" aria-label="Hold until (optional)" value=${until} onInput=${e=>setUntil(e.target.value)}/>
+      <button className="btn btn-line" disabled=${!reason.trim()} onClick=${save}>Set tier</button></div></div>`;
+}
 function PartnersAdmin({ctx}){
   const rows=useQuery(api.holmPartners.adminPartners);const setP=useMutation(api.holmPartners.adminSetPartner);const pay=useMutation(api.holmPartners.adminRecordPayout);const [refs,setRefs]=useState({});
   const run=(p,ok)=>p.then(()=>ctx.toast(ok)).catch(e=>ctx.toast(errText(e)));
@@ -3560,7 +3573,8 @@ function PartnersAdmin({ctx}){
   return html`<div style=${{display:'grid',gap:14,marginTop:18}}>${rows.map(p=>html`<div key=${p.userId} className="panel" style=${{display:'grid',gap:10}}>
     <div className="row" style=${{justifyContent:'space-between',flexWrap:'wrap'}}><h3>${p.name}</h3><span className="mono mute">${p.email} · ${p.refCode}</span></div>
     <div className="kv"><span className="mono mute">Pending</span><span>${fmt(p.pendingCents/100,true)}</span><span className="mono mute">Cleared</span><span>${fmt(p.clearedCents/100,true)}</span><span className="mono mute">Paid</span><span>${fmt(p.paidCents/100,true)}</span><span className="mono mute">W-9</span><span>${p.w9Status==='none'?'Not uploaded':html`${p.w9Url&&html`<a href=${p.w9Url} target="_blank" rel="noopener">View</a> · `}${p.w9Status==='approved'?'Approved':html`<button className="lnk" onClick=${()=>run(setP({userId:p.userId,w9Approved:true}),'W-9 approved')}>Approve</button>`}`}</span></div>
-    <div className="row" style=${{flexWrap:'wrap'}}><select className="field" style=${{maxWidth:200}} value=${p.tier} onChange=${e=>run(setP({userId:p.userId,tier:e.target.value}),'Tier saved')}>${[['base','Base · 10%'],['active','Active · 12%'],['top','Top · 15%'],['elite','Elite · 18%']].map(([k,l])=>html`<option key=${k} value=${k}>${l}</option>`)}</select>
+    <${TierOverride} key=${p.tier+(p.override?.reason||'')} p=${p} setP=${setP} run=${run}/>
+    <div className="row" style=${{flexWrap:'wrap'}}>
       ${p.clearedCents>0&&html`<input className="field" style=${{maxWidth:260}} placeholder="Payment reference" value=${refs[p.userId]||''} onInput=${e=>setRefs({...refs,[p.userId]:e.target.value})}/><button className="btn btn-ink" onClick=${()=>run(pay({userId:p.userId,reference:refs[p.userId]||''}),'Payout recorded')}>Record payout of ${fmt(p.clearedCents/100,true)}</button>`}</div>
   </div>`)}</div>`;
 }
