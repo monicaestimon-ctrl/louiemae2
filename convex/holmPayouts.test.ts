@@ -6,7 +6,7 @@ import schema from './schema';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 
-const stripe = vi.hoisted(() => ({ accounts: { retrieve: vi.fn() }, transfers: { create: vi.fn() } }));
+const stripe = vi.hoisted(() => ({ accounts: { retrieve: vi.fn() }, transfers: { create: vi.fn(), list: vi.fn() } }));
 vi.mock('stripe', () => ({ default: function Stripe() { return stripe; } }));
 import { runMonthlyPayouts } from './holmConnect';
 
@@ -65,10 +65,20 @@ describe('monthly payout records', () => {
 
 describe('monthly payout run', () => {
   const handler = (runMonthlyPayouts as unknown as { _handler: (ctx: any, args: any) => Promise<any> })._handler;
-  const ctx = (claim: { payoutId: string; amountCents: number } | null) => ({
-    runQuery: vi.fn(async () => [{ userId: 'u1', accountId: 'acct_1' }]),
-    runMutation: vi.fn(async (_ref: unknown, args: any) => ('period' in args ? claim : undefined)),
+  // The run's calls by what they carry: claims have a period, completions a transferId, failures an error.
+  const ctx = (claim: { payoutId: string; amountCents: number } | null, open: any[] = [], completeThrows = false) => ({
+    runQuery: vi.fn(async (_ref: unknown, _args: any) => (ctx.calls++ === 0 ? open : [{ userId: 'u1', accountId: 'acct_1' }])),
+    runMutation: vi.fn(async (_ref: unknown, args: any) => {
+      if ('period' in args) return claim;
+      if ('transferId' in args && completeThrows) throw new Error('write conflict');
+      return undefined;
+    }),
   });
+  ctx.calls = 0;
+  const failed = (c: ReturnType<typeof ctx>) => c.runMutation.mock.calls.filter(([, a]: any) => 'error' in a);
+  const completed = (c: ReturnType<typeof ctx>) => c.runMutation.mock.calls.filter(([, a]: any) => 'transferId' in a);
+  const ready = () => stripe.accounts.retrieve.mockResolvedValue({ id: 'acct_1', payouts_enabled: true, capabilities: { transfers: 'active' }, requirements: { currently_due: [] } });
+  beforeEach(() => { ctx.calls = 0; stripe.transfers.create.mockReset(); stripe.transfers.list.mockReset(); });
 
   it('does nothing until automatic payouts are switched on', async () => {
     vi.stubEnv('PARTNER_PAYOUTS_ENABLED', '');
@@ -88,6 +98,43 @@ describe('monthly payout run', () => {
       expect.objectContaining({ amount: 6_000, currency: 'usd', destination: 'acct_1' }),
       { idempotencyKey: 'holm-payout:pay_1' }
     );
+  });
+
+  it('frees the commission only when Stripe definitely rejected the transfer', async () => {
+    vi.stubEnv('PARTNER_PAYOUTS_ENABLED', 'true');
+    vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_fixture');
+    ready();
+    stripe.transfers.create.mockRejectedValue(Object.assign(new Error('Insufficient funds'), { type: 'StripeInvalidRequestError' }));
+    const rejected = ctx({ payoutId: 'pay_1', amountCents: 6_000 });
+    await handler(rejected, {});
+    expect(failed(rejected)).toHaveLength(1);
+    ctx.calls = 0;
+    stripe.transfers.create.mockRejectedValue(Object.assign(new Error('timeout'), { type: 'StripeConnectionError' }));
+    const unclear = ctx({ payoutId: 'pay_1', amountCents: 6_000 });
+    await handler(unclear, {});
+    expect(failed(unclear)).toHaveLength(0); // stays processing; the next run checks Stripe
+  });
+
+  it('never frees the commission when recording a successful transfer fails', async () => {
+    vi.stubEnv('PARTNER_PAYOUTS_ENABLED', 'true');
+    vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_fixture');
+    ready();
+    stripe.transfers.create.mockResolvedValue({ id: 'tr_1' });
+    const c = ctx({ payoutId: 'pay_1', amountCents: 6_000 }, [], true);
+    await expect(handler(c, {})).rejects.toThrow('write conflict');
+    expect(failed(c)).toHaveLength(0);
+  });
+
+  it('settles an unfinished payout from Stripe before paying anything new', async () => {
+    vi.stubEnv('PARTNER_PAYOUTS_ENABLED', 'true');
+    vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_fixture');
+    ready();
+    stripe.transfers.list.mockResolvedValue({ data: [{ id: 'tr_old', metadata: { payoutId: 'pay_0' } }] });
+    const c = ctx(null, [{ payoutId: 'pay_0', accountId: 'acct_1', startedAt: 0 }, { payoutId: 'pay_9', accountId: 'acct_1', startedAt: 0 }]);
+    await handler(c, {});
+    expect(completed(c).map(([, a]: any) => a)).toEqual([{ payoutId: 'pay_0', transferId: 'tr_old' }]); // found: paid
+    expect(failed(c).map(([, a]: any) => a.payoutId)).toEqual(['pay_9']); // never made: freed
+    expect(stripe.transfers.create).not.toHaveBeenCalled();
   });
 
   it('skips a partner whose Stripe setup is unfinished', async () => {

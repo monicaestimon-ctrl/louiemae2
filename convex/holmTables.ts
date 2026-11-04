@@ -240,7 +240,8 @@ export const holmTables = {
     error: v.optional(v.string()),
   })
     .index('by_partner', ['partnerId', 'paidAt'])
-    .index('by_partner_period', ['partnerId', 'period']),
+    .index('by_partner_period', ['partnerId', 'period'])
+    .index('by_status', ['status']),
 
   holmSourcing: defineTable({
     number: v.string(),

@@ -287,7 +287,13 @@ export const hub = query({
     const commissions = await ctx.db.query('holmCommissions').withIndex('by_partner', (q) => q.eq('partnerId', me.userId)).order('desc').take(500);
     const referrals = await ctx.db.query('holmReferrals').withIndex('by_referrer', (q) => q.eq('referrerId', me.userId)).order('desc').take(100);
     const credits = await ctx.db.query('holmCredits').withIndex('by_user', (q) => q.eq('userId', me.userId)).take(500);
-    const payouts = await ctx.db.query('holmPayouts').withIndex('by_partner', (q) => q.eq('partnerId', me.userId)).order('desc').take(24);
+    // Completed payouts only: a failed or unfinished Stripe transfer isn't money the partner has.
+    const payouts = await ctx.db
+      .query('holmPayouts')
+      .withIndex('by_partner', (q) => q.eq('partnerId', me.userId))
+      .order('desc')
+      .filter((q) => q.and(q.neq(q.field('status'), 'failed'), q.neq(q.field('status'), 'processing')))
+      .take(24);
     const tier = p.partnerTier ?? 'base';
     const sales12Cents = await salesLast12Months(ctx, me.userId);
     return {

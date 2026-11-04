@@ -47,6 +47,15 @@ export const setConnectStatus = internalMutation({
   },
 });
 
+/** Payouts an earlier run started but didn't finish (an unclear transfer outcome). */
+export const openPayouts = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query('holmPayouts').withIndex('by_status', (q) => q.eq('status', 'processing')).take(500);
+    return rows.filter((p) => p.accountId).map((p) => ({ payoutId: p._id, accountId: p.accountId!, startedAt: p.paidAt }));
+  },
+});
+
 /** Partners with a connected account, for the monthly run. */
 export const payoutTargets = internalQuery({
   args: {},
