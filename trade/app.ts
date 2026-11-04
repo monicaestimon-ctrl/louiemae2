@@ -3560,21 +3560,62 @@ function SourcingAdmin({ctx}){
   </div>`;
 }
 function PricingAdmin({ctx}){
-  const rows=useQuery(api.holm.adminPricing);const [only,setOnly]=useState(true);
+  const rows=useQuery(api.holm.adminPricing);const [only,setOnly]=useState(true);const exclude=useMutation(api.holmAdmin.addExclusion);
+  const excludePiece=r=>{const reason=prompt(`Exclude ${r.name} from partner commission? Give a reason:`);if(reason&&reason.trim())exclude({kind:'product',value:r.productId,reason}).then(()=>ctx.toast(`${r.name} excluded from commission`)).catch(e=>ctx.toast(errText(e)))};
   if(rows===undefined)return html`<p className="help" style=${{marginTop:18}}>Loading…</p>`;
   const flagged=rows.filter(r=>r.flags.length);const list=only?flagged:rows;const m=b=>b==null?'—':(b/100).toFixed(1)+'%';const $=c=>fmt(c/100,true);
   return html`<div style=${{marginTop:18,display:'grid',gap:14}}>
-    <p className="help">Cost is the dealer cost plus the supplier freight allowance. Margins are after card processing (2.9% + 30¢). Trade never goes below a 25% margin; where that would happen, the floor holds the price and the piece is flagged. Delivery is one flat fee per order: ${deliveryText()}.</p>
+    <p className="help">Cost is the dealer cost plus the supplier freight allowance. Margins are after card processing (2.9% + 30¢). "Retail after Elite" is the retail margin left after the top partner rate for the piece's type (held to 40% of profit); under 20% is flagged, so you can exclude or reprice it.</p><p className="help"> Trade never goes below a 25% margin; where that would happen, the floor holds the price and the piece is flagged. Delivery is one flat fee per order: ${deliveryText()}.</p>
     <div className="row" style=${{gap:8}}><button className=${'chip'+(only?' on':'')} onClick=${()=>setOnly(true)}>Flagged · ${flagged.length}</button><button className=${'chip'+(!only?' on':'')} onClick=${()=>setOnly(false)}>All pieces · ${rows.length}</button></div>
     ${list.length?html`<div style=${{overflowX:'auto'}}><table className="ptable" style=${{width:'100%',borderCollapse:'collapse',fontSize:13}}>
-      <thead><tr>${['Piece','SKU','Cost','Retail','Trade','Project 5%','Trade margin','Project margin','Flags'].map(h=>html`<th key=${h} style=${{textAlign:'left',padding:'8px 10px',borderBottom:'1px solid var(--line2)',whiteSpace:'nowrap'}}>${h}</th>`)}</tr></thead>
+      <thead><tr>${['Piece','SKU','Cost','Retail','Trade','Project 5%','Trade margin','Project margin','Retail after Elite','Flags'].map(h=>html`<th key=${h} style=${{textAlign:'left',padding:'8px 10px',borderBottom:'1px solid var(--line2)',whiteSpace:'nowrap'}}>${h}</th>`)}</tr></thead>
       <tbody>${list.map(r=>html`<tr key=${r.productId+r.sku}>
         <td style=${{padding:'8px 10px',borderBottom:'1px solid var(--line)'}}>${r.name}${r.variant&&r.variant!=='Default'?html`<span className="mute"> · ${r.variant}</span>`:''}</td>
         <td className="mono" style=${{padding:'8px 10px',borderBottom:'1px solid var(--line)'}}>${r.sku}</td>
-        ${[r.costCents?$(r.costCents):'Missing',$(r.retailCents),$(r.tradeCents),$(r.projectCents),m(r.tradeMarginBps),m(r.projectMarginBps)].map((v,i)=>html`<td key=${i} className="num" style=${{padding:'8px 10px',borderBottom:'1px solid var(--line)',whiteSpace:'nowrap'}}>${v}</td>`)}
-        <td style=${{padding:'8px 10px',borderBottom:'1px solid var(--line)',color:r.flags.length?'var(--cognac)':'inherit'}}>${r.flags.join(' · ')||'OK'}</td></tr>`)}</tbody></table></div>`
+        ${[r.costCents?$(r.costCents):'Missing',$(r.retailCents),$(r.tradeCents),$(r.projectCents),m(r.tradeMarginBps),m(r.projectMarginBps),m(r.afterEliteBps)].map((v,i)=>html`<td key=${i} className="num" style=${{padding:'8px 10px',borderBottom:'1px solid var(--line)',whiteSpace:'nowrap'}}>${v}</td>`)}
+        <td style=${{padding:'8px 10px',borderBottom:'1px solid var(--line)',color:r.flags.length?'var(--cognac)':'inherit'}}>${r.flags.join(' · ')||'OK'} <button className="lnk" style=${{marginLeft:6}} onClick=${()=>excludePiece(r)}>Exclude from commission</button></td></tr>`)}</tbody></table></div>`
       :html`<div className="empty"><h3>Nothing flagged</h3><p>Every piece keeps the full trade discount above the margin floor.</p></div>`}
   </div>`;
+}
+// One partner's ledger, transfers and manual adjustments (opened on demand).
+function PartnerLedger({userId,ctx}){
+  const [open,setOpen]=useState(false);const l=useQuery(api.holmAdmin.ledger,open?{userId}:'skip');const adjust=useMutation(api.holmAdmin.adjust);
+  const [amt,setAmt]=useState('');const [note,setNote]=useState('');const $=c=>fmt(c/100,true);
+  const SRC={storefront_order:'louiemae.com order',house_quote:'House quote',adjustment:'Adjustment'};
+  if(!open)return html`<button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>setOpen(true)}>Open ledger and adjustments</button>`;
+  if(!l)return html`<p className="help">Loading…</p>`;
+  const save=()=>{const cents=Math.round(Number(amt)*100);adjust({userId,amountCents:cents,note}).then(()=>{ctx.toast('Adjustment added');setAmt('');setNote('')}).catch(e=>ctx.toast(errText(e)))};
+  return html`<div style=${{display:'grid',gap:10}}>
+    <div style=${{overflowX:'auto'}}><table className="t"><thead><tr><th>Date</th><th>Source</th><th>Order</th><th className="r">Order value</th><th className="r">Rate</th><th className="r">Commission</th><th>Status</th></tr></thead>
+      <tbody>${l.rows.map(r=>html`<tr key=${r.id}><td>${new Date(r.createdAt).toLocaleDateString()}</td><td>${SRC[r.source]||r.source}${r.note?html`<br/><small className="mute">${r.note}</small>`:''}</td><td className="mono">${r.order?String(r.order).slice(-12):''}</td><td className="r num">${r.baseCents?$(r.baseCents):''}</td><td className="r num">${r.rateBps?(r.rateBps/100).toFixed(1)+'%':''}</td><td className="r num">${$(r.amountCents)}</td><td>${r.status}</td></tr>`)}</tbody></table></div>
+    ${l.payouts.length>0&&html`<div><h4 style=${{margin:'4px 0'}}>Payouts</h4>${l.payouts.map(x=>html`<div key=${x.id} className="sumrow"><span>${new Date(x.paidAt).toLocaleDateString()} · ${x.method==='stripe'?'Stripe':'By hand'} · ${x.status}${x.error?html` <small className="mute">${x.error}</small>`:''}</span><span>${x.url?html`<a href=${x.url} target="_blank" rel="noopener">${$(x.amountCents)}</a>`:$(x.amountCents)} <small className="mute">${x.method==='stripe'?'':x.reference}</small></span></div>`)}</div>`}
+    <div className="row" style=${{flexWrap:'wrap',gap:8}}><input className="field" style=${{maxWidth:140}} type="number" step="0.01" placeholder="Amount ($)" aria-label="Adjustment amount in dollars, negative to deduct" value=${amt} onInput=${e=>setAmt(e.target.value)}/>
+      <input className="field" style=${{maxWidth:320}} placeholder="Note (required)" aria-label="Adjustment note" value=${note} onInput=${e=>setNote(e.target.value)}/>
+      <button className="btn btn-line" disabled=${!note.trim()||!Number(amt)} onClick=${save}>Add adjustment</button></div>
+    <p className="help" style=${{margin:0}}>An adjustment is cleared straight away and goes on the next payout. Use a negative amount to take money back.</p>
+  </div>`;
+}
+// Products or categories that never earn commission.
+function ExclusionsAdmin({ctx}){
+  const rows=useQuery(api.holmAdmin.exclusions);const add=useMutation(api.holmAdmin.addExclusion);const remove=useMutation(api.holmAdmin.removeExclusion);
+  const [kind,setKind]=useState('category');const [value,setValue]=useState('');const [reason,setReason]=useState('');
+  const save=()=>add({kind,value,reason}).then(()=>{ctx.toast('Excluded from commission');setValue('');setReason('')}).catch(e=>ctx.toast(errText(e)));
+  return html`<details className="panel"><summary style=${{cursor:'pointer'}}><b style=${{fontWeight:500}}>Commission exclusions</b> <span className="mute">· ${rows?rows.length:'…'}</span></summary>
+    <div style=${{display:'grid',gap:10,marginTop:10}}>
+      <p className="help" style=${{margin:0}}>Excluded products earn no partner commission on orders paid from now on. A category matches any listing whose category contains the text.</p>
+      ${(rows||[]).map(r=>html`<div key=${r.id} className="sumrow"><span>${r.kind==='product'?'Product':'Category'}: <b style=${{fontWeight:500}}>${r.label}</b><br/><small className="mute">${r.reason} · ${r.by}</small></span><button className="lnk" onClick=${()=>remove({id:r.id}).catch(e=>ctx.toast(errText(e)))}>Remove</button></div>`)}
+      <div className="row" style=${{flexWrap:'wrap',gap:8}}><select className="field" style=${{maxWidth:150}} aria-label="Exclude by" value=${kind} onChange=${e=>setKind(e.target.value)}><option value="category">Category</option><option value="product">Product id (or use the Pricing tab)</option></select>
+        <input className="field" style=${{maxWidth:240}} placeholder=${kind==='product'?'Product id':'e.g. clearance'} aria-label="What to exclude" value=${value} onInput=${e=>setValue(e.target.value)}/>
+        <input className="field" style=${{maxWidth:260}} placeholder="Reason (required)" aria-label="Reason" value=${reason} onInput=${e=>setReason(e.target.value)}/>
+        <button className="btn btn-line" disabled=${!value.trim()||!reason.trim()} onClick=${save}>Exclude</button></div></div></details>`;
+}
+// The last 12 months of commission as a CSV file.
+function CommissionsCsv({ctx}){
+  const [on,setOn]=useState(false);const data=useQuery(api.holmAdmin.commissionsCsv,on?{}:'skip');
+  // Text that starts like a formula (= + - @, tab, return) is prefixed with ' so a spreadsheet shows it as text; numbers stay numbers.
+  const cell=v=>{let s=String(v);if(typeof v!=='number'&&!/^-?\d+(\.\d+)?$/.test(s)&&/^[=+\-@\t\r]/.test(s))s="'"+s;return `"${s.replace(/"/g,'""')}"`};
+  useEffect(()=>{if(on&&data){const csv=data.rows.map(r=>r.map(cell).join(',')).join('\n');saveBlob(new Blob([csv],{type:'text/csv'}),`partner-commissions-${new Date().toISOString().slice(0,10)}.csv`);setOn(false);ctx.toast(data.complete?'CSV downloaded':'CSV downloaded, but it is incomplete: there are more partners or rows than one export holds')}},[on,data]);
+  return html`<button className="btn btn-line btn-sm" disabled=${on} onClick=${()=>setOn(true)}>${on?'Preparing…':'Export CSV · 12 months'}</button>`;
 }
 // Setting a tier by hand holds it (with a reason, until an optional end date); the nightly update leaves it alone until then.
 function TierOverride({p,setP,run}){
@@ -3593,11 +3634,21 @@ function PartnersAdmin({ctx}){
   const rows=useQuery(api.holmPartners.adminPartners);const setP=useMutation(api.holmPartners.adminSetPartner);const pay=useMutation(api.holmPartners.adminRecordPayout);const [refs,setRefs]=useState({});
   const run=(p,ok)=>p.then(()=>ctx.toast(ok)).catch(e=>ctx.toast(errText(e)));
   if(rows===undefined)return html`<p className="help" style=${{marginTop:18}}>Loading…</p>`;
-  if(!rows.length)return html`<div className="empty"><h3>No partners yet</h3><p>Accounts that join the partner program appear here.</p></div>`;
-  return html`<div style=${{display:'grid',gap:14,marginTop:18}}>${rows.map(p=>html`<div key=${p.userId} className="panel" style=${{display:'grid',gap:10}}>
+  if(!rows.length)return html`<div style=${{display:'grid',gap:14,marginTop:18}}><div className="empty"><h3>No partners yet</h3><p>Accounts that join the partner program appear here.</p></div><${ExclusionsAdmin} ctx=${ctx}/></div>`;
+  // Payable on the 15th: $50 or more cleared and unpaid, and a way to pay them (Stripe ready
+  // with automatic payouts on, or an approved W-9 for paying by hand).
+  const auto=p=>p.autoPayouts&&p.payouts.ready;const payable=rows.filter(p=>p.unpaidCents>=5000&&(auto(p)||p.w9Approved));const waiting=rows.filter(p=>p.unpaidCents>=5000&&!auto(p)&&!p.w9Approved);
+  return html`<div style=${{display:'grid',gap:14,marginTop:18}}>
+    <div className="panel row" style=${{justifyContent:'space-between',flexWrap:'wrap',gap:10}}>
+      <span><b style=${{fontWeight:500}}>Cleared and unpaid, due on the 15th: ${fmt(payable.reduce((t,p)=>t+p.unpaidCents,0)/100,true)}</b> <span className="mute">· ${payable.length} partner${payable.length===1?'':'s'}: ${payable.filter(auto).length} through Stripe automatically, ${payable.length-payable.filter(auto).length} by hand${waiting.length?` · ${waiting.length} more waiting on a W-9 or Stripe setup`:''}</span></span>
+      <${CommissionsCsv} ctx=${ctx}/></div>
+    <${ExclusionsAdmin} ctx=${ctx}/>
+    ${rows.map(p=>html`<div key=${p.userId} className="panel" style=${{display:'grid',gap:10}}>
     <div className="row" style=${{justifyContent:'space-between',flexWrap:'wrap'}}><h3>${p.name}</h3><span className="mono mute">${p.email} · ${p.refCode}</span></div>
     <div className="kv"><span className="mono mute">Pending</span><span>${fmt(p.pendingCents/100,true)}</span><span className="mono mute">Cleared</span><span>${fmt(p.clearedCents/100,true)}</span><span className="mono mute">Paid</span><span>${fmt(p.paidCents/100,true)}</span><span className="mono mute">W-9</span><span>${p.w9Status==='none'?'Not uploaded':html`${p.w9Url&&html`<a href=${p.w9Url} target="_blank" rel="noopener">View</a> · `}${p.w9Status==='approved'?'Approved':html`<button className="lnk" onClick=${()=>run(setP({userId:p.userId,w9Approved:true}),'W-9 approved')}>Approve</button>`}`}</span></div>
+    <p className="help" style=${{margin:0}}>${p.nextTier}. Payouts: ${p.payouts.ready?'Stripe ready':p.payouts.connected?(p.payouts.due?'Stripe needs details from the partner':'Stripe setup in progress'):'not connected (paid by hand)'}. Unpaid and cleared: ${fmt(p.unpaidCents/100,true)}.</p>
     <${TierOverride} key=${p.tier+(p.override?.reason||'')} p=${p} setP=${setP} run=${run}/>
+    <${PartnerLedger} userId=${p.userId} ctx=${ctx}/>
     <div className="row" style=${{flexWrap:'wrap'}}>
       ${p.clearedCents>0&&html`<input className="field" style=${{maxWidth:260}} placeholder="Payment reference" value=${refs[p.userId]||''} onInput=${e=>setRefs({...refs,[p.userId]:e.target.value})}/><button className="btn btn-ink" onClick=${()=>run(pay({userId:p.userId,reference:refs[p.userId]||''}),'Payout recorded')}>Record payout of ${fmt(p.clearedCents/100,true)}</button>`}</div>
   </div>`)}</div>`;

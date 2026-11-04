@@ -3,7 +3,7 @@
 // is "true" in the deployment, which the owner sets once Connect is turned on in Stripe.
 import { v } from 'convex/values';
 import { internalMutation, internalQuery } from './_generated/server';
-import type { MutationCtx } from './_generated/server';
+import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import { isPartner, viewer } from './holmAccess';
@@ -23,7 +23,7 @@ function takeLease(p: Doc<'holmPayouts'>, now: number) {
 }
 
 /** Cleared commission (and adjustments) for a partner that isn't already in a payout. */
-export async function unpaidCleared(ctx: MutationCtx, partnerId: Id<'users'>) {
+export async function unpaidCleared(ctx: QueryCtx, partnerId: Id<'users'>) {
   const rows = await ctx.db
     .query('holmCommissions')
     .withIndex('by_partner_status', (q) => q.eq('partnerId', partnerId).eq('status', 'cleared'))
