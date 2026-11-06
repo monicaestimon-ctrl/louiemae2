@@ -1,4 +1,5 @@
 import { calculateRetailFromProductCost } from './pricing';
+import { ConvexError } from 'convex/values';
 
 export type CjPriceQuote = {
   vid: string;
@@ -122,5 +123,5 @@ export function cjPricingBlocks(p: CjPricedProduct, now = Date.now()): string[] 
 }
 export function assertCjPricingReady(p: CjPricedProduct) {
   const reasons = cjPricingBlocks(p);
-  if (reasons.length) throw new Error(reasons.join(' '));
+  if (reasons.length) throw new ConvexError({ code: 'CJ_PRICING_NOT_READY', message: reasons.join(' ') });
 }

@@ -28,7 +28,7 @@ interface SiteContextType {
   addProduct: (product: Omit<Product, 'id'>) => Promise<string | null>;
   addProducts: (products: Omit<Product, 'id'>[]) => Promise<string[]>;
   updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
-  deleteProduct: (id: string) => void;
+  deleteProduct: (id: string) => Promise<void>;
   // Site Content Actions
   updateSiteContent: (section: keyof SiteContent, data: Partial<SiteContent[keyof SiteContent]>) => void;
   // Custom Page Actions
@@ -294,8 +294,8 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } as any);
   };
 
-  const deleteProduct = (id: string) => {
-    removeProduct({ id: id as Id<"products"> });
+  const deleteProduct = async (id: string): Promise<void> => {
+    await removeProduct({ id: id as Id<"products"> });
   };
 
   // --- Deep merge utility for nested objects ---
