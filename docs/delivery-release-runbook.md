@@ -115,3 +115,20 @@ Role arrays can combine independent responsibilities. Changes revoke access at t
 No named staff assignments were changed during this implementation. Before adding staff, an owner must record the actual account, role, business need and access-review owner. Do not treat the role table as permission to create employees, invite users, send messages or change payout access.
 
 Pre-deployment check, 2026-11-08: production has no explicit `DELIVERY_ADMIN_ROLES` variable. Existing allowlisted site owners therefore retain their access. No role-map value or account email was logged, and no role assignment was changed.
+
+Deployment evidence: PR 251 merged as `759c049`; main CI 42535490647, Convex deploy/seed and Vercel production succeeded. The unauthenticated production session query returned `{owner:false, delivery:false}`. This read-only check did not create accounts or modify staff permissions.
+
+## 13. Protected catalog migration
+
+The 803-product staging packet is not evidence of 803 purchasable products. Preserve its approved sellable-pack prices, media, exclusions and unresolved source holds. Internal draft migration and publication are separate operations.
+
+1. Retain the original source files and SHA-256 references outside the public repository. Normalize once with stable observation metadata. A local file modification date is not supplier verification.
+2. Begin a dry run with the exact files, importer revision, declared normalized record count and rejected-row report. Every accepted identity must be unique. Identical chunk retries are permitted; changed retries fail.
+3. Stage at most 25 records per transaction. Finish checks the declared count even when the historical full 865-row cohort check is disabled. A partial dry run cannot qualify a commit.
+4. Review the completed dry-run report. Commit binds to that completed run and verifies each full normalized row, including observation metadata and hold reasons, by SHA-256 before writing. Changed source metadata, importer revision, counts or rows require a new dry run.
+5. Existing staged prices and pack quantities must match exactly. Import cannot clear a staged exclusion; explicit price/exclusion review occurs in its separate workflow. A newly added recognized hold is applied even when product facts and prices are otherwise unchanged.
+6. Finish the commit and compare all expected records. Chunk transactions are atomic individually, not across the entire packet: an interrupted/failed run may have written some internal drafts. Keep them held; resume the same running batch with identical chunks, or review and start a new dry run. Do not interpret an incomplete run as publication approval.
+7. Legacy unfinished batches lack this binding and must be replaced by a fresh dry run. A legacy completed commit with a reused source key requires a new migration key; it is not silently certified by the newer importer.
+8. Independently validate current variant costs/MAP, shipping cartons and method, rights, inventory, approved operating policies and live checkout gates before publishing. A successful migration never clears these gates.
+
+Local evidence: all 803 actual staged rows passed the fixture replay for prices, images, names, pack quantities and exclusions. No production migration or sale activation was performed by this safeguard phase. The real source packet remains outside git.

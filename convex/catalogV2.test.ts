@@ -54,7 +54,7 @@ async function setup() {
 
 async function importPackage(admin: Awaited<ReturnType<typeof setup>>['admin'], rows: Record<string, unknown>[], mode: 'dry_run' | 'commit', sourceKey = 'pkg-1') {
   const { records, rejected } = normalizePackage(parseJsonPackage(JSON.stringify(rows)), 'Zuo-Draft-Import.json', NOW);
-  const { batchId, alreadyCommitted } = await admin.mutation(api.zuoImport.begin, { mode, sourceKey, files: [{ name: 'Zuo-Draft-Import.json', sha256: 'abc', rows: rows.length }], codeRevision: 'test', rejected });
+  const { batchId, alreadyCommitted } = await admin.mutation(api.zuoImport.begin, { mode, sourceKey, files: [{ name: 'Zuo-Draft-Import.json', sha256: 'abc', rows: rows.length }], codeRevision: 'test', expectedRecords: records.length, rejected });
   if (alreadyCommitted) return { batchId, alreadyCommitted, status: 'done', counts: {} as Record<string, number>, mismatches: [] as string[] };
   for (let i = 0; i < records.length; i += 25) await admin.mutation(api.zuoImport.stage, { batchId, records: records.slice(i, i + 25) });
   const done = await admin.mutation(api.zuoImport.finish, { batchId, expectPackageCounts: false });
@@ -175,6 +175,9 @@ describe('Zuo import (CAT01, PRI01)', () => {
     await expect(
       importPackage(admin, [row('A', { piecesPerPack: 1 })], 'dry_run', 'pack')
     ).rejects.toThrow(/pack quantity differs/);
+    await expect(
+      importPackage(admin, [row('A', { approvedRetail: '500.00' })], 'dry_run', 'changed-price')
+    ).rejects.toThrow(/staged prices differ/);
     expect(await t.run((ctx) => ctx.db.query('catVariants').collect())).toHaveLength(0);
     expect((await t.run((ctx) => ctx.db.query('commerceProducts').first()))!.draft).toEqual(draft);
   });
@@ -192,6 +195,7 @@ describe('Zuo import (CAT01, PRI01)', () => {
       const { batchId } = await admin.mutation(api.zuoImport.begin, {
         mode: 'dry_run',
         sourceKey: 'invalid',
+        expectedRecords: 1,
         files: [],
         codeRevision: 'test',
         rejected: [],
@@ -285,6 +289,62 @@ describe('Zuo import (CAT01, PRI01)', () => {
     },
     120000
   );
+
+  it('binds committed rows and holds to the completed dry run', async () => {
+    const { t, admin } = await setup();
+    const { records } = normalizePackage(parseJsonPackage(JSON.stringify([row('A')])), 'test', NOW);
+    const args = { sourceKey: 'bound', files: [{ name: 'test', sha256: 'a', rows: 1 }], codeRevision: 'test', expectedRecords: 1, rejected: [] };
+    const dry = await admin.mutation(api.zuoImport.begin, { ...args, mode: 'dry_run' });
+    await admin.mutation(api.zuoImport.stage, { batchId: dry.batchId, records });
+    await admin.mutation(api.zuoImport.finish, { batchId: dry.batchId, expectPackageCounts: false });
+    for (const changed of [{ files: [{ name: 'test', sha256: 'b', rows: 1 }] }, { expectedRecords: 2 }, { codeRevision: 'changed' }])
+      await expect(admin.mutation(api.zuoImport.begin, { ...args, ...changed, mode: 'commit' })).rejects.toThrow(/dry run/);
+    const commit = await admin.mutation(api.zuoImport.begin, { ...args, mode: 'commit' });
+    for (const changed of [
+      { ...records[0], record: { ...records[0].record, approvedRetailPack: '999.00' } },
+      { ...records[0], holdReasons: [...records[0].holdReasons, 'MANUAL'] },
+      { ...records[0], record: { ...records[0].record, observedAt: NOW + 1 } },
+      { ...records[0], record: { ...records[0].record, sku: 'B' } },
+    ]) await expect(admin.mutation(api.zuoImport.stage, { batchId: commit.batchId, records: [changed] })).rejects.toThrow(/reviewed dry run/);
+    expect(await t.run((ctx) => ctx.db.query('catVariants').collect())).toHaveLength(0);
+    await admin.mutation(api.zuoImport.stage, { batchId: commit.batchId, records });
+    await admin.mutation(api.zuoImport.stage, { batchId: commit.batchId, records });
+    await expect(admin.mutation(api.zuoImport.stage, { batchId: commit.batchId, records: [{ ...records[0], holdReasons: ['MANUAL'] }] })).rejects.toThrow(/retried row differs/);
+    const done = await admin.mutation(api.zuoImport.finish, { batchId: commit.batchId, expectPackageCounts: false });
+    expect(done).toMatchObject({ status: 'done', counts: { total: 1 } });
+    expect(await t.run((ctx) => ctx.db.query('commerceListings').collect())).toHaveLength(0);
+    await expect(admin.mutation(api.zuoImport.begin, { ...args, mode: 'commit', codeRevision: 'changed' })).rejects.toThrow(/different or legacy package/);
+  });
+
+  it('fails incomplete dry runs and refuses undeclared extra rows', async () => {
+    const { admin } = await setup();
+    const { records } = normalizePackage(parseJsonPackage(JSON.stringify([row('A'), row('B')])), 'test', NOW);
+    const args = { sourceKey: 'partial', files: [], codeRevision: 'test', expectedRecords: 2, rejected: [] };
+    const dry = await admin.mutation(api.zuoImport.begin, { ...args, mode: 'dry_run' });
+    await admin.mutation(api.zuoImport.stage, { batchId: dry.batchId, records: records.slice(0, 1) });
+    expect(await admin.mutation(api.zuoImport.finish, { batchId: dry.batchId, expectPackageCounts: false })).toMatchObject({ status: 'failed', mismatches: ['Reviewed record count: expected 2, got 1'] });
+    await expect(admin.mutation(api.zuoImport.begin, { ...args, mode: 'commit' })).rejects.toThrow(/dry run/);
+    const small = await admin.mutation(api.zuoImport.begin, { ...args, expectedRecords: 1, mode: 'dry_run' });
+    await expect(admin.mutation(api.zuoImport.stage, { batchId: small.batchId, records })).rejects.toThrow(/declared record count/);
+    expect(await admin.query(api.zuoImport.batchRecords, { batchId: small.batchId })).toHaveLength(0);
+  });
+
+  it('keeps newly reviewed holds on unchanged variants and fails a partial commit', async () => {
+    const { t, admin } = await setup();
+    await importPackage(admin, [row('A')], 'dry_run');
+    await importPackage(admin, [row('A')], 'commit');
+    const { records } = normalizePackage(parseJsonPackage(JSON.stringify([row('A'), row('B')])), 'Zuo-Draft-Import.json', NOW);
+    records[0].holdReasons.push('MANUAL');
+    const args = { sourceKey: 'new-hold', files: [], codeRevision: 'test', expectedRecords: 2, rejected: [] };
+    const dry = await admin.mutation(api.zuoImport.begin, { ...args, mode: 'dry_run' });
+    await admin.mutation(api.zuoImport.stage, { batchId: dry.batchId, records });
+    await admin.mutation(api.zuoImport.finish, { batchId: dry.batchId, expectPackageCounts: false });
+    const commit = await admin.mutation(api.zuoImport.begin, { ...args, mode: 'commit' });
+    await admin.mutation(api.zuoImport.stage, { batchId: commit.batchId, records: records.slice(0, 1) });
+    expect((await t.run((ctx) => ctx.db.query('catVariants').first()))!.holds).toContain('MANUAL');
+    expect(await admin.mutation(api.zuoImport.finish, { batchId: commit.batchId, expectPackageCounts: false })).toMatchObject({ status: 'failed' });
+    expect(await t.run((ctx) => ctx.db.query('commerceListings').collect())).toHaveLength(0);
+  });
 
   it('requires a dry run, then commits idempotently with stable identities', async () => {
     const { t, admin } = await setup();

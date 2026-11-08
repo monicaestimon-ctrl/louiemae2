@@ -18,9 +18,16 @@ import { slugify } from '../lib/slug';
 import { piecePriceInfo } from '../lib/catUnits';
 import { countMismatches, fingerprint, identityKey, type ZuoRecord } from '../lib/zuoImport';
 import { HOLD_REASONS, type HoldReason } from './v2Validators';
+import { stableStringify } from '../lib/canonicalJson';
 
 const CHUNK = 25;
 const zuoRecord = v.any(); // validated field by field in validateRecord (the shape is lib/zuoImport ZuoRecord)
+
+async function contentHash(value: unknown) {
+  const bytes = new globalThis.TextEncoder().encode(stableStringify(value));
+  const hash = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, '0')).join('');
+}
 
 function validateRecord(r: ZuoRecord): ZuoRecord {
   const ok =
@@ -78,6 +85,12 @@ async function protectStagedPack(ctx: MutationCtx, r: ZuoRecord) {
       'INVALID_INPUT',
       `Missing approved prices for staged product: ${r.sku}`
     );
+  const staged = product.draft.variants.find((variant) => variant.sku === r.sku);
+  if (!staged || staged.retail !== dollarsToMinor(r.approvedRetailPack) ||
+      staged.commercial !== dollarsToMinor(r.approvedTradePack))
+    throw new CommerceError('INVALID_INPUT', `Approved staged prices differ; explicit price review required: ${r.sku}`);
+  if (product.zuoStaging.excluded && !r.excluded)
+    throw new CommerceError('INVALID_INPUT', `Staged exclusion cannot be removed by import: ${r.sku}`);
 }
 
 export const begin = mutation({
@@ -86,23 +99,34 @@ export const begin = mutation({
     sourceKey: v.string(),
     files: v.array(v.object({ name: v.string(), sha256: v.string(), rows: v.number() })),
     codeRevision: v.string(),
+    expectedRecords: v.number(),
     rejected: v.array(v.object({ row: v.number(), sku: v.string(), reasons: v.array(v.string()) })),
   },
   handler: async (ctx, a) => {
     const admin = await requireCjAdminIdentity(ctx);
+    if (!Number.isSafeInteger(a.expectedRecords) || a.expectedRecords < 0 || a.expectedRecords > 10000)
+      throw new CommerceError('INVALID_INPUT', 'Expected record count must be an integer from 0 to 10000.');
+    const packageBinding = await contentHash({ files: [...a.files].sort((x, y) => x.name.localeCompare(y.name)),
+      codeRevision: a.codeRevision, expectedRecords: a.expectedRecords, rejected: a.rejected });
+    let reviewedBatchId: Id<'catImportBatches'> | undefined;
     if (a.mode === 'commit') {
       const done = await ctx.db
         .query('catImportBatches')
         .withIndex('by_source_mode', (q) => q.eq('sourceKey', a.sourceKey).eq('mode', 'commit'))
         .filter((q) => q.eq(q.field('status'), 'done'))
         .first();
-      if (done) return { batchId: done._id, alreadyCommitted: true };
+      if (done) {
+        if (done.packageBinding !== packageBinding)
+          throw new CommerceError('INVALID_INPUT', 'This source key was committed with a different or legacy package. Use a new reviewed package key.');
+        return { batchId: done._id, alreadyCommitted: true };
+      }
       const dry = await ctx.db
         .query('catImportBatches')
         .withIndex('by_source_mode', (q) => q.eq('sourceKey', a.sourceKey).eq('mode', 'dry_run'))
-        .filter((q) => q.eq(q.field('status'), 'done'))
+        .filter((q) => q.and(q.eq(q.field('status'), 'done'), q.eq(q.field('packageBinding'), packageBinding)))
         .first();
       if (!dry) throw new CommerceError('INVALID_INPUT', 'Run and review a dry run of this exact package before committing it.');
+      reviewedBatchId = dry._id;
     }
     const supplier = await ensureSupplier(ctx, 'zuo');
     const batchId = await ctx.db.insert('catImportBatches', {
@@ -115,6 +139,9 @@ export const begin = mutation({
       codeRevision: a.codeRevision,
       schemaVersion: 'v2',
       configVersions: {},
+      packageBinding,
+      expectedRecords: a.expectedRecords,
+      ...(reviewedBatchId ? { reviewedBatchId } : {}),
       startedBy: admin.email,
       startedAt: Date.now(),
     });
@@ -189,7 +216,12 @@ async function commitRecord(ctx: MutationCtx, s: StagedRecord, batch: Doc<'catIm
     .query('catVariants')
     .withIndex('by_identity', (q) => q.eq('supplierId', supplierId).eq('supplierSku', r.sku).eq('packId', r.packId))
     .first();
-  if (existing && existing.importFingerprint === fp && (!r.approvedRetailPack || (existing.retailPriceRevisionId && existing.tradePriceRevisionId))) return { action: 'unchanged' as const, variantId: existing._id, conflicts: [] };
+  if (existing && existing.importFingerprint === fp && (!r.approvedRetailPack || (existing.retailPriceRevisionId && existing.tradePriceRevisionId))) {
+    // Identical prices/facts do not authorize dropping a newly reviewed safety hold.
+    for (const h of s.holdReasons) if ((HOLD_REASONS as readonly string[]).includes(h))
+      await openHold(ctx, existing._id, h as HoldReason, `Zuo import: ${h}`, by);
+    return { action: 'unchanged' as const, variantId: existing._id, conflicts: [] };
+  }
   const productId = existing?.productId ?? (await productFor(ctx, r, by));
   const now = Date.now();
   const conflicts: string[] = [];
@@ -420,8 +452,25 @@ export const stage = mutation({
       await protectStagedPack(ctx, record);
       const key = identityKey(record);
       const already = await ctx.db.query('catImportRecords').withIndex('by_batch', (q) => q.eq('batchId', batch._id).eq('sourceRowKey', key)).first();
-      if (already) continue; // a retried chunk
       const staged = { record, holdReasons: s.holdReasons };
+      const reviewedHash = await contentHash(staged);
+      if (already) {
+        if (already.diff?.reviewedHash !== reviewedHash)
+          throw new CommerceError('INVALID_INPUT', `A retried row differs from the original: ${key}`);
+        continue;
+      }
+      if (batch.expectedRecords === undefined || !batch.packageBinding)
+        throw new CommerceError('INVALID_INPUT', 'Legacy unfinished batch: start a new dry run.');
+      if (batch.mode === 'commit') {
+        if (!batch.reviewedBatchId) throw new CommerceError('INVALID_INPUT', 'Missing reviewed dry run.');
+        const reviewed = await ctx.db.query('catImportRecords').withIndex('by_batch', (q) =>
+          q.eq('batchId', batch.reviewedBatchId!).eq('sourceRowKey', key)).unique();
+        if (reviewed?.diff?.reviewedHash !== reviewedHash)
+          throw new CommerceError('INVALID_INPUT', `Row or holds differ from the reviewed dry run: ${key}`);
+      }
+      const processed = (summary.create ?? 0) + (summary.update ?? 0) + (summary.unchanged ?? 0);
+      if (processed >= batch.expectedRecords)
+        throw new CommerceError('INVALID_INPUT', 'Batch exceeds its declared record count.');
       const res = batch.mode === 'commit' ? await commitRecord(ctx, staged, batch, admin.email) : await diffRecord(ctx, staged, batch.supplierId);
       const action = res.action;
       summary[action] = (summary[action] ?? 0) + 1;
@@ -436,7 +485,7 @@ export const stage = mutation({
         action,
         reasons: s.holdReasons,
         cohort: record.cohort,
-        diff: { fingerprint: fingerprint(record) },
+        diff: { fingerprint: fingerprint(record), reviewedHash },
         ...('variantId' in res && res.variantId ? { variantId: res.variantId } : {}),
         ...(conflicts.length ? { conflicts } : {}),
       });
@@ -460,6 +509,10 @@ export const finish = mutation({
     const staged = (batch.summary.create ?? 0) + (batch.summary.update ?? 0) + (batch.summary.unchanged ?? 0);
     const counts = { ...c, total: staged, modeledPrices: staged - (c.unpriced_62 ?? 0), excluded: c.excluded ?? 0, nonexcludedDrafts: staged - (c.excluded ?? 0) };
     const mismatches = a.expectPackageCounts ? countMismatches(counts) : [];
+    if (batch.expectedRecords === undefined || !batch.packageBinding)
+      mismatches.push('Legacy batch lacks a verified package binding; start a new dry run.');
+    else if (staged !== batch.expectedRecords)
+      mismatches.push(`Reviewed record count: expected ${batch.expectedRecords}, got ${staged}`);
     await ctx.db.patch(batch._id, {
       status: mismatches.length ? 'failed' : 'done',
       summary: { ...batch.summary, counts, mismatches },
