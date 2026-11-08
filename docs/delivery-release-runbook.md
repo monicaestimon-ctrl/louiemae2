@@ -132,3 +132,17 @@ The 803-product staging packet is not evidence of 803 purchasable products. Pres
 8. Independently validate current variant costs/MAP, shipping cartons and method, rights, inventory, approved operating policies and live checkout gates before publishing. A successful migration never clears these gates.
 
 Local evidence: all 803 actual staged rows passed the fixture replay for prices, images, names, pack quantities and exclusions. No production migration or sale activation was performed by this safeguard phase. The real source packet remains outside git.
+
+Deployment evidence: PR 252 merged as `01f89dd`; main CI 42536623497, Convex deploy/seed and Vercel production succeeded. Full CI and focused import tests passed. Automatic CodeRabbit review was skipped by repository eligibility; there were no review comments.
+
+## 14. Itemized freight and historical reconciliation
+
+Use the delivery console's itemized invoice form for all new freight expenses. The old `ordFulfillment.recordFreightActual` API now refuses writes instead of creating totals absent from the contribution ledger. Historical rows remain intact and visible beside each supplier order's invoices.
+
+- Enter base freight, fuel, accessorials, supplier fees and credits separately. Every field starts blank; enter `0` only when confirmed. Identify the supplier child order and, when applicable, its shipment. For a carrier invoice spanning orders, enter only this child's documented allocation; do not repeat the entire carrier invoice on every child. This workflow does not automatically allocate a carrier billing statement.
+- An identical carrier/reference retry is idempotent within the supplier order. Changed amounts, shipment, evidence or explanation fail. Existing invoices are immutable; corrections require documented adjustment/credit entries. A positive aggregate freight variance opens the internal review queue and never changes the frozen customer charge.
+- Any legacy freight row without a review prevents a final actual-cost statement. An approver must match its freight total to itemized invoices from that same supplier child (supplier fees excluded), or explain with evidence why the historical record is duplicate or invalid. Unknown costs must first be verified and itemized, not dismissed to clear a gate.
+- Reviews are append-only. Identical retries return the existing review; a correction appends another review. The latest review controls reconciliation, and changes invalidate a previously final cost statement. Original historical amounts and review history remain preserved.
+- Canonical invoices alone supply freight expense to contribution. Matched legacy totals are not added again. After resolving every legacy entry and confirming all expenses, record a new final cost statement. Every supplier child still needs an itemized invoice or an explicitly confirmed zero invoice.
+
+Fixture verification covers conflicting invoice retries, unchanged paid totals, retired legacy writes, final-cost blocking, approver-only review, idempotent review, review corrections, absence of double counting, explicit zero entry and internal freight-variance alerts. No production invoices, payments, refunds or customer messages were created for testing.

@@ -610,6 +610,8 @@ export const recordInvoice = mutation({
       .withIndex('by_invoice', (q) => q.eq('invoiceKey', invoiceKey))
       .unique();
     if (old) {
+      if (old.shipmentId !== a.shipmentId || old.evidence.trim() !== a.evidence.trim() || old.note.trim() !== a.note.trim())
+        throw new CommerceError('INVALID_INPUT', 'Invoice already recorded with different shipment or evidence');
       for (const k of [
         'baseMinor',
         'fuelMinor',
@@ -632,6 +634,16 @@ export const recordInvoice = mutation({
       createdBy: actor.email,
       createdAt: Date.now(),
     });
+    const parent = await ctx.db.get(order.orderId);
+    const intent = parent?.intentId ? await ctx.db.get(parent.intentId) : null;
+    const estimate = intent ? await ctx.db.get(intent.estimateId) : null;
+    const groups = estimate?.groups.filter(g => g.supplierCode === order.supplierCode &&
+      (!order.warehouseCode || g.groupKey === 'ashcroft' || g.groupKey === `${order.supplierCode}:${order.warehouseCode}:${order.service}`)) ?? [];
+    if (groups.length) {
+      const invoices = await ctx.db.query('dlvFreightInvoices').withIndex('by_supplier_order', q => q.eq('supplierOrderId', order._id)).collect();
+      const variance = invoices.reduce((n, i) => n + i.baseMinor + i.fuelMinor + i.accessorialMinor - i.creditMinor, 0) - groups.reduce((n, g) => n + g.freightMinor, 0);
+      if (variance > 0) await openReview(ctx, 'freight_variance', 'ordSupplierOrders', order._id, `Recorded freight exceeds the frozen estimate by ${variance} cents; review internally, never surcharge the customer.`);
+    }
     await audit(ctx, {
       actor: actor.email,
       action: 'delivery.invoice.record',
@@ -639,6 +651,41 @@ export const recordInvoice = mutation({
       entityId: id,
       reason: a.note,
     });
+    return id;
+  },
+});
+async function legacyFreight(ctx: QueryCtx | MutationCtx, supplierOrderId: Doc<'ordSupplierOrders'>['_id']) {
+  const rows = await ctx.db.query('ordFreightActuals').withIndex('by_supplier_order', q => q.eq('supplierOrderId', supplierOrderId)).collect();
+  return Promise.all(rows.map(async row => ({ ...row, review: await ctx.db.query('dlvLegacyFreightReviews')
+    .withIndex('by_legacy', q => q.eq('legacyId', row._id)).order('desc').first() })));
+}
+
+/** Historical totals are retained, never silently counted twice or discarded. */
+export const reviewLegacyFreight = mutation({
+  args: {
+    legacyId: v.id('ordFreightActuals'),
+    resolution: v.union(v.literal('matched_invoice'), v.literal('duplicate_or_invalid')),
+    invoiceIds: v.array(v.id('dlvFreightInvoices')),
+    evidence: v.string(), note: v.string(),
+  },
+  handler: async (ctx, a) => {
+    const actor = await requireDeliveryRole(ctx, 'approver');
+    const legacy = await ctx.db.get(a.legacyId);
+    if (!legacy || !a.evidence.trim() || !a.note.trim() || a.evidence.length > 2000 || a.note.length > 2000 ||
+        a.invoiceIds.length > 50 || new Set(a.invoiceIds).size !== a.invoiceIds.length)
+      throw new CommerceError('INVALID_INPUT');
+    if (a.resolution === 'matched_invoice') {
+      const invoices = await Promise.all(a.invoiceIds.map(id => ctx.db.get(id)));
+      if (!invoices.length || invoices.some(i => !i || i.supplierOrderId !== legacy.supplierOrderId) ||
+          invoices.reduce((n, i) => n + (i ? i.baseMinor + i.fuelMinor + i.accessorialMinor - i.creditMinor : 0), 0) !== legacy.actualMinor)
+        throw new CommerceError('INVALID_INPUT', 'Select invoices for this supplier order whose freight total matches the legacy amount.');
+    } else if (a.invoiceIds.length) throw new CommerceError('INVALID_INPUT');
+    const normalized = { ...a, invoiceIds: [...a.invoiceIds].sort(), evidence: a.evidence.trim(), note: a.note.trim() };
+    const old = await ctx.db.query('dlvLegacyFreightReviews').withIndex('by_legacy', q => q.eq('legacyId', a.legacyId)).order('desc').first();
+    if (old && old.resolution === normalized.resolution && old.evidence === normalized.evidence && old.note === normalized.note &&
+        old.invoiceIds.join(',') === normalized.invoiceIds.join(',')) return old._id;
+    const id = await ctx.db.insert('dlvLegacyFreightReviews', { ...normalized, createdBy: actor.email, createdAt: Date.now() });
+    await audit(ctx, { actor: actor.email, action: 'delivery.legacy_freight.review', entityTable: 'dlvLegacyFreightReviews', entityId: id, reason: normalized.note });
     return id;
   },
 });
@@ -738,6 +785,8 @@ export const reconciliation = query({
       orderNumber: order?.number,
       supplierCode: child.supplierCode,
       invoices,
+      legacyFreight: await legacyFreight(ctx, child._id),
+      shipments: await ctx.db.query('ordShipments').withIndex('by_supplier_order', q => q.eq('supplierOrderId', child._id)).collect(),
       customerDeliveryMinor,
       estimatedFreightMinor,
       estimatedSubsidyMinor: groups.reduce((n, g) => n + g.subsidyMinor, 0),
@@ -771,12 +820,14 @@ async function actualSources(ctx: QueryCtx | MutationCtx, orderId: Doc<'ordOrder
     .query('dlvTaxRefundReviews')
     .withIndex('by_order', (q) => q.eq('orderId', orderId))
     .unique();
+  const legacy = (await Promise.all(children.map(c => legacyFreight(ctx, c._id)))).flat();
   const sourceHash = await digest({
     children: children.map((c) => c._id),
     invoices: invoices.map((i) => i._id).sort(),
     refundMinor: refunds?.confirmedRefundMinor ?? 0,
+    ...(legacy.length ? { legacy: legacy.map(r => [r._id, r.review?._id ?? null]).sort() } : {}),
   });
-  return { children, invoices, sourceHash };
+  return { children, invoices, sourceHash, unresolvedLegacy: legacy.filter(r => !r.review).length };
 }
 const expenseFields = [
   'wholesaleMinor',
@@ -826,6 +877,8 @@ export const recordActualCosts = mutation({
     )
       throw new CommerceError('INVALID_INPUT', 'Refund allocations exceed paid revenue');
     const sources = await actualSources(ctx, a.orderId);
+    if (a.freightFinal && sources.unresolvedLegacy)
+      throw new CommerceError('INVALID_INPUT', 'Resolve historical freight entries before confirming final costs.');
     if (
       a.freightFinal &&
       sources.children.some((c) => !sources.invoices.some((i) => i.supplierOrderId === c._id))
@@ -913,11 +966,12 @@ export const actualContribution = query({
       .withIndex('by_order', (q) => q.eq('orderId', a.orderId))
       .order('desc')
       .first();
-    const complete = !!statement?.freightFinal && statement.sourceHash === sources.sourceHash;
+    const complete = !!statement?.freightFinal && statement.sourceHash === sources.sourceHash && sources.unresolvedLegacy === 0;
     if (!statement)
       return {
         orderNumber: order.number,
         complete: false,
+        unresolvedLegacy: sources.unresolvedLegacy,
         contributionMinor: null,
         note: 'Record every actual expense; unknown expenses are not zero.',
       };
@@ -935,6 +989,7 @@ export const actualContribution = query({
     return {
       orderNumber: order.number,
       complete,
+      unresolvedLegacy: sources.unresolvedLegacy,
       statement,
       freightAndSupplierFeesMinor,
       netRevenueMinor: revenue,
@@ -946,7 +1001,7 @@ export const actualContribution = query({
           : null,
       note: complete
         ? 'Actual recorded contribution includes allocated overhead and advertising. Delivery allowance is not deducted again.'
-        : 'Provisional: freight is not final or new invoices/refunds require an updated statement.',
+        : 'Provisional: resolve historical freight and reconcile final invoices/refunds in an updated statement.',
     };
   },
 });

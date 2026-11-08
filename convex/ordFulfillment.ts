@@ -293,20 +293,13 @@ export const cancelAllocations = mutation({
   },
 });
 
-/** Records the actual freight invoice; a higher actual is an internal variance, never a customer charge. */
+/** Retired: unitemized expenses cannot bypass the canonical invoice/contribution ledger. */
 export const recordFreightActual = mutation({
   args: { supplierOrderId: v.id('ordSupplierOrders'), estimatedMinor: v.number(), actualMinor: v.number(), invoiceRef: v.string() },
   handler: async (ctx, a) => {
-    const admin = await requireDeliveryRole(ctx, 'finance');
-    const c = await child(ctx, a.supplierOrderId);
-    const varianceMinor = a.actualMinor - a.estimatedMinor;
-    await ctx.db.insert('ordFreightActuals', { supplierOrderId: c._id, estimatedMinor: a.estimatedMinor, actualMinor: a.actualMinor, invoiceRef: a.invoiceRef, varianceMinor, createdAt: Date.now() });
-    if (varianceMinor > 0) {
-      await ctx.db.patch(c._id, { exceptions: [...c.exceptions, { at: Date.now(), kind: 'freight_variance', note: `Actual freight ${a.actualMinor} exceeds estimate ${a.estimatedMinor}` }], updatedAt: Date.now() });
-      await openReview(ctx, 'freight_variance', 'ordSupplierOrders', c._id, `Freight variance +${varianceMinor}`);
-    }
-    await audit(ctx, { actor: admin.email, action: 'freight.actual', entityTable: 'ordSupplierOrders', entityId: c._id, after: { varianceMinor } });
-    return { varianceMinor, customerCharged: 0 };
+    await requireDeliveryRole(ctx, 'finance');
+    await child(ctx, a.supplierOrderId);
+    throw new CommerceError('INVALID_INPUT', 'Use the itemized delivery invoice workflow. Legacy freight entry is retired.');
   },
 });
 
