@@ -12,7 +12,7 @@ import { ensureSupplier, openHold } from './catCore';
 import { audit } from './sysCore';
 import { blankCommerceDraft } from '../lib/commerce';
 import { CommerceError } from '../lib/errors';
-import { dollarsToMinor } from '../lib/decimal';
+import { dollarsToMinor, mul, parseDecimal, rat, toMinor } from '../lib/decimal';
 import { proposeCategory } from '../lib/catCategory';
 import { slugify } from '../lib/slug';
 import { piecePriceInfo } from '../lib/catUnits';
@@ -34,7 +34,50 @@ function validateRecord(r: ZuoRecord): ZuoRecord {
     Array.isArray(r.images) &&
     (r.wholesalePiece === null || /^\d+(\.\d+)?$/.test(r.wholesalePiece));
   if (!ok) throw new CommerceError('INVALID_INPUT', `Malformed record ${String(r?.sku)}`);
+  for (const value of [r.approvedRetailPack, r.approvedTradePack]) {
+    if (
+      value !== null &&
+      (typeof value !== 'string' ||
+        !/^\d+(\.\d{1,2}0*)?$/.test(value) ||
+        dollarsToMinor(value) <= 0)
+    )
+      throw new CommerceError(
+        'INVALID_INPUT',
+        `Approved pack prices must be positive exact cents: ${r.sku}`
+      );
+  }
+  if ((r.approvedRetailPack === null) !== (r.approvedTradePack === null))
+    throw new CommerceError('INVALID_INPUT', `Both approved pack prices are required: ${r.sku}`);
   return r;
+}
+
+function importedPolicy(r: ZuoRecord) {
+  return (
+    r.policyKey ??
+    (r.cohort === 'approved_306'
+      ? 'zuo-approved-5'
+      : r.cohort === 'map_135'
+        ? 'zuo-map-floor-pending'
+        : 'zuo-standard-20')
+  );
+}
+
+async function protectStagedPack(ctx: MutationCtx, r: ZuoRecord) {
+  const product = await ctx.db
+    .query('commerceProducts')
+    .withIndex('by_source', (q) => q.eq('sourceKey', `zuo:${r.sku}`))
+    .unique();
+  if (!product?.zuoStaging) return;
+  if (product.zuoStaging.pack !== r.piecesPerPack)
+    throw new CommerceError(
+      'INVALID_INPUT',
+      `Staged pack quantity differs; review required: ${r.sku}`
+    );
+  if (r.approvedRetailPack === null || r.approvedTradePack === null)
+    throw new CommerceError(
+      'INVALID_INPUT',
+      `Missing approved prices for staged product: ${r.sku}`
+    );
 }
 
 export const begin = mutation({
@@ -146,7 +189,7 @@ async function commitRecord(ctx: MutationCtx, s: StagedRecord, batch: Doc<'catIm
     .query('catVariants')
     .withIndex('by_identity', (q) => q.eq('supplierId', supplierId).eq('supplierSku', r.sku).eq('packId', r.packId))
     .first();
-  if (existing && existing.importFingerprint === fp) return { action: 'unchanged' as const, variantId: existing._id, conflicts: [] };
+  if (existing && existing.importFingerprint === fp && (!r.approvedRetailPack || (existing.retailPriceRevisionId && existing.tradePriceRevisionId))) return { action: 'unchanged' as const, variantId: existing._id, conflicts: [] };
   const productId = existing?.productId ?? (await productFor(ctx, r, by));
   const now = Date.now();
   const conflicts: string[] = [];
@@ -167,7 +210,7 @@ async function commitRecord(ctx: MutationCtx, s: StagedRecord, batch: Doc<'catIm
   if (existing) {
     variantId = existing._id;
     // Owner-renamed variants keep their Louie Mae name; supplier names and SKUs never change.
-    await ctx.db.patch(variantId, base);
+    await ctx.db.patch(variantId, { ...base, ...(!existing.marginPolicyKey ? { marginPolicyKey: importedPolicy(r) } : {}) });
   } else {
     variantId = await ctx.db.insert('catVariants', {
       productId,
@@ -179,7 +222,7 @@ async function commitRecord(ctx: MutationCtx, s: StagedRecord, batch: Doc<'catIm
       availability: 'unknown',
       fulfillmentRoute: 'manual_dealer_zuo',
       holds: [],
-      ...(r.policyKey ? { marginPolicyKey: r.policyKey } : r.cohort === 'approved_306' ? { marginPolicyKey: 'zuo-approved-5' } : r.cohort === 'map_135' ? { marginPolicyKey: 'zuo-map-floor-pending' } : {}),
+      marginPolicyKey: importedPolicy(r),
       createdAt: now,
       ...base,
     });
@@ -233,8 +276,8 @@ async function commitRecord(ctx: MutationCtx, s: StagedRecord, batch: Doc<'catIm
     });
     await ctx.db.patch(variantId, { currentCostRevisionId: costId });
   }
-  // The approved cohort's exact pack prices, preserved as imported (PRI01).
-  if (r.cohort === 'approved_306' && r.approvedRetailPack) {
+  // Preserve approved pack prices for every cohort; this does not clear sale holds.
+  if (r.approvedRetailPack && r.approvedTradePack) {
     for (const [channel, value] of [['retail', r.approvedRetailPack], ['trade', r.approvedTradePack]] as const) {
       if (!value) continue;
       const packPriceMinor = dollarsToMinor(value, 'ceil');
@@ -252,10 +295,10 @@ async function commitRecord(ctx: MutationCtx, s: StagedRecord, batch: Doc<'catIm
         channel,
         packPriceMinor,
         piecePriceMinorInfo: piecePriceInfo(packPriceMinor, r.piecesPerPack),
-        marginPolicyKey: 'zuo-approved-5',
+        marginPolicyKey: existing?.marginPolicyKey ?? importedPolicy(r),
         marginPolicyVersion: 1,
         roundingPolicyVersion: 1,
-        approvedBy: 'owner (approved 306-product cohort, v2 §1)',
+        approvedBy: `owner (approved imported pack prices, ${r.cohort})`,
         approvedAt: now,
         status: 'approved',
         origin: 'import_approved',
@@ -267,6 +310,7 @@ async function commitRecord(ctx: MutationCtx, s: StagedRecord, batch: Doc<'catIm
       await ctx.db.patch(variantId, { [field]: priceId });
     }
   }
+  if (r.cohort === 'map_135') await openHold(ctx, variantId, 'MAP_FLOOR_UNAPPROVED', 'Imported prices do not approve the MAP cohort operating floor.', by);
   if (r.stock !== 'unknown' || r.excluded) await ctx.db.patch(variantId, { availability: r.stock === 'unknown' ? 'out_of_stock' : r.stock, availabilityObservedAt: r.observedAt });
   for (const h of s.holdReasons) if ((HOLD_REASONS as readonly string[]).includes(h)) await openHold(ctx, variantId, h as HoldReason, `Zuo import: ${h}`, by);
   if (r.excluded) await openHold(ctx, variantId, 'MANUAL', 'Excluded in the reconciled package: keep history, do not activate.', by);
@@ -278,33 +322,88 @@ async function commitRecord(ctx: MutationCtx, s: StagedRecord, batch: Doc<'catIm
 export async function projectDraftVariants(ctx: MutationCtx, productId: Id<'commerceProducts'>) {
   const product = await ctx.db.get(productId);
   if (!product || product.provider !== 'zuo') return;
-  const variants = await ctx.db.query('catVariants').withIndex('by_product', (q) => q.eq('productId', productId)).collect();
+  const variants = await ctx.db
+    .query('catVariants')
+    .withIndex('by_product', (q) => q.eq('productId', productId))
+    .collect();
   const draftVariants = [];
   for (const cv of variants) {
+    const matching = product.draft.variants.filter(
+      (v) => v.id === cv._id || v.sku === cv.supplierSku
+    );
+    const previous =
+      matching.find((v) => v.id === cv._id) ?? (matching.length === 1 ? matching[0] : undefined);
+    if (matching.length > 1 && !previous)
+      throw new CommerceError('INVALID_INPUT', `Ambiguous draft variant: ${cv.supplierSku}`);
     const cost = cv.currentCostRevisionId ? await ctx.db.get(cv.currentCostRevisionId) : null;
     const retail = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
     const trade = cv.tradePriceRevisionId ? await ctx.db.get(cv.tradePriceRevisionId) : null;
+    if (
+      retail?.status !== 'approved' ||
+      trade?.status !== 'approved' ||
+      retail.packPriceMinor <= 0 ||
+      trade.packPriceMinor <= 0
+    ) {
+      if (previous)
+        throw new CommerceError(
+          'INVALID_INPUT',
+          `Cannot replace existing variant without both approved prices: ${cv.supplierSku}`
+        );
+      await openHold(
+        ctx,
+        cv._id,
+        'MANUAL',
+        'Both approved pack prices required before draft projection.',
+        'zuo-import'
+      );
+      continue; // Keep unpriced records for review, never create a zero-price draft variant.
+    }
     draftVariants.push({
+      ...(previous ?? {}),
       id: cv._id,
       name: cv.louieMaeVariantName,
       sku: cv.supplierSku,
-      cost: cost?.wholesaleMinor ? (cost.wholesaleMinor * cv.piecesPerPack) / 100 : 0,
+      cost: cost?.wholesalePrecise
+        ? toMinor(
+            mul(parseDecimal(cost.wholesalePrecise), rat(cv.piecesPerPack * 100)),
+            'half_up'
+          ) / 100
+        : cost?.wholesaleMinor != null
+          ? (cost.wholesaleMinor * cv.piecesPerPack) / 100
+          : (previous?.cost ?? 0),
       minimum: cv.orderMinimumPacks,
       increment: cv.orderIncrementPacks,
-      retail: retail?.status === 'approved' ? retail.packPriceMinor : 0,
-      commercial: trade?.status === 'approved' ? trade.packPriceMinor : 0,
+      retail: retail.packPriceMinor,
+      commercial: trade.packPriceMinor,
     });
   }
-  await ctx.db.patch(productId, { draft: { ...product.draft, variants: draftVariants }, revision: product.revision + 1, updatedAt: Date.now() });
+  const migratedSkus = new Set(variants.map((v) => v.supplierSku));
+  draftVariants.push(...product.draft.variants.filter((v) => !migratedSkus.has(v.sku)));
+  await ctx.db.patch(productId, {
+    draft: { ...product.draft, variants: draftVariants },
+    revision: product.revision + 1,
+    updatedAt: Date.now(),
+  });
 }
 
 async function diffRecord(ctx: MutationCtx, s: StagedRecord, supplierId: Id<'catSuppliers'>) {
   const existing = await ctx.db
     .query('catVariants')
-    .withIndex('by_identity', (q) => q.eq('supplierId', supplierId).eq('supplierSku', s.record.sku).eq('packId', s.record.packId))
+    .withIndex('by_identity', (q) =>
+      q.eq('supplierId', supplierId).eq('supplierSku', s.record.sku).eq('packId', s.record.packId)
+    )
     .first();
   if (!existing) return { action: 'create' as const };
-  return { action: existing.importFingerprint === fingerprint(s.record) ? ('unchanged' as const) : ('update' as const), variantId: existing._id };
+  const pricesPresent =
+    !s.record.approvedRetailPack ||
+    (existing.retailPriceRevisionId && existing.tradePriceRevisionId);
+  return {
+    action:
+      existing.importFingerprint === fingerprint(s.record) && pricesPresent
+        ? ('unchanged' as const)
+        : ('update' as const),
+    variantId: existing._id,
+  };
 }
 
 /** Stages a chunk of normalized records: a dry run reports, a commit writes. */
@@ -318,6 +417,7 @@ export const stage = mutation({
     const summary = { ...batch.summary, cohorts: { ...(batch.summary.cohorts ?? {}) } };
     for (const s of a.records) {
       const record = validateRecord(s.record as ZuoRecord);
+      await protectStagedPack(ctx, record);
       const key = identityKey(record);
       const already = await ctx.db.query('catImportRecords').withIndex('by_batch', (q) => q.eq('batchId', batch._id).eq('sourceRowKey', key)).first();
       if (already) continue; // a retried chunk
