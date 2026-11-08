@@ -18,6 +18,13 @@ import type * as batchImports from "../batchImports.js";
 import type * as blogPosts from "../blogPosts.js";
 import type * as brandVoice from "../brandVoice.js";
 import type * as campaigns from "../campaigns.js";
+import type * as catCategories from "../catCategories.js";
+import type * as catCore from "../catCore.js";
+import type * as catMedia from "../catMedia.js";
+import type * as catPolicies from "../catPolicies.js";
+import type * as catPricing from "../catPricing.js";
+import type * as catPublication from "../catPublication.js";
+import type * as catStock from "../catStock.js";
 import type * as catalog from "../catalog.js";
 import type * as catalogMaintenance from "../catalogMaintenance.js";
 import type * as catalogMigration from "../catalogMigration.js";
@@ -123,6 +130,7 @@ import type * as webhookRetention from "../webhookRetention.js";
 import type * as webhookSummaries from "../webhookSummaries.js";
 import type * as webhookSummaryMaintenance from "../webhookSummaryMaintenance.js";
 import type * as zuoStaging from "../zuoStaging.js";
+import type * as zuoImport from "../zuoImport.js";
 
 import type {
   ApiFromModules,
@@ -141,6 +149,13 @@ declare const fullApi: ApiFromModules<{
   blogPosts: typeof blogPosts;
   brandVoice: typeof brandVoice;
   campaigns: typeof campaigns;
+  catCategories: typeof catCategories;
+  catCore: typeof catCore;
+  catMedia: typeof catMedia;
+  catPolicies: typeof catPolicies;
+  catPricing: typeof catPricing;
+  catPublication: typeof catPublication;
+  catStock: typeof catStock;
   catalog: typeof catalog;
   catalogMaintenance: typeof catalogMaintenance;
   catalogMigration: typeof catalogMigration;
@@ -246,6 +261,7 @@ declare const fullApi: ApiFromModules<{
   webhookSummaries: typeof webhookSummaries;
   webhookSummaryMaintenance: typeof webhookSummaryMaintenance;
   zuoStaging: typeof zuoStaging;
+  zuoImport: typeof zuoImport;
 }>;
 
 /**

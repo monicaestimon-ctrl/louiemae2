@@ -229,6 +229,7 @@ export const v2Tables = {
     tradePriceRevisionId: v.optional(v.id('catPriceRevisions')),
     holds: v.array(holdReason),
     referralEligible: v.optional(v.boolean()),
+    importFingerprint: v.optional(v.string()),
     legacyVariantId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
