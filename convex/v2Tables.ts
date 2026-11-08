@@ -22,6 +22,9 @@ import {
 } from './v2Validators';
 
 export const v2Tables = {
+  dlvRequestLimits: defineTable({ key: v.string(), tokens: v.number(), refilledAt: v.number(), expiresAt: v.number() }).index('by_key', ['key']).index('by_expiry', ['expiresAt']),
+  dlvRequestPermits: defineTable({ nonce: v.string(), expiresAt: v.number() }).index('by_nonce', ['nonce']).index('by_expiry', ['expiresAt']),
+
   // ---------------- system (S02, S03) ----------------
   sysConfig: defineTable({
     kind: v.string(),

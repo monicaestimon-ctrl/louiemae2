@@ -6,7 +6,7 @@ import { STANDARD_ACCESS, addressKey } from '../../lib/delivery/destination';
 import { serviceTerms } from '../../lib/delivery/service';
 
 const request = vi.hoisted(() => vi.fn());
-vi.mock('convex/react', () => ({ useMutation: () => request }));
+vi.mock('./useDeliveryRequest', () => ({ useDeliveryRequest: () => request }));
 vi.mock('./DeliveryQuoteStatus', () => ({ default: () => <p>Request saved</p> }));
 
 describe('delivery access handoff', () => {

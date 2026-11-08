@@ -17,6 +17,7 @@ export const COMMERCE_ERROR_CODES = [
   'INVALID_INPUT',
   'FORBIDDEN',
   'TEMPORARILY_UNAVAILABLE',
+  'RATE_LIMITED',
 ] as const;
 export type CommerceErrorCode = (typeof COMMERCE_ERROR_CODES)[number];
 
@@ -34,6 +35,7 @@ export const CUSTOMER_MESSAGES: Record<CommerceErrorCode, string> = {
   FEATURE_DISABLED: "This isn't available yet.",
   INVALID_INPUT: 'Please check the details and try again.',
   FORBIDDEN: "You don't have access to this.",
+  RATE_LIMITED: 'Too many requests. Please wait a moment and try again.',
   TEMPORARILY_UNAVAILABLE: 'This is temporarily unavailable. Please try again or request support.',
 };
 

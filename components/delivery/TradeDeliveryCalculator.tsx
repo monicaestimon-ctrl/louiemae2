@@ -1,6 +1,7 @@
+import { useDeliveryRequest } from './useDeliveryRequest';
 import DeliveryBoundary from './DeliveryBoundary';
 import React, { useEffect, useState } from 'react';
-import { useAction, usePaginatedQuery, useQuery } from 'convex/react';
+import { usePaginatedQuery, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { DeliveryCheckout } from './CheckoutV2';
 import DeliveryQuoteRequest from './DeliveryQuoteRequest';
@@ -50,7 +51,7 @@ function ApprovedCalculator() {
     api.dlvTradeCalculator.calculate,
     lines.length && quantitiesValid ? { lines } : 'skip'
   );
-  const estimate = useAction(api.dlvTaxActions.estimate);
+  const estimate = useDeliveryRequest('estimate');
   const [delivery, setDelivery] = useState<{
     key: string;
     status: string;

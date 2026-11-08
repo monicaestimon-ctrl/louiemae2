@@ -1,10 +1,13 @@
 'use node';
-import { publicDeliveryError } from '../lib/delivery/publicErrors';
+import { proofArg } from './dlvPerimeter';
+import { quoteRequestArgs } from './dlvOperations';
+import type { Id } from './_generated/dataModel';
+import { customerFacing, publicDeliveryError } from '../lib/delivery/publicErrors';
 import { assertDeliveryBounds } from '../lib/delivery/requestBounds';
 import Stripe from 'stripe';
 import { v } from 'convex/values';
 import { action, internalAction } from './_generated/server';
-import { api, internal } from './_generated/api';
+import { internal } from './_generated/api';
 import { addressArg, lineArg, type PublicDeliveryEstimate } from './dlvEstimates';
 import { CommerceError } from '../lib/errors';
 import type { Observation } from '../lib/delivery/monitoring';
@@ -12,6 +15,7 @@ import type { Observation } from '../lib/delivery/monitoring';
 /** Iterates provider tax and the shared delivery engine. Never creates a payment or shipment. */
 export const estimate = action({
   args: {
+    proof: v.optional(proofArg),
     lines: v.array(lineArg),
     channel: v.union(v.literal('retail'), v.literal('trade')),
     zip: v.string(),
@@ -22,6 +26,17 @@ export const estimate = action({
     clientPrices: v.optional(v.any()),
   },
   handler: async (ctx, a): Promise<PublicDeliveryEstimate> => {
+    const { proof, ...input } = a;
+    // Reject unsigned/direct calls before any provider work or observation writes.
+    const permit = await customerFacing(() =>
+      ctx.runMutation(internal.dlvPerimeter.consume, {
+        operation: 'estimate',
+        input,
+        ...(proof ? { proof } : {}),
+      })
+    );
+    if (permit !== 'ok')
+      throw new CommerceError(permit === 'limited' ? 'RATE_LIMITED' : 'FORBIDDEN');
     const started = Date.now();
     let path: Observation['path'] = 'matrix';
     let outcome: Observation['outcome'] | undefined;
@@ -29,9 +44,9 @@ export const estimate = action({
     let requestId: string | undefined;
     let finalResult: PublicDeliveryEstimate | undefined;
     try {
-      assertDeliveryBounds(a);
+      assertDeliveryBounds(input);
       finalResult = await (async (): Promise<PublicDeliveryEstimate> => {
-        let result = await ctx.runMutation(api.dlvEstimates.estimate, a);
+        let result = await ctx.runMutation(internal.dlvEstimates.compute, input);
         if (!a.address || result.status !== 'ok' || result.totalMinor !== null) return result;
         if (!process.env.STRIPE_SECRET_KEY) return result;
         path = 'matrix_tax';
@@ -126,7 +141,7 @@ export const estimate = action({
               reasons: ['We need to confirm tax and delivery before payment. Request a quote.'],
             };
           }
-          result = await ctx.runMutation(api.dlvEstimates.estimate, a);
+          result = await ctx.runMutation(internal.dlvEstimates.compute, input);
           if (result.status !== 'ok' || result.totalMinor !== null) return result;
         }
         outcome = 'tax_unavailable';
@@ -165,6 +180,26 @@ export const estimate = action({
         // Fixed text only: no input, provider error, address or capability in logs.
         console.warn('Delivery observation could not be persisted');
       }
+    }
+  },
+});
+
+/** Signed quote intake; creation remains atomic while abuse limits commit independently. */
+export const requestQuote = action({
+  args: { ...quoteRequestArgs, proof: v.optional(proofArg) },
+  handler: async (ctx, a): Promise<{ id: Id<'dlvQuoteRequests'>; guestCapability?: string }> => {
+    try {
+      const { proof, ...input } = a;
+      const permit = await ctx.runMutation(internal.dlvPerimeter.consume, {
+        operation: 'quote',
+        input,
+        ...(proof ? { proof } : {}),
+      });
+      if (permit !== 'ok')
+        throw new CommerceError(permit === 'limited' ? 'RATE_LIMITED' : 'FORBIDDEN');
+      return await ctx.runMutation(internal.dlvOperations.createRequest, input);
+    } catch (error) {
+      throw publicDeliveryError(error);
     }
   },
 });

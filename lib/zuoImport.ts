@@ -2,6 +2,8 @@
 // validation, cohort classification and holds. The Convex side (convex/zuoImport.ts) diffs and
 // writes. Field names accept the aliases below; verify them against the real package's header
 // row before the first real dry run and add aliases here rather than renaming source columns.
+import { stableStringify } from './canonicalJson.js';
+export { stableStringify } from './canonicalJson.js';
 import { parseDecimal, toDecimalString, mul, rat, toMinor } from './decimal';
 
 export const ZUO_COHORTS = ['approved_306', 'map_135', 'original_296', 'reconciled_66', 'unpriced_62'] as const;
@@ -347,15 +349,4 @@ export function fingerprint(r: ZuoRecord): string {
   void _o;
   void _s;
   return stableStringify(rest);
-}
-
-export function stableStringify(x: unknown): string {
-  if (Array.isArray(x)) return `[${x.map(stableStringify).join(',')}]`;
-  if (x && typeof x === 'object')
-    return `{${Object.keys(x as object)
-      .sort()
-      .filter((k) => (x as Record<string, unknown>)[k] !== undefined)
-      .map((k) => `${JSON.stringify(k)}:${stableStringify((x as Record<string, unknown>)[k])}`)
-      .join(',')}}`;
-  return JSON.stringify(x);
 }

@@ -1,4 +1,4 @@
-import { CommerceError } from '../errors';
+import { CommerceError } from '../errors.js';
 import type { AddressIn } from './destination';
 
 export const DELIVERY_BODY_BYTES = 65536;

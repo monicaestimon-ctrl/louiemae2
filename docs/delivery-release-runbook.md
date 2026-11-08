@@ -82,3 +82,16 @@ Release record must include deployment IDs, policy versions, SKU/rate evidence, 
 Before production expansion, record the owner-approved contact-data retention schedule, storage-provider encryption/access assurances, backup/erasure procedure, legal-hold treatment and responsible operator. Keep those gates open when evidence is missing. A request to erase data requires an authenticated identity check, a review of all linked projects/notifications/orders and a recorded decision; it must not erase payment or partner obligations.
 
 Unexpected delivery failures use a random support reference. Never paste full addresses, guest links, supplier costs or raw provider payloads into public issue trackers or analytics. Customer errors contain stable codes and safe wording; detailed investigations remain inside authorized systems.
+
+
+## 11. Signed delivery gateway configuration and verification
+
+The browser uses `/api/delivery` on its own retail/trade origin for estimate and quote intake. Only the server creates a proof. Set a fresh 64-character hexadecimal `DELIVERY_REQUEST_SECRET` as a sensitive Vercel Production environment variable and the matching Convex environment variable, using stdin rather than command arguments or committed files. Keep `VITE_CONVEX_URL` pointed at the intended backend. The secret must never have a `VITE_` prefix. Roll both servers together for rotation; in-flight proofs expire after 60 seconds and temporarily fail safely on mismatch.
+
+Use a separate Convex deployment and distinct secret for Preview. An unconfigured preview intentionally refuses gateway requests; do not connect it to production to make a test pass. Local end-to-end tests should use fixtures or an explicitly isolated trusted-server adapter; localhost cannot manufacture production's Vercel request header.
+
+After both deployments, while delivery is still disabled, a bounded same-origin estimate request with fixture identifiers must return `FEATURE_DISABLED`, demonstrating trusted-context verification without provider calls. A direct unsigned Convex estimate must return `FORBIDDEN`; invalid/oversized payloads must not reach pricing. Use no real quote contact details, payments or notification sends for these checks. Once operational readiness is approved, verify ordinary estimates, authenticated trade access and exact quote retry in the authorized environment.
+
+The request limit is a workload/spend control, not a carrier rate or customer-delivery price. HTTP 429 returns Retry-After 60 seconds; a quote bucket may take up to 12 minutes to replenish one token, so another attempt can remain limited. Counts survive invalid products, rejected membership and failed calculations. The daily IP pseudonym means an IP budget resets on UTC day rollover; account/email/global budgets continue independently. NAT/shared networks may share a limit; a support-assisted quote is the recovery route.
+
+Configuration evidence, 2026-11-08: matching server-only gateway secrets were set via stdin in Convex `diligent-jay-261` and Vercel production project `prj_Qijd8TQq62BbwCyUjLj1nzbBtAUk`. No secret was written to the repository or copied to Preview. Delivery activation flags were unchanged. The deployment/probe result must be recorded after merge.

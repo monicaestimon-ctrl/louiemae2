@@ -1,6 +1,7 @@
+import { useDeliveryRequest } from './useDeliveryRequest';
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { useAuthToken } from '@convex-dev/auth/react';
-import { useAction, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { Loader2 } from 'lucide-react';
 import { api } from '../../convex/_generated/api';
 import { useCart } from '../../contexts/CartContext';
@@ -67,7 +68,7 @@ export function DeliveryCheckout({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-  const estimate = useAction(api.dlvTaxActions.estimate);
+  const estimate = useDeliveryRequest('estimate');
   const [address, setAddress] = useState({
     recipientName: '',
     phone: '',

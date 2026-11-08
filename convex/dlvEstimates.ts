@@ -4,11 +4,11 @@ import { assertDeliveryBounds } from '../lib/delivery/requestBounds';
 // estimate valid through payment initiation is required for checkout. Any change to cart,
 // address, membership, service, quantity, credit, discount or source version invalidates it.
 import { v } from 'convex/values';
-import { mutation, query } from './_generated/server';
+import { internalMutation, query } from './_generated/server';
 import type { Id } from './_generated/dataModel';
 import { computeEstimate, cartHash, type LineInput } from './dlvEngine';
 import { activeConfig } from './sysConfig';
-import { bumpMetric, rateLimit } from './sysCore';
+import { bumpMetric } from './sysCore';
 import { viewer, isVerified } from './holmAccess';
 import { requireFlag, flag } from '../lib/flags';
 import { available as creditAvailable } from './ldgCredits';
@@ -87,11 +87,11 @@ export const productProfile = query({
 });
 
 /**
- * Compatibility mutation for existing clients; new storefronts use the observed dlvTaxActions action.
+ * Internal computation only. Public requests must pass the signed gateway and durable limits.
  * Estimates delivery for a cart or a single product. Returns customer-safe fields only; the
  * internal breakdown stays on the stored estimate for admins.
  */
-export const estimate = mutation({
+export const compute = internalMutation({
   args: {
     lines: v.array(lineArg),
     channel: v.union(v.literal('retail'), v.literal('trade')),
@@ -107,20 +107,6 @@ export const estimate = mutation({
     customerFacing(async () => {
       assertDeliveryBounds(a, 30);
       requireFlag('DELIVERY_AUTOMATION_ENABLED');
-      const estimateViewer = await viewer(ctx);
-      // A freely chosen visitor string is never the sole limit or an ownership credential.
-      const principal =
-        estimateViewer?.userId ??
-        `guest:${await digest({ lines: a.lines, zip: a.zip.slice(0, 5) })}`;
-      if (
-        !(await rateLimit(ctx, `estimate:${principal}`, 30, 30)) ||
-        !(await rateLimit(ctx, 'estimate:global-budget', 2000, 60))
-      )
-        throw new CommerceError(
-          'INVALID_INPUT',
-          'Too many estimates; wait a moment.',
-          'Please wait a moment and try again.'
-        );
       if (a.clientPrices !== undefined) await bumpMetric(ctx, 'security.client_price_ignored');
       const policy = (await activeConfig<EstimatePolicy>(ctx, 'estimatePolicy', 'estimate-policy'))
         .value;
