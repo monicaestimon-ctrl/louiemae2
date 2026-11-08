@@ -60,6 +60,7 @@ import type * as dataLifecycle from "../dataLifecycle.js";
 import type * as descriptionAudits from "../descriptionAudits.js";
 import type * as descriptionValidators from "../descriptionValidators.js";
 import type * as dlvTaxExemptions from "../dlvTaxExemptions.js";
+import type * as dlvTelemetry from "../dlvTelemetry.js";
 import type * as dlvTax from "../dlvTax.js";
 import type * as dlvTaxActions from "../dlvTaxActions.js";
 import type * as dlvManual from "../dlvManual.js";
@@ -223,6 +224,7 @@ declare const fullApi: ApiFromModules<{
   descriptionAudits: typeof descriptionAudits;
   descriptionValidators: typeof descriptionValidators;
   dlvTaxExemptions: typeof dlvTaxExemptions;
+  dlvTelemetry: typeof dlvTelemetry;
   dlvTax: typeof dlvTax;
   dlvTaxActions: typeof dlvTaxActions;
   dlvManual: typeof dlvManual;

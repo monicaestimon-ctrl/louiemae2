@@ -13,8 +13,8 @@ vi.mock('convex/react', () => ({
       : getFunctionName(ref as never).includes('productProfile')
         ? { piecesPerPack: 2, minimumPacks: 3, incrementPacks: 2 }
         : undefined,
-  useMutation: (ref: unknown) =>
-    getFunctionName(ref as never).includes('dlvEstimates') ? mock.estimate : mock.request,
+  useAction: () => mock.estimate,
+  useMutation: () => mock.request,
 }));
 vi.mock('@convex-dev/auth/react', () => ({ useAuthToken: () => null }));
 beforeEach(() => {

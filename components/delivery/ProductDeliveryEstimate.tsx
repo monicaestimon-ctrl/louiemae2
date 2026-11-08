@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import DeliveryQuoteRequest from './DeliveryQuoteRequest';
-import { useMutation, useQuery } from 'convex/react';
+import { useAction, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { visitorId } from '../../lib/partnerLink';
 import { customerMessage } from '../../lib/errors';
@@ -60,7 +60,7 @@ function DeliveryForm({
   incrementPacks: number;
   channel: 'retail' | 'trade';
 }) {
-  const estimate = useMutation(api.dlvEstimates.estimate);
+  const estimate = useAction(api.dlvTaxActions.estimate);
   const [zip, setZip] = useState('');
   const [qty, setQty] = useState(minimumPacks);
   const sequence = useRef(0);

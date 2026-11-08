@@ -10,7 +10,7 @@ import { bumpMetric, rateLimit } from './sysCore';
 import { viewer, isVerified } from './holmAccess';
 import { requireFlag, flag } from '../lib/flags';
 import { available as creditAvailable } from './ldgCredits';
-import { CommerceError, commerceErrorData } from '../lib/errors';
+import { CommerceError } from '../lib/errors';
 import { addressKey } from '../lib/delivery/destination';
 import { DELIVERY_TIMING_CAVEAT, QUOTE_CTA, ZIP_ESTIMATE_NOTE } from '../lib/customerCopy';
 import type { EstimatePolicy } from '../lib/config';
@@ -82,6 +82,7 @@ export const productProfile = query({
 });
 
 /**
+ * Compatibility mutation for existing clients; new storefronts use the observed dlvTaxActions action.
  * Estimates delivery for a cart or a single product. Returns customer-safe fields only; the
  * internal breakdown stays on the stored estimate for admins.
  */
@@ -113,7 +114,6 @@ export const estimate = mutation({
         'Please wait a moment and try again.'
       );
     if (a.clientPrices !== undefined) await bumpMetric(ctx, 'security.client_price_ignored');
-    const started = Date.now();
     const policy = (await activeConfig<EstimatePolicy>(ctx, 'estimatePolicy', 'estimate-policy'))
       .value;
     const service = a.service ?? 'curbside';
@@ -121,20 +121,13 @@ export const estimate = mutation({
     const me0 = await viewer(ctx);
     const creditMinor =
       a.useCredit && me0 && flag('CREDIT_V2_ENABLED') ? await creditAvailable(ctx, me0.userId) : 0;
-    let out;
-    try {
-      out = await computeEstimate(ctx, {
-        lines: a.lines as LineInput[],
-        channel: a.channel,
-        destination,
-        service,
-        creditMinor,
-      });
-    } catch (e) {
-      const d = commerceErrorData(e);
-      await bumpMetric(ctx, `estimate.error.${d?.code ?? 'unknown'}`);
-      throw e;
-    }
+    const out = await computeEstimate(ctx, {
+      lines: a.lines as LineInput[],
+      channel: a.channel,
+      destination,
+      service,
+      creditMinor,
+    });
     const now = Date.now();
     const expiresAt = Math.min(
       now + policy.validityMinutes * 60000,
@@ -190,11 +183,6 @@ export const estimate = mutation({
       ...(guestCapability ? { guestCapabilityHash: await digest(guestCapability) } : {}),
       createdAt: now,
     });
-    await bumpMetric(
-      ctx,
-      status === 'ok' ? 'estimate.ok' : 'estimate.quote_required',
-      Date.now() - started
-    );
     const splitKnown = new Set(out.groups.map((g) => g.groupKey)).size > 1;
     return {
       estimateId: id,

@@ -1,3 +1,4 @@
+import DeliveryMonitoring from './DeliveryMonitoring';
 import React, { useState } from 'react';
 import { useConvex, useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
@@ -37,6 +38,7 @@ export default function DeliveryDiagnostics() {
   return (
     <section className="space-y-3 border p-4 text-sm">
       <h3>Readiness, coverage and scenario records</h3>
+      <DeliveryMonitoring />
       <p>
         Carrier evidence: {coverage?.carrierEvidence ?? 'Not configured'} ·{' '}
         {coverage?.carrierCurrent ? 'Current' : 'Review required'} · Address-tax policy:{' '}

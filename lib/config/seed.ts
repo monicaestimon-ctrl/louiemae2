@@ -4,6 +4,7 @@
 import type { ConfigSeed } from './index';
 
 export const CONFIG_SEED: ConfigSeed[] = [
+  { kind: 'deliveryMonitoringPolicy', key: 'delivery-monitoring', version: 1, status: 'proposed', value: { minimumAttempts: 20, authorizationFailures: 20, errorRateBps: 1000, matrixP95Ms: 2000, taxP95Ms: 8000, quoteSlaHours: 24, retentionDays: 7 }, note: 'Initial rolling-15-minute monitoring targets; quote SLA is elapsed time since last staff action, not business hours. Review before enabling alerts.', decision: 'D-08' },
   {
     kind: 'serviceLevel',
     key: 'delivery-curbside',

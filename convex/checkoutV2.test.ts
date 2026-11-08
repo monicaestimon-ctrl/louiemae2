@@ -13,11 +13,13 @@ import { quoteOnlyReasons, zipRegion, STANDARD_ACCESS } from '../lib/delivery/de
 import { exemptionFor } from './dlvTaxExemptions';
 import { groupFreight, type FreightConfig, type ResolvedLine } from './dlvEngine';
 
+const taxFixture = vi.hoisted(() => ({ fail: false }));
 vi.mock('stripe', () => ({
   default: class {
     tax = {
       calculations: {
         create: async (a: any) => {
+          if (taxFixture.fail) throw new Error('Fixture provider failure');
           const amount =
             a.line_items.reduce((n: number, l: any) => n + l.amount, 0) + a.shipping_cost.amount;
           const tax = Math.ceil((amount * 825) / 10000);
@@ -57,6 +59,7 @@ const ADDRESS = {
 };
 
 beforeEach(() => {
+  taxFixture.fail = false;
   // Scheduled work (payment processing, email delivery) runs only when a test drives it.
   vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'], now: Date.now() });
   process.env.CJ_ADMIN_EMAILS = ADMIN;
@@ -493,6 +496,41 @@ describe('delivery estimates (S17, S18)', () => {
     });
     expect(full.taxMinor).toBe(Math.ceil(((45_806 + 4_999) * 825) / 10_000));
     expect(full.totalMinor).toBe(45_806 + 4_999 + full.taxMinor!);
+    const observations = await s.t.run((ctx) => ctx.db.query('dlvObservations').collect());
+    expect(observations).toHaveLength(2); // Internal tax iterations are not extra requests.
+    expect(observations[1].path).toBe('matrix_tax');
+    expect(observations[1].scopes[0]).toMatchObject({
+      supplier: 'zuo',
+      origin: '95206',
+      zone: 'Z1',
+      mode: 'ground',
+    });
+    expect(JSON.stringify(observations)).not.toContain(ADDRESS.line1);
+    expect(JSON.stringify(observations)).not.toContain(ADDRESS.recipientName);
+  });
+
+  it('persists failures outside the failed estimate transaction and identifies tax-provider failures', async () => {
+    const s = await setup();
+    const args = {
+      lines: [zuoLine(s)],
+      channel: 'retail' as const,
+      zip: '95206',
+      address: ADDRESS,
+      visitorKey: 'telemetry-fixture-123',
+    };
+    await expect(
+      s.t.action(api.dlvTaxActions.estimate, { ...args, channel: 'trade' })
+    ).rejects.toThrow();
+    let rows = await s.t.run((ctx) => ctx.db.query('dlvObservations').collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0].outcome).toBe('blocked');
+    taxFixture.fail = true;
+    const quote = await s.t.action(api.dlvTaxActions.estimate, args);
+    expect(quote.totalMinor).toBeNull();
+    rows = await s.t.run((ctx) => ctx.db.query('dlvObservations').collect());
+    expect(rows).toHaveLength(2);
+    expect(rows[1].outcome).toBe('tax_error');
+    expect(rows[1].path).toBe('matrix_tax');
   });
 
   it('binds access requirements and service terms, and routes special access to a quote', async () => {
@@ -633,6 +671,7 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
     expect(orders[0].totals.total).toBe(intent.totalMinor);
     expect(orders[0].shippingAddress).toEqual(ADDRESS);
     expect(orders[0].serviceTerms?.label).toContain('Parcel delivery');
+    expect(intent.serviceLabel).toBe(orders[0].serviceTerms?.label);
     expect(orders[0].serviceTerms?.label).toContain('Supplier standard delivery');
     const children = await s.t.run((ctx) => ctx.db.query('ordSupplierOrders').collect());
     expect(children.map((c) => c.route).sort()).toEqual([
@@ -1805,6 +1844,25 @@ describe('delivery request lifecycle', () => {
     await s.admin.mutation(api.dlvOperations.attachQuote, { id: r.id, versionId: q.id });
     return { s, r, q, input };
   }
+  it('reports overdue staff work but pauses the follow-up clock while awaiting customer information', async () => {
+    const s = await setup();
+    const r = await s.t.mutation(api.dlvOperations.requestQuote, requestInput(s, 'c'));
+    const config = await s.admin.query(api.sysConfig.list, { status: 'proposed' });
+    await s.admin.mutation(api.sysConfig.approve, {
+      id: config.records.find((p) => p.key === 'delivery-monitoring')!._id,
+    });
+    vi.setSystemTime(Date.now() + 25 * 3600000);
+    let report = await s.admin.query(api.dlvTelemetry.report, {});
+    expect(report.overdue.find((q) => q.status === 'requested')?.count).toBe(1);
+    await s.admin.mutation(api.dlvOperations.updateRequest, {
+      id: r.id,
+      status: 'needs_information',
+      message: 'Please confirm delivery access.',
+    });
+    report = await s.admin.query(api.dlvTelemetry.report, {});
+    expect(report.overdue.every((q) => q.count === 0)).toBe(true);
+  });
+
   it('limits new requests to five per hour while allowing an exact retry', async () => {
     const s = await setup();
     for (const key of ['a', 'b', 'c', 'd', 'e']) {

@@ -9,6 +9,7 @@ import { maybeConfig } from './sysConfig';
 import { openReview } from './sysCore';
 import { notify } from './sysNotify';
 import { flagStates, payoutRoute } from '../lib/flags';
+import { deliveryAlerts } from './dlvTelemetry';
 import { localParts } from '../lib/tiers';
 import type { TierPolicy } from '../lib/config';
 
@@ -54,6 +55,7 @@ export async function evaluateAlerts(ctx: Ctx, now = Date.now()): Promise<Alert[
   }
   const openExceptions = await ctx.db.query('ordPaidExceptions').withIndex('by_status', (q) => q.eq('status', 'open')).take(50);
   if (openExceptions.length) alerts.push({ key: 'paid_exceptions_open', title: 'Paid orders need resolution', detail: `${openExceptions.length} paid-order exception(s) open` });
+  alerts.push(...await deliveryAlerts(ctx));
   return alerts;
 }
 
@@ -77,7 +79,7 @@ export const health = query({
   handler: async (ctx) => {
     await requireCjAdminIdentity(ctx);
     const metrics: Record<string, number> = {};
-    for (const name of ['estimate.ok', 'estimate.quote_required', 'checkout.price_changed', 'payment.order_created', 'payment.exception', 'commission.accrued', 'credit.award_pending', 'attribution.click', 'attribution.click_ineligible', 'attribution.self_referral_blocked', 'security.client_price_ignored', 'payout.aborted', 'payout.bank_failed', 'ledger.duplicate_event'])
+    for (const name of ['estimate.request.ok', 'estimate.request.quote', 'estimate.request.blocked', 'estimate.request.error', 'estimate.request.tax_error', 'estimate.request.tax_unavailable', 'checkout.price_changed', 'payment.order_created', 'payment.exception', 'commission.accrued', 'credit.award_pending', 'attribution.click', 'attribution.click_ineligible', 'attribution.self_referral_blocked', 'security.client_price_ignored', 'payout.aborted', 'payout.bank_failed', 'ledger.duplicate_event'])
       metrics[name] = await sumMetric(ctx, name, 24);
     const notifications = await ctx.db.query('sysNotifications').withIndex('by_status_next', (q) => q.eq('status', 'failed')).take(100);
     return { flags: flagStates(), payoutRoute: payoutRoute(), alerts: await evaluateAlerts(ctx), metrics, failedNotifications: notifications.length };
