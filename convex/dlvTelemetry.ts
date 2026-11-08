@@ -1,4 +1,5 @@
 import { v } from 'convex/values';
+import { internal } from './_generated/api';
 import { internalMutation, query } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import { bumpMetric } from './sysCore';
@@ -23,6 +24,7 @@ export const record = internalMutation({
       v.literal('tax_unavailable')
     ),
     code: v.optional(v.string()),
+    requestId: v.optional(v.string()),
     estimateId: v.optional(v.id('dlvEstimates')),
   },
   handler: async (ctx, a) => {
@@ -56,6 +58,7 @@ export const record = internalMutation({
       path: a.path,
       outcome: a.outcome,
       ...(a.code ? { code: a.code.slice(0, 80) } : {}),
+      ...(/^[a-f0-9]{24}$/.test(a.requestId ?? '') ? { requestId: a.requestId } : {}),
       scopes,
     });
   },
@@ -208,8 +211,10 @@ export async function deliveryAlerts(ctx: Ctx) {
 
 /** Only operational observations are deleted. Orders, invoices and audit history are untouched. */
 export const purge = internalMutation({
-  args: {},
-  handler: async (ctx) => {
+  args: { remainingBatches: v.optional(v.number()) },
+  handler: async (ctx, a): Promise<number> => {
+    const remaining = a.remainingBatches ?? 99;
+    if (!Number.isInteger(remaining) || remaining < 0 || remaining > 99) return 0;
     const policy = await maybeConfig<DeliveryMonitoringPolicy>(
       ctx,
       'deliveryMonitoringPolicy',
@@ -221,6 +226,10 @@ export const purge = internalMutation({
       .withIndex('by_created', (q) => q.lt('createdAt', Date.now() - days * 86400000))
       .take(500);
     for (const row of rows) await ctx.db.delete(row._id);
+    if (rows.length === 500 && remaining > 0)
+      await ctx.scheduler.runAfter(1000, internal.dlvTelemetry.purge, {
+        remainingBatches: remaining - 1,
+      });
     return rows.length;
   },
 });

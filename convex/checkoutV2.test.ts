@@ -7,7 +7,7 @@ import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { submitWith, type Transport } from './ediZuo';
 import { refundSplit } from './ordReturns';
-import { isCommerceError } from '../lib/errors';
+import { isCommerceError, commerceErrorData } from '../lib/errors';
 import { SPLIT_MAY, SPLIT_WILL, splitDisclosure } from '../lib/customerCopy';
 import { quoteOnlyReasons, zipRegion, STANDARD_ACCESS } from '../lib/delivery/destination';
 import { exemptionFor } from './dlvTaxExemptions';
@@ -2090,5 +2090,57 @@ describe('customer receipts and order access', () => {
     expect(await t.query(api.ordReceipts.receipt, { sessionId: 'cs_legacy_fixture' })).toEqual({
       state: 'unavailable',
     });
+  });
+});
+
+describe('delivery public error and input privacy', () => {
+  it('omits internal policy detail on both public estimate paths and retains every rejected cart line', async () => {
+    const s = await setup();
+    await s.t.run(async (ctx) => {
+      const config = await ctx.db.query('sysConfig').collect();
+      for (const row of config)
+        if (row.kind === 'estimatePolicy') await ctx.db.patch(row._id, { status: 'retired' });
+    });
+    const args = {
+      lines: [zuoLine(s)],
+      channel: 'retail' as const,
+      zip: '95206',
+      visitorKey: 'fixture-privacy',
+    };
+    for (const run of [
+      () => s.t.action(api.dlvTaxActions.estimate, args),
+      () => s.t.mutation(api.dlvEstimates.estimate, args),
+    ]) {
+      const error = await run().then(
+        () => null,
+        (e) => e
+      );
+      expect(commerceErrorData(error)).toEqual({
+        code: 'POLICY_NOT_APPROVED',
+        message: "This isn't available yet.",
+      });
+      expect(JSON.stringify(error)).not.toMatch(/detail|estimate-policy|estimatePolicy/);
+    }
+    const invalid = await s.t
+      .mutation(api.dlvOperations.requestQuote, {
+        requestKey: 'a'.repeat(64),
+        lines: [zuoLine(s)],
+        channel: 'retail',
+        postalCode: '95206',
+        name: 'Customer',
+        email: 'customer@example.com',
+        phone: '',
+        service: 'curbside',
+        notes: '',
+        consent: true,
+        address: { ...ADDRESS, line2: 'x'.repeat(201) },
+      })
+      .then(
+        () => null,
+        (e) => e
+      );
+    expect(commerceErrorData(invalid)?.code).toBe('INVALID_INPUT');
+    expect(await s.t.run((ctx) => ctx.db.query('dlvQuoteRequests').collect())).toHaveLength(0);
+    expect(await s.t.run((ctx) => ctx.db.query('dlvEstimates').collect())).toHaveLength(0);
   });
 });

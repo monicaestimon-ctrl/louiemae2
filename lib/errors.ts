@@ -16,6 +16,7 @@ export const COMMERCE_ERROR_CODES = [
   'FEATURE_DISABLED',
   'INVALID_INPUT',
   'FORBIDDEN',
+  'TEMPORARILY_UNAVAILABLE',
 ] as const;
 export type CommerceErrorCode = (typeof COMMERCE_ERROR_CODES)[number];
 
@@ -33,14 +34,15 @@ export const CUSTOMER_MESSAGES: Record<CommerceErrorCode, string> = {
   FEATURE_DISABLED: "This isn't available yet.",
   INVALID_INPUT: 'Please check the details and try again.',
   FORBIDDEN: "You don't have access to this.",
+  TEMPORARILY_UNAVAILABLE: 'This is temporarily unavailable. Please try again or request support.',
 };
 
-export type CommerceErrorData = { code: CommerceErrorCode; message: string; detail?: string };
+export type CommerceErrorData = { code: CommerceErrorCode; message: string; detail?: string; requestId?: string };
 
 export class CommerceError extends ConvexError<CommerceErrorData> {
   readonly code: CommerceErrorCode;
-  constructor(code: CommerceErrorCode, detail?: string, message?: string) {
-    super({ code, message: message ?? CUSTOMER_MESSAGES[code], ...(detail ? { detail } : {}) });
+  constructor(code: CommerceErrorCode, detail?: string, message?: string, requestId?: string) {
+    super({ code, message: message ?? CUSTOMER_MESSAGES[code], ...(detail ? { detail } : {}), ...(requestId ? { requestId } : {}) });
     this.code = code;
   }
 }
@@ -69,5 +71,7 @@ export function isCommerceError(e: unknown, code?: CommerceErrorCode): e is Comm
 
 /** What a customer-facing surface may show for any error. */
 export function customerMessage(e: unknown): string {
-  return commerceErrorData(e)?.message ?? 'Something went wrong. Please try again.';
+  const data = commerceErrorData(e);
+  const message = data?.message ?? 'Something went wrong. Please try again.';
+  return data?.code === 'TEMPORARILY_UNAVAILABLE' && /^[a-f0-9]{24}$/.test(data.requestId ?? '') ? `${message} Reference: ${data.requestId}.` : message;
 }

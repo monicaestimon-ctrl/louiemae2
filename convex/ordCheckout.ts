@@ -1,3 +1,4 @@
+import { assertDeliveryBounds } from '../lib/delivery/requestBounds';
 // Checkout service (spec S19, v2 §12, §13). Creates an idempotent checkout intent from a valid
 // full-address estimate, reserves inventory, freezes the accepted line and delivery snapshot,
 // and creates a payment session for exactly that total. Only a verified payment event marks an
@@ -68,6 +69,7 @@ export const createIntent = internalMutation({
     guestCapability: v.optional(v.string()),
   },
   handler: async (ctx, a): Promise<IntentResult> => {
+    assertDeliveryBounds(a, 100);
     if (!/^[\w-]{16,80}$/.test(a.idempotencyKey))
       throw new CommerceError('INVALID_INPUT', 'Bad idempotency key');
     const est = await ctx.db.get(a.estimateId);

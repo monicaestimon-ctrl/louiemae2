@@ -495,6 +495,7 @@ export const v2Tables = {
     path: v.union(v.literal('matrix'), v.literal('matrix_tax')),
     outcome: v.union(v.literal('ok'), v.literal('quote'), v.literal('blocked'), v.literal('error'), v.literal('tax_error'), v.literal('tax_unavailable')),
     code: v.optional(v.string()),
+    requestId: v.optional(v.string()),
     scopes: v.array(v.object({supplier:v.string(),origin:v.string(),zone:v.string(),mode:v.string(),service:v.string()})),
   }).index('by_created',['createdAt']),
   dlvEstimates: defineTable({

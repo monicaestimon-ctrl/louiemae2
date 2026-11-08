@@ -67,3 +67,18 @@ Review the first 20 completed shipments per pilot grouping, then weekly until st
 Rollback disables new automatic estimates/checkout only for affected scope. Keep paid fulfillment, quote access, invoices, refunds, tax reporting and audit history running. Do not delete records or restore a destructive old schema; use a corrective current-main deployment.
 
 Release record must include deployment IDs, policy versions, SKU/rate evidence, deployed browser and permitted payment evidence, monitoring, named queue owners and rollback rehearsal. Unverified scope stays quote-only and its gaps remain explicit.
+
+
+## 10. Delivery records and retention
+
+| Record | Access / retention behavior |
+| --- | --- |
+| Guest estimate/quote/order capabilities | Only digests on the server; scoped access expires after 90 days. Expiration is not deletion of financial records. |
+| Operational estimate observations | No full address, contact, capability or prices. Seven-day default; an effective approved monitoring policy may set 1–90 days. Hourly cleanup catches up in bounded 500-row transactions, up to 50,000 per invocation. Monitor unusual backlogs. |
+| Browser checkout-return token | Tab-scoped sessionStorage with a 90-day logical expiration; removed when read after expiry. Browser session/storage clearing also removes access. No new token is placed in a checkout-return URL. |
+| Quote contacts, addresses, notes and notification envelopes | Restricted server records. Do not delete by guessing a legal retention period or while a quote, failed/uncertain notification, payment, claim or dispute needs them. Owner must record the approved closure/retention/deletion schedule before broad rollout. |
+| Paid orders, invoices, accepted terms, refunds, taxes, commissions and audit | Preserve immutable financial history and legal holds. No automatic deletion is introduced by delivery observation cleanup. Owner/accountant/legal records requirements govern any later archival/erasure workflow. |
+
+Before production expansion, record the owner-approved contact-data retention schedule, storage-provider encryption/access assurances, backup/erasure procedure, legal-hold treatment and responsible operator. Keep those gates open when evidence is missing. A request to erase data requires an authenticated identity check, a review of all linked projects/notifications/orders and a recorded decision; it must not erase payment or partner obligations.
+
+Unexpected delivery failures use a random support reference. Never paste full addresses, guest links, supplier costs or raw provider payloads into public issue trackers or analytics. Customer errors contain stable codes and safe wording; detailed investigations remain inside authorized systems.

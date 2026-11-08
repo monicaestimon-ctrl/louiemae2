@@ -1,3 +1,5 @@
+import { customerFacing } from '../lib/delivery/publicErrors';
+import { assertDeliveryBounds } from '../lib/delivery/requestBounds';
 import { v } from 'convex/values';
 import { paginationOptsValidator } from 'convex/server';
 import { mutation, query } from './_generated/server';
@@ -42,194 +44,200 @@ export const requestQuote = mutation({
     notes: v.string(),
     consent: v.boolean(),
   },
-  handler: async (ctx, a) => {
-    const me = await viewer(ctx);
-    if (a.channel === 'trade' && !isVerified(me?.profile ?? null))
-      throw new CommerceError('TRADE_APPROVAL_REQUIRED');
-    if (
-      !/^[a-f0-9]{64}$/.test(a.requestKey) ||
-      !a.consent ||
-      !/^\d{5}(-\d{4})?$/.test(a.postalCode) ||
-      !a.name.trim() ||
-      a.name.length > 150 ||
-      !/^\S+@\S+\.\S+$/.test(a.email) ||
-      a.email.length > 254 ||
-      a.phone.length > 50 ||
-      a.notes.length > 4000 ||
-      a.service.length > 80 ||
-      !a.lines.length ||
-      a.lines.length > 100
-    )
-      throw new CommerceError('INVALID_INPUT');
-    const email = a.email.trim().toLowerCase();
-    const requestKeyHash = await digest(a.requestKey);
-    const requestHash = await digest({ ...a, userId: me?.userId ?? null });
-    const existing = await ctx.db
-      .query('dlvQuoteRequests')
-      .withIndex('by_request_key', (q) => q.eq('requestKeyHash', requestKeyHash))
-      .unique();
-    if (existing) {
-      if (existing.requestHash !== requestHash)
-        throw new CommerceError('INVALID_INPUT', 'Request key belongs to different quote details');
-      if (existing.createdAt + 90 * 86400000 <= Date.now())
-        throw new CommerceError('QUOTE_EXPIRED');
-      // The random request key is a retry capability. Rotate guest access only for an exact retry.
-      const token = capability();
-      if (!existing.userId)
-        await ctx.db.patch(existing._id, { guestCapabilityHash: await digest(token) });
-      return { id: existing._id, ...(!existing.userId ? { guestCapability: token } : {}) };
-    }
-    if (
-      !(await rateLimit(ctx, `delivery-quote:email:${await digest(email)}`, 5, 5 / 60)) ||
-      (me && !(await rateLimit(ctx, `delivery-quote:user:${me.userId}`, 5, 5 / 60))) ||
-      !(await rateLimit(ctx, 'delivery-quote:global', 100, 100 / 60))
-    )
-      throw new CommerceError('INVALID_INPUT', 'Quote request limit reached');
-    const lines = [];
-    const requested = [];
-    const seen = new Set<string>();
-    for (const l of a.lines) {
+  handler: async (ctx, a) =>
+    customerFacing(async () => {
+      assertDeliveryBounds(a, 100);
+      const me = await viewer(ctx);
+      if (a.channel === 'trade' && !isVerified(me?.profile ?? null))
+        throw new CommerceError('TRADE_APPROVAL_REQUIRED');
       if (
-        !Number.isSafeInteger(l.packs) ||
-        l.packs < 1 ||
-        l.packs > 10000 ||
-        seen.has(`${l.productId}:${l.variantId}`)
+        !/^[a-f0-9]{64}$/.test(a.requestKey) ||
+        !a.consent ||
+        !/^\d{5}(-\d{4})?$/.test(a.postalCode) ||
+        !a.name.trim() ||
+        a.name.length > 150 ||
+        !/^\S+@\S+\.\S+$/.test(a.email) ||
+        a.email.length > 254 ||
+        a.phone.length > 50 ||
+        a.notes.length > 4000 ||
+        a.service.length > 80 ||
+        !a.lines.length ||
+        a.lines.length > 100
       )
         throw new CommerceError('INVALID_INPUT');
-      seen.add(`${l.productId}:${l.variantId}`);
-      const pid = ctx.db.normalizeId('commerceProducts', l.productId);
-      const p = pid ? await ctx.db.get(pid) : null;
-      if (!p) throw new CommerceError('STOCK_UNAVAILABLE');
-      const listing = await ctx.db
-        .query('commerceListings')
-        .withIndex('by_product_channel', (q) =>
-          q.eq('productId', p._id).eq('channel', a.channel === 'retail' ? 'retail' : 'house')
-        )
+      const email = a.email.trim().toLowerCase();
+      const requestKeyHash = await digest(a.requestKey);
+      const requestHash = await digest({ ...a, userId: me?.userId ?? null });
+      const existing = await ctx.db
+        .query('dlvQuoteRequests')
+        .withIndex('by_request_key', (q) => q.eq('requestKeyHash', requestKeyHash))
         .unique();
-      const option = listing?.snapshot.variants.find((x) => x.id === l.variantId);
-      if (!listing?.published || !option) throw new CommerceError('STOCK_UNAVAILABLE');
-      if (p.provider === 'zuo') {
-        const vid = ctx.db.normalizeId('catVariants', l.variantId);
-        const variant = vid ? await ctx.db.get(vid) : null;
-        if (
-          !variant ||
-          variant.productId !== p._id ||
-          variant.availability === 'discontinued' ||
-          variant.availability === 'out_of_stock'
-        )
-          throw new CommerceError('STOCK_UNAVAILABLE');
+      if (existing) {
+        if (existing.requestHash !== requestHash)
+          throw new CommerceError(
+            'INVALID_INPUT',
+            'Request key belongs to different quote details'
+          );
+        if (existing.createdAt + 90 * 86400000 <= Date.now())
+          throw new CommerceError('QUOTE_EXPIRED');
+        // The random request key is a retry capability. Rotate guest access only for an exact retry.
+        const token = capability();
+        if (!existing.userId)
+          await ctx.db.patch(existing._id, { guestCapabilityHash: await digest(token) });
+        return { id: existing._id, ...(!existing.userId ? { guestCapability: token } : {}) };
       }
-      lines.push({
-        productId: p._id,
-        variantId: l.variantId,
-        packs: l.packs,
-        name: listing.snapshot.name,
+      if (
+        !(await rateLimit(ctx, `delivery-quote:email:${await digest(email)}`, 5, 5 / 60)) ||
+        (me && !(await rateLimit(ctx, `delivery-quote:user:${me.userId}`, 5, 5 / 60))) ||
+        !(await rateLimit(ctx, 'delivery-quote:global', 100, 100 / 60))
+      )
+        throw new CommerceError('INVALID_INPUT', 'Quote request limit reached');
+      const lines = [];
+      const requested = [];
+      const seen = new Set<string>();
+      for (const l of a.lines) {
+        if (
+          !Number.isSafeInteger(l.packs) ||
+          l.packs < 1 ||
+          l.packs > 10000 ||
+          seen.has(`${l.productId}:${l.variantId}`)
+        )
+          throw new CommerceError('INVALID_INPUT');
+        seen.add(`${l.productId}:${l.variantId}`);
+        const pid = ctx.db.normalizeId('commerceProducts', l.productId);
+        const p = pid ? await ctx.db.get(pid) : null;
+        if (!p) throw new CommerceError('STOCK_UNAVAILABLE');
+        const listing = await ctx.db
+          .query('commerceListings')
+          .withIndex('by_product_channel', (q) =>
+            q.eq('productId', p._id).eq('channel', a.channel === 'retail' ? 'retail' : 'house')
+          )
+          .unique();
+        const option = listing?.snapshot.variants.find((x) => x.id === l.variantId);
+        if (!listing?.published || !option) throw new CommerceError('STOCK_UNAVAILABLE');
+        if (p.provider === 'zuo') {
+          const vid = ctx.db.normalizeId('catVariants', l.variantId);
+          const variant = vid ? await ctx.db.get(vid) : null;
+          if (
+            !variant ||
+            variant.productId !== p._id ||
+            variant.availability === 'discontinued' ||
+            variant.availability === 'out_of_stock'
+          )
+            throw new CommerceError('STOCK_UNAVAILABLE');
+        }
+        lines.push({
+          productId: p._id,
+          variantId: l.variantId,
+          packs: l.packs,
+          name: listing.snapshot.name,
+        });
+        requested.push({
+          productId: p._id,
+          variantId: l.variantId,
+          name: listing.snapshot.name,
+          variantName: option.name,
+          quantity: l.packs,
+          unitPrice: option.price,
+          provider: p.provider,
+          sku: listing.fulfillment?.find((x) => x.id === l.variantId)?.sku ?? '',
+        });
+      }
+      const token = capability(),
+        now = Date.now();
+      const projectId = await ctx.db.insert('commerceProjects', {
+        token: capability(),
+        channel: a.channel === 'retail' ? 'retail' : 'house',
+        name: a.name.trim(),
+        email,
+        phone: a.phone,
+        business: '',
+        address: {
+          line1: a.address?.line1 ?? '',
+          city: a.address?.city ?? '',
+          state: a.address?.state ?? '',
+          postalCode: a.postalCode,
+          country: a.address?.country ?? 'US',
+        },
+        notes: a.notes,
+        requested,
+        lines: requested,
+        delivery: 0,
+        tax: 0,
+        revision: 1,
+        status: 'delivery_quote_requested',
+        createdAt: now,
+        updatedAt: now,
       });
-      requested.push({
-        productId: p._id,
-        variantId: l.variantId,
-        name: listing.snapshot.name,
-        variantName: option.name,
-        quantity: l.packs,
-        unitPrice: option.price,
-        provider: p.provider,
-        sku: listing.fulfillment?.find((x) => x.id === l.variantId)?.sku ?? '',
-      });
-    }
-    const token = capability(),
-      now = Date.now();
-    const projectId = await ctx.db.insert('commerceProjects', {
-      token: capability(),
-      channel: a.channel === 'retail' ? 'retail' : 'house',
-      name: a.name.trim(),
-      email,
-      phone: a.phone,
-      business: '',
-      address: {
-        line1: a.address?.line1 ?? '',
-        city: a.address?.city ?? '',
-        state: a.address?.state ?? '',
+      const { consent: _consent, requestKey: _requestKey, ...details } = a;
+      void _requestKey;
+      void _consent;
+      const id = await ctx.db.insert('dlvQuoteRequests', {
+        ...details,
+        requestKeyHash,
+        requestHash,
         postalCode: a.postalCode,
-        country: a.address?.country ?? 'US',
-      },
-      notes: a.notes,
-      requested,
-      lines: requested,
-      delivery: 0,
-      tax: 0,
-      revision: 1,
-      status: 'delivery_quote_requested',
-      createdAt: now,
-      updatedAt: now,
-    });
-    const { consent: _consent, requestKey: _requestKey, ...details } = a;
-    void _requestKey;
-    void _consent;
-    const id = await ctx.db.insert('dlvQuoteRequests', {
-      ...details,
-      requestKeyHash,
-      requestHash,
-      postalCode: a.postalCode,
-      lines,
-      projectId,
-      email,
-      name: a.name.trim(),
-      ...(me ? { userId: me.userId } : { guestCapabilityHash: await digest(token) }),
-      status: 'requested',
-      createdAt: now,
-      updatedAt: now,
-    });
-    // Contact acknowledgement is transactional; no marketing subscription is created.
-    await notify(ctx, {
-      dedupeKey: `delivery-request:${id}`,
-      audience: 'customer',
-      template: 'delivery_quote_requested',
-      to: email,
-      subject: 'Your delivery quote request',
-      text: `We received your delivery quote request ${id}. Our team will review the items, address and service before you pay. This is not an order or a stock reservation.`,
-    });
-    return { id, ...(!me ? { guestCapability: token } : {}) };
-  },
+        lines,
+        projectId,
+        email,
+        name: a.name.trim(),
+        ...(me ? { userId: me.userId } : { guestCapabilityHash: await digest(token) }),
+        status: 'requested',
+        createdAt: now,
+        updatedAt: now,
+      });
+      // Contact acknowledgement is transactional; no marketing subscription is created.
+      await notify(ctx, {
+        dedupeKey: `delivery-request:${id}`,
+        audience: 'customer',
+        template: 'delivery_quote_requested',
+        to: email,
+        subject: 'Your delivery quote request',
+        text: `We received your delivery quote request ${id}. Our team will review the items, address and service before you pay. This is not an order or a stock reservation.`,
+      });
+      return { id, ...(!me ? { guestCapability: token } : {}) };
+    }),
 });
 export const requestStatus = query({
   args: { id: v.id('dlvQuoteRequests'), guestCapability: v.optional(v.string()) },
-  handler: async (ctx, a) => {
-    const r = await ctx.db.get(a.id);
-    if (!r) return null;
-    await owns(ctx, r, a.guestCapability);
-    const q = r.quoteVersionId ? await ctx.db.get(r.quoteVersionId) : null;
-    return {
-      id: r._id,
-      status: requestState(r, q),
-      orderPlaced: !!r.orderId,
-      lines: r.lines,
-      message: r.customerMessage ?? null,
-      updatedAt: r.updatedAt,
-      quote:
-        q && ['sent', 'accepted', 'expired'].includes(q.status)
-          ? {
-              id: q._id,
-              version: q.version,
-              lines: q.lines,
-              merchandiseMinor: q.lines.reduce(
-                (n, l) => n + l.unitPackMinor * l.packs - l.discountMinor,
-                0
-              ),
-              totalMinor:
-                q.lines.reduce((n, l) => n + l.unitPackMinor * l.packs - l.discountMinor, 0) +
-                q.deliveryMinor +
-                q.taxMinor,
-              address: q.address ?? null,
-              deliveryMinor: q.deliveryMinor,
-              taxMinor: q.taxMinor,
-              service: q.service,
-              terms: q.terms,
-              expiresAt: q.expiresAt,
-              expired: q.expiresAt <= Date.now(),
-            }
-          : null,
-    };
-  },
+  handler: async (ctx, a) =>
+    customerFacing(async () => {
+      const r = await ctx.db.get(a.id);
+      if (!r) return null;
+      await owns(ctx, r, a.guestCapability);
+      const q = r.quoteVersionId ? await ctx.db.get(r.quoteVersionId) : null;
+      return {
+        id: r._id,
+        status: requestState(r, q),
+        orderPlaced: !!r.orderId,
+        lines: r.lines,
+        message: r.customerMessage ?? null,
+        updatedAt: r.updatedAt,
+        quote:
+          q && ['sent', 'accepted', 'expired'].includes(q.status)
+            ? {
+                id: q._id,
+                version: q.version,
+                lines: q.lines,
+                merchandiseMinor: q.lines.reduce(
+                  (n, l) => n + l.unitPackMinor * l.packs - l.discountMinor,
+                  0
+                ),
+                totalMinor:
+                  q.lines.reduce((n, l) => n + l.unitPackMinor * l.packs - l.discountMinor, 0) +
+                  q.deliveryMinor +
+                  q.taxMinor,
+                address: q.address ?? null,
+                deliveryMinor: q.deliveryMinor,
+                taxMinor: q.taxMinor,
+                service: q.service,
+                terms: q.terms,
+                expiresAt: q.expiresAt,
+                expired: q.expiresAt <= Date.now(),
+              }
+            : null,
+      };
+    }),
 });
 export const queue = query({
   args: { paginationOpts: paginationOptsValidator },
@@ -368,45 +376,50 @@ export const acceptQuote = mutation({
     versionId: v.id('ordQuoteVersions'),
     guestCapability: v.optional(v.string()),
   },
-  handler: async (ctx, a) => {
-    const r = await ctx.db.get(a.id);
-    if (!r) throw new CommerceError('FORBIDDEN');
-    await owns(ctx, r, a.guestCapability);
-    const q = await ctx.db.get(a.versionId);
-    if (
-      !q ||
-      q._id !== r.quoteVersionId ||
-      q.projectId !== r.projectId ||
-      q.expiresAt <= Date.now()
-    )
-      throw new CommerceError('QUOTE_EXPIRED');
-    if (r.status === 'accepted' && q.status === 'accepted') return { accepted: true };
-    if (
-      r.status !== 'sent' ||
-      q.status !== 'sent' ||
-      !q.checks.map ||
-      !q.checks.margin ||
-      !q.checks.policy
-    )
-      throw new CommerceError('INVALID_INPUT');
-    const checks = await checkQuoteLines(ctx, q.lines, r.channel === 'retail' ? 'retail' : 'house');
-    if (!checks.map || !checks.margin || !checks.policy)
-      throw new CommerceError('COST_REVIEW_REQUIRED', 'Quote must be reviewed again');
-    await computeManualQuote(ctx, q);
-    await ctx.db.patch(q._id, {
-      status: 'accepted',
-      acceptedAt: Date.now(),
-      acceptedBy: r.userId ?? `guest:${r._id}`,
-    });
-    await ctx.db.patch(r._id, { status: 'accepted', updatedAt: Date.now() });
-    await audit(ctx, {
-      actor: r.userId ?? `guest:${r._id}`,
-      action: 'delivery.quote.customer_accept',
-      entityTable: 'ordQuoteVersions',
-      entityId: q._id,
-    });
-    return { accepted: true };
-  },
+  handler: async (ctx, a) =>
+    customerFacing(async () => {
+      const r = await ctx.db.get(a.id);
+      if (!r) throw new CommerceError('FORBIDDEN');
+      await owns(ctx, r, a.guestCapability);
+      const q = await ctx.db.get(a.versionId);
+      if (
+        !q ||
+        q._id !== r.quoteVersionId ||
+        q.projectId !== r.projectId ||
+        q.expiresAt <= Date.now()
+      )
+        throw new CommerceError('QUOTE_EXPIRED');
+      if (r.status === 'accepted' && q.status === 'accepted') return { accepted: true };
+      if (
+        r.status !== 'sent' ||
+        q.status !== 'sent' ||
+        !q.checks.map ||
+        !q.checks.margin ||
+        !q.checks.policy
+      )
+        throw new CommerceError('INVALID_INPUT');
+      const checks = await checkQuoteLines(
+        ctx,
+        q.lines,
+        r.channel === 'retail' ? 'retail' : 'house'
+      );
+      if (!checks.map || !checks.margin || !checks.policy)
+        throw new CommerceError('COST_REVIEW_REQUIRED', 'Quote must be reviewed again');
+      await computeManualQuote(ctx, q);
+      await ctx.db.patch(q._id, {
+        status: 'accepted',
+        acceptedAt: Date.now(),
+        acceptedBy: r.userId ?? `guest:${r._id}`,
+      });
+      await ctx.db.patch(r._id, { status: 'accepted', updatedAt: Date.now() });
+      await audit(ctx, {
+        actor: r.userId ?? `guest:${r._id}`,
+        action: 'delivery.quote.customer_accept',
+        entityTable: 'ordQuoteVersions',
+        entityId: q._id,
+      });
+      return { accepted: true };
+    }),
 });
 /** Customer closes only an unaccepted request; an accepted/payment order needs staff review. */
 export const closeRequest = mutation({
@@ -416,63 +429,108 @@ export const closeRequest = mutation({
     outcome: v.union(v.literal('declined'), v.literal('cancelled')),
     reason: v.string(),
   },
-  handler: async (ctx, a) => {
-    const r = await ctx.db.get(a.id);
-    if (!r) throw new CommerceError('FORBIDDEN');
-    await owns(ctx, r, a.guestCapability);
-    if (a.reason.length > 2000) throw new CommerceError('INVALID_INPUT');
-    if (r.status === a.outcome) return { status: r.status };
-    if (['accepted', ...closedRequestStates].includes(r.status))
-      throw new CommerceError(
-        'INVALID_INPUT',
-        'Contact support about an accepted or closed request'
-      );
-    const q = r.quoteVersionId ? await ctx.db.get(r.quoteVersionId) : null;
-    if (q?.status === 'accepted' || q?.checkoutIntentId)
-      throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED');
-    if (a.outcome === 'declined' && !q) throw new CommerceError('INVALID_INPUT');
-    if (q && ['draft', 'sent'].includes(q.status))
-      await ctx.db.patch(q._id, { status: 'superseded' });
-    await ctx.db.patch(r._id, { status: a.outcome, updatedAt: Date.now() });
-    await audit(ctx, {
-      actor: r.userId ?? `guest:${r._id}`,
-      action: `delivery.quote.customer_${a.outcome}`,
-      entityTable: 'dlvQuoteRequests',
-      entityId: r._id,
-      reason: a.reason,
-    });
-    return { status: a.outcome };
-  },
+  handler: async (ctx, a) =>
+    customerFacing(async () => {
+      const r = await ctx.db.get(a.id);
+      if (!r) throw new CommerceError('FORBIDDEN');
+      await owns(ctx, r, a.guestCapability);
+      if (a.reason.length > 2000) throw new CommerceError('INVALID_INPUT');
+      if (r.status === a.outcome) return { status: r.status };
+      if (['accepted', ...closedRequestStates].includes(r.status))
+        throw new CommerceError(
+          'INVALID_INPUT',
+          'Contact support about an accepted or closed request'
+        );
+      const q = r.quoteVersionId ? await ctx.db.get(r.quoteVersionId) : null;
+      if (q?.status === 'accepted' || q?.checkoutIntentId)
+        throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED');
+      if (a.outcome === 'declined' && !q) throw new CommerceError('INVALID_INPUT');
+      if (q && ['draft', 'sent'].includes(q.status))
+        await ctx.db.patch(q._id, { status: 'superseded' });
+      await ctx.db.patch(r._id, { status: a.outcome, updatedAt: Date.now() });
+      await audit(ctx, {
+        actor: r.userId ?? `guest:${r._id}`,
+        action: `delivery.quote.customer_${a.outcome}`,
+        entityTable: 'dlvQuoteRequests',
+        entityId: r._id,
+        reason: a.reason,
+      });
+      return { status: a.outcome };
+    }),
 });
 export const prepareCheckout = mutation({
   args: { id: v.id('dlvQuoteRequests'), guestCapability: v.optional(v.string()) },
-  handler: async (ctx, a) => {
-    const r = await ctx.db.get(a.id);
-    if (!r) throw new CommerceError('FORBIDDEN');
-    await owns(ctx, r, a.guestCapability);
-    if (r.channel === 'trade' && !isVerified((await viewer(ctx))?.profile ?? null))
-      throw new CommerceError('TRADE_APPROVAL_REQUIRED');
-    const q = r.quoteVersionId ? await ctx.db.get(r.quoteVersionId) : null;
-    if (r.status !== 'accepted' || q?.status !== 'accepted' || q.projectId !== r.projectId)
-      throw new CommerceError('QUOTE_EXPIRED');
-    const out = await computeManualQuote(ctx, q);
-    const token = capability(),
-      now = Date.now();
-    const expiresAt = Math.min(q.expiresAt, now + 30 * 60000);
-    const total = out.merchandiseMinor + q.deliveryMinor + q.taxMinor;
-    const previous = await ctx.db
-      .query('dlvEstimates')
-      .withIndex('by_manual_quote', (q0) => q0.eq('manualQuoteVersionId', q._id))
-      .order('desc')
-      .first();
-    if (
-      previous &&
-      previous.expiresAt > now &&
-      previous.sourceVersionsHash === out.sourceVersionsHash
-    ) {
-      if (!r.userId) await ctx.db.patch(previous._id, { guestCapabilityHash: await digest(token) });
+  handler: async (ctx, a) =>
+    customerFacing(async () => {
+      const r = await ctx.db.get(a.id);
+      if (!r) throw new CommerceError('FORBIDDEN');
+      await owns(ctx, r, a.guestCapability);
+      if (r.channel === 'trade' && !isVerified((await viewer(ctx))?.profile ?? null))
+        throw new CommerceError('TRADE_APPROVAL_REQUIRED');
+      const q = r.quoteVersionId ? await ctx.db.get(r.quoteVersionId) : null;
+      if (r.status !== 'accepted' || q?.status !== 'accepted' || q.projectId !== r.projectId)
+        throw new CommerceError('QUOTE_EXPIRED');
+      const out = await computeManualQuote(ctx, q);
+      const token = capability(),
+        now = Date.now();
+      const expiresAt = Math.min(q.expiresAt, now + 30 * 60000);
+      const total = out.merchandiseMinor + q.deliveryMinor + q.taxMinor;
+      const previous = await ctx.db
+        .query('dlvEstimates')
+        .withIndex('by_manual_quote', (q0) => q0.eq('manualQuoteVersionId', q._id))
+        .order('desc')
+        .first();
+      if (
+        previous &&
+        previous.expiresAt > now &&
+        previous.sourceVersionsHash === out.sourceVersionsHash
+      ) {
+        if (!r.userId)
+          await ctx.db.patch(previous._id, { guestCapabilityHash: await digest(token) });
+        return {
+          estimateId: previous._id,
+          ...(!r.userId ? { guestCapability: token } : {}),
+          lines: q.lines.map((l) => ({
+            productId: l.productId,
+            variantId: l.variantId,
+            packs: l.packs,
+          })),
+          address: q.address!,
+          service: q.service,
+          acceptTotalMinor: total,
+          email: r.email,
+          expiresAt: previous.expiresAt,
+        };
+      }
+      const id = await ctx.db.insert('dlvEstimates', {
+        serviceTerms: out.serviceTerms,
+        manualQuoteVersionId: q._id,
+        channel: r.channel,
+        destination: {
+          zip: q.address!.postalCode,
+          precision: 'full',
+          addressHash: await digest(addressKey(q.address!)),
+          state: q.address!.state,
+        },
+        service: q.service,
+        lines: out.lines.map((l) => ({ variantId: l.variant._id, packs: l.packs })),
+        groups: out.groups,
+        status: 'ok',
+        deliveryChargeMinor: q.deliveryMinor,
+        merchandiseMinor: out.merchandiseMinor,
+        discountMinor: 0,
+        creditMinor: 0,
+        taxMinor: q.taxMinor,
+        totalMinor: total,
+        expiresAt,
+        cartHash: cartHash(q.lines, r.channel),
+        sourceVersionsHash: out.sourceVersionsHash,
+        internal: { manualQuoteId: q._id, configVersions: out.configVersions },
+        ...(r.userId ? { userId: r.userId } : { guestCapabilityHash: await digest(token) }),
+        createdAt: now,
+      });
       return {
-        estimateId: previous._id,
+        estimateId: id,
         ...(!r.userId ? { guestCapability: token } : {}),
         lines: q.lines.map((l) => ({
           productId: l.productId,
@@ -483,51 +541,9 @@ export const prepareCheckout = mutation({
         service: q.service,
         acceptTotalMinor: total,
         email: r.email,
-        expiresAt: previous.expiresAt,
+        expiresAt,
       };
-    }
-    const id = await ctx.db.insert('dlvEstimates', {
-      serviceTerms: out.serviceTerms,
-      manualQuoteVersionId: q._id,
-      channel: r.channel,
-      destination: {
-        zip: q.address!.postalCode,
-        precision: 'full',
-        addressHash: await digest(addressKey(q.address!)),
-        state: q.address!.state,
-      },
-      service: q.service,
-      lines: out.lines.map((l) => ({ variantId: l.variant._id, packs: l.packs })),
-      groups: out.groups,
-      status: 'ok',
-      deliveryChargeMinor: q.deliveryMinor,
-      merchandiseMinor: out.merchandiseMinor,
-      discountMinor: 0,
-      creditMinor: 0,
-      taxMinor: q.taxMinor,
-      totalMinor: total,
-      expiresAt,
-      cartHash: cartHash(q.lines, r.channel),
-      sourceVersionsHash: out.sourceVersionsHash,
-      internal: { manualQuoteId: q._id, configVersions: out.configVersions },
-      ...(r.userId ? { userId: r.userId } : { guestCapabilityHash: await digest(token) }),
-      createdAt: now,
-    });
-    return {
-      estimateId: id,
-      ...(!r.userId ? { guestCapability: token } : {}),
-      lines: q.lines.map((l) => ({
-        productId: l.productId,
-        variantId: l.variantId,
-        packs: l.packs,
-      })),
-      address: q.address!,
-      service: q.service,
-      acceptTotalMinor: total,
-      email: r.email,
-      expiresAt,
-    };
-  },
+    }),
 });
 export const recordInvoice = mutation({
   args: {
