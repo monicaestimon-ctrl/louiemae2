@@ -13,6 +13,7 @@ import { CommerceError, commerceErrorData } from '../lib/errors';
 import { addressArg } from './dlvEstimates';
 import { assertSellable } from './catCore';
 import { checkPackQuantity } from '../lib/catUnits';
+import { assertRequestRevisable } from './dlvQuoteLifecycle';
 
 const quoteLine = v.object({
   productId: v.id('commerceProducts'),
@@ -113,6 +114,7 @@ export const saveVersion = mutation({
       throw new CommerceError('INVALID_INPUT', 'Add 1–100 distinct lines');
     const project = await ctx.db.get(a.projectId);
     if (!project) throw new CommerceError('INVALID_INPUT');
+    const deliveryRequest = await assertRequestRevisable(ctx, a.projectId);
     if (!Number.isSafeInteger(a.validDays) || a.validDays < 1 || a.validDays > 30)
       throw new CommerceError('INVALID_INPUT', 'Quotes are valid for 1–30 days');
     if (
@@ -173,6 +175,13 @@ export const saveVersion = mutation({
       reservesInventory: false,
       createdAt: now,
     });
+    if (deliveryRequest)
+      await ctx.db.patch(deliveryRequest._id, {
+        quoteVersionId: id,
+        quoteExpiresAt: now + a.validDays * 86_400_000,
+        status: 'ready_for_review',
+        updatedAt: now,
+      });
     await audit(ctx, {
       actor: admin.email,
       action: 'quote.version',
@@ -193,6 +202,8 @@ export const markSent = mutation({
       throw new CommerceError('INVALID_INPUT', 'Only a draft can be sent');
     const project = await ctx.db.get(q.projectId);
     if (!project || q.expiresAt <= Date.now()) throw new CommerceError('QUOTE_EXPIRED');
+    const request = await assertRequestRevisable(ctx, q.projectId);
+    if (request && request.quoteVersionId !== q._id) throw new CommerceError('QUOTE_EXPIRED');
     const checks = await checkQuoteLines(ctx, q.lines, project.channel);
     if (!checks.map || !checks.margin || !checks.policy)
       throw new CommerceError(
@@ -227,9 +238,22 @@ export const accept = mutation({
     const q = await ctx.db.get(a.versionId);
     if (!q || q.status !== 'sent')
       throw new CommerceError('INVALID_INPUT', 'Only a sent quote can be accepted');
-    if (q.expiresAt <= Date.now()) {
-      await ctx.db.patch(q._id, { status: 'expired' });
+    if (q.expiresAt <= Date.now()) throw new CommerceError('QUOTE_EXPIRED');
+    const request = await ctx.db
+      .query('dlvQuoteRequests')
+      .withIndex('by_project', (i) => i.eq('projectId', q.projectId))
+      .unique();
+    if (request && (request.status !== 'sent' || request.quoteVersionId !== q._id))
       throw new CommerceError('QUOTE_EXPIRED');
+    const project = await ctx.db.get(q.projectId);
+    if (!project) throw new CommerceError('INVALID_INPUT');
+    const checks = await checkQuoteLines(ctx, q.lines, project.channel);
+    if (!checks.map || !checks.margin || !checks.policy)
+      throw new CommerceError('COST_REVIEW_REQUIRED');
+    if (request) {
+      const { computeManualQuote } = await import('./dlvManual');
+      await computeManualQuote(ctx, q);
+      await ctx.db.patch(request._id, { status: 'accepted', updatedAt: Date.now() });
     }
     await ctx.db.patch(q._id, {
       status: 'accepted',

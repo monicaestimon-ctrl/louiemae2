@@ -67,6 +67,7 @@ import type * as dlvCommission from "../dlvCommission.js";
 import type * as dlvSecurity from "../dlvSecurity.js";
 import type * as dlvAccess from "../dlvAccess.js";
 import type * as dlvProjectPricing from "../dlvProjectPricing.js";
+import type * as dlvQuoteLifecycle from "../dlvQuoteLifecycle.js";
 import type * as dlvAdmin from "../dlvAdmin.js";
 import type * as dlvEngine from "../dlvEngine.js";
 import type * as dlvEstimates from "../dlvEstimates.js";
@@ -229,6 +230,7 @@ declare const fullApi: ApiFromModules<{
   dlvSecurity: typeof dlvSecurity;
   dlvAccess: typeof dlvAccess;
   dlvProjectPricing: typeof dlvProjectPricing;
+  dlvQuoteLifecycle: typeof dlvQuoteLifecycle;
   dlvAdmin: typeof dlvAdmin;
   dlvEngine: typeof dlvEngine;
   dlvEstimates: typeof dlvEstimates;

@@ -13,6 +13,7 @@ export default function DeliveryQuoteStatus({ request }: { request: QuoteAccess 
     accept = useMutation(api.dlvOperations.acceptQuote);
   const prepare = useMutation(api.dlvOperations.prepareCheckout),
     authToken = useAuthToken();
+  const closeRequest = useMutation(api.dlvOperations.closeRequest);
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState(''),
     [now, setNow] = useState(Date.now());
@@ -33,6 +34,12 @@ export default function DeliveryQuoteStatus({ request }: { request: QuoteAccess 
         {status === null ? 'Quote unavailable' : (status?.status.replaceAll('_', ' ') ?? 'Loading')}
       </p>
       {status?.message && <p>{status.message}</p>}
+      {status?.orderPlaced && (
+        <p role="status">
+          Your quote has become an order. Use your order confirmation for delivery and shipment
+          updates.
+        </p>
+      )}
       <p>
         <a href={url.href} className="underline" referrerPolicy="no-referrer">
           Save this private quote link
@@ -130,6 +137,31 @@ export default function DeliveryQuoteStatus({ request }: { request: QuoteAccess 
           }}
         >
           Continue to payment for {money(q.totalMinor)}
+        </button>
+      )}
+      {status && !['accepted', 'converted', 'cancelled', 'declined'].includes(status.status) && (
+        <button
+          type="button"
+          className="border p-2"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setMessage('');
+            try {
+              await closeRequest({
+                ...request,
+                outcome: q ? 'declined' : 'cancelled',
+                reason: 'Customer closed the request using their private quote page.',
+              });
+              setMessage('Your request is closed. No payment was made.');
+            } catch (e) {
+              setMessage(customerMessage(e));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {q ? 'Decline this quote' : 'Cancel this request'}
         </button>
       )}
       <p role="status">{message}</p>

@@ -11,6 +11,7 @@ import { createOrderFromIntent } from './ordFulfillment';
 import { releaseIntent } from './ordCheckout';
 import { accrueForOrder } from './ldgCommissions';
 import { onOrderPaid, settle as settleCredit } from './ldgCredits';
+import { convertPaidQuote } from './dlvQuoteLifecycle';
 
 export type SessionPayload = {
   id: string;
@@ -62,6 +63,7 @@ async function handleSession(ctx: MutationCtx, s: SessionPayload, kind: 'complet
   const orderId = await createOrderFromIntent(ctx, intent, { ...(s.payment_intent ? { paymentIntentId: s.payment_intent } : {}), email: (s.email || intent.buyer.email || '').toLowerCase(), ...((intent.shippingAddress ?? s.shipping) ? { shippingAddress: intent.shippingAddress ?? s.shipping } : {}), paidAt: Date.now() });
   if (intent.creditReservationRef) await settleCredit(ctx, intent.creditReservationRef, 'redeemed', intent.creditMinor, orderId);
   await accrueForOrder(ctx, orderId);
+  await convertPaidQuote(ctx, intent.estimateId, orderId);
   await onOrderPaid(ctx, orderId);
   if(intent.taxCalculationRef){
     const id=await ctx.db.insert('dlvTaxTransactions',{orderId,calculationRef:intent.taxCalculationRef,status:'pending',attempts:0,nextAttemptAt:Date.now(),createdAt:Date.now()});
