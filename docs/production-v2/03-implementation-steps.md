@@ -9,7 +9,7 @@ Status line convention: replace `Status: not started` with `Status: in progress 
 ## Phase 0: handoff
 
 ### S00. Handoff setup and baseline
-Status: not started
+Status: done (Phase B PR)
 
 **Goal.** Record the starting point, put the working tools in place and make a read-only export before any migration.
 
@@ -30,7 +30,7 @@ Status: not started
 ## Phase B: foundations and schema (package B)
 
 ### S01. Money, rates and rounding library
-Status: not started
+Status: done (Phase B PR)
 
 **Goal.** Exact integer money arithmetic for all v2 code.
 
@@ -45,7 +45,7 @@ Status: not started
 **Exit criteria.** The library is fully covered (≥ 95% lines). Nothing else changes.
 
 ### S02. Flags, error codes and versioned config registry
-Status: not started
+Status: done (Phase B PR)
 
 **Goal.** One server-side place for flags (02 §5), typed errors (02 §4) and approvable config records (02 §6).
 
@@ -66,7 +66,7 @@ Status: not started
 **Exit criteria.** The seed runs twice with no duplicates, and every flag reads `false` when unset.
 
 ### S03. Idempotency keys and audit events
-Status: not started
+Status: done (Phase B PR)
 
 **Goal.** Primitives that make "exactly once" and "who changed what" enforceable at the transaction layer.
 
@@ -84,7 +84,7 @@ Status: not started
 **Exit criteria.** The concurrent-claim test passes. Audit rows can't be changed: no exported mutation patches them, and the `verify:catalog-writers`-style script `scripts/verify-append-only.mjs` greps for `db.patch`/`db.delete` on append-only tables. CI runs it.
 
 ### S04. Catalog and supplier schema
-Status: not started
+Status: done (Phase B PR)
 
 **Goal.** Canonical products and variants, cartons, observations, revisions, media, imports, mappings and holds.
 
@@ -104,7 +104,7 @@ Status: not started
 **Exit criteria.** The schema deploys additively. Existing tests are unchanged and passing.
 
 ### S05. Identity, organization and membership schema with backfill
-Status: not started
+Status: done (Phase B PR)
 
 **Goal.** Keep a person login, a business organization, a program membership and a payout beneficiary as separate things.
 
@@ -122,7 +122,7 @@ Status: not started
 **Exit criteria.** The dry run on dev matches the profile counts exactly.
 
 ### S06. Referral, ledger, credit and payout schema with opening snapshot
-Status: not started
+Status: done (Phase B PR)
 
 **Goal.** Append-only financial ledger tables, and a non-destructive opening snapshot of legacy balances.
 
@@ -152,7 +152,7 @@ After `transferred`, a reversal or refund never debits a bank account. It append
 **Exit criteria.** The parity report is stored in the evidence log (`MIG-LEDGER-01`). The legacy tables are untouched.
 
 ### S07. Cart, estimate, quote, order and fulfillment schema
-Status: not started
+Status: done (Phase B PR)
 
 **Goal.** Durable records for the whole checkout and fulfillment lifecycle.
 

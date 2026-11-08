@@ -18,7 +18,7 @@ This package is a build plan. It does not say production is ready, and it does n
 
 ## 2. Rules every agent follows
 
-1. **One step = one branch = one PR.** Work through the steps in order unless the dependency table (section 5) shows a step can start in parallel. Do not combine steps. Each PR title starts with the step ID, for example `S12: pricing engine and margin policies`.
+1. **One phase = one PR.** Work through the phases (0+B, C, D, E, F, G+H) in order; inside a phase, build the steps in order. Each PR title starts with the phase and its step IDs, for example `Phase C (S08–S15): catalog and economics`.
 2. **Read before editing.** Before each step, re-read the files listed under *Touches* in that step and check them against [01-baseline-and-gap-audit.md](01-baseline-and-gap-audit.md). Line numbers drift, so search by function name.
 3. **Schema changes are additive only.** `main` deploys Convex automatically (`.github/workflows/ci.yml`, job `deploy-convex`). Never remove a table, field, index or union literal that existing rows or code use. New fields are `v.optional(...)`. Widening a union is allowed. Narrowing one isn't. Backfills run as separate, resumable, paginated internal mutations with a dry-run mode.
 4. **New behaviour ships disabled.** Every new customer-facing or money path is behind a server-owned flag (see 02 §5) that defaults to off. Existing production behaviour keeps working until its replacement is verified and the owner signs off on the switch.
