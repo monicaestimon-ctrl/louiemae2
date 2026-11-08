@@ -41,6 +41,9 @@ jobs:
       - name: Verify transactional catalog writers
         run: npm run verify:catalog-writers
 
+      - name: Verify append-only ledger and audit tables
+        run: npm run verify:append-only
+
       - name: Run tests
         run: npm run test:run
 
@@ -70,5 +73,18 @@ jobs:
         # Frontend quality/build already ran in lint-test-build, and Vercel builds
         # the frontend deployment. Do not spend a second build here.
         run: npx convex deploy
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+
+      - name: Seed v2 configuration (idempotent, adds missing records only)
+        run: npx convex run sysConfig:seed '{}'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+
+      - name: v2 backfill dry run (read-only report)
+        # Prints what the identity, ledger and credit backfills would write. Commit runs are a
+        # separate, reviewed step (docs/production-v2/03 S05–S06).
+        run: npx convex run v2Migrations:runBackfills '{"commit":false}'
+        continue-on-error: true
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}

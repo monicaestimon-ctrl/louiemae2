@@ -175,6 +175,9 @@ export const publish = productMutation({
     const p = await ctx.db.get(args.id);
     if (!p || p.revision !== args.revision)
       throw new Error('This draft changed. Reload before publishing.');
+    // Zuo products only publish through the v2 publication gates (catPublication).
+    const provider = p.provider;
+    if (provider === 'zuo') throw new Error('Zuo products publish through the catalog review gates.');
     if (p.provider === 'cj') {
       const linked = p.cjProductId ? await ctx.db.get(p.cjProductId) : null;
       if (!linked || !evaluateProductCjReadiness(linked).ready)
@@ -215,7 +218,7 @@ export const publish = productMutation({
     }
     const ready = args.channels.map((c) => ({
       channel: c,
-      snapshot: listingSnapshot(p.draft, p.provider, c),
+      snapshot: listingSnapshot(p.draft, provider, c),
     }));
     for (const item of ready) {
       const old = await ctx.db
