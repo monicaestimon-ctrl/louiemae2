@@ -16,6 +16,7 @@ import {
   retailOrTrade,
   revisionMeta,
   shipAddress,
+  deliveryTerms,
   tierKey,
 } from './v2Validators';
 
@@ -482,6 +483,7 @@ export const v2Tables = {
     totalMinor:v.number(),evidence:v.string(),note:v.string(),createdBy:v.string(),createdAt:v.number(),
   }).index('by_invoice',['invoiceKey']).index('by_supplier_order',['supplierOrderId','createdAt']),
   dlvEstimates: defineTable({
+    serviceTerms: v.optional(deliveryTerms),
     manualQuoteVersionId:v.optional(v.id('ordQuoteVersions')),
     guestCapabilityHash: v.optional(v.string()),
     cartRevision: v.optional(v.number()),
@@ -555,6 +557,7 @@ export const v2Tables = {
   }).index('by_project_version', ['projectId', 'version']),
 
   ordCheckoutIntents: defineTable({
+    serviceTerms: v.optional(deliveryTerms),
     deliveryTaxMinor:v.optional(v.number()),
     taxCalculationRef:v.optional(v.string()),
     requestHash: v.optional(v.string()),
@@ -614,6 +617,7 @@ export const v2Tables = {
     .index('by_intent', ['intentId']),
 
   ordOrders: defineTable({
+    serviceTerms: v.optional(deliveryTerms),
     number: v.string(),
     intentId: v.optional(v.id('ordCheckoutIntents')),
     legacyOrderId: v.optional(v.id('orders')),

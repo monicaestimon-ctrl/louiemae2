@@ -36,6 +36,8 @@ import { allocate } from '../lib/money';
 import { assertLineMap, assertLineMechanism } from './catPolicies';
 import { projectPrices } from './dlvProjectPricing';
 import { exemptionFor } from './dlvTaxExemptions';
+import { DELIVERY_TERMS_VERSION, serviceTerms, type DeliveryTerms } from '../lib/delivery/service';
+import type { DeliveryServicePolicy } from '../lib/config';
 
 type Ctx = QueryCtx | MutationCtx;
 export type LineInput = { productId: string; variantId: string; packs: number };
@@ -396,7 +398,8 @@ export function groupFreight(
   lines: readonly ResolvedLine[],
   dest: Destination,
   f: FreightConfig,
-  reasons: string[]
+  reasons: string[],
+  rated?: { mode?: 'ground' | 'ltl' }
 ): number | null {
   if (
     !f.evidenceRef?.trim() ||
@@ -430,6 +433,7 @@ export function groupFreight(
     reasons.push(...c.reasons);
     return null;
   }
+  if (rated) rated.mode = c.mode;
   if (reasons.length) return null;
   if (
     f.rule.effectiveFrom > Date.now() ||
@@ -498,6 +502,7 @@ export function groupFreight(
 }
 
 export type EstimateOutcome = {
+  serviceTerms: DeliveryTerms;
   lineTaxes?: { key: string; taxMinor: number }[];
   deliveryTaxMinor?: number;
   taxCalculationRef?: string;
@@ -617,8 +622,16 @@ export async function computeEstimate(
   const ash = lines.filter((l) => l.provider === 'ashcroft');
   const configVersions: Record<string, number> = {};
   const configs: unknown[] = project ? [project.policy, project.schedule] : [];
+  const servicePolicy = await deliveryConfig<DeliveryServicePolicy>(
+    'serviceLevel',
+    `delivery-${input.service}`,
+    true
+  );
+  configs.push(servicePolicy);
+  if (servicePolicy) configVersions[`delivery-${input.service}`] = servicePolicy.version;
   const versions = () =>
     digest({
+      deliveryTermsVersion: DELIVERY_TERMS_VERSION,
       lines,
       configs,
       configVersions,
@@ -683,9 +696,17 @@ export async function computeEstimate(
       reasons: [],
     });
   const destReasons = quoteOnlyReasons(input.destination.zip, input.destination.address);
+  if (!servicePolicy || servicePolicy.value.code !== input.service)
+    destReasons.push('Delivery service terms need approval');
+  if (ash.length && !servicePolicy?.value.modes.per_item)
+    destReasons.push('Supplier delivery service needs review');
   if (!zuo.length) {
     if (destReasons.length)
       return {
+        serviceTerms: serviceTerms(
+          groupsOut.map((g) => g.classification),
+          servicePolicy?.value
+        ),
         status: 'quote_required',
         lines,
         merchandiseMinor,
@@ -698,12 +719,16 @@ export async function computeEstimate(
     const tax = verifiedTax(extraFixedMinor);
     if (tax) configs.push(tax);
     return {
+      serviceTerms: serviceTerms(
+        groupsOut.map((g) => g.classification),
+        servicePolicy?.value
+      ),
       status: 'ok',
       ...(taxBaseKey ? { taxBaseKey } : {}),
       ...(tax
         ? {
             taxMinor: tax.taxMinor,
-            validUntil: tax.expiresAt,
+            validUntil: Math.min(tax.expiresAt, servicePolicy?.effectiveTo ?? Infinity),
             taxCalculationRef: tax.reference,
             lineTaxes: tax.lineTaxes,
             deliveryTaxMinor: tax.deliveryTaxMinor,
@@ -749,6 +774,7 @@ export async function computeEstimate(
     byGroup.set(k, [...(byGroup.get(k) ?? []), l]);
   }
   const engineGroups: EngineGroup[] = [];
+  const groupModes = new Map<string, string>();
   const groupEntries = [...byGroup.entries()];
   const fixedPaymentShares = allocate(
     freightCfg?.value.fixedPaymentMinor ?? 0,
@@ -787,10 +813,16 @@ export async function computeEstimate(
       reasons.push(`Origin ${gl[0].originZip} has no approved delivery rule`);
     if (gl.some((l) => l.variant.holds.includes('METHOD_CHANGED')))
       reasons.push('Supplier shipping method changed; needs a quote');
-    const freightMinor =
+    const rated: { mode?: 'ground' | 'ltl' } = {};
+    let freightMinor =
       freightCfg && !reasons.length
-        ? groupFreight(gl, input.destination, freightCfg.value, reasons)
+        ? groupFreight(gl, input.destination, freightCfg.value, reasons, rated)
         : null;
+    if (rated.mode && !servicePolicy?.value.modes[rated.mode]) {
+      reasons.push('This delivery mode needs approved service terms');
+      freightMinor = null;
+    }
+    if (rated.mode) groupModes.set(groupKey, rated.mode);
     if (!freightCfg) reasons.push('Freight rates are awaiting approval');
     engineGroups.push({
       key: groupKey,
@@ -827,7 +859,7 @@ export async function computeEstimate(
       groupKey: g.key,
       supplierCode: g.key.split(':')[0],
       rule: 'zuo-95206-curbside',
-      classification: g.quoteRequired ? 'quote' : 'auto',
+      classification: g.quoteRequired ? 'quote' : (groupModes.get(g.key) ?? 'quote'),
       freightMinor: engineGroups.find((e) => e.key === g.key)?.freightMinor ?? 0,
       subsidyMinor: g.subsidyMinor,
       requirementMinor: g.requirementMinor ?? 0,
@@ -836,6 +868,10 @@ export async function computeEstimate(
     });
   if (est.status !== 'ok')
     return {
+      serviceTerms: serviceTerms(
+        groupsOut.map((g) => g.classification),
+        servicePolicy?.value
+      ),
       status: 'quote_required',
       lines,
       merchandiseMinor,
@@ -870,10 +906,15 @@ export async function computeEstimate(
     freightCfg?.value.rule.effectiveTo ?? Infinity,
     freightCfg?.value.validUntil ?? Infinity,
     controls?.effectiveTo ?? Infinity,
+    servicePolicy?.effectiveTo ?? Infinity,
     taxPolicy?.effectiveTo ?? Infinity,
     verified?.expiresAt ?? Infinity
   );
   return {
+    serviceTerms: serviceTerms(
+      groupsOut.map((g) => g.classification),
+      servicePolicy?.value
+    ),
     status: 'ok',
     validUntil,
     ...(taxBaseKey ? { taxBaseKey } : {}),

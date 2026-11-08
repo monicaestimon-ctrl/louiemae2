@@ -26,6 +26,8 @@ export function zipRegion(
 }
 
 export type AddressIn = {
+  recipientName?: string;
+  access?: DeliveryAccess;
   phone?: string;
   line1: string;
   line2?: string;
@@ -33,6 +35,21 @@ export type AddressIn = {
   state: string;
   postalCode: string;
   country: string;
+};
+
+export type DeliveryAccess = {
+  destinationType: 'residential' | 'commercial';
+  requestedService: 'standard' | 'inside' | 'white_glove' | 'expedited';
+  stairs: boolean;
+  limitedAccess: boolean;
+  loadingDock: boolean;
+};
+export const STANDARD_ACCESS: DeliveryAccess = {
+  destinationType: 'residential',
+  requestedService: 'standard',
+  stairs: false,
+  limitedAccess: false,
+  loadingDock: false,
 };
 
 /** Reasons an address must use the quote flow instead of an automatic estimate. */
@@ -47,6 +64,15 @@ export function quoteOnlyReasons(zip: string, address?: AddressIn): string[] {
         : 'Territories and military addresses need a delivery quote'
     );
   if (address) {
+    if (!address.recipientName?.trim() || address.recipientName.length > 150)
+      r.push('Delivery recipient name required');
+    if (!address.access) r.push('Confirm delivery location and access requirements');
+    else if (
+      address.access.requestedService !== 'standard' ||
+      address.access.stairs ||
+      address.access.limitedAccess
+    )
+      r.push('Special delivery service or access requires a confirmed quote');
     if (
       !address.line1.trim() ||
       !address.city.trim() ||
@@ -68,6 +94,24 @@ export function quoteOnlyReasons(zip: string, address?: AddressIn): string[] {
 
 /** Stable hash input for an address (lowercased, trimmed), so any change invalidates an estimate. */
 export const addressKey = (a: AddressIn) =>
-  [a.line1, a.line2 ?? '', a.city, a.state, a.postalCode, a.country, a.phone ?? '']
-    .map((x) => x.trim().toLowerCase())
-    .join('|');
+  JSON.stringify({
+    fields: [
+      a.recipientName ?? '',
+      a.line1,
+      a.line2 ?? '',
+      a.city,
+      a.state,
+      a.postalCode,
+      a.country,
+      a.phone ?? '',
+    ].map((x) => x.trim().toLowerCase()),
+    access: a.access
+      ? [
+          a.access.destinationType,
+          a.access.requestedService,
+          a.access.stairs,
+          a.access.limitedAccess,
+          a.access.loadingDock,
+        ]
+      : null,
+  });

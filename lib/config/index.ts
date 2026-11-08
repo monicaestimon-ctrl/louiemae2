@@ -93,6 +93,12 @@ export type CreditPolicy = {
   dualReward: 'forbidden' | 'allowed';
 };
 export type EstimatePolicy = { validityMinutes: number; zipNonbinding: boolean };
+export type DeliveryServicePolicy = {
+  code: string;
+  modes: Partial<
+    Record<'ground' | 'ltl' | 'per_item', { label: string; details: string[]; evidenceRef: string }>
+  >;
+};
 export type DeliveryControls = {
   automaticEnabled: boolean;
   suppliers: string[];
@@ -352,6 +358,26 @@ export function parseConfig(kind: ConfigKind, value: unknown): unknown {
         bps(kind, obj(kind, t).bps, 'tiers[].bps');
       }
       return o as ProjectDiscountPolicy;
+    }
+    case 'serviceLevel': {
+      str(kind, o.code, 'code');
+      const modes = obj(kind, o.modes);
+      if (!Object.keys(modes).length) bad(kind, 'at least one service mode is required');
+      for (const [mode, raw] of Object.entries(modes)) {
+        if (!['ground', 'ltl', 'per_item'].includes(mode)) bad(kind, 'unknown service mode');
+        const entry = obj(kind, raw);
+        for (const field of ['label', 'evidenceRef']) {
+          const value = str(kind, entry[field], field);
+          if (!value.trim() || value.length > 1000) bad(kind, 'invalid service text');
+        }
+        if (!Array.isArray(entry.details) || !entry.details.length || entry.details.length > 10)
+          bad(kind, 'provide 1–10 service details');
+        for (const value of entry.details as unknown[]) {
+          const detail = str(kind, value, 'details');
+          if (!detail.trim() || detail.length > 2000) bad(kind, 'invalid service detail');
+        }
+      }
+      return o as DeliveryServicePolicy;
     }
     case 'operatorDetails':
       for (const f of [

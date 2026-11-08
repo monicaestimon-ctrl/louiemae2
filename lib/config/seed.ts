@@ -4,6 +4,37 @@
 import type { ConfigSeed } from './index';
 
 export const CONFIG_SEED: ConfigSeed[] = [
+  {
+    kind: 'serviceLevel',
+    key: 'delivery-curbside',
+    version: 1,
+    status: 'proposed',
+    value: {
+      code: 'curbside',
+      modes: {
+        ground: {
+          label: 'Parcel delivery',
+          details: [
+            'Parcel delivery follows the carrier’s standard placement and access rules.',
+            'Inside delivery, stairs, assembly and expedited service are not included.',
+          ],
+          evidenceRef:
+            'Zuo Drop Ship Policy downloaded 2026-11-05; confirm current account service scope',
+        },
+        ltl: {
+          label: 'Curbside freight delivery',
+          details: [
+            'Freight delivery is curbside; residential and liftgate service must be included in the approved carrier rate.',
+            'Inside delivery, stairs and assembly are not included. The carrier may contact you to arrange an appointment.',
+          ],
+          evidenceRef:
+            'Zuo Drop Ship Policy downloaded 2026-11-05; confirm current account service scope',
+        },
+      },
+    },
+    note: 'Customer service descriptions require approval against current supplier/carrier terms. Ashcroft per-item service must be documented separately before adding its mode.',
+    decision: 'D-08',
+  },
   {kind:'deliveryControls',key:'delivery-controls',version:1,status:'proposed',value:{automaticEnabled:false,suppliers:['zuo'],origins:['95206'],services:['curbside'],zip3Allowlist:[],blockedZip5:[]},note:'Approve only verified pilot lanes. An empty allowlist disables automatic freight; quotes and paid-order fulfillment remain available.',decision:'D-03/D-08'},
   { kind: 'marginPolicy', key: 'zuo-standard-20', version: 1, status: 'approved', value: { targetBps: 2000 }, note: 'Default Zuo model: 20% contribution after modeled variable expenses, commission and allocated overhead (v2 §7).' },
   { kind: 'marginPolicy', key: 'zuo-approved-5', version: 1, status: 'approved', value: { targetBps: 500, cohort: 'approved_306', expandable: false }, note: 'The approved 306-product 5% exception. Never extended automatically (v2 §1, §7).' },
