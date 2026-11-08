@@ -41,6 +41,7 @@ export const revisionMeta = {
   source: v.string(),
 };
 export const shipAddress = v.object({
+  phone:v.optional(v.string()),
   line1: v.string(),
   line2: v.optional(v.string()),
   city: v.string(),

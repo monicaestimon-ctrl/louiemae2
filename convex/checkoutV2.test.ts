@@ -10,11 +10,49 @@ import { refundSplit } from './ordReturns';
 import { isCommerceError } from '../lib/errors';
 import { SPLIT_MAY, SPLIT_WILL, splitDisclosure } from '../lib/customerCopy';
 import { quoteOnlyReasons, zipRegion } from '../lib/delivery/destination';
+import { exemptionFor } from './dlvTaxExemptions';
+import { groupFreight, type FreightConfig, type ResolvedLine } from './dlvEngine';
+
+vi.mock('stripe', () => ({
+  default: class {
+    tax = {
+      calculations: {
+        create: async (a: any) => {
+          const amount =
+            a.line_items.reduce((n: number, l: any) => n + l.amount, 0) + a.shipping_cost.amount;
+          const tax = Math.ceil((amount * 825) / 10000);
+          return {
+            id: `taxcalc_fixture_${amount}`,
+            currency: 'usd',
+            tax_amount_inclusive: 0,
+            tax_amount_exclusive: tax,
+            amount_total: amount + tax,
+            line_items: {
+              data: a.line_items.map((l: any, i: number) => ({
+                reference: l.reference,
+                amount_tax: i === 0 ? tax : 0,
+              })),
+            },
+            shipping_cost: { amount_tax: 0 },
+            expires_at: Math.floor(Date.now() / 1000) + 3600,
+          };
+        },
+      },
+    };
+  },
+}));
 
 const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 const ADMIN = 'owner@louiemae.com';
 const NOW = Date.now();
-const ADDRESS = { line1: '1 Main St', city: 'Stockton', state: 'CA', postalCode: '95206', country: 'US' };
+const ADDRESS = {
+  phone: '+12095550100',
+  line1: '1 Main St',
+  city: 'Stockton',
+  state: 'CA',
+  postalCode: '95206',
+  country: 'US',
+};
 
 beforeEach(() => {
   // Scheduled work (payment processing, email delivery) runs only when a test drives it.
@@ -22,14 +60,47 @@ beforeEach(() => {
   process.env.CJ_ADMIN_EMAILS = ADMIN;
   process.env.DELIVERY_AUTOMATION_ENABLED = 'true';
   process.env.RETAIL_ZUO_CHECKOUT_ENABLED = 'true';
+  process.env.TRADE_CALCULATOR_V2_ENABLED = 'true';
+  process.env.STRIPE_SECRET_KEY = 'sk_test_fixture_only';
 });
 afterEach(() => {
   vi.useRealTimers();
-  for (const k of ['CJ_ADMIN_EMAILS', 'DELIVERY_AUTOMATION_ENABLED', 'RETAIL_ZUO_CHECKOUT_ENABLED', 'EDI_ZUO_ENABLED']) delete process.env[k];
+  for (const k of [
+    'TRADE_CALCULATOR_V2_ENABLED',
+    'STRIPE_SECRET_KEY',
+    'TRADE_CHECKOUT_V2_ENABLED',
+    'CJ_ADMIN_EMAILS',
+    'DELIVERY_ADMIN_ROLES',
+    'DELIVERY_AUTOMATION_ENABLED',
+    'RETAIL_ZUO_CHECKOUT_ENABLED',
+    'EDI_ZUO_ENABLED',
+  ])
+    delete process.env[k];
 });
 
 const FREIGHT = {
-  rule: { carrier: 'test', service: 'ground', effectiveFrom: 0, dimDivisorMm3PerG: 5_021, ground: { maxLongestMm: 2_743, maxLengthPlusGirthMm: 4_191, maxWeightG: 68_039 }, ltl: { maxLongestMm: 3_658, maxWeightG: 907_185, maxCartons: 20 } },
+  fixedPaymentMinor: 0,
+  evidenceRef: 'synthetic carrier matrix',
+  verifiedAt: 0,
+  validUntil: NOW + 86400000,
+  pallet: {
+    lengthMm: 1200,
+    widthMm: 1200,
+    maxHeightMm: 2000,
+    maxGrossWeightG: 1000000,
+    tareWeightG: 20000,
+    maxPallets: 10,
+    freightClass: 'fixture-class',
+    packing: 'one_carton_per_pallet',
+  },
+  rule: {
+    carrier: 'test',
+    service: 'ground',
+    effectiveFrom: 0,
+    dimDivisorMm3PerG: 5_021,
+    ground: { maxLongestMm: 2_743, maxLengthPlusGirthMm: 4_191, maxWeightG: 68_039 },
+    ltl: { maxLongestMm: 3_658, maxWeightG: 907_185, maxCartons: 20 },
+  },
   originZip: '95206',
   zip3Zones: { '952': 'Z1', '850': 'Z2', '100': 'Z3' },
   groundPerKgMinorByZone: { Z1: 150, Z2: 250, Z3: 400 },
@@ -47,26 +118,264 @@ async function setup(opts: { approveMixed?: boolean } = {}) {
   const userId = await t.run((ctx) => ctx.db.insert('users', { email: ADMIN }));
   const admin = t.withIdentity({ subject: `${userId}|s`, email: ADMIN });
   await t.mutation(internal.sysConfig.seed, {});
-  await admin.mutation(api.sysConfig.propose, { kind: 'carrierRule', key: 'zuo-freight', value: FREIGHT, note: 'test carrier', decision: 'D-03' });
+  const taxPolicy = await admin.mutation(api.sysConfig.propose, {
+    kind: 'taxProviderPolicy',
+    key: 'delivery-tax',
+    value: {
+      provider: 'stripe',
+      validityMinutes: 15,
+      categoryCodes: {
+        furniture: 'txcd_99999999',
+        decor: 'txcd_99999999',
+        clothing: 'txcd_99999999',
+      },
+      shippingTaxCode: 'txcd_92010001',
+    },
+    note: 'Synthetic fixture tax provider',
+  });
+  await admin.mutation(api.sysConfig.approve, { id: taxPolicy });
+  const control = await admin.mutation(api.sysConfig.propose, {
+    kind: 'deliveryControls',
+    key: 'delivery-controls',
+    value: {
+      automaticEnabled: true,
+      suppliers: ['zuo'],
+      origins: ['95206'],
+      services: ['curbside'],
+      zip3Allowlist: ['952', '850', '100'],
+      blockedZip5: [],
+    },
+    note: 'Synthetic test lane coverage',
+  });
+  await admin.mutation(api.sysConfig.approve, { id: control });
+  await admin.mutation(api.sysConfig.propose, {
+    kind: 'carrierRule',
+    key: 'zuo-freight',
+    value: FREIGHT,
+    note: 'test carrier',
+    decision: 'D-03',
+  });
   const { records } = await admin.query(api.sysConfig.list, { status: 'proposed' });
-  const keys = ['freshness-default', 'delivery-ladder', 'zuo-95206-curbside', 'estimate-policy', ...(opts.approveMixed ? ['mixed-zuo-ashcroft'] : [])];
-  for (const r of records.filter((x) => keys.includes(x.key) || (x.key === 'zuo-freight' && x.createdBy === ADMIN))) await admin.mutation(api.sysConfig.approve, { id: r._id });
+  const keys = [
+    'freshness-default',
+    'delivery-ladder',
+    'zuo-95206-curbside',
+    'estimate-policy',
+    ...(opts.approveMixed ? ['mixed-zuo-ashcroft'] : []),
+  ];
+  for (const r of records.filter(
+    (x) => keys.includes(x.key) || (x.key === 'zuo-freight' && x.createdBy === ADMIN)
+  ))
+    await admin.mutation(api.sysConfig.approve, { id: r._id });
   // A published, gate-passing Zuo product (built directly; the publication path is tested in catalogV2.test.ts).
   const ids = await t.run(async (ctx) => {
-    const supplierId = await ctx.db.insert('catSuppliers', { code: 'zuo', name: 'Zuo', publicAttributionAllowed: false, fulfillmentRoute: 'manual_dealer_zuo', freshnessKey: 'freshness-default', createdAt: 1 });
-    const productId = await ctx.db.insert('commerceProducts', { provider: 'zuo', sourceKey: 'zuo:111182', draft: { name: 'Mara dining chair', description: 'Oak', category: 'Dining chair', images: [], referenceImages: [], sourceUrl: '', supplierName: 'Zuo', supplierContact: '', facts: '', packaging: '', currency: 'USD', usdRate: 1, variants: [], conflicts: [], factsApproved: true, imagesApproved: true, referencePermission: true }, revision: 1, updatedAt: 1 });
-    await ctx.db.insert('catProductMeta', { productId, supplierId, commissionCategory: 'furniture', navCategory: 'Dining chair', louieMaeName: 'Mara dining chair', slug: 'mara', slugHistory: [], supplierName: 'Zuo chair', holds: [], stage: 'published', createdAt: 1, updatedAt: 1 });
-    const variantId = await ctx.db.insert('catVariants', { productId, supplierId, supplierSku: '111182', packId: '1', optionKey: 'oak', supplierVariantName: 'Oak', louieMaeVariantName: 'Oak', sizeClass: 'MEDIUM', piecesPerPack: 2, orderMinimumPacks: 1, orderIncrementPacks: 1, availability: 'in_stock', fulfillmentRoute: 'manual_dealer_zuo', marginPolicyKey: 'zuo-approved-5', holds: [], referralEligible: true, createdAt: 1, updatedAt: 1 });
-    const obs = await ctx.db.insert('catSourceObservations', { supplierId, variantId, field: 'stock', extractedValue: 'in_stock', observedAt: NOW - 3_600_000, contentHash: 's1', verifier: 't', confidence: 'confirmed', createdAt: 1 });
+    const supplierId = await ctx.db.insert('catSuppliers', {
+      code: 'zuo',
+      name: 'Zuo',
+      publicAttributionAllowed: false,
+      fulfillmentRoute: 'manual_dealer_zuo',
+      freshnessKey: 'freshness-default',
+      createdAt: 1,
+    });
+    const productId = await ctx.db.insert('commerceProducts', {
+      provider: 'zuo',
+      sourceKey: 'zuo:111182',
+      draft: {
+        name: 'Mara dining chair',
+        description: 'Oak',
+        category: 'Dining chair',
+        images: [],
+        referenceImages: [],
+        sourceUrl: '',
+        supplierName: 'Zuo',
+        supplierContact: '',
+        facts: '',
+        packaging: '',
+        currency: 'USD',
+        usdRate: 1,
+        variants: [],
+        conflicts: [],
+        factsApproved: true,
+        imagesApproved: true,
+        referencePermission: true,
+      },
+      revision: 1,
+      updatedAt: 1,
+    });
+    await ctx.db.insert('catProductMeta', {
+      productId,
+      supplierId,
+      commissionCategory: 'furniture',
+      navCategory: 'Dining chair',
+      louieMaeName: 'Mara dining chair',
+      slug: 'mara',
+      slugHistory: [],
+      supplierName: 'Zuo chair',
+      holds: [],
+      stage: 'published',
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const warehouseId = await ctx.db.insert('catWarehouses', {
+      supplierId,
+      code: 'stockton',
+      originZip: '95206',
+      state: 'CA',
+      active: true,
+    });
+    const variantId = await ctx.db.insert('catVariants', {
+      productId,
+      warehouseId,
+      supplierId,
+      supplierSku: '111182',
+      packId: '1',
+      optionKey: 'oak',
+      supplierVariantName: 'Oak',
+      louieMaeVariantName: 'Oak',
+      sizeClass: 'MEDIUM',
+      piecesPerPack: 2,
+      orderMinimumPacks: 1,
+      orderIncrementPacks: 1,
+      availability: 'in_stock',
+      fulfillmentRoute: 'manual_dealer_zuo',
+      marginPolicyKey: 'zuo-approved-5',
+      holds: [],
+      referralEligible: true,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const obs = await ctx.db.insert('catSourceObservations', {
+      supplierId,
+      variantId,
+      field: 'stock',
+      extractedValue: 'in_stock',
+      observedAt: NOW - 3_600_000,
+      contentHash: 's1',
+      verifier: 't',
+      confidence: 'confirmed',
+      createdAt: 1,
+    });
     void obs;
-    const costId = await ctx.db.insert('catCostRevisions', { variantId, wholesaleMinor: 11_500, currency: 'USD', dutiesMinor: null, dutiesConfirmedZero: true, inboundFreightMinor: null, inboundConfirmedZero: true, supplierFeesMinor: null, feesConfirmedZero: true, mapMinor: null, mapUnitBasis: 'pack', mapSource: 'none', mapApplicability: 'not_applicable', costSource: 't', verifiedAt: NOW - 3_600_000, observationIds: [], createdAt: 1, createdBy: 't', effectiveFrom: 0, source: 't' });
-    await ctx.db.insert('catCartons', { variantId, index: 0, cartonsPerPack: 1, lengthMm: 610, widthMm: 508, heightMm: 914, grossWeightG: 13_608, supplierMethod: 'ground', createdAt: 1 });
-    const priceId = await ctx.db.insert('catPriceRevisions', { variantId, channel: 'retail', packPriceMinor: 45_806, piecePriceMinorInfo: 22_903, marginPolicyKey: 'zuo-approved-5', marginPolicyVersion: 1, roundingPolicyVersion: 1, status: 'approved', origin: 'import_approved', createdAt: 1, createdBy: 't', effectiveFrom: 0, source: 't' });
-    await ctx.db.patch(variantId, { currentCostRevisionId: costId, retailPriceRevisionId: priceId });
-    await ctx.db.insert('commerceListings', { productId, channel: 'retail', published: true, revision: 1, updatedAt: 1, snapshot: { name: 'Mara dining chair', description: 'Oak', category: 'Dining chair', images: [], facts: '', variants: [{ id: variantId, name: 'Oak', minimum: 1, increment: 1, price: 45_806 }] } });
+    const costId = await ctx.db.insert('catCostRevisions', {
+      variantId,
+      wholesaleMinor: 11_500,
+      currency: 'USD',
+      dutiesMinor: null,
+      dutiesConfirmedZero: true,
+      inboundFreightMinor: null,
+      inboundConfirmedZero: true,
+      supplierFeesMinor: null,
+      feesConfirmedZero: true,
+      mapMinor: null,
+      mapUnitBasis: 'pack',
+      mapSource: 'none',
+      mapApplicability: 'not_applicable',
+      costSource: 't',
+      verifiedAt: NOW - 3_600_000,
+      observationIds: [],
+      createdAt: 1,
+      createdBy: 't',
+      effectiveFrom: 0,
+      source: 't',
+    });
+    await ctx.db.insert('catCartons', {
+      variantId,
+      index: 0,
+      cartonsPerPack: 1,
+      lengthMm: 610,
+      widthMm: 508,
+      heightMm: 914,
+      grossWeightG: 13_608,
+      supplierMethod: 'ground',
+      createdAt: 1,
+    });
+    const priceId = await ctx.db.insert('catPriceRevisions', {
+      variantId,
+      channel: 'retail',
+      packPriceMinor: 45_806,
+      piecePriceMinorInfo: 22_903,
+      marginPolicyKey: 'zuo-approved-5',
+      marginPolicyVersion: 1,
+      roundingPolicyVersion: 1,
+      status: 'approved',
+      origin: 'import_approved',
+      createdAt: 1,
+      createdBy: 't',
+      effectiveFrom: 0,
+      source: 't',
+    });
+    await ctx.db.patch(variantId, {
+      currentCostRevisionId: costId,
+      retailPriceRevisionId: priceId,
+    });
+    await ctx.db.insert('commerceListings', {
+      productId,
+      channel: 'retail',
+      published: true,
+      revision: 1,
+      updatedAt: 1,
+      snapshot: {
+        name: 'Mara dining chair',
+        description: 'Oak',
+        category: 'Dining chair',
+        images: [],
+        facts: '',
+        variants: [{ id: variantId, name: 'Oak', minimum: 1, increment: 1, price: 45_806 }],
+      },
+    });
     // An Ashcroft product on its existing launch rules.
-    const ashId = await ctx.db.insert('commerceProducts', { provider: 'ashcroft', sourceKey: 'ashcroft:bench', draft: { name: 'Beckett bench', description: '', category: 'bench', images: [], referenceImages: [], sourceUrl: '', supplierName: '', supplierContact: '', facts: '', packaging: '', currency: 'USD', usdRate: 1, variants: [], conflicts: [], factsApproved: true, imagesApproved: true, referencePermission: true }, revision: 1, updatedAt: 1 });
-    await ctx.db.insert('commerceListings', { productId: ashId, channel: 'retail', published: true, revision: 1, updatedAt: 1, snapshot: { name: 'Beckett bench', description: '', category: 'bench', images: [], facts: '', variants: [{ id: 'b1', name: 'Default Title', minimum: 1, increment: 1, price: 60_000 }] }, fulfillment: [{ id: 'b1', name: 'Default Title', sku: 'BEN123', cost: 300, minimum: 1, increment: 1, retail: 60_000, commercial: 0 }] });
+    const ashId = await ctx.db.insert('commerceProducts', {
+      provider: 'ashcroft',
+      sourceKey: 'ashcroft:bench',
+      draft: {
+        name: 'Beckett bench',
+        description: '',
+        category: 'bench',
+        images: [],
+        referenceImages: [],
+        sourceUrl: '',
+        supplierName: '',
+        supplierContact: '',
+        facts: '',
+        packaging: '',
+        currency: 'USD',
+        usdRate: 1,
+        variants: [],
+        conflicts: [],
+        factsApproved: true,
+        imagesApproved: true,
+        referencePermission: true,
+      },
+      revision: 1,
+      updatedAt: 1,
+    });
+    await ctx.db.insert('commerceListings', {
+      productId: ashId,
+      channel: 'retail',
+      published: true,
+      revision: 1,
+      updatedAt: 1,
+      snapshot: {
+        name: 'Beckett bench',
+        description: '',
+        category: 'bench',
+        images: [],
+        facts: '',
+        variants: [{ id: 'b1', name: 'Default Title', minimum: 1, increment: 1, price: 60_000 }],
+      },
+      fulfillment: [
+        {
+          id: 'b1',
+          name: 'Default Title',
+          sku: 'BEN123',
+          cost: 300,
+          minimum: 1,
+          increment: 1,
+          retail: 60_000,
+          commercial: 0,
+        },
+      ],
+    });
     return { productId, variantId, ashId };
   });
   return { t, admin, ...ids };
@@ -74,19 +383,60 @@ async function setup(opts: { approveMixed?: boolean } = {}) {
 
 async function processEvents(t: ReturnType<typeof convexTest>) {
   const pending = await t.run((ctx) => ctx.db.query('sysPaymentEvents').collect());
-  for (const ev of pending) if (ev.status === 'received') await t.mutation(internal.ordPayments.process, { id: ev._id });
+  for (const ev of pending)
+    if (ev.status === 'received') await t.mutation(internal.ordPayments.process, { id: ev._id });
 }
 
-const zuoLine = (s: { productId: Id<'commerceProducts'>; variantId: Id<'catVariants'> }, packs = 1) => ({ productId: s.productId, variantId: s.variantId, packs });
+const zuoLine = (
+  s: { productId: Id<'commerceProducts'>; variantId: Id<'catVariants'> },
+  packs = 1
+) => ({ productId: s.productId, variantId: s.variantId, packs });
 
-async function paidOrder(s: Awaited<ReturnType<typeof setup>>, lines: { productId: string; variantId: string; packs: number }[], eventId = 'evt_1') {
-  const est = await s.t.mutation(api.dlvEstimates.estimate, { lines, channel: 'retail', zip: '95206', address: ADDRESS, visitorKey: 'visitor-1234567890' });
+async function paidOrder(
+  s: Awaited<ReturnType<typeof setup>>,
+  lines: { productId: string; variantId: string; packs: number }[],
+  eventId = 'evt_1'
+) {
+  const est = await s.t.action(api.dlvTaxActions.estimate, {
+    lines,
+    channel: 'retail',
+    zip: '95206',
+    address: ADDRESS,
+    visitorKey: 'visitor-1234567890',
+  });
   expect(est.status).toBe('ok');
-  const intent = await s.t.mutation(internal.ordCheckout.createIntent, { idempotencyKey: 'key-abcdefghijklmnop', estimateId: est.estimateId, lines, address: ADDRESS, service: 'curbside', acceptTotalMinor: est.totalMinor!, email: 'buyer@x.com' });
+  const intent = await s.t.mutation(internal.ordCheckout.createIntent, {
+    idempotencyKey: 'key-abcdefghijklmnop',
+    estimateId: est.estimateId,
+    guestCapability: est.guestCapability,
+    lines,
+    address: ADDRESS,
+    service: 'curbside',
+    acceptTotalMinor: est.totalMinor!,
+    email: 'buyer@x.com',
+  });
   if (intent.status === 'price_changed') throw new Error('unexpected price change');
-  await s.t.mutation(internal.ordCheckout.attachSession, { intentId: intent.intentId, sessionId: 'cs_1' });
-  const payload = { id: 'cs_1', intentId: intent.intentId, payment_status: 'paid', amount_total: intent.totalMinor, currency: 'usd', payment_intent: 'pi_1', email: 'buyer@x.com', shipping: ADDRESS };
-  await s.t.mutation(internal.ordPayments.receive, { eventId, type: 'checkout.session.completed', livemode: false, payloadHash: 'h', payload });
+  await s.t.mutation(internal.ordCheckout.attachSession, {
+    intentId: intent.intentId,
+    sessionId: 'cs_1',
+  });
+  const payload = {
+    id: 'cs_1',
+    intentId: intent.intentId,
+    payment_status: 'paid',
+    amount_total: intent.totalMinor,
+    currency: 'usd',
+    payment_intent: 'pi_1',
+    email: 'buyer@x.com',
+    shipping: ADDRESS,
+  };
+  await s.t.mutation(internal.ordPayments.receive, {
+    eventId,
+    type: 'checkout.session.completed',
+    livemode: false,
+    payloadHash: 'h',
+    payload,
+  });
   await processEvents(s.t);
   return { est, intent, payload };
 }
@@ -94,12 +444,23 @@ async function paidOrder(s: Awaited<ReturnType<typeof setup>>, lines: { productI
 describe('delivery estimates (S17, S18)', () => {
   it('estimates a Zuo item, keeps ZIP estimates non-binding and shows tax only with a full address', async () => {
     const s = await setup();
-    const zip = await s.t.mutation(api.dlvEstimates.estimate, { lines: [zuoLine(s)], channel: 'retail', zip: '95206', visitorKey: 'visitor-1234567890' });
+    const zip = await s.t.action(api.dlvTaxActions.estimate, {
+      lines: [zuoLine(s)],
+      channel: 'retail',
+      zip: '95206',
+      visitorKey: 'visitor-1234567890',
+    });
     expect(zip.status).toBe('ok');
     expect(zip.deliveryChargeMinor).toBe(4_999);
     expect(zip.taxMinor).toBeNull();
     expect(zip.note).toMatch(/Estimate/);
-    const full = await s.t.mutation(api.dlvEstimates.estimate, { lines: [zuoLine(s)], channel: 'retail', zip: '95206', address: ADDRESS, visitorKey: 'visitor-1234567890' });
+    const full = await s.t.action(api.dlvTaxActions.estimate, {
+      lines: [zuoLine(s)],
+      channel: 'retail',
+      zip: '95206',
+      address: ADDRESS,
+      visitorKey: 'visitor-1234567890',
+    });
     expect(full.taxMinor).toBe(Math.ceil(((45_806 + 4_999) * 825) / 10_000));
     expect(full.totalMinor).toBe(45_806 + 4_999 + full.taxMinor!);
   });
@@ -107,32 +468,71 @@ describe('delivery estimates (S17, S18)', () => {
   it('routes Alaska, Hawaii, PO boxes and unzoned ZIPs to a quote (DEL03)', async () => {
     const s = await setup();
     for (const zip of ['99501', '96813', '10001x']) {
-      const r = await s.t.mutation(api.dlvEstimates.estimate, { lines: [zuoLine(s)], channel: 'retail', zip, visitorKey: 'visitor-1234567890' }).catch((e) => ({ status: 'error', e }));
+      const r = await s.t
+        .action(api.dlvTaxActions.estimate, {
+          lines: [zuoLine(s)],
+          channel: 'retail',
+          zip,
+          visitorKey: 'visitor-1234567890',
+        })
+        .catch((e) => ({ status: 'error', e }));
       expect(r.status === 'quote_required' || r.status === 'error').toBe(true);
     }
-    const unzoned = await s.t.mutation(api.dlvEstimates.estimate, { lines: [zuoLine(s)], channel: 'retail', zip: '60601', visitorKey: 'visitor-1234567890' });
+    const unzoned = await s.t.action(api.dlvTaxActions.estimate, {
+      lines: [zuoLine(s)],
+      channel: 'retail',
+      zip: '60601',
+      visitorKey: 'visitor-1234567890',
+    });
     expect(unzoned.status).toBe('quote_required');
     expect(unzoned.reasons).toEqual(['Request a delivery quote']);
-    expect(quoteOnlyReasons('95206', { ...ADDRESS, line1: 'PO Box 12' })).toContain('PO boxes need a delivery quote');
+    expect(quoteOnlyReasons('95206', { ...ADDRESS, line1: 'PO Box 12' })).toContain(
+      'PO boxes need a delivery quote'
+    );
     expect(zipRegion('00901')).toBe('PR');
   });
 
   it('is off unless the flag is on, refuses proposed policies, and ignores client prices (SEC01)', async () => {
     const s = await setup();
-    const r = await s.t.mutation(api.dlvEstimates.estimate, { lines: [zuoLine(s)], channel: 'retail', zip: '95206', visitorKey: 'visitor-1234567890', clientPrices: { [s.variantId]: 1 } });
+    const r = await s.t.action(api.dlvTaxActions.estimate, {
+      lines: [zuoLine(s)],
+      channel: 'retail',
+      zip: '95206',
+      visitorKey: 'visitor-1234567890',
+      clientPrices: { [s.variantId]: 1 },
+    });
     expect(r.merchandiseMinor).toBe(45_806);
     const metric = await s.t.run((ctx) => ctx.db.query('sysMetrics').collect());
     expect(metric.some((m) => m.name === 'security.client_price_ignored')).toBe(true);
     delete process.env.DELIVERY_AUTOMATION_ENABLED;
-    await expect(s.t.mutation(api.dlvEstimates.estimate, { lines: [zuoLine(s)], channel: 'retail', zip: '95206', visitorKey: 'v' })).rejects.toSatisfy((e) => isCommerceError(e, 'FEATURE_DISABLED'));
+    await expect(
+      s.t.action(api.dlvTaxActions.estimate, {
+        lines: [zuoLine(s)],
+        channel: 'retail',
+        zip: '95206',
+        visitorKey: 'v',
+      })
+    ).rejects.toSatisfy((e) => isCommerceError(e, 'FEATURE_DISABLED'));
   });
 
   it('needs the mixed-cart decision (D-12) before combining Zuo and Ashcroft, then sums groups once', async () => {
     const s = await setup();
     const mixed = [zuoLine(s), { productId: s.ashId, variantId: 'b1', packs: 1 }];
-    await expect(s.t.mutation(api.dlvEstimates.estimate, { lines: mixed, channel: 'retail', zip: '95206', visitorKey: 'visitor-1234567890' })).rejects.toSatisfy((e) => isCommerceError(e, 'POLICY_NOT_APPROVED'));
+    await expect(
+      s.t.action(api.dlvTaxActions.estimate, {
+        lines: mixed,
+        channel: 'retail',
+        zip: '95206',
+        visitorKey: 'visitor-1234567890',
+      })
+    ).rejects.toSatisfy((e) => isCommerceError(e, 'POLICY_NOT_APPROVED'));
     const s2 = await setup({ approveMixed: true });
-    const r = await s2.t.mutation(api.dlvEstimates.estimate, { lines: [zuoLine(s2), { productId: s2.ashId, variantId: 'b1', packs: 1 }], channel: 'retail', zip: '95206', visitorKey: 'visitor-1234567890' });
+    const r = await s2.t.action(api.dlvTaxActions.estimate, {
+      lines: [zuoLine(s2), { productId: s2.ashId, variantId: 'b1', packs: 1 }],
+      channel: 'retail',
+      zip: '95206',
+      visitorKey: 'visitor-1234567890',
+    });
     expect(r.status).toBe('ok');
     expect(r.deliveryChargeMinor).toBe(4_999 + 2_900); // Zuo ladder + Ashcroft per-item bench fee
     expect(r.splitKnown).toBe(true);
@@ -145,14 +545,29 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
     const lines = [zuoLine(s, 2), { productId: s.ashId, variantId: 'b1', packs: 1 }];
     const { intent, payload } = await paidOrder(s, lines);
     // duplicate delivery of the same and of a new event id for the same session
-    await s.t.mutation(internal.ordPayments.receive, { eventId: 'evt_1', type: 'checkout.session.completed', livemode: false, payloadHash: 'h', payload });
-    await s.t.mutation(internal.ordPayments.receive, { eventId: 'evt_2', type: 'checkout.session.completed', livemode: false, payloadHash: 'h', payload });
+    await s.t.mutation(internal.ordPayments.receive, {
+      eventId: 'evt_1',
+      type: 'checkout.session.completed',
+      livemode: false,
+      payloadHash: 'h',
+      payload,
+    });
+    await s.t.mutation(internal.ordPayments.receive, {
+      eventId: 'evt_2',
+      type: 'checkout.session.completed',
+      livemode: false,
+      payloadHash: 'h',
+      payload,
+    });
     await processEvents(s.t);
     const orders = await s.t.run((ctx) => ctx.db.query('ordOrders').collect());
     expect(orders).toHaveLength(1);
     expect(orders[0].totals.total).toBe(intent.totalMinor);
     const children = await s.t.run((ctx) => ctx.db.query('ordSupplierOrders').collect());
-    expect(children.map((c) => c.route).sort()).toEqual(['manual_dealer_ashcroft', 'manual_dealer_zuo']);
+    expect(children.map((c) => c.route).sort()).toEqual([
+      'manual_dealer_ashcroft',
+      'manual_dealer_zuo',
+    ]);
     const allocs = await s.t.run((ctx) => ctx.db.query('ordAllocations').collect());
     expect(allocs.reduce((t, a) => t + a.pieces, 0)).toBe(4 + 1); // 2 pairs + 1 bench, each allocated once
     const lineRows = await s.t.run((ctx) => ctx.db.query('ordOrderLines').collect());
@@ -165,45 +580,174 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
   it('requires reconfirmation when anything changes, and refuses stale estimates', async () => {
     const s = await setup();
     const lines = [zuoLine(s)];
-    const est = await s.t.mutation(api.dlvEstimates.estimate, { lines, channel: 'retail', zip: '95206', address: ADDRESS, visitorKey: 'visitor-1234567890' });
-    await expect(s.t.mutation(internal.ordCheckout.createIntent, { idempotencyKey: 'key-abcdefghijklmnop', estimateId: est.estimateId, lines: [zuoLine(s, 2)], address: ADDRESS, service: 'curbside', acceptTotalMinor: est.totalMinor! })).rejects.toSatisfy((e) => isCommerceError(e, 'QUOTE_EXPIRED'));
-    await expect(s.t.mutation(internal.ordCheckout.createIntent, { idempotencyKey: 'key-abcdefghijklmnop', estimateId: est.estimateId, lines, address: { ...ADDRESS, line1: '2 Main St' }, service: 'curbside', acceptTotalMinor: est.totalMinor! })).rejects.toSatisfy((e) => isCommerceError(e, 'QUOTE_EXPIRED'));
-    // A price change after the estimate: the server returns the new total instead of charging it.
+    const est = await s.t.action(api.dlvTaxActions.estimate, {
+      lines,
+      channel: 'retail',
+      zip: '95206',
+      address: ADDRESS,
+      visitorKey: 'visitor-1234567890',
+    });
+    await expect(
+      s.t.mutation(internal.ordCheckout.createIntent, {
+        idempotencyKey: 'key-abcdefghijklmnop',
+        estimateId: est.estimateId,
+        guestCapability: est.guestCapability,
+        lines: [zuoLine(s, 2)],
+        address: ADDRESS,
+        service: 'curbside',
+        acceptTotalMinor: est.totalMinor!,
+      })
+    ).rejects.toSatisfy((e) => isCommerceError(e, 'QUOTE_EXPIRED'));
+    await expect(
+      s.t.mutation(internal.ordCheckout.createIntent, {
+        idempotencyKey: 'key-abcdefghijklmnop',
+        estimateId: est.estimateId,
+        guestCapability: est.guestCapability,
+        lines,
+        address: { ...ADDRESS, line1: '2 Main St' },
+        service: 'curbside',
+        acceptTotalMinor: est.totalMinor!,
+      })
+    ).rejects.toSatisfy((e) => isCommerceError(e, 'QUOTE_EXPIRED'));
+    // A changed merchandise price invalidates address-bound tax and requires a fresh review.
     await s.t.run(async (ctx) => {
       const p = (await ctx.db.query('catPriceRevisions').first())!;
       await ctx.db.patch(p._id, { packPriceMinor: 47_000 });
-      const l = (await ctx.db.query('commerceListings').filter((q) => q.eq(q.field('productId'), s.productId)).first())!;
-      await ctx.db.patch(l._id, { snapshot: { ...l.snapshot, variants: l.snapshot.variants.map((x) => ({ ...x, price: 47_000 })) } });
+      const l = (await ctx.db
+        .query('commerceListings')
+        .filter((q) => q.eq(q.field('productId'), s.productId))
+        .first())!;
+      await ctx.db.patch(l._id, {
+        snapshot: {
+          ...l.snapshot,
+          variants: l.snapshot.variants.map((x) => ({ ...x, price: 47_000 })),
+        },
+      });
     });
-    const r = await s.t.mutation(internal.ordCheckout.createIntent, { idempotencyKey: 'key-abcdefghijklmnop', estimateId: est.estimateId, lines, address: ADDRESS, service: 'curbside', acceptTotalMinor: est.totalMinor! });
-    expect(r.status).toBe('price_changed');
-    const ok = await s.t.mutation(internal.ordCheckout.createIntent, { idempotencyKey: 'key-abcdefghijklmnop', estimateId: est.estimateId, lines, address: ADDRESS, service: 'curbside', acceptTotalMinor: r.totalMinor });
+    await expect(
+      s.t.mutation(internal.ordCheckout.createIntent, {
+        idempotencyKey: 'key-abcdefghijklmnop',
+        estimateId: est.estimateId,
+        guestCapability: est.guestCapability,
+        lines,
+        address: ADDRESS,
+        service: 'curbside',
+        acceptTotalMinor: est.totalMinor!,
+      })
+    ).rejects.toSatisfy((e) => isCommerceError(e, 'QUOTE_EXPIRED'));
+    const refreshed = await s.t.action(api.dlvTaxActions.estimate, {
+      lines,
+      channel: 'retail',
+      zip: '95206',
+      address: ADDRESS,
+      visitorKey: 'visitor-1234567890',
+    });
+    const ok = await s.t.mutation(internal.ordCheckout.createIntent, {
+      idempotencyKey: 'key-abcdefghijklmnop',
+      estimateId: refreshed.estimateId,
+      guestCapability: refreshed.guestCapability,
+      lines,
+      address: ADDRESS,
+      service: 'curbside',
+      acceptTotalMinor: refreshed.totalMinor!,
+    });
     expect(ok.status).toBe('created');
-    const again = await s.t.mutation(internal.ordCheckout.createIntent, { idempotencyKey: 'key-abcdefghijklmnop', estimateId: est.estimateId, lines, address: ADDRESS, service: 'curbside', acceptTotalMinor: r.totalMinor });
+    const again = await s.t.mutation(internal.ordCheckout.createIntent, {
+      idempotencyKey: 'key-abcdefghijklmnop',
+      estimateId: refreshed.estimateId,
+      guestCapability: refreshed.guestCapability,
+      lines,
+      address: ADDRESS,
+      service: 'curbside',
+      acceptTotalMinor: refreshed.totalMinor!,
+    });
     expect(again.status).toBe('existing');
   });
 
   it('sends a payment after expiry or with a mismatched total to the paid-order exception queue', async () => {
     const s = await setup();
     const lines = [zuoLine(s)];
-    const est = await s.t.mutation(api.dlvEstimates.estimate, { lines, channel: 'retail', zip: '95206', address: ADDRESS, visitorKey: 'visitor-1234567890' });
-    const intent = await s.t.mutation(internal.ordCheckout.createIntent, { idempotencyKey: 'key-abcdefghijklmnop', estimateId: est.estimateId, lines, address: ADDRESS, service: 'curbside', acceptTotalMinor: est.totalMinor! });
+    const est = await s.t.action(api.dlvTaxActions.estimate, {
+      lines,
+      channel: 'retail',
+      zip: '95206',
+      address: ADDRESS,
+      visitorKey: 'visitor-1234567890',
+    });
+    const intent = await s.t.mutation(internal.ordCheckout.createIntent, {
+      idempotencyKey: 'key-abcdefghijklmnop',
+      estimateId: est.estimateId,
+      guestCapability: est.guestCapability,
+      lines,
+      address: ADDRESS,
+      service: 'curbside',
+      acceptTotalMinor: est.totalMinor!,
+    });
     if (intent.status === 'price_changed') throw new Error();
-    await s.t.mutation(internal.ordCheckout.attachSession, { intentId: intent.intentId, sessionId: 'cs_1' });
-    await s.t.mutation(internal.ordPayments.receive, { eventId: 'e1', type: 'checkout.session.completed', livemode: false, payloadHash: 'h', payload: { id: 'cs_1', intentId: intent.intentId, payment_status: 'paid', amount_total: intent.totalMinor - 1, currency: 'usd', payment_intent: 'pi_9', email: 'b@x.com' } });
+    await s.t.mutation(internal.ordCheckout.attachSession, {
+      intentId: intent.intentId,
+      sessionId: 'cs_1',
+    });
+    await s.t.mutation(internal.ordPayments.receive, {
+      eventId: 'e1',
+      type: 'checkout.session.completed',
+      livemode: false,
+      payloadHash: 'h',
+      payload: {
+        id: 'cs_1',
+        intentId: intent.intentId,
+        payment_status: 'paid',
+        amount_total: intent.totalMinor - 1,
+        currency: 'usd',
+        payment_intent: 'pi_9',
+        email: 'b@x.com',
+      },
+    });
     await processEvents(s.t);
     expect(await s.t.run((ctx) => ctx.db.query('ordOrders').collect())).toHaveLength(0);
     const ex = await s.t.run((ctx) => ctx.db.query('ordPaidExceptions').collect());
-    expect(ex[0]).toMatchObject({ reason: 'total_mismatch', status: 'open', paymentIntentId: 'pi_9' });
+    expect(ex[0]).toMatchObject({
+      reason: 'total_mismatch',
+      status: 'open',
+      paymentIntentId: 'pi_9',
+    });
   });
 
   it('releases reservations when the session expires', async () => {
     const s = await setup();
     const lines = [zuoLine(s)];
-    const est = await s.t.mutation(api.dlvEstimates.estimate, { lines, channel: 'retail', zip: '95206', address: ADDRESS, visitorKey: 'visitor-1234567890' });
-    const intent = await s.t.mutation(internal.ordCheckout.createIntent, { idempotencyKey: 'key-abcdefghijklmnop', estimateId: est.estimateId, lines, address: ADDRESS, service: 'curbside', acceptTotalMinor: est.totalMinor! });
+    const est = await s.t.action(api.dlvTaxActions.estimate, {
+      lines,
+      channel: 'retail',
+      zip: '95206',
+      address: ADDRESS,
+      visitorKey: 'visitor-1234567890',
+    });
+    const intent = await s.t.mutation(internal.ordCheckout.createIntent, {
+      idempotencyKey: 'key-abcdefghijklmnop',
+      estimateId: est.estimateId,
+      guestCapability: est.guestCapability,
+      lines,
+      address: ADDRESS,
+      service: 'curbside',
+      acceptTotalMinor: est.totalMinor!,
+    });
     if (intent.status === 'price_changed') throw new Error();
-    await s.t.mutation(internal.ordPayments.receive, { eventId: 'e-exp', type: 'checkout.session.expired', livemode: false, payloadHash: 'h', payload: { id: 'cs_1', intentId: intent.intentId, payment_status: 'unpaid', amount_total: null, currency: 'usd', payment_intent: null, email: '' } });
+    await s.t.mutation(internal.ordPayments.receive, {
+      eventId: 'e-exp',
+      type: 'checkout.session.expired',
+      livemode: false,
+      payloadHash: 'h',
+      payload: {
+        id: 'cs_1',
+        intentId: intent.intentId,
+        payment_status: 'unpaid',
+        amount_total: null,
+        currency: 'usd',
+        payment_intent: null,
+        email: '',
+      },
+    });
     await processEvents(s.t);
     const res = await s.t.run((ctx) => ctx.db.query('ordInventoryReservations').collect());
     expect(res.every((r) => r.status === 'released')).toBe(true);
@@ -214,34 +758,66 @@ describe('fulfillment (S21, FUL04, FUL05, DEL05)', () => {
   it('ships partially, keeps the other supplier intact on cancel, and never marks the whole order delivered early', async () => {
     const s = await setup({ approveMixed: true });
     await paidOrder(s, [zuoLine(s, 2), { productId: s.ashId, variantId: 'b1', packs: 1 }]);
-    const zuoQueue = await s.admin.query(api.ordFulfillment.dealerQueue, { route: 'manual_dealer_zuo' });
-    const ashQueue = await s.admin.query(api.ordFulfillment.dealerQueue, { route: 'manual_dealer_ashcroft' });
+    const zuoQueue = await s.admin.query(api.ordFulfillment.dealerQueue, {
+      route: 'manual_dealer_zuo',
+    });
+    const ashQueue = await s.admin.query(api.ordFulfillment.dealerQueue, {
+      route: 'manual_dealer_ashcroft',
+    });
     expect(zuoQueue).toHaveLength(1);
     expect(zuoQueue[0].items[0]).toMatchObject({ supplierSku: '111182', packs: 2, pieces: 4 });
-    await s.admin.mutation(api.ordFulfillment.markSubmitted, { supplierOrderId: zuoQueue[0]._id, supplierPo: 'PO-1', acceptedCostMinor: 47_380 });
+    await s.admin.mutation(api.ordFulfillment.markSubmitted, {
+      supplierOrderId: zuoQueue[0]._id,
+      supplierPo: 'PO-1',
+      acceptedCostMinor: 47_380,
+    });
     // Partial shipment of 2 of 4 pieces
-    const shipId = await s.admin.mutation(api.ordFulfillment.recordShipment, { supplierOrderId: zuoQueue[0]._id, items: [{ allocationId: zuoQueue[0].items[0].allocationId, pieces: 2 }], trackingUrl: 'https://track.example/1' });
+    const shipId = await s.admin.mutation(api.ordFulfillment.recordShipment, {
+      supplierOrderId: zuoQueue[0]._id,
+      items: [{ allocationId: zuoQueue[0].items[0].allocationId, pieces: 2 }],
+      trackingUrl: 'https://track.example/1',
+    });
     let order = (await s.t.run((ctx) => ctx.db.query('ordOrders').first()))!;
     expect(order.status).toBe('paid'); // nothing fully shipped yet
-    await expect(s.admin.mutation(api.ordFulfillment.recordShipment, { supplierOrderId: zuoQueue[0]._id, items: [{ allocationId: zuoQueue[0].items[0].allocationId, pieces: 3 }] })).rejects.toThrow(/More pieces/);
-    await s.admin.mutation(api.ordFulfillment.recordShipment, { supplierOrderId: zuoQueue[0]._id, items: [{ allocationId: zuoQueue[0].items[0].allocationId, pieces: 2 }] });
+    await expect(
+      s.admin.mutation(api.ordFulfillment.recordShipment, {
+        supplierOrderId: zuoQueue[0]._id,
+        items: [{ allocationId: zuoQueue[0].items[0].allocationId, pieces: 3 }],
+      })
+    ).rejects.toThrow(/More pieces/);
+    await s.admin.mutation(api.ordFulfillment.recordShipment, {
+      supplierOrderId: zuoQueue[0]._id,
+      items: [{ allocationId: zuoQueue[0].items[0].allocationId, pieces: 2 }],
+    });
     order = (await s.t.run((ctx) => ctx.db.query('ordOrders').first()))!;
     expect(order.status).toBe('partially_shipped');
     await s.admin.mutation(api.ordFulfillment.markDelivered, { shipmentId: shipId });
     order = (await s.t.run((ctx) => ctx.db.query('ordOrders').first()))!;
     expect(order.status).toBe('partially_shipped'); // first shipment only covers half the pair set
     // Ashcroft rejects: only its allocation changes
-    await s.admin.mutation(api.ordFulfillment.cancelAllocations, { supplierOrderId: ashQueue[0]._id, allocationIds: [ashQueue[0].items[0].allocationId], reason: 'Dealer rejected' });
+    await s.admin.mutation(api.ordFulfillment.cancelAllocations, {
+      supplierOrderId: ashQueue[0]._id,
+      allocationIds: [ashQueue[0].items[0].allocationId],
+      reason: 'Dealer rejected',
+    });
     const children = await s.t.run((ctx) => ctx.db.query('ordSupplierOrders').collect());
     expect(children.find((c) => c.supplierCode === 'zuo')!.status).toBe('shipped');
     expect(children.find((c) => c.supplierCode === 'ashcroft')!.status).toBe('cancelled');
     const notes = await s.t.run((ctx) => ctx.db.query('sysNotifications').collect());
     expect(notes.find((n) => n.template === 'shipment')!.text).toMatch(/Still to ship/);
-    const status = await s.t.query(api.ordFulfillment.orderStatus, { number: order.number, email: 'buyer@x.com' });
+    const status = await s.t.query(api.ordFulfillment.orderStatus, {
+      number: order.number,
+      email: 'buyer@x.com',
+    });
     expect(status!.disclosure).toBe(SPLIT_WILL);
     expect(JSON.stringify(status)).not.toMatch(/zuo|ashcroft|111182/i); // no supplier names or SKUs
     // Freight invoice above the estimate: internal variance only
-    const v = await s.admin.mutation(api.ordFulfillment.recordFreightActual, { supplierOrderId: zuoQueue[0]._id, estimatedMinor: 4_000, actualMinor: 6_000, invoiceRef: 'INV-1' });
+    const v = await s.admin.mutation(api.ordFulfillment.recordFreightActual, {
+      supplierOrderId: zuoQueue[0]._id,
+      estimatedMinor: 4_000,
+      actualMinor: 6_000,
+      invoiceRef: 'INV-1',
+    });
     expect(v).toEqual({ varianceMinor: 2_000, customerCharged: 0 });
   });
 });
@@ -250,19 +826,39 @@ describe('EDI adapter (S23, FUL02, FUL03)', () => {
   it('sends only the Zuo child, once, and blocks resubmission while uncertain', async () => {
     const s = await setup({ approveMixed: true });
     await paidOrder(s, [zuoLine(s, 1), { productId: s.ashId, variantId: 'b1', packs: 1 }]);
-    const child = (await s.t.run((ctx) => ctx.db.query('ordSupplierOrders').collect())).find((c) => c.supplierCode === 'zuo')!;
-    const ash = (await s.t.run((ctx) => ctx.db.query('ordSupplierOrders').collect())).find((c) => c.supplierCode === 'ashcroft')!;
+    const child = (await s.t.run((ctx) => ctx.db.query('ordSupplierOrders').collect())).find(
+      (c) => c.supplierCode === 'zuo'
+    )!;
+    const ash = (await s.t.run((ctx) => ctx.db.query('ordSupplierOrders').collect())).find(
+      (c) => c.supplierCode === 'ashcroft'
+    )!;
     const sent: unknown[] = [];
     const uncertain: Transport = { send: async (p) => (sent.push(p), { outcome: 'uncertain' }) };
-    await expect(s.t.run((ctx) => submitWith(ctx, child._id, uncertain, 't'))).rejects.toSatisfy((e) => isCommerceError(e, 'FEATURE_DISABLED'));
+    await expect(s.t.run((ctx) => submitWith(ctx, child._id, uncertain, 't'))).rejects.toSatisfy(
+      (e) => isCommerceError(e, 'FEATURE_DISABLED')
+    );
     process.env.EDI_ZUO_ENABLED = 'true';
-    await expect(s.t.run((ctx) => submitWith(ctx, ash._id, uncertain, 't'))).rejects.toSatisfy((e) => isCommerceError(e, 'FORBIDDEN'));
+    await expect(s.t.run((ctx) => submitWith(ctx, ash._id, uncertain, 't'))).rejects.toSatisfy(
+      (e) => isCommerceError(e, 'FORBIDDEN')
+    );
     expect(await s.t.run((ctx) => submitWith(ctx, child._id, uncertain, 't'))).toBe('uncertain');
     expect(JSON.stringify(sent[0])).toContain('111182');
     expect(JSON.stringify(sent[0])).not.toContain('BEN123');
-    await expect(s.t.run((ctx) => submitWith(ctx, child._id, uncertain, 't'))).rejects.toSatisfy((e) => isCommerceError(e, 'PAYMENT_RECONCILIATION_REQUIRED'));
-    await expect(s.admin.mutation(api.ordFulfillment.markSubmitted, { supplierOrderId: child._id, supplierPo: 'X', acceptedCostMinor: 1 })).rejects.toThrow();
-    await s.admin.mutation(api.ediZuo.reconcileUncertain, { supplierOrderId: child._id, supplierReceived: true, note: 'Zuo confirmed by phone' });
+    await expect(s.t.run((ctx) => submitWith(ctx, child._id, uncertain, 't'))).rejects.toSatisfy(
+      (e) => isCommerceError(e, 'PAYMENT_RECONCILIATION_REQUIRED')
+    );
+    await expect(
+      s.admin.mutation(api.ordFulfillment.markSubmitted, {
+        supplierOrderId: child._id,
+        supplierPo: 'X',
+        acceptedCostMinor: 1,
+      })
+    ).rejects.toThrow();
+    await s.admin.mutation(api.ediZuo.reconcileUncertain, {
+      supplierOrderId: child._id,
+      supplierReceived: true,
+      note: 'Zuo confirmed by phone',
+    });
     const after = (await s.t.run((ctx) => ctx.db.get(child._id)))!;
     expect(after).toMatchObject({ status: 'submitted' });
     expect(sent).toHaveLength(1);
@@ -271,10 +867,50 @@ describe('EDI adapter (S23, FUL02, FUL03)', () => {
 
 describe('returns and quotes (S20, S22)', () => {
   it('splits refunds into merchandise, tax, delivery, credit and cash', () => {
-    const line = { pieces: 4, unitPackMinor: 45_806, packs: 2, discountMinor: 0, creditMinor: 10_000, taxMinor: 8_000, deliveryAllocMinor: 4_000, refundedMinor: 0 };
-    const r = refundSplit(line, 2, { windowDays: 30, restockingBps: 1_000, refundOriginalDelivery: false, customerPaysReturnFreight: true, damageClaimDays: 3, requiresAuthorization: true }, false);
-    expect(r).toEqual({ merchandise: 41_226, tax: 4_000, delivery: 0, creditRestored: 5_000, cash: 41_226 - 5_000 + 4_000, restocking: 4_580 });
-    const goodwill = refundSplit(line, 2, { windowDays: 30, restockingBps: 1_000, refundOriginalDelivery: false, customerPaysReturnFreight: true, damageClaimDays: 3, requiresAuthorization: true }, true);
+    const line = {
+      pieces: 4,
+      unitPackMinor: 45_806,
+      packs: 2,
+      discountMinor: 0,
+      creditMinor: 10_000,
+      taxMinor: 8_000,
+      deliveryAllocMinor: 4_000,
+      refundedMinor: 0,
+    };
+    const r = refundSplit(
+      line,
+      2,
+      {
+        windowDays: 30,
+        restockingBps: 1_000,
+        refundOriginalDelivery: false,
+        customerPaysReturnFreight: true,
+        damageClaimDays: 3,
+        requiresAuthorization: true,
+      },
+      false
+    );
+    expect(r).toEqual({
+      merchandise: 41_226,
+      tax: 4_000,
+      delivery: 0,
+      creditRestored: 5_000,
+      cash: 41_226 - 5_000 + 4_000,
+      restocking: 4_580,
+    });
+    const goodwill = refundSplit(
+      line,
+      2,
+      {
+        windowDays: 30,
+        restockingBps: 1_000,
+        refundOriginalDelivery: false,
+        customerPaysReturnFreight: true,
+        damageClaimDays: 3,
+        requiresAuthorization: true,
+      },
+      true
+    );
     expect(goodwill.restocking).toBe(0);
     expect(goodwill.delivery).toBe(2_000);
   });
@@ -283,22 +919,104 @@ describe('returns and quotes (S20, S22)', () => {
     const s = await setup();
     await paidOrder(s, [zuoLine(s)]);
     const line = (await s.t.run((ctx) => ctx.db.query('ordOrderLines').first()))!;
-    await expect(s.admin.mutation(api.ordReturns.request, { orderLineId: line._id, pieces: 1, reason: 'Changed mind', goodwill: false })).rejects.toSatisfy((e) => isCommerceError(e, 'POLICY_NOT_APPROVED'));
+    await expect(
+      s.admin.mutation(api.ordReturns.request, {
+        orderLineId: line._id,
+        pieces: 1,
+        reason: 'Changed mind',
+        goodwill: false,
+      })
+    ).rejects.toSatisfy((e) => isCommerceError(e, 'POLICY_NOT_APPROVED'));
   });
 
   it('versions quotes, refuses below-minimum trade prices and freezes accepted versions', async () => {
     const s = await setup();
-    const projectId = await s.t.run((ctx) => ctx.db.insert('commerceProjects', { token: 't', channel: 'house', name: 'n', email: 'e@x.com', phone: '', business: '', address: { line1: '', city: '', state: '', postalCode: '', country: 'US' }, notes: '', requested: [], lines: [], delivery: 0, tax: 0, revision: 1, status: 'new', createdAt: 1, updatedAt: 1 }));
-    const low = await s.admin.mutation(api.ordQuotes.saveVersion, { projectId, lines: [{ productId: s.productId, variantId: s.variantId, packs: 1, unitPackMinor: 30_000, discountMinor: 0 }], service: 'curbside', deliveryMinor: 0, taxMinor: 0, validDays: 7, terms: 'Net' });
+    const projectId = await s.t.run((ctx) =>
+      ctx.db.insert('commerceProjects', {
+        token: 't',
+        channel: 'house',
+        name: 'n',
+        email: 'e@x.com',
+        phone: '',
+        business: '',
+        address: { line1: '', city: '', state: '', postalCode: '', country: 'US' },
+        notes: '',
+        requested: [],
+        lines: [],
+        delivery: 0,
+        tax: 0,
+        revision: 1,
+        status: 'new',
+        createdAt: 1,
+        updatedAt: 1,
+      })
+    );
+    const low = await s.admin.mutation(api.ordQuotes.saveVersion, {
+      projectId,
+      lines: [
+        {
+          productId: s.productId,
+          variantId: s.variantId,
+          packs: 1,
+          unitPackMinor: 30_000,
+          discountMinor: 0,
+        },
+      ],
+      service: 'curbside',
+      deliveryMinor: 0,
+      taxMinor: 0,
+      validDays: 7,
+      terms: 'Net',
+    });
     expect(low.checks.margin).toBe(false);
     await expect(s.admin.mutation(api.ordQuotes.markSent, { versionId: low.id })).rejects.toThrow();
-    const ok = await s.admin.mutation(api.ordQuotes.saveVersion, { projectId, lines: [{ productId: s.productId, variantId: s.variantId, packs: 1, unitPackMinor: 45_806, discountMinor: 0 }], service: 'curbside', deliveryMinor: 4_999, taxMinor: 0, validDays: 7, terms: 'Net' });
+    const ok = await s.admin.mutation(api.ordQuotes.saveVersion, {
+      projectId,
+      lines: [
+        {
+          productId: s.productId,
+          variantId: s.variantId,
+          packs: 1,
+          unitPackMinor: 45_806,
+          discountMinor: 0,
+        },
+      ],
+      service: 'curbside',
+      deliveryMinor: 4_999,
+      taxMinor: 0,
+      validDays: 7,
+      terms: 'Net',
+    });
     expect(ok.checks).toMatchObject({ map: true, margin: true, policy: true });
     await s.admin.mutation(api.ordQuotes.markSent, { versionId: ok.id });
-    await s.admin.mutation(api.ordQuotes.accept, { versionId: ok.id, acceptedBy: 'Client by email' });
-    const v2 = await s.admin.mutation(api.ordQuotes.saveVersion, { projectId, lines: [{ productId: s.productId, variantId: s.variantId, packs: 2, unitPackMinor: 45_806, discountMinor: 0 }], service: 'curbside', deliveryMinor: 4_999, taxMinor: 0, validDays: 7, terms: 'Net' });
+    await s.admin.mutation(api.ordQuotes.accept, {
+      versionId: ok.id,
+      acceptedBy: 'Client by email',
+      evidence: 'Fixture consent message matching this version',
+    });
+    const v2 = await s.admin.mutation(api.ordQuotes.saveVersion, {
+      projectId,
+      lines: [
+        {
+          productId: s.productId,
+          variantId: s.variantId,
+          packs: 2,
+          unitPackMinor: 45_806,
+          discountMinor: 0,
+        },
+      ],
+      service: 'curbside',
+      deliveryMinor: 4_999,
+      taxMinor: 0,
+      validDays: 7,
+      terms: 'Net',
+    });
     const versions = await s.admin.query(api.ordQuotes.versions, { projectId });
-    expect(versions.map((x) => [x.version, x.status])).toEqual([[3, 'draft'], [2, 'accepted'], [1, 'superseded']]);
+    expect(versions.map((x) => [x.version, x.status])).toEqual([
+      [3, 'draft'],
+      [2, 'accepted'],
+      [1, 'superseded'],
+    ]);
     void v2;
   });
 });
@@ -307,6 +1025,645 @@ describe('customer copy (FUL05)', () => {
   it('uses the exact disclosure strings', () => {
     expect(splitDisclosure(false)).toBe(SPLIT_MAY);
     expect(splitDisclosure(true)).toBe(SPLIT_WILL);
-    expect(SPLIT_MAY).toContain('will not add delivery charges beyond the amount confirmed at checkout');
+    expect(SPLIT_MAY).toContain(
+      'will not add delivery charges beyond the amount confirmed at checkout'
+    );
+  });
+});
+
+describe('delivery tool security and operations regressions', () => {
+  it('uses approved trade prices, excludes Zuo project stacking and creates no trade referral snapshot', async () => {
+    const s = await setup();
+    process.env.TRADE_CHECKOUT_V2_ENABLED = 'true';
+    const userId = await s.t.run(async (ctx) => {
+      const userId = await ctx.db.insert('users', { email: 'trade@example.com' });
+      await ctx.db.insert('holmProfiles', {
+        userId,
+        displayName: 'Studio',
+        tradeStatus: 'approved',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      const cv = (await ctx.db.get(s.variantId))!;
+      const retail = (await ctx.db.get(cv.retailPriceRevisionId!))!;
+      const { _id, _creationTime, ...data } = retail;
+      void _id;
+      void _creationTime;
+      const priceId = await ctx.db.insert('catPriceRevisions', {
+        ...data,
+        channel: 'trade',
+        packPriceMinor: 42000,
+        piecePriceMinorInfo: 21000,
+      });
+      await ctx.db.patch(cv._id, { tradePriceRevisionId: priceId });
+      const listing = (await ctx.db
+        .query('commerceListings')
+        .withIndex('by_product_channel', (q) =>
+          q.eq('productId', s.productId).eq('channel', 'retail')
+        )
+        .unique())!;
+      await ctx.db.insert('commerceListings', {
+        productId: s.productId,
+        channel: 'house',
+        published: true,
+        revision: 1,
+        updatedAt: 1,
+        snapshot: {
+          ...listing.snapshot,
+          variants: listing.snapshot.variants.map((v) => ({ ...v, price: 42000 })),
+        },
+      });
+      await ctx.db.insert('catSupplierPolicies', {
+        supplierId: cv.supplierId,
+        kind: 'trade',
+        summary: 'Fixture approved private trade pricing',
+        evidenceRefs: ['fixture'],
+        scope: { all: true },
+        status: 'documented',
+        createdAt: 1,
+        createdBy: 'fixture',
+        effectiveFrom: 0,
+        source: 'fixture',
+      });
+      return userId;
+    });
+    const trade = s.t.withIdentity({ subject: `${userId}|s`, email: 'trade@example.com' });
+    await expect(
+      s.t.query(api.dlvTradeCalculator.calculate, { lines: [zuoLine(s)] })
+    ).rejects.toThrow();
+    const r = await trade.query(api.dlvTradeCalculator.calculate, { lines: [zuoLine(s)] });
+    expect(r.tradeSubtotalMinor).toBe(42000);
+    expect(r.baseTradeSavingsMinor).toBe(3806);
+    expect(r.projectSavingsMinor).toBe(0);
+    expect(r.lines[0].eligibleProject).toBe(false);
+    const e = await trade.action(api.dlvTaxActions.estimate, {
+      lines: [zuoLine(s)],
+      channel: 'trade',
+      zip: '95206',
+      address: ADDRESS,
+      visitorKey: 'trade',
+    });
+    expect(e.status).toBe('ok');
+    const intent = await trade.mutation(internal.ordCheckout.createIntent, {
+      idempotencyKey: 'trade-fixture-12345678',
+      estimateId: e.estimateId,
+      lines: [zuoLine(s)],
+      address: ADDRESS,
+      service: 'curbside',
+      acceptTotalMinor: e.totalMinor!,
+    });
+    expect(intent.status).toBe('created');
+    expect(await s.t.run((ctx) => ctx.db.query('prgAttributionSnapshots').collect())).toHaveLength(
+      0
+    );
+    delete process.env.TRADE_CHECKOUT_V2_ENABLED;
+  });
+  it('denies a guest estimate without its capability and denies an unrelated signed-in account', async () => {
+    const s = await setup();
+    const e = await s.t.action(api.dlvTaxActions.estimate, {
+      lines: [zuoLine(s)],
+      channel: 'retail',
+      zip: '95206',
+      address: ADDRESS,
+      visitorKey: 'x',
+    });
+    await expect(s.t.query(api.dlvEstimates.get, { estimateId: e.estimateId })).rejects.toSatisfy(
+      (x) => isCommerceError(x, 'FORBIDDEN')
+    );
+    expect(
+      (
+        await s.t.query(api.dlvEstimates.get, {
+          estimateId: e.estimateId,
+          guestCapability: e.guestCapability,
+        })
+      )?.totalMinor
+    ).toBe(e.totalMinor);
+    const owned = await s.admin.action(api.dlvTaxActions.estimate, {
+      lines: [zuoLine(s)],
+      channel: 'retail',
+      zip: '95206',
+      address: ADDRESS,
+      visitorKey: 'x',
+    });
+    await expect(
+      s.t.query(api.dlvEstimates.get, {
+        estimateId: owned.estimateId,
+        guestCapability: e.guestCapability,
+      })
+    ).rejects.toSatisfy((x) => isCommerceError(x, 'FORBIDDEN'));
+  });
+  it('binds an idempotency key to the exact request and refuses replay by another buyer', async () => {
+    const s = await setup();
+    const args = {
+      lines: [zuoLine(s)],
+      channel: 'retail' as const,
+      zip: '95206',
+      address: ADDRESS,
+      visitorKey: 'x',
+    };
+    const e = await s.t.action(api.dlvTaxActions.estimate, args);
+    const request = {
+      idempotencyKey: 'delivery-bound-key-1234',
+      estimateId: e.estimateId,
+      guestCapability: e.guestCapability,
+      lines: args.lines,
+      address: ADDRESS,
+      service: 'curbside',
+      acceptTotalMinor: e.totalMinor!,
+      email: 'a@example.com',
+    };
+    await s.t.mutation(internal.ordCheckout.createIntent, request);
+    await expect(
+      s.t.mutation(internal.ordCheckout.createIntent, {
+        ...request,
+        idempotencyKey: 'second-tab-key-12345678',
+      })
+    ).rejects.toSatisfy((x) => isCommerceError(x, 'PAYMENT_RECONCILIATION_REQUIRED'));
+    await expect(
+      s.t.mutation(internal.ordCheckout.createIntent, { ...request, email: 'b@example.com' })
+    ).rejects.toSatisfy((x) => isCommerceError(x, 'FORBIDDEN'));
+    await expect(
+      s.t.mutation(internal.ordCheckout.createIntent, { ...request, guestCapability: undefined })
+    ).rejects.toSatisfy((x) => isCommerceError(x, 'FORBIDDEN'));
+  });
+  it('requires renewed acceptance when the same total has a different tax/delivery breakdown', async () => {
+    const s = await setup();
+    const lines = [zuoLine(s)];
+    const e = await s.t.action(api.dlvTaxActions.estimate, {
+      lines,
+      channel: 'retail',
+      zip: '95206',
+      address: ADDRESS,
+      visitorKey: 'x',
+    });
+    await s.t.run((ctx) =>
+      ctx.db.patch(e.estimateId, {
+        deliveryChargeMinor: e.deliveryChargeMinor! + 100,
+        taxMinor: e.taxMinor! - 100,
+      })
+    );
+    const r = await s.t.mutation(internal.ordCheckout.createIntent, {
+      idempotencyKey: 'breakdown-key-12345678',
+      estimateId: e.estimateId,
+      guestCapability: e.guestCapability,
+      lines,
+      address: ADDRESS,
+      service: 'curbside',
+      acceptTotalMinor: e.totalMinor!,
+    });
+    expect(r.status).toBe('price_changed');
+  });
+  it('keeps future configuration inactive until its effective time and rejects overlapping schedules', async () => {
+    const s = await setup();
+    const before = await s.t.query(internal.sysConfig.active, {
+      kind: 'estimatePolicy',
+      key: 'estimate-policy',
+    });
+    const starts = Date.now() + 60000;
+    const id = await s.admin.mutation(api.sysConfig.propose, {
+      kind: 'estimatePolicy',
+      key: 'estimate-policy',
+      value: { validityMinutes: 15, zipNonbinding: true },
+      note: 'Future version',
+      effectiveFrom: starts,
+    });
+    await s.admin.mutation(api.sysConfig.approve, { id });
+    expect(
+      (
+        await s.t.query(internal.sysConfig.active, {
+          kind: 'estimatePolicy',
+          key: 'estimate-policy',
+        })
+      ).version
+    ).toBe(before.version);
+    expect(
+      (
+        await s.t.query(internal.sysConfig.active, {
+          kind: 'estimatePolicy',
+          key: 'estimate-policy',
+          at: starts,
+        })
+      ).version
+    ).toBe(before.version + 1);
+    const next = await s.admin.mutation(api.sysConfig.propose, {
+      kind: 'estimatePolicy',
+      key: 'estimate-policy',
+      value: { validityMinutes: 10, zipNonbinding: true },
+      note: 'Overlapping',
+      effectiveFrom: starts + 60000,
+    });
+    await expect(s.admin.mutation(api.sysConfig.approve, { id: next })).rejects.toThrow();
+  });
+  it('quotes disabled lanes and missing fixed expenses without a partial payable total', async () => {
+    const s = await setup();
+    const e = await s.t.action(api.dlvTaxActions.estimate, {
+      lines: [zuoLine(s)],
+      channel: 'retail',
+      zip: '60601',
+      visitorKey: 'x',
+    });
+    expect(e.status).toBe('quote_required');
+    expect(e.totalMinor).toBeNull();
+    const missing = { ...FREIGHT };
+    delete (missing as Partial<typeof FREIGHT>).fixedPaymentMinor;
+    const id = await s.admin.mutation(api.sysConfig.propose, {
+      kind: 'carrierRule',
+      key: 'zuo-freight',
+      value: missing,
+      note: 'Missing fixed fee fixture',
+    });
+    await s.admin.mutation(api.sysConfig.approve, { id });
+    const result = await s.t.action(api.dlvTaxActions.estimate, {
+      lines: [zuoLine(s)],
+      channel: 'retail',
+      zip: '95206',
+      visitorKey: 'x',
+    });
+    expect(result.status).toBe('quote_required');
+  });
+  it('does not let rotating visitor IDs evade the same basket rate limit', async () => {
+    const s = await setup();
+    for (let i = 0; i < 30; i++)
+      await s.t.action(api.dlvTaxActions.estimate, {
+        lines: [zuoLine(s)],
+        channel: 'retail',
+        zip: '95206',
+        visitorKey: `visitor-${i}`,
+      });
+    await expect(
+      s.t.action(api.dlvTaxActions.estimate, {
+        lines: [zuoLine(s)],
+        channel: 'retail',
+        zip: '95206',
+        visitorKey: 'another',
+      })
+    ).rejects.toThrow();
+  });
+  it('creates a real guest quote request, protects its contents and shows the whole quote total', async () => {
+    const s = await setup();
+    const r = await s.t.mutation(api.dlvOperations.requestQuote, {
+      requestKey: 'a'.repeat(64),
+      lines: [zuoLine(s)],
+      channel: 'retail',
+      postalCode: '99501',
+      name: 'Test customer',
+      email: 'customer@example.com',
+      phone: '',
+      service: 'curbside',
+      notes: 'Residential',
+      consent: true,
+    });
+    await expect(s.t.query(api.dlvOperations.requestStatus, { id: r.id })).rejects.toThrow();
+    const detail = await s.admin.query(api.dlvOperations.quoteDetail, { id: r.id });
+    const q = await s.admin.mutation(api.ordQuotes.saveVersion, {
+      projectId: detail!.request.projectId,
+      lines: [
+        {
+          productId: s.productId,
+          variantId: s.variantId,
+          packs: 1,
+          unitPackMinor: 100000,
+          discountMinor: 0,
+        },
+      ],
+      address: { ...ADDRESS, postalCode: '99501' },
+      service: 'curbside',
+      deliveryMinor: 40000,
+      taxMinor: 0,
+      validDays: 7,
+      terms: 'Fixture quote: curbside, no stock reservation',
+      taxEvidence: 'Fixture address tax confirmed zero',
+      fixedPaymentMinor: 30,
+      freight: [
+        {
+          supplierCode: 'zuo',
+          originZip: '95206',
+          freightMinor: 40000,
+          supplierFeeMinor: 1000,
+          evidence: 'Synthetic carrier quote',
+        },
+      ],
+    });
+    await s.admin.mutation(api.ordQuotes.markSent, { versionId: q.id });
+    await s.admin.mutation(api.dlvOperations.attachQuote, { id: r.id, versionId: q.id });
+    const status = await s.t.query(api.dlvOperations.requestStatus, r);
+    expect(status!.quote!.totalMinor).toBe(140000);
+    await s.t.mutation(api.dlvOperations.acceptQuote, { ...r, versionId: q.id });
+    await s.t.mutation(api.dlvOperations.acceptQuote, { ...r, versionId: q.id });
+    expect((await s.t.query(api.dlvOperations.requestStatus, r))!.status).toBe('accepted');
+    const prepared = await s.t.mutation(api.dlvOperations.prepareCheckout, r);
+    const retry = await s.t.mutation(api.dlvOperations.prepareCheckout, r);
+    expect(retry.estimateId).toBe(prepared.estimateId);
+    const intent = await s.t.mutation(internal.ordCheckout.createIntent, {
+      estimateId: retry.estimateId,
+      guestCapability: retry.guestCapability,
+      lines: retry.lines,
+      address: retry.address,
+      service: retry.service,
+      acceptTotalMinor: retry.acceptTotalMinor,
+      email: retry.email,
+      idempotencyKey: 'manual-fixture-12345678',
+    });
+    expect(intent.status).toBe('created');
+    expect(await s.t.run((ctx) => ctx.db.query('ordOrders').collect())).toHaveLength(0);
+  });
+  it('records invoices once, rejects conflicting retries and never changes the paid total', async () => {
+    const s = await setup();
+    await paidOrder(s, [zuoLine(s)]);
+    const child = (await s.t.run((ctx) => ctx.db.query('ordSupplierOrders').first()))!;
+    const before = (await s.t.run((ctx) => ctx.db.get(child.orderId)))!;
+    const invoice = {
+      supplierOrderId: child._id,
+      reference: 'INV-001',
+      carrier: 'Fixture carrier',
+      baseMinor: 25000,
+      fuelMinor: 2000,
+      accessorialMinor: 3000,
+      supplierFeeMinor: 1000,
+      creditMinor: 0,
+      evidence: 'fixture invoice document',
+      note: 'Invoice reconciliation test',
+    };
+    const a = await s.admin.mutation(api.dlvOperations.recordInvoice, invoice);
+    expect(await s.admin.mutation(api.dlvOperations.recordInvoice, invoice)).toBe(a);
+    await expect(
+      s.admin.mutation(api.dlvOperations.recordInvoice, { ...invoice, baseMinor: 25001 })
+    ).rejects.toThrow();
+    const r = await s.admin.query(api.dlvOperations.reconciliation, { supplierOrderId: child._id });
+    expect(r!.actualFreightMinor).toBe(30000);
+    expect(r!.actualSupplierFeeMinor).toBe(1000);
+    const statement = {
+      orderId: child.orderId,
+      wholesaleMinor: 10000,
+      dutiesMinor: 0,
+      inboundMinor: 0,
+      otherSupplierFeesMinor: 0,
+      paymentMinor: 100,
+      commissionMinor: 0,
+      overheadMinor: 500,
+      returnLossMinor: 0,
+      advertisingMinor: 0,
+      recoveriesMinor: 0,
+      merchandiseRefundMinor: 0,
+      deliveryRefundMinor: 0,
+      freightFinal: true,
+      evidence: 'Fixture all costs reconciled',
+    };
+    const statementId = await s.admin.mutation(api.dlvOperations.recordActualCosts, statement);
+    expect(await s.admin.mutation(api.dlvOperations.recordActualCosts, statement)).toBe(
+      statementId
+    );
+    const contribution = await s.admin.query(api.dlvOperations.actualContribution, {
+      orderId: child.orderId,
+    });
+    expect(contribution?.complete).toBe(true);
+    expect(contribution?.contributionMinor).toBe(
+      before.totals.merchandise + before.totals.delivery - 41600
+    );
+    await s.admin.mutation(api.dlvOperations.recordActualCosts, {
+      ...statement,
+      wholesaleMinor: before.totals.total * 2,
+      evidence: 'Fixture corrected costs exceed revenue',
+    });
+    const floorReviews = await s.t.run((ctx) =>
+      ctx.db
+        .query('sysReviewItems')
+        .withIndex('by_entity', (q) =>
+          q.eq('entityTable', 'ordOrders').eq('entityId', child.orderId)
+        )
+        .collect()
+    );
+    expect(floorReviews.some((r) => r.kind === 'actual_contribution_below_floor')).toBe(true);
+    const credit = {
+      ...invoice,
+      reference: 'CREDIT-001',
+      baseMinor: 0,
+      fuelMinor: 0,
+      accessorialMinor: 0,
+      supplierFeeMinor: 0,
+      creditMinor: 1000,
+      note: 'Fixture carrier credit against INV-001',
+    };
+    await s.admin.mutation(api.dlvOperations.recordInvoice, credit);
+    await s.admin.mutation(api.dlvOperations.recordInvoice, credit);
+    expect(
+      (await s.admin.query(api.dlvOperations.actualContribution, { orderId: child.orderId }))
+        ?.complete
+    ).toBe(false);
+
+    expect((await s.t.run((ctx) => ctx.db.get(child.orderId)))!.totals).toEqual(before.totals);
+  });
+  it('charges each parcel minimum and accepts an explicitly supported supplier LTL method', () => {
+    const carton = {
+      lengthMm: 100,
+      widthMm: 100,
+      heightMm: 100,
+      grossWeightG: 1000,
+      cartonsPerPack: 1,
+      supplierMethod: 'ground',
+    };
+    const line = { packs: 2, cartons: [carton] } as unknown as ResolvedLine;
+    const reasons: string[] = [];
+    expect(
+      groupFreight(
+        [line],
+        { zip: '95206' },
+        { ...FREIGHT, uncertaintyBps: 0 } as FreightConfig,
+        reasons
+      )
+    ).toBe(5000);
+    expect(reasons).toEqual([]);
+    const ltl = {
+      packs: 1,
+      cartons: [{ ...carton, supplierMethod: 'ltl' }],
+    } as unknown as ResolvedLine;
+    expect(
+      groupFreight(
+        [ltl],
+        { zip: '95206' },
+        { ...FREIGHT, ltlRatingBasis: 'actual_weight', uncertaintyBps: 0 } as FreightConfig,
+        []
+      )
+    ).toBe(41500);
+  });
+});
+
+describe('delivery tax exemption scope', () => {
+  it('requires a verified certificate, organization membership, destination and current dates', async () => {
+    const s = await setup();
+    const ids = await s.t.run(async (ctx) => {
+      const userId = await ctx.db.insert('users', { email: 'certificate@example.com' });
+      await ctx.db.insert('holmProfiles', {
+        userId,
+        displayName: 'Studio',
+        tradeStatus: 'approved',
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      const org = await ctx.db.insert('prgOrganizations', {
+        legalName: 'Studio LLC',
+        displayName: 'Studio',
+        verification: 'verified',
+        createdAt: NOW,
+      });
+      const other = await ctx.db.insert('prgOrganizations', {
+        legalName: 'Other LLC',
+        displayName: 'Other',
+        verification: 'verified',
+        createdAt: NOW,
+      });
+      const seat = await ctx.db.insert('prgOrganizationMembers', {
+        organizationId: org,
+        userId,
+        role: 'purchasing',
+        status: 'active',
+        createdAt: NOW,
+      });
+      const membership = await ctx.db.insert('prgMemberships', {
+        program: 'trade',
+        userId,
+        organizationId: org,
+        state: 'approved',
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      return { userId, org, other, seat, membership };
+    });
+    const certificate = await s.admin.mutation(api.dlvTaxExemptions.verify, {
+      organizationId: ids.org,
+      states: ['CA'],
+      evidence: 'Fixture verified certificate',
+      validFrom: 0,
+      validUntil: Date.now() + 60000,
+    });
+    const trade = s.t.withIdentity({
+      subject: `${ids.userId}|s`,
+      email: 'certificate@example.com',
+    });
+    expect(await trade.run((ctx) => exemptionFor(ctx, 'trade', 'CA'))).toMatchObject({
+      _id: certificate,
+    });
+    expect(await trade.run((ctx) => exemptionFor(ctx, 'retail', 'CA'))).toBeNull();
+    expect(await trade.run((ctx) => exemptionFor(ctx, 'trade', 'NY'))).toBeNull();
+    expect(
+      await trade.run((ctx) => exemptionFor(ctx, 'trade', 'CA', Date.now() + 60001))
+    ).toBeNull();
+    await s.t.run((ctx) => ctx.db.patch(ids.membership, { organizationId: ids.other }));
+    expect(await trade.run((ctx) => exemptionFor(ctx, 'trade', 'CA'))).toBeNull();
+    await s.t.run((ctx) => ctx.db.patch(ids.membership, { organizationId: ids.org }));
+    await s.t.run((ctx) => ctx.db.patch(ids.seat, { status: 'removed' }));
+    expect(await trade.run((ctx) => exemptionFor(ctx, 'trade', 'CA'))).toBeNull();
+    await s.t.run((ctx) => ctx.db.patch(ids.seat, { status: 'active' }));
+    await s.admin.mutation(api.dlvTaxExemptions.revoke, {
+      id: certificate,
+      reason: 'Fixture revoked',
+    });
+    expect(await trade.run((ctx) => exemptionFor(ctx, 'trade', 'CA'))).toBeNull();
+  });
+});
+
+describe('tax reporting reconciliation', () => {
+  it('deduplicates and orders verified refund totals without issuing a refund', async () => {
+    const s = await setup();
+    const { intent } = await paidOrder(s, [zuoLine(s)]);
+    const order = await s.t.run((ctx) =>
+      ctx.db
+        .query('ordOrders')
+        .withIndex('by_payment', (q) => q.eq('paymentIntentId', 'pi_1'))
+        .unique()
+    );
+    const event = {
+      paymentIntentId: 'pi_1',
+      eventId: 'evt_refund_2',
+      refundedMinor: 2000,
+      chargeMinor: intent.totalMinor,
+    };
+    await s.t.mutation(internal.dlvTax.receiveRefund, event);
+    await s.t.mutation(internal.dlvTax.receiveRefund, event);
+    await s.t.mutation(internal.dlvTax.receiveRefund, {
+      ...event,
+      eventId: 'evt_refund_1',
+      refundedMinor: 1000,
+    });
+    const queue = await s.admin.query(api.dlvTax.reportingQueue, {});
+    expect(queue.refunds).toHaveLength(1);
+    expect(queue.refunds[0].confirmedRefundMinor).toBe(2000);
+    const adjustment = {
+      orderId: order!._id,
+      kind: 'refund' as const,
+      providerRef: 'tax_fixture_reversal',
+      cumulativeRefundMinor: 2000,
+      taxMinor: 100,
+      evidence: 'Fixture provider reversal reviewed',
+    };
+    await expect(s.t.mutation(api.dlvTax.recordAdjustment, adjustment)).rejects.toThrow();
+    const id = await s.admin.mutation(api.dlvTax.recordAdjustment, adjustment);
+    expect(await s.admin.mutation(api.dlvTax.recordAdjustment, adjustment)).toBe(id);
+    expect((await s.admin.query(api.dlvTax.reportingQueue, {})).refunds).toHaveLength(0);
+    const reviews = await s.t.run((ctx) =>
+      ctx.db
+        .query('sysReviewItems')
+        .withIndex('by_entity', (q) => q.eq('entityTable', 'ordOrders').eq('entityId', order!._id))
+        .collect()
+    );
+    expect(reviews.find((r) => r.kind === 'tax_refund_reconciliation')?.status).toBe('resolved');
+    expect((await s.t.run((ctx) => ctx.db.get(order!._id)))!.totals.total).toBe(intent.totalMinor);
+    await expect(
+      s.admin.mutation(api.dlvTax.recordAdjustment, {
+        ...adjustment,
+        providerRef: 'tax_unverified',
+        cumulativeRefundMinor: 3000,
+      })
+    ).rejects.toThrow();
+  });
+});
+
+describe('delivery staff permissions', () => {
+  it('keeps support away from costs and rate approvals', async () => {
+    const s = await setup();
+    process.env.DELIVERY_ADMIN_ROLES = JSON.stringify({ [ADMIN]: ['support'] });
+    expect(await s.admin.query(api.dlvAccess.permissions, {})).toMatchObject({
+      support: true,
+      finance: false,
+      approver: false,
+    });
+    expect(await s.admin.query(api.dlvAccess.supportQueue, {})).toEqual([]);
+    await expect(s.admin.query(api.sysConfig.list, {})).rejects.toSatisfy((x) =>
+      isCommerceError(x, 'FORBIDDEN')
+    );
+    await expect(s.admin.query(api.dlvAdmin.coverage, {})).rejects.toSatisfy((x) =>
+      isCommerceError(x, 'FORBIDDEN')
+    );
+    await expect(s.admin.query(api.dlvTax.reportingQueue, {})).rejects.toSatisfy((x) =>
+      isCommerceError(x, 'FORBIDDEN')
+    );
+  });
+});
+
+describe('partial refund rounding', () => {
+  it('preserves every cent across sequential piece returns and refunds delivery tax only with delivery', () => {
+    const l = {
+      pieces: 3,
+      packs: 1,
+      unitPackMinor: 10001,
+      discountMinor: 0,
+      creditMinor: 0,
+      taxMinor: 101,
+      deliveryAllocMinor: 4999,
+      deliveryTaxAllocMinor: 401,
+      refundedMinor: 0,
+    };
+    const p = {
+      windowDays: 30,
+      restockingBps: 0,
+      refundOriginalDelivery: false,
+      customerPaysReturnFreight: true,
+      damageClaimDays: 2,
+      requiresAuthorization: true,
+    };
+    const rs = [0, 1, 2].map((n) => refundSplit(l, 1, p, false, n));
+    expect(rs.reduce((n, r) => n + r.merchandise, 0)).toBe(10001);
+    expect(rs.reduce((n, r) => n + r.tax, 0)).toBe(101);
+    expect(refundSplit(l, 3, p, true).tax).toBe(502);
   });
 });

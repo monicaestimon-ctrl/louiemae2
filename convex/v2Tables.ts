@@ -463,7 +463,26 @@ export const v2Tables = {
   }).index('by_channel_status', ['channel', 'status']),
 
   // ---------------- delivery, cart, quotes, orders (S07) ----------------
+  dlvQuoteRequests: defineTable({
+    requestKeyHash:v.optional(v.string()), requestHash:v.optional(v.string()),
+    projectId:v.id('commerceProjects'), userId:v.optional(v.id('users')), guestCapabilityHash:v.optional(v.string()),
+    channel:retailOrTrade, email:v.string(), name:v.string(), phone:v.string(), postalCode:v.string(),
+    address:v.optional(shipAddress), service:v.string(), notes:v.string(),
+    lines:v.array(v.object({productId:v.id('commerceProducts'),variantId:v.string(),packs:v.number(),name:v.string()})),
+    status:v.union(v.literal('requested'),v.literal('needs_information'),v.literal('sourcing'),v.literal('sent'),v.literal('accepted'),v.literal('cancelled')),
+    assignedTo:v.optional(v.string()), customerMessage:v.optional(v.string()), quoteVersionId:v.optional(v.id('ordQuoteVersions')),
+    createdAt:v.number(),updatedAt:v.number(),
+  }).index('by_status_updated',['status','updatedAt']).index('by_user',['userId','createdAt']).index('by_project',['projectId']).index('by_request_key',['requestKeyHash']),
+  dlvActualCostStatements:defineTable({orderId:v.id('ordOrders'),wholesaleMinor:v.number(),dutiesMinor:v.number(),inboundMinor:v.number(),otherSupplierFeesMinor:v.number(),paymentMinor:v.number(),commissionMinor:v.number(),overheadMinor:v.number(),returnLossMinor:v.number(),advertisingMinor:v.number(),recoveriesMinor:v.number(),merchandiseRefundMinor:v.number(),deliveryRefundMinor:v.number(),freightFinal:v.boolean(),evidence:v.string(),sourceHash:v.string(),createdBy:v.string(),createdAt:v.number()}).index('by_order',['orderId','createdAt']),
+  dlvFreightInvoices: defineTable({
+    supplierOrderId:v.id('ordSupplierOrders'), shipmentId:v.optional(v.id('ordShipments')),
+    invoiceKey:v.string(),reference:v.string(),carrier:v.string(),currency:v.literal('USD'),
+    baseMinor:v.number(),fuelMinor:v.number(),accessorialMinor:v.number(),supplierFeeMinor:v.number(),creditMinor:v.number(),
+    totalMinor:v.number(),evidence:v.string(),note:v.string(),createdBy:v.string(),createdAt:v.number(),
+  }).index('by_invoice',['invoiceKey']).index('by_supplier_order',['supplierOrderId','createdAt']),
   dlvEstimates: defineTable({
+    manualQuoteVersionId:v.optional(v.id('ordQuoteVersions')),
+    guestCapabilityHash: v.optional(v.string()),
     cartRevision: v.optional(v.number()),
     channel: retailOrTrade,
     destination: v.object({ zip: v.string(), precision: v.union(v.literal('zip'), v.literal('full')), addressHash: v.optional(v.string()), state: v.optional(v.string()) }),
@@ -496,7 +515,13 @@ export const v2Tables = {
     internal: v.any(),
     userId: v.optional(v.id('users')),
     createdAt: v.number(),
-  }).index('by_cart_hash', ['cartHash', 'createdAt']),
+  }).index('by_cart_hash', ['cartHash', 'createdAt']).index('by_manual_quote',['manualQuoteVersionId','createdAt']),
+
+  dlvTaxRefundReviews: defineTable({orderId:v.id('ordOrders'),confirmedRefundMinor:v.number(),chargeMinor:v.number(),latestEventId:v.string(),reportedRefundMinor:v.number(),updatedAt:v.number()}).index('by_order',['orderId']),
+  dlvTaxAdjustments: defineTable({orderId:v.id('ordOrders'),kind:v.union(v.literal('sale'),v.literal('refund')),providerRef:v.string(),cumulativeRefundMinor:v.number(),taxMinor:v.number(),evidence:v.string(),createdBy:v.string(),createdAt:v.number()}).index('by_reference',['providerRef']).index('by_order',['orderId','createdAt']),
+  dlvTaxCalculations:defineTable({lineTaxes:v.optional(v.array(v.object({key:v.string(),taxMinor:v.number()}))),deliveryTaxMinor:v.optional(v.number()),baseKey:v.string(),deliveryMinor:v.number(),taxMinor:v.number(),provider:v.literal('stripe'),reference:v.string(),policyVersion:v.number(),expiresAt:v.number(),createdAt:v.number()}).index('by_base',['baseKey','createdAt']),
+  dlvTaxTransactions:defineTable({orderId:v.id('ordOrders'),calculationRef:v.string(),status:v.union(v.literal('pending'),v.literal('processing'),v.literal('complete'),v.literal('review_required')),providerRef:v.optional(v.string()),attempts:v.number(),nextAttemptAt:v.number(),lastError:v.optional(v.string()),createdAt:v.number()}).index('by_order',['orderId']).index('by_status_due',['status','nextAttemptAt']),
+  dlvTaxExemptions:defineTable({organizationId:v.id('prgOrganizations'),states:v.array(v.string()),evidence:v.string(),validFrom:v.number(),validUntil:v.number(),status:v.union(v.literal('verified'),v.literal('revoked')),verifiedBy:v.string(),createdAt:v.number()}).index('by_org',['organizationId','createdAt']),
 
   ordCarts: defineTable({
     ownerKey: v.string(),
@@ -507,6 +532,10 @@ export const v2Tables = {
   }).index('by_owner', ['ownerKey']),
 
   ordQuoteVersions: defineTable({
+    taxEvidence:v.optional(v.string()),
+    checkoutIntentId:v.optional(v.id('ordCheckoutIntents')),
+    freight:v.optional(v.array(v.object({supplierCode:v.string(),originZip:v.string(),freightMinor:v.number(),supplierFeeMinor:v.number(),evidence:v.string()}))),
+    fixedPaymentMinor:v.optional(v.number()),
     projectId: v.id('commerceProjects'),
     version: v.number(),
     lines: v.array(v.object({ variantId: v.string(), productId: v.id('commerceProducts'), packs: v.number(), unitPackMinor: v.number(), discountMinor: v.number() })),
@@ -525,6 +554,10 @@ export const v2Tables = {
   }).index('by_project_version', ['projectId', 'version']),
 
   ordCheckoutIntents: defineTable({
+    deliveryTaxMinor:v.optional(v.number()),
+    taxCalculationRef:v.optional(v.string()),
+    requestHash: v.optional(v.string()),
+    shippingAddress: v.optional(shipAddress),
     idempotencyKey: v.string(),
     estimateId: v.id('dlvEstimates'),
     cartHash: v.string(),
@@ -533,6 +566,9 @@ export const v2Tables = {
     lineSnapshot: v.array(
       v.object({
         lineKey: v.string(),
+        taxMinor:v.optional(v.number()),
+        deliveryAllocMinor:v.optional(v.number()),
+        marginFloorBps: v.optional(v.number()),
         variantId: v.id('catVariants'),
         productId: v.id('commerceProducts'),
         name: v.string(),
@@ -544,6 +580,8 @@ export const v2Tables = {
         commissionCategory,
         supplierCode: v.string(),
         costRevisionId: v.optional(v.id('catCostRevisions')),
+        originZip:v.optional(v.string()),
+        service:v.optional(v.string()),
         priceRevisionId: v.optional(v.id('catPriceRevisions')),
       })
     ),
@@ -560,6 +598,7 @@ export const v2Tables = {
     createdAt: v.number(),
   })
     .index('by_key', ['idempotencyKey'])
+    .index('by_estimate', ['estimateId'])
     .index('by_session', ['stripeSessionId'])
     .index('by_status_expires', ['status', 'expiresAt']),
 
@@ -616,6 +655,7 @@ export const v2Tables = {
     creditMinor: v.number(),
     taxMinor: v.number(),
     deliveryAllocMinor: v.number(),
+    deliveryTaxAllocMinor:v.optional(v.number()),
     commissionCategory,
     supplierCode: v.string(),
     costRevisionId: v.optional(v.id('catCostRevisions')),
@@ -699,7 +739,7 @@ export const v2Tables = {
     status: v.union(v.literal('open'), v.literal('resolved')),
     resolution: v.optional(v.string()),
     createdAt: v.number(),
-  }).index('by_status', ['status', 'createdAt']),
+  }).index('by_status', ['status', 'createdAt']).index('by_session',['stripeSessionId']),
 
   ordFreightActuals: defineTable({
     supplierOrderId: v.id('ordSupplierOrders'),

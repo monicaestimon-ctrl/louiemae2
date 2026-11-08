@@ -7,19 +7,85 @@ import type { Id } from './_generated/dataModel';
 import { computeEstimate, cartHash, type LineInput } from './dlvEngine';
 import { activeConfig } from './sysConfig';
 import { bumpMetric, rateLimit } from './sysCore';
-import { viewer } from './holmAccess';
+import { viewer, isVerified } from './holmAccess';
 import { requireFlag, flag } from '../lib/flags';
 import { available as creditAvailable } from './ldgCredits';
 import { CommerceError, commerceErrorData } from '../lib/errors';
 import { addressKey } from '../lib/delivery/destination';
 import { DELIVERY_TIMING_CAVEAT, QUOTE_CTA, ZIP_ESTIMATE_NOTE } from '../lib/customerCopy';
 import type { EstimatePolicy } from '../lib/config';
+import { authorizeEstimate, capability, digest } from './dlvSecurity';
 
-export const lineArg = v.object({ productId: v.string(), variantId: v.string(), packs: v.number() });
-export const addressArg = v.object({ line1: v.string(), line2: v.optional(v.string()), city: v.string(), state: v.string(), postalCode: v.string(), country: v.string() });
+export const lineArg = v.object({
+  productId: v.string(),
+  variantId: v.string(),
+  packs: v.number(),
+});
+export const addressArg = v.object({
+  phone: v.optional(v.string()),
+  line1: v.string(),
+  line2: v.optional(v.string()),
+  city: v.string(),
+  state: v.string(),
+  postalCode: v.string(),
+  country: v.string(),
+});
+export type PublicDeliveryEstimate = {
+  estimateId: Id<'dlvEstimates'>;
+  guestCapability?: string;
+  status: 'ok' | 'quote_required' | 'unsupported';
+  deliveryChargeMinor: number | null;
+  merchandiseMinor: number;
+  taxMinor: number | null;
+  creditMinor: number;
+  totalMinor: number | null;
+  serviceName: string;
+  timingCaveat: string;
+  note: string | null;
+  expiresAt: number;
+  splitKnown: boolean;
+  reasons: string[];
+  shipmentGroups: { label: string; items: { name: string; packs: number }[] }[];
+};
 
 /** Whether automatic delivery estimates are on (the storefront hides the estimator otherwise). */
 export const enabled = query({ args: {}, handler: () => flag('DELIVERY_AUTOMATION_ENABLED') });
+
+export const productProfile = query({
+  args: {
+    productId: v.string(),
+    variantId: v.string(),
+    channel: v.union(v.literal('retail'), v.literal('trade')),
+  },
+  handler: async (ctx, a) => {
+    if (a.channel === 'trade' && !isVerified((await viewer(ctx))?.profile ?? null))
+      throw new CommerceError('TRADE_APPROVAL_REQUIRED');
+    const pid = ctx.db.normalizeId('commerceProducts', a.productId),
+      vid = ctx.db.normalizeId('catVariants', a.variantId);
+    if (!pid || !vid) return null;
+    const [cv, listing] = await Promise.all([
+      ctx.db.get(vid),
+      ctx.db
+        .query('commerceListings')
+        .withIndex('by_product_channel', (q) =>
+          q.eq('productId', pid).eq('channel', a.channel === 'retail' ? 'retail' : 'house')
+        )
+        .unique(),
+    ]);
+    if (
+      !cv ||
+      cv.productId !== pid ||
+      !listing?.published ||
+      !listing.snapshot.variants.some((v) => v.id === vid)
+    )
+      return null;
+    return {
+      piecesPerPack: cv.piecesPerPack,
+      minimumPacks: cv.orderMinimumPacks,
+      incrementPacks: cv.orderIncrementPacks,
+    };
+  },
+});
 
 /**
  * Estimates delivery for a cart or a single product. Returns customer-safe fields only; the
@@ -37,30 +103,61 @@ export const estimate = mutation({
     clientPrices: v.optional(v.any()),
     useCredit: v.optional(v.boolean()),
   },
-  handler: async (ctx, a) => {
+  handler: async (ctx, a): Promise<PublicDeliveryEstimate> => {
     requireFlag('DELIVERY_AUTOMATION_ENABLED');
-    if (!(await rateLimit(ctx, `estimate:${a.visitorKey.slice(0, 64)}`, 30, 30))) throw new CommerceError('INVALID_INPUT', 'Too many estimates; wait a moment.', 'Please wait a moment and try again.');
+    const estimateViewer = await viewer(ctx);
+    // A freely chosen visitor string is never the sole limit or an ownership credential.
+    const principal =
+      estimateViewer?.userId ?? `guest:${await digest({ lines: a.lines, zip: a.zip.slice(0, 5) })}`;
+    if (
+      !(await rateLimit(ctx, `estimate:${principal}`, 30, 30)) ||
+      !(await rateLimit(ctx, 'estimate:global-budget', 2000, 60))
+    )
+      throw new CommerceError(
+        'INVALID_INPUT',
+        'Too many estimates; wait a moment.',
+        'Please wait a moment and try again.'
+      );
     if (a.clientPrices !== undefined) await bumpMetric(ctx, 'security.client_price_ignored');
     const started = Date.now();
-    const policy = (await activeConfig<EstimatePolicy>(ctx, 'estimatePolicy', 'estimate-policy')).value;
+    const policy = (await activeConfig<EstimatePolicy>(ctx, 'estimatePolicy', 'estimate-policy'))
+      .value;
     const service = a.service ?? 'curbside';
     const destination = { zip: a.zip.trim(), ...(a.address ? { address: a.address } : {}) };
     const me0 = await viewer(ctx);
-    const creditMinor = a.useCredit && me0 && flag('CREDIT_V2_ENABLED') ? await creditAvailable(ctx, me0.userId) : 0;
+    const creditMinor =
+      a.useCredit && me0 && flag('CREDIT_V2_ENABLED') ? await creditAvailable(ctx, me0.userId) : 0;
     let out;
     try {
-      out = await computeEstimate(ctx, { lines: a.lines as LineInput[], channel: a.channel, destination, service, creditMinor });
+      out = await computeEstimate(ctx, {
+        lines: a.lines as LineInput[],
+        channel: a.channel,
+        destination,
+        service,
+        creditMinor,
+      });
     } catch (e) {
       const d = commerceErrorData(e);
       await bumpMetric(ctx, `estimate.error.${d?.code ?? 'unknown'}`);
       throw e;
     }
     const now = Date.now();
+    const expiresAt = Math.min(
+      now + policy.validityMinutes * 60000,
+      out.validUntil ?? Number.MAX_SAFE_INTEGER
+    );
     const me = await viewer(ctx);
+    const guestCapability = me ? undefined : capability();
     const status = out.status;
     const id: Id<'dlvEstimates'> = await ctx.db.insert('dlvEstimates', {
       channel: a.channel,
-      destination: { zip: destination.zip, precision: a.address ? 'full' : 'zip', ...(a.address ? { addressHash: addressKey(a.address), state: a.address.state } : {}) },
+      destination: {
+        zip: destination.zip,
+        precision: a.address ? 'full' : 'zip',
+        ...(a.address
+          ? { addressHash: await digest(addressKey(a.address)), state: a.address.state }
+          : {}),
+      },
       service,
       lines: out.lines.map((l) => ({ variantId: l.variant._id, packs: l.packs })),
       groups: out.groups,
@@ -70,42 +167,89 @@ export const estimate = mutation({
       discountMinor: 0,
       creditMinor: out.creditMinor,
       ...(out.taxMinor !== undefined ? { taxMinor: out.taxMinor } : {}),
-      ...(out.deliveryMinor !== undefined ? { totalMinor: out.merchandiseMinor - out.creditMinor + out.deliveryMinor + (out.taxMinor ?? 0) } : {}),
-      expiresAt: now + policy.validityMinutes * 60_000,
+      ...(out.deliveryMinor !== undefined && out.taxMinor !== undefined
+        ? { totalMinor: out.merchandiseMinor - out.creditMinor + out.deliveryMinor + out.taxMinor }
+        : {}),
+      expiresAt,
       cartHash: cartHash(a.lines as LineInput[], a.channel),
       sourceVersionsHash: out.sourceVersionsHash,
-      internal: { reasons: out.reasons, configVersions: out.configVersions, lines: out.lines.map((l) => ({ key: l.lineKey, unit: l.unitPackMinor, packs: l.packs, provider: l.provider })) },
+      internal: {
+        reasons: out.reasons,
+        configVersions: out.configVersions,
+        ...(out.taxBaseKey ? { taxBaseKey: out.taxBaseKey } : {}),
+        lines: out.lines.map((l) => ({
+          key: l.lineKey,
+          unit: l.unitPackMinor,
+          packs: l.packs,
+          provider: l.provider,
+          pieces: l.pieces,
+          originZip: l.originZip,
+          ...(l.engine ? { economics: l.engine } : {}),
+          ...(l.costRevisionId ? { costRevisionId: l.costRevisionId } : {}),
+          ...(l.priceRevisionId ? { priceRevisionId: l.priceRevisionId } : {}),
+          category: l.category,
+          netMinor: l.unitPackMinor * l.packs - (l.creditMinor ?? 0),
+        })),
+      },
       ...(me ? { userId: me.userId } : {}),
+      ...(guestCapability ? { guestCapabilityHash: await digest(guestCapability) } : {}),
       createdAt: now,
     });
-    await bumpMetric(ctx, status === 'ok' ? 'estimate.ok' : 'estimate.quote_required', Date.now() - started);
+    await bumpMetric(
+      ctx,
+      status === 'ok' ? 'estimate.ok' : 'estimate.quote_required',
+      Date.now() - started
+    );
     const splitKnown = new Set(out.groups.map((g) => g.groupKey)).size > 1;
     return {
       estimateId: id,
+      ...(guestCapability ? { guestCapability } : {}),
       status,
       deliveryChargeMinor: out.deliveryMinor ?? null,
       merchandiseMinor: out.merchandiseMinor,
       taxMinor: out.taxMinor ?? null,
       creditMinor: out.creditMinor,
-      totalMinor: out.deliveryMinor !== undefined && out.taxMinor !== undefined ? out.merchandiseMinor - out.creditMinor + out.deliveryMinor + out.taxMinor : null,
+      totalMinor:
+        out.deliveryMinor !== undefined && out.taxMinor !== undefined
+          ? out.merchandiseMinor - out.creditMinor + out.deliveryMinor + out.taxMinor
+          : null,
       serviceName: 'Curbside delivery',
       timingCaveat: DELIVERY_TIMING_CAVEAT,
       note: a.address ? null : ZIP_ESTIMATE_NOTE,
-      expiresAt: now + policy.validityMinutes * 60_000,
+      expiresAt,
       splitKnown,
       // Customer-safe reasons only: no supplier names, costs or margins.
       reasons: status === 'ok' ? [] : [QUOTE_CTA],
-      shipmentGroups: out.groups.map((g, i) => ({ label: `Shipment ${i + 1}`, items: out.lines.filter((l) => (g.groupKey === 'ashcroft' ? l.provider === 'ashcroft' : l.provider === 'zuo' && g.groupKey.startsWith(l.supplierCode))).map((l) => ({ name: l.name, packs: l.packs })) })),
+      shipmentGroups: out.groups.map((g, i) => ({
+        label: `Shipment ${i + 1}`,
+        items: out.lines
+          .filter((l) =>
+            g.groupKey === 'ashcroft'
+              ? l.provider === 'ashcroft'
+              : g.groupKey === `${l.supplierCode}:${l.originZip}:${service}`
+          )
+          .map((l) => ({ name: l.name, packs: l.packs })),
+      })),
     };
   },
 });
 
 /** A stored estimate in customer-safe form (for the checkout review screen). */
 export const get = query({
-  args: { estimateId: v.id('dlvEstimates') },
+  args: { estimateId: v.id('dlvEstimates'), guestCapability: v.optional(v.string()) },
   handler: async (ctx, a) => {
     const e = await ctx.db.get(a.estimateId);
     if (!e) return null;
-    return { status: e.status, deliveryChargeMinor: e.deliveryChargeMinor ?? null, merchandiseMinor: e.merchandiseMinor, taxMinor: e.taxMinor ?? null, totalMinor: e.totalMinor ?? null, expiresAt: e.expiresAt, expired: e.expiresAt <= Date.now(), precision: e.destination.precision };
+    await authorizeEstimate(ctx, e, a.guestCapability);
+    return {
+      status: e.status,
+      deliveryChargeMinor: e.deliveryChargeMinor ?? null,
+      merchandiseMinor: e.merchandiseMinor,
+      taxMinor: e.taxMinor ?? null,
+      totalMinor: e.totalMinor ?? null,
+      expiresAt: e.expiresAt,
+      expired: e.expiresAt <= Date.now(),
+      precision: e.destination.precision,
+    };
   },
 });

@@ -4,6 +4,7 @@
 import type { ConfigSeed } from './index';
 
 export const CONFIG_SEED: ConfigSeed[] = [
+  {kind:'deliveryControls',key:'delivery-controls',version:1,status:'proposed',value:{automaticEnabled:false,suppliers:['zuo'],origins:['95206'],services:['curbside'],zip3Allowlist:[],blockedZip5:[]},note:'Approve only verified pilot lanes. An empty allowlist disables automatic freight; quotes and paid-order fulfillment remain available.',decision:'D-03/D-08'},
   { kind: 'marginPolicy', key: 'zuo-standard-20', version: 1, status: 'approved', value: { targetBps: 2000 }, note: 'Default Zuo model: 20% contribution after modeled variable expenses, commission and allocated overhead (v2 §7).' },
   { kind: 'marginPolicy', key: 'zuo-approved-5', version: 1, status: 'approved', value: { targetBps: 500, cohort: 'approved_306', expandable: false }, note: 'The approved 306-product 5% exception. Never extended automatically (v2 §1, §7).' },
   { kind: 'marginPolicy', key: 'zuo-legacy-18', version: 1, status: 'approved', value: { targetBps: 1800, requiresDocumentRef: true }, note: 'Only for a SKU with a documented 18% exception (v2 §7).' },
@@ -24,7 +25,7 @@ export const CONFIG_SEED: ConfigSeed[] = [
   { kind: 'deliveryRule', key: 'house-flat', version: 1, status: 'approved', value: { engine: 'house_flat', source: 'lib/holmDelivery.ts DELIVERY_TIERS' }, note: 'Existing House flat delivery, unchanged (v2 §1).' },
   {
     kind: 'deliveryRule', key: 'zuo-95206-curbside', version: 1, status: 'proposed',
-    value: { engine: 'zuo_ladder', originZip: '95206', service: 'curbside', quoteOnly: ['AK', 'HI', 'PO_BOX', 'APO_FPO', 'territories', 'islands', 'remote', 'restricted'], truckload: 'quote_only' },
+    value: { engine: 'zuo_ladder', originZip: '95206', supplierOrderFeeMinor: 1000, supplierFeeScope: 'order', service: 'curbside', quoteOnly: ['AK', 'HI', 'PO_BOX', 'APO_FPO', 'territories', 'islands', 'remote', 'restricted'], truckload: 'quote_only' },
     note: 'v2 §9–§10 proposed initial standard service.', decision: 'D-08',
   },
   { kind: 'deliveryRule', key: 'mixed-zuo-ashcroft', version: 1, status: 'proposed', value: { engine: 'sum_groups', display: 'single_line_with_groups' }, note: 'Mixed Zuo + Ashcroft carts: Ashcroft per-item charge plus the Zuo ladder charge.', decision: 'D-12' },
@@ -32,7 +33,7 @@ export const CONFIG_SEED: ConfigSeed[] = [
     kind: 'carrierRule', key: 'zuo-freight', version: 1, status: 'proposed',
     value: {
       rule: { carrier: 'to be contracted', service: 'ground', effectiveFrom: 0, dimDivisorMm3PerG: 5_021, ground: { maxLongestMm: 2_743, maxLengthPlusGirthMm: 4_191, maxWeightG: 68_039 }, ltl: { maxLongestMm: 3_658, maxWeightG: 907_185, maxCartons: 20 } },
-      originZip: '95206',
+      originZip: '95206', supplierOrderFeeMinor: 1000, supplierFeeScope: 'order',
       zip3Zones: {},
       groundPerKgMinorByZone: {},
       groundMinimumMinor: 0,
@@ -75,6 +76,6 @@ export const CONFIG_SEED: ConfigSeed[] = [
     value: { general: { maxBps: 2500, requiresSchedule: true }, suppliers: { zuo: { defaultBps: 1000, approvedExceptionBps: 500, projectStacking: false } } },
     note: 'Explicit per-supplier trade schedule; Zuo 10% (or approved 5%), never the general 25%, no project stacking (v2 §18).',
   },
-  { kind: 'projectDiscountPolicy', key: 'project-discount', version: 2, status: 'proposed', value: { tiers: [{ minMinor: 1_000_000, bps: 300 }, { minMinor: 2_500_000, bps: 500 }], stack: 'highest_only' }, note: 'v2 §18 proposed project thresholds.', decision: 'D-04' },
+  { kind: 'projectDiscountPolicy', key: 'project-discount', version: 2, status: 'proposed', value: { tiers: [{ minMinor: 1_000_000, bps: 300 }, { minMinor: 2_500_000, bps: 500 }], stack: 'highest_only', basis:'eligible_trade_merchandise' }, note: 'v2 §18 proposed project thresholds.', decision: 'D-04' },
   { kind: 'ledgerPolicy', key: 'ledger-adjustment-threshold', version: 1, status: 'proposed', value: { secondConfirmationAtMinor: 25_000 }, note: 'Manual ledger adjustments of $250 or more need a second confirmation.', decision: 'D-17' },
 ];

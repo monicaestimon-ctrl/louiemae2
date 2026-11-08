@@ -11,9 +11,10 @@ import { audit, openReview } from './sysCore';
 import { openHold, resolveHold } from './catCore';
 import { projectDraftVariants } from './zuoImport';
 import { CommerceError, commerceErrorData } from '../lib/errors';
-import { rat } from '../lib/decimal';
+import { rat, mul, parseDecimal } from '../lib/decimal';
+import { commissionReserve } from './dlvCommission';
 import { piecePriceInfo } from '../lib/catUnits';
-import { ENGINE_VERSION, FULL_SCHEDULE_BPS, minimumRetail, scenarios, type PricingInput, type SizeClass } from '../lib/economics/pricing';
+import { ENGINE_VERSION, minimumRetail, scenarios, type PricingInput, type SizeClass } from '../lib/economics/pricing';
 import type { MarginPolicy, PricingAssumptions, TradeDiscountSchedule } from '../lib/config';
 import { stableStringify } from '../lib/zuoImport';
 
@@ -39,22 +40,18 @@ export async function pricingInput(ctx: Ctx, cv: Doc<'catVariants'>, o: Opts = {
   const supplier = await ctx.db.get(cv.supplierId);
   const tradeRule = trade.suppliers[supplier?.code ?? ''];
   if (!tradeRule) throw new CommerceError('POLICY_NOT_APPROVED', `No trade discount schedule for ${supplier?.code}`);
-  const exception = await ctx.db
-    .query('prgSkuCommissionExceptions')
-    .withIndex('by_product_effective', (q) => q.eq('productId', cv.productId))
-    .order('desc')
-    .first();
-  const maxCommissionBps = exception && (exception.effectiveTo === undefined || exception.effectiveTo > Date.now()) ? Math.max(...exception.rates.map((r) => r.rateBps)) : FULL_SCHEDULE_BPS[category];
+  // Qualification always tests the configured retail referral schedule, including protected rates.
+  const maxCommissionBps = (await commissionReserve(ctx,cv.productId,category,true,Date.now())).bps;
   const confirmed = (m: number | null, zero: boolean) => (m !== null ? m : zero ? 0 : null);
   return {
     category,
     margin,
     input: {
-      wholesalePiece: rat(cost.wholesaleMinor),
+      wholesalePiece: cost.wholesalePrecise ? mul(parseDecimal(cost.wholesalePrecise),rat(100)) : rat(cost.wholesaleMinor),
       piecesPerPack: cv.piecesPerPack,
       sizeClass: (cv.sizeClass ?? 'UNKNOWN') as SizeClass,
       extraPackCostsMinor: [confirmed(cost.dutiesMinor, cost.dutiesConfirmedZero), confirmed(cost.inboundFreightMinor, cost.inboundConfirmedZero), confirmed(cost.supplierFeesMinor, cost.feesConfirmedZero)],
-      mapPackMinor: cost.mapApplicability === 'applies' ? cost.mapMinor : null,
+      mapPackMinor: cost.mapApplicability === 'applies' && cost.mapMinor !== null ? cost.mapMinor * (cost.mapUnitBasis === 'piece' ? cv.piecesPerPack : 1) : null,
       assumptions,
       maxCommissionBps,
       marginBps: margin.targetBps,
@@ -69,7 +66,7 @@ export async function computeScenarios(ctx: Ctx, cv: Doc<'catVariants'>, o: Opts
   const min = minimumRetail(input);
   const approved = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
   const retailMinor = approved?.status === 'approved' ? approved.packPriceMinor : min.retailMinor;
-  const s = scenarios({ ...input, retailMinor, fullScheduleBps: Math.min(FULL_SCHEDULE_BPS[category], input.maxCommissionBps) });
+  const s = scenarios({ ...input, retailMinor, fullScheduleBps: input.maxCommissionBps });
   const inputsHash = stableStringify({ ...input, wholesalePiece: `${input.wholesalePiece.n}/${input.wholesalePiece.d}`, retailMinor });
   return { minimumRetailMinor: min.retailMinor, minimumTradeMinor: min.tradeMinor, retailMinor, belowMinimum: retailMinor < min.retailMinor, inputsHash, category, ...s };
 }

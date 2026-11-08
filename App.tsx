@@ -15,6 +15,7 @@ import { useConvex, useMutation } from 'convex/react';
 import { api } from './convex/_generated/api';
 import { captureRefFromUrl, visitorId } from './lib/partnerLink';
 import { safeRedirect } from './lib/enrollment';
+import {DeliveryQuoteAccess} from './components/delivery/DeliveryQuoteStatus';
 
 // Everything past the home page loads on demand so the first visit only downloads
 // what it shows. Each page keeps its named export; lazy() needs a default.
@@ -459,6 +460,7 @@ const AppContent = () => {
 
       {/* Cart Drawer */}
       <CartDrawer />
+      <DeliveryQuoteAccess />
 
       {/* Search Modal */}
       {searchOpen && <Suspense fallback={null}><SearchModal

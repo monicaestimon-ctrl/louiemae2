@@ -10,6 +10,8 @@ import { activeRef, captureRefFromUrl, pieceShareUrl, rememberRef, shareOrigin, 
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { phoneCut } from './phoneCut.mjs';
+import {DeliveryQuoteAccess} from '../components/delivery/DeliveryQuoteStatus';
+import TradeDeliveryCalculator from '../components/delivery/TradeDeliveryCalculator';
 import ProgramHubV2, { TeamPanel } from '../components/partner/ProgramHubV2';
 import { area as polyArea, inside as inPoly, centroid as polyCentre, bounds as polyBounds, setWallLength } from '../lib/holmPlan';
 export const html = htm.bind(React.createElement);
@@ -24,7 +26,6 @@ const BY_ID = new Map<number, HolmProduct>();
 export function setProducts(list: HolmProduct[]) { PRODUCTS = list; BY_ID.clear(); list.forEach(p => BY_ID.set(p.id, p)); }
 const byId = (id: number): HolmProduct => BY_ID.get(id) || PRODUCTS[0];
 const has = (id: number) => BY_ID.has(id);
-const TRADE = 0.75; // illustrative only (trade section demo); real prices come from the server
 const tp = (p: HolmProduct) => p.trade ?? p.price;
 const pr = (p: HolmProduct, mode: string) => (mode === 'trade' ? tp(p) : p.price);
 // A piece's seamless cutout when it has one (from its asset record, or the curated studio set), else its photo.
@@ -1000,7 +1001,7 @@ function QuoteShow({ctx}){
   const [show,setShow]=useState('markup');const [mk,setMk]=useState(40);
   const pick=(n,i)=>PRODUCTS.find(p=>p.name===n)||PRODUCTS[i];
   const lines=useMemo(()=>[[pick('Roscoe',0),2],[pick('Ansel',1),4],[pick('Elara',2),3]],[]);
-  const set={show,markup:mk};const cost=lines.reduce((s,[p,q])=>s+(p.trade??p.price*TRADE)*q,0);
+  const set={show,markup:mk};const cost=lines.reduce((s,[p,q])=>s+(p.trade??p.price)*q,0);
   const sell=lines.reduce((s,[p,q])=>s+qSellOf(p,set)*q,0);const profit=useTween(sell-cost,500);const total=useTween(sell+2400,500);
   const sample=()=>{location.hash='q/sample'};
   return html`<section className="lx qs" ref=${ref} aria-label="Client quotes">
@@ -1039,28 +1040,21 @@ function useTween(value,ms=700){
 }
 function TradeBand({ctx}){
   const ref=useLux();const cardRef=useRef();
-  const [name,setName]=useState('');const [flip,setFlip]=useState(false);const [amt,setAmt]=useState(25000);
+  const [name,setName]=useState('');const [flip,setFlip]=useState(false);
   // card-local tilt so the light follows the cursor across the metal
   const tilt=e=>{const el=cardRef.current;if(!el)return;const r=el.getBoundingClientRect();el.style.setProperty('--tx',((e.clientX-r.left)/r.width*2-1).toFixed(3));el.style.setProperty('--ty',((e.clientY-r.top)/r.height*2-1).toFixed(3))};
   const rest=()=>{const el=cardRef.current;if(el){el.style.setProperty('--tx',0);el.style.setProperty('--ty',0)}};
   const pc=partnerCopy(ctx.me.partnerTier);
-  const trade=amt*TRADE,save=amt-trade,proj=Math.round(trade*tierOf(trade).rate),earn=Math.round(amt*pc.rateBps/10000);
-  const tSave=useTween(save+proj),tEarn=useTween(earn),tProj=useTween(proj);
   const shown=(name.trim()||'Your studio').slice(0,26);
   const money=v=>'$'+Math.round(v).toLocaleString('en-US');
   return html`<section className="lx tc" ref=${ref} aria-label="Built for the trade">
     <div className="tc-spot" aria-hidden="true"></div>
     <div className="lx-in tc-grid">
       <div className="tc-copy">
-        <header data-r style=${{'--i':0}}><h2>Built for the trade.</h2><p>One verified account opens trade pricing on every piece, project pricing on big orders, and sourcing on request. Join the partner program to earn commission when people order through your links.</p></header>
+        <header data-r style=${{'--i':0}}><h2>Built for the trade.</h2><p>One verified account opens approved prices on eligible pieces, eligible project pricing, and sourcing on request. Join the partner program to earn commission when people order through your links.</p></header>
         <label className="tc-engrave" data-r style=${{'--i':1}}><span>Preview your trade pass</span><input value=${name} maxLength="26" onInput=${e=>setName(e.target.value)} placeholder="Your studio name"/></label>
         <div className="tc-lens" data-r style=${{'--i':2}}>
-          <div className="tc-lens-h"><span>Project size</span><b className="num">${money(amt)}</b></div>
-          <input type="range" min="5000" max="250000" step="1000" value=${amt} onInput=${e=>setAmt(+e.target.value)} aria-label="Project size in dollars"/>
-          <div className="tc-figs">
-            <div><b className="num">${money(tSave)}</b><span>you save at trade${proj?html`, including <em className="num">${money(tProj)}</em> project pricing`:''}</span></div>
-            <div><b className="num">${money(tEarn)}</b><span>you earn at ${pc.rateLabel} if clients order it at retail through your links</span></div>
-          </div>
+          <${TradeDeliveryCalculator}/>
         </div>
         <div className="tc-actions" data-r style=${{'--i':3}}><button className="btn btn-lg lx-cream" onClick=${()=>ctx.go('trade')}>Apply for trade</button><button className="btn btn-lg lx-ghost" onClick=${()=>ctx.go('hub')}>Your quotes</button></div>
       </div>
@@ -1073,14 +1067,14 @@ function TradeBand({ctx}){
             <span className="tc-brand foil">House of Louie Mae</span>
             <span className="tc-tier">Trade</span>
             <span className="tc-name foil" key=${shown}>${shown}</span>
-            <span className="tc-meta"><span>Verified trade</span><span className="num">25% · Trade</span></span>
+            <span className="tc-meta"><span>Verified trade</span><span className="num">Approved pricing</span></span>
           </span>
           <span className="tc-face tc-back">
             <span className="tc-sheen" aria-hidden="true"></span>
             <span className="tc-strip" aria-hidden="true"></span>
             <span className="tc-benefits">
-              <span><b className="foil">25%</b>off retail on every piece</span>
-              <span><b className="foil">+3–5%</b>project pricing over $10,000 and $25,000</span>
+              <span><b className="foil">Trade</b>product-specific approved savings</span>
+              <span><b className="foil">Projects</b>additional pricing where eligible</span>
               <span><b className="foil">${pc.commissionHeadline}</b>${pc.cardCommission}</span>
               <span><b className="foil">${pc.referralHeadline}</b>${pc.cardReferral}</span>
             </span>
@@ -1193,13 +1187,14 @@ const CARE={
 };
 const CAT_OF={sofa:'Seating',sectional:'Seating',bench:'Seating',ottoman:'Seating',lighting:'Lighting'};
 // Project pricing on a project's trade subtotal: extra 3% over $10,000, extra 5% over $25,000. The server also holds every piece above its margin floor.
-const PROJECT_TIERS=[[10000,.03],[25000,.05]];
-const tierOf=t=>{let rate=0;for(const [m,b] of PROJECT_TIERS)if(t>=m)rate=b;const next=PROJECT_TIERS.find(([m])=>t<m)||null;return {rate,next}};
+// Legacy tray previews do not promise project discounts; the approved basket calculator resolves them.
+const PROJECT_TIERS=[];
+const tierOf=t=>({rate:0,next:null});
 const pct=r=>Math.round(r*100)+'%';
 // One flat delivery fee per order, tiered by subtotal (dollars in, dollars out).
 const deliveryOf=sub=>deliveryCents(Math.round(sub*100))/100;
 const deliveryText=()=>DELIVERY_TIERS.map((t,i)=>(t.underCents===Infinity?fmt(DELIVERY_TIERS[i-1].underCents/100)+'+':'under '+fmt(t.underCents/100))+' '+fmt(t.feeCents/100,t.feeCents%100>0)).join(' · ');
-const tierLine=(t,name)=>{const {rate,next}=tierOf(t);return next?(rate?`Extra ${pct(rate)} unlocked. ${fmt(next[0]-t)} more reaches ${pct(next[1])}.`:`${fmt(next[0]-t)} more in trade${name?' in '+name:''} unlocks an extra ${pct(next[1])}.`):`Top project pricing unlocked: an extra ${pct(rate)}.`};
+const tierLine=()=> 'Project pricing is confirmed for eligible items in your quote.';
 function pairsFor(p,n=3){
   const want=p.type==='lighting'?['sofa','sectional','bench','ottoman']:p.type==='ottoman'?['sofa','sectional','bench','lighting']:['ottoman','lighting','bench'];
   const picked=[];want.forEach(t=>{const c=PRODUCTS.filter(x=>x.type===t&&x.id!==p.id&&!picked.includes(x)).sort((a,b)=>(a.mat===p.mat?-40:0)+cdist(a.tone,p.tone)-((b.mat===p.mat?-40:0)+cdist(b.tone,p.tone)))[0];if(c&&picked.length<n)picked.push(c)});
@@ -1382,7 +1377,7 @@ function PinDetail({ctx}){
             <select className="field" aria-label="Area" value=${Z} onChange=${e=>{if(e.target.value==='__new'){const n=prompt('Name the new area, e.g. Patio or Bar');if(n&&n.trim()){ctx.addZone(P.id,n.trim());setZone(n.trim())}return}setZone(e.target.value)}}>${P.zones.map(z=>html`<option key=${z}>${z}</option>`)}<option value="__new">+ New area…</option></select>
           </div>
           <button ref=${addRef} className="btn btn-ink btn-lg pp-add" onClick=${e=>add()}>${I('tray',{width:18})} Add ${qty>1?qty+' ':''}to ${P.name}</button>
-          <div className="pp-tier"><div className="ix-meter"><i style=${{width:Math.min(100,after/(tierOf(after).next||PROJECT_TIERS[PROJECT_TIERS.length-1])[0]*100)+'%'}}></i></div><span>${tierLine(after,P.name)}</span></div>
+          <div className="pp-tier"><div className="ix-meter"><i style=${{width:'0%'}}></i></div><span>${tierLine(after,P.name)}</span></div>
           <div className="row pp-acts">
             <span style=${{position:'relative'}}><button className="btn btn-line btn-sm" onClick=${()=>setSave(!save)}>${I('pin',{width:15})} Save</button>${save&&html`<${SaveMenu} ctx=${ctx} pid=${p.id} align="left" onDone=${()=>setSave(false)}/>`}</span>
             <button className="btn btn-line btn-sm" onClick=${()=>ctx.toStudio([p.id])}>${I('brush',{width:15})} Studio</button>
@@ -1436,7 +1431,7 @@ const qSellOf=(p,set)=>set.show==='cost'?tp(p):set.show==='retail'?p.price:Math.
 // The home page sample, built locally from real pieces.
 function sampleQuote(space){
   const pick=(n,i)=>PRODUCTS.find(p=>p.name===n)||PRODUCTS[i];
-  const lines=[[pick('Roscoe',0),2],[pick('Ansel',1),4],[pick('Elara',2),3]].filter(([p])=>p).map(([p,q],i)=>({key:'s'+i,name:p.name,line:p.line,img:cut(p.id),tone:p.tone,mat:p.mat,z:'Main dining',q,u:Math.round((p.trade??p.price*TRADE)*1.4)}));
+  const lines=[[pick('Roscoe',0),2],[pick('Ansel',1),4],[pick('Elara',2),3]].filter(([p])=>p).map(([p,q],i)=>({key:'s'+i,name:p.name,line:p.line,img:cut(p.id),tone:p.tone,mat:p.mat,z:'Main dining',q,u:Math.round((p.trade??p.price)*1.4)}));
   const d=Date.now();
   return {x:true,ref:'Q-1042',by:'Studio Ama',studio:true,c:'Ama Owusu',t:'Fernwood Café',n:'Warm cognac leather and rattan light, chosen to wear in beautifully with daily service.',sp:space,d,until:d+30*864e5,dl:2400,dep:50,lt:'8 to 10 weeks',lines,approved:null,changed:false};
 }
@@ -1711,7 +1706,7 @@ function Tray({ctx}){
           <div className="meter" style=${{marginTop:8}}><i style=${{width:Math.min(100,seats/proj.target*100)+'%'}}></i></div>
           <p className="help">${seats>=proj.target?'Every planned seat has a piece.':`${proj.target-seats} seats to go.`}</p></div>
         ${palette.length>0&&html`<div><span className="st-h">Material palette</span><div className="palette" style=${{marginTop:8}}>${palette.map(x=>html`<i key=${x.c} style=${{background:x.c,flex:x.w}}></i>`)}</div></div>`}
-        ${ctx.mode==='trade'&&html`<div className="tv-tier ${tierOn?'on':''}"><span className="st-h">Project pricing</span><div className="ix-meter"><i style=${{width:Math.min(100,trade/(tier.next||PROJECT_TIERS[PROJECT_TIERS.length-1])[0]*100)+'%'}}></i></div><p>${tierLine(trade)}</p></div>`}
+        ${ctx.mode==='trade'&&html`<div className="tv-tier ${tierOn?'on':''}"><span className="st-h">Project pricing</span><div className="ix-meter"><i style=${{width:'0%'}}></i></div><p>${tierLine(trade)}</p></div>`}
         <div>
           <div className="sumrow"><span>Retail subtotal</span><span>${fmt(retail,true)}</span></div>
           ${ctx.mode==='trade'&&html`<div className="sumrow" style=${{color:'var(--ok)'}}><span>Trade savings</span><span>−${fmt(retail-trade,true)}</span></div>`}
@@ -3215,7 +3210,7 @@ function TradePass({name,since}){
   return html`<div className="tp-wrap" onPointerMove=${tilt} onPointerLeave=${rest}>
     <div ref=${ref} className="tc-card tp-card" role="img" aria-label=${'Trade pass for '+name}>
       <span className="tc-face tc-front"><span className="tc-sheen"></span><span className="tc-mark foil">HL</span><span className="tc-brand foil">House of Louie Mae</span><span className="tc-tier">Trade</span>
-        <span className="tc-name foil">${name}</span><span className="tc-meta"><span>Verified ${since}</span><span className="num">25% · Trade</span></span></span>
+        <span className="tc-name foil">${name}</span><span className="tc-meta"><span>Verified ${since}</span><span className="num">Approved pricing</span></span></span>
     </div></div>`;
 }
 // Partner program panel on the "Your quotes" page.
@@ -3879,6 +3874,7 @@ export function App(){
   if(route.startsWith('q/'))return html`<${React.Fragment}><${ClientQuote} ctx=${ctx} code=${route.slice(2)}/><${Toast} t=${toastS} onClose=${()=>setToastS(null)}/><//>`;
   return html`<${React.Fragment}>
     <${Header} ctx=${ctx}/>
+    <${DeliveryQuoteAccess}/>
     ${route.startsWith('b/')?html`<${SharedBoard} key=${route} ctx=${ctx} slug=${route.slice(2)}/>`:html`<${Page} key=${route+(route==='studio'?nonce:'')} ctx=${ctx}/>`}
     ${route!=='studio'&&route!=='room'&&html`<${TabBar} ctx=${ctx}/>`}
     ${pin&&html`<${PinDetail} ctx=${ctx}/>`}

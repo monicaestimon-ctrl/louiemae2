@@ -6,7 +6,7 @@ import { v } from 'convex/values';
 import { internalMutation, internalQuery } from './_generated/server';
 import type { MutationCtx } from './_generated/server';
 import { internal } from './_generated/api';
-import { bumpMetric } from './sysCore';
+import { bumpMetric, openReview } from './sysCore';
 import { createOrderFromIntent } from './ordFulfillment';
 import { releaseIntent } from './ordCheckout';
 import { accrueForOrder } from './ldgCommissions';
@@ -49,18 +49,25 @@ async function handleSession(ctx: MutationCtx, s: SessionPayload, kind: 'complet
   if (existing && s.payment_intent) return 'processed';
   const evidence = { sessionId: s.id, amount: s.amount_total, currency: s.currency, paymentIntent: s.payment_intent, intentStatus: intent.status };
   const mismatch = s.currency !== 'usd' || s.amount_total !== intent.totalMinor || (intent.stripeSessionId && intent.stripeSessionId !== s.id);
-  const expired = intent.status !== 'session_open' || intent.expiresAt + 24 * 3600e3 < Date.now();
+  const expired = intent.status !== 'session_open' || intent.expiresAt < Date.now();
   if (mismatch || expired) {
+    const prior=await ctx.db.query('ordPaidExceptions').withIndex('by_session',q=>q.eq('stripeSessionId',s.id)).first();
+    if(prior)return 'processed';
     await ctx.db.insert('ordPaidExceptions', { intentId: intent._id, ...(s.payment_intent ? { paymentIntentId: s.payment_intent } : {}), stripeSessionId: s.id, reason: mismatch ? 'total_mismatch' : 'intent_expired', evidence, status: 'open', createdAt: Date.now() });
     await ctx.db.patch(intent._id, { status: 'exception' });
     await bumpMetric(ctx, 'payment.exception');
     return 'processed';
   }
   await ctx.db.patch(intent._id, { status: 'paid' });
-  const orderId = await createOrderFromIntent(ctx, intent, { ...(s.payment_intent ? { paymentIntentId: s.payment_intent } : {}), email: (s.email || intent.buyer.email || '').toLowerCase(), ...(s.shipping ? { shippingAddress: s.shipping } : {}), paidAt: Date.now() });
+  const orderId = await createOrderFromIntent(ctx, intent, { ...(s.payment_intent ? { paymentIntentId: s.payment_intent } : {}), email: (s.email || intent.buyer.email || '').toLowerCase(), ...((intent.shippingAddress ?? s.shipping) ? { shippingAddress: intent.shippingAddress ?? s.shipping } : {}), paidAt: Date.now() });
   if (intent.creditReservationRef) await settleCredit(ctx, intent.creditReservationRef, 'redeemed', intent.creditMinor, orderId);
   await accrueForOrder(ctx, orderId);
   await onOrderPaid(ctx, orderId);
+  if(intent.taxCalculationRef){
+    const id=await ctx.db.insert('dlvTaxTransactions',{orderId,calculationRef:intent.taxCalculationRef,status:'pending',attempts:0,nextAttemptAt:Date.now(),createdAt:Date.now()});
+    await ctx.scheduler.runAfter(0,internal.dlvTaxActions.commit,{id});
+  }
+  if (!intent.taxCalculationRef) await openReview(ctx,'manual_sale_tax_reporting','ordOrders',orderId,'Paid manual quote requires tax-reporting evidence. Use the frozen quote tax and address; do not charge the customer again.');
   await bumpMetric(ctx, 'payment.order_created');
   return 'processed';
 }
