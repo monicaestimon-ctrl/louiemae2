@@ -12,6 +12,10 @@ if (monitoringEnabled) crons.interval('refresh-due-product-health', { minutes: 5
 // v2 catalog: re-evaluate source freshness so stale cost, MAP or stock becomes a hold, never a sale.
 if (monitoringEnabled) crons.interval('refresh-catalog-freshness', { hours: 1 }, internal.catStock.refreshPage, {});
 
+// v2 checkout: expired intents release their holds; verified payment events never wait unprocessed.
+crons.interval('expire-checkout-intents', { minutes: 15 }, internal.ordCheckout.expireStale, {});
+crons.interval('recover-payment-events', { minutes: 5 }, internal.ordPayments.recoverBacklog, {});
+
 // Persist signups first; process/recover the bounded marketing queue separately.
 crons.interval('sync-klaviyo-waitlist', { minutes: 1 }, internal.klaviyoWaitlist.dispatch, {});
 crons.interval('reconcile-klaviyo-consent', { minutes: 15 }, internal.klaviyoWaitlistWorker.reconcileConsent, { cursor: null });

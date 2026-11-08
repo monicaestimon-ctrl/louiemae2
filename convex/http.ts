@@ -16,6 +16,7 @@ import { cjJsonResponse } from "../lib/cjWebhookHttp";
 import { parseCjWebhookPayload, type ParsedCjWebhookPayload } from "../lib/cjWebhookRequest";
 import { parseCjSourcingWebhookEvidence } from "../lib/cjSourcingWebhook";
 import { getStripeWebhookVerificationError, shouldAllowUnsignedStripeWebhook } from "../lib/stripeWebhook";
+import { commerceErrorData } from "../lib/errors";
 
 const http = httpRouter();
 
@@ -164,6 +165,75 @@ http.route({
     }),
 });
 
+// v2 checkout (docs/production-v2 S19): an idempotent intent from a full-address estimate,
+// then a Stripe Checkout session for exactly the accepted total. Off unless
+// RETAIL_ZUO_CHECKOUT_ENABLED is "true".
+http.route({
+    path: "/v2/checkout",
+    method: "POST",
+    handler: httpAction(async (ctx, request) => {
+        const json = (body: unknown, status: number) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        if (process.env.RETAIL_ZUO_CHECKOUT_ENABLED !== 'true') return json({ code: 'FEATURE_DISABLED', error: "This isn't available yet." }, 403);
+        const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+        if (!stripeSecretKey) return json({ error: 'Payments are not configured.' }, 500);
+        let body: any;
+        try {
+            body = await request.json();
+        } catch {
+            return json({ code: 'INVALID_INPUT', error: 'Invalid request.' }, 400);
+        }
+        let result: any;
+        try {
+            result = await ctx.runMutation(internal.ordCheckout.createIntent, {
+                idempotencyKey: String(body.idempotencyKey || ''),
+                estimateId: body.estimateId,
+                lines: Array.isArray(body.lines) ? body.lines.map((l: any) => ({ productId: String(l.productId || ''), variantId: String(l.variantId || ''), packs: Number(l.packs) })) : [],
+                address: body.address,
+                service: String(body.service || 'curbside'),
+                acceptTotalMinor: Number(body.acceptTotalMinor),
+                ...(typeof body.email === 'string' ? { email: body.email.slice(0, 254) } : {}),
+            });
+        } catch (err: any) {
+            const data = commerceErrorData(err);
+            return json({ code: data?.code ?? 'INVALID_INPUT', error: data?.message ?? 'Checkout could not start.' }, 409);
+        }
+        if (result.status === 'price_changed') return json({ code: 'PRICE_CHANGED', error: 'Your total changed. Please review before paying.', ...result }, 409);
+        const stripe = new Stripe(stripeSecretKey);
+        try {
+            const session = await stripe.checkout.sessions.create({
+                mode: 'payment',
+                payment_method_types: ['card'],
+                line_items: [
+                    ...result.lines.map((l: any) => ({ price_data: { currency: 'usd', product_data: { name: l.name }, unit_amount: l.unitMinor }, quantity: l.packs })),
+                    ...(result.taxMinor > 0 ? [{ price_data: { currency: 'usd', product_data: { name: 'Sales tax' }, unit_amount: result.taxMinor }, quantity: 1 }] : []),
+                ],
+                shipping_options: [{ shipping_rate_data: { type: 'fixed_amount', fixed_amount: { amount: result.deliveryMinor, currency: 'usd' }, display_name: 'Curbside delivery' } }],
+                ...(result.email ? { customer_email: result.email } : {}),
+                metadata: { intentId: result.intentId },
+                expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
+                success_url: 'https://www.louiemae.com/#checkout/success?session_id={CHECKOUT_SESSION_ID}',
+                cancel_url: 'https://www.louiemae.com/#checkout/cancel',
+            }, { idempotencyKey: `v2-checkout-session:${result.intentId}` });
+            if (session.amount_total !== result.totalMinor) {
+                await stripe.checkout.sessions.expire(session.id).catch(() => undefined);
+                await ctx.runMutation(internal.ordCheckout.fail, { intentId: result.intentId });
+                return json({ code: 'PAYMENT_RECONCILIATION_REQUIRED', error: 'Checkout could not start.' }, 500);
+            }
+            await ctx.runMutation(internal.ordCheckout.attachSession, { intentId: result.intentId, sessionId: session.id });
+            return json({ url: session.url, intentId: result.intentId }, 200);
+        } catch (err: any) {
+            console.error('v2 checkout session failed', result.intentId, err?.message);
+            await ctx.runMutation(internal.ordCheckout.fail, { intentId: result.intentId });
+            return json({ error: 'Checkout could not start. Please try again.' }, 502);
+        }
+    }),
+});
+http.route({
+    path: "/v2/checkout",
+    method: "OPTIONS",
+    handler: httpAction(async () => new Response(null, { status: 204, headers: corsHeaders })),
+});
+
 // CORS preflight handler
 http.route({
     path: "/stripe/checkout",
@@ -220,6 +290,32 @@ http.route({
         } catch (err: any) {
             console.error("Webhook signature verification failed:", err.message);
             return new Response(`Webhook Error: ${err.message}`, { status: 400 });
+        }
+
+        // v2 checkout (docs/production-v2 S19): store the verified event first, then process it
+        // durably. Duplicate or out-of-order deliveries are no-ops.
+        if (event.type.startsWith('checkout.session.') && (event.data.object as Stripe.Checkout.Session).metadata?.intentId) {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            const session = event.data.object as Stripe.Checkout.Session;
+            const shipping = (session as any).collected_information?.shipping_details || (session as any).shipping_details;
+            const digest = Array.from(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', new globalThis.TextEncoder().encode(body))), (b) => b.toString(16).padStart(2, '0')).join('');
+            await ctx.runMutation(internal.ordPayments.receive, {
+                eventId: event.id,
+                type: event.type,
+                livemode: event.livemode,
+                payloadHash: digest,
+                payload: {
+                    id: session.id,
+                    intentId: session.metadata!.intentId,
+                    payment_status: session.payment_status,
+                    amount_total: session.amount_total,
+                    currency: session.currency,
+                    payment_intent: typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id ?? null,
+                    email: (session.customer_details?.email || '').toLowerCase(),
+                    ...(shipping?.address ? { shipping: { line1: shipping.address.line1 || '', ...(shipping.address.line2 ? { line2: shipping.address.line2 } : {}), city: shipping.address.city || '', state: shipping.address.state || '', postalCode: shipping.address.postal_code || '', country: shipping.address.country || '' } } : {}),
+                },
+            });
+            return new Response(JSON.stringify({ received: true }), { status: 200 });
         }
 
         // Commercial invoice payments must use a verified invoice snapshot, never Checkout metadata.

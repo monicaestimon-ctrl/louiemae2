@@ -349,7 +349,7 @@ Status: done (Phase C PR). Admin screens ship with S35.
 ## Phase D: delivery, checkout and fulfillment (package D)
 
 ### S16. Shipment classification
-Status: not started
+Status: done (Phase D PR).
 
 **Goal.** Ground against LTL against quote-only, from real carton evidence.
 
@@ -362,7 +362,7 @@ Status: not started
 **Tests.** Boundary tests per limit, an oversize carton, the supplier-LTL lock (SKU 110799 fixture), and a missing carton giving `CARTON_MISSING`.
 
 ### S17. Delivery and cart economics engine
-Status: not started
+Status: done (Phase D PR).
 
 **Goal.** One server-owned delivery service for product estimates, cart estimates, checkout and trade quotes.
 
@@ -388,7 +388,7 @@ Status: not started
 **Tests.** DEL01 (49.99, 50, 195 and 200 give 49.99, 59.99, 199.99 and quote-required). DEL02 (mixed-margin, mixed-origin cart: per-line floors, group-specific costs and subsidies, the actual $10 fee and the allowance never spent twice; includes the "4 pieces, one $10 order fee, $40 allocation, $30 left" case). DEL03 (oversize carton, sofa, AK/HI, remote address: supported classification or quote, and never a distance-only or $199.99 cap fallback). DEL05 (freight invoice above the estimate: internal variance exception, no extra customer charge). Worked example F=100, S=25, pd=3% gives $79.99. A negative `A_i` blocks checkout.
 
 ### S18. Estimate service and storefront UI
-Status: not started
+Status: done (Phase D PR).
 
 **Goal.** ZIP estimates on product and cart pages, and full-address confirmation at checkout.
 
@@ -411,7 +411,7 @@ Status: not started
 **Tests.** DEL04 (a change to quantity, address or service, or an expired quote, means requote and reconfirm before payment, and the paid amount stays immutable). Client-sent prices are ignored and logged (SEC01 part).
 
 ### S19. Checkout service (mixed supplier, reservations, verified payment)
-Status: not started
+Status: done (Phase D PR).
 
 **Goal.** One idempotent checkout for Louie Mae. It can include Zuo and Ashcroft in one parent order, and only a verified payment event marks it paid.
 
@@ -436,7 +436,7 @@ Status: not started
 **Blocked by.** D-12 (mixed delivery). Real Stripe calls (README rule 5) are mocked in tests.
 
 ### S20. Versioned manual quotes
-Status: not started
+Status: done (Phase D PR).
 
 **Goal.** Delivery quotes and trade quotes with immutable accepted versions.
 
@@ -449,7 +449,7 @@ Status: not started
 **Tests.** Editing an accepted quote creates a new version. An expired quote gives `QUOTE_EXPIRED`. A trade quote below MAP is rejected.
 
 ### S21. Parent and child orders, manual dealer queues and shipments
-Status: not started
+Status: done (Phase D PR).
 
 **Goal.** Explicit Zuo fulfillment, partial fulfillment and honest split-shipment communication.
 
@@ -469,7 +469,7 @@ Status: not started
 **Tests.** FUL01, FUL04 (one supplier rejects, partially ships or cancels: only its lines change, parent status, tracking and refunds stay accurate, and the other supplier's order is preserved) and FUL05 (the disclosure appears before payment, after checkout and in the confirmation email, notifications identify shipped and outstanding items, and there is no extra charge just for splitting).
 
 ### S22. Returns, refunds and goodwill
-Status: not started
+Status: done (Phase D PR).
 
 **Goal.** Return terms per supplier and category, and refunds per line.
 
@@ -482,7 +482,7 @@ Status: not started
 **Blocked by.** Supplier return and damage policies (README §4, decision D-08). Build the model. Checkout activation stays blocked.
 
 ### S23. EDI adapter interface (disabled)
-Status: not started
+Status: done (Phase D PR).
 
 **Goal.** A future Zuo EDI is a supplier-specific fulfillment adapter. It is not a new checkout and not a universal forwarding rule.
 

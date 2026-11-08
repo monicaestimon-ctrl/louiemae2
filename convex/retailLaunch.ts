@@ -5,7 +5,7 @@ import { internalMutation, internalQuery, query } from './_generated/server';
 import { paginationOptsValidator } from 'convex/server';
 import { checkQuantity } from '../lib/commerce';
 import { launchPrice, retailDelivery, supplierAvailable, retailDescription } from '../lib/retailLaunch';
-import { storefrontListing } from './retailStorefront';
+import { storefrontListing, zuoStorefrontListing, zuoRetailEnabled } from './retailStorefront';
 import { resolveAttribution } from './holmPartners';
 
 export const storefrontPage = query({
@@ -14,7 +14,13 @@ export const storefrontPage = query({
     const batch = await ctx.db.query('commerceListings').withIndex('by_channel_published', q => q.eq('channel', 'retail').eq('published', true)).paginate(args.paginationOpts);
     const page = await Promise.all(batch.page.map(async listing => {
       const product = await ctx.db.get(listing.productId);
-      return product?.provider === 'ashcroft' ? storefrontListing(listing) : null;
+      if (product?.provider === 'ashcroft') return storefrontListing(listing);
+      // v2 Zuo listings appear only once Zuo retail checkout is switched on.
+      if (product?.provider === 'zuo' && zuoRetailEnabled()) {
+        const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', product._id)).first();
+        return zuoStorefrontListing(listing, meta?.commissionCategory === 'decor' ? 'decor' : 'furniture');
+      }
+      return null;
     }));
     return { ...batch, page: page.filter(p => p !== null) };
   },

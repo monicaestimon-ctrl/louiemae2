@@ -23,7 +23,7 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({
 
     // Disabled if out of stock OR if variant is required but not selected
     const needsVariantSelection = variantRequired && !selectedVariant;
-    const comingSoon = product.fulfillmentProvider !== 'ashcroft' || !product.inStock;
+    const comingSoon = (product.fulfillmentProvider !== 'ashcroft' && product.fulfillmentProvider !== 'zuo') || !product.inStock;
     const isDisabled = comingSoon || !product.inStock || needsVariantSelection || selectedVariant?.inStock === false;
 
     const handleClick = () => {
