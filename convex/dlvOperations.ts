@@ -14,6 +14,7 @@ import { checkQuoteLines } from './ordQuotes';
 import { computeManualQuote } from './dlvManual';
 import { cartHash } from './dlvEngine';
 import { addressKey } from '../lib/delivery/destination';
+import { closedRequestStates, requestState } from './dlvQuoteLifecycle';
 
 async function owns(ctx: MutationCtx | QueryCtx, r: Doc<'dlvQuoteRequests'>, token?: string) {
   const me = await viewer(ctx);
@@ -78,7 +79,11 @@ export const requestQuote = mutation({
         await ctx.db.patch(existing._id, { guestCapabilityHash: await digest(token) });
       return { id: existing._id, ...(!existing.userId ? { guestCapability: token } : {}) };
     }
-    if (!(await rateLimit(ctx, `delivery-quote:${me?.userId ?? (await digest(email))}`, 5, 3600)))
+    if (
+      !(await rateLimit(ctx, `delivery-quote:email:${await digest(email)}`, 5, 5 / 60)) ||
+      (me && !(await rateLimit(ctx, `delivery-quote:user:${me.userId}`, 5, 5 / 60))) ||
+      !(await rateLimit(ctx, 'delivery-quote:global', 100, 100 / 60))
+    )
       throw new CommerceError('INVALID_INPUT', 'Quote request limit reached');
     const lines = [];
     const requested = [];
@@ -195,12 +200,13 @@ export const requestStatus = query({
     const q = r.quoteVersionId ? await ctx.db.get(r.quoteVersionId) : null;
     return {
       id: r._id,
-      status: r.status,
+      status: requestState(r, q),
+      orderPlaced: !!r.orderId,
       lines: r.lines,
       message: r.customerMessage ?? null,
       updatedAt: r.updatedAt,
       quote:
-        q && ['sent', 'accepted'].includes(q.status)
+        q && ['sent', 'accepted', 'expired'].includes(q.status)
           ? {
               id: q._id,
               version: q.version,
@@ -255,8 +261,14 @@ export const updateRequest = mutation({
   handler: async (ctx, a) => {
     const actor = await requireDeliveryRole(ctx, 'operations');
     const r = await ctx.db.get(a.id);
-    if (!r || ['accepted', 'cancelled'].includes(r.status))
+    if (!r || ['accepted', ...closedRequestStates].includes(r.status))
       throw new CommerceError('INVALID_INPUT');
+    const activeQuote = r.quoteVersionId ? await ctx.db.get(r.quoteVersionId) : null;
+    if (activeQuote?.status === 'accepted')
+      throw new CommerceError(
+        'INVALID_INPUT',
+        'Accepted quote changes require a new reviewed version'
+      );
     if (a.message.length > 2000 || (a.assignedTo?.length ?? 0) > 200)
       throw new CommerceError('INVALID_INPUT');
     await ctx.db.patch(r._id, {
@@ -292,13 +304,19 @@ export const attachQuote = mutation({
       !r ||
       !q ||
       q.projectId !== r.projectId ||
+      (r.quoteVersionId !== undefined && r.quoteVersionId !== q._id) ||
       q.status !== 'sent' ||
       q.expiresAt <= Date.now() ||
-      ['accepted', 'cancelled'].includes(r.status)
+      ['accepted', ...closedRequestStates].includes(r.status)
     )
       throw new CommerceError('INVALID_INPUT');
     await computeManualQuote(ctx, q);
-    await ctx.db.patch(r._id, { quoteVersionId: q._id, status: 'sent', updatedAt: Date.now() });
+    await ctx.db.patch(r._id, {
+      quoteVersionId: q._id,
+      quoteExpiresAt: q.expiresAt,
+      status: 'sent',
+      updatedAt: Date.now(),
+    });
     await audit(ctx, {
       actor: actor.email,
       action: 'delivery.quote.attach',
@@ -374,6 +392,7 @@ export const acceptQuote = mutation({
     const checks = await checkQuoteLines(ctx, q.lines, r.channel === 'retail' ? 'retail' : 'house');
     if (!checks.map || !checks.margin || !checks.policy)
       throw new CommerceError('COST_REVIEW_REQUIRED', 'Quote must be reviewed again');
+    await computeManualQuote(ctx, q);
     await ctx.db.patch(q._id, {
       status: 'accepted',
       acceptedAt: Date.now(),
@@ -387,6 +406,42 @@ export const acceptQuote = mutation({
       entityId: q._id,
     });
     return { accepted: true };
+  },
+});
+/** Customer closes only an unaccepted request; an accepted/payment order needs staff review. */
+export const closeRequest = mutation({
+  args: {
+    id: v.id('dlvQuoteRequests'),
+    guestCapability: v.optional(v.string()),
+    outcome: v.union(v.literal('declined'), v.literal('cancelled')),
+    reason: v.string(),
+  },
+  handler: async (ctx, a) => {
+    const r = await ctx.db.get(a.id);
+    if (!r) throw new CommerceError('FORBIDDEN');
+    await owns(ctx, r, a.guestCapability);
+    if (a.reason.length > 2000) throw new CommerceError('INVALID_INPUT');
+    if (r.status === a.outcome) return { status: r.status };
+    if (['accepted', ...closedRequestStates].includes(r.status))
+      throw new CommerceError(
+        'INVALID_INPUT',
+        'Contact support about an accepted or closed request'
+      );
+    const q = r.quoteVersionId ? await ctx.db.get(r.quoteVersionId) : null;
+    if (q?.status === 'accepted' || q?.checkoutIntentId)
+      throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED');
+    if (a.outcome === 'declined' && !q) throw new CommerceError('INVALID_INPUT');
+    if (q && ['draft', 'sent'].includes(q.status))
+      await ctx.db.patch(q._id, { status: 'superseded' });
+    await ctx.db.patch(r._id, { status: a.outcome, updatedAt: Date.now() });
+    await audit(ctx, {
+      actor: r.userId ?? `guest:${r._id}`,
+      action: `delivery.quote.customer_${a.outcome}`,
+      entityTable: 'dlvQuoteRequests',
+      entityId: r._id,
+      reason: a.reason,
+    });
+    return { status: a.outcome };
   },
 });
 export const prepareCheckout = mutation({

@@ -185,7 +185,7 @@ function QuoteEditor({ id, canSend }: { canSend: boolean; id: Id<'dlvQuoteReques
         {(['sourcing', 'needs_information', 'cancelled'] as const).map((status) => (
           <button
             key={status}
-            disabled={busy || ['accepted', 'cancelled'].includes(r.status)}
+            disabled={busy || ['accepted', 'cancelled', 'declined', 'converted'].includes(r.status)}
             onClick={() => action(() => update({ id, status, assignedTo: assignee, message }))}
           >
             {status.replaceAll('_', ' ')}
@@ -354,7 +354,7 @@ function QuoteEditor({ id, canSend }: { canSend: boolean; id: Id<'dlvQuoteReques
               Send checked quote to customer
             </button>
           )}
-          {v.status === 'sent' && r.quoteVersionId !== v._id && (
+          {v.status === 'sent' && (r.quoteVersionId !== v._id || r.status !== 'sent') && (
             <button disabled={busy} onClick={() => action(() => attach({ id, versionId: v._id }))}>
               Attach sent version
             </button>

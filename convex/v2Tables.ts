@@ -469,10 +469,11 @@ export const v2Tables = {
     channel:retailOrTrade, email:v.string(), name:v.string(), phone:v.string(), postalCode:v.string(),
     address:v.optional(shipAddress), service:v.string(), notes:v.string(),
     lines:v.array(v.object({productId:v.id('commerceProducts'),variantId:v.string(),packs:v.number(),name:v.string()})),
-    status:v.union(v.literal('requested'),v.literal('needs_information'),v.literal('sourcing'),v.literal('sent'),v.literal('accepted'),v.literal('cancelled')),
+    status:v.union(v.literal('requested'),v.literal('needs_information'),v.literal('sourcing'),v.literal('ready_for_review'),v.literal('sent'),v.literal('accepted'),v.literal('expired'),v.literal('declined'),v.literal('superseded'),v.literal('converted'),v.literal('cancelled')),
+    quoteExpiresAt:v.optional(v.number()), orderId:v.optional(v.id('ordOrders')),
     assignedTo:v.optional(v.string()), customerMessage:v.optional(v.string()), quoteVersionId:v.optional(v.id('ordQuoteVersions')),
     createdAt:v.number(),updatedAt:v.number(),
-  }).index('by_status_updated',['status','updatedAt']).index('by_user',['userId','createdAt']).index('by_project',['projectId']).index('by_request_key',['requestKeyHash']),
+  }).index('by_status_updated',['status','updatedAt']).index('by_status_expiry',['status','quoteExpiresAt']).index('by_quote',['quoteVersionId']).index('by_user',['userId','createdAt']).index('by_project',['projectId']).index('by_request_key',['requestKeyHash']),
   dlvActualCostStatements:defineTable({orderId:v.id('ordOrders'),wholesaleMinor:v.number(),dutiesMinor:v.number(),inboundMinor:v.number(),otherSupplierFeesMinor:v.number(),paymentMinor:v.number(),commissionMinor:v.number(),overheadMinor:v.number(),returnLossMinor:v.number(),advertisingMinor:v.number(),recoveriesMinor:v.number(),merchandiseRefundMinor:v.number(),deliveryRefundMinor:v.number(),freightFinal:v.boolean(),evidence:v.string(),sourceHash:v.string(),createdBy:v.string(),createdAt:v.number()}).index('by_order',['orderId','createdAt']),
   dlvFreightInvoices: defineTable({
     supplierOrderId:v.id('ordSupplierOrders'), shipmentId:v.optional(v.id('ordShipments')),

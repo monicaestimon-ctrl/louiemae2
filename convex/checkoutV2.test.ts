@@ -1348,6 +1348,12 @@ describe('delivery tool security and operations regressions', () => {
     await s.admin.mutation(api.dlvOperations.attachQuote, { id: r.id, versionId: q.id });
     const status = await s.t.query(api.dlvOperations.requestStatus, r);
     expect(status!.quote!.totalMinor).toBe(140000);
+    // A valid payment session may finish after the quote's shorter acceptance window.
+    await s.t.run(async (ctx) => {
+      const shortExpiry = Date.now() + 2 * 60000;
+      await ctx.db.patch(q.id, { expiresAt: shortExpiry });
+      await ctx.db.patch(r.id, { quoteExpiresAt: shortExpiry });
+    });
     await s.t.mutation(api.dlvOperations.acceptQuote, { ...r, versionId: q.id });
     await s.t.mutation(api.dlvOperations.acceptQuote, { ...r, versionId: q.id });
     expect((await s.t.query(api.dlvOperations.requestStatus, r))!.status).toBe('accepted');
@@ -1366,6 +1372,40 @@ describe('delivery tool security and operations regressions', () => {
     });
     expect(intent.status).toBe('created');
     expect(await s.t.run((ctx) => ctx.db.query('ordOrders').collect())).toHaveLength(0);
+    if (intent.status === 'price_changed') throw new Error('Unexpected price change');
+    await s.t.mutation(internal.ordCheckout.attachSession, {
+      intentId: intent.intentId,
+      sessionId: 'cs_manual',
+    });
+    vi.setSystemTime(Date.now() + 3 * 60000);
+    expect(await s.t.mutation(internal.dlvQuoteLifecycle.expire, {})).toBe(1);
+    expect((await s.t.query(api.dlvOperations.requestStatus, r))!.status).toBe('expired');
+    const paid = {
+      eventId: 'evt_manual_paid',
+      type: 'checkout.session.completed',
+      livemode: false,
+      payloadHash: 'fixture',
+      payload: {
+        id: 'cs_manual',
+        intentId: intent.intentId,
+        payment_status: 'paid',
+        amount_total: intent.totalMinor,
+        currency: 'usd',
+        payment_intent: 'pi_manual',
+        email: 'customer@example.com',
+        shipping: retry.address,
+      },
+    };
+    await s.t.mutation(internal.ordPayments.receive, paid);
+    await processEvents(s.t);
+    await s.t.mutation(internal.ordPayments.receive, paid);
+    await processEvents(s.t);
+    expect(await s.t.query(api.dlvOperations.requestStatus, r)).toMatchObject({
+      status: 'converted',
+      orderPlaced: true,
+    });
+    expect(await s.t.run((ctx) => ctx.db.query('ordOrders').collect())).toHaveLength(1);
+    await expect(s.t.mutation(api.dlvOperations.prepareCheckout, r)).rejects.toThrow();
   });
   it('records invoices once, rejects conflicting retries and never changes the paid total', async () => {
     const s = await setup();
@@ -1637,6 +1677,126 @@ describe('delivery staff permissions', () => {
     await expect(s.admin.query(api.dlvTax.reportingQueue, {})).rejects.toSatisfy((x) =>
       isCommerceError(x, 'FORBIDDEN')
     );
+  });
+});
+
+describe('delivery request lifecycle', () => {
+  const requestInput = (s: Awaited<ReturnType<typeof setup>>, key: string) => ({
+    requestKey: key.repeat(64),
+    lines: [zuoLine(s)],
+    channel: 'retail' as const,
+    postalCode: '99501',
+    name: 'Customer',
+    email: 'customer@example.com',
+    phone: '',
+    service: 'curbside',
+    notes: '',
+    consent: true,
+  });
+  async function quotedRequest() {
+    const s = await setup();
+    const r = await s.t.mutation(api.dlvOperations.requestQuote, requestInput(s, 'a'));
+    const detail = await s.admin.query(api.dlvOperations.quoteDetail, { id: r.id });
+    const input = {
+      projectId: detail!.request.projectId,
+      lines: [
+        {
+          productId: s.productId,
+          variantId: s.variantId,
+          packs: 1,
+          unitPackMinor: 100000,
+          discountMinor: 0,
+        },
+      ],
+      address: { ...ADDRESS, postalCode: '99501' },
+      service: 'curbside',
+      deliveryMinor: 40000,
+      taxMinor: 0,
+      validDays: 7,
+      terms: 'Fixture curbside service',
+      taxEvidence: 'Fixture verified zero tax',
+      fixedPaymentMinor: 30,
+      freight: [
+        {
+          supplierCode: 'zuo',
+          originZip: '95206',
+          freightMinor: 40000,
+          supplierFeeMinor: 1000,
+          evidence: 'Fixture freight',
+        },
+      ],
+    };
+    const q = await s.admin.mutation(api.ordQuotes.saveVersion, input);
+    expect((await s.t.query(api.dlvOperations.requestStatus, r))!.status).toBe('ready_for_review');
+    await s.admin.mutation(api.ordQuotes.markSent, { versionId: q.id });
+    await s.admin.mutation(api.dlvOperations.attachQuote, { id: r.id, versionId: q.id });
+    return { s, r, q, input };
+  }
+  it('limits new requests to five per hour while allowing an exact retry', async () => {
+    const s = await setup();
+    for (const key of ['a', 'b', 'c', 'd', 'e']) {
+      await s.t.mutation(api.dlvOperations.requestQuote, requestInput(s, key));
+      vi.setSystemTime(Date.now() + 1000);
+    }
+    await expect(
+      s.t.mutation(api.dlvOperations.requestQuote, requestInput(s, 'f'))
+    ).rejects.toThrow();
+    await expect(
+      s.t.mutation(api.dlvOperations.requestQuote, requestInput(s, 'a'))
+    ).resolves.toHaveProperty('id');
+    expect(await s.t.run((ctx) => ctx.db.query('dlvQuoteRequests').collect())).toHaveLength(5);
+    vi.setSystemTime(Date.now() + 12 * 60000);
+    await expect(
+      s.t.mutation(api.dlvOperations.requestQuote, requestInput(s, 'f'))
+    ).resolves.toHaveProperty('id');
+  });
+  it('allows only the owner to decline, and prevents acceptance/revision of a closed request', async () => {
+    const { s, r, q, input } = await quotedRequest();
+    const close = { ...r, outcome: 'declined' as const, reason: 'Project changed' };
+    await expect(
+      s.t.mutation(api.dlvOperations.closeRequest, { ...close, guestCapability: 'b'.repeat(64) })
+    ).rejects.toThrow();
+    await s.t.mutation(api.dlvOperations.closeRequest, close);
+    await s.t.mutation(api.dlvOperations.closeRequest, close);
+    expect((await s.t.query(api.dlvOperations.requestStatus, r))!.status).toBe('declined');
+    await expect(
+      s.t.mutation(api.dlvOperations.acceptQuote, { ...r, versionId: q.id })
+    ).rejects.toThrow();
+    await expect(
+      s.admin.mutation(api.ordQuotes.accept, {
+        versionId: q.id,
+        acceptedBy: 'Customer',
+        evidence: 'Stale approval',
+      })
+    ).rejects.toThrow();
+    await expect(s.admin.mutation(api.ordQuotes.saveVersion, input)).rejects.toThrow();
+    expect(await s.t.run((ctx) => ctx.db.query('ordOrders').collect())).toHaveLength(0);
+  });
+  it('expires sent requests once and requires acceptance of a newly reviewed version', async () => {
+    const { s, r, q } = await quotedRequest();
+    const version = await s.t.run((ctx) => ctx.db.get(q.id));
+    vi.setSystemTime(version!.expiresAt + 1);
+    expect((await s.t.query(api.dlvOperations.requestStatus, r))!.status).toBe('expired');
+    expect(await s.t.mutation(internal.dlvQuoteLifecycle.expire, {})).toBe(1);
+    expect(await s.t.mutation(internal.dlvQuoteLifecycle.expire, {})).toBe(0);
+    expect((await s.t.run((ctx) => ctx.db.get(q.id)))!.status).toBe('expired');
+    await expect(
+      s.t.mutation(api.dlvOperations.acceptQuote, { ...r, versionId: q.id })
+    ).rejects.toThrow();
+  });
+  it('preserves accepted versions through expiry and blocks revision of a current acceptance', async () => {
+    const { s, r, q, input } = await quotedRequest();
+    await s.t.mutation(api.dlvOperations.acceptQuote, { ...r, versionId: q.id });
+    await expect(
+      s.t.mutation(api.dlvOperations.closeRequest, { ...r, outcome: 'cancelled', reason: '' })
+    ).rejects.toThrow();
+    await expect(s.admin.mutation(api.ordQuotes.saveVersion, input)).rejects.toThrow();
+    const frozen = await s.t.run((ctx) => ctx.db.get(q.id));
+    vi.setSystemTime(frozen!.expiresAt + 1);
+    expect(await s.t.mutation(internal.dlvQuoteLifecycle.expire, {})).toBe(1);
+    expect(await s.t.run((ctx) => ctx.db.get(q.id))).toEqual(frozen);
+    expect((await s.t.query(api.dlvOperations.requestStatus, r))!.status).toBe('expired');
+    await expect(s.t.mutation(api.dlvOperations.prepareCheckout, r)).rejects.toThrow();
   });
 });
 
