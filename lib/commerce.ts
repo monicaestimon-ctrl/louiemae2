@@ -1,4 +1,4 @@
-export type Provider = 'cj' | 'ashcroft' | 'owner_managed';
+export type Provider = 'cj' | 'ashcroft' | 'owner_managed' | 'zuo';
 export type Channel = 'retail' | 'house';
 export type CommerceVariant = {
   id: string;
@@ -33,12 +33,13 @@ export type CommerceDraft = {
   referencePermission: boolean;
 };
 export const providerLabels: Record<Provider, string> = {
+  zuo: 'Zuo - staged, not orderable',
   cj: 'CJ fulfillment',
   ashcroft: 'Ashcroft · manual dealer order',
   owner_managed: 'Owner-managed logistics',
 };
 export function allowsChannel(provider: Provider, channel: Channel) {
-  return provider !== 'owner_managed' || channel === 'house';
+  return provider !== 'zuo' && (provider !== 'owner_managed' || channel === 'house');
 }
 export function sourceIdentity(raw: string, provider: Provider) {
   const url = new URL(raw.trim());
@@ -224,7 +225,7 @@ export function listingSnapshot(
   channel: Channel
 ): ListingSnapshot {
   if (!allowsChannel(provider, channel))
-    throw new Error('Owner-managed products can only publish to House.');
+    throw new Error(provider === 'zuo' ? 'Zuo staging is not approved for publication or checkout.' : 'Owner-managed products can only publish to House.');
   validateDraft(draft, true);
   if (
     provider === 'ashcroft' &&
