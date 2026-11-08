@@ -6,6 +6,7 @@ export async function listingReady(
   product: Doc<'commerceProducts'>,
   listing: Doc<'commerceListings'>
 ) {
+  if (product.provider === 'zuo') return false; // Staging never implies sellability.
   if (!listing.published || (product.provider === 'owner_managed' && listing.channel !== 'house'))
     return false;
   if (product.provider !== 'cj') return true;
