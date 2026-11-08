@@ -204,9 +204,11 @@ function ZuoImport() {
     try {
       const text = await file.text();
       const rows = file.name.toLowerCase().endsWith('.csv') ? parseCsv(text) : parseJsonPackage(text);
-      const { records, rejected } = normalizePackage(rows, file.name, Date.now());
+      // Keep fallback observation metadata identical between dry run and commit.
+      // A file timestamp is not supplier verification or permission to release a hold.
+      const { records, rejected } = normalizePackage(rows, file.name, file.lastModified);
       const hash = await sha256(text);
-      const res = await begin({ mode, sourceKey: hash, files: [{ name: file.name, sha256: hash, rows: rows.length }], codeRevision: 'admin-ui', rejected });
+      const res = await begin({ mode, sourceKey: hash, files: [{ name: file.name, sha256: hash, rows: rows.length }], codeRevision: 'admin-ui', expectedRecords: records.length, rejected });
       if (res.alreadyCommitted) {
         setLog(['This exact package is already committed. Nothing was changed.']);
         return;
