@@ -13,6 +13,7 @@ import { allocate } from '../lib/money';
 import { splitDisclosure, ORDER_STATUS_LABEL } from '../lib/customerCopy';
 import { CommerceError } from '../lib/errors';
 import { formatUsd } from '../lib/money';
+import { ownsOrder } from './ordAccess';
 
 const ROUTE: Record<string, Doc<'ordSupplierOrders'>['route']> = { zuo: 'manual_dealer_zuo', ashcroft: 'manual_dealer_ashcroft' };
 
@@ -308,12 +309,8 @@ export const recordFreightActual = mutation({
   },
 });
 
-/** Customer order page: items, shipment groups, tracking and the split disclosure. No supplier names. */
-export const orderStatus = query({
-  args: { number: v.string(), email: v.string() },
-  handler: async (ctx, a) => {
-    const order = await ctx.db.query('ordOrders').withIndex('by_number', (q) => q.eq('number', a.number.trim().toUpperCase())).first();
-    if (!order || order.email !== a.email.trim().toLowerCase()) return null;
+/** Customer-safe projection shared by authenticated order status and payment receipts. */
+export async function customerOrder(ctx: QueryCtx, order: Doc<'ordOrders'>) {
     const children = await ctx.db.query('ordSupplierOrders').withIndex('by_order', (q) => q.eq('orderId', order._id)).collect();
     const shipments = await Promise.all(
       children.map(async (c, i) => {
@@ -327,5 +324,17 @@ export const orderStatus = query({
       })
     );
     return { serviceTerms: order.serviceTerms ?? null, number: order.number, status: order.status, statusLabel: ORDER_STATUS_LABEL[order.status], totals: order.totals, disclosure: splitDisclosure(order.splitKnown), shipments };
+}
+
+/** Email is accepted for old callers but is no longer an authorization credential. */
+export const orderStatus = query({
+  args: { number: v.string(), email: v.optional(v.string()), guestCapability: v.optional(v.string()) },
+  handler: async (ctx, a) => {
+    if (a.number.length > 64) return null;
+    const order = await ctx.db.query('ordOrders').withIndex('by_number', q => q.eq('number', a.number.trim().toUpperCase())).first();
+    if (!order) return null;
+    const intent = order.intentId ? await ctx.db.get(order.intentId) : null;
+    if (!(await ownsOrder(ctx, { userId: order.buyerUserId, email: order.email }, intent, a.guestCapability))) return null;
+    return customerOrder(ctx, order);
   },
 });

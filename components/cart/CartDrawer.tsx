@@ -1,3 +1,4 @@
+import { rememberCheckout, cartLines } from '../../lib/delivery/checkoutReturn';
 import React, { useEffect, useState } from 'react';
 import { X, ShoppingBag, Loader2 } from 'lucide-react';
 import { useQuery } from 'convex/react';
@@ -102,10 +103,11 @@ export const CartDrawer: React.FC = () => {
                 throw new Error(errorData.error || 'Checkout failed');
             }
 
-            const { url } = await response.json();
+            const { url, sessionId } = await response.json();
 
             // Redirect to Stripe Checkout
             if (url) {
+                if (sessionId) rememberCheckout(sessionId, undefined, cartLines(items));
                 window.location.href = url;
             } else {
                 throw new Error('No checkout URL received');

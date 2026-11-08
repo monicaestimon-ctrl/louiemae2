@@ -224,7 +224,7 @@ http.route({
                 return json({ code: 'PAYMENT_RECONCILIATION_REQUIRED', error: 'Checkout could not start.' }, 500);
             }
             await ctx.runMutation(internal.ordCheckout.attachSession, { intentId: result.intentId, sessionId: session.id });
-            return json({ url: session.url, intentId: result.intentId }, 200);
+            return json({ url: session.url, sessionId: session.id, intentId: result.intentId }, 200);
         } catch (err: any) {
             console.error('v2 checkout session failed', result.intentId, err?.message);
             // A timeout can follow successful session creation. Retain the intent and its

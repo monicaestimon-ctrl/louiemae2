@@ -110,6 +110,8 @@ import type * as ldgCredits from "../ldgCredits.js";
 import type * as ldgPayoutActions from "../ldgPayoutActions.js";
 import type * as ldgPayouts from "../ldgPayouts.js";
 import type * as ordCheckout from "../ordCheckout.js";
+import type * as ordAccess from "../ordAccess.js";
+import type * as ordReceipts from "../ordReceipts.js";
 import type * as ordFulfillment from "../ordFulfillment.js";
 import type * as ordPayments from "../ordPayments.js";
 import type * as ordQuotes from "../ordQuotes.js";
@@ -276,6 +278,8 @@ declare const fullApi: ApiFromModules<{
   ldgPayoutActions: typeof ldgPayoutActions;
   ldgPayouts: typeof ldgPayouts;
   ordCheckout: typeof ordCheckout;
+  ordAccess: typeof ordAccess;
+  ordReceipts: typeof ordReceipts;
   ordFulfillment: typeof ordFulfillment;
   ordPayments: typeof ordPayments;
   ordQuotes: typeof ordQuotes;

@@ -24,6 +24,7 @@ export async function authorizeEstimate(
   if (estimate.userId) {
     if (me?.userId !== estimate.userId) throw new CommerceError('FORBIDDEN');
   } else if (
+    Date.now() >= estimate.createdAt + 90 * 24 * 60 * 60 * 1000 ||
     !token ||
     !/^[a-f0-9]{64}$/.test(token) ||
     !estimate.guestCapabilityHash ||

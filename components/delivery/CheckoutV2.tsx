@@ -8,6 +8,7 @@ import { visitorId } from '../../lib/partnerLink';
 import { customerMessage } from '../../lib/errors';
 import { QUOTE_CTA, SPLIT_MAY, SPLIT_WILL } from '../../lib/customerCopy';
 import { STANDARD_ACCESS } from '../../lib/delivery/destination';
+import { rememberCheckout } from '../../lib/delivery/checkoutReturn';
 import DeliveryAccessFields from './DeliveryAccessFields';
 import DeliveryQuoteRequest from './DeliveryQuoteRequest';
 
@@ -163,6 +164,12 @@ export function DeliveryCheckout({
       });
       const body = await res.json();
       if (res.ok && body.url) {
+        if (body.sessionId)
+          rememberCheckout(
+            body.sessionId,
+            est.guestCapability,
+            channel === 'retail' ? lines : undefined
+          );
         window.location.href = body.url;
         return;
       }
