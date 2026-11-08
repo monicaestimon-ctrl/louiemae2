@@ -131,10 +131,12 @@ import type * as sourcePropertiesValidator from "../sourcePropertiesValidator.js
 import type * as sourcingCounts from "../sourcingCounts.js";
 import type * as sourcingCountsMaintenance from "../sourcingCountsMaintenance.js";
 import type * as subscribers from "../subscribers.js";
+import type * as sysAlerts from "../sysAlerts.js";
 import type * as sysConfig from "../sysConfig.js";
 import type * as sysCore from "../sysCore.js";
 import type * as sysNotify from "../sysNotify.js";
 import type * as translations from "../translations.js";
+import type * as v2Admin from "../v2Admin.js";
 import type * as v2Migrations from "../v2Migrations.js";
 import type * as v2Tables from "../v2Tables.js";
 import type * as v2Validators from "../v2Validators.js";
@@ -280,10 +282,12 @@ declare const fullApi: ApiFromModules<{
   sourcingCounts: typeof sourcingCounts;
   sourcingCountsMaintenance: typeof sourcingCountsMaintenance;
   subscribers: typeof subscribers;
+  sysAlerts: typeof sysAlerts;
   sysConfig: typeof sysConfig;
   sysCore: typeof sysCore;
   sysNotify: typeof sysNotify;
   translations: typeof translations;
+  v2Admin: typeof v2Admin;
   v2Migrations: typeof v2Migrations;
   v2Tables: typeof v2Tables;
   v2Validators: typeof v2Validators;

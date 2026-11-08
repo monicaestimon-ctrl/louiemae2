@@ -5,7 +5,7 @@ import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { applyCommission, applyCredit, LedgerTransitionError, type CommissionEventType, type CreditEventType, type ObligationState } from '../lib/ledgerStates';
 import { CommerceError } from '../lib/errors';
-import { claimKey, setKeyResult } from './sysCore';
+import { bumpMetric, claimKey, setKeyResult } from './sysCore';
 
 type NewObligation = Omit<Doc<'ldgObligations'>, '_id' | '_creationTime' | 'createdAt' | 'updatedAt' | 'earnedMinor' | 'reversedMinor' | 'heldMinor' | 'refundedBasisMinor' | 'currency'> & {
   refundedBasisMinor?: number;
@@ -29,7 +29,10 @@ export type CommissionEventInput = {
  */
 export async function applyCommissionEvent(ctx: MutationCtx, e: CommissionEventInput) {
   const claim = await claimKey(ctx, e.eventKey, 'commission');
-  if (claim.duplicate) return { duplicate: true as const, obligationId: claim.resultRef as Id<'ldgObligations'> | undefined };
+  if (claim.duplicate) {
+    await bumpMetric(ctx, 'ledger.duplicate_event');
+    return { duplicate: true as const, obligationId: claim.resultRef as Id<'ldgObligations'> | undefined };
+  }
   const at = e.at ?? Date.now();
   let obligationId: Id<'ldgObligations'>;
   if (e.create) {
@@ -125,7 +128,10 @@ export type CreditEventInput = {
 /** Applies one credit event exactly once; overspending throws (so concurrent carts can't both reserve). */
 export async function applyCreditEvent(ctx: MutationCtx, e: CreditEventInput) {
   const claim = await claimKey(ctx, e.eventKey, 'credit');
-  if (claim.duplicate) return { duplicate: true as const };
+  if (claim.duplicate) {
+    await bumpMetric(ctx, 'ledger.duplicate_event');
+    return { duplicate: true as const };
+  }
   const account = await creditAccountFor(ctx, e.userId);
   let next;
   try {

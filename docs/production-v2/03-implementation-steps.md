@@ -686,7 +686,7 @@ Status: done (Phase E PR). Hub screens ship with S33/S34.
 ## Phase G: portals (package G)
 
 ### S33. Creator Hub v2
-Status: not started
+Status: done (Phase G+H PR): components/partner/ProgramHubV2.tsx in the Creator Hub.
 
 **Goal.** A complete creator portal.
 
@@ -699,7 +699,7 @@ Status: not started
 **Tests.** A snapshot test per state. A projection test shows no PII and no supplier cost in the query result.
 
 ### S34. Trade Hub v2
-Status: not started
+Status: done (Phase G+H PR): ProgramHubV2 + TeamPanel in the Trade Hub.
 
 **Goal.** A complete trade portal in `/trade`.
 
@@ -710,7 +710,7 @@ Status: not started
 **Contents.** Application and approval status. Business users and roles (invite, change role and remove, owner only). Trade catalog with actual prices. Projects and versioned quotes (S20). Order tracking (S21). **Referrals & Earnings**: retail links and the same retail commission ledger as creators. Business invitations and credit history (S31). Payout setup. Terms and support. A second creator account is never required, and the referral activation step is separate from approval to buy.
 
 ### S35. Admin consoles and the decision register UI
-Status: not started
+Status: done (Phase G+H PR): Admin → Commerce v2 → Operations & decisions.
 
 **Goal.** Every operational queue the PDF names, kept out of reach of creators and unauthorized trade users.
 
@@ -723,7 +723,7 @@ Status: not started
 **Rules.** Supplier cost data and customer PII are never exposed to creators or unauthorized trade users (a projection test per query). Every write is audited.
 
 ### S36. Durable notifications
-Status: not started
+Status: done (Phase D/G+H): convex/sysNotify.ts with order, shipment, payout and alert messages.
 
 **Goal.** Notifications go out as durable jobs with deduplication, and transactional and marketing preferences are kept separate.
 
@@ -734,7 +734,7 @@ Status: not started
 **Events.** Approval, missing information, quote readiness, shipment (per shipment, S21), commission adjustment, payout failure, tier change, credit award or reversal. Transactional messages ignore marketing opt-out. Marketing messages require consent.
 
 ### S37. Accessibility, copy, terms and privacy
-Status: not started
+Status: done (Phase G+H PR): lib/programTerms.ts, lib/vocabulary.ts, trade PartnerTerms; publication waits for D-14.
 
 **Goal.** Public terms match the implemented behaviour, and the two sites use the same vocabulary.
 
@@ -757,7 +757,7 @@ Status: not started
 ## Phase H: security, operations and release (package H)
 
 ### S38. Security hardening and data retention
-Status: not started
+Status: done (Phase G+H PR): auth-coverage test, live-key webhook guard, repo secret scan, data retention doc.
 
 **Goal.** The security and privacy controls the PDF requires.
 
@@ -775,7 +775,7 @@ Status: not started
 **Tests.** SEC01 (client price tampering, webhook forgery and cross-account access: rejected and logged without leaking secrets or private financial data).
 
 ### S39. Monitoring, alerts and runbooks
-Status: not started
+Status: done (Phase G+H PR): convex/sysAlerts.ts (5-minute checks) and the Health screen.
 
 **Goal.** Make operations visible and owned.
 
@@ -788,7 +788,7 @@ Status: not started
 **Proposed alerts.** Any negative realized contribution. Any duplicate financial event (a duplicate idempotency claim on a money scope). A missed daily source or tier job. A webhook backlog older than 15 minutes. Payout reconciliation exceptions. Review the first 20 fulfilled shipments by hand and recalibrate reserves from actual invoices, without presenting that sample as statistically conclusive.
 
 ### S40. Staging validation, pilot cohort and controlled release
-Status: not started
+Status: in progress: 06-release-checklist.md lists the owner actions; activation is gated on 05 §2.
 
 **Goal.** A controlled production activation with evidence.
 

@@ -10,6 +10,7 @@ import { activeRef, captureRefFromUrl, pieceShareUrl, rememberRef, shareOrigin, 
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { phoneCut } from './phoneCut.mjs';
+import ProgramHubV2, { TeamPanel } from '../components/partner/ProgramHubV2';
 import { area as polyArea, inside as inPoly, centroid as polyCentre, bounds as polyBounds, setWallLength } from '../lib/holmPlan';
 export const html = htm.bind(React.createElement);
 
@@ -3267,7 +3268,7 @@ function PartnerPanel({ctx}){
 }
 function Hub({ctx}){
   const me=ctx.me;
-  const quotes=useQuery(api.holm.myQuoteRequests)||[];const cqs=useQuery(api.holm.myClientQuotes)||[];const app=useQuery(api.holm.myApplication);
+  const quotes=useQuery(api.holm.myQuoteRequests)||[];const cqs=useQuery(api.holm.myClientQuotes)||[];const app=useQuery(api.holm.myApplication);const v2=useQuery(api.v2Admin.publicFlags);
   if(!me.signedIn)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h3>Sign in to see your quotes</h3><p>Quote requests, client quote links and your trade pass live here.</p><button className="btn btn-ink" onClick=${()=>ctx.go('welcome')}>Sign in</button></div></main>`;
   const status={requested:'Requested',quoted:'Quote ready',accepted:'Accepted',invoiced:'Invoiced',paid:'Paid',fulfilled:'Delivered',cancelled:'Cancelled'};
   const cqStatus={sent:'Sent',viewed:'Viewed',approved:'Approved',changes_requested:'Changes requested'};
@@ -3282,7 +3283,7 @@ function Hub({ctx}){
         ${cqs.length?html`<div style=${{display:'grid',gap:2,marginTop:8}}>${cqs.map(q=>html`<div key=${q.slug} className="sumrow" style=${{borderBottom:'1px solid var(--line)',padding:'10px 0'}}><span>${q.title}<br/><small className="mute">${q.number} · ${q.clientName} · ${cqStatus[q.status]}${q.approval?` by ${q.approval.name}`:''}</small></span><span className="row" style=${{gap:6}}><button className="btn btn-line btn-sm" onClick=${()=>copyText(location.origin+'/trade#q/'+q.slug,ctx.toast)}>Copy link</button><button className="btn btn-line btn-sm" onClick=${()=>{location.hash='q/'+q.slug}}>Open</button></span></div>`)}</div>`
         :html`<p className="help">${me.verified?'Create one from your tray: price a project, add your markup, send one link.':'Client quotes open with a verified trade account.'}</p>`}</div>
     </div>
-    <${PartnerPanel} ctx=${ctx}/>
+    ${v2?.creatorEnrollment?html`<section style=${{display:'grid',gap:18,marginBottom:24}}><h2 style=${{fontSize:38}}>Referrals & earnings</h2><${ProgramHubV2} site="trade"/><${TeamPanel}/></section>`:html`<${PartnerPanel} ctx=${ctx}/>`}
     <div style=${{height:40}}></div>
   </main>`;
 }
@@ -3308,6 +3309,14 @@ function CreditToggle({ctx}){
 /* ================= PARTNER TERMS ================= */
 // Written from the program rules (lib/holmPartners), so the terms can't promise what the code doesn't do.
 function PartnerTerms(){
+  // v2 (S37): once v2 enrollment is on and every policy the terms describe is approved, the terms
+  // are generated from that configuration; until then the current terms stay up.
+  const v2=useQuery(api.v2Admin.publicFlags);const v2t=useQuery(api.v2Admin.programTermsView,v2?.creatorEnrollment?{}:'skip');
+  if(v2?.creatorEnrollment&&v2t?.ready)return html`<main className="wrap" style=${{maxWidth:820,marginInline:'auto',paddingTop:48,paddingBottom:80}}>
+    <h1 style=${{fontSize:'clamp(40px,5vw,64px)'}}>Partner terms</h1>
+    <p className="mute" style=${{marginTop:10}}>Creator Program and House of Louie Mae Trade Program: shared retail-referral terms.</p>
+    ${v2t.sections.map(s=>html`<section key=${s.title} style=${{margin:'30px 0'}}><h3 style=${{fontSize:24}}>${s.title}</h3><ul style=${{margin:'8px 0 0',paddingLeft:20,display:'grid',gap:6}}>${s.items.map((t,i)=>html`<li key=${i}>${t}</li>`)}</ul></section>`)}
+  </main>`;
   const rows=rateRows();
   return html`<main className="wrap" style=${{maxWidth:820,marginInline:'auto',paddingTop:48,paddingBottom:80}}>
     <h1 style=${{fontSize:'clamp(40px,5vw,64px)'}}>Partner terms</h1>

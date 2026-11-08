@@ -1,5 +1,6 @@
 
 import React, { useState, useRef } from 'react';
+import CommerceV2Admin from './admin/CommerceV2Admin';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
@@ -41,7 +42,8 @@ type AdminTab =
    | 'cj-risk-check'
    | 'import'
    | 'shared-products'
-   | 'cj-settings';
+   | 'cj-settings'
+   | 'commerce-v2';
 
 type CjAdminNavTarget = 'cj-settings' | 'cj-control-room' | 'cj-risk-check';
 type CjAdminNavRequest = CjAdminNavTarget | {
@@ -51,7 +53,7 @@ type CjAdminNavRequest = CjAdminNavTarget | {
 };
 
 type NavIcon = React.ComponentType<{ className?: string }>;
-type NavGroupId = 'sourcing' | 'settings';
+type NavGroupId = 'sourcing' | 'settings' | 'commerce';
 
 // The six places used day to day. Everything else lives in a folded group below.
 const PRIMARY_NAV: Array<{ tab: AdminTab; label: string; icon: NavIcon }> = [
@@ -70,6 +72,11 @@ const NAV_GROUPS: Array<{ id: NavGroupId; label: string; icon: NavIcon; items: A
          { tab: 'cj-risk-check', label: 'Risk check' },
          { tab: 'import', label: 'Import products' },
          { tab: 'shared-products', label: 'Publishing destinations' },
+      ],
+   },
+   {
+      id: 'commerce', label: 'Commerce v2', icon: Package, items: [
+         { tab: 'commerce-v2', label: 'Operations & decisions' },
       ],
    },
    {
@@ -271,7 +278,7 @@ export const AdminPage: React.FC = () => {
    // Navigation State
    const [activeTab, setActiveTabState] = useState<AdminTab>(() => {
       const saved = localStorage.getItem('admin-active-tab');
-      const validTabs = ['dashboard', 'journal', 'pages', 'products', 'structure', 'newsletter', 'orders', 'cj-control-room', 'cj-risk-check', 'import', 'shared-products', 'cj-settings'] as const;
+      const validTabs = ['dashboard', 'journal', 'pages', 'products', 'structure', 'newsletter', 'orders', 'cj-control-room', 'cj-risk-check', 'import', 'shared-products', 'cj-settings', 'commerce-v2'] as const;
       return saved && (validTabs as readonly string[]).includes(saved) ? saved as typeof validTabs[number] : 'dashboard';
    });
    const [cjNavContext, setCjNavContext] = useState<{ orderId?: string; productId?: string }>({});
@@ -914,6 +921,12 @@ export const AdminPage: React.FC = () => {
             {activeTab === 'orders' && (
                <FadeIn>
                   <AdminOrders />
+               </FadeIn>
+            )}
+
+            {activeTab === 'commerce-v2' && (
+               <FadeIn>
+                  <CommerceV2Admin />
                </FadeIn>
             )}
 

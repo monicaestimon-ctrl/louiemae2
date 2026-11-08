@@ -5,6 +5,7 @@ import { Copy, Download, Check, ArrowUpRight } from 'lucide-react';
 import { api } from '../convex/_generated/api';
 import { partnerCopy, rateRows, TIER_NAMES, type HolmTier } from '../lib/holmPartners';
 import { activeRef, partnerPageUrl, shareOrigin } from '../lib/partnerLink';
+import ProgramHubV2 from './partner/ProgramHubV2';
 
 // The Creator Hub on louiemae.com: the same partner program as /trade, without the trade tools.
 const PAGES: [string, string][] = [
@@ -324,6 +325,18 @@ export default function CreatorHub() {
     if (signedIn) ensureProfile({ ref: activeRef()?.code }).catch(() => {});
   }, [signedIn, ensureProfile]);
   const c = partnerCopy();
+  // v2 (S33): with v2 enrollment on, signed-in members use the v2 program hub (versioned terms,
+  // retail links, ledger, credit, payouts). Signed-out visitors still see the sign-in page below.
+  const flags = useQuery(api.v2Admin.publicFlags);
+  if (signedIn && flags?.creatorEnrollment)
+    return (
+      <main className="min-h-screen bg-cream pt-32 pb-24">
+        <div className="container mx-auto px-4 sm:px-6 max-w-3xl grid gap-8">
+          <h1 className="font-serif text-4xl text-earth">Creator Hub</h1>
+          <ProgramHubV2 site="creators" />
+        </div>
+      </main>
+    );
   return (
     <main className="min-h-screen bg-cream pt-32 pb-24">
       <div className="container mx-auto px-4 sm:px-6 max-w-5xl grid gap-12">

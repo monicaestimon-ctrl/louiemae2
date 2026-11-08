@@ -44,6 +44,9 @@ jobs:
       - name: Verify append-only ledger and audit tables
         run: npm run verify:append-only
 
+      - name: Verify no secrets or supplier data are tracked
+        run: npm run verify:repo-secrets
+
       - name: Run tests
         run: npm run test:run
 
@@ -81,10 +84,16 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
 
-      - name: v2 backfill dry run (read-only report)
-        # Prints what the identity, ledger and credit backfills would write. Commit runs are a
-        # separate, reviewed step (docs/production-v2/03 S05–S06).
-        run: npx convex run v2Migrations:runBackfills '{"commit":false}'
+      - name: v2 identity backfill (idempotent, additive)
+        # The production dry run after #235 was reviewed (1 profile, no partners). Only identity
+        # rows are committed here; ledger and credit balances move at the payout cutover
+        # (docs/production-v2/06 step 7), after which sync-legacy-ledger keeps them in step.
+        run: npx convex run v2Migrations:runBackfills '{"commit":true,"only":["identity"]}'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+
+      - name: v2 ledger parity check (read-only)
+        run: npx convex run v2Migrations:ledgerParity '{}'
         continue-on-error: true
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
