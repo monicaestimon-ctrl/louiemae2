@@ -1,10 +1,12 @@
 'use node';
+import { publicDeliveryError } from '../lib/delivery/publicErrors';
+import { assertDeliveryBounds } from '../lib/delivery/requestBounds';
 import Stripe from 'stripe';
 import { v } from 'convex/values';
 import { action, internalAction } from './_generated/server';
 import { api, internal } from './_generated/api';
 import { addressArg, lineArg, type PublicDeliveryEstimate } from './dlvEstimates';
-import { CommerceError, commerceErrorData } from '../lib/errors';
+import { CommerceError } from '../lib/errors';
 import type { Observation } from '../lib/delivery/monitoring';
 
 /** Iterates provider tax and the shared delivery engine. Never creates a payment or shipment. */
@@ -24,8 +26,10 @@ export const estimate = action({
     let path: Observation['path'] = 'matrix';
     let outcome: Observation['outcome'] | undefined;
     let code: string | undefined;
+    let requestId: string | undefined;
     let finalResult: PublicDeliveryEstimate | undefined;
     try {
+      assertDeliveryBounds(a);
       finalResult = await (async (): Promise<PublicDeliveryEstimate> => {
         let result = await ctx.runMutation(api.dlvEstimates.estimate, a);
         if (!a.address || result.status !== 'ok' || result.totalMinor !== null) return result;
@@ -141,9 +145,11 @@ export const estimate = action({
             : 'ok';
       return finalResult;
     } catch (error) {
-      code = commerceErrorData(error)?.code;
-      outcome = code ? 'blocked' : 'error';
-      throw error;
+      const safe = publicDeliveryError(error);
+      code = safe.data.code;
+      requestId = safe.data.requestId;
+      outcome = code === 'TEMPORARILY_UNAVAILABLE' ? 'error' : 'blocked';
+      throw safe;
     } finally {
       try {
         await ctx.runMutation(internal.dlvTelemetry.record, {
@@ -152,6 +158,7 @@ export const estimate = action({
           path,
           outcome: outcome ?? 'error',
           ...(code ? { code } : {}),
+          ...(requestId ? { requestId } : {}),
           ...(finalResult ? { estimateId: finalResult.estimateId } : {}),
         });
       } catch {

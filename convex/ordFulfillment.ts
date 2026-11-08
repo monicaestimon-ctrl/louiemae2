@@ -1,3 +1,4 @@
+import { customerFacing } from '../lib/delivery/publicErrors';
 // Parent and child orders, manual dealer queues and shipments (spec S21, v2 §13). After verified
 // payment the immutable lines are partitioned into supplier child orders; every physical piece
 // belongs to exactly one allocation. Zuo goes to the Zuo manual dealer-order queue and Ashcroft
@@ -329,12 +330,12 @@ export async function customerOrder(ctx: QueryCtx, order: Doc<'ordOrders'>) {
 /** Email is accepted for old callers but is no longer an authorization credential. */
 export const orderStatus = query({
   args: { number: v.string(), email: v.optional(v.string()), guestCapability: v.optional(v.string()) },
-  handler: async (ctx, a) => {
+  handler: async (ctx, a) => customerFacing(async () => {
     if (a.number.length > 64) return null;
     const order = await ctx.db.query('ordOrders').withIndex('by_number', q => q.eq('number', a.number.trim().toUpperCase())).first();
     if (!order) return null;
     const intent = order.intentId ? await ctx.db.get(order.intentId) : null;
     if (!(await ownsOrder(ctx, { userId: order.buyerUserId, email: order.email }, intent, a.guestCapability))) return null;
     return customerOrder(ctx, order);
-  },
+  }),
 });

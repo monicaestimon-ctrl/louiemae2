@@ -1,3 +1,5 @@
+import { readDeliveryJson } from '../lib/delivery/requestBounds';
+import { publicDeliveryError } from '../lib/delivery/publicErrors';
 import { httpRouter } from "convex/server";
 import { v } from "convex/values";
 import { httpAction, internalAction, type ActionCtx } from "./_generated/server";
@@ -16,7 +18,7 @@ import { cjJsonResponse } from "../lib/cjWebhookHttp";
 import { parseCjWebhookPayload, type ParsedCjWebhookPayload } from "../lib/cjWebhookRequest";
 import { parseCjSourcingWebhookEvidence } from "../lib/cjSourcingWebhook";
 import { getStripeWebhookVerificationError, shouldAllowUnsignedStripeWebhook } from "../lib/stripeWebhook";
-import { commerceErrorData } from "../lib/errors";
+import { customerMessage } from "../lib/errors";
 
 const http = httpRouter();
 
@@ -178,7 +180,7 @@ http.route({
         if (!stripeSecretKey) return json({ error: 'Payments are not configured.' }, 500);
         let body: any;
         try {
-            body = await request.json();
+            body = await readDeliveryJson(request);
         } catch {
             return json({ code: 'INVALID_INPUT', error: 'Invalid request.' }, 400);
         }
@@ -197,8 +199,8 @@ http.route({
                 ...(body.useCredit === true ? { useCredit: true } : {}),
             });
         } catch (err: any) {
-            const data = commerceErrorData(err);
-            return json({ code: data?.code ?? 'INVALID_INPUT', error: data?.message ?? 'Checkout could not start.' }, 409);
+            const safe = publicDeliveryError(err);
+            return json({ code: safe.data.code, error: customerMessage(safe), ...(safe.data.requestId ? { requestId: safe.data.requestId } : {}) }, safe.data.code === 'TEMPORARILY_UNAVAILABLE' ? 503 : 409);
         }
         if (result.status === 'price_changed') return json({ code: 'PRICE_CHANGED', error: 'Your total changed. Please review before paying.', ...result }, 409);
         const stripe = new Stripe(stripeSecretKey);
@@ -225,8 +227,8 @@ http.route({
             }
             await ctx.runMutation(internal.ordCheckout.attachSession, { intentId: result.intentId, sessionId: session.id });
             return json({ url: session.url, sessionId: session.id, intentId: result.intentId }, 200);
-        } catch (err: any) {
-            console.error('v2 checkout session failed', result.intentId, err?.message);
+        } catch {
+            console.error('v2 checkout session failed', result.intentId);
             // A timeout can follow successful session creation. Retain the intent and its
             // reservations so the same idempotency key can reconcile the uncertain outcome.
             return json({ error: 'Payment setup is still being confirmed. Retry this same checkout.' }, 502);

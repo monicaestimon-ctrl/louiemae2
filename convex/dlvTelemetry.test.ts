@@ -1,6 +1,6 @@
 // @vitest-environment node
 /// <reference types="vite/client" />
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { convexTest } from 'convex-test';
 import schema from './schema';
 import { api, internal } from './_generated/api';
@@ -9,6 +9,7 @@ import { summarizeObservations } from '../lib/delivery/monitoring';
 const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 afterEach(() => {
   delete process.env.BACKGROUND_MONITORING_ENABLED;
+  vi.useRealTimers();
 });
 
 describe('durable delivery observations', () => {
@@ -98,9 +99,10 @@ describe('durable delivery observations', () => {
     await expect(t.query(api.dlvTelemetry.report, {})).rejects.toThrow();
   });
   it('purges only expired operational observations in bounded batches', async () => {
+    vi.useFakeTimers();
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
-      for (let i = 0; i < 503; i++)
+      for (let i = 0; i < 1003; i++)
         await ctx.db.insert('dlvObservations', {
           createdAt: Date.now() - 8 * 86400000,
           durationMs: 10,
@@ -124,7 +126,8 @@ describe('durable delivery observations', () => {
       durationMs: 20,
     });
     expect(await t.mutation(internal.dlvTelemetry.purge, {})).toBe(500);
-    expect(await t.mutation(internal.dlvTelemetry.purge, {})).toBe(3);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await t.mutation(internal.dlvTelemetry.purge, { remainingBatches: 0 })).toBe(0);
     expect(await t.run((ctx) => ctx.db.query('dlvObservations').collect())).toHaveLength(1);
     expect(await t.run((ctx) => ctx.db.query('sysAuditEvents').collect())).toHaveLength(1);
   });
