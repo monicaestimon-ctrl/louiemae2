@@ -1,6 +1,6 @@
 import { defineTable } from 'convex/server';
 import { v } from 'convex/values';
-export const provider = v.union(v.literal('cj'), v.literal('ashcroft'), v.literal('owner_managed'));
+export const provider = v.union(v.literal('cj'), v.literal('ashcroft'), v.literal('owner_managed'), v.literal('zuo'));
 export const channel = v.union(v.literal('retail'), v.literal('house'));
 export const variant = v.object({
   id: v.string(),
@@ -155,6 +155,12 @@ export const commerceTables = {
     provider,
     sourceKey: v.string(),
     cjProductId: v.optional(v.id('products')),
+    zuoStaging: v.optional(v.object({
+      sku: v.string(), pack: v.number(), unitsPerSellUnit: v.number(), runId: v.string(), manifestSha256: v.string(),
+      sourceEvidence: v.string(), excluded: v.boolean(), exclusionReasons: v.array(v.string()),
+      holdReasons: v.array(v.string()), payload: v.string(),
+      status: v.literal('staged_not_orderable'),
+    })),
     draft,
     revision: v.number(),
     updatedAt: v.number(),

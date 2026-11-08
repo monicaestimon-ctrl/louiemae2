@@ -40,6 +40,7 @@ export const save = mutation({
     const p = await ctx.db.get(args.id);
     if (!p || p.revision !== args.revision)
       throw new Error('This draft changed. Reload before saving.');
+    if (p.provider === 'zuo') throw new Error('Staged Zuo records require an explicit audited revision workflow.');
     validateDraft(args.draft);
     if (JSON.stringify(args.draft).length > 150000)
       throw new Error('Product details are too large.');
@@ -67,6 +68,7 @@ export const imported = internalMutation({
       .withIndex('by_source', (q) => q.eq('sourceKey', args.sourceKey))
       .unique();
     if (existing) return { id: existing._id, existing: true };
+    if (args.provider === 'zuo') throw new Error('Use the audited Zuo staging importer.');
     if (args.provider === 'cj') throw new Error('Link an existing retail CJ product instead.');
     validateDraft(args.draft);
     const id = await ctx.db.insert('commerceProducts', {
