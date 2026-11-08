@@ -27,15 +27,74 @@ export default function DeliveryOperations() {
   );
 }
 function DeliverySupport() {
-  const rows = useQuery(api.dlvAccess.supportQueue, {});
+  const {
+    results: rows,
+    status,
+    loadMore,
+  } = usePaginatedQuery(api.dlvAccess.supportRequests, {}, { initialNumItems: 20 });
+  const [draft, setDraft] = useState(''),
+    [estimateId, setEstimateId] = useState('');
   return (
-    <section>
+    <section className="space-y-4">
       <h3>Delivery request status</h3>
-      {rows?.map((r) => (
+      {rows.map((r) => (
         <p key={r.id}>
           {r.name} · {r.postalCode} · {r.status} · {r.customerMessage}
         </p>
       ))}
+      {status === 'LoadingFirstPage' && <p role="status">Loading delivery requests…</p>}
+      {status === 'CanLoadMore' && (
+        <button type="button" onClick={() => loadMore(20)}>
+          Load more requests
+        </button>
+      )}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          setEstimateId(draft.trim());
+        }}
+      >
+        <label>
+          Customer estimate reference
+          <input
+            className={input}
+            value={draft}
+            maxLength={200}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+        </label>
+        <button type="submit" disabled={!draft.trim()}>
+          View customer estimate
+        </button>
+      </form>
+      {estimateId && (
+        <DeliveryBoundary key={estimateId}>
+          <SupportEstimate id={estimateId as Id<'dlvEstimates'>} />
+        </DeliveryBoundary>
+      )}
+    </section>
+  );
+}
+function SupportEstimate({ id }: { id: Id<'dlvEstimates'> }) {
+  const row = useQuery(api.dlvAccess.supportEstimate, { id });
+  if (row === undefined) return <p role="status">Loading estimate…</p>;
+  if (!row) return <p>Estimate not found.</p>;
+  return (
+    <section className="border p-3 space-y-2">
+      <h4>Customer estimate · {row.postalCode}</h4>
+      <p>
+        {row.status.replaceAll('_', ' ')} · {row.expired ? 'Expired' : 'Current'} ·{' '}
+        {row.shipmentCount} shipment groups
+      </p>
+      <p>{row.serviceTerms?.label ?? 'Service needs confirmation'}</p>
+      {row.serviceTerms?.details.map((detail) => (
+        <p key={detail}>{detail}</p>
+      ))}
+      <p>
+        Merchandise {money(row.merchandiseMinor)} · Credit {money(row.creditMinor)} · Delivery{' '}
+        {money(row.deliveryMinor)} · Tax {money(row.taxMinor)} · Total {money(row.totalMinor)}
+      </p>
+      <p>This estimate is not proof of payment or a stock reservation.</p>
     </section>
   );
 }

@@ -4,7 +4,7 @@
 // and email the operations inbox. The admin health screen reads the same checks.
 import { internalMutation, query } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
-import { requireCjAdminIdentity } from './cjAdminAccess';
+import { requireDeliveryRole } from './dlvAccess';
 import { maybeConfig } from './sysConfig';
 import { openReview } from './sysCore';
 import { notify } from './sysNotify';
@@ -77,7 +77,7 @@ export const check = internalMutation({
 export const health = query({
   args: {},
   handler: async (ctx) => {
-    await requireCjAdminIdentity(ctx);
+    await requireDeliveryRole(ctx, 'finance');
     const metrics: Record<string, number> = {};
     for (const name of ['estimate.request.ok', 'estimate.request.quote', 'estimate.request.blocked', 'estimate.request.error', 'estimate.request.tax_error', 'estimate.request.tax_unavailable', 'checkout.price_changed', 'payment.order_created', 'payment.exception', 'commission.accrued', 'credit.award_pending', 'attribution.click', 'attribution.click_ineligible', 'attribution.self_referral_blocked', 'security.client_price_ignored', 'payout.aborted', 'payout.bank_failed', 'ledger.duplicate_event'])
       metrics[name] = await sumMetric(ctx, name, 24);

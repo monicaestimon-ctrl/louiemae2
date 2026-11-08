@@ -1,3 +1,4 @@
+import { requireDeliveryRole } from './dlvAccess';
 // Admin consoles for v2 operations (spec S35, v2 §20) and public flag states for the portals.
 // Every admin query requires the admin allowlist; supplier costs and customer details never
 // reach creators or trade users through these.
@@ -83,7 +84,7 @@ export const resolveHoldAdmin = mutation({
 export const paidExceptions = query({
   args: {},
   handler: async (ctx) => {
-    await requireCjAdminIdentity(ctx);
+    await requireDeliveryRole(ctx, 'finance');
     return ctx.db.query('ordPaidExceptions').withIndex('by_status', (q) => q.eq('status', 'open')).order('desc').take(200);
   },
 });
@@ -92,7 +93,7 @@ export const paidExceptions = query({
 export const resolvePaidException = mutation({
   args: { id: v.id('ordPaidExceptions'), resolution: v.string() },
   handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+    const admin = await requireDeliveryRole(ctx, 'approver');
     if (a.resolution.trim().length < 5) throw new CommerceError('INVALID_INPUT', 'Record what was agreed with the customer');
     await ctx.db.patch(a.id, { status: 'resolved', resolution: a.resolution.slice(0, 1000) });
     await audit(ctx, { actor: admin.email, action: 'paid_exception.resolve', entityTable: 'ordPaidExceptions', entityId: a.id, reason: a.resolution });

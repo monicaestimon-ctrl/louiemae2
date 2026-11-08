@@ -3,7 +3,7 @@ import { v } from 'convex/values';
 import { mutation, query } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Id } from './_generated/dataModel';
-import { requireCjAdminIdentity } from './cjAdminAccess';
+import { requireDeliveryRole } from './dlvAccess';
 import { audit, openReview } from './sysCore';
 import { ensureSupplier, supplierByCode } from './catCore';
 import { assertMapRespected, assertMechanism, marketFlag, type Mechanism } from '../lib/promotionPolicy';
@@ -49,7 +49,7 @@ export const savePolicy = mutation({
     status: v.union(v.literal('documented'), v.literal('unverified'), v.literal('denied')),
   },
   handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+    const admin = await requireDeliveryRole(ctx, 'approver');
     if (a.status === 'documented' && !a.evidenceRefs.some((r) => r.trim())) throw new CommerceError('INVALID_INPUT', 'A documented policy needs at least one evidence reference.');
     const supplier = await ensureSupplier(ctx, a.supplierCode);
     const now = Date.now();
@@ -64,7 +64,7 @@ export const savePolicy = mutation({
 export const policies = query({
   args: { supplierCode: v.string() },
   handler: async (ctx, a) => {
-    await requireCjAdminIdentity(ctx);
+    await requireDeliveryRole(ctx, 'operations');
     const s = await supplierByCode(ctx, a.supplierCode);
     return s ? supplierPolicies(ctx, s._id) : [];
   },
@@ -91,7 +91,7 @@ const marketObservation = v.object({
 export const recordMarketReview = mutation({
   args: { variantId: v.id('catVariants'), ourDeliveredMinor: v.number(), observations: v.array(marketObservation) },
   handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+    const admin = await requireDeliveryRole(ctx, 'finance');
     if (a.observations.some((o) => /msrp/i.test(o.retailer))) throw new CommerceError('INVALID_INPUT', 'MSRP is not an observed market price.');
     const f = marketFlag(a.ourDeliveredMinor, a.observations);
     const id = await ctx.db.insert('catMarketReviews', {

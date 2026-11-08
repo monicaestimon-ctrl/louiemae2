@@ -1,4 +1,6 @@
-import { internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { deliveryStaffRoles } from '../lib/delivery/staffRoles';
+import { CommerceError } from '../lib/errors';
+import { query, internalQuery, type MutationCtx, type QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { auth } from "./auth";
 
@@ -13,7 +15,7 @@ const parseAdminEmails = (rawEmails: string | undefined): Set<string> =>
 const getAdminEmailAllowlist = () =>
     parseAdminEmails(process.env.CJ_ADMIN_EMAILS || process.env.ADMIN_EMAILS);
 
-export const requireCjAdminIdentity = async (ctx: AdminCtx): Promise<{ email: string }> => {
+export const requireCjAdminIdentity = async (ctx: AdminCtx, purpose?: 'delivery'): Promise<{ email: string }> => {
     const userId = await auth.getUserId(ctx).catch(() => null);
     const identity = await ctx.auth.getUserIdentity().catch(() => null);
     if (!userId) {
@@ -39,6 +41,9 @@ export const requireCjAdminIdentity = async (ctx: AdminCtx): Promise<{ email: st
         throw new Error("You do not have permission to manage CJ fulfillment.");
     }
 
+    // Limited delivery staff must not regain owner rights through older admin endpoints.
+    const roles = deliveryStaffRoles(process.env.DELIVERY_ADMIN_ROLES, email);
+    if (purpose !== 'delivery' && !roles.includes('owner')) throw new CommerceError('FORBIDDEN');
     return { email };
 };
 
@@ -47,3 +52,12 @@ export const verifyCjAdminIdentity = internalQuery({
     args: {},
     handler: async (ctx): Promise<{ email: string }> => requireCjAdminIdentity(ctx),
 });
+
+/** Safe navigation capabilities for the current account, never a client authorization decision. */
+export const session = query({ args: {}, handler: async ctx => {
+    try {
+        const actor = await requireCjAdminIdentity(ctx, 'delivery');
+        const roles = deliveryStaffRoles(process.env.DELIVERY_ADMIN_ROLES, actor.email);
+        return { owner: roles.includes('owner'), delivery: roles.length > 0 };
+    } catch { return { owner: false, delivery: false }; }
+} });

@@ -94,4 +94,24 @@ After both deployments, while delivery is still disabled, a bounded same-origin 
 
 The request limit is a workload/spend control, not a carrier rate or customer-delivery price. HTTP 429 returns Retry-After 60 seconds; a quote bucket may take up to 12 minutes to replenish one token, so another attempt can remain limited. Counts survive invalid products, rejected membership and failed calculations. The daily IP pseudonym means an IP budget resets on UTC day rollover; account/email/global budgets continue independently. NAT/shared networks may share a limit; a support-assisted quote is the recovery route.
 
-Configuration evidence, 2026-11-08: matching server-only gateway secrets were set via stdin in Convex `diligent-jay-261` and Vercel production project `prj_Qijd8TQq62BbwCyUjLj1nzbBtAUk`. No secret was written to the repository or copied to Preview. Delivery activation flags were unchanged. The deployment/probe result must be recorded after merge.
+Configuration evidence, 2026-11-08: matching server-only gateway secrets were set via stdin in Convex `diligent-jay-261` and Vercel production project `prj_Qijd8TQq62BbwCyUjLj1nzbBtAUk`. No secret was written to the repository or copied to Preview. Delivery activation flags were unchanged. PR 250 merged as `7460da1`; main CI 42533991178 and Vercel production succeeded. Production checks on 2026-11-08 returned HTTP 409/FEATURE_DISABLED through the signed gateway, FORBIDDEN from the unsigned direct action, and HTTP 400/INVALID_INPUT for an invalid gateway operation. No provider work, payment or message was invoked.
+
+
+## 12. Delivery staff access
+
+`CJ_ADMIN_EMAILS` (or its existing `ADMIN_EMAILS` fallback) remains the first staff allowlist. `DELIVERY_ADMIN_ROLES`, when set, is a JSON object mapping canonical email addresses to arrays containing only `owner`, `support`, `operations`, `finance`, `approver`, or `engineering`. Every intended owner must be explicitly included when installing this map. A missing variable preserves existing owners; an empty string, malformed map or omitted account never silently grants owner rights. Normalize addresses and avoid duplicate case variants. Test a proposed map with fixtures and retain authorized deployment-console recovery before installing it.
+
+| Role | Delivery access | Restricted access |
+| --- | --- | --- |
+| Support | Paginated request status; customer-safe estimate totals/service | No cost, finance, policy approval, general admin or payout access |
+| Operations | Support plus quote drafting, shipment/dealer handoff and rate proposals; supplier PO amounts needed for handoff | No catalog economics, actual expense accounting or publication |
+| Finance | Operations plus costs, reconciliation, return calculations and financial health | No price/policy publication, goodwill or refund-state approval |
+| Approver | Finance plus policy/price publication, sending quotes, goodwill and manual return authorization/refund recording | No implicit general-site, marketing, catalog-import or payout administration |
+| Engineering | Integration configuration presence and feature states; external deployment tooling remains separately authorized | No implicit customer, support, finance or general-site access |
+| Owner | Existing complete site administration and all delivery roles | Existing financial-testing and approval restrictions still apply |
+
+Role arrays can combine independent responsibilities. Changes revoke access at the next server call; existing financial snapshots and audit history are preserved. The `/admin` page routes limited staff to scoped commerce screens, while owners retain the existing full admin experience. Staff who lose all roles receive no workspace. The browser does not decide authorization.
+
+No named staff assignments were changed during this implementation. Before adding staff, an owner must record the actual account, role, business need and access-review owner. Do not treat the role table as permission to create employees, invite users, send messages or change payout access.
+
+Pre-deployment check, 2026-11-08: production has no explicit `DELIVERY_ADMIN_ROLES` variable. Existing allowlisted site owners therefore retain their access. No role-map value or account email was logged, and no role assignment was changed.
