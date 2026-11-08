@@ -9,6 +9,9 @@ const monitoringEnabled = process.env.BACKGROUND_MONITORING_ENABLED === 'true';
 // Only summaries whose 48-hour pending threshold is due are revisited.
 if (monitoringEnabled) crons.interval('refresh-due-product-health', { minutes: 5 }, internal.productHealth.refreshDue, {});
 
+// v2 catalog: re-evaluate source freshness so stale cost, MAP or stock becomes a hold, never a sale.
+if (monitoringEnabled) crons.interval('refresh-catalog-freshness', { hours: 1 }, internal.catStock.refreshPage, {});
+
 // Persist signups first; process/recover the bounded marketing queue separately.
 crons.interval('sync-klaviyo-waitlist', { minutes: 1 }, internal.klaviyoWaitlist.dispatch, {});
 crons.interval('reconcile-klaviyo-consent', { minutes: 15 }, internal.klaviyoWaitlistWorker.reconcileConsent, { cursor: null });
