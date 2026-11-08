@@ -1,8 +1,42 @@
 import { v } from 'convex/values';
+import type { MutationCtx } from './_generated/server';
+import type { Id } from './_generated/dataModel';
+import type { ZuoStagingRow } from '../lib/zuoStaging';
 import { mutation, query } from './_generated/server';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { draft } from './commerceTables';
 import { stagingPayload, validateZuoStagingRow } from '../lib/zuoStaging';
+
+/** Phase C uses the same supplier and product identity. Metadata stays explicitly held. */
+async function ensureCatalogMeta(ctx: MutationCtx, productId: Id<'commerceProducts'>, row: ZuoStagingRow) {
+  const old = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', productId)).unique();
+  if (old) return; // Never overwrite a later catalog review or publication stage.
+  const supplier = await ctx.db.query('catSuppliers').withIndex('by_code', q => q.eq('code', 'zuo')).unique();
+  const supplierId = supplier?._id ?? await ctx.db.insert('catSuppliers', {
+    code: 'zuo', name: 'Zuo', publicAttributionAllowed: false,
+    fulfillmentRoute: 'manual_dealer_zuo', freshnessKey: 'freshness-default', createdAt: Date.now(),
+  });
+  let supplierProductName = '';
+  let commissionCategory: 'furniture' | 'decor' | 'clothing' | 'review_required' = 'review_required';
+  try {
+    const facts = JSON.parse(row.draft.facts);
+    if (typeof facts.supplierName === 'string' && facts.supplierName.trim() && facts.supplierName.length <= 1000) supplierProductName = facts.supplierName.trim();
+    const explicit = facts.commissionCategory;
+    if (explicit === 'furniture' || explicit === 'decor' || explicit === 'clothing') commissionCategory = explicit;
+  } catch { /* Non-JSON evidence requires explicit category review. */ }
+  if (!supplierProductName) {
+    try {
+      const original = JSON.parse(row.sourceEvidence).originalSupplierName;
+      if (typeof original === 'string' && original.trim() && original.length <= 1000) supplierProductName = original.trim();
+    } catch { /* Preserve missing original name as supplier SKU, never invent a name. */ }
+  }
+  await ctx.db.insert('catProductMeta', {
+    productId, supplierId, commissionCategory, navCategory: row.draft.category,
+    louieMaeName: row.draft.name, slug: `zuo-${row.sku.toLowerCase()}`, slugHistory: [],
+    supplierName: supplierProductName || row.sku, supplierProductRef: row.sku,
+    holds: commissionCategory === 'review_required' ? ['CATEGORY_REVIEW', 'MANUAL'] : ['MANUAL'], stage: 'imported_draft', createdAt: Date.now(), updatedAt: Date.now(),
+  });
+}
 
 /** Authenticated, insert-only staging. No listing creation and no publication capability. */
 export const importBatch = mutation({
@@ -23,12 +57,15 @@ export const importBatch = mutation({
     for (const row of args.rows) validateZuoStagingRow(row);
     const results = [];
     for (const row of args.rows) {
-      const sourceKey = `zuo:sku:${row.sku}`;
+      const sourceKey = `zuo:${row.sku}`;
+      const legacy = await ctx.db.query('commerceProducts').withIndex('by_source', q => q.eq('sourceKey', `zuo:sku:${row.sku}`)).unique();
+      if (legacy) throw new Error(`Legacy staging identity for ${row.sku} requires migration before import.`);
       const payload = stagingPayload(row);
       const existing = await ctx.db.query('commerceProducts').withIndex('by_source', q => q.eq('sourceKey', sourceKey)).unique();
       if (existing) {
         if (existing.provider !== 'zuo' || existing.zuoStaging?.payload !== payload || stagingPayload(existing.draft) !== stagingPayload(row.draft))
           throw new Error(`Existing Zuo SKU ${row.sku} differs; explicit revision review required.`);
+        await ensureCatalogMeta(ctx, existing._id, row);
         results.push({ sku: row.sku, id: existing._id, existing: true, excluded: row.excluded });
         continue;
       }
@@ -39,6 +76,7 @@ export const importBatch = mutation({
           sourceEvidence: row.sourceEvidence, excluded: row.excluded, exclusionReasons: row.exclusionReasons,
           holdReasons: row.holdReasons, payload, status: 'staged_not_orderable' },
       });
+      await ensureCatalogMeta(ctx, id, row);
       await ctx.db.insert('commerceAudit', { entityId: id, actor: actor.email, action: `zuo_stage:${args.runId}`, revision: 1, createdAt: now });
       results.push({ sku: row.sku, id, existing: false, excluded: row.excluded });
     }
