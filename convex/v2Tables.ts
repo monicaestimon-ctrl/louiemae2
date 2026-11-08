@@ -572,6 +572,7 @@ export const v2Tables = {
   }).index('by_project_version', ['projectId', 'version']),
 
   ordCheckoutIntents: defineTable({
+    guestCapabilityHash: v.optional(v.string()),
     serviceTerms: v.optional(deliveryTerms),
     deliveryTaxMinor:v.optional(v.number()),
     taxCalculationRef:v.optional(v.string()),
@@ -657,6 +658,7 @@ export const v2Tables = {
     createdAt: v.number(),
   })
     .index('by_number', ['number'])
+    .index('by_intent', ['intentId'])
     .index('by_payment', ['paymentIntentId'])
     .index('by_buyer', ['buyerUserId', 'createdAt'])
     .index('by_email', ['email', 'createdAt']),

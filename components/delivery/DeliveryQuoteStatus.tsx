@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
+import { rememberCheckout } from '../../lib/delivery/checkoutReturn';
 import { customerMessage } from '../../lib/errors';
 import { SPLIT_MAY } from '../../lib/customerCopy';
 import { useAuthToken } from '@convex-dev/auth/react';
@@ -127,8 +128,10 @@ export default function DeliveryQuoteStatus({ request }: { request: QuoteAccess 
                 }),
               });
               const result = await response.json();
-              if (response.ok && result.url) window.location.href = result.url;
-              else setMessage(result.error || 'This quote needs review before payment.');
+              if (response.ok && result.url) {
+                if (result.sessionId) rememberCheckout(result.sessionId, prepared.guestCapability);
+                window.location.href = result.url;
+              } else setMessage(result.error || 'This quote needs review before payment.');
             } catch (e) {
               setMessage(customerMessage(e));
             } finally {

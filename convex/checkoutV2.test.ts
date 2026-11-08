@@ -869,7 +869,10 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
 describe('fulfillment (S21, FUL04, FUL05, DEL05)', () => {
   it('ships partially, keeps the other supplier intact on cancel, and never marks the whole order delivered early', async () => {
     const s = await setup({ approveMixed: true });
-    await paidOrder(s, [zuoLine(s, 2), { productId: s.ashId, variantId: 'b1', packs: 1 }]);
+    const { est } = await paidOrder(s, [
+      zuoLine(s, 2),
+      { productId: s.ashId, variantId: 'b1', packs: 1 },
+    ]);
     const zuoQueue = await s.admin.query(api.ordFulfillment.dealerQueue, {
       route: 'manual_dealer_zuo',
     });
@@ -920,6 +923,7 @@ describe('fulfillment (S21, FUL04, FUL05, DEL05)', () => {
     const status = await s.t.query(api.ordFulfillment.orderStatus, {
       number: order.number,
       email: 'buyer@x.com',
+      guestCapability: est.guestCapability,
     });
     expect(status!.disclosure).toBe(SPLIT_WILL);
     expect(JSON.stringify(status)).not.toMatch(/zuo|ashcroft|111182/i); // no supplier names or SKUs
@@ -1956,5 +1960,135 @@ describe('partial refund rounding', () => {
     expect(rs.reduce((n, r) => n + r.merchandise, 0)).toBe(10001);
     expect(rs.reduce((n, r) => n + r.tax, 0)).toBe(101);
     expect(refundSplit(l, 3, p, true).tax).toBe(502);
+  });
+});
+
+describe('customer receipts and order access', () => {
+  it('requires the scoped capability and frozen verified payment; distinguishes provider acceptance', async () => {
+    const s = await setup();
+    const { est, intent } = await paidOrder(s, [zuoLine(s)]);
+    const args = { sessionId: 'cs_1', guestCapability: est.guestCapability };
+    expect(await s.t.query(api.ordReceipts.receipt, { sessionId: 'cs_1' })).toEqual({
+      state: 'unavailable',
+    });
+    expect(
+      await s.t.query(api.ordReceipts.receipt, { ...args, guestCapability: 'b'.repeat(64) })
+    ).toEqual({ state: 'unavailable' });
+    let receipt = await s.t.query(api.ordReceipts.receipt, args);
+    expect(receipt).toMatchObject({ state: 'confirmed', emailStatus: 'pending' });
+    expect(JSON.stringify(receipt)).not.toMatch(
+      /buyer@x.com|guestCapability|supplierCode|costRevision|95206/
+    );
+    const order = (await s.t.run((ctx) => ctx.db.query('ordOrders').first()))!;
+    expect(
+      await s.t.query(api.ordFulfillment.orderStatus, {
+        number: order.number,
+        email: 'buyer@x.com',
+      })
+    ).toBeNull();
+    await s.t.run(async (ctx) => {
+      // A later quote preparation may rotate the estimate capability; accepted intent access stays frozen.
+      await ctx.db.patch(est.estimateId, { guestCapabilityHash: 'changed' });
+      const n = (await ctx.db
+        .query('sysNotifications')
+        .withIndex('by_dedupe', (q) => q.eq('dedupeKey', `order-confirmation:${order._id}`))
+        .unique())!;
+      await ctx.db.patch(n._id, { status: 'sent', providerId: 'provider_fixture' });
+    });
+    receipt = await s.t.query(api.ordReceipts.receipt, args);
+    expect(receipt).toMatchObject({ state: 'confirmed', emailStatus: 'accepted' });
+    for (const [status, state] of [
+      ['session_open', 'pending'],
+      ['exception', 'review_required'],
+      ['failed', 'not_completed'],
+      ['expired', 'not_completed'],
+    ] as const) {
+      await s.t.run((ctx) => ctx.db.patch(intent.intentId, { status }));
+      expect(await s.t.query(api.ordReceipts.receipt, args)).toEqual({ state });
+    }
+  });
+
+  it('expires guest access, permits verified guest-email recovery, and isolates account-owned orders', async () => {
+    const s = await setup();
+    const { est, intent } = await paidOrder(s, [zuoLine(s)]);
+    const order = (await s.t.run((ctx) => ctx.db.query('ordOrders').first()))!;
+    const uid = await s.t.run((ctx) => ctx.db.insert('users', { email: 'buyer@x.com' }));
+    const account = s.t.withIdentity({ subject: `${uid}|s`, email: 'buyer@x.com' });
+    expect(await account.query(api.ordReceipts.receipt, { sessionId: 'cs_1' })).toEqual({
+      state: 'unavailable',
+    });
+    await s.t.run(async (ctx) => {
+      await ctx.db.patch(uid, { emailVerificationTime: Date.now() });
+      await ctx.db.patch(intent.intentId, { createdAt: Date.now() - 90 * 86400000 });
+      await ctx.db.patch(est.estimateId, { createdAt: Date.now() - 90 * 86400000 });
+    });
+    expect(
+      await s.t.query(api.ordReceipts.receipt, {
+        sessionId: 'cs_1',
+        guestCapability: est.guestCapability,
+      })
+    ).toEqual({ state: 'unavailable' });
+    await expect(
+      s.t.query(api.dlvEstimates.get, {
+        estimateId: est.estimateId,
+        guestCapability: est.guestCapability,
+      })
+    ).rejects.toThrow();
+    expect(await account.query(api.ordReceipts.receipt, { sessionId: 'cs_1' })).toMatchObject({
+      state: 'confirmed',
+    });
+    expect(
+      await account.query(api.ordFulfillment.orderStatus, { number: order.number })
+    ).toMatchObject({ number: order.number });
+    const owner = await s.t.run(async (ctx) => {
+      const userId = await ctx.db.insert('users', { email: 'owner@example.com' });
+      await ctx.db.patch(intent.intentId, { buyer: { userId, email: 'buyer@x.com' } });
+      await ctx.db.patch(order._id, { buyerUserId: userId });
+      return userId;
+    });
+    expect(await account.query(api.ordReceipts.receipt, { sessionId: 'cs_1' })).toEqual({
+      state: 'unavailable',
+    });
+    expect(
+      await account.query(api.ordFulfillment.orderStatus, { number: order.number })
+    ).toBeNull();
+    expect(
+      await s.t
+        .withIdentity({ subject: `${owner}|s` })
+        .query(api.ordReceipts.receipt, { sessionId: 'cs_1' })
+    ).toMatchObject({ state: 'confirmed' });
+  });
+
+  it('keeps legacy receipts minimal and unknown/invalid redirects cannot confirm payment', async () => {
+    const t = convexTest(schema, modules);
+    expect(await t.query(api.ordReceipts.receipt, { sessionId: 'not-a-session' })).toEqual({
+      state: 'unavailable',
+    });
+    expect(await t.query(api.ordReceipts.receipt, { sessionId: 'cs_unknown' })).toEqual({
+      state: 'pending',
+    });
+    const id = await t.mutation(internal.orders.createOrder, {
+      stripeSessionId: 'cs_legacy_fixture',
+      customerEmail: 'private@example.com',
+      items: [],
+      subtotal: 20,
+      total: 20,
+      currency: 'usd',
+    });
+    const receipt = await t.query(api.ordReceipts.receipt, { sessionId: 'cs_legacy_fixture' });
+    expect(receipt).toEqual({ state: 'legacy_confirmed', disclosure: SPLIT_MAY });
+    await t.run((ctx) => ctx.db.patch(id, { status: 'cancelled' }));
+    expect(await t.query(api.ordReceipts.receipt, { sessionId: 'cs_legacy_fixture' })).toEqual({
+      state: 'not_completed',
+    });
+    await t.run((ctx) =>
+      ctx.db.patch(id, {
+        status: 'paid',
+        createdAt: new Date(Date.now() - 90 * 86400000).toISOString(),
+      })
+    );
+    expect(await t.query(api.ordReceipts.receipt, { sessionId: 'cs_legacy_fixture' })).toEqual({
+      state: 'unavailable',
+    });
   });
 });
