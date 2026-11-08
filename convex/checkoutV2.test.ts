@@ -1,6 +1,6 @@
 // @vitest-environment node
 /// <reference types="vite/client" />
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { convexTest } from 'convex-test';
 import schema from './schema';
 import { api, internal } from './_generated/api';
@@ -17,11 +17,14 @@ const NOW = Date.now();
 const ADDRESS = { line1: '1 Main St', city: 'Stockton', state: 'CA', postalCode: '95206', country: 'US' };
 
 beforeEach(() => {
+  // Scheduled work (payment processing, email delivery) runs only when a test drives it.
+  vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'], now: Date.now() });
   process.env.CJ_ADMIN_EMAILS = ADMIN;
   process.env.DELIVERY_AUTOMATION_ENABLED = 'true';
   process.env.RETAIL_ZUO_CHECKOUT_ENABLED = 'true';
 });
 afterEach(() => {
+  vi.useRealTimers();
   for (const k of ['CJ_ADMIN_EMAILS', 'DELIVERY_AUTOMATION_ENABLED', 'RETAIL_ZUO_CHECKOUT_ENABLED', 'EDI_ZUO_ENABLED']) delete process.env[k];
 });
 
