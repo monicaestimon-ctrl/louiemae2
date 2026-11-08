@@ -147,13 +147,20 @@ export async function snapshotForIntent(ctx: MutationCtx, a: { intentId: Id<'ord
     await bumpMetric(ctx, 'attribution.self_referral_blocked');
     return null;
   }
+  // A referred business buying through its referrer's link: the business-referral credit flow is
+  // chosen before checkout, so the same beneficiary earns no retail commission on this order.
+  let businessReferral = !!a.businessReferral;
+  if (!businessReferral && flag('CREDIT_V2_ENABLED') && a.buyer.userId && b.legacyUserId) {
+    const ref = await ctx.db.query('holmReferrals').withIndex('by_referred', (q) => q.eq('referredUserId', a.buyer.userId!)).first();
+    businessReferral = !!ref && ref.referrerId === b.legacyUserId && ref.status !== 'credited';
+  }
   const sched = await schedule(ctx);
   const lines = [];
   for (const l of a.lines) {
     const variant = await ctx.db.get(l.variantId);
-    const eligible = l.category !== 'review_required' && variant?.referralEligible === true && !a.businessReferral;
+    const eligible = l.category !== 'review_required' && variant?.referralEligible === true && !businessReferral;
     if (!eligible || l.category === 'review_required') {
-      lines.push({ lineKey: l.lineKey, productId: l.productId, category: l.category, protectedRateBps: 0, currentRateBps: 0, appliedRateBps: 0, eligible: false, reason: a.businessReferral ? 'business referral chosen' : 'not referral-eligible' });
+      lines.push({ lineKey: l.lineKey, productId: l.productId, category: l.category, protectedRateBps: 0, currentRateBps: 0, appliedRateBps: 0, eligible: false, reason: businessReferral ? 'business referral chosen' : 'not referral-eligible' });
       continue;
     }
     const current = (await productRate(ctx, l.productId, b.tierKey, l.category, sched.value)).rateBps;

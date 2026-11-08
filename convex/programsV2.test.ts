@@ -10,7 +10,7 @@ import { isCommerceError } from '../lib/errors';
 
 const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 const ADMIN = 'owner@louiemae.com';
-const FLAGS = ['CREATOR_ENROLLMENT_V2_ENABLED', 'RETAIL_LINK_GENERATION_V2_ENABLED', 'ATTRIBUTION_V2_ENABLED', 'HOLM_TRADE_ONLY_ENABLED'];
+const FLAGS = ['CREATOR_ENROLLMENT_V2_ENABLED', 'RETAIL_LINK_GENERATION_V2_ENABLED', 'COMMISSION_ACCRUAL_V2_ENABLED', 'ATTRIBUTION_V2_ENABLED', 'HOLM_TRADE_ONLY_ENABLED'];
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'], now: Date.now() });

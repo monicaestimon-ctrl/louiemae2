@@ -19,6 +19,13 @@ crons.interval('recover-payment-events', { minutes: 5 }, internal.ordPayments.re
 // v2 tiers: recompute once a day at 00:15 America/Chicago (the handler checks local time, so DST is handled).
 crons.cron('tier-daily-chicago', '15 * * * *', internal.prgTiers.dailyTick, {});
 
+// v2 ledger: clear commission 30 days after payment, settle business-referral awards, and run
+// payouts (the handlers do nothing unless PAYOUT_EXECUTION_ENABLED is the only payout route).
+crons.interval('clear-commissions-v2', { hours: 1 }, internal.ldgCommissions.clearDue, {});
+crons.interval('settle-credit-awards-v2', { hours: 1 }, internal.ldgCredits.awardDue, {});
+crons.cron('payout-run-chicago', '0 * * * *', internal.ldgPayoutActions.tick, {});
+crons.interval('reconcile-uncertain-payouts', { hours: 1 }, internal.ldgPayoutActions.reconcileUncertain, {});
+
 // Persist signups first; process/recover the bounded marketing queue separately.
 crons.interval('sync-klaviyo-waitlist', { minutes: 1 }, internal.klaviyoWaitlist.dispatch, {});
 crons.interval('reconcile-klaviyo-consent', { minutes: 15 }, internal.klaviyoWaitlistWorker.reconcileConsent, { cursor: null });

@@ -988,6 +988,7 @@ export const v2Tables = {
     }),
     fundingCheck: v.optional(v.object({ availableMinor: v.number(), at: v.number(), ok: v.boolean() })),
     abortReason: v.optional(v.string()),
+    lockName: v.optional(v.string()),
     createdBy: v.string(),
   }).index('by_period_kind', ['period', 'kind']),
 

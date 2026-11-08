@@ -9,6 +9,8 @@ import { internal } from './_generated/api';
 import { bumpMetric } from './sysCore';
 import { createOrderFromIntent } from './ordFulfillment';
 import { releaseIntent } from './ordCheckout';
+import { accrueForOrder } from './ldgCommissions';
+import { onOrderPaid, settle as settleCredit } from './ldgCredits';
 
 export type SessionPayload = {
   id: string;
@@ -55,7 +57,10 @@ async function handleSession(ctx: MutationCtx, s: SessionPayload, kind: 'complet
     return 'processed';
   }
   await ctx.db.patch(intent._id, { status: 'paid' });
-  await createOrderFromIntent(ctx, intent, { ...(s.payment_intent ? { paymentIntentId: s.payment_intent } : {}), email: (s.email || intent.buyer.email || '').toLowerCase(), ...(s.shipping ? { shippingAddress: s.shipping } : {}), paidAt: Date.now() });
+  const orderId = await createOrderFromIntent(ctx, intent, { ...(s.payment_intent ? { paymentIntentId: s.payment_intent } : {}), email: (s.email || intent.buyer.email || '').toLowerCase(), ...(s.shipping ? { shippingAddress: s.shipping } : {}), paidAt: Date.now() });
+  if (intent.creditReservationRef) await settleCredit(ctx, intent.creditReservationRef, 'redeemed', intent.creditMinor, orderId);
+  await accrueForOrder(ctx, orderId);
+  await onOrderPaid(ctx, orderId);
   await bumpMetric(ctx, 'payment.order_created');
   return 'processed';
 }

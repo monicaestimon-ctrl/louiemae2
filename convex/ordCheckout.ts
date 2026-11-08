@@ -14,11 +14,13 @@ import { CommerceError } from '../lib/errors';
 import { addressKey } from '../lib/delivery/destination';
 import { addressArg, lineArg } from './dlvEstimates';
 import { snapshotForIntent } from './prgAttribution';
+import { available as creditAvailable, reserve as reserveCreditV2, settle as settleCredit } from './ldgCredits';
+import { flag } from '../lib/flags';
 
 const INTENT_MS = 30 * 60_000;
 
 export type IntentResult =
-  | { status: 'created' | 'existing'; intentId: Id<'ordCheckoutIntents'>; totalMinor: number; lines: { name: string; unitMinor: number; packs: number }[]; deliveryMinor: number; taxMinor: number; email?: string }
+  | { status: 'created' | 'existing'; intentId: Id<'ordCheckoutIntents'>; totalMinor: number; creditMinor: number; lines: { name: string; unitMinor: number; packs: number }[]; deliveryMinor: number; taxMinor: number; email?: string }
   | { status: 'price_changed'; totalMinor: number; deliveryMinor: number; taxMinor: number; merchandiseMinor: number };
 
 /**
@@ -36,6 +38,7 @@ export const createIntent = internalMutation({
     acceptTotalMinor: v.number(),
     email: v.optional(v.string()),
     visitorKey: v.optional(v.string()),
+    useCredit: v.optional(v.boolean()),
   },
   handler: async (ctx, a): Promise<IntentResult> => {
     requireFlag('RETAIL_ZUO_CHECKOUT_ENABLED');
@@ -43,7 +46,7 @@ export const createIntent = internalMutation({
     const existing = await ctx.db.query('ordCheckoutIntents').withIndex('by_key', (q) => q.eq('idempotencyKey', a.idempotencyKey)).first();
     if (existing) {
       if (existing.status !== 'created' && existing.status !== 'session_open') throw new CommerceError('QUOTE_EXPIRED', `Intent ${existing.status}`);
-      return { status: 'existing', intentId: existing._id, totalMinor: existing.totalMinor, deliveryMinor: existing.deliveryMinor, taxMinor: existing.taxMinor, lines: existing.lineSnapshot.map((l) => ({ name: l.name, unitMinor: l.unitPackMinor, packs: l.packs })), ...(existing.buyer.email ? { email: existing.buyer.email } : {}) };
+      return { status: 'existing', intentId: existing._id, totalMinor: existing.totalMinor, creditMinor: existing.creditMinor, deliveryMinor: existing.deliveryMinor, taxMinor: existing.taxMinor, lines: existing.lineSnapshot.map((l) => ({ name: l.name, unitMinor: l.unitPackMinor, packs: l.packs })), ...(existing.buyer.email ? { email: existing.buyer.email } : {}) };
     }
     const now = Date.now();
     const est = await ctx.db.get(a.estimateId);
@@ -53,10 +56,13 @@ export const createIntent = internalMutation({
     if (est.cartHash !== cartHash(a.lines as LineInput[], 'retail') || est.service !== a.service) throw new CommerceError('QUOTE_EXPIRED', 'Cart or service changed since the estimate');
     if (est.status !== 'ok') throw new CommerceError('DELIVERY_QUOTE_REQUIRED');
     // Recompute against current prices, stock, sources and config; never charge a stale total.
-    const fresh = await computeEstimate(ctx, { lines: a.lines as LineInput[], channel: 'retail', destination: { zip: a.address.postalCode.slice(0, 5), address: a.address }, service: a.service }, now);
+    const me0 = await viewer(ctx);
+    const creditWanted = a.useCredit && me0 && flag('CREDIT_V2_ENABLED') ? await creditAvailable(ctx, me0.userId) : 0;
+    if (creditWanted !== est.creditMinor) throw new CommerceError('QUOTE_EXPIRED', 'Store credit changed since the estimate');
+    const fresh = await computeEstimate(ctx, { lines: a.lines as LineInput[], channel: 'retail', destination: { zip: a.address.postalCode.slice(0, 5), address: a.address }, service: a.service, creditMinor: creditWanted }, now);
     if (fresh.status !== 'ok' || fresh.deliveryMinor === undefined) throw new CommerceError('DELIVERY_QUOTE_REQUIRED');
     if (fresh.taxMinor === undefined) throw new CommerceError('POLICY_NOT_APPROVED', 'No approved tax estimate for this state');
-    const totalMinor = fresh.merchandiseMinor + fresh.deliveryMinor + fresh.taxMinor;
+    const totalMinor = fresh.merchandiseMinor - fresh.creditMinor + fresh.deliveryMinor + fresh.taxMinor;
     if (totalMinor !== a.acceptTotalMinor) {
       await bumpMetric(ctx, 'checkout.price_changed');
       return { status: 'price_changed', totalMinor, deliveryMinor: fresh.deliveryMinor, taxMinor: fresh.taxMinor, merchandiseMinor: fresh.merchandiseMinor };
@@ -79,7 +85,7 @@ export const createIntent = internalMutation({
         pieces: l.pieces,
         unitPackMinor: l.unitPackMinor,
         discountMinor: 0,
-        creditMinor: 0,
+        creditMinor: l.creditMinor ?? 0,
         commissionCategory: l.category,
         supplierCode: l.supplierCode,
         ...(l.costRevisionId ? { costRevisionId: l.costRevisionId } : {}),
@@ -88,7 +94,7 @@ export const createIntent = internalMutation({
       merchandiseMinor: fresh.merchandiseMinor,
       deliveryMinor: fresh.deliveryMinor,
       taxMinor: fresh.taxMinor,
-      creditMinor: 0,
+      creditMinor: fresh.creditMinor,
       totalMinor,
       status: 'created',
       expiresAt: now + INTENT_MS,
@@ -97,11 +103,16 @@ export const createIntent = internalMutation({
     // Zuo has no live stock count: the reservation records the packs held for this intent, and
     // operations confirms supplier availability before ordering (paid-order exceptions otherwise).
     for (const l of fresh.lines) await ctx.db.insert('ordInventoryReservations', { variantId: l.variant._id, packs: l.packs, intentId, expiresAt: now + INTENT_MS, status: 'held' });
+    if (fresh.creditMinor > 0 && me) {
+      const held = await reserveCreditV2(ctx, me.userId, fresh.creditMinor, `intent:${intentId}`);
+      if (held !== fresh.creditMinor) throw new CommerceError('QUOTE_EXPIRED', 'Store credit changed');
+      await ctx.db.patch(intentId, { creditReservationRef: `intent:${intentId}` });
+    }
     // Freeze attribution and rate protection with the accepted lines (S27).
     const snapshotId = await snapshotForIntent(ctx, { intentId, visitorKey: a.visitorKey, buyer: { ...(me ? { userId: me.userId } : {}), ...(a.email ? { email: a.email.trim().toLowerCase() } : {}) }, channel: 'retail', lines: fresh.lines.map((l) => ({ lineKey: l.lineKey, productId: l.productId, variantId: l.variant._id, category: l.category })) });
     if (snapshotId) await ctx.db.patch(intentId, { attributionSnapshotId: snapshotId });
     await setKeyResult(ctx, `checkout:${a.idempotencyKey}`, intentId);
-    return { status: 'created', intentId, totalMinor, deliveryMinor: fresh.deliveryMinor, taxMinor: fresh.taxMinor, lines: fresh.lines.map((l) => ({ name: l.name, unitMinor: l.unitPackMinor, packs: l.packs })) };
+    return { status: 'created', intentId, totalMinor, creditMinor: fresh.creditMinor, deliveryMinor: fresh.deliveryMinor, taxMinor: fresh.taxMinor, lines: fresh.lines.map((l) => ({ name: l.name, unitMinor: l.unitPackMinor, packs: l.packs })) };
   },
 });
 
@@ -119,6 +130,7 @@ export const attachSession = internalMutation({
 export async function releaseIntent(ctx: MutationCtx, intent: Doc<'ordCheckoutIntents'>, status: 'expired' | 'failed') {
   if (intent.status === 'paid' || intent.status === 'exception') return;
   await ctx.db.patch(intent._id, { status });
+  if (intent.creditReservationRef) await settleCredit(ctx, intent.creditReservationRef, 'released');
   for (const r of await ctx.db.query('ordInventoryReservations').withIndex('by_intent', (q) => q.eq('intentId', intent._id)).collect()) if (r.status === 'held') await ctx.db.patch(r._id, { status: 'released' });
 }
 

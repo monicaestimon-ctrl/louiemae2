@@ -15,6 +15,7 @@ import { FULL_SCHEDULE_BPS } from '../lib/economics/pricing';
 import { checkPackQuantity, physicalUnits } from '../lib/catUnits';
 import type { DeliveryLadder, MarginPolicy, PricingAssumptions } from '../lib/config';
 import { stableStringify } from '../lib/zuoImport';
+import { allocate } from '../lib/money';
 
 type Ctx = QueryCtx | MutationCtx;
 export type LineInput = { productId: string; variantId: string; packs: number };
@@ -52,6 +53,7 @@ export type ResolvedLine = {
   priceRevisionId?: Id<'catPriceRevisions'>;
   /** Ashcroft's existing per-item delivery (cents) for this line; 0 for ladder-priced lines. */
   fixedDeliveryMinor: number;
+  creditMinor?: number;
   engine?: Omit<EngineLine, 'key'>;
   cartons: Doc<'catCartons'>[];
   originZip: string;
@@ -229,6 +231,7 @@ export type EstimateOutcome = {
   status: 'ok' | 'quote_required' | 'unsupported';
   lines: ResolvedLine[];
   merchandiseMinor: number;
+  creditMinor: number;
   deliveryMinor?: number;
   taxMinor?: number;
   groups: { groupKey: string; supplierCode: string; rule: string; classification: string; freightMinor: number; subsidyMinor: number; requirementMinor: number; chargeMinor?: number; quoteRequired: boolean; reasons: string[] }[];
@@ -238,10 +241,17 @@ export type EstimateOutcome = {
 };
 
 /** Computes a full estimate (no writes besides Ashcroft mirror variants). */
-export async function computeEstimate(ctx: MutationCtx, input: { lines: LineInput[]; channel: 'retail' | 'trade'; destination: Destination; service: string }, now = Date.now()): Promise<EstimateOutcome> {
+export async function computeEstimate(ctx: MutationCtx, input: { lines: LineInput[]; channel: 'retail' | 'trade'; destination: Destination; service: string; creditMinor?: number }, now = Date.now()): Promise<EstimateOutcome> {
   if (input.service !== 'curbside') throw new CommerceError('DELIVERY_QUOTE_REQUIRED', 'Only curbside service is offered automatically', 'This delivery service needs a quote.');
   const lines = await resolveLines(ctx, input.lines, input.channel, now);
   const merchandiseMinor = lines.reduce((t, l) => t + l.unitPackMinor * l.packs, 0);
+  // Store credit comes off merchandise only (never delivery or tax), shared across lines by value.
+  const creditMinor = Math.min(Math.max(0, input.creditMinor ?? 0), merchandiseMinor);
+  const creditShares = allocate(creditMinor, lines.map((l) => l.unitPackMinor * l.packs));
+  lines.forEach((l, i) => {
+    l.creditMinor = creditShares[i];
+    if (l.engine) l.engine = { ...l.engine, netMinor: l.engine.netMinor - creditShares[i], commissionMinor: Math.ceil((l.engine.commissionMinor * (l.unitPackMinor * l.packs - creditShares[i])) / Math.max(1, l.unitPackMinor * l.packs)) };
+  });
   const zuo = lines.filter((l) => l.provider === 'zuo');
   const ash = lines.filter((l) => l.provider === 'ashcroft');
   const configVersions: Record<string, number> = {};
@@ -255,8 +265,8 @@ export async function computeEstimate(ctx: MutationCtx, input: { lines: LineInpu
   if (ash.length) groupsOut.push({ groupKey: 'ashcroft', supplierCode: 'ashcroft', rule: 'ashcroft-launch', classification: 'per_item', freightMinor: 0, subsidyMinor: 0, requirementMinor: extraFixedMinor, chargeMinor: extraFixedMinor, quoteRequired: false, reasons: [] });
   const destReasons = quoteOnlyReasons(input.destination.zip, input.destination.address);
   if (!zuo.length) {
-    if (destReasons.length && zipRegion(input.destination.zip) !== 'CONUS') return { status: 'quote_required', lines, merchandiseMinor, groups: groupsOut, reasons: destReasons, sourceVersionsHash: versions, configVersions };
-    return { status: 'ok', lines, merchandiseMinor, deliveryMinor: extraFixedMinor, taxMinor: 0, groups: groupsOut, reasons: [], sourceVersionsHash: versions, configVersions };
+    if (destReasons.length && zipRegion(input.destination.zip) !== 'CONUS') return { status: 'quote_required', lines, merchandiseMinor, creditMinor, groups: groupsOut, reasons: destReasons, sourceVersionsHash: versions, configVersions };
+    return { status: 'ok', lines, merchandiseMinor, creditMinor, deliveryMinor: extraFixedMinor, taxMinor: 0, groups: groupsOut, reasons: [], sourceVersionsHash: versions, configVersions };
   }
   const ladderCfg = await activeConfig<DeliveryLadder>(ctx, 'deliveryLadder', 'delivery-ladder');
   const zuoRule = await activeConfig<{ originZip: string; supplierOrderFeeMinor?: number }>(ctx, 'deliveryRule', 'zuo-95206-curbside');
@@ -297,10 +307,10 @@ export async function computeEstimate(ctx: MutationCtx, input: { lines: LineInpu
       quoteRequired: g.quoteRequired,
       reasons: g.reasons,
     });
-  if (est.status !== 'ok') return { status: 'quote_required', lines, merchandiseMinor, groups: groupsOut, reasons: est.reasons, sourceVersionsHash: versions, configVersions };
+  if (est.status !== 'ok') return { status: 'quote_required', lines, merchandiseMinor, creditMinor, groups: groupsOut, reasons: est.reasons, sourceVersionsHash: versions, configVersions };
   // Tax shown only at full-address precision with an approved tax table.
   const showTax = !!input.destination.address && taxBps !== undefined;
-  return { status: 'ok', lines, merchandiseMinor, deliveryMinor: est.deliveryMinor, ...(showTax ? { taxMinor: est.taxMinor } : {}), groups: groupsOut, reasons: [], sourceVersionsHash: versions, configVersions };
+  return { status: 'ok', lines, merchandiseMinor, creditMinor, deliveryMinor: est.deliveryMinor, ...(showTax ? { taxMinor: est.taxMinor } : {}), groups: groupsOut, reasons: [], sourceVersionsHash: versions, configVersions };
 }
 
 export const cartHash = (lines: readonly LineInput[], channel: string) => stableStringify({ channel, lines: [...lines].map((l) => ({ p: l.productId, v: l.variantId, n: l.packs })).sort((a, b) => (a.p + a.v < b.p + b.v ? -1 : 1)) });

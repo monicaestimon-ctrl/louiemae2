@@ -9,6 +9,7 @@ import { activeConfig } from './sysConfig';
 import { bumpMetric, rateLimit } from './sysCore';
 import { viewer } from './holmAccess';
 import { requireFlag, flag } from '../lib/flags';
+import { available as creditAvailable } from './ldgCredits';
 import { CommerceError, commerceErrorData } from '../lib/errors';
 import { addressKey } from '../lib/delivery/destination';
 import { DELIVERY_TIMING_CAVEAT, QUOTE_CTA, ZIP_ESTIMATE_NOTE } from '../lib/customerCopy';
@@ -34,6 +35,7 @@ export const estimate = mutation({
     visitorKey: v.string(),
     // Anything a client might send about prices or rates is accepted only to be ignored and logged.
     clientPrices: v.optional(v.any()),
+    useCredit: v.optional(v.boolean()),
   },
   handler: async (ctx, a) => {
     requireFlag('DELIVERY_AUTOMATION_ENABLED');
@@ -43,9 +45,11 @@ export const estimate = mutation({
     const policy = (await activeConfig<EstimatePolicy>(ctx, 'estimatePolicy', 'estimate-policy')).value;
     const service = a.service ?? 'curbside';
     const destination = { zip: a.zip.trim(), ...(a.address ? { address: a.address } : {}) };
+    const me0 = await viewer(ctx);
+    const creditMinor = a.useCredit && me0 && flag('CREDIT_V2_ENABLED') ? await creditAvailable(ctx, me0.userId) : 0;
     let out;
     try {
-      out = await computeEstimate(ctx, { lines: a.lines as LineInput[], channel: a.channel, destination, service });
+      out = await computeEstimate(ctx, { lines: a.lines as LineInput[], channel: a.channel, destination, service, creditMinor });
     } catch (e) {
       const d = commerceErrorData(e);
       await bumpMetric(ctx, `estimate.error.${d?.code ?? 'unknown'}`);
@@ -64,9 +68,9 @@ export const estimate = mutation({
       ...(out.deliveryMinor !== undefined ? { deliveryChargeMinor: out.deliveryMinor } : {}),
       merchandiseMinor: out.merchandiseMinor,
       discountMinor: 0,
-      creditMinor: 0,
+      creditMinor: out.creditMinor,
       ...(out.taxMinor !== undefined ? { taxMinor: out.taxMinor } : {}),
-      ...(out.deliveryMinor !== undefined ? { totalMinor: out.merchandiseMinor + out.deliveryMinor + (out.taxMinor ?? 0) } : {}),
+      ...(out.deliveryMinor !== undefined ? { totalMinor: out.merchandiseMinor - out.creditMinor + out.deliveryMinor + (out.taxMinor ?? 0) } : {}),
       expiresAt: now + policy.validityMinutes * 60_000,
       cartHash: cartHash(a.lines as LineInput[], a.channel),
       sourceVersionsHash: out.sourceVersionsHash,
@@ -82,7 +86,8 @@ export const estimate = mutation({
       deliveryChargeMinor: out.deliveryMinor ?? null,
       merchandiseMinor: out.merchandiseMinor,
       taxMinor: out.taxMinor ?? null,
-      totalMinor: out.deliveryMinor !== undefined && out.taxMinor !== undefined ? out.merchandiseMinor + out.deliveryMinor + out.taxMinor : null,
+      creditMinor: out.creditMinor,
+      totalMinor: out.deliveryMinor !== undefined && out.taxMinor !== undefined ? out.merchandiseMinor - out.creditMinor + out.deliveryMinor + out.taxMinor : null,
       serviceName: 'Curbside delivery',
       timingCaveat: DELIVERY_TIMING_CAVEAT,
       note: a.address ? null : ZIP_ESTIMATE_NOTE,

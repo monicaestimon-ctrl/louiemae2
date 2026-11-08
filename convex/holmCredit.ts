@@ -8,18 +8,24 @@ import type { Id } from './_generated/dataModel';
 import { requireUser, viewer } from './holmAccess';
 import { HOLM_PARTNERS } from '../lib/holmPartners';
 import { projectCredit } from '../lib/commerce';
+import { flag } from '../lib/flags';
+import { available as creditAvailableV2, reserve as reserveV2, settle as settleV2 } from './ldgCredits';
+import { applyCreditEvent } from './ldgCore';
+import { claimKey } from './sysCore';
 
 const DAY = 864e5;
 /** Stripe Checkout sessions expire after 24 hours; a hold still open after this is released. */
 const CHECKOUT_HOLD_MS = 25 * 3600e3;
 
 export async function creditBalance(ctx: QueryCtx, userId: Id<'users'>) {
+  if (flag('CREDIT_V2_ENABLED')) return creditAvailableV2(ctx, userId);
   const rows = await ctx.db.query('holmCredits').withIndex('by_user', (q) => q.eq('userId', userId)).take(2000);
   return Math.max(0, rows.reduce((t, r) => t + r.amountCents, 0));
 }
 
 /** Holds up to `maxCents` of the member's credit for one order. Returns the amount held. */
 export async function reserveCredit(ctx: MutationCtx, userId: Id<'users'>, maxCents: number, ref: string) {
+  if (flag('CREDIT_V2_ENABLED')) return reserveV2(ctx, userId, maxCents, ref);
   const existing = await ctx.db.query('holmCredits').withIndex('by_ref', (q) => q.eq('ref', ref)).first();
   if (existing) return -existing.amountCents;
   const amount = Math.min(await creditBalance(ctx, userId), Math.max(0, Math.floor(maxCents)));
@@ -33,6 +39,12 @@ export async function reserveCredit(ctx: MutationCtx, userId: Id<'users'>, maxCe
  * balance); `released` gives it all back. Settling twice changes nothing.
  */
 export async function settleCredit(ctx: MutationCtx, ref: string, outcome: 'used' | 'released', usedCents?: number, paymentIntentId?: string) {
+  if (flag('CREDIT_V2_ENABLED')) {
+    const used = await settleV2(ctx, ref, outcome === 'used' ? 'redeemed' : 'released', usedCents);
+    // Remember which payment used the credit so a later refund can reinstate its share.
+    if (used > 0 && paymentIntentId) await claimKey(ctx, `credit-pi:${paymentIntentId}`, 'credit', ref);
+    return used;
+  }
   const row = await ctx.db.query('holmCredits').withIndex('by_ref', (q) => q.eq('ref', ref)).first();
   if (!row || row.kind !== 'reserved') return 0;
   const held = row.heldCents ?? -row.amountCents;
@@ -84,6 +96,18 @@ export const useCheckout = internalMutation({
 export const restoreOnRefund = internalMutation({
   args: { paymentIntentId: v.string(), refundedCents: v.number(), chargeCents: v.number() },
   handler: async (ctx, a) => {
+    if (flag('CREDIT_V2_ENABLED')) {
+      const link = await ctx.db.query('sysIdempotencyKeys').withIndex('by_key', (q) => q.eq('key', `credit-pi:${a.paymentIntentId}`)).first();
+      if (!link?.resultRef || a.chargeCents <= 0) return;
+      const ref = link.resultRef;
+      const redeemed = (await ctx.db.query('ldgCreditEvents').withIndex('by_ref', (q) => q.eq('ref', ref)).collect()).find((e) => e.type === 'redeemed');
+      if (!redeemed) return;
+      const acct = (await ctx.db.get(redeemed.accountId))!;
+      const target = Math.min(redeemed.amountMinor, Math.floor((redeemed.amountMinor * Math.min(a.refundedCents, a.chargeCents)) / a.chargeCents));
+      const already = (await ctx.db.query('ldgCreditEvents').withIndex('by_ref', (q) => q.eq('ref', `${ref}:reinstated`)).collect()).reduce((t, e) => t + e.amountMinor, 0);
+      if (target - already > 0) await applyCreditEvent(ctx, { eventKey: `reinstate:${ref}:${target}`, userId: acct.userId, type: 'reinstated', amountMinor: target - already, ref: `${ref}:reinstated`, actor: 'system:refund' });
+      return;
+    }
     const row = await ctx.db.query('holmCredits').withIndex('by_payment', (q) => q.eq('paymentIntentId', a.paymentIntentId)).first();
     if (!row || row.kind !== 'used' || a.chargeCents <= 0) return;
     const used = -row.amountCents;
@@ -103,6 +127,7 @@ export const restoreOnRefund = internalMutation({
 export const settleStaleHolds = internalMutation({
   args: {},
   handler: async (ctx) => {
+    if (flag('CREDIT_V2_ENABLED')) return; // v2 holds are released by their checkout intent or quote
     const now = Date.now();
     const holds = await ctx.db.query('holmCredits').withIndex('by_kind', (q) => q.eq('kind', 'reserved')).take(200);
     for (const h of holds) {

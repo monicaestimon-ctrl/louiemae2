@@ -218,6 +218,8 @@ const overrideActive = (p: Doc<'holmProfiles'>, now: number) => !!p.tierOverride
 export const updateTiers = internalMutation({
   args: { cursor: v.optional(v.string()), now: v.optional(v.number()) },
   handler: async (ctx, a) => {
+    // v2 (S28): once v2 accrual is on, tiers are computed by prgTiers.
+    if (flag('COMMISSION_ACCRUAL_V2_ENABLED')) return;
     // One page of partners per run, and one small job per partner, so no single transaction
     // reads more than one partner's 12 months of orders. Every page uses the same moment.
     const now = a.now ?? Date.now();
@@ -559,6 +561,8 @@ export const reconcile = internalMutation({
       await ctx.db.patch(c._id, { status: project && project.status !== 'payment_review' && project.status !== 'cancelled' ? 'cleared' : 'void' });
     }
     // 3. Business referrals: $100 credit after the referred business is verified and a first order over $500 is paid.
+    // v2 (S31) settles awards with a 30-day wait and anti-double-reward instead.
+    if (flag('CREDIT_V2_ENABLED')) return;
     // Least recently checked first and in small batches, so one run stays within read limits.
     const verified = await ctx.db
       .query('holmReferrals')
