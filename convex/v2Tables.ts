@@ -17,6 +17,7 @@ import {
   revisionMeta,
   shipAddress,
   deliveryTerms,
+  notificationEnvelope,
   tierKey,
 } from './v2Validators';
 
@@ -98,6 +99,11 @@ export const v2Tables = {
     .index('by_status_runAt', ['status', 'runAt']),
 
   sysNotifications: defineTable({
+    deliveryVersion:v.optional(v.number()), generation:v.optional(v.number()),
+    leaseUntil:v.optional(v.number()), firstAttemptAt:v.optional(v.number()),
+    providerId:v.optional(v.string()), reviewRequired:v.optional(v.boolean()),
+    envelope:v.optional(notificationEnvelope),
+
     dedupeKey: v.string(),
     audience: v.union(v.literal('customer'), v.literal('partner'), v.literal('admin')),
     category: v.union(v.literal('transactional'), v.literal('marketing')),
@@ -114,7 +120,8 @@ export const v2Tables = {
     createdAt: v.number(),
   })
     .index('by_dedupe', ['dedupeKey'])
-    .index('by_status_next', ['status', 'nextAttemptAt']),
+    .index('by_status_next', ['status', 'nextAttemptAt'])
+    .index('by_status_lease', ['status','leaseUntil']),
 
   sysMetrics: defineTable({
     name: v.string(),

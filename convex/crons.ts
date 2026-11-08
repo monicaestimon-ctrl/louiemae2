@@ -16,6 +16,7 @@ if (monitoringEnabled) crons.interval('refresh-catalog-freshness', { hours: 1 },
 crons.interval('expire-checkout-intents', { minutes: 15 }, internal.ordCheckout.expireStale, {});
 crons.interval('recover-payment-events', { minutes: 5 }, internal.ordPayments.recoverBacklog, {});
 crons.interval('recover-delivery-tax-reporting', { minutes: 5 }, internal.dlvTax.recoverTransactions, {});
+crons.interval('recover-notification-outbox', { minutes: 5 }, internal.sysNotify.recover, {});
 crons.interval('purge-delivery-observations', { hours: 1 }, internal.dlvTelemetry.purge, {});
 crons.interval('expire-delivery-quotes', { minutes: 5 }, internal.dlvQuoteLifecycle.expire, {});
 

@@ -147,6 +147,8 @@ import type * as subscribers from "../subscribers.js";
 import type * as sysAlerts from "../sysAlerts.js";
 import type * as sysConfig from "../sysConfig.js";
 import type * as sysCore from "../sysCore.js";
+import type * as sysNotifyAdmin from "../sysNotifyAdmin.js";
+import type * as sysNotifySender from "../sysNotifySender.js";
 import type * as sysNotify from "../sysNotify.js";
 import type * as translations from "../translations.js";
 import type * as v2Admin from "../v2Admin.js";
@@ -311,6 +313,8 @@ declare const fullApi: ApiFromModules<{
   sysAlerts: typeof sysAlerts;
   sysConfig: typeof sysConfig;
   sysCore: typeof sysCore;
+  sysNotifyAdmin: typeof sysNotifyAdmin;
+  sysNotifySender: typeof sysNotifySender;
   sysNotify: typeof sysNotify;
   translations: typeof translations;
   v2Admin: typeof v2Admin;

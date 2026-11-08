@@ -6,8 +6,8 @@ Started 2026-11-08 after PR 243 deployed as `c573e61`. This register tracks rema
 | --- | --- | --- |
 | 1 | Complete quote states, safe expiry/revision/payment conversion, owner decline/cancellation, retry UI and request limits (§12–13, SEC02, PAY01). | Merged PR 244 (`d2b67c3`); main CI 42523335583 passed, including Convex deploy/seed; Vercel production succeeded. Automatic CodeRabbit review skipped by repository eligibility; no review comments were present. |
 | 2 | Accurate service labels/terms and destination/access handling across PDP, cart, quotes and paid snapshots (§5–10, §14). | Merged PR 245 (`3cc9de5`); main CI 42525621860 and Convex deployment/seed succeeded; Vercel production succeeded. 42 focused tests plus full CI passed. No review comments; automatic CodeRabbit skipped repository eligibility. |
-| 3 | Durable monitoring, latency/error/quote separation, quote SLA and cost-floor alerts, operational readiness and evidence (§16, §20). | In implementation: durable per-request observations, bounded tax work, scoped dashboard, approved alert policy and quote follow-up targets. |
-| 4 | Security/perimeter, privacy/retention, notification recovery and production staff configuration (§11, §17). | Audit queued; host/account evidence required for activation. |
+| 3 | Durable monitoring, latency/error/quote separation, quote SLA and cost-floor alerts, operational readiness and evidence (§16, §20). | Merged PR 246 (`0002c5b`); main CI 42527280305, Convex deploy/seed and Vercel production succeeded. 41 focused tests plus full CI passed; no review comments; CodeRabbit skipped repository eligibility. |
+| 4 | Security/perimeter, privacy/retention, notification recovery and production staff configuration (§11, §17). | 4a notification receipts/recovery in implementation. 4b order access, confirmation truthfulness, perimeter and privacy/retention remain queued; host/account evidence required for activation. |
 | 5 | Pricing/carrier/tax/SKU evidence reconciliation and approved scoped policies (§2–9, §21 D1–D3). | Existing downloaded documents identified; do not substitute public freight examples for actual account rates. |
 | 6 | Complete deployed retail/trade/quote/fulfillment accessibility and integration verification (§18–19, §21 D4–D7). | Fixture evidence exists; full production journeys still unverified. Existing financial-testing restrictions apply. |
 | 7 | Approved pilot activation, real invoice calibration, rollback rehearsal and expansion (§21 D8, §22). | Requires verified operational inputs and actual shipment evidence; cannot be completed by code or synthetic transactions alone. |
@@ -47,3 +47,13 @@ Audit each subsection as phases progress. Features not covered by a passing test
 - Production alert activation, named owners and real lane/invoice evidence remain deployment-readiness tasks. This phase does not approve supplier rates, send test notifications or execute payments.
 
 - Follow-through review found Stripe’s hosted shipping label still used the old curbside label. Checkout intent responses now supply the frozen approved service label to the hosted session too; old intents use neutral wording. No payment was created to test this.
+
+
+## Phase 4a: notification delivery and recovery
+
+- The old outbox treated a helper returning without a send as success. New queue entries require a provider acceptance ID; this does not prove inbox delivery. Legacy send records without receipts remain unverified and are never blindly replayed.
+- A versioned outbox freezes recipient, sender, reply-to, subject and text on its first attempt. An internal sender uses a fixed HTTPS endpoint, rejects redirects, aborts after ten seconds and bounds response size. It records only fixed, customer-safe error descriptions.
+- Claims expire after two minutes. Attempt and generation fences reject late worker results. Recovery is bounded; up to five attempts use exponential delay with jitter and the same provider idempotency key/payload.
+- Automatic retries stop before 23 hours, inside [Resend’s documented 24-hour idempotency window](https://resend.com/docs/dashboard/emails/idempotency-keys). Provider contract: [send email response](https://resend.com/docs/api-reference/emails/send-email). No production messages were sent for testing.
+- Authorized staff can paginate queues, record an existing provider receipt, stop retries, or explicitly requeue a message only after confirming provider records show it was not accepted. Every decision requires evidence and an audit entry. Known accepted messages cannot be resent through this control. Marketing messages cannot bypass their separate consent workflow.
+- Remaining 4b findings: order status currently relies on order number/email; checkout success currently claims confirmation/email success without verifying payment; guest access expiration, error privacy, request-context limits and retention need review. These are not marked complete by this phase.
