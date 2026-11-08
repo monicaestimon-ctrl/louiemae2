@@ -1,4 +1,7 @@
 import { v } from 'convex/values';
+import { flag } from '../lib/flags';
+import { recordClickCore } from './prgAttribution';
+import { CommerceError } from '../lib/errors';
 import { query, mutation, internalMutation } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
@@ -25,6 +28,8 @@ export const join = mutation({
   args: { acceptTerms: v.boolean() },
   handler: async (ctx, a) => {
     const me = await requireUser(ctx);
+    // v2 (S24): enrollment runs through prgMemberships (profile, versioned terms, checks).
+    if (flag('CREATOR_ENROLLMENT_V2_ENABLED')) throw new CommerceError('FEATURE_DISABLED', 'Use prgMemberships.creatorStart', 'Join from the Creator Hub to accept the current terms.');
     if (!a.acceptTerms) throw new Error('Accept the partner terms to join.');
     if (isPartner(me.profile)) return me.profile!.refCode;
     let code = makeCode(me.profile?.businessName || me.profile?.displayName || me.email);
@@ -80,8 +85,13 @@ export async function insertClick(
 }
 
 export const recordClick = mutation({
-  args: { refCode: v.string(), channel: v.string(), target: v.string(), visitorId: v.string() },
-  handler: async (ctx, a) => insertClick(ctx, a),
+  args: { refCode: v.string(), channel: v.string(), target: v.string(), visitorId: v.string(), userAgent: v.optional(v.string()) },
+  handler: async (ctx, a) => {
+    const ok = await insertClick(ctx, a);
+    // v2 (S27): the same visit also becomes an opaque, rate-protected click record.
+    if (ok && flag('ATTRIBUTION_V2_ENABLED')) await recordClickCore(ctx, { refCode: a.refCode, visitorKey: a.visitorId, userAgent: a.userAgent ?? 'browser', consent: 'unknown' });
+    return ok;
+  },
 });
 
 /**

@@ -57,7 +57,7 @@ export default function CheckoutV2() {
       const res = await fetch(`${site}/v2/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idempotencyKey: `${est.estimateId}-${accepted}`.replace(/[^\w-]/g, ''), estimateId: est.estimateId, lines, address: { ...address, line2: address.line2 || undefined }, service: 'curbside', acceptTotalMinor: accepted, email }),
+        body: JSON.stringify({ idempotencyKey: `${est.estimateId}-${accepted}`.replace(/[^\w-]/g, ''), estimateId: est.estimateId, lines, address: { ...address, line2: address.line2 || undefined }, service: 'curbside', acceptTotalMinor: accepted, email, visitorKey: visitorId() }),
       });
       const body = await res.json();
       if (res.ok && body.url) {

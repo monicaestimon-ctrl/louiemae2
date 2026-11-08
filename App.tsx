@@ -11,9 +11,10 @@ import { SiteProvider, useSite } from './contexts/BlogContext';
 import { NewsletterProvider } from './contexts/NewsletterContext';
 import { CartProvider } from './contexts/CartContext';
 import { CartIcon, CartDrawer } from './components/cart';
-import { useMutation } from 'convex/react';
+import { useConvex, useMutation } from 'convex/react';
 import { api } from './convex/_generated/api';
-import { captureRefFromUrl } from './lib/partnerLink';
+import { captureRefFromUrl, visitorId } from './lib/partnerLink';
+import { safeRedirect } from './lib/enrollment';
 
 // Everything past the home page loads on demand so the first visit only downloads
 // what it shows. Each page keeps its named export; lazy() needs a default.
@@ -100,6 +101,43 @@ const AppContent = () => {
   // A visit through a partner link (?ref=CODE&ch=channel) on any storefront page: saved for
   // 30 days and shared with /trade, then taken out of the address bar.
   const recordPartnerClick = useMutation(api.holmPartners.recordClick);
+  const recordReferralClick = useMutation(api.prgAttribution.recordClick);
+  const convex = useConvex();
+  // A retail referral link (/r/<linkId>, v2): record the click server-side, then open its destination.
+  useEffect(() => {
+    const m = window.location.pathname.match(/^\/r\/([a-z0-9]{8,24})$/);
+    if (!m) return;
+    const linkId = m[1];
+    let referrerHost: string | undefined;
+    try {
+      referrerHost = document.referrer ? new URL(document.referrer).hostname : undefined;
+    } catch {
+      referrerHost = undefined;
+    }
+    const consent = (() => {
+      try {
+        const c = localStorage.getItem('lm:consent');
+        return c === 'granted' || c === 'denied' ? c : 'unknown';
+      } catch {
+        return 'unknown';
+      }
+    })() as 'granted' | 'denied' | 'unknown';
+    void (async () => {
+      try {
+        await recordReferralClick({ linkId, visitorKey: visitorId(), userAgent: navigator.userAgent, ...(referrerHost ? { referrerHost } : {}), consent });
+      } catch {
+        /* the visit still lands on the page */
+      }
+      const dest = await convex.query(api.prgLinks.resolve, { linkId }).catch(() => ({ kind: 'home' as const }));
+      const target =
+        dest.kind === 'product'
+          ? `/#collection/${dest.collection}?product=${encodeURIComponent(dest.productId)}${dest.variantId ? `&variant=${encodeURIComponent(dest.variantId)}` : ''}`
+          : dest.kind === 'page'
+            ? safeRedirect(dest.path)
+            : '/';
+      window.location.replace(target);
+    })();
+  }, [recordReferralClick, convex]);
   useEffect(() => {
     // Not on the admin pages: the team's own visits shouldn't count as partner traffic.
     const admin = window.location.pathname.replace(/\/+$/, '') === '/admin' || /^#admin/.test(window.location.hash);

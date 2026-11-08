@@ -192,6 +192,7 @@ http.route({
                 service: String(body.service || 'curbside'),
                 acceptTotalMinor: Number(body.acceptTotalMinor),
                 ...(typeof body.email === 'string' ? { email: body.email.slice(0, 254) } : {}),
+                ...(typeof body.visitorKey === 'string' ? { visitorKey: body.visitorKey.slice(0, 64) } : {}),
             });
         } catch (err: any) {
             const data = commerceErrorData(err);

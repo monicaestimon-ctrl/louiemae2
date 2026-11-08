@@ -503,7 +503,7 @@ Status: done (Phase D PR).
 ## Phase E: programs and referrals (package E)
 
 ### S24. Creator and trade memberships, versioned terms
-Status: not started
+Status: done (Phase E PR). Hub screens ship with S33/S34.
 
 **Goal.** One login, two independent memberships, and versioned acceptance of terms.
 
@@ -520,7 +520,7 @@ Status: not started
 **Tests.** ACC01 (creator and trade memberships on one identity: shared tier and payout beneficiary, separate permissions, no second account). Each state transition, a duplicate enrollment and the terms version stored.
 
 ### S25. Cross-site identity, trade-only HOLM, retiring HOLM retail commission
-Status: not started
+Status: done (Phase E PR). Hub screens ship with S33/S34.
 
 **Goal.** Trade authorization is checked on the server everywhere. HOLM is for approved trade purchasing only.
 
@@ -536,7 +536,7 @@ Status: not started
 **Tests.** ACC02 (unapproved trade access or a direct endpoint call: trade pricing and checkout are denied and no private data leaks). A retail visitor on HOLM is routed to Louie Mae. A HOLM retail-quote commission path cannot be created with the flag on.
 
 ### S26. Retail mappings and the link builder
-Status: not started
+Status: done (Phase E PR). Hub screens ship with S33/S34.
 
 **Goal.** Retail links only for approved referral members and mapped, published, purchasable retail variants.
 
@@ -554,7 +554,7 @@ Status: not started
 **Tests.** REF01 (HOLM's Copy retail referral link gives the correct published Louie Mae variant destination and a tracked retail purchase). An unmapped variant shows the unavailable state. A creator without an active membership is denied.
 
 ### S27. Attribution v2 and rate protection
-Status: not started
+Status: done (Phase E PR). Hub screens ship with S33/S34.
 
 **Goal.** Deterministic last-eligible-click attribution with exact 30×24h windows, and a protected rate snapshot taken at the click.
 
@@ -573,7 +573,7 @@ Status: not started
 **Tests.** REF02 (last valid click, a direct visit, an expired click and a self click: deterministic winner, exact 30-day boundary at `expiresAt − 1 ms` and `expiresAt`). REF03 (rate reduction, rate increase and category change: protected window honored, higher eligible rate applied, earned terms immutable).
 
 ### S28. Commission schedules, tier computation and SKU prequalification
-Status: not started
+Status: done (Phase E PR). Hub screens ship with S33/S34.
 
 **Goal.** One versioned schedule, deterministic tiers with explicit timing, and no hidden caps.
 
@@ -663,7 +663,7 @@ Status: not started
 **Blocked by.** D-05 (dual-reward and review rules), and funding approval for issuance.
 
 ### S32. Trade and project benefits v2
-Status: not started
+Status: done (Phase E PR). Hub screens ship with S33/S34.
 
 **Goal.** Trade discounts from an explicit product and supplier schedule, with project tiers that never override policy.
 
