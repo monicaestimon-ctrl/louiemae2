@@ -19,6 +19,7 @@
     "verify:client-secrets": "node scripts/verify-client-secrets.mjs",
     "verify:catalog-writers": "node scripts/verify-catalog-writers.mjs",
     "verify:append-only": "node scripts/verify-append-only.mjs",
+    "verify:repo-secrets": "node scripts/verify-repo-secrets.mjs",
     "verify:environment": "node scripts/verify-environment.mjs"
   },
   "dependencies": {

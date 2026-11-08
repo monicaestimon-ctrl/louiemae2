@@ -15,6 +15,8 @@ import type { MutationCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { applyCommissionEvent, applyCreditEvent } from './ldgCore';
 import { openReview } from './sysCore';
+import { ensureBeneficiary } from './prgCore';
+import { payoutRoute } from '../lib/flags';
 
 const PAGE = 50;
 const page = { cursor: v.optional(v.union(v.string(), v.null())), dryRun: v.optional(v.boolean()) };
@@ -247,7 +249,7 @@ type PageResult = { counts: Counts; continueCursor: string; isDone: boolean; amb
  * each deploy. Commit only after the dry run has been reviewed.
  */
 export const runBackfills = internalAction({
-  args: { commit: v.optional(v.boolean()) },
+  args: { commit: v.optional(v.boolean()), only: v.optional(v.array(v.union(v.literal('identity'), v.literal('ledger'), v.literal('credit')))) },
   handler: async (ctx, a): Promise<{ dryRun: boolean; steps: Record<string, { counts: Counts; notes: string[] }> }> => {
     const dryRun = a.commit !== true;
     const out: Record<string, { counts: Counts; notes: string[] }> = {};
@@ -257,6 +259,7 @@ export const runBackfills = internalAction({
       ['credit', internal.v2Migrations.creditSnapshot],
     ] as const;
     for (const [name, fn] of steps) {
+      if (a.only && !a.only.includes(name)) continue;
       const total: Counts = {};
       const notes: string[] = [];
       let cursor: string | null = null;
@@ -271,5 +274,60 @@ export const runBackfills = internalAction({
     }
     console.log(`v2 backfills (${dryRun ? 'dry run' : 'commit'}):`, JSON.stringify(out));
     return { dryRun, steps: out };
+  },
+});
+
+/**
+ * Keeps the v2 ledger in step with legacy commissions once v2 payouts are the active route
+ * (cutover): new legacy rows are mirrored at their current amount, and later legacy changes
+ * (refund reductions, voids, won disputes) become v2 reversals, offsets or adjustments. Amounts
+ * are never recomputed. A no-op while the legacy payout route is in charge.
+ */
+export const syncLegacyLedgerPage = internalMutation({
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  handler: async (ctx, a) => {
+    if (payoutRoute() !== 'v2') return { skipped: 'legacy payout route active' };
+    const res = await ctx.db.query('holmCommissions').paginate({ cursor: a.cursor ?? null, numItems: 100 });
+    let mirrored = 0;
+    let adjusted = 0;
+    for (const c of res.page) {
+      const o = await ctx.db.query('ldgObligations').withIndex('by_legacy', (q) => q.eq('legacyCommissionId', c._id)).first();
+      if (!o) {
+        let b = await beneficiaryFor(ctx, c.partnerId);
+        if (!b) {
+          const p = await ctx.db.query('holmProfiles').withIndex('by_user', (q) => q.eq('userId', c.partnerId)).unique();
+          const u = await ctx.db.get(c.partnerId);
+          if (!p) continue;
+          b = await ensureBeneficiary(ctx, c.partnerId, p.displayName, typeof u?.email === 'string' ? u.email : '');
+        }
+        const adjustment = c.source === 'adjustment';
+        await applyCommissionEvent(ctx, {
+          eventKey: `opening:commission:${c._id}`,
+          type: adjustment ? 'manual_adjustment' : 'opening_balance',
+          amountMinor: c.amountCents,
+          actor: 'sync:legacy',
+          reason: c.note ?? 'Mirrored from holmCommissions',
+          at: c.createdAt,
+          create: { beneficiaryId: b._id, source: adjustment ? 'adjustment' : c.source === 'storefront_order' ? 'legacy_storefront' : 'legacy_house_quote', legacyCommissionId: c._id, rateBps: c.rateBps, basisMinor: c.baseCents, state: STATE_MAP[c.status], clearsAt: c.clearsAt, ...(c.status === 'cleared' || c.status === 'paid' ? { clearedAt: c.clearsAt } : {}) },
+        });
+        mirrored++;
+        continue;
+      }
+      if (o.source === 'adjustment') continue;
+      const target = c.status === 'void' ? 0 : c.amountCents;
+      const current = o.earnedMinor - o.reversedMinor;
+      if (target === current) continue;
+      const key = `sync:${c._id}:${target}`;
+      const after = o.state === 'reserved' || o.state === 'transfer_submitted' || o.state === 'transferred';
+      if (target < current) {
+        if (after || o.state === 'void')
+          await applyCommissionEvent(ctx, { eventKey: key, type: 'offset', amountMinor: target - current, actor: 'sync:legacy', reason: 'Legacy commission reduced after payout', create: { beneficiaryId: o.beneficiaryId, source: 'offset', rateBps: 0, basisMinor: 0, state: 'cleared', clearsAt: Date.now() } });
+        else await applyCommissionEvent(ctx, { eventKey: key, obligationId: o._id, type: 'refund_reversal', amountMinor: target - current, actor: 'sync:legacy', reason: 'Legacy commission reduced' });
+      } else
+        await applyCommissionEvent(ctx, { eventKey: key, type: 'manual_adjustment', amountMinor: target - current, actor: 'sync:legacy', reason: 'Legacy commission restored', create: { beneficiaryId: o.beneficiaryId, source: 'adjustment', rateBps: 0, basisMinor: 0, state: 'cleared', clearsAt: Date.now() } });
+      adjusted++;
+    }
+    if (!res.isDone) await ctx.scheduler.runAfter(0, internal.v2Migrations.syncLegacyLedgerPage, { cursor: res.continueCursor });
+    return { mirrored, adjusted };
   },
 });

@@ -391,8 +391,4 @@ export const batchRecords = query({
   },
 });
 
-/** Known stale package settings text: row-level data and the reconciliation summary control (v2 §22). */
-export const KNOWN_METADATA_CORRECTIONS = [
-  'settings.pricingPrecedence mentions 128 unpriced records; the reconciled snapshot has 62.',
-  'settings.targetContributionScope omits the 66 reconciled 20% candidates.',
-];
+export { KNOWN_METADATA_CORRECTIONS } from '../lib/zuoImportNotes';

@@ -27,6 +27,7 @@ export const CONFIG_KINDS = [
   'categoryMap',
   'ledgerPolicy',
   'flagSwitch',
+  'operatorDetails',
 ] as const;
 export type ConfigKind = (typeof CONFIG_KINDS)[number];
 
@@ -159,10 +160,15 @@ export function parseConfig(kind: ConfigKind, value: unknown): unknown {
       }
       return o as ProjectDiscountPolicy;
     }
+    case 'operatorDetails':
+      for (const f of ['legalName', 'supportEmail', 'supportAddress', 'jurisdiction', 'privacyUrl', 'effectiveDate']) str(kind, o[f], f);
+      return o as OperatorDetails;
     default:
       // Kinds whose shape is supplier- or carrier-specific are checked by their consumers.
       return o;
   }
 }
+
+export type OperatorDetails = { legalName: string; supportEmail: string; supportAddress: string; jurisdiction: string; privacyUrl: string; effectiveDate: string };
 
 export type ConfigSeed = { kind: ConfigKind; key: string; version: number; status: 'proposed' | 'approved'; value: unknown; note: string; decision?: string };

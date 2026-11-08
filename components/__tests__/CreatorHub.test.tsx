@@ -18,6 +18,13 @@ vi.mock('../../convex/_generated/api', () => {
       holmPartners: { hub: ref('holmPartners.hub'), join: ref('holmPartners.join') },
       holmConnect: { startPayoutSetup: ref('holmConnect.startPayoutSetup'), refreshPayoutStatus: ref('holmConnect.refreshPayoutStatus') },
       holmCredit: { myCredit: ref('holmCredit.myCredit'), setCreditAutoApply: ref('holmCredit.setCreditAutoApply') },
+      v2Admin: { publicFlags: ref('v2Admin.publicFlags') },
+      prgMemberships: { myPrograms: ref('prgMemberships.myPrograms'), creatorStart: ref('prgMemberships.creatorStart'), creatorProfile: ref('prgMemberships.creatorProfile'), creatorAcceptTerms: ref('prgMemberships.creatorAcceptTerms'), activateTradeReferrals: ref('prgMemberships.activateTradeReferrals') },
+      prgLinks: { create: ref('prgLinks.create') },
+      prgTiers: { myTier: ref('prgTiers.myTier') },
+      ldgCommissions: { myEarnings: ref('ldgCommissions.myEarnings') },
+      ldgCredits: { myCreditV2: ref('ldgCredits.myCreditV2') },
+      retailLaunch: { storefrontPage: ref('retailLaunch.storefrontPage') },
     },
   };
 });

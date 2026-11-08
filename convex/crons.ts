@@ -26,6 +26,12 @@ crons.interval('settle-credit-awards-v2', { hours: 1 }, internal.ldgCredits.awar
 crons.cron('payout-run-chicago', '0 * * * *', internal.ldgPayoutActions.tick, {});
 crons.interval('reconcile-uncertain-payouts', { hours: 1 }, internal.ldgPayoutActions.reconcileUncertain, {});
 
+// v2 monitoring: alerts for backlog, duplicate money events, payout exceptions and missed jobs.
+crons.interval('v2-alerts', { minutes: 5 }, internal.sysAlerts.check, {});
+
+// v2 cutover: once v2 payouts are the active route, legacy commissions are mirrored into the v2 ledger.
+crons.interval('sync-legacy-ledger', { hours: 1 }, internal.v2Migrations.syncLegacyLedgerPage, {});
+
 // Persist signups first; process/recover the bounded marketing queue separately.
 crons.interval('sync-klaviyo-waitlist', { minutes: 1 }, internal.klaviyoWaitlist.dispatch, {});
 crons.interval('reconcile-klaviyo-consent', { minutes: 15 }, internal.klaviyoWaitlistWorker.reconcileConsent, { cursor: null });

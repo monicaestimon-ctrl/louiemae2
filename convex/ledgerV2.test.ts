@@ -274,3 +274,29 @@ describe('business referral credit v2 (S31, CRE01, CRE02)', () => {
     expect(rows.reduce((t, r) => t + r.basisMinor, 0)).toBe(140_000);
   });
 });
+
+describe('legacy ledger sync at payout cutover', () => {
+  it('mirrors legacy commissions and follows later reductions and voids, only on the v2 route', async () => {
+    const s = await setup();
+    const ids = await s.t.run(async (ctx) => {
+      const partner = await ctx.db.insert('users', { email: 'legacy@x.com' });
+      await ctx.db.insert('holmProfiles', { userId: partner, displayName: 'Legacy', tradeStatus: 'none', partnerStatus: 'active', partnerTier: 'base', refCode: 'LEGACY1', createdAt: 0, updatedAt: 0 });
+      const c1 = await ctx.db.insert('holmCommissions', { partnerId: partner, source: 'storefront_order', baseCents: 10_000, rateBps: 1000, amountCents: 1_000, status: 'cleared', clearsAt: 0, createdAt: 0 });
+      const c2 = await ctx.db.insert('holmCommissions', { partnerId: partner, source: 'house_quote', baseCents: 20_000, rateBps: 1000, amountCents: 2_000, status: 'pending', clearsAt: Date.now() + DAY, createdAt: 0 });
+      return { c1, c2 };
+    });
+    expect(await s.t.mutation(internal.v2Migrations.syncLegacyLedgerPage, {})).toEqual({ skipped: 'legacy payout route active' });
+    process.env.PAYOUT_EXECUTION_ENABLED = 'true';
+    expect(await s.t.mutation(internal.v2Migrations.syncLegacyLedgerPage, {})).toEqual({ mirrored: 2, adjusted: 0 });
+    expect(await s.t.mutation(internal.v2Migrations.syncLegacyLedgerPage, {})).toEqual({ mirrored: 0, adjusted: 0 });
+    await s.t.run(async (ctx) => {
+      await ctx.db.patch(ids.c1, { amountCents: 400 });
+      await ctx.db.patch(ids.c2, { amountCents: 0, status: 'void' });
+    });
+    expect(await s.t.mutation(internal.v2Migrations.syncLegacyLedgerPage, {})).toEqual({ mirrored: 0, adjusted: 2 });
+    expect(await s.t.mutation(internal.v2Migrations.syncLegacyLedgerPage, {})).toEqual({ mirrored: 0, adjusted: 0 });
+    const parity = await s.t.query(internal.v2Migrations.ledgerParity, {});
+    expect(parity.mismatches).toEqual([]);
+    delete process.env.PAYOUT_EXECUTION_ENABLED;
+  });
+});
