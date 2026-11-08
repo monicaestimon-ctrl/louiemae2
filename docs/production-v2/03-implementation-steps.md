@@ -167,7 +167,7 @@ Status: done (Phase B PR)
 ## Phase C: catalog and economics (package C)
 
 ### S08. Explicit commission categories and lighting migration
-Status: not started
+Status: done (Phase C PR). Admin screens ship with S35.
 
 **Goal.** Every product has an explicit commission category. Lighting becomes décor for future eligibility, and history stays exactly as it was.
 
@@ -185,7 +185,7 @@ Status: not started
 **Exit criteria.** Preview and commit work. No historical row is changed (a hash of the `holmCommissions` table is identical before and after).
 
 ### S09. Zuo import adapter: dry run and commit
-Status: not started
+Status: done (Phase C PR). Admin screens ship with S35.
 
 **Goal.** A repeatable adapter from the neutral staging package (JSON or CSV) to the real schema. Every record keeps its holds and exclusions, and no import creates duplicates.
 
@@ -217,7 +217,7 @@ Status: not started
 **Blocked by.** Real package files (README §4).
 
 ### S10. Source observations, freshness and availability
-Status: not started
+Status: done (Phase C PR). Admin screens ship with S35.
 
 **Goal.** Separate states for source data, economics and publication. Freshness is enforced, and availability is never inferred.
 
@@ -245,7 +245,7 @@ Status: not started
 **Exit criteria.** Every caller path goes through `assertSellable`. A grep test enforces this: every `publish`, `createSnapshot` and link mutation file imports it.
 
 ### S11. Cartons, packs and physical units
-Status: not started
+Status: done (Phase C PR). Admin screens ship with S35.
 
 **Goal.** A two-piece pack consistently means two physical pieces in cost, handling, allocation, MAP, cartons, price, inventory and customer copy.
 
@@ -258,7 +258,7 @@ Status: not started
 **Tests.** CAT03 (a 2-piece pack with 2 cartons: piece cost and handling, pack price, inventory, cartons and the customer's quantity all agree).
 
 ### S12. Pricing engine, margin policies and scenario economics
-Status: not started
+Status: done (Phase C PR). Admin screens ship with S35.
 
 **Goal.** Every variant has a policy id and a reproducible scenario result. Approved prices are preserved and the 5% scope can't expand.
 
@@ -287,7 +287,7 @@ Status: not started
 **Exit criteria.** The engine is deterministic: the same inputs hash to the same output (`inputsHash`).
 
 ### S13. MAP, promotions and market review
-Status: not started
+Status: done (Phase C PR). Admin screens ship with S35.
 
 **Goal.** MAP, advertised-price constraints, coupons, trade treatment and rights are separate controls that the server enforces.
 
@@ -305,7 +305,7 @@ Status: not started
 **Tests.** PRI03 (a Zuo coupon, project discount or 25% attempt is rejected by the server whatever the client or MAP arithmetic says). The review trigger fires at 10% exactly and handles fewer than 3 references.
 
 ### S14. Names, slugs, redirects and the media pipeline
-Status: not started
+Status: done (Phase C PR). Admin screens ship with S35.
 
 **Goal.** Short Louie Mae names, stable links, and media that is verified and stored, never hot-linked.
 
@@ -322,7 +322,7 @@ Status: not started
 **Tests.** Allowlist and redirect SSRF tests. Hash dedupe. A rejected HTML response. A slug rename keeps the old URL working.
 
 ### S15. Publication state machine and server gates
-Status: not started
+Status: done (Phase C PR). Admin screens ship with S35.
 
 **Goal.** One server-owned path from imported draft to published, for both channels.
 
