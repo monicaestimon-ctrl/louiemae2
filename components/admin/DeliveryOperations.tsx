@@ -1,6 +1,7 @@
 import type { FunctionReturnType } from 'convex/server';
 import { STANDARD_ACCESS } from '../../lib/delivery/destination';
 import DeliveryAccessFields from '../delivery/DeliveryAccessFields';
+import NotificationOperations from './NotificationOperations';
 import DeliveryBoundary from '../delivery/DeliveryBoundary';
 import DeliveryActualCosts from './DeliveryActualCosts';
 import React, { useState } from 'react';
@@ -56,6 +57,7 @@ function DeliveryOperationsWorkspace({
   return (
     <section className="space-y-5 text-sm">
       <h3 className="font-serif text-xl">Delivery quotes and actual freight</h3>
+      <NotificationOperations canResolve={approver} />
       {finance && (
         <>
           <DeliveryDiagnostics />

@@ -91,3 +91,5 @@ export const CREDIT_EVENT_TYPES = [
 ] as const;
 export type CreditEventType = (typeof CREDIT_EVENT_TYPES)[number];
 export const creditEventType = v.union(...CREDIT_EVENT_TYPES.map((t) => v.literal(t))) as ReturnType<typeof v.union<[ReturnType<typeof v.literal<CreditEventType>>]>>;
+
+export const notificationEnvelope = v.object({ from:v.string(), to:v.string(), subject:v.string(), text:v.string(), replyTo:v.optional(v.string()) });
