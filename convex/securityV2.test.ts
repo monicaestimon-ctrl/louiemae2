@@ -25,7 +25,7 @@ afterEach(() => {
 const V2_FILES = ['sysConfig', 'sysNotifyAdmin', 'dlvTelemetry', 'zuoImport', 'catCategories', 'catPricing', 'catPolicies', 'catMedia', 'catStock', 'catPublication', 'dlvEstimates', 'dlvAccess', 'dlvAdmin', 'dlvOperations', 'dlvTax', 'dlvTaxActions', 'dlvTaxExemptions', 'dlvTradeCalculator', 'ordFulfillment', 'ordReceipts', 'ordQuotes', 'ordReturns', 'ediZuo', 'prgMemberships', 'prgLinks', 'prgAttribution', 'prgTiers', 'ldgCommissions', 'ldgPayouts', 'ldgCredits', 'v2Admin', 'sysAlerts'];
 const AUTH = /ownsOrder\(|requireDeliveryRole|authorizeEstimate|owns\(|handler:\s*access|requireCjAdminIdentity|verifyCjAdminIdentity|requireUser\(|viewer\(|requireFlag\(|flag\('/;
 // Deliberately public: read-only, customer-safe projections or flag-gated anonymous actions.
-const PUBLIC = new Set(['dlvEstimates.enabled', 'dlvTaxActions.estimate', 'dlvEstimates.get', 'catMedia.resolveSlug', 'prgLinks.resolve', 'v2Admin.publicFlags', 'v2Admin.programTermsView']);
+const PUBLIC = new Set(['dlvEstimates.enabled', 'dlvTaxActions.estimate', 'dlvTaxActions.requestQuote', 'dlvEstimates.get', 'catMedia.resolveSlug', 'prgLinks.resolve', 'v2Admin.publicFlags', 'v2Admin.programTermsView']);
 
 describe('security (S38, SEC01)', () => {
   it('every exported public v2 function authenticates or is on the reviewed public list', () => {

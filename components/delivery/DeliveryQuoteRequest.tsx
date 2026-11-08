@@ -1,7 +1,6 @@
+import { useDeliveryRequest } from './useDeliveryRequest';
 import React, { useRef, useState } from 'react';
-import { useMutation } from 'convex/react';
 import DeliveryQuoteStatus from './DeliveryQuoteStatus';
-import { api } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
 import { customerMessage } from '../../lib/errors';
 
@@ -22,7 +21,7 @@ export default function DeliveryQuoteRequest({
   initialEmail,
 }: Props) {
   const retry = useRef<{ payload: string; key: string } | null>(null);
-  const request = useMutation(api.dlvOperations.requestQuote);
+  const request = useDeliveryRequest('quote');
 
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),

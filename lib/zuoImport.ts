@@ -2,7 +2,7 @@
 // validation, cohort classification and holds. The Convex side (convex/zuoImport.ts) diffs and
 // writes. Field names accept the aliases below; verify them against the real package's header
 // row before the first real dry run and add aliases here rather than renaming source columns.
-import { parseDecimal, toDecimalString, mul, rat, toMinor } from './decimal';
+import { parseDecimal, toDecimalString, mul, rat, toMinor } from './decimal.js';
 
 export const ZUO_COHORTS = ['approved_306', 'map_135', 'original_296', 'reconciled_66', 'unpriced_62'] as const;
 export type ZuoCohort = (typeof ZUO_COHORTS)[number] | 'other';

@@ -1,10 +1,13 @@
 // @vitest-environment node
 /// <reference types="vite/client" />
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { convexTest } from 'convex-test';
+import { convexTest, type TestConvexForDataModel } from 'convex-test';
+import { signRequest } from '../lib/delivery/requestProof';
+import { randomBytes } from 'node:crypto';
+import type { FunctionArgs } from 'convex/server';
 import schema from './schema';
 import { api, internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import type { DataModel, Id } from './_generated/dataModel';
 import { submitWith, type Transport } from './ediZuo';
 import { refundSplit } from './ordReturns';
 import { isCommerceError, commerceErrorData } from '../lib/errors';
@@ -12,6 +15,35 @@ import { SPLIT_MAY, SPLIT_WILL, splitDisclosure } from '../lib/customerCopy';
 import { quoteOnlyReasons, zipRegion, STANDARD_ACCESS } from '../lib/delivery/destination';
 import { exemptionFor } from './dlvTaxExemptions';
 import { groupFreight, type FreightConfig, type ResolvedLine } from './dlvEngine';
+
+const PERIMETER_SECRET = '1'.repeat(64);
+async function estimateViaGateway(
+  t: TestConvexForDataModel<DataModel>,
+  input: Omit<FunctionArgs<typeof api.dlvTaxActions.estimate>, 'proof'>
+) {
+  process.env.DELIVERY_REQUEST_SECRET = PERIMETER_SECRET;
+  const proof = await signRequest(PERIMETER_SECRET, 'estimate', input, {
+    issuedAt: Date.now(),
+    nonce: randomBytes(24).toString('hex'),
+    rateKey: '2'.repeat(64),
+  });
+  return t.action(api.dlvTaxActions.estimate, { ...input, proof });
+}
+async function quoteViaGateway(
+  t: TestConvexForDataModel<DataModel>,
+  input: Omit<FunctionArgs<typeof api.dlvTaxActions.requestQuote>, 'proof'>
+) {
+  process.env.DELIVERY_REQUEST_SECRET = PERIMETER_SECRET;
+  const proof = await signRequest(PERIMETER_SECRET, 'quote', input, {
+    issuedAt: Date.now(),
+    nonce: randomBytes(24).toString('hex'),
+    rateKey: '2'.repeat(64),
+  });
+  return t.action(api.dlvTaxActions.requestQuote, { ...input, proof });
+}
+afterEach(() => {
+  delete process.env.DELIVERY_REQUEST_SECRET;
+});
 
 const taxFixture = vi.hoisted(() => ({ fail: false }));
 vi.mock('stripe', () => ({
@@ -428,7 +460,7 @@ async function paidOrder(
   lines: { productId: string; variantId: string; packs: number }[],
   eventId = 'evt_1'
 ) {
-  const est = await s.t.action(api.dlvTaxActions.estimate, {
+  const est = await estimateViaGateway(s.t, {
     lines,
     channel: 'retail',
     zip: '95206',
@@ -475,7 +507,7 @@ async function paidOrder(
 describe('delivery estimates (S17, S18)', () => {
   it('estimates a Zuo item, keeps ZIP estimates non-binding and shows tax only with a full address', async () => {
     const s = await setup();
-    const zip = await s.t.action(api.dlvTaxActions.estimate, {
+    const zip = await estimateViaGateway(s.t, {
       lines: [zuoLine(s)],
       channel: 'retail',
       zip: '95206',
@@ -487,7 +519,7 @@ describe('delivery estimates (S17, S18)', () => {
     expect(zip.deliveryChargeMinor).toBe(4_999);
     expect(zip.taxMinor).toBeNull();
     expect(zip.note).toMatch(/Estimate/);
-    const full = await s.t.action(api.dlvTaxActions.estimate, {
+    const full = await estimateViaGateway(s.t, {
       lines: [zuoLine(s)],
       channel: 'retail',
       zip: '95206',
@@ -518,14 +550,12 @@ describe('delivery estimates (S17, S18)', () => {
       address: ADDRESS,
       visitorKey: 'telemetry-fixture-123',
     };
-    await expect(
-      s.t.action(api.dlvTaxActions.estimate, { ...args, channel: 'trade' })
-    ).rejects.toThrow();
+    await expect(estimateViaGateway(s.t, { ...args, channel: 'trade' })).rejects.toThrow();
     let rows = await s.t.run((ctx) => ctx.db.query('dlvObservations').collect());
     expect(rows).toHaveLength(1);
     expect(rows[0].outcome).toBe('blocked');
     taxFixture.fail = true;
-    const quote = await s.t.action(api.dlvTaxActions.estimate, args);
+    const quote = await estimateViaGateway(s.t, args);
     expect(quote.totalMinor).toBeNull();
     rows = await s.t.run((ctx) => ctx.db.query('dlvObservations').collect());
     expect(rows).toHaveLength(2);
@@ -541,8 +571,8 @@ describe('delivery estimates (S17, S18)', () => {
       zip: '95206',
       visitorKey: 'access-fixture-12345',
     };
-    const regular = await s.t.action(api.dlvTaxActions.estimate, { ...base, address: ADDRESS });
-    const commercial = await s.t.action(api.dlvTaxActions.estimate, {
+    const regular = await estimateViaGateway(s.t, { ...base, address: ADDRESS });
+    const commercial = await estimateViaGateway(s.t, {
       ...base,
       address: {
         ...ADDRESS,
@@ -555,7 +585,7 @@ describe('delivery estimates (S17, S18)', () => {
       { ...STANDARD_ACCESS, limitedAccess: true },
       { ...STANDARD_ACCESS, requestedService: 'inside' as const },
     ]) {
-      const result = await s.t.action(api.dlvTaxActions.estimate, {
+      const result = await estimateViaGateway(s.t, {
         ...base,
         address: { ...ADDRESS, access },
       });
@@ -567,24 +597,22 @@ describe('delivery estimates (S17, S18)', () => {
     const rows = await s.admin.query(api.sysConfig.list, { status: 'approved' });
     const policy = rows.records.find((r) => r.key === 'delivery-curbside')!;
     await s.t.run((ctx) => ctx.db.patch(policy._id, { status: 'retired' }));
-    const unapproved = await s.t.action(api.dlvTaxActions.estimate, { ...base, address: ADDRESS });
+    const unapproved = await estimateViaGateway(s.t, { ...base, address: ADDRESS });
     expect(unapproved.status).toBe('quote_required');
   });
 
   it('routes Alaska, Hawaii, PO boxes and unzoned ZIPs to a quote (DEL03)', async () => {
     const s = await setup();
     for (const zip of ['99501', '96813', '10001x']) {
-      const r = await s.t
-        .action(api.dlvTaxActions.estimate, {
-          lines: [zuoLine(s)],
-          channel: 'retail',
-          zip,
-          visitorKey: 'visitor-1234567890',
-        })
-        .catch((e) => ({ status: 'error', e }));
+      const r = await estimateViaGateway(s.t, {
+        lines: [zuoLine(s)],
+        channel: 'retail',
+        zip,
+        visitorKey: 'visitor-1234567890',
+      }).catch((e) => ({ status: 'error', e }));
       expect(r.status === 'quote_required' || r.status === 'error').toBe(true);
     }
-    const unzoned = await s.t.action(api.dlvTaxActions.estimate, {
+    const unzoned = await estimateViaGateway(s.t, {
       lines: [zuoLine(s)],
       channel: 'retail',
       zip: '60601',
@@ -600,7 +628,7 @@ describe('delivery estimates (S17, S18)', () => {
 
   it('is off unless the flag is on, refuses proposed policies, and ignores client prices (SEC01)', async () => {
     const s = await setup();
-    const r = await s.t.action(api.dlvTaxActions.estimate, {
+    const r = await estimateViaGateway(s.t, {
       lines: [zuoLine(s)],
       channel: 'retail',
       zip: '95206',
@@ -612,7 +640,7 @@ describe('delivery estimates (S17, S18)', () => {
     expect(metric.some((m) => m.name === 'security.client_price_ignored')).toBe(true);
     delete process.env.DELIVERY_AUTOMATION_ENABLED;
     await expect(
-      s.t.action(api.dlvTaxActions.estimate, {
+      estimateViaGateway(s.t, {
         lines: [zuoLine(s)],
         channel: 'retail',
         zip: '95206',
@@ -625,7 +653,7 @@ describe('delivery estimates (S17, S18)', () => {
     const s = await setup();
     const mixed = [zuoLine(s), { productId: s.ashId, variantId: 'b1', packs: 1 }];
     await expect(
-      s.t.action(api.dlvTaxActions.estimate, {
+      estimateViaGateway(s.t, {
         lines: mixed,
         channel: 'retail',
         zip: '95206',
@@ -633,7 +661,7 @@ describe('delivery estimates (S17, S18)', () => {
       })
     ).rejects.toSatisfy((e) => isCommerceError(e, 'POLICY_NOT_APPROVED'));
     const s2 = await setup({ approveMixed: true });
-    const r = await s2.t.action(api.dlvTaxActions.estimate, {
+    const r = await estimateViaGateway(s2.t, {
       lines: [zuoLine(s2), { productId: s2.ashId, variantId: 'b1', packs: 1 }],
       channel: 'retail',
       zip: '95206',
@@ -692,7 +720,7 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
   it('requires reconfirmation when anything changes, and refuses stale estimates', async () => {
     const s = await setup();
     const lines = [zuoLine(s)];
-    const est = await s.t.action(api.dlvTaxActions.estimate, {
+    const est = await estimateViaGateway(s.t, {
       lines,
       channel: 'retail',
       zip: '95206',
@@ -747,7 +775,7 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
         acceptTotalMinor: est.totalMinor!,
       })
     ).rejects.toSatisfy((e) => isCommerceError(e, 'QUOTE_EXPIRED'));
-    const refreshed = await s.t.action(api.dlvTaxActions.estimate, {
+    const refreshed = await estimateViaGateway(s.t, {
       lines,
       channel: 'retail',
       zip: '95206',
@@ -779,7 +807,7 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
   it('sends a payment after expiry or with a mismatched total to the paid-order exception queue', async () => {
     const s = await setup();
     const lines = [zuoLine(s)];
-    const est = await s.t.action(api.dlvTaxActions.estimate, {
+    const est = await estimateViaGateway(s.t, {
       lines,
       channel: 'retail',
       zip: '95206',
@@ -828,7 +856,7 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
   it('releases reservations when the session expires', async () => {
     const s = await setup();
     const lines = [zuoLine(s)];
-    const est = await s.t.action(api.dlvTaxActions.estimate, {
+    const est = await estimateViaGateway(s.t, {
       lines,
       channel: 'retail',
       zip: '95206',
@@ -1212,7 +1240,7 @@ describe('delivery tool security and operations regressions', () => {
     expect(r.baseTradeSavingsMinor).toBe(3806);
     expect(r.projectSavingsMinor).toBe(0);
     expect(r.lines[0].eligibleProject).toBe(false);
-    const e = await trade.action(api.dlvTaxActions.estimate, {
+    const e = await estimateViaGateway(trade, {
       lines: [zuoLine(s)],
       channel: 'trade',
       zip: '95206',
@@ -1236,7 +1264,7 @@ describe('delivery tool security and operations regressions', () => {
   });
   it('denies a guest estimate without its capability and denies an unrelated signed-in account', async () => {
     const s = await setup();
-    const e = await s.t.action(api.dlvTaxActions.estimate, {
+    const e = await estimateViaGateway(s.t, {
       lines: [zuoLine(s)],
       channel: 'retail',
       zip: '95206',
@@ -1254,7 +1282,7 @@ describe('delivery tool security and operations regressions', () => {
         })
       )?.totalMinor
     ).toBe(e.totalMinor);
-    const owned = await s.admin.action(api.dlvTaxActions.estimate, {
+    const owned = await estimateViaGateway(s.admin, {
       lines: [zuoLine(s)],
       channel: 'retail',
       zip: '95206',
@@ -1277,7 +1305,7 @@ describe('delivery tool security and operations regressions', () => {
       address: ADDRESS,
       visitorKey: 'x',
     };
-    const e = await s.t.action(api.dlvTaxActions.estimate, args);
+    const e = await estimateViaGateway(s.t, args);
     const request = {
       idempotencyKey: 'delivery-bound-key-1234',
       estimateId: e.estimateId,
@@ -1305,7 +1333,7 @@ describe('delivery tool security and operations regressions', () => {
   it('requires renewed acceptance when the same total has a different tax/delivery breakdown', async () => {
     const s = await setup();
     const lines = [zuoLine(s)];
-    const e = await s.t.action(api.dlvTaxActions.estimate, {
+    const e = await estimateViaGateway(s.t, {
       lines,
       channel: 'retail',
       zip: '95206',
@@ -1372,7 +1400,7 @@ describe('delivery tool security and operations regressions', () => {
   });
   it('quotes disabled lanes and missing fixed expenses without a partial payable total', async () => {
     const s = await setup();
-    const e = await s.t.action(api.dlvTaxActions.estimate, {
+    const e = await estimateViaGateway(s.t, {
       lines: [zuoLine(s)],
       channel: 'retail',
       zip: '60601',
@@ -1389,7 +1417,7 @@ describe('delivery tool security and operations regressions', () => {
       note: 'Missing fixed fee fixture',
     });
     await s.admin.mutation(api.sysConfig.approve, { id });
-    const result = await s.t.action(api.dlvTaxActions.estimate, {
+    const result = await estimateViaGateway(s.t, {
       lines: [zuoLine(s)],
       channel: 'retail',
       zip: '95206',
@@ -1400,14 +1428,14 @@ describe('delivery tool security and operations regressions', () => {
   it('does not let rotating visitor IDs evade the same basket rate limit', async () => {
     const s = await setup();
     for (let i = 0; i < 30; i++)
-      await s.t.action(api.dlvTaxActions.estimate, {
+      await estimateViaGateway(s.t, {
         lines: [zuoLine(s)],
         channel: 'retail',
         zip: '95206',
         visitorKey: `visitor-${i}`,
       });
     await expect(
-      s.t.action(api.dlvTaxActions.estimate, {
+      estimateViaGateway(s.t, {
         lines: [zuoLine(s)],
         channel: 'retail',
         zip: '95206',
@@ -1417,7 +1445,7 @@ describe('delivery tool security and operations regressions', () => {
   });
   it('creates a real guest quote request, protects its contents and shows the whole quote total', async () => {
     const s = await setup();
-    const r = await s.t.mutation(api.dlvOperations.requestQuote, {
+    const r = await quoteViaGateway(s.t, {
       requestKey: 'a'.repeat(64),
       lines: [zuoLine(s)],
       channel: 'retail',
@@ -1811,7 +1839,7 @@ describe('delivery request lifecycle', () => {
   });
   async function quotedRequest() {
     const s = await setup();
-    const r = await s.t.mutation(api.dlvOperations.requestQuote, requestInput(s, 'a'));
+    const r = await quoteViaGateway(s.t, requestInput(s, 'a'));
     const detail = await s.admin.query(api.dlvOperations.quoteDetail, { id: r.id });
     const input = {
       projectId: detail!.request.projectId,
@@ -1850,7 +1878,7 @@ describe('delivery request lifecycle', () => {
   }
   it('reports overdue staff work but pauses the follow-up clock while awaiting customer information', async () => {
     const s = await setup();
-    const r = await s.t.mutation(api.dlvOperations.requestQuote, requestInput(s, 'c'));
+    const r = await quoteViaGateway(s.t, requestInput(s, 'c'));
     const config = await s.admin.query(api.sysConfig.list, { status: 'proposed' });
     await s.admin.mutation(api.sysConfig.approve, {
       id: config.records.find((p) => p.key === 'delivery-monitoring')!._id,
@@ -1870,20 +1898,14 @@ describe('delivery request lifecycle', () => {
   it('limits new requests to five per hour while allowing an exact retry', async () => {
     const s = await setup();
     for (const key of ['a', 'b', 'c', 'd', 'e']) {
-      await s.t.mutation(api.dlvOperations.requestQuote, requestInput(s, key));
+      await quoteViaGateway(s.t, requestInput(s, key));
       vi.setSystemTime(Date.now() + 1000);
     }
-    await expect(
-      s.t.mutation(api.dlvOperations.requestQuote, requestInput(s, 'f'))
-    ).rejects.toThrow();
-    await expect(
-      s.t.mutation(api.dlvOperations.requestQuote, requestInput(s, 'a'))
-    ).resolves.toHaveProperty('id');
+    await expect(quoteViaGateway(s.t, requestInput(s, 'f'))).rejects.toThrow();
+    await expect(quoteViaGateway(s.t, requestInput(s, 'a'))).resolves.toHaveProperty('id');
     expect(await s.t.run((ctx) => ctx.db.query('dlvQuoteRequests').collect())).toHaveLength(5);
     vi.setSystemTime(Date.now() + 12 * 60000);
-    await expect(
-      s.t.mutation(api.dlvOperations.requestQuote, requestInput(s, 'f'))
-    ).resolves.toHaveProperty('id');
+    await expect(quoteViaGateway(s.t, requestInput(s, 'f'))).resolves.toHaveProperty('id');
   });
   it('allows only the owner to decline, and prevents acceptance/revision of a closed request', async () => {
     const { s, r, q, input } = await quotedRequest();
@@ -2108,8 +2130,8 @@ describe('delivery public error and input privacy', () => {
       visitorKey: 'fixture-privacy',
     };
     for (const run of [
-      () => s.t.action(api.dlvTaxActions.estimate, args),
-      () => s.t.mutation(api.dlvEstimates.estimate, args),
+      () => estimateViaGateway(s.t, args),
+      () => s.t.mutation(internal.dlvEstimates.compute, args),
     ]) {
       const error = await run().then(
         () => null,
@@ -2121,24 +2143,22 @@ describe('delivery public error and input privacy', () => {
       });
       expect(JSON.stringify(error)).not.toMatch(/detail|estimate-policy|estimatePolicy/);
     }
-    const invalid = await s.t
-      .mutation(api.dlvOperations.requestQuote, {
-        requestKey: 'a'.repeat(64),
-        lines: [zuoLine(s)],
-        channel: 'retail',
-        postalCode: '95206',
-        name: 'Customer',
-        email: 'customer@example.com',
-        phone: '',
-        service: 'curbside',
-        notes: '',
-        consent: true,
-        address: { ...ADDRESS, line2: 'x'.repeat(201) },
-      })
-      .then(
-        () => null,
-        (e) => e
-      );
+    const invalid = await quoteViaGateway(s.t, {
+      requestKey: 'a'.repeat(64),
+      lines: [zuoLine(s)],
+      channel: 'retail',
+      postalCode: '95206',
+      name: 'Customer',
+      email: 'customer@example.com',
+      phone: '',
+      service: 'curbside',
+      notes: '',
+      consent: true,
+      address: { ...ADDRESS, line2: 'x'.repeat(201) },
+    }).then(
+      () => null,
+      (e) => e
+    );
     expect(commerceErrorData(invalid)?.code).toBe('INVALID_INPUT');
     expect(await s.t.run((ctx) => ctx.db.query('dlvQuoteRequests').collect())).toHaveLength(0);
     expect(await s.t.run((ctx) => ctx.db.query('dlvEstimates').collect())).toHaveLength(0);

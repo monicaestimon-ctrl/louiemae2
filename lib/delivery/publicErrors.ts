@@ -1,4 +1,4 @@
-import { CommerceError, commerceErrorData } from '../errors';
+import { CommerceError, commerceErrorData } from '../errors.js';
 
 /** Preserve the actionable code, never internal detail, custom text or provider messages. */
 export function publicDeliveryError(error: unknown) {

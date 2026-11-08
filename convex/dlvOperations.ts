@@ -2,7 +2,7 @@ import { customerFacing } from '../lib/delivery/publicErrors';
 import { assertDeliveryBounds } from '../lib/delivery/requestBounds';
 import { v } from 'convex/values';
 import { paginationOptsValidator } from 'convex/server';
-import { mutation, query } from './_generated/server';
+import { internalMutation, mutation, query } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc } from './_generated/dataModel';
 import { addressArg, lineArg } from './dlvEstimates';
@@ -10,7 +10,7 @@ import { capability, digest } from './dlvSecurity';
 import { viewer, isVerified } from './holmAccess';
 import { requireDeliveryRole } from './dlvAccess';
 import { CommerceError } from '../lib/errors';
-import { rateLimit, audit, openReview } from './sysCore';
+import { audit, openReview } from './sysCore';
 import { notify } from './sysNotify';
 import { checkQuoteLines } from './ordQuotes';
 import { computeManualQuote } from './dlvManual';
@@ -30,20 +30,21 @@ async function owns(ctx: MutationCtx | QueryCtx, r: Doc<'dlvQuoteRequests'>, tok
   )
     throw new CommerceError('FORBIDDEN');
 }
-export const requestQuote = mutation({
-  args: {
-    requestKey: v.string(),
-    lines: v.array(lineArg),
-    channel: v.union(v.literal('retail'), v.literal('trade')),
-    postalCode: v.string(),
-    address: v.optional(addressArg),
-    name: v.string(),
-    email: v.string(),
-    phone: v.string(),
-    service: v.string(),
-    notes: v.string(),
-    consent: v.boolean(),
-  },
+export const quoteRequestArgs = {
+  requestKey: v.string(),
+  lines: v.array(lineArg),
+  channel: v.union(v.literal('retail'), v.literal('trade')),
+  postalCode: v.string(),
+  address: v.optional(addressArg),
+  name: v.string(),
+  email: v.string(),
+  phone: v.string(),
+  service: v.string(),
+  notes: v.string(),
+  consent: v.boolean(),
+};
+export const createRequest = internalMutation({
+  args: quoteRequestArgs,
   handler: async (ctx, a) =>
     customerFacing(async () => {
       assertDeliveryBounds(a, 100);
@@ -86,12 +87,6 @@ export const requestQuote = mutation({
           await ctx.db.patch(existing._id, { guestCapabilityHash: await digest(token) });
         return { id: existing._id, ...(!existing.userId ? { guestCapability: token } : {}) };
       }
-      if (
-        !(await rateLimit(ctx, `delivery-quote:email:${await digest(email)}`, 5, 5 / 60)) ||
-        (me && !(await rateLimit(ctx, `delivery-quote:user:${me.userId}`, 5, 5 / 60))) ||
-        !(await rateLimit(ctx, 'delivery-quote:global', 100, 100 / 60))
-      )
-        throw new CommerceError('INVALID_INPUT', 'Quote request limit reached');
       const lines = [];
       const requested = [];
       const seen = new Set<string>();

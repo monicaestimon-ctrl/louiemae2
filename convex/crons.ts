@@ -94,4 +94,5 @@ crons.interval(
 
 // Check each approved product about daily, in bounded batches with shared CJ throttling.
 if (monitoringEnabled) crons.interval('monitor-cj-pricing', { minutes: 15 }, internal.cjPricingReview.dispatchMonitor, {});
+crons.interval('delivery-request-retention', { minutes: 1 }, internal.dlvPerimeter.purge, {});
 export default crons;
