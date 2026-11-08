@@ -91,7 +91,11 @@ import type * as holmTables from "../holmTables.js";
 import type * as http from "../http.js";
 import type * as klaviyoWaitlist from "../klaviyoWaitlist.js";
 import type * as klaviyoWaitlistWorker from "../klaviyoWaitlistWorker.js";
+import type * as ldgCommissions from "../ldgCommissions.js";
 import type * as ldgCore from "../ldgCore.js";
+import type * as ldgCredits from "../ldgCredits.js";
+import type * as ldgPayoutActions from "../ldgPayoutActions.js";
+import type * as ldgPayouts from "../ldgPayouts.js";
 import type * as ordCheckout from "../ordCheckout.js";
 import type * as ordFulfillment from "../ordFulfillment.js";
 import type * as ordPayments from "../ordPayments.js";
@@ -143,8 +147,8 @@ import type * as webhookRecoveryQueue from "../webhookRecoveryQueue.js";
 import type * as webhookRetention from "../webhookRetention.js";
 import type * as webhookSummaries from "../webhookSummaries.js";
 import type * as webhookSummaryMaintenance from "../webhookSummaryMaintenance.js";
-import type * as zuoStaging from "../zuoStaging.js";
 import type * as zuoImport from "../zuoImport.js";
+import type * as zuoStaging from "../zuoStaging.js";
 
 import type {
   ApiFromModules,
@@ -236,7 +240,11 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   klaviyoWaitlist: typeof klaviyoWaitlist;
   klaviyoWaitlistWorker: typeof klaviyoWaitlistWorker;
+  ldgCommissions: typeof ldgCommissions;
   ldgCore: typeof ldgCore;
+  ldgCredits: typeof ldgCredits;
+  ldgPayoutActions: typeof ldgPayoutActions;
+  ldgPayouts: typeof ldgPayouts;
   ordCheckout: typeof ordCheckout;
   ordFulfillment: typeof ordFulfillment;
   ordPayments: typeof ordPayments;
@@ -288,8 +296,8 @@ declare const fullApi: ApiFromModules<{
   webhookRetention: typeof webhookRetention;
   webhookSummaries: typeof webhookSummaries;
   webhookSummaryMaintenance: typeof webhookSummaryMaintenance;
-  zuoStaging: typeof zuoStaging;
   zuoImport: typeof zuoImport;
+  zuoStaging: typeof zuoStaging;
 }>;
 
 /**

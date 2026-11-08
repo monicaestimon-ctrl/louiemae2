@@ -596,7 +596,7 @@ Status: done (Phase E PR). Hub screens ship with S33/S34.
 ## Phase F: financial lifecycle (package F)
 
 ### S29. Commission ledger v2
-Status: not started
+Status: done (Phase F PR).
 
 **Goal.** Earned, cleared, reversed and held amounts as append-only events on immutable line snapshots.
 
@@ -616,7 +616,7 @@ Status: not started
 **Tests.** LED01 (duplicate or out-of-order paid and refund events: exactly one obligation and correct cumulative reversals). LED02 (a partial refund, and a dispute won or lost: correct pending, cleared and paid adjustments and restoration with no duplication). A sum invariant: `Σ events = projection` for every obligation (property test).
 
 ### S30. Payout runs v2
-Status: not started
+Status: done (Phase F PR).
 
 **Goal.** Monthly payouts that are safe to retry, with a cutoff, reservations, uncertain-result reconciliation and transfer kept separate from bank arrival.
 
@@ -641,7 +641,7 @@ Status: not started
 **Blocked by.** D-09 and D-10. Real transfers are prohibited (README rule 5).
 
 ### S31. Business referral credit v2
-Status: not started
+Status: done (Phase F PR).
 
 **Goal.** A $100 one-time credit with pending, award, reservation, redemption, reversal and liability treatment.
 

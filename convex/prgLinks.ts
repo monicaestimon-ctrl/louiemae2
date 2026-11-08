@@ -43,6 +43,8 @@ export const create = mutation({
   args: { productId: v.optional(v.id('commerceProducts')), variantId: v.optional(v.string()), path: v.optional(v.string()), channelTag: v.string() },
   handler: async (ctx, a) => {
     requireFlag('RETAIL_LINK_GENERATION_V2_ENABLED');
+    // Never promise a rate that the ledger would not pay.
+    requireFlag('COMMISSION_ACCRUAL_V2_ENABLED');
     const me = await requireUser(ctx);
     if (!(await rateLimit(ctx, `link:${me.userId}`, 60, 20))) throw new CommerceError('INVALID_INPUT', 'Too many links; wait a moment.');
     const source = await referralActive(ctx, me.userId);

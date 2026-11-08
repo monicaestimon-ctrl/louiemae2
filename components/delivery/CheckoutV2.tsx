@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { useMutation } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import { Loader2 } from 'lucide-react';
 import { api } from '../../convex/_generated/api';
 import { useCart } from '../../contexts/CartContext';
@@ -10,7 +10,7 @@ import { QUOTE_CTA, SPLIT_MAY, SPLIT_WILL } from '../../lib/customerCopy';
 const money = (minor: number) => `$${(minor / 100).toFixed(2)}`;
 const STATES = 'AL AZ AR CA CO CT DE DC FL GA ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY'.split(' ');
 
-type Est = { estimateId: string; status: string; deliveryChargeMinor: number | null; merchandiseMinor: number; taxMinor: number | null; totalMinor: number | null; splitKnown: boolean; timingCaveat: string };
+type Est = { estimateId: string; status: string; deliveryChargeMinor: number | null; merchandiseMinor: number; creditMinor?: number; taxMinor: number | null; totalMinor: number | null; splitKnown: boolean; timingCaveat: string };
 
 /**
  * v2 checkout (spec S18–S19, S21): confirm the full address, then show merchandise, delivery,
@@ -22,12 +22,15 @@ export default function CheckoutV2() {
   const estimate = useMutation(api.dlvEstimates.estimate);
   const [address, setAddress] = useState({ line1: '', line2: '', city: '', state: 'CA', postalCode: '', country: 'US' });
   const [email, setEmail] = useState('');
+  // Store credit (v2): comes off merchandise only, never delivery or tax.
+  const credit = useQuery(api.ldgCredits.myCreditV2);
+  const [useCredit, setUseCredit] = useState(false);
   const [est, setEst] = useState<Est | null>(null);
   const [accepted, setAccepted] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const lines = useMemo(() => items.map((i) => ({ productId: i.product.id, variantId: i.selectedVariant?.id ?? i.product.variants?.[0]?.id ?? '', packs: i.quantity })), [items]);
-  const key = useMemo(() => JSON.stringify({ lines, address }), [lines, address]);
+  const key = useMemo(() => JSON.stringify({ lines, address, useCredit }), [lines, address, useCredit]);
   const [estKey, setEstKey] = useState('');
   const stale = !!est && estKey !== key;
 
@@ -37,7 +40,7 @@ export default function CheckoutV2() {
     setMsg(null);
     try {
       const addr = { ...address, line2: address.line2 || undefined };
-      const r = (await estimate({ lines, channel: 'retail', zip: address.postalCode.slice(0, 5), address: addr, visitorKey: visitorId() })) as Est;
+      const r = (await estimate({ lines, channel: 'retail', zip: address.postalCode.slice(0, 5), address: addr, visitorKey: visitorId(), useCredit })) as Est;
       setEst(r);
       setEstKey(key);
       setAccepted(r.totalMinor);
@@ -57,7 +60,7 @@ export default function CheckoutV2() {
       const res = await fetch(`${site}/v2/checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idempotencyKey: `${est.estimateId}-${accepted}`.replace(/[^\w-]/g, ''), estimateId: est.estimateId, lines, address: { ...address, line2: address.line2 || undefined }, service: 'curbside', acceptTotalMinor: accepted, email, visitorKey: visitorId() }),
+        body: JSON.stringify({ idempotencyKey: `${est.estimateId}-${accepted}`.replace(/[^\w-]/g, ''), estimateId: est.estimateId, lines, address: { ...address, line2: address.line2 || undefined }, service: 'curbside', acceptTotalMinor: accepted, email, visitorKey: visitorId(), useCredit }),
       });
       const body = await res.json();
       if (res.ok && body.url) {
@@ -102,6 +105,12 @@ export default function CheckoutV2() {
           Email
           <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" className="mt-1 border border-earth/20 px-2 py-1 text-sm normal-case tracking-normal" />
         </label>
+        {credit && credit.availableMinor > 0 && (
+          <label className="col-span-2 flex items-center gap-2 text-xs text-earth">
+            <input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} />
+            Use my {money(credit.availableMinor)} store credit (merchandise only, not delivery or tax)
+          </label>
+        )}
         <button type="submit" disabled={busy} className="col-span-2 border border-earth/30 py-2 text-[10px] uppercase tracking-widest hover:bg-earth hover:text-cream">
           {busy && !est ? 'Checking delivery…' : 'Review delivery and total'}
         </button>
@@ -111,6 +120,7 @@ export default function CheckoutV2() {
         {est && !stale && est.status === 'ok' && est.totalMinor !== null && (
           <div className="text-xs text-earth space-y-1 border-t border-earth/10 pt-3">
             <div className="flex justify-between"><span>Merchandise</span><span>{money(est.merchandiseMinor)}</span></div>
+            {!!est.creditMinor && <div className="flex justify-between"><span>Store credit</span><span>−{money(est.creditMinor)}</span></div>}
             <div className="flex justify-between"><span>Curbside delivery</span><span>{money(est.deliveryChargeMinor ?? 0)}</span></div>
             <div className="flex justify-between"><span>Estimated tax</span><span>{money(est.taxMinor ?? 0)}</span></div>
             <div className="flex justify-between font-serif text-base"><span>Total</span><span>{money(est.totalMinor)}</span></div>

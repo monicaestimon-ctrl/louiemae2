@@ -193,6 +193,7 @@ http.route({
                 acceptTotalMinor: Number(body.acceptTotalMinor),
                 ...(typeof body.email === 'string' ? { email: body.email.slice(0, 254) } : {}),
                 ...(typeof body.visitorKey === 'string' ? { visitorKey: body.visitorKey.slice(0, 64) } : {}),
+                ...(body.useCredit === true ? { useCredit: true } : {}),
             });
         } catch (err: any) {
             const data = commerceErrorData(err);
@@ -209,6 +210,7 @@ http.route({
                     ...(result.taxMinor > 0 ? [{ price_data: { currency: 'usd', product_data: { name: 'Sales tax' }, unit_amount: result.taxMinor }, quantity: 1 }] : []),
                 ],
                 shipping_options: [{ shipping_rate_data: { type: 'fixed_amount', fixed_amount: { amount: result.deliveryMinor, currency: 'usd' }, display_name: 'Curbside delivery' } }],
+                ...(result.creditMinor > 0 ? { discounts: [{ coupon: (await stripe.coupons.create({ amount_off: result.creditMinor, currency: 'usd', duration: 'once', max_redemptions: 1, name: 'Store credit' }, { idempotencyKey: `v2-credit:${result.intentId}` })).id }] } : {}),
                 ...(result.email ? { customer_email: result.email } : {}),
                 metadata: { intentId: result.intentId },
                 expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
@@ -325,6 +327,12 @@ http.route({
             const payment = (event.data.object as Stripe.Charge | Stripe.Dispute).payment_intent;
             const paymentIntentId = typeof payment === 'string' ? payment : payment?.id;
             if (paymentIntentId) await ctx.runAction(internal.commerceStripe.reconcileReversal, { paymentIntentId });
+            // v2 orders: commission reversal/hold and credit reinstatement (no-op for other payments).
+            if (paymentIntentId) {
+                const isRefund = event.type === 'charge.refunded';
+                const ch = event.data.object as Stripe.Charge;
+                await ctx.runMutation(internal.ldgCommissions.onPaymentEvent, isRefund ? { paymentIntentId, kind: 'refund', refundedCents: ch.amount_refunded, chargeCents: ch.amount } : { paymentIntentId, kind: 'dispute', disputeId: (event.data.object as Stripe.Dispute).id });
+            }
             // A partner's commission on a storefront order shrinks with a refund and is taken back for a dispute.
             if (paymentIntentId) {
                 const charge = event.data.object as Stripe.Charge;
@@ -356,6 +364,25 @@ http.route({
             const id = (event.data.object as Stripe.Checkout.Session).metadata?.retailCheckoutId;
             if (id) await ctx.runMutation(internal.holmCredit.releaseCheckout, { retailCheckoutId: id });
             return new Response(JSON.stringify({ received: true }), { status: 200 });
+        }
+        // v2: dispute closed (won or lost) for a v2 order.
+        if (event.type === 'charge.dispute.closed') {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            const d = event.data.object as Stripe.Dispute;
+            const pi = typeof d.payment_intent === 'string' ? d.payment_intent : d.payment_intent?.id;
+            if (pi && (d.status === 'won' || d.status === 'lost')) await ctx.runMutation(internal.ldgCommissions.onPaymentEvent, { paymentIntentId: pi, kind: d.status === 'won' ? 'dispute_won' : 'dispute_lost', disputeId: d.id });
+        }
+        // v2 payouts: bank arrival on connected accounts is observed separately from the transfer.
+        if (event.type.startsWith('payout.') && event.account) {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            const p = event.data.object as Stripe.Payout;
+            const status = (['pending', 'in_transit', 'paid', 'failed', 'canceled'] as const).find((x) => x === p.status);
+            if (status) await ctx.runMutation(internal.ldgPayouts.observeBankPayout, { accountId: event.account, stripePayoutId: p.id, amountMinor: p.amount, status, ...(p.arrival_date ? { arrivalDate: p.arrival_date * 1000 } : {}), ...(p.failure_code ? { failureCode: p.failure_code } : {}) });
+            return new Response(JSON.stringify({ received: true }), { status: 200 });
+        }
+        if (event.type === 'transfer.reversed') {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            await ctx.runMutation(internal.ldgPayouts.onTransferReversed, { transferId: (event.data.object as Stripe.Transfer).id });
         }
         // A won dispute gives the partner's storefront commission back.
         if (event.type === 'charge.dispute.closed' && (event.data.object as Stripe.Dispute).status === 'won') {
