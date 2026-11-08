@@ -210,7 +210,7 @@ http.route({
                     ...(result.lines.length>=100?[{price_data:{currency:'usd',product_data:{name:`Accepted project quote (${result.lines.length} items)`},unit_amount:result.lines.reduce((n:number,l:any)=>n+l.unitMinor*l.packs,0)},quantity:1}]:result.lines.map((l: any) => ({ price_data: { currency: 'usd', product_data: { name: l.name }, unit_amount: l.unitMinor }, quantity: l.packs }))),
                     ...(result.taxMinor > 0 ? [{ price_data: { currency: 'usd', product_data: { name: 'Sales tax' }, unit_amount: result.taxMinor }, quantity: 1 }] : []),
                 ],
-                shipping_options: [{ shipping_rate_data: { type: 'fixed_amount', fixed_amount: { amount: result.deliveryMinor, currency: 'usd' }, display_name: result.service==='curbside'?'Curbside delivery':result.service } }],
+                shipping_options: [{ shipping_rate_data: { type: 'fixed_amount', fixed_amount: { amount: result.deliveryMinor, currency: 'usd' }, display_name: result.serviceLabel.slice(0, 100) } }],
                 ...(result.creditMinor > 0 ? { discounts: [{ coupon: (await stripe.coupons.create({ amount_off: result.creditMinor, currency: 'usd', duration: 'once', max_redemptions: 1, name: 'Store credit' }, { idempotencyKey: `v2-credit:${result.intentId}` })).id }] } : {}),
                 ...(result.email ? { customer_email: result.email } : {}),
                 metadata: { intentId: result.intentId },

@@ -482,6 +482,14 @@ export const v2Tables = {
     baseMinor:v.number(),fuelMinor:v.number(),accessorialMinor:v.number(),supplierFeeMinor:v.number(),creditMinor:v.number(),
     totalMinor:v.number(),evidence:v.string(),note:v.string(),createdBy:v.string(),createdAt:v.number(),
   }).index('by_invoice',['invoiceKey']).index('by_supplier_order',['supplierOrderId','createdAt']),
+  dlvObservations: defineTable({
+    createdAt: v.number(), durationMs: v.number(),
+    channel: retailOrTrade,
+    path: v.union(v.literal('matrix'), v.literal('matrix_tax')),
+    outcome: v.union(v.literal('ok'), v.literal('quote'), v.literal('blocked'), v.literal('error'), v.literal('tax_error'), v.literal('tax_unavailable')),
+    code: v.optional(v.string()),
+    scopes: v.array(v.object({supplier:v.string(),origin:v.string(),zone:v.string(),mode:v.string(),service:v.string()})),
+  }).index('by_created',['createdAt']),
   dlvEstimates: defineTable({
     serviceTerms: v.optional(deliveryTerms),
     manualQuoteVersionId:v.optional(v.id('ordQuoteVersions')),

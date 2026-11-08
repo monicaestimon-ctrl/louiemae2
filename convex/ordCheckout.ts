@@ -33,6 +33,7 @@ export type IntentResult =
       intentId: Id<'ordCheckoutIntents'>;
       expiresAt: number;
       service: string;
+      serviceLabel: string;
       totalMinor: number;
       creditMinor: number;
       lines: { name: string; unitMinor: number; packs: number }[];
@@ -101,6 +102,7 @@ export const createIntent = internalMutation({
         intentId: existing._id,
         expiresAt: existing.expiresAt,
         service: est.service,
+        serviceLabel: existing.serviceTerms?.label ?? 'Confirmed delivery',
         totalMinor: existing.totalMinor,
         creditMinor: existing.creditMinor,
         deliveryMinor: existing.deliveryMinor,
@@ -301,6 +303,7 @@ export const createIntent = internalMutation({
       intentId,
       expiresAt: now + INTENT_MS,
       service: est.service,
+      serviceLabel: fresh.serviceTerms.label,
       ...(a.email || me?.email ? { email: (a.email || me!.email).trim().toLowerCase() } : {}),
       totalMinor,
       creditMinor: fresh.creditMinor,

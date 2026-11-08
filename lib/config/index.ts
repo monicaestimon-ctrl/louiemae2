@@ -12,6 +12,7 @@ export const CONFIG_KINDS = [
   'deliveryRule',
   'carrierRule',
   'deliveryControls',
+  'deliveryMonitoringPolicy',
   'taxProviderPolicy',
   'commissionSchedule',
   'tierPolicy',
@@ -98,6 +99,15 @@ export type DeliveryServicePolicy = {
   modes: Partial<
     Record<'ground' | 'ltl' | 'per_item', { label: string; details: string[]; evidenceRef: string }>
   >;
+};
+export type DeliveryMonitoringPolicy = {
+  minimumAttempts: number;
+  authorizationFailures: number;
+  errorRateBps: number;
+  matrixP95Ms: number;
+  taxP95Ms: number;
+  quoteSlaHours: number;
+  retentionDays: number;
 };
 export type DeliveryControls = {
   automaticEnabled: boolean;
@@ -358,6 +368,16 @@ export function parseConfig(kind: ConfigKind, value: unknown): unknown {
         bps(kind, obj(kind, t).bps, 'tiers[].bps');
       }
       return o as ProjectDiscountPolicy;
+    }
+    case 'deliveryMonitoringPolicy': {
+      int(kind, o.minimumAttempts, 'minimumAttempts', 1, 10000);
+      int(kind, o.authorizationFailures, 'authorizationFailures', 1, 10000);
+      bps(kind, o.errorRateBps, 'errorRateBps');
+      int(kind, o.matrixP95Ms, 'matrixP95Ms', 100, 60000);
+      int(kind, o.taxP95Ms, 'taxP95Ms', 100, 60000);
+      int(kind, o.quoteSlaHours, 'quoteSlaHours', 1, 720);
+      int(kind, o.retentionDays, 'retentionDays', 1, 90);
+      return o as DeliveryMonitoringPolicy;
     }
     case 'serviceLevel': {
       str(kind, o.code, 'code');
