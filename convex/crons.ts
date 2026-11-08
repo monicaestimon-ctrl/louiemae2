@@ -16,6 +16,9 @@ if (monitoringEnabled) crons.interval('refresh-catalog-freshness', { hours: 1 },
 crons.interval('expire-checkout-intents', { minutes: 15 }, internal.ordCheckout.expireStale, {});
 crons.interval('recover-payment-events', { minutes: 5 }, internal.ordPayments.recoverBacklog, {});
 
+// v2 tiers: recompute once a day at 00:15 America/Chicago (the handler checks local time, so DST is handled).
+crons.cron('tier-daily-chicago', '15 * * * *', internal.prgTiers.dailyTick, {});
+
 // Persist signups first; process/recover the bounded marketing queue separately.
 crons.interval('sync-klaviyo-waitlist', { minutes: 1 }, internal.klaviyoWaitlist.dispatch, {});
 crons.interval('reconcile-klaviyo-consent', { minutes: 15 }, internal.klaviyoWaitlistWorker.reconcileConsent, { cursor: null });

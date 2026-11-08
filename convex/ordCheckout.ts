@@ -13,6 +13,7 @@ import { requireFlag } from '../lib/flags';
 import { CommerceError } from '../lib/errors';
 import { addressKey } from '../lib/delivery/destination';
 import { addressArg, lineArg } from './dlvEstimates';
+import { snapshotForIntent } from './prgAttribution';
 
 const INTENT_MS = 30 * 60_000;
 
@@ -34,6 +35,7 @@ export const createIntent = internalMutation({
     service: v.string(),
     acceptTotalMinor: v.number(),
     email: v.optional(v.string()),
+    visitorKey: v.optional(v.string()),
   },
   handler: async (ctx, a): Promise<IntentResult> => {
     requireFlag('RETAIL_ZUO_CHECKOUT_ENABLED');
@@ -95,6 +97,9 @@ export const createIntent = internalMutation({
     // Zuo has no live stock count: the reservation records the packs held for this intent, and
     // operations confirms supplier availability before ordering (paid-order exceptions otherwise).
     for (const l of fresh.lines) await ctx.db.insert('ordInventoryReservations', { variantId: l.variant._id, packs: l.packs, intentId, expiresAt: now + INTENT_MS, status: 'held' });
+    // Freeze attribution and rate protection with the accepted lines (S27).
+    const snapshotId = await snapshotForIntent(ctx, { intentId, visitorKey: a.visitorKey, buyer: { ...(me ? { userId: me.userId } : {}), ...(a.email ? { email: a.email.trim().toLowerCase() } : {}) }, channel: 'retail', lines: fresh.lines.map((l) => ({ lineKey: l.lineKey, productId: l.productId, variantId: l.variant._id, category: l.category })) });
+    if (snapshotId) await ctx.db.patch(intentId, { attributionSnapshotId: snapshotId });
     await setKeyResult(ctx, `checkout:${a.idempotencyKey}`, intentId);
     return { status: 'created', intentId, totalMinor, deliveryMinor: fresh.deliveryMinor, taxMinor: fresh.taxMinor, lines: fresh.lines.map((l) => ({ name: l.name, unitMinor: l.unitPackMinor, packs: l.packs })) };
   },

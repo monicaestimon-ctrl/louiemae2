@@ -1,4 +1,10 @@
 import { v } from 'convex/values';
+import { syncTrade } from './prgCore';
+import { maybeConfig } from './sysConfig';
+import { applyProjectTier } from '../lib/projectDiscount';
+import type { ProjectDiscountPolicy } from '../lib/config';
+import { flag } from '../lib/flags';
+import { CommerceError } from '../lib/errors';
 import { query, mutation } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
@@ -131,6 +137,9 @@ async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>) {
     const retail = rate ? launchPrice(base, rate.freight, rate.delivery) : base;
     const freight = variantFreight(route, rate);
     const cost = costCents(product, route, linked, freight.cents);
+    // Zuo (v2): the approved trade pack price is the trade price and its floor (10% or the
+    // approved 5%), never the general 25% schedule; it is never discounted further by projects.
+    if (product.provider === 'zuo') return route.commercial > 0 ? [{ ...sv, retail, cost, sku: route.sku, freightKnown: true, trade: route.commercial, floor: route.commercial }] : [];
     return [{ ...sv, retail, cost, sku: route.sku, freightKnown: freight.known, trade: tradeCents(retail, cost), floor: floorCents(cost) }];
   });
   return variants.length ? { product, listing, variants, inStock: linked?.inStock !== false } : null;
@@ -344,6 +353,7 @@ export const applyTrade = mutation({
         createdAt: now,
         ...profile,
       });
+    await syncTrade(ctx, me.userId, 'pending', name);
     await ctx.scheduler.runAfter(0, internal.holmEmail.send, {
       key: `trade-application:${id}`,
       to: 'owner',
@@ -411,6 +421,7 @@ export const reviewApplication = mutation({
     };
     if (profile) await ctx.db.patch(profile._id, patch);
     if (a.decision === 'approved') await markReferralVerified(ctx, app.userId);
+    await syncTrade(ctx, app.userId, a.decision, app.businessName);
     const copy = {
       approved: `Your trade account for ${app.businessName} is approved. Trade pricing is now on for every piece, and your digital trade pass is in your account.\n\nhttps://louiemae.com/trade`,
       rejected: `We weren't able to approve the trade account for ${app.businessName}.${note ? `\n\n${note}` : ''}\n\nReply to this email if anything has changed.`,
@@ -456,9 +467,17 @@ async function priceSelection(
     checkQuantity(s.quantity, variant);
     rows.push({ s, priced, variant, route });
   }
-  const pp = trade
-    ? applyProjectPricing(rows.map((r) => ({ unitCents: r.variant.trade, quantity: r.s.quantity, floorCents: r.variant.floor })))
-    : null;
+  // v2 (S32): project tiers apply only to stackable lines, on the eligible trade subtotal, from the
+  // approved policy; Zuo lines never stack. Legacy pricing stays until TRADE_CHECKOUT_V2_ENABLED.
+  const v2Policy = trade && flag('TRADE_CHECKOUT_V2_ENABLED') ? await maybeConfig<ProjectDiscountPolicy>(ctx, 'projectDiscountPolicy', 'project-discount') : null;
+  const pp = !trade
+    ? null
+    : v2Policy
+      ? (() => {
+          const r = applyProjectTier(rows.map((x, i) => ({ key: String(i), tradeUnitMinor: x.variant.trade, quantity: x.s.quantity, floorUnitMinor: x.variant.floor, mapUnitMinor: null, stackable: x.priced.product.provider !== 'zuo' })), v2Policy.value);
+          return { units: r.lines.map((l) => l.unitMinor), bps: r.tierBps, discountCents: r.discountMinor };
+        })()
+      : applyProjectPricing(rows.map((r) => ({ unitCents: r.variant.trade, quantity: r.s.quantity, floorCents: r.variant.floor })));
   const lines = rows.map((r, i) => ({
     productId: r.priced.product._id,
     variantId: r.variant.id,
@@ -538,6 +557,8 @@ export const requestQuote = mutation({
     if (recent.length === 3 && recent[2].createdAt > Date.now() - 3600000)
       throw new Error('You have sent several requests. Please wait an hour before sending another.');
     const trade = !!me && (isVerified(me.profile) || (await isAdmin(ctx)));
+    // v2 (S25): HOLM is the approved-trade purchasing channel; retail buyers shop on Louie Mae.
+    if (flag('HOLM_TRADE_ONLY_ENABLED') && !trade) throw new CommerceError('TRADE_APPROVAL_REQUIRED', 'Retail requests are no longer taken on HOLM', 'Trade pricing and quotes are for approved trade members. Shop retail on louiemae.com.');
     const priced = await priceSelection(ctx, a.items, trade);
     const delivery = deliveryCents(priced.subtotal);
     totalLines(priced.lines, delivery, 0);

@@ -336,9 +336,16 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
 
   // Decoded category from URL
   const selectedCategory = useMemo(() => decodeURIComponent(initialCategory), [initialCategory]);
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  // A retail referral link lands on ?product=<id> (and ?variant=<id>): open that piece directly.
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(() => {
+    const q = window.location.hash.split('?')[1];
+    return q ? new URLSearchParams(q).get('product') : null;
+  });
   const { product: selectedProduct, loading: detailLoading, unavailable: detailUnavailable } = useStorefrontProductDetail(selectedProductId);
-  const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(undefined);
+  const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(() => {
+    const q = window.location.hash.split('?')[1];
+    return (q && new URLSearchParams(q).get('variant')) || undefined;
+  });
   // Price/stock changes and deleted options must not leave a stale cart selection.
   const selectedVariant = selectedProduct?.variants?.length === 1
     ? selectedProduct.variants[0]
