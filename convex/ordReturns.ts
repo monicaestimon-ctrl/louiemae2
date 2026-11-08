@@ -13,14 +13,15 @@ import { CommerceError } from '../lib/errors';
 export type ReturnPolicy = { windowDays: number; restockingBps: number; refundOriginalDelivery: boolean; customerPaysReturnFreight: boolean; damageClaimDays: number; requiresAuthorization: boolean };
 
 /** Refund split for returning `pieces` of a line, using the policy. Pure arithmetic, exact cents. */
-export function refundSplit(line: { pieces: number; unitPackMinor: number; packs: number; discountMinor: number; creditMinor: number; taxMinor: number; deliveryAllocMinor: number; refundedMinor: number }, pieces: number, policy: ReturnPolicy, goodwill: boolean) {
+export function refundSplit(line: { pieces: number; unitPackMinor: number; packs: number; discountMinor: number; creditMinor: number; taxMinor: number; deliveryAllocMinor: number; deliveryTaxAllocMinor?:number; refundedMinor: number }, pieces: number, policy: ReturnPolicy, goodwill: boolean, previousPieces=0) {
   if (!Number.isInteger(pieces) || pieces < 1 || pieces > line.pieces) throw new CommerceError('INVALID_INPUT', 'Return quantity is not valid');
-  const share = (x: number) => Math.floor((x * pieces) / line.pieces);
+  if(!Number.isInteger(previousPieces)||previousPieces<0||previousPieces+pieces>line.pieces)throw new CommerceError('INVALID_INPUT','Invalid cumulative returned quantity');
+  const share = (x: number) => Math.floor((x * (previousPieces+pieces)) / line.pieces)-Math.floor((x*previousPieces)/line.pieces);
   const gross = share(line.unitPackMinor * line.packs - line.discountMinor);
   const restocking = goodwill ? 0 : Math.floor((gross * policy.restockingBps) / 10_000);
   const merchandise = gross - restocking;
   const creditRestored = Math.min(share(line.creditMinor), merchandise);
-  const tax = share(line.taxMinor);
+  const tax = share(line.taxMinor) + (policy.refundOriginalDelivery || goodwill ? share(line.deliveryTaxAllocMinor??0) : 0);
   const delivery = policy.refundOriginalDelivery || goodwill ? share(line.deliveryAllocMinor) : 0;
   const cash = merchandise - creditRestored + tax + delivery;
   return { merchandise, tax, delivery, creditRestored, cash, restocking };
@@ -39,7 +40,7 @@ export const request = mutation({
     const prior = await ctx.db.query('ordReturns').withIndex('by_line', (q) => q.eq('orderLineId', line._id)).collect();
     const returned = prior.filter((r) => r.status !== 'rejected').reduce((t, r) => t + r.pieces, 0);
     if (returned + a.pieces > line.pieces) throw new CommerceError('INVALID_INPUT', 'More pieces than were ordered');
-    const refund = refundSplit(line, a.pieces, policy, a.goodwill);
+    const refund = refundSplit(line, a.pieces, policy, a.goodwill, returned);
     const id = await ctx.db.insert('ordReturns', {
       orderLineId: line._id,
       policyKey,

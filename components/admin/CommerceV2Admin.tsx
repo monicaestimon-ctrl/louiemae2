@@ -6,17 +6,19 @@ import { customerMessage, commerceErrorData } from '../../lib/errors';
 import { normalizePackage, parseCsv, parseJsonPackage } from '../../lib/zuoImport';
 import { KNOWN_METADATA_CORRECTIONS } from '../../lib/zuoImportNotes';
 import { dollarsToMinor } from '../../lib/decimal';
+import DeliveryOperations from './DeliveryOperations';
 
 // Commerce v2 operations console (spec S35, v2 §20, §26). Admin-only: every query behind it
 // requires the admin allowlist on the server.
 
-type Section = 'decisions' | 'health' | 'reviews' | 'catalog' | 'fulfillment' | 'partners';
+type Section = 'decisions' | 'health' | 'reviews' | 'catalog' | 'fulfillment' | 'partners' | 'delivery';
 const SECTIONS: [Section, string][] = [
   ['decisions', 'Decisions & flags'],
   ['health', 'Health & alerts'],
   ['reviews', 'Review queue'],
   ['catalog', 'Catalog & import'],
   ['fulfillment', 'Dealer orders'],
+  ['delivery', 'Delivery & freight'],
   ['partners', 'Partners & payouts'],
 ];
 const money = (m: number) => `$${(m / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
@@ -497,6 +499,7 @@ export default function CommerceV2Admin() {
       {section === 'reviews' && <Reviews />}
       {section === 'catalog' && <Catalog />}
       {section === 'fulfillment' && <Fulfillment />}
+      {section === 'delivery' && <DeliveryOperations />}
       {section === 'partners' && <Partners />}
     </div>
   );

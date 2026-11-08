@@ -173,7 +173,7 @@ http.route({
     method: "POST",
     handler: httpAction(async (ctx, request) => {
         const json = (body: unknown, status: number) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-        if (process.env.RETAIL_ZUO_CHECKOUT_ENABLED !== 'true') return json({ code: 'FEATURE_DISABLED', error: "This isn't available yet." }, 403);
+        if (process.env.RETAIL_ZUO_CHECKOUT_ENABLED !== 'true' && process.env.TRADE_CHECKOUT_V2_ENABLED !== 'true') return json({ code: 'FEATURE_DISABLED', error: "This isn't available yet." }, 403);
         const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
         if (!stripeSecretKey) return json({ error: 'Payments are not configured.' }, 500);
         let body: any;
@@ -191,6 +191,7 @@ http.route({
                 address: body.address,
                 service: String(body.service || 'curbside'),
                 acceptTotalMinor: Number(body.acceptTotalMinor),
+                ...(typeof body.guestCapability === 'string' ? { guestCapability: body.guestCapability } : {}),
                 ...(typeof body.email === 'string' ? { email: body.email.slice(0, 254) } : {}),
                 ...(typeof body.visitorKey === 'string' ? { visitorKey: body.visitorKey.slice(0, 64) } : {}),
                 ...(body.useCredit === true ? { useCredit: true } : {}),
@@ -206,19 +207,19 @@ http.route({
                 mode: 'payment',
                 payment_method_types: ['card'],
                 line_items: [
-                    ...result.lines.map((l: any) => ({ price_data: { currency: 'usd', product_data: { name: l.name }, unit_amount: l.unitMinor }, quantity: l.packs })),
+                    ...(result.lines.length>=100?[{price_data:{currency:'usd',product_data:{name:`Accepted project quote (${result.lines.length} items)`},unit_amount:result.lines.reduce((n:number,l:any)=>n+l.unitMinor*l.packs,0)},quantity:1}]:result.lines.map((l: any) => ({ price_data: { currency: 'usd', product_data: { name: l.name }, unit_amount: l.unitMinor }, quantity: l.packs }))),
                     ...(result.taxMinor > 0 ? [{ price_data: { currency: 'usd', product_data: { name: 'Sales tax' }, unit_amount: result.taxMinor }, quantity: 1 }] : []),
                 ],
-                shipping_options: [{ shipping_rate_data: { type: 'fixed_amount', fixed_amount: { amount: result.deliveryMinor, currency: 'usd' }, display_name: 'Curbside delivery' } }],
+                shipping_options: [{ shipping_rate_data: { type: 'fixed_amount', fixed_amount: { amount: result.deliveryMinor, currency: 'usd' }, display_name: result.service==='curbside'?'Curbside delivery':result.service } }],
                 ...(result.creditMinor > 0 ? { discounts: [{ coupon: (await stripe.coupons.create({ amount_off: result.creditMinor, currency: 'usd', duration: 'once', max_redemptions: 1, name: 'Store credit' }, { idempotencyKey: `v2-credit:${result.intentId}` })).id }] } : {}),
                 ...(result.email ? { customer_email: result.email } : {}),
                 metadata: { intentId: result.intentId },
-                expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
+                expires_at: Math.floor(result.expiresAt / 1000),
                 success_url: 'https://www.louiemae.com/#checkout/success?session_id={CHECKOUT_SESSION_ID}',
                 cancel_url: 'https://www.louiemae.com/#checkout/cancel',
             }, { idempotencyKey: `v2-checkout-session:${result.intentId}` });
             if (session.amount_total !== result.totalMinor) {
-                await stripe.checkout.sessions.expire(session.id).catch(() => undefined);
+                await stripe.checkout.sessions.expire(session.id);
                 await ctx.runMutation(internal.ordCheckout.fail, { intentId: result.intentId });
                 return json({ code: 'PAYMENT_RECONCILIATION_REQUIRED', error: 'Checkout could not start.' }, 500);
             }
@@ -226,8 +227,9 @@ http.route({
             return json({ url: session.url, intentId: result.intentId }, 200);
         } catch (err: any) {
             console.error('v2 checkout session failed', result.intentId, err?.message);
-            await ctx.runMutation(internal.ordCheckout.fail, { intentId: result.intentId });
-            return json({ error: 'Checkout could not start. Please try again.' }, 502);
+            // A timeout can follow successful session creation. Retain the intent and its
+            // reservations so the same idempotency key can reconcile the uncertain outcome.
+            return json({ error: 'Payment setup is still being confirmed. Retry this same checkout.' }, 502);
         }
     }),
 });
@@ -331,6 +333,7 @@ http.route({
             if (paymentIntentId) {
                 const isRefund = event.type === 'charge.refunded';
                 const ch = event.data.object as Stripe.Charge;
+                if(isRefund) await ctx.runMutation(internal.dlvTax.receiveRefund,{paymentIntentId,eventId:event.id,refundedMinor:ch.amount_refunded,chargeMinor:ch.amount});
                 await ctx.runMutation(internal.ldgCommissions.onPaymentEvent, isRefund ? { paymentIntentId, kind: 'refund', refundedCents: ch.amount_refunded, chargeCents: ch.amount } : { paymentIntentId, kind: 'dispute', disputeId: (event.data.object as Stripe.Dispute).id });
             }
             // A partner's commission on a storefront order shrinks with a refund and is taken back for a dispute.

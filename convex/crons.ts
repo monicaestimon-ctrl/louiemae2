@@ -15,6 +15,7 @@ if (monitoringEnabled) crons.interval('refresh-catalog-freshness', { hours: 1 },
 // v2 checkout: expired intents release their holds; verified payment events never wait unprocessed.
 crons.interval('expire-checkout-intents', { minutes: 15 }, internal.ordCheckout.expireStale, {});
 crons.interval('recover-payment-events', { minutes: 5 }, internal.ordPayments.recoverBacklog, {});
+crons.interval('recover-delivery-tax-reporting', { minutes: 5 }, internal.dlvTax.recoverTransactions, {});
 
 // v2 tiers: recompute once a day at 00:15 America/Chicago (the handler checks local time, so DST is handled).
 crons.cron('tier-daily-chicago', '15 * * * *', internal.prgTiers.dailyTick, {});

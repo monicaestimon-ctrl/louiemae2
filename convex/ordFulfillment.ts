@@ -27,9 +27,10 @@ function orderNumber(intentId: string) {
 export async function createOrderFromIntent(ctx: MutationCtx, intent: Doc<'ordCheckoutIntents'>, p: { paymentIntentId?: string; email: string; shippingAddress?: Doc<'ordOrders'>['shippingAddress']; paidAt: number }) {
   const lines = intent.lineSnapshot;
   const taxShares = allocate(intent.taxMinor, lines.map((l) => l.unitPackMinor * l.packs));
+  const deliveryTaxShares=allocate(intent.deliveryTaxMinor??0,lines.map(l=>l.unitPackMinor*l.packs));
   const deliveryShares = allocate(intent.deliveryMinor, lines.map((l) => l.unitPackMinor * l.packs));
   const groups = new Map<string, number[]>();
-  lines.forEach((l, i) => groups.set(l.supplierCode, [...(groups.get(l.supplierCode) ?? []), i]));
+  lines.forEach((l, i) => {const key=`${l.supplierCode}:${l.originZip??''}:${l.service??'curbside'}`;groups.set(key,[...(groups.get(key)??[]),i])});
   const splitKnown = groups.size > 1;
   const orderId = await ctx.db.insert('ordOrders', {
     number: orderNumber(intent._id),
@@ -61,8 +62,9 @@ export async function createOrderFromIntent(ctx: MutationCtx, intent: Doc<'ordCh
         unitPackMinor: l.unitPackMinor,
         discountMinor: l.discountMinor,
         creditMinor: l.creditMinor,
-        taxMinor: taxShares[i],
-        deliveryAllocMinor: deliveryShares[i],
+        taxMinor: l.taxMinor ?? taxShares[i],
+        deliveryTaxAllocMinor:deliveryTaxShares[i],
+        deliveryAllocMinor: l.deliveryAllocMinor ?? deliveryShares[i],
         commissionCategory: l.commissionCategory,
         supplierCode: l.supplierCode,
         ...(l.costRevisionId ? { costRevisionId: l.costRevisionId } : {}),
@@ -72,10 +74,11 @@ export async function createOrderFromIntent(ctx: MutationCtx, intent: Doc<'ordCh
       })
     );
   const now = Date.now();
-  for (const [supplierCode, idx] of groups) {
+  for (const [, idx] of groups) {
+    const first=lines[idx[0]],supplierCode=first.supplierCode;
     const route = ROUTE[supplierCode];
     if (!route) throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED', `No fulfillment route for ${supplierCode}`);
-    const childId = await ctx.db.insert('ordSupplierOrders', { orderId, supplierCode, service: 'curbside', route, status: 'queued', submission: { mode: 'none' }, exceptions: [], createdAt: now, updatedAt: now });
+    const childId = await ctx.db.insert('ordSupplierOrders', { orderId, supplierCode, ...(first.originZip?{warehouseCode:first.originZip}:{}),service:first.service??'curbside', route, status: 'queued', submission: { mode: 'none' }, exceptions: [], createdAt: now, updatedAt: now });
     for (const i of idx) await ctx.db.insert('ordAllocations', { orderLineId: lineIds[i], supplierOrderId: childId, pieces: lines[i].pieces, packs: lines[i].packs, status: 'open' });
   }
   for (const r of await ctx.db.query('ordInventoryReservations').withIndex('by_intent', (q) => q.eq('intentId', intent._id)).collect()) await ctx.db.patch(r._id, { status: 'consumed' });
