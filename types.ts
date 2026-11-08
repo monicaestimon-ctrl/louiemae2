@@ -37,7 +37,7 @@ export interface CjInventorySnapshot {
 }
 
 export interface Product {
-  fulfillmentProvider?: 'ashcroft';
+  fulfillmentProvider?: 'ashcroft' | 'zuo';
   deliveryFee?: number;
   id: string;
   name: string;

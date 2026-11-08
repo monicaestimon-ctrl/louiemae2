@@ -48,7 +48,8 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }, [items]);
 
     const addToCart = (product: Product, quantity: number = 1, variant?: ProductVariant) => {
-        if (product.fulfillmentProvider !== 'ashcroft') return;
+        // Only orderable providers: Ashcroft (legacy checkout) and Zuo (v2 checkout, when listed).
+        if (product.fulfillmentProvider !== 'ashcroft' && product.fulfillmentProvider !== 'zuo') return;
         setItems(prev => {
             const key = getCartItemKey(product.id, variant?.id);
             const existingIndex = prev.findIndex(item =>

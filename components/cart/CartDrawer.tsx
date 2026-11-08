@@ -6,9 +6,12 @@ import { api } from '../../convex/_generated/api';
 import { useCart } from '../../contexts/CartContext';
 import CartItem from './CartItem';
 import { activeRef, visitorId } from '../../lib/partnerLink';
+import CheckoutV2 from '../delivery/CheckoutV2';
 
 export const CartDrawer: React.FC = () => {
     const { isOpen, closeCart, items, subtotal, itemCount, removeFromCart } = useCart();
+    // Zuo items (or a mixed cart) use the v2 checkout: full-address delivery and tax before payment.
+    const hasV2 = items.some((item) => item.product.fulfillmentProvider === 'zuo');
     const delivery = items.reduce((sum, item) => sum + (item.product.deliveryFee ?? 0) * item.quantity, 0);
     const [isCheckingOut, setIsCheckingOut] = useState(false);
     // Store credit (signed-in members): pre-set from their Hub setting, changeable per order.
@@ -191,7 +194,7 @@ export const CartDrawer: React.FC = () => {
                             <span className="font-serif text-xl text-earth">${subtotal.toFixed(2)}</span>
                         </div>
 
-                        {credit && credit.balanceCents > 0 && (
+                        {!hasV2 && credit && credit.balanceCents > 0 && (
                             <label className="flex items-center justify-between gap-3 mb-3 text-xs text-earth">
                                 <span className="flex items-center gap-2">
                                     <input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} />
@@ -201,6 +204,7 @@ export const CartDrawer: React.FC = () => {
                             </label>
                         )}
 
+                        {hasV2 ? <CheckoutV2 /> : (<>
                         <p className="text-[10px] text-earth/40 mb-4 text-center">
                             Economy delivery: ${delivery.toFixed(2)} · Total before tax: ${(subtotal - creditOff + delivery).toFixed(2)}. Delivery is charged per item; tax is calculated at checkout.{creditOff > 0 ? ' Store credit comes off the items, not delivery or tax.' : ''}
                         </p>
@@ -255,6 +259,7 @@ export const CartDrawer: React.FC = () => {
                                 'Proceed to Checkout'
                             )}
                         </button>
+                        </>)}
 
                         {/* Continue Shopping */}
                         <button

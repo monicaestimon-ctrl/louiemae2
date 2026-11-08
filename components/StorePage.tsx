@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
+import ProductDeliveryEstimate from './delivery/ProductDeliveryEstimate';
 import { useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { FadeIn } from './FadeIn';
@@ -980,7 +981,8 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                   </div>
                 </div>
               </div>
-              {selectedProduct.fulfillmentProvider && selectedProduct.inStock && <p className="text-sm text-earth/60">${selectedProduct.deliveryFee} Economy delivery per item</p>}
+              {selectedProduct.fulfillmentProvider === 'ashcroft' && selectedProduct.inStock && <p className="text-sm text-earth/60">${selectedProduct.deliveryFee} Economy delivery per item</p>}
+              {selectedProduct.fulfillmentProvider === 'zuo' && <ProductDeliveryEstimate productId={selectedProduct.id} variantId={selectedVariant?.id ?? selectedProduct.variants?.[0]?.id} />}
               <AddToCartButton
                 product={selectedProduct}
                 selectedVariant={selectedVariant}

@@ -21,9 +21,31 @@ export function storefrontListing(listing: Doc<'commerceListings'>) {
   };
 }
 
+/**
+ * A published Zuo listing for the storefront (v2). Prices are the approved pack prices; delivery
+ * comes from the server estimate at checkout, never from a per-item fee here.
+ */
+export function zuoStorefrontListing(listing: Doc<'commerceListings'>, collection: 'furniture' | 'decor') {
+  const s = listing.snapshot;
+  const variants = s.variants.map(v => ({ id: v.id, name: v.name, image: v.image, price: v.price / 100, inStock: true }));
+  const price = Math.min(...variants.map(v => v.price));
+  return { _id: listing.productId, name: s.name, description: s.description, category: s.category, collection,
+    images: s.images, price, deliveryFee: 0, fulfillmentProvider: 'zuo' as const, inStock: true,
+    variants: variants.map(({ price: variantPrice, ...v }) => ({ ...v, priceAdjustment: variantPrice - price })),
+    variantCount: variants.length, isNew: false,
+  };
+}
+
+export const zuoRetailEnabled = () => process.env.RETAIL_ZUO_CHECKOUT_ENABLED === 'true';
+
 export async function retailDetail(ctx: QueryCtx, id: Id<'commerceProducts'>) {
   const product = await ctx.db.get(id);
-  if (product?.provider !== 'ashcroft') return null;
+  if (product?.provider !== 'ashcroft' && !(product?.provider === 'zuo' && zuoRetailEnabled())) return null;
   const listing = await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', id).eq('channel', 'retail')).unique();
-  return listing?.published ? storefrontListing(listing) : null;
+  if (!listing?.published) return null;
+  if (product.provider === 'zuo') {
+    const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', id)).first();
+    return zuoStorefrontListing(listing, meta?.commissionCategory === 'decor' ? 'decor' : 'furniture');
+  }
+  return storefrontListing(listing);
 }

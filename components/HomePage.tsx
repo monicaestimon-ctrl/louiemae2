@@ -1,5 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
+import ProductDeliveryEstimate from './delivery/ProductDeliveryEstimate';
 import { createPortal } from 'react-dom';
 import { FadeIn } from './FadeIn';
 import { GlassButton } from './ui/GlassButton';
@@ -563,7 +564,8 @@ export const HomePage: React.FC = () => {
               </div>
 
               <div className="relative z-10 mt-8">
-                {selectedProduct.fulfillmentProvider && selectedProduct.inStock && <p className="text-sm text-earth/60 mb-3">${selectedProduct.deliveryFee} Economy delivery per item</p>}
+                {selectedProduct.fulfillmentProvider === 'ashcroft' && selectedProduct.inStock && <p className="text-sm text-earth/60 mb-3">${selectedProduct.deliveryFee} Economy delivery per item</p>}
+                {selectedProduct.fulfillmentProvider === 'zuo' && <ProductDeliveryEstimate productId={selectedProduct.id} variantId={selectedVariant?.id ?? selectedProduct.variants?.[0]?.id} />}
                 <AddToCartButton key={selectedProduct.id} product={selectedProduct} selectedVariant={selectedVariant} variantRequired={!!selectedProduct.variants?.length} className="rounded-lg shadow-xl" />
               </div>
             </div>
