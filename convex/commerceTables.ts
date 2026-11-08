@@ -1,6 +1,6 @@
 import { defineTable } from 'convex/server';
 import { v } from 'convex/values';
-export const provider = v.union(v.literal('cj'), v.literal('ashcroft'), v.literal('owner_managed'));
+export const provider = v.union(v.literal('cj'), v.literal('ashcroft'), v.literal('owner_managed'), v.literal('zuo'));
 export const channel = v.union(v.literal('retail'), v.literal('house'));
 export const variant = v.object({
   id: v.string(),
