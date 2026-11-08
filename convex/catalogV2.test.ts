@@ -9,6 +9,9 @@ import { assertSellable } from './catCore';
 import { assertLineMechanism } from './catPolicies';
 import { normalizePackage, parseJsonPackage } from '../lib/zuoImport';
 import { isCommerceError } from '../lib/errors';
+import { readFileSync } from 'node:fs';
+import { blankCommerceDraft } from '../lib/commerce';
+import type { ZuoStagingRow } from '../lib/zuoStaging';
 
 const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 const ADMIN = 'owner@louiemae.com';
@@ -65,6 +68,224 @@ async function approve(t: ReturnType<typeof convexTest>, admin: Awaited<ReturnTy
 }
 
 describe('Zuo import (CAT01, PRI01)', () => {
+  it.each(['approved_306', 'map_135', 'original_296', 'reconciled_66'])(
+    'preserves both prices and the existing image for %s',
+    async (cohort) => {
+      const { t, admin } = await setup();
+      const draft = {
+        ...blankCommerceDraft(),
+        name: 'Existing name',
+        supplierName: 'Zuo',
+        sourceUrl: 'https://www.zuomod.com/',
+        variants: [
+          {
+            id: 'A',
+            sku: 'A',
+            name: 'Default',
+            cost: 230,
+            minimum: 1,
+            increment: 1,
+            retail: 45806,
+            commercial: 41226,
+            image: 'https://storage.example/primary.jpg',
+          },
+        ],
+      };
+      await admin.mutation(api.zuoStaging.importBatch, {
+        runId: 'test',
+        manifestSha256: 'a'.repeat(64),
+        rows: [
+          {
+            sku: 'A',
+            pack: 2,
+            draft,
+            sourceEvidence: '{}',
+            excluded: false,
+            exclusionReasons: [],
+            holdReasons: ['MANUAL'],
+          },
+        ],
+      });
+      const rows = [row('A', { cohort })];
+      await importPackage(admin, rows, 'dry_run');
+      await importPackage(admin, rows, 'commit');
+      const p = (await t.run((ctx) => ctx.db.query('commerceProducts').first()))!;
+      expect(p.draft.name).toBe('Existing name');
+      expect(p.draft.variants[0]).toMatchObject({
+        retail: 45806,
+        commercial: 41226,
+        cost: 230,
+        minimum: 1,
+        increment: 1,
+        image: 'https://storage.example/primary.jpg',
+      });
+      const variant = (await t.run((ctx) => ctx.db.query('catVariants').first()))!;
+      expect(variant.marginPolicyKey).toBe(
+        cohort === 'approved_306'
+          ? 'zuo-approved-5'
+          : cohort === 'map_135'
+            ? 'zuo-map-floor-pending'
+            : 'zuo-standard-20'
+      );
+      if (cohort === 'map_135') expect(variant.holds).toContain('MAP_FLOOR_UNAPPROVED');
+      await importPackage(admin, rows, 'dry_run', 'repeat');
+      await importPackage(admin, rows, 'commit', 'repeat');
+      expect(await t.run((ctx) => ctx.db.query('catPriceRevisions').collect())).toHaveLength(2);
+    }
+  );
+
+  it('rejects missing prices and changed pack quantities before mutating staged records', async () => {
+    const { t, admin } = await setup();
+    const draft = {
+      ...blankCommerceDraft(),
+      name: 'Existing name',
+      supplierName: 'Zuo',
+      sourceUrl: 'https://www.zuomod.com/',
+      variants: [
+        {
+          id: 'A',
+          sku: 'A',
+          name: 'Default',
+          cost: 230,
+          minimum: 1,
+          increment: 1,
+          retail: 45806,
+          commercial: 41226,
+        },
+      ],
+    };
+    await admin.mutation(api.zuoStaging.importBatch, {
+      runId: 'test',
+      manifestSha256: 'a'.repeat(64),
+      rows: [
+        {
+          sku: 'A',
+          pack: 2,
+          draft,
+          sourceEvidence: '{}',
+          excluded: false,
+          exclusionReasons: [],
+          holdReasons: ['MANUAL'],
+        },
+      ],
+    });
+    await expect(
+      importPackage(admin, [row('A', { approvedRetail: '', approvedTrade: '' })], 'dry_run')
+    ).rejects.toThrow(/Missing approved prices/);
+    await expect(
+      importPackage(admin, [row('A', { piecesPerPack: 1 })], 'dry_run', 'pack')
+    ).rejects.toThrow(/pack quantity differs/);
+    expect(await t.run((ctx) => ctx.db.query('catVariants').collect())).toHaveLength(0);
+    expect((await t.run((ctx) => ctx.db.query('commerceProducts').first()))!.draft).toEqual(draft);
+  });
+
+  it.each(['0', '-1', '10.001', 'NaN'])(
+    'rejects invalid approved pack price %s server-side',
+    async (price) => {
+      const { admin } = await setup();
+      const { records } = normalizePackage(
+        parseJsonPackage(JSON.stringify([row('A')])),
+        'test',
+        NOW
+      );
+      records[0].record.approvedRetailPack = price;
+      const { batchId } = await admin.mutation(api.zuoImport.begin, {
+        mode: 'dry_run',
+        sourceKey: 'invalid',
+        files: [],
+        codeRevision: 'test',
+        rejected: [],
+      });
+      await expect(admin.mutation(api.zuoImport.stage, { batchId, records })).rejects.toThrow(
+        /positive exact cents/
+      );
+    }
+  );
+
+  it('retains unpriced records as held variants without creating zero-price draft variants', async () => {
+    const { t, admin } = await setup();
+    const rows = [row('A', { cohort: 'unpriced_62', approvedRetail: '', approvedTrade: '' })];
+    await importPackage(admin, rows, 'dry_run');
+    await importPackage(admin, rows, 'commit');
+    expect(
+      (await t.run((ctx) => ctx.db.query('commerceProducts').first()))!.draft.variants
+    ).toEqual([]);
+    expect((await t.run((ctx) => ctx.db.query('catVariants').first()))!.holds).toContain('MANUAL');
+  });
+
+  it.skipIf(!process.env.ZUO_PARITY_MANIFEST)(
+    'replays all 803 actual staged products through migration without price, image or pack loss',
+    async () => {
+      const manifest = JSON.parse(readFileSync(process.env.ZUO_PARITY_MANIFEST!, 'utf8')) as {
+        runId: string;
+        manifestSha256: string;
+        rows: ZuoStagingRow[];
+      };
+      expect(manifest.rows).toHaveLength(803);
+      // Bound the in-memory Convex test database while exercising every real row.
+      for (let offset = 0; offset < manifest.rows.length; offset += 25) {
+      const batchRows = manifest.rows.slice(offset, offset + 25);
+      const { t, admin } = await setup();
+      for (let i = 0; i < batchRows.length; i += 10)
+        await admin.mutation(api.zuoStaging.importBatch, {
+          ...manifest,
+          rows: batchRows.slice(i, i + 10),
+        });
+      const cohorts: Record<string, string> = {
+        APPROVED_5_PERCENT: 'approved_306',
+        MAP_BASED_10_PERCENT_TRADE: 'map_135',
+        ORIGINAL_20_PERCENT_MODEL: 'original_296',
+        RECONCILED_20_PERCENT_MODEL: 'reconciled_66',
+      };
+      const rows = batchRows.map((r) => {
+        const ev = JSON.parse(r.sourceEvidence);
+        const v = r.draft.variants[0];
+        return row(r.sku, {
+          cohort: cohorts[ev.pricingRegime],
+          piecesPerPack: r.pack,
+          wholesale: String(v.cost / r.pack),
+          approvedRetailPack: (v.retail / 100).toFixed(2),
+          approvedTradePack: (v.commercial / 100).toFixed(2),
+          excluded: r.excluded,
+          images: r.draft.images,
+        });
+      });
+      await importPackage(admin, rows, 'dry_run');
+      await importPackage(admin, rows, 'commit');
+      const products = await t.run((ctx) => ctx.db.query('commerceProducts').collect());
+      expect(products).toHaveLength(batchRows.length);
+      for (const r of batchRows) {
+        const p = products.find((p) => p.sourceKey === `zuo:${r.sku}`)!;
+        const v = p.draft.variants[0];
+        const expected = r.draft.variants[0];
+        expect({
+          sku: r.sku,
+          retail: v.retail,
+          commercial: v.commercial,
+          cost: v.cost,
+          image: v.image,
+          minimum: v.minimum,
+          increment: v.increment,
+        }).toEqual({
+          sku: r.sku,
+          retail: expected.retail,
+          commercial: expected.commercial,
+          cost: expected.cost,
+          image: expected.image,
+          minimum: expected.minimum,
+          increment: expected.increment,
+        });
+        expect(p.draft.images).toEqual(r.draft.images);
+        expect(p.draft.name).toBe(r.draft.name);
+        expect(p.zuoStaging?.excluded).toBe(r.excluded);
+      }
+      expect(await t.run((ctx) => ctx.db.query('catPriceRevisions').collect())).toHaveLength(batchRows.length * 2);
+      expect(await t.run((ctx) => ctx.db.query('commerceListings').collect())).toHaveLength(0);
+      }
+    },
+    120000
+  );
+
   it('requires a dry run, then commits idempotently with stable identities', async () => {
     const { t, admin } = await setup();
     const rows = [row('111182'), row('111183', { cohort: 'original_296', approvedRetail: '', approvedTrade: '' }), row('110799')];
