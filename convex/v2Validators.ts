@@ -41,13 +41,33 @@ export const revisionMeta = {
   source: v.string(),
 };
 export const shipAddress = v.object({
-  phone:v.optional(v.string()),
+  recipientName: v.optional(v.string()),
+  access: v.optional(
+    v.object({
+      destinationType: v.union(v.literal('residential'), v.literal('commercial')),
+      requestedService: v.union(
+        v.literal('standard'),
+        v.literal('inside'),
+        v.literal('white_glove'),
+        v.literal('expedited')
+      ),
+      stairs: v.boolean(),
+      limitedAccess: v.boolean(),
+      loadingDock: v.boolean(),
+    })
+  ),
+  phone: v.optional(v.string()),
   line1: v.string(),
   line2: v.optional(v.string()),
   city: v.string(),
   state: v.string(),
   postalCode: v.string(),
   country: v.string(),
+});
+export const deliveryTerms = v.object({
+  version: v.number(),
+  label: v.string(),
+  details: v.array(v.string()),
 });
 export const obligationState = v.union(
   v.literal('pending'),

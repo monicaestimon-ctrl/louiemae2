@@ -69,6 +69,7 @@ function DeliveryForm({
     text?: string;
     quote?: boolean;
     caveat?: string;
+    details?: string[];
     expiresAt?: number;
   }>({ status: 'idle' });
   useEffect(() => {
@@ -99,6 +100,7 @@ function DeliveryForm({
               status: 'done',
               text: `${r.serviceName}: ${money(r.deliveryChargeMinor)}`,
               caveat: r.timingCaveat,
+              details: r.serviceDetails,
               expiresAt: r.expiresAt,
             }
           : { status: 'done', quote: true, text: QUOTE_CTA }
@@ -153,6 +155,11 @@ function DeliveryForm({
         {state.status === 'done' && (
           <>
             <span className="text-earth">{state.text}</span>
+            {state.details?.map((detail) => (
+              <span className="block text-xs" key={detail}>
+                {detail}
+              </span>
+            ))}
             {state.caveat && (
               <span className="block text-xs text-earth/50">
                 {state.caveat} {ZIP_ESTIMATE_NOTE}

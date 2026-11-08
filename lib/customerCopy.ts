@@ -13,8 +13,10 @@ export const SPLIT_WILL =
 /** The disclosure for an order: "will" once the split is known, "may" otherwise. */
 export const splitDisclosure = (splitKnown: boolean) => (splitKnown ? SPLIT_WILL : SPLIT_MAY);
 
-export const DELIVERY_TIMING_CAVEAT = 'Curbside delivery. Timing is confirmed when your order ships.';
-export const ZIP_ESTIMATE_NOTE = 'Estimate for this ZIP code. Your final delivery charge is confirmed with your full address before you pay.';
+export const DELIVERY_TIMING_CAVEAT =
+  'Dispatch and transit timing are confirmed separately when your order ships.';
+export const ZIP_ESTIMATE_NOTE =
+  'Estimate for this ZIP code. Your final delivery charge is confirmed with your full address before you pay.';
 export const QUOTE_CTA = 'Request a delivery quote';
 
 /** Status words used by both sites (spec S37 vocabulary). */

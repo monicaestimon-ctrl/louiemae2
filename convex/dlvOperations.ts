@@ -487,6 +487,7 @@ export const prepareCheckout = mutation({
       };
     }
     const id = await ctx.db.insert('dlvEstimates', {
+      serviceTerms: out.serviceTerms,
       manualQuoteVersionId: q._id,
       channel: r.channel,
       destination: {

@@ -8,6 +8,7 @@ import { evaluateGroup, type EngineGroup } from '../lib/delivery/engine';
 import { allocate } from '../lib/money';
 import { digest } from './dlvSecurity';
 import { CommerceError } from '../lib/errors';
+import { DELIVERY_TERMS_VERSION } from '../lib/delivery/service';
 
 /** Manual freight bypasses only automatic lane/rate coverage, never product or contribution gates. */
 export async function computeManualQuote(
@@ -17,6 +18,11 @@ export async function computeManualQuote(
   if (q.status !== 'accepted' && q.status !== 'sent' && q.status !== 'draft')
     throw new CommerceError('QUOTE_EXPIRED');
   if (q.expiresAt <= Date.now() || !q.address) throw new CommerceError('QUOTE_EXPIRED');
+  if (!q.address.recipientName?.trim() || q.address.recipientName.length > 150 || !q.address.access)
+    throw new CommerceError(
+      'INVALID_INPUT',
+      'Confirm recipient and delivery access before sending a payable quote'
+    );
   const project = await ctx.db.get(q.projectId);
   if (!project) throw new CommerceError('INVALID_INPUT');
   const checks = await checkQuoteLines(ctx, q.lines, project.channel);
@@ -130,6 +136,11 @@ export async function computeManualQuote(
     g.chargeMinor = g.requirementMinor + surplus[i];
   });
   return {
+    serviceTerms: {
+      version: DELIVERY_TERMS_VERSION,
+      label: q.service === 'curbside' ? 'Quoted standard delivery' : q.service.replaceAll('_', ' '),
+      details: [q.terms],
+    },
     status: 'ok',
     lines,
     merchandiseMinor,
@@ -140,6 +151,8 @@ export async function computeManualQuote(
     reasons: [],
     sourceVersionsHash: await digest({
       quoteId: q._id,
+      terms: q.terms,
+      deliveryTermsVersion: DELIVERY_TERMS_VERSION,
       quote: q.lines,
       address: q.address,
       freight: q.freight,

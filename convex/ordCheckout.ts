@@ -217,6 +217,7 @@ export const createIntent = internalMutation({
     )
       throw new CommerceError('DELIVERY_QUOTE_REQUIRED', 'Shipment charges do not reconcile');
     const intentId = await ctx.db.insert('ordCheckoutIntents', {
+      serviceTerms: fresh.serviceTerms,
       idempotencyKey: a.idempotencyKey,
       requestHash,
       shippingAddress: a.address,

@@ -7,6 +7,8 @@ import { useCart } from '../../contexts/CartContext';
 import { visitorId } from '../../lib/partnerLink';
 import { customerMessage } from '../../lib/errors';
 import { QUOTE_CTA, SPLIT_MAY, SPLIT_WILL } from '../../lib/customerCopy';
+import { STANDARD_ACCESS } from '../../lib/delivery/destination';
+import DeliveryAccessFields from './DeliveryAccessFields';
 import DeliveryQuoteRequest from './DeliveryQuoteRequest';
 
 const money = (minor: number) => `$${(minor / 100).toFixed(2)}`;
@@ -27,6 +29,8 @@ type Est = {
   totalMinor: number | null;
   splitKnown: boolean;
   timingCaveat: string;
+  serviceName: string;
+  serviceDetails: string[];
 };
 
 /**
@@ -64,6 +68,7 @@ export function DeliveryCheckout({
   }, []);
   const estimate = useAction(api.dlvTaxActions.estimate);
   const [address, setAddress] = useState({
+    recipientName: '',
     phone: '',
     line1: '',
     line2: '',
@@ -72,6 +77,7 @@ export function DeliveryCheckout({
     postalCode: '',
     country: 'US',
   });
+  const [access, setAccess] = useState(STANDARD_ACCESS);
   const [email, setEmail] = useState('');
   // Store credit (v2): comes off merchandise only, never delivery or tax.
   const credit = useQuery(api.ldgCredits.myCreditV2);
@@ -82,8 +88,17 @@ export function DeliveryCheckout({
   const [msg, setMsg] = useState<string | null>(null);
 
   const key = useMemo(
-    () => JSON.stringify({ lines, channel, address, useCredit, email, authenticated: !!authToken }),
-    [lines, channel, address, useCredit, email, authToken]
+    () =>
+      JSON.stringify({
+        lines,
+        channel,
+        address,
+        access,
+        useCredit,
+        email,
+        authenticated: !!authToken,
+      }),
+    [lines, channel, address, access, useCredit, email, authToken]
   );
   const [estKey, setEstKey] = useState('');
   const stale = !!est && (estKey !== key || est.expiresAt <= now);
@@ -98,7 +113,7 @@ export function DeliveryCheckout({
     setMsg(null);
     const seq = ++requestSequence.current;
     try {
-      const addr = { ...address, line2: address.line2 || undefined };
+      const addr = { ...address, access, line2: address.line2 || undefined };
       const r = (await estimate({
         lines,
         channel,
@@ -138,7 +153,7 @@ export function DeliveryCheckout({
           estimateId: est.estimateId,
           guestCapability: est.guestCapability,
           lines,
-          address: { ...address, line2: address.line2 || undefined },
+          address: { ...address, access, line2: address.line2 || undefined },
           service: 'curbside',
           acceptTotalMinor: accepted,
           email,
@@ -185,6 +200,10 @@ export function DeliveryCheckout({
   return (
     <div className="space-y-3">
       <form onSubmit={review} className="grid grid-cols-2 gap-2" aria-label="Delivery address">
+        <div className="col-span-2">
+          {field('recipientName', 'Recipient name', { autoComplete: 'name', maxLength: 150 })}
+        </div>
+        <DeliveryAccessFields value={access} onChange={setAccess} />
         <div className="col-span-2">
           {field('line1', 'Street address', { autoComplete: 'address-line1' })}
         </div>
@@ -259,7 +278,7 @@ export function DeliveryCheckout({
               </div>
             )}
             <div className="flex justify-between">
-              <span>Curbside delivery</span>
+              <span>{est.serviceName}</span>
               <span>{money(est.deliveryChargeMinor ?? 0)}</span>
             </div>
             <div className="flex justify-between">
@@ -273,6 +292,11 @@ export function DeliveryCheckout({
             <p className="text-[11px] text-earth/60 pt-2">
               {est.splitKnown ? SPLIT_WILL : SPLIT_MAY}
             </p>
+            <ul>
+              {est.serviceDetails.map((detail) => (
+                <li key={detail}>{detail}</li>
+              ))}
+            </ul>
             <p className="text-[11px] text-earth/50">{est.timingCaveat}</p>
           </div>
         )}
@@ -285,7 +309,14 @@ export function DeliveryCheckout({
         {est && !stale && (est.status !== 'ok' || est.totalMinor === null) && (
           <>
             <p>We need to confirm delivery and tax before payment.</p>
-            <DeliveryQuoteRequest lines={lines} postalCode={address.postalCode} channel={channel} />
+            <DeliveryQuoteRequest
+              key={estKey}
+              lines={lines}
+              postalCode={address.postalCode}
+              channel={channel}
+              address={{ ...address, access }}
+              initialEmail={email}
+            />
           </>
         )}
         {stale && (

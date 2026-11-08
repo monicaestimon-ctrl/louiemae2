@@ -1,3 +1,6 @@
+import type { FunctionReturnType } from 'convex/server';
+import { STANDARD_ACCESS } from '../../lib/delivery/destination';
+import DeliveryAccessFields from '../delivery/DeliveryAccessFields';
 import DeliveryBoundary from '../delivery/DeliveryBoundary';
 import DeliveryActualCosts from './DeliveryActualCosts';
 import React, { useState } from 'react';
@@ -120,6 +123,24 @@ function DeliveryOperationsWorkspace({
 }
 function QuoteEditor({ id, canSend }: { canSend: boolean; id: Id<'dlvQuoteRequests'> }) {
   const detail = useQuery(api.dlvOperations.quoteDetail, { id });
+  if (!detail) return <p>Loading request…</p>;
+  return <LoadedQuoteEditor id={id} canSend={canSend} detail={detail} />;
+}
+function LoadedQuoteEditor({
+  id,
+  canSend,
+  detail,
+}: {
+  id: Id<'dlvQuoteRequests'>;
+  canSend: boolean;
+  detail: NonNullable<FunctionReturnType<typeof api.dlvOperations.quoteDetail>>;
+}) {
+  const [recipientName, setRecipientName] = useState(
+    detail.request.address?.recipientName ?? detail.request.name
+  );
+  const [line2, setLine2] = useState(detail.request.address?.line2 ?? '');
+  const [access, setAccess] = useState(detail.request.address?.access ?? STANDARD_ACCESS);
+  const [confirmedAccess, setConfirmedAccess] = useState(false);
   const update = useMutation(api.dlvOperations.updateRequest),
     save = useMutation(api.ordQuotes.saveVersion),
     send = useMutation(api.ordQuotes.markSent),
@@ -133,10 +154,10 @@ function QuoteEditor({ id, canSend }: { canSend: boolean; id: Id<'dlvQuoteReques
     [taxEvidence, setTaxEvidence] = useState(''),
     [terms, setTerms] = useState(''),
     [days, setDays] = useState(7);
-  const [line1, setLine1] = useState(''),
-    [city, setCity] = useState(''),
-    [phone, setPhone] = useState(''),
-    [state, setState] = useState('');
+  const [line1, setLine1] = useState(detail.request.address?.line1 ?? ''),
+    [city, setCity] = useState(detail.request.address?.city ?? ''),
+    [phone, setPhone] = useState(detail.request.address?.phone ?? detail.request.phone ?? ''),
+    [state, setState] = useState(detail.request.address?.state ?? '');
   const [freight, setFreight] = useState<
       Record<string, { freight: string; fee: string; evidence: string }>
     >({}),
@@ -153,7 +174,6 @@ function QuoteEditor({ id, canSend }: { canSend: boolean; id: Id<'dlvQuoteReques
       setBusy(false);
     }
   }
-  if (!detail) return <p>Loading request…</p>;
   const r = detail.request;
   return (
     <div className="border p-4 space-y-2">
@@ -197,6 +217,34 @@ function QuoteEditor({ id, canSend }: { canSend: boolean; id: Id<'dlvQuoteReques
         Uses the request's merchandise lines. Confirm the current prices and delivery evidence
         before sending; automatic checks can block this quote.
       </p>
+      <label>
+        Recipient name
+        <input
+          className={input}
+          value={recipientName}
+          onChange={(e) => setRecipientName(e.target.value)}
+          maxLength={150}
+        />
+      </label>
+      <DeliveryAccessFields
+        value={access}
+        onChange={(value) => {
+          setAccess(value);
+          setConfirmedAccess(false);
+        }}
+      />
+      <label>
+        <input
+          type="checkbox"
+          checked={confirmedAccess}
+          onChange={(e) => setConfirmedAccess(e.target.checked)}
+        />{' '}
+        Confirmed delivery service and access with customer and carrier
+      </label>
+      <label>
+        Apartment / suite
+        <input className={input} value={line2} onChange={(e) => setLine2(e.target.value)} />
+      </label>
       <label>
         Street
         <input className={input} value={line1} onChange={(e) => setLine1(e.target.value)} />
@@ -292,7 +340,15 @@ function QuoteEditor({ id, canSend }: { canSend: boolean; id: Id<'dlvQuoteReques
         );
       })}
       <button
-        disabled={busy || !terms.trim() || !line1 || !city || state.length !== 2}
+        disabled={
+          busy ||
+          !confirmedAccess ||
+          !recipientName.trim() ||
+          !terms.trim() ||
+          !line1 ||
+          !city ||
+          state.length !== 2
+        }
         onClick={() =>
           action(() =>
             save({
@@ -305,6 +361,9 @@ function QuoteEditor({ id, canSend }: { canSend: boolean; id: Id<'dlvQuoteReques
                 discountMinor: 0,
               })),
               address: {
+                recipientName,
+                access,
+                line2: line2 || undefined,
                 line1,
                 city,
                 state,
@@ -312,7 +371,8 @@ function QuoteEditor({ id, canSend }: { canSend: boolean; id: Id<'dlvQuoteReques
                 postalCode: r.postalCode,
                 country: 'US',
               },
-              service: r.service,
+              service:
+                access.requestedService === 'standard' ? 'curbside' : access.requestedService,
               deliveryMinor: dollarsToMinor(delivery),
               taxMinor: dollarsToMinor(tax),
               taxEvidence,

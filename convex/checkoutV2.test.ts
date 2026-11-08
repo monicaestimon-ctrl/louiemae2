@@ -9,7 +9,7 @@ import { submitWith, type Transport } from './ediZuo';
 import { refundSplit } from './ordReturns';
 import { isCommerceError } from '../lib/errors';
 import { SPLIT_MAY, SPLIT_WILL, splitDisclosure } from '../lib/customerCopy';
-import { quoteOnlyReasons, zipRegion } from '../lib/delivery/destination';
+import { quoteOnlyReasons, zipRegion, STANDARD_ACCESS } from '../lib/delivery/destination';
 import { exemptionFor } from './dlvTaxExemptions';
 import { groupFreight, type FreightConfig, type ResolvedLine } from './dlvEngine';
 
@@ -46,6 +46,8 @@ const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 const ADMIN = 'owner@louiemae.com';
 const NOW = Date.now();
 const ADDRESS = {
+  recipientName: 'Fixture customer',
+  access: STANDARD_ACCESS,
   phone: '+12095550100',
   line1: '1 Main St',
   city: 'Stockton',
@@ -118,6 +120,32 @@ async function setup(opts: { approveMixed?: boolean } = {}) {
   const userId = await t.run((ctx) => ctx.db.insert('users', { email: ADMIN }));
   const admin = t.withIdentity({ subject: `${userId}|s`, email: ADMIN });
   await t.mutation(internal.sysConfig.seed, {});
+  const service = await admin.mutation(api.sysConfig.propose, {
+    kind: 'serviceLevel',
+    key: 'delivery-curbside',
+    value: {
+      code: 'curbside',
+      modes: {
+        ground: {
+          label: 'Parcel delivery',
+          details: ['Standard parcel placement.'],
+          evidenceRef: 'fixture',
+        },
+        ltl: {
+          label: 'Curbside freight',
+          details: ['No inside delivery or assembly.'],
+          evidenceRef: 'fixture',
+        },
+        per_item: {
+          label: 'Supplier standard delivery',
+          details: ['Fixture supplier service.'],
+          evidenceRef: 'fixture',
+        },
+      },
+    },
+    note: 'Synthetic test service terms',
+  });
+  await admin.mutation(api.sysConfig.approve, { id: service });
   const taxPolicy = await admin.mutation(api.sysConfig.propose, {
     kind: 'taxProviderPolicy',
     key: 'delivery-tax',
@@ -451,6 +479,8 @@ describe('delivery estimates (S17, S18)', () => {
       visitorKey: 'visitor-1234567890',
     });
     expect(zip.status).toBe('ok');
+    expect(zip.serviceName).toBe('Parcel delivery');
+    expect(zip.serviceDetails).toEqual(['Standard parcel placement.']);
     expect(zip.deliveryChargeMinor).toBe(4_999);
     expect(zip.taxMinor).toBeNull();
     expect(zip.note).toMatch(/Estimate/);
@@ -463,6 +493,44 @@ describe('delivery estimates (S17, S18)', () => {
     });
     expect(full.taxMinor).toBe(Math.ceil(((45_806 + 4_999) * 825) / 10_000));
     expect(full.totalMinor).toBe(45_806 + 4_999 + full.taxMinor!);
+  });
+
+  it('binds access requirements and service terms, and routes special access to a quote', async () => {
+    const s = await setup();
+    const base = {
+      lines: [zuoLine(s)],
+      channel: 'retail' as const,
+      zip: '95206',
+      visitorKey: 'access-fixture-12345',
+    };
+    const regular = await s.t.action(api.dlvTaxActions.estimate, { ...base, address: ADDRESS });
+    const commercial = await s.t.action(api.dlvTaxActions.estimate, {
+      ...base,
+      address: {
+        ...ADDRESS,
+        access: { ...STANDARD_ACCESS, destinationType: 'commercial', loadingDock: true },
+      },
+    });
+    expect(commercial.deliveryChargeMinor).toBe(regular.deliveryChargeMinor);
+    for (const access of [
+      { ...STANDARD_ACCESS, stairs: true },
+      { ...STANDARD_ACCESS, limitedAccess: true },
+      { ...STANDARD_ACCESS, requestedService: 'inside' as const },
+    ]) {
+      const result = await s.t.action(api.dlvTaxActions.estimate, {
+        ...base,
+        address: { ...ADDRESS, access },
+      });
+      expect(result.status).toBe('quote_required');
+      expect(result.totalMinor).toBeNull();
+    }
+    const stored = await s.t.run((ctx) => ctx.db.get(regular.estimateId));
+    expect(stored?.serviceTerms?.label).toBe('Parcel delivery');
+    const rows = await s.admin.query(api.sysConfig.list, { status: 'approved' });
+    const policy = rows.records.find((r) => r.key === 'delivery-curbside')!;
+    await s.t.run((ctx) => ctx.db.patch(policy._id, { status: 'retired' }));
+    const unapproved = await s.t.action(api.dlvTaxActions.estimate, { ...base, address: ADDRESS });
+    expect(unapproved.status).toBe('quote_required');
   });
 
   it('routes Alaska, Hawaii, PO boxes and unzoned ZIPs to a quote (DEL03)', async () => {
@@ -563,6 +631,9 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
     const orders = await s.t.run((ctx) => ctx.db.query('ordOrders').collect());
     expect(orders).toHaveLength(1);
     expect(orders[0].totals.total).toBe(intent.totalMinor);
+    expect(orders[0].shippingAddress).toEqual(ADDRESS);
+    expect(orders[0].serviceTerms?.label).toContain('Parcel delivery');
+    expect(orders[0].serviceTerms?.label).toContain('Supplier standard delivery');
     const children = await s.t.run((ctx) => ctx.db.query('ordSupplierOrders').collect());
     expect(children.map((c) => c.route).sort()).toEqual([
       'manual_dealer_ashcroft',
@@ -575,6 +646,8 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
     expect(lineRows.reduce((t, l) => t + l.deliveryAllocMinor, 0)).toBe(orders[0].totals.delivery);
     const email = await s.t.run((ctx) => ctx.db.query('sysNotifications').first());
     expect(email!.text).toContain(SPLIT_WILL);
+    expect(email!.text).toContain(ADDRESS.recipientName);
+    expect(email!.text).toContain('Standard parcel placement.');
   });
 
   it('requires reconfirmation when anything changes, and refuses stale estimates', async () => {

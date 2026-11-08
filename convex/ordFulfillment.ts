@@ -33,6 +33,7 @@ export async function createOrderFromIntent(ctx: MutationCtx, intent: Doc<'ordCh
   lines.forEach((l, i) => {const key=`${l.supplierCode}:${l.originZip??''}:${l.service??'curbside'}`;groups.set(key,[...(groups.get(key)??[]),i])});
   const splitKnown = groups.size > 1;
   const orderId = await ctx.db.insert('ordOrders', {
+    ...(intent.serviceTerms ? { serviceTerms: intent.serviceTerms } : {}),
     number: orderNumber(intent._id),
     intentId: intent._id,
     channel: intent.channel,
@@ -83,13 +84,25 @@ export async function createOrderFromIntent(ctx: MutationCtx, intent: Doc<'ordCh
   }
   for (const r of await ctx.db.query('ordInventoryReservations').withIndex('by_intent', (q) => q.eq('intentId', intent._id)).collect()) await ctx.db.patch(r._id, { status: 'consumed' });
   const itemsText = lines.map((l) => `• ${l.name} × ${l.packs} — ${formatUsd(l.unitPackMinor * l.packs)}`).join('\n');
+  const address = intent.shippingAddress ?? p.shippingAddress;
+  const destinationText = address
+    ? [
+        address.recipientName,
+        address.line1,
+        address.line2,
+        `${address.city}, ${address.state} ${address.postalCode}`,
+        address.phone,
+      ]
+        .filter(Boolean)
+        .join('\n')
+    : '';
   await notify(ctx, {
     dedupeKey: `order-confirmation:${orderId}`,
     audience: 'customer',
     template: 'order_confirmation',
     to: p.email,
     subject: `Your Louie Mae order ${orderNumber(intent._id)}`,
-    text: `Thank you for your order.\n\n${itemsText}\n\nDelivery: ${formatUsd(intent.deliveryMinor)}\nTax: ${formatUsd(intent.taxMinor)}\nTotal: ${formatUsd(intent.totalMinor)}\n\n${splitDisclosure(splitKnown)}`,
+    text: `Thank you for your order.\n\n${itemsText}\n\nDelivery: ${formatUsd(intent.deliveryMinor)}\nTax: ${formatUsd(intent.taxMinor)}\nTotal: ${formatUsd(intent.totalMinor)}\n\n${intent.serviceTerms ? [intent.serviceTerms.label, ...intent.serviceTerms.details].join('\n') : ''}\n\n${splitDisclosure(splitKnown)}\n\nDelivery destination:\n${destinationText}`,
   });
   return orderId;
 }
@@ -313,6 +326,6 @@ export const orderStatus = query({
         };
       })
     );
-    return { number: order.number, status: order.status, statusLabel: ORDER_STATUS_LABEL[order.status], totals: order.totals, disclosure: splitDisclosure(order.splitKnown), shipments };
+    return { serviceTerms: order.serviceTerms ?? null, number: order.number, status: order.status, statusLabel: ORDER_STATUS_LABEL[order.status], totals: order.totals, disclosure: splitDisclosure(order.splitKnown), shipments };
   },
 });

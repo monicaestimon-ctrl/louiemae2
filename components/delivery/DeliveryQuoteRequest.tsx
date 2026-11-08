@@ -5,21 +5,31 @@ import { api } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
 import { customerMessage } from '../../lib/errors';
 
+import type { AddressIn } from '../../lib/delivery/destination';
+
 type Props = {
   lines: { productId: string; variantId: string; packs: number }[];
   postalCode: string;
   channel?: 'retail' | 'trade';
+  address?: AddressIn;
+  initialEmail?: string;
 };
-export default function DeliveryQuoteRequest({ lines, postalCode, channel = 'retail' }: Props) {
+export default function DeliveryQuoteRequest({
+  lines,
+  postalCode,
+  channel = 'retail',
+  address,
+  initialEmail,
+}: Props) {
   const retry = useRef<{ payload: string; key: string } | null>(null);
   const request = useMutation(api.dlvOperations.requestQuote);
 
   const [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState('');
-  const [name, setName] = useState(''),
-    [email, setEmail] = useState(''),
-    [phone, setPhone] = useState(''),
+  const [name, setName] = useState(address?.recipientName ?? ''),
+    [email, setEmail] = useState(initialEmail ?? ''),
+    [phone, setPhone] = useState(address?.phone ?? ''),
     [notes, setNotes] = useState(''),
     [consent, setConsent] = useState(false);
   const [saved, setSaved] = useState<{
@@ -99,6 +109,7 @@ export default function DeliveryQuoteRequest({ lines, postalCode, channel = 'ret
                   lines,
                   channel,
                   postalCode,
+                  address,
                   name,
                   email,
                   phone,
@@ -118,11 +129,16 @@ export default function DeliveryQuoteRequest({ lines, postalCode, channel = 'ret
                     lines,
                     channel,
                     postalCode,
+                    address,
                     name,
                     email,
                     phone,
                     notes,
-                    service: 'curbside',
+                    service:
+                      address?.access?.requestedService &&
+                      address.access.requestedService !== 'standard'
+                        ? address.access.requestedService
+                        : 'curbside',
                     consent,
                   })
                 );

@@ -15,21 +15,14 @@ import { addressKey } from '../lib/delivery/destination';
 import { DELIVERY_TIMING_CAVEAT, QUOTE_CTA, ZIP_ESTIMATE_NOTE } from '../lib/customerCopy';
 import type { EstimatePolicy } from '../lib/config';
 import { authorizeEstimate, capability, digest } from './dlvSecurity';
+import { shipAddress } from './v2Validators';
 
 export const lineArg = v.object({
   productId: v.string(),
   variantId: v.string(),
   packs: v.number(),
 });
-export const addressArg = v.object({
-  phone: v.optional(v.string()),
-  line1: v.string(),
-  line2: v.optional(v.string()),
-  city: v.string(),
-  state: v.string(),
-  postalCode: v.string(),
-  country: v.string(),
-});
+export const addressArg = shipAddress;
 export type PublicDeliveryEstimate = {
   estimateId: Id<'dlvEstimates'>;
   guestCapability?: string;
@@ -40,6 +33,7 @@ export type PublicDeliveryEstimate = {
   creditMinor: number;
   totalMinor: number | null;
   serviceName: string;
+  serviceDetails: string[];
   timingCaveat: string;
   note: string | null;
   expiresAt: number;
@@ -150,6 +144,7 @@ export const estimate = mutation({
     const guestCapability = me ? undefined : capability();
     const status = out.status;
     const id: Id<'dlvEstimates'> = await ctx.db.insert('dlvEstimates', {
+      serviceTerms: out.serviceTerms,
       channel: a.channel,
       destination: {
         zip: destination.zip,
@@ -213,7 +208,8 @@ export const estimate = mutation({
         out.deliveryMinor !== undefined && out.taxMinor !== undefined
           ? out.merchandiseMinor - out.creditMinor + out.deliveryMinor + out.taxMinor
           : null,
-      serviceName: 'Curbside delivery',
+      serviceName: out.serviceTerms.label,
+      serviceDetails: out.serviceTerms.details,
       timingCaveat: DELIVERY_TIMING_CAVEAT,
       note: a.address ? null : ZIP_ESTIMATE_NOTE,
       expiresAt,
@@ -243,6 +239,7 @@ export const get = query({
     await authorizeEstimate(ctx, e, a.guestCapability);
     return {
       status: e.status,
+      serviceTerms: e.serviceTerms ?? null,
       deliveryChargeMinor: e.deliveryChargeMinor ?? null,
       merchandiseMinor: e.merchandiseMinor,
       taxMinor: e.taxMinor ?? null,
