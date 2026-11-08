@@ -51,12 +51,14 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const { signIn: authSignIn, signOut: authSignOut } = useAuthActions();
   const { requested: adminCatalogRequested, register: registerAdminCatalog } = useCatalogDemand();
   const { requested: storefrontCatalogRequested, register: registerStorefrontCatalog } = useCatalogDemand();
-  const needsAdminCatalog = isAuthenticated && adminCatalogRequested;
+  const adminSession = useQuery(api.cjAdminAccess.session, isAuthenticated ? {} : 'skip');
+  const siteOwner = isAuthenticated && adminSession?.owner === true;
+  const needsAdminCatalog = siteOwner && adminCatalogRequested;
 
   // --- Convex Queries ---
-  const adminPosts = useQuery(api.blogPosts.listAdmin, isAuthenticated ? {} : 'skip');
-  const publicPosts = useQuery(api.blogPosts.list, isAuthenticated ? 'skip' : {});
-  const convexPosts = isAuthenticated ? adminPosts : publicPosts;
+  const adminPosts = useQuery(api.blogPosts.listAdmin, siteOwner ? {} : 'skip');
+  const publicPosts = useQuery(api.blogPosts.list, siteOwner ? 'skip' : {});
+  const convexPosts = siteOwner ? adminPosts : publicPosts;
   const adminProducts = useQuery(api.products.list, needsAdminCatalog ? {} : 'skip');
   const storefrontProducts = useQuery(api.products.listForStorefront, !needsAdminCatalog && storefrontCatalogRequested ? {} : 'skip');
   const convexProducts = needsAdminCatalog ? adminProducts : storefrontProducts;
@@ -85,7 +87,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // --- Seed initial data if Convex is empty ---
   useEffect(() => {
-    if (isAuthenticated && convexSiteContent === null && !siteContentSeedStarted.current) {
+    if (siteOwner && convexSiteContent === null && !siteContentSeedStarted.current) {
       siteContentSeedStarted.current = true;
       void seedSiteContent({
         navLinks: INITIAL_SITE_CONTENT.navLinks,
@@ -94,27 +96,27 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         story: INITIAL_SITE_CONTENT.story,
       }).catch(error => console.error('Site content seeding failed:', error));
     }
-  }, [isAuthenticated, convexSiteContent, seedSiteContent]);
+  }, [siteOwner, convexSiteContent, seedSiteContent]);
 
   useEffect(() => {
-    if (isAuthenticated && adminProducts?.length === 0 && !productSeedStarted.current) {
+    if (siteOwner && adminProducts?.length === 0 && !productSeedStarted.current) {
       productSeedStarted.current = true;
       void Promise.all(INITIAL_PRODUCTS.map(product => {
         const { id, ...productData } = product;
         return createProduct(productData);
       })).catch(error => console.error('Product seeding failed:', error));
     }
-  }, [isAuthenticated, adminProducts, createProduct]);
+  }, [siteOwner, adminProducts, createProduct]);
 
   useEffect(() => {
-    if (isAuthenticated && adminPosts?.length === 0 && !postSeedStarted.current) {
+    if (siteOwner && adminPosts?.length === 0 && !postSeedStarted.current) {
       postSeedStarted.current = true;
       void Promise.all(INITIAL_POSTS.map(post => {
         const { id, date, ...postData } = post;
         return createPost(postData);
       })).catch(error => console.error('Blog post seeding failed:', error));
     }
-  }, [isAuthenticated, adminPosts, createPost]);
+  }, [siteOwner, adminPosts, createPost]);
 
   // --- Transform Convex data to match existing types ---
   const posts: BlogPost[] = (convexPosts ?? []).map(p => ({

@@ -7,7 +7,7 @@ import { v } from 'convex/values';
 import { mutation, query } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
-import { requireCjAdminIdentity } from './cjAdminAccess';
+import { requireDeliveryRole } from './dlvAccess';
 import { audit, openReview } from './sysCore';
 import { notify } from './sysNotify';
 import { allocate } from '../lib/money';
@@ -135,7 +135,7 @@ async function child(ctx: QueryCtx, id: Id<'ordSupplierOrders'>) {
 export const dealerQueue = query({
   args: { route: v.union(v.literal('manual_dealer_zuo'), v.literal('manual_dealer_ashcroft')), status: v.optional(v.string()) },
   handler: async (ctx, a) => {
-    await requireCjAdminIdentity(ctx);
+    await requireDeliveryRole(ctx, 'operations');
     const rows = await ctx.db
       .query('ordSupplierOrders')
       .withIndex('by_route_status', (q) => (a.status ? q.eq('route', a.route).eq('status', a.status as Doc<'ordSupplierOrders'>['status']) : q.eq('route', a.route)))
@@ -162,7 +162,7 @@ export const dealerQueue = query({
 export const markSubmitted = mutation({
   args: { supplierOrderId: v.id('ordSupplierOrders'), supplierPo: v.string(), acceptedCostMinor: v.number(), note: v.optional(v.string()) },
   handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+    const admin = await requireDeliveryRole(ctx, 'operations');
     const c = await child(ctx, a.supplierOrderId);
     if (c.submission.mode === 'edi') throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED', 'Submitted by EDI; reconcile before any manual order');
     if (c.status !== 'queued') throw new CommerceError('INVALID_INPUT', `Already ${c.status}`);
@@ -176,7 +176,7 @@ export const markSubmitted = mutation({
 export const acknowledge = mutation({
   args: { supplierOrderId: v.id('ordSupplierOrders'), confirmation: v.string(), invoicedCostMinor: v.optional(v.number()) },
   handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+    const admin = await requireDeliveryRole(ctx, 'operations');
     const c = await child(ctx, a.supplierOrderId);
     const exceptions = [...c.exceptions];
     if (a.invoicedCostMinor !== undefined && c.acceptedCostMinor !== undefined && a.invoicedCostMinor > c.acceptedCostMinor) {
@@ -195,7 +195,7 @@ export const acknowledge = mutation({
 export const recordShipment = mutation({
   args: { supplierOrderId: v.id('ordSupplierOrders'), items: v.array(v.object({ allocationId: v.id('ordAllocations'), pieces: v.number() })), carrier: v.optional(v.string()), trackingNumber: v.optional(v.string()), trackingUrl: v.optional(v.string()), estimatedWindow: v.optional(v.string()) },
   handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+    const admin = await requireDeliveryRole(ctx, 'operations');
     const c = await child(ctx, a.supplierOrderId);
     if (!a.items.length) throw new CommerceError('INVALID_INPUT', 'Choose the items in this shipment');
     if (a.trackingUrl && !/^https:\/\//.test(a.trackingUrl)) throw new CommerceError('INVALID_INPUT', 'Tracking links must be https');
@@ -245,7 +245,7 @@ async function outstandingItems(ctx: QueryCtx, orderId: Id<'ordOrders'>) {
 export const markDelivered = mutation({
   args: { shipmentId: v.id('ordShipments') },
   handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+    const admin = await requireDeliveryRole(ctx, 'operations');
     const s = await ctx.db.get(a.shipmentId);
     if (!s) throw new CommerceError('INVALID_INPUT', 'Shipment not found');
     await ctx.db.patch(s._id, { status: 'delivered', deliveredAt: Date.now() });
@@ -274,7 +274,7 @@ export const markDelivered = mutation({
 export const cancelAllocations = mutation({
   args: { supplierOrderId: v.id('ordSupplierOrders'), allocationIds: v.array(v.id('ordAllocations')), reason: v.string() },
   handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+    const admin = await requireDeliveryRole(ctx, 'operations');
     const c = await child(ctx, a.supplierOrderId);
     for (const id of a.allocationIds) {
       const al = await ctx.db.get(id);
@@ -297,7 +297,7 @@ export const cancelAllocations = mutation({
 export const recordFreightActual = mutation({
   args: { supplierOrderId: v.id('ordSupplierOrders'), estimatedMinor: v.number(), actualMinor: v.number(), invoiceRef: v.string() },
   handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+    const admin = await requireDeliveryRole(ctx, 'finance');
     const c = await child(ctx, a.supplierOrderId);
     const varianceMinor = a.actualMinor - a.estimatedMinor;
     await ctx.db.insert('ordFreightActuals', { supplierOrderId: c._id, estimatedMinor: a.estimatedMinor, actualMinor: a.actualMinor, invoiceRef: a.invoiceRef, varianceMinor, createdAt: Date.now() });

@@ -6,7 +6,7 @@ import { getFunctionName } from 'convex/server';
 import { SiteProvider, useSite } from './BlogContext';
 import { useAdminCatalog, useStorefrontCatalog } from './AdminCatalogDemand';
 
-const mocks = vi.hoisted(() => ({ authenticated: true, query: vi.fn(), mutation: vi.fn() }));
+const mocks = vi.hoisted(() => ({ authenticated: true, owner: true, query: vi.fn(), mutation: vi.fn() }));
 vi.mock('convex/react', () => ({
   useConvexAuth: () => ({ isAuthenticated: mocks.authenticated, isLoading: false }),
   useQuery: (reference: Parameters<typeof getFunctionName>[0], args: unknown) => mocks.query(getFunctionName(reference), args),
@@ -22,11 +22,12 @@ function View({ admin, storefront = true }: { admin: boolean; storefront?: boole
 }
 
 beforeEach(() => {
-  mocks.authenticated = true;
+  mocks.authenticated = true; mocks.owner = true;
   mocks.query.mockReset();
   mocks.mutation.mockReset();
   mocks.query.mockImplementation((name: string, args: unknown) => {
     if (args === 'skip') return undefined;
+    if (name === 'cjAdminAccess:session') return { owner: mocks.owner, delivery: !mocks.owner };
     if (name === 'products:list') return [{ _id: 'private', name: 'Private product' }];
     if (name === 'products:listForStorefront') return [{ _id: 'public', name: 'Published product' }];
     if (name === 'siteContent:get') return {};
@@ -71,6 +72,13 @@ describe('SiteProvider catalog isolation', () => {
     expect(mocks.mutation).not.toHaveBeenCalled();
   });
 
+  it('keeps signed-in delivery staff on public catalog and blog reads even when private data is requested', () => {
+    mocks.owner = false;
+    render(<SiteProvider><View admin /></SiteProvider>);
+    expect(screen.getByRole('status')).toHaveTextContent('Published product');
+    expect(mocks.query.mock.calls.filter(([name]) => ['products:list', 'blogPosts:listAdmin'].includes(name)).every(([, args]) => args === 'skip')).toBe(true);
+    expect(mocks.mutation).not.toHaveBeenCalled();
+  });
   it('never subscribes to private products without authentication, even with a requesting view', () => {
     mocks.authenticated = false;
     render(<SiteProvider><View admin /></SiteProvider>);

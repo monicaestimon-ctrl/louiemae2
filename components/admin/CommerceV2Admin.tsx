@@ -11,7 +11,7 @@ import DeliveryOperations from './DeliveryOperations';
 // Commerce v2 operations console (spec S35, v2 §20, §26). Admin-only: every query behind it
 // requires the admin allowlist on the server.
 
-type Section = 'decisions' | 'health' | 'reviews' | 'catalog' | 'fulfillment' | 'partners' | 'delivery';
+type Section = 'decisions' | 'health' | 'reviews' | 'catalog' | 'fulfillment' | 'partners' | 'delivery' | 'integrations';
 const SECTIONS: [Section, string][] = [
   ['decisions', 'Decisions & flags'],
   ['health', 'Health & alerts'],
@@ -20,13 +20,14 @@ const SECTIONS: [Section, string][] = [
   ['fulfillment', 'Dealer orders'],
   ['delivery', 'Delivery & freight'],
   ['partners', 'Partners & payouts'],
+  ['integrations', 'Integration readiness'],
 ];
 const money = (m: number) => `$${(m / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
 const card = 'bg-white border border-earth/10 rounded-lg p-4 space-y-2 text-sm text-earth';
 const btn = 'px-3 py-1.5 border border-earth/30 text-[11px] uppercase tracking-widest hover:bg-earth hover:text-cream disabled:opacity-40';
 const errText = (e: unknown) => commerceErrorData(e)?.detail ?? customerMessage(e);
 
-function Decisions() {
+function Decisions({ canApprove }: { canApprove: boolean }) {
   const data = useQuery(api.sysConfig.list, {});
   const approve = useMutation(api.sysConfig.approve);
   const reject = useMutation(api.sysConfig.reject);
@@ -57,10 +58,10 @@ function Decisions() {
             <p className="text-xs text-earth/70">{r.note}</p>
             <pre className="text-[11px] bg-cream/50 p-2 overflow-auto max-h-40">{JSON.stringify(r.value, null, 2)}</pre>
             <div className="flex gap-2">
-              <button className={btn} onClick={() => approve({ id: r._id }).then(() => setMsg(`Approved ${r.key}`), (e) => setMsg(errText(e)))}>
+              <button className={btn} disabled={!canApprove} onClick={() => approve({ id: r._id }).then(() => setMsg(`Approved ${r.key}`), (e) => setMsg(errText(e)))}>
                 Approve
               </button>
-              <button className={btn} onClick={() => reject({ id: r._id, note: 'Rejected in the decision register' }).then(() => setMsg(`Rejected ${r.key}`), (e) => setMsg(errText(e)))}>
+              <button className={btn} disabled={!canApprove} onClick={() => reject({ id: r._id, note: 'Rejected in the decision register' }).then(() => setMsg(`Rejected ${r.key}`), (e) => setMsg(errText(e)))}>
                 Reject
               </button>
             </div>
@@ -343,15 +344,15 @@ function DealerQueue({ route }: { route: 'manual_dealer_zuo' | 'manual_dealer_as
   );
 }
 
-function Fulfillment() {
-  const exceptions = useQuery(api.v2Admin.paidExceptions);
+function Fulfillment({ finance, approver }: { finance: boolean; approver: boolean }) {
+  const exceptions = useQuery(api.v2Admin.paidExceptions, finance ? {} : 'skip');
   const resolve = useMutation(api.v2Admin.resolvePaidException);
   const [note, setNote] = useState('');
   return (
     <div className="space-y-4">
       <DealerQueue route="manual_dealer_zuo" />
       <DealerQueue route="manual_dealer_ashcroft" />
-      <div className={card}>
+      {finance && <div className={card}>
         <h3 className="font-serif text-lg">Paid orders needing resolution ({exceptions?.length ?? '…'})</h3>
         <input className="border border-earth/20 px-2 py-1 w-full text-xs" placeholder="What was agreed with the customer" aria-label="Resolution" value={note} onChange={(e) => setNote(e.target.value)} />
         {(exceptions ?? []).map((x) => (
@@ -359,12 +360,12 @@ function Fulfillment() {
             <span>
               {x.reason} · {x.paymentIntentId ?? x.stripeSessionId} · {new Date(x.createdAt).toLocaleString()}
             </span>
-            <button className={btn} disabled={note.trim().length < 5} onClick={() => resolve({ id: x._id, resolution: note })}>
+            <button className={btn} disabled={!approver || note.trim().length < 5} onClick={() => resolve({ id: x._id, resolution: note })}>
               Resolve
             </button>
           </div>
         ))}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -482,25 +483,45 @@ function Partners() {
   );
 }
 
+function IntegrationReadiness() {
+  const data = useQuery(api.dlvAccess.integrations, {});
+  if (!data) return <p role="status">Loading integration readiness…</p>;
+  return <section className={card}>
+    <h3 className="font-serif text-lg">Integration readiness</h3>
+    <p>Configuration presence does not verify a working connection. Deployments and credential changes use the authorized deployment consoles and release runbook.</p>
+    <ul><li>Request gateway: {data.gatewayConfigured ? 'Configured' : 'Missing configuration'}</li>
+    <li>Tax provider: {data.taxProviderConfigured ? 'Configured' : 'Missing configuration'}</li>
+    <li>Notifications: {data.notificationProviderConfigured ? 'Configured' : 'Missing configuration'}</li></ul>
+    <ul>{Object.entries(data.flags).map(([key, enabled]) => <li key={key}>{key}: {enabled ? 'on' : 'off'}</li>)}</ul>
+  </section>;
+}
 export default function CommerceV2Admin() {
-  const [section, setSection] = useState<Section>('decisions');
+  const permissions = useQuery(api.dlvAccess.permissions, {});
+  const [selected, setSection] = useState<Section>('delivery');
+  if (!permissions) return <p role="status">Checking staff permissions…</p>;
+  const sections = SECTIONS.filter(([id]) => permissions.owner ||
+    (id === 'delivery' && permissions.support) ||
+    ((id === 'decisions' || id === 'fulfillment') && permissions.operations) ||
+    (id === 'health' && permissions.finance) ||
+    (id === 'integrations' && permissions.engineering));
+  if (!sections.length) return <p role="alert">No staff permissions are assigned to this account.</p>;
+  const section = sections.some(([id]) => id === selected) ? selected : sections[0][0];
   return (
     <div className="space-y-6">
-      <h2 className="font-serif text-3xl text-earth">Commerce v2 operations</h2>
+      <h2 className="font-serif text-3xl text-earth">Commerce operations</h2>
       <nav aria-label="Commerce v2 sections" className="flex flex-wrap gap-2">
-        {SECTIONS.map(([id, label]) => (
-          <button key={id} className={`${btn} ${section === id ? 'bg-earth text-cream' : ''}`} aria-current={section === id ? 'page' : undefined} onClick={() => setSection(id)}>
-            {label}
-          </button>
+        {sections.map(([id, label]) => (
+          <button key={id} className={`${btn} ${section === id ? 'bg-earth text-cream' : ''}`} aria-current={section === id ? 'page' : undefined} onClick={() => setSection(id)}>{label}</button>
         ))}
       </nav>
-      {section === 'decisions' && <Decisions />}
+      {section === 'decisions' && <Decisions canApprove={permissions.approver} />}
       {section === 'health' && <Health />}
       {section === 'reviews' && <Reviews />}
       {section === 'catalog' && <Catalog />}
-      {section === 'fulfillment' && <Fulfillment />}
+      {section === 'fulfillment' && <Fulfillment finance={permissions.finance} approver={permissions.approver} />}
       {section === 'delivery' && <DeliveryOperations />}
       {section === 'partners' && <Partners />}
+      {section === 'integrations' && <IntegrationReadiness />}
     </div>
   );
 }

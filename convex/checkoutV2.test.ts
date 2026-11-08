@@ -1805,6 +1805,7 @@ describe('tax reporting reconciliation', () => {
 describe('delivery staff permissions', () => {
   it('keeps support away from costs and rate approvals', async () => {
     const s = await setup();
+    const estimate = await estimateViaGateway(s.t, { lines: [zuoLine(s)], channel: 'retail', zip: '95206', visitorKey: 'support-fixture' });
     process.env.DELIVERY_ADMIN_ROLES = JSON.stringify({ [ADMIN]: ['support'] });
     expect(await s.admin.query(api.dlvAccess.permissions, {})).toMatchObject({
       support: true,
@@ -1812,6 +1813,11 @@ describe('delivery staff permissions', () => {
       approver: false,
     });
     expect(await s.admin.query(api.dlvAccess.supportQueue, {})).toEqual([]);
+    const safe = await s.admin.query(api.dlvAccess.supportEstimate, { id: estimate.estimateId });
+    expect(safe).toMatchObject({ postalCode: '95206', merchandiseMinor: estimate.merchandiseMinor });
+    for (const field of ['internal', 'guestCapabilityHash', 'userId', 'groups', 'sourceVersionsHash']) expect(safe).not.toHaveProperty(field);
+    expect((await s.admin.query(api.dlvAccess.supportRequests, { paginationOpts: { numItems: 20, cursor: null } })).page).toEqual([]);
+
     await expect(s.admin.query(api.sysConfig.list, {})).rejects.toSatisfy((x) =>
       isCommerceError(x, 'FORBIDDEN')
     );

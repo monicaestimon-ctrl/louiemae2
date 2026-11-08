@@ -1,3 +1,4 @@
+import { getFunctionName } from 'convex/server';
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
@@ -11,7 +12,7 @@ const mocks = vi.hoisted(() => ({
       collections: [{ id: 'furniture', title: 'Furniture', subcategories: [{ id: 'chairs', title: 'Furniture Chairs' }] }],
       customPages: [] as unknown[], navLinks: [],
     } },
-  inventoryArgs: vi.fn(),
+  inventoryArgs: vi.fn(), newsletter: vi.fn(), session: {owner: true, delivery: true},
 }));
 vi.mock('../useAdminInventoryPage', () => ({ useAdminInventoryPage: (_enabled: boolean, args: unknown) => { mocks.inventoryArgs(args); return mocks.inventory; } }));
 vi.mock('../AdminProductPicker', () => ({ AdminProductPicker: () => null }));
@@ -21,13 +22,14 @@ vi.mock('../CJControlRoom', () => ({ CJControlRoom: () => <p>Control room view</
 vi.mock('../CJSettings', () => ({ CJSettings: () => <p>CJ settings view</p> }));
 vi.mock('../../contexts/BlogContext', () => ({ useSite: () => mocks.site }));
 vi.mock('../../contexts/AdminCatalogDemand', () => ({ useAdminCatalog: () => undefined }));
-vi.mock('../../contexts/NewsletterContext', () => ({ useNewsletterAdmin: () => ({ subscribers: [], campaigns: [], stats: {} }) }));
-vi.mock('convex/react', () => ({ useMutation: () => vi.fn(), useAction: () => vi.fn(), useQuery: () => undefined }));
+vi.mock('../../contexts/NewsletterContext', () => ({ useNewsletterAdmin: () => { mocks.newsletter(); return { subscribers: [], campaigns: [], stats: {} }; } }));
+vi.mock('../admin/CommerceV2Admin', () => ({ default: () => <p>Scoped staff workspace</p> }));
+vi.mock('convex/react', () => ({ useMutation: () => vi.fn(), useAction: () => vi.fn(), useQuery: (ref: Parameters<typeof getFunctionName>[0]) => getFunctionName(ref) === 'cjAdminAccess:session' ? mocks.session : undefined }));
 vi.mock('../useAdminProductDetail', () => ({ useAdminProductDetail: () => ({ load: vi.fn(), cancel: vi.fn(), loadingId: null, error: null }) }));
 vi.mock('../useAdminDescriptionBatch', () => ({ useAdminDescriptionBatch: () => ({ busy: false, previews: [], setPreviews: vi.fn(), run: vi.fn() }) }));
 vi.mock('../FadeIn', () => ({ FadeIn: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 
-beforeEach(() => { vi.clearAllMocks(); localStorage.setItem('admin-active-tab', 'dashboard'); });
+beforeEach(() => { mocks.session = {owner: true, delivery: true}; vi.clearAllMocks(); localStorage.setItem('admin-active-tab', 'dashboard'); });
 
 const sidebar = () => within(screen.getByRole('complementary', { name: 'Admin navigation' }));
 
@@ -59,4 +61,14 @@ it('moves collection and category browsing into the Products view', () => {
   expect(mocks.inventoryArgs).toHaveBeenLastCalledWith(expect.objectContaining({ collection: 'furniture', category: 'Furniture Chairs' }));
   fireEvent.click(screen.getByRole('button', { name: 'All collections' }));
   expect(mocks.inventoryArgs).toHaveBeenLastCalledWith(expect.objectContaining({ collection: 'all', category: null }));
+});
+
+
+it('routes limited staff without mounting newsletter, inventory or owner navigation', () => {
+  mocks.session = { owner: false, delivery: true };
+  render(<AdminPage />);
+  expect(screen.getByText('Scoped staff workspace')).toBeInTheDocument();
+  expect(screen.queryByRole('complementary', { name: 'Admin navigation' })).not.toBeInTheDocument();
+  expect(mocks.newsletter).not.toHaveBeenCalled();
+  expect(mocks.inventoryArgs).not.toHaveBeenCalled();
 });

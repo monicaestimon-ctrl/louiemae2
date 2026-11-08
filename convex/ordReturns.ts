@@ -5,7 +5,7 @@
 // authorized operations step, and its Stripe event drives commission reversal.
 import { v } from 'convex/values';
 import { mutation, query } from './_generated/server';
-import { requireCjAdminIdentity } from './cjAdminAccess';
+import { requireDeliveryRole } from './dlvAccess';
 import { activeConfig } from './sysConfig';
 import { audit } from './sysCore';
 import { CommerceError } from '../lib/errors';
@@ -30,7 +30,7 @@ export function refundSplit(line: { pieces: number; unitPackMinor: number; packs
 export const request = mutation({
   args: { orderLineId: v.id('ordOrderLines'), pieces: v.number(), reason: v.string(), goodwill: v.boolean() },
   handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+    const admin = await requireDeliveryRole(ctx, a.goodwill ? 'approver' : 'finance');
     const line = await ctx.db.get(a.orderLineId);
     if (!line) throw new CommerceError('INVALID_INPUT', 'Order line not found');
     const order = (await ctx.db.get(line.orderId))!;
@@ -62,7 +62,7 @@ export const request = mutation({
 export const transition = mutation({
   args: { returnId: v.id('ordReturns'), to: v.union(v.literal('authorized'), v.literal('received'), v.literal('refunded'), v.literal('rejected')), condition: v.optional(v.string()) },
   handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+    const admin = await requireDeliveryRole(ctx, a.to === 'received' ? 'finance' : 'approver');
     const r = await ctx.db.get(a.returnId);
     if (!r) throw new CommerceError('INVALID_INPUT', 'Return not found');
     const allowed: Record<string, string[]> = { requested: ['authorized', 'rejected'], authorized: ['received', 'refunded', 'rejected'], received: ['refunded', 'rejected'] };
@@ -79,7 +79,7 @@ export const transition = mutation({
 export const forOrder = query({
   args: { orderId: v.id('ordOrders') },
   handler: async (ctx, a) => {
-    await requireCjAdminIdentity(ctx);
+    await requireDeliveryRole(ctx, 'finance');
     const lines = await ctx.db.query('ordOrderLines').withIndex('by_order', (q) => q.eq('orderId', a.orderId)).collect();
     return (await Promise.all(lines.map((l) => ctx.db.query('ordReturns').withIndex('by_line', (q) => q.eq('orderLineId', l._id)).collect()))).flat();
   },

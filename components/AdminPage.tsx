@@ -1,5 +1,6 @@
 
 import React, { useState, useRef } from 'react';
+import DeliveryBoundary from './delivery/DeliveryBoundary';
 import CommerceV2Admin from './admin/CommerceV2Admin';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
@@ -261,6 +262,16 @@ const ImageUploader: React.FC<{
 };
 
 export const AdminPage: React.FC = () => {
+   const { isAuthenticated, isAuthLoading, logout } = useSite();
+   const access = useQuery(api.cjAdminAccess.session, isAuthenticated ? {} : 'skip');
+   if (isAuthLoading || (isAuthenticated && !access)) return <p role="status">Checking staff access…</p>;
+   if (!isAuthenticated || access?.owner) return <OwnerAdminPage />;
+   return <main className="mx-auto max-w-6xl p-6 pt-28 space-y-6">
+      <button type="button" onClick={() => logout()}>Sign out</button>
+      {access?.delivery ? <DeliveryBoundary><CommerceV2Admin /></DeliveryBoundary> : <p role="alert">This account does not have staff access.</p>}
+   </main>;
+};
+const OwnerAdminPage: React.FC = () => {
    const { isAuthenticated, isAuthLoading, signIn, logout, posts, addPost, updatePost, deletePost, siteContent, updateSiteContent, addCustomPage, updateCustomPage, deleteCustomPage, addProduct, addProducts, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
    const { subscribers, subscriberListTruncated, campaigns, createCampaign, updateCampaign, sendCampaign, deleteCampaign, stats } = useNewsletterAdmin();
    const linkDescriptionAuditToProduct = useMutation(api.descriptionAudits.linkAuditToProduct);

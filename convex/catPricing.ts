@@ -5,7 +5,7 @@ import { v } from 'convex/values';
 import { internalMutation, mutation, query } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
-import { requireCjAdminIdentity } from './cjAdminAccess';
+import { requireDeliveryRole } from './dlvAccess';
 import { activeConfig } from './sysConfig';
 import { audit, openReview } from './sysCore';
 import { openHold, resolveHold } from './catCore';
@@ -74,7 +74,7 @@ export async function computeScenarios(ctx: Ctx, cv: Doc<'catVariants'>, o: Opts
 export const simulate = query({
   args: { variantId: v.id('catVariants') },
   handler: async (ctx, a) => {
-    await requireCjAdminIdentity(ctx);
+    await requireDeliveryRole(ctx, 'finance');
     const cv = await ctx.db.get(a.variantId);
     if (!cv) throw new CommerceError('INVALID_INPUT', 'Variant not found');
     try {
@@ -130,7 +130,7 @@ export const recompute = internalMutation({
 export const recomputeVariants = mutation({
   args: { variantIds: v.array(v.id('catVariants')) },
   handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+    const admin = await requireDeliveryRole(ctx, 'finance');
     for (const id of a.variantIds.slice(0, 50)) await recordScenarios(ctx, id, admin.email);
   },
 });
@@ -139,7 +139,7 @@ export const recomputeVariants = mutation({
 export const approvePrice = mutation({
   args: { variantId: v.id('catVariants'), channel: v.union(v.literal('retail'), v.literal('trade')), packPriceMinor: v.number(), reason: v.string() },
   handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+    const admin = await requireDeliveryRole(ctx, 'approver');
     if (!Number.isSafeInteger(a.packPriceMinor) || a.packPriceMinor <= 0) throw new CommerceError('INVALID_INPUT', 'Price must be a positive whole number of cents');
     if (!a.reason.trim()) throw new CommerceError('INVALID_INPUT', 'Add a reason');
     const cv = await ctx.db.get(a.variantId);
@@ -187,7 +187,7 @@ export const approvePrice = mutation({
 export const assignPolicy = mutation({
   args: { variantId: v.id('catVariants'), policyKey: v.string(), documentRef: v.optional(v.string()), reason: v.string() },
   handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+    const admin = await requireDeliveryRole(ctx, 'approver');
     const cv = await ctx.db.get(a.variantId);
     if (!cv) throw new CommerceError('INVALID_INPUT', 'Variant not found');
     const policy = (await activeConfig<MarginPolicy>(ctx, 'marginPolicy', a.policyKey)).value;
@@ -203,7 +203,7 @@ export const assignPolicy = mutation({
 export const contributionReport = query({
   args: { productId: v.id('commerceProducts') },
   handler: async (ctx, a) => {
-    await requireCjAdminIdentity(ctx);
+    await requireDeliveryRole(ctx, 'finance');
     const variants = await ctx.db.query('catVariants').withIndex('by_product', (q) => q.eq('productId', a.productId)).collect();
     return Promise.all(
       variants.map(async (cv) => ({
