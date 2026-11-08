@@ -138,7 +138,7 @@ export async function computeManualQuote(
   return {
     serviceTerms: {
       version: DELIVERY_TERMS_VERSION,
-      label: q.service.replaceAll('_', ' '),
+      label: q.service === 'curbside' ? 'Quoted standard delivery' : q.service.replaceAll('_', ' '),
       details: [q.terms],
     },
     status: 'ok',
