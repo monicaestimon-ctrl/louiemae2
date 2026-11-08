@@ -1,6 +1,9 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import fs from 'node:fs';
+import path from 'node:path';
+import ts from 'typescript';
 import { CommerceError } from '../errors';
 import { verifyRequest } from './requestProof';
 import handler from '../../api/delivery';
@@ -47,6 +50,31 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 describe('delivery server gateway', () => {
+  it('keeps every local runtime dependency resolvable by deployed Node ESM', () => {
+    const seen = new Set<string>();
+    function inspect(file: string) {
+      if (seen.has(file)) return;
+      seen.add(file);
+      const source = ts.createSourceFile(
+        file,
+        fs.readFileSync(file, 'utf8'),
+        ts.ScriptTarget.Latest,
+        true
+      );
+      for (const statement of source.statements) {
+        if (!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement)) continue;
+        if (ts.isImportDeclaration(statement) && statement.importClause?.isTypeOnly) continue;
+        if (ts.isExportDeclaration(statement) && statement.isTypeOnly) continue;
+        const specifier = statement.moduleSpecifier;
+        if (!specifier || !ts.isStringLiteral(specifier) || !specifier.text.startsWith('.'))
+          continue;
+        expect(specifier.text, file).toMatch(/\.js$/);
+        const target = path.resolve(path.dirname(file), specifier.text);
+        inspect(fs.existsSync(target) ? target : target.replace(/\.js$/, '.ts'));
+      }
+    }
+    inspect(path.resolve('api/delivery.ts'));
+  });
   it('signs the exact input, forwards account authentication and never returns the proof or IP', async () => {
     const res = await call({ headers: { ...headers, authorization: 'Bearer fixture.jwt.token' } });
     expect(res.status).toHaveBeenCalledWith(200);

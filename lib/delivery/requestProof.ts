@@ -1,4 +1,4 @@
-import { stableStringify } from '../zuoImport.js';
+import { stableStringify } from '../canonicalJson.js';
 
 export type RequestProof = { issuedAt: number; nonce: string; rateKey: string; signature: string };
 export type DeliveryOperation = 'estimate' | 'quote';
