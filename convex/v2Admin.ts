@@ -24,6 +24,7 @@ export const publicFlags = query({
     credit: flag('CREDIT_V2_ENABLED'),
     delivery: flag('DELIVERY_AUTOMATION_ENABLED'),
     zuoCheckout: flag('RETAIL_ZUO_CHECKOUT_ENABLED'),
+      tradeCheckout: flag('TRADE_CHECKOUT_V2_ENABLED'),
     tradeOnly: flag('HOLM_TRADE_ONLY_ENABLED'),
     payouts: flag('PAYOUT_EXECUTION_ENABLED'),
   }),

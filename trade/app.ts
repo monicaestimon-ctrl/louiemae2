@@ -12,6 +12,8 @@ import { api } from '../convex/_generated/api';
 import { phoneCut } from './phoneCut.mjs';
 import {DeliveryQuoteAccess} from '../components/delivery/DeliveryQuoteStatus';
 import TradeDeliveryCalculator from '../components/delivery/TradeDeliveryCalculator';
+import ProjectDeliveryPanel from '../components/delivery/ProjectDeliveryPanel';
+import { projectLines } from './projectLines';
 import ProductDeliveryEstimate from '../components/delivery/ProductDeliveryEstimate';
 import { SafeImage } from '../components/SafeImage';
 import DeliveryBoundary from '../components/delivery/DeliveryBoundary';
@@ -1606,23 +1608,25 @@ function Tray({ctx}){
   useEffect(()=>{const k=e=>e.key==='Escape'&&ctx.setTray(false);addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[]);
   useEffect(()=>{setStep(0)},[tray.active]);
   const upd=fn=>setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===t.active?fn(p):p)}));
-  const items=proj.items.map(it=>({...it,p:byId(it.pid)}));const later=(tray.later||[]).map(x=>({...x,p:byId(x.pid)}));
-  const retail=items.reduce((s,i)=>s+i.p.price*i.qty,0);const trade=items.reduce((s,i)=>s+tp(i.p)*i.qty,0);const tier=tierOf(trade);const tierOn=ctx.mode==='trade'&&tier.rate>0;const tierSave=tierOn?trade*tier.rate:0;
+  const missing=proj.items.filter(it=>(!BY_ID.has(it.pid)||(it.vid&&BY_ID.get(it.pid).vid!==it.vid)));
+  const items=proj.items.filter(it=>BY_ID.has(it.pid)&&(!it.vid||BY_ID.get(it.pid).vid===it.vid)).map(it=>({...it,p:BY_ID.get(it.pid)}));const later=(tray.later||[]).filter(x=>BY_ID.has(x.pid)).map(x=>({...x,p:BY_ID.get(x.pid)}));
+  const project=projectLines(proj.items,BY_ID);const v2=items.some(i=>i.p.checkoutMode==='v2');
+  const retail=items.reduce((s,i)=>s+i.p.price*i.qty,0);const trade=items.reduce((s,i)=>s+tp(i.p)*i.qty,0);const tier=tierOf(trade);const tierOn=!v2&&ctx.mode==='trade'&&tier.rate>0;const tierSave=tierOn?trade*tier.rate:0;
   const sub=(ctx.mode==='trade'?trade:retail)-tierSave;const seats=items.reduce((s,i)=>s+i.p.seats*i.qty,0);
   const palette=[];items.forEach(i=>{const w=i.p.price*i.qty;const f=palette.find(x=>cdist(x.c,i.p.tone)<20);f?f.w+=w:palette.push({c:i.p.tone,w})});
   const line=(i,fn)=>upd(p=>({...p,items:p.items.map(x=>x.pid===i.pid&&x.zone===i.zone?fn(x):x).filter(Boolean)}));
-  const remove=i=>{line(i,()=>null);ctx.toast(`${i.p.name} removed`,{label:'Undo',fn:()=>upd(p=>({...p,items:[...p.items,{pid:i.pid,qty:i.qty,zone:i.zone}]}))})};
-  const saveLater=i=>{line(i,()=>null);setTrayState(t=>({...t,later:[{pid:i.pid,qty:i.qty},...(t.later||[]).filter(x=>x.pid!==i.pid)]}));ctx.toast(`${i.p.name} saved for later`)};
+  const remove=i=>{line(i,()=>null);ctx.toast(`${i.p.name} removed`,{label:'Undo',fn:()=>upd(p=>({...p,items:[...p.items,{pid:i.pid,vid:i.vid,qty:i.qty,zone:i.zone}]}))})};
+  const saveLater=i=>{line(i,()=>null);setTrayState(t=>({...t,later:[{pid:i.pid,vid:i.vid,qty:i.qty},...(t.later||[]).filter(x=>x.pid!==i.pid)]}));ctx.toast(`${i.p.name} saved for later`)};
   const restore=x=>{setTrayState(t=>({...t,later:(t.later||[]).filter(y=>y.pid!==x.pid)}));ctx.addToProject(x.pid,x.qty,proj.id,proj.zones[0],null,true)};
-  const moveTo=(i,z)=>{if(i.zone===z)return;upd(p=>{const rest=p.items.filter(x=>!(x.pid===i.pid&&x.zone===i.zone));const ex=rest.find(x=>x.pid===i.pid&&x.zone===z);return {...p,items:ex?rest.map(x=>x===ex?{...x,qty:x.qty+i.qty}:x):[...rest,{pid:i.pid,qty:i.qty,zone:z}]}})};
+  const moveTo=(i,z)=>{if(i.zone===z)return;upd(p=>{const rest=p.items.filter(x=>!(x.pid===i.pid&&x.zone===i.zone));const ex=rest.find(x=>x.pid===i.pid&&x.zone===z);return {...p,items:ex?rest.map(x=>x===ex?{...x,qty:x.qty+i.qty}:x):[...rest,{pid:i.pid,vid:i.vid,qty:i.qty,zone:z}]}})};
   const suggest=z=>{const zi=items.filter(i=>i.zone===z);if(!zi.length)return null;const have=new Set(items.map(i=>i.pid));const anchor=zi[0].p;return pairsFor(anchor,4).find(x=>!have.has(x.id))};
   const csv=()=>['Zone,Item,SKU,Material,Approx width (cm),Qty,Unit trade,Line trade,Status',...items.map(i=>[i.zone,`${i.p.name} ${i.p.line}`,i.p.sku,MAT[i.p.mat],cmW(i.p.id),i.qty,tp(i.p).toFixed(2),(tp(i.p)*i.qty).toFixed(2),i.p.oos?'Restock check':'Ready to quote'].map(v=>`"${v}"`).join(','))].join('\n');
   const STEPS=['Tray','Delivery','Review','Requested'];
   const contactErr=()=>!del.name.trim()?'Add a contact name for delivery.':!/^\S+@\S+\.\S+$/.test(del.email)?'Add an email for the quote.':!del.line1.trim()||!del.city.trim()||!del.postal.trim()?'Add the delivery address.':'';
-  const submit=async()=>{const m=contactErr();if(m){setStep(1);setErr(m);return}setBusy(true);setErr('');
+  const submit=async()=>{if(project.errors.length||v2){setErr('Review the project items and use the delivery checkout below.');return}const m=contactErr();if(m){setStep(1);setErr(m);return}setBusy(true);setErr('');
     try{tokRef.current=tokRef.current||Array.from(crypto.getRandomValues(new Uint8Array(24)),b=>'abcdefghijklmnopqrstuvwxyz0123456789'[b%36]).join('');
       const merged=[];items.forEach(i=>{const ex=merged.find(x=>x.productId===i.p.lid&&x.variantId===i.p.vid);if(ex)ex.quantity+=i.qty;else merged.push({productId:i.p.lid,variantId:i.p.vid,quantity:i.qty,zone:i.zone})});
-      const r=await requestQuote({token:tokRef.current,projectName:proj.name,name:del.name.trim(),email:del.email.trim(),phone:del.phone.trim(),business:del.business.trim(),address:{line1:del.line1.trim(),city:del.city.trim(),state:del.state.trim(),postalCode:del.postal.trim(),country:'US'},timing:del.when,date:del.date,receiving:del.recv,notes:(del.teamNote+(del.notes?'\nAccess: '+del.notes:'')).trim(),website:'',items:merged,refCode:activeRef()?.code,visitorId:visitorId(),...(useCredit&&credit?.balanceCents>0?{useCredit:true}:{})});
+      const r=await requestQuote({token:tokRef.current,projectName:proj.name,name:del.name.trim(),email:del.email.trim(),phone:del.phone.trim(),business:del.business.trim(),address:{line1:del.line1.trim(),city:del.city.trim(),state:del.state.trim(),postalCode:del.postal.trim(),country:'US'},timing:del.when,date:del.date,receiving:del.recv,notes:(del.teamNote+(del.notes?'\nAccess: '+del.notes:'')).trim(),website:'',items:merged,refCode:activeRef()?.code,visitorId:visitorId(),...(!v2&&useCredit&&credit?.balanceCents>0?{useCredit:true}:{})});
       tokRef.current=null;setRef(r.reference);setStep(3)}
     catch(e){setErr(e?.data||String(e?.message||'').replace(/^.*Uncaught Error: /,'').split('\n')[0]||'Something went wrong. Try again.')}finally{setBusy(false)}};
   const fld=(k,label,ph,type='text',auto)=>html`<div><label className="lbl" htmlFor=${'tv-'+k}>${label}</label><input id=${'tv-'+k} className="field" type=${type} autoComplete=${auto} value=${del[k]} placeholder=${ph} onInput=${e=>{setDel({...del,[k]:e.target.value});setErr('')}}/></div>`;
@@ -1648,6 +1652,7 @@ function Tray({ctx}){
           ${tab==='tray'&&html`<div className="seg"><button className=${view==='staged'?'on':''} onClick=${()=>setView('staged')}>Staged</button><button className=${view==='schedule'?'on':''} onClick=${()=>setView('schedule')}>Schedule</button></div>`}
         </div>
         ${tab==='later'&&(later.length?later.map(x=>html`<div key=${x.pid} className="tv-line"><span className="tv-th" style=${{backgroundImage:`url(${cut(x.pid)})`}}></span><div><b>${x.p.name}</b> <span className="mute">${x.p.line}</span><div className="meta">${x.qty} × · ${fmt(pr(x.p,ctx.mode))} each</div></div><button className="btn btn-line btn-sm" onClick=${()=>restore(x)}>Move to ${proj.name}</button></div>`):html`<div className="empty"><h3>Nothing saved for later</h3><p>Use "Save for later" on any line to park it here without losing it.</p></div>`)}
+        ${missing.map(i=>html`<div key=${i.pid+i.zone} role="alert"><p>Saved item ${i.pid} is no longer available. Choose a replacement or remove it.</p><button className="btn btn-line" onClick=${()=>line(i,()=>null)}>Remove unavailable item</button></div>`)}
         ${tab==='tray'&&!items.length&&html`<div className="empty"><h3>This project is empty</h3><p>Add pieces from the floor, a product page, or a whole Studio collage at once.</p><button className="btn btn-ink" onClick=${()=>{ctx.setTray(false);ctx.go('discover')}}>Browse pieces</button></div>`}
         ${tab==='tray'&&items.length>0&&view==='staged'&&html`
           <div className="tv-stage" aria-label="Your tray, staged">
@@ -1663,7 +1668,7 @@ function Tray({ctx}){
               <div style=${{minWidth:0}}><b>${i.p.name}</b> <span className="mute">${i.p.line}</span>
                 <div className="meta"><span className="row" style=${{gap:5}}><span className="dot" style=${{background:i.p.tone}}></span>${MAT[i.p.mat]}</span><span className="mono">${i.p.sku}</span>${i.p.oos?html`<span className="tv-status warn">Restock check</span>`:html`<span className="tv-status">Ready to quote</span>`}</div>
                 <div className="meta"><button className="lnk" onClick=${()=>saveLater(i)}>Save for later</button><button className="lnk" onClick=${()=>remove(i)}>Remove</button><span className="mute hide-sm">Drag to another area</span></div></div>
-              <div className="qty sm"><button aria-label="Fewer" onClick=${()=>line(i,x=>({...x,qty:Math.max(1,x.qty-1)}))}>−</button><span>${i.qty}</span><button aria-label="More" onClick=${()=>line(i,x=>({...x,qty:x.qty+1}))}>+</button></div>
+              <div className="qty sm"><button aria-label="Fewer" onClick=${()=>line(i,x=>({...x,qty:Math.max(i.p.minimum,x.qty-i.p.increment)}))}>−</button><span>${i.qty}</span><button aria-label="More" onClick=${()=>line(i,x=>({...x,qty:x.qty+i.p.increment}))}>+</button></div>
               <div className="tot">${ctx.mode==='trade'?html`${fmt(tp(i.p)*i.qty)}<s>${fmt(i.p.price*i.qty)}</s>`:fmt(i.p.price*i.qty)}</div>
             </div>`)}
             ${sg&&html`<button className="tv-suggest" onClick=${()=>ctx.addToProject(sg.id,1,proj.id,z,null,true)}><img src=${cut(sg.id)} alt=""/><span><b>Complete the ${z.toLowerCase()}</b><small>Add ${sg.name} ${sg.line.toLowerCase()} · ${fmt(pr(sg,ctx.mode))}</small></span>${I('plus',{width:18})}</button>`}
@@ -1708,22 +1713,24 @@ function Tray({ctx}){
           <div className="meter" style=${{marginTop:8}}><i style=${{width:Math.min(100,seats/proj.target*100)+'%'}}></i></div>
           <p className="help">${seats>=proj.target?'Every planned seat has a piece.':`${proj.target-seats} seats to go.`}</p></div>
         ${palette.length>0&&html`<div><span className="st-h">Material palette</span><div className="palette" style=${{marginTop:8}}>${palette.map(x=>html`<i key=${x.c} style=${{background:x.c,flex:x.w}}></i>`)}</div></div>`}
-        ${ctx.mode==='trade'&&html`<div className="tv-tier ${tierOn?'on':''}"><span className="st-h">Project pricing</span><div className="ix-meter"><i style=${{width:'0%'}}></i></div><p>${tierLine(trade)}</p></div>`}
+        ${!v2&&ctx.mode==='trade'&&html`<div className="tv-tier ${tierOn?'on':''}"><span className="st-h">Project pricing</span><div className="ix-meter"><i style=${{width:'0%'}}></i></div><p>${tierLine(trade)}</p></div>`}
         <div>
           <div className="sumrow"><span>Retail subtotal</span><span>${fmt(retail,true)}</span></div>
           ${ctx.mode==='trade'&&html`<div className="sumrow" style=${{color:'var(--ok)'}}><span>Trade savings</span><span>−${fmt(retail-trade,true)}</span></div>`}
           ${tierOn&&html`<div className="sumrow" style=${{color:'var(--ok)'}}><span>Project pricing · ${pct(tier.rate)}</span><span>−${fmt(tierSave,true)}</span></div>`}
           <div className="sumrow"><span>Delivery</span><span>On final quote</span></div>
           <div className="sumrow"><span>Sales tax</span><span>${tray.taxExempt?'Exempt':'On final quote'}</span></div>
-          ${credit?.balanceCents>0&&html`<label className="sumrow" style=${{cursor:'pointer'}}><span><input type="checkbox" checked=${useCredit} onChange=${e=>setUseCredit(e.target.checked)} style=${{marginRight:8}}/>Use my ${fmt(credit.balanceCents/100,true)} credit</span><span>${useCredit?'−'+fmt(Math.min(credit.balanceCents/100,sub),true):''}</span></label>`}
-          <div className="sumrow total"><span>Merchandise estimate</span><span>${fmt(sub-(useCredit&&credit?Math.min(credit.balanceCents/100,sub):0),true)}</span></div>
+          ${!v2&&credit?.balanceCents>0&&html`<label className="sumrow" style=${{cursor:'pointer'}}><span><input type="checkbox" checked=${useCredit} onChange=${e=>setUseCredit(e.target.checked)} style=${{marginRight:8}}/>Use my ${fmt(credit.balanceCents/100,true)} credit</span><span>${useCredit?'−'+fmt(Math.min(credit.balanceCents/100,sub),true):''}</span></label>`}
+          <div className="sumrow total"><span>Merchandise estimate</span><span>${fmt(sub-(!v2&&useCredit&&credit?Math.min(credit.balanceCents/100,sub):0),true)}</span></div>
           <p className="help" style=${{marginTop:8}}>Excludes delivery and tax. We confirm your complete total before payment. ${SPLIT_MAY}</p>
         </div>
-        ${step<2&&html`<button className="btn btn-ink btn-lg" disabled=${!items.length} onClick=${()=>{if(step===1){const m=contactErr();if(m){setErr(m);return}}setErr('');setStep(step+1)}}>${step===0?'Continue to delivery':'Review request'} ${I('arrow',{width:17})}</button>`}
-        ${step===2&&html`<button className="btn btn-cog btn-lg" disabled=${busy} onClick=${submit}>${busy?'Sending…':'Request final quote'} ${I('arrow',{width:17})}</button>`}
+        ${!v2&&step<2&&html`<button className="btn btn-ink btn-lg" disabled=${!items.length||project.errors.length>0} onClick=${()=>{if(step===1){const m=contactErr();if(m){setErr(m);return}}setErr('');setStep(step+1)}}>${step===0?'Continue to delivery':'Review request'} ${I('arrow',{width:17})}</button>`}
+        ${!v2&&step===2&&html`<button className="btn btn-cog btn-lg" disabled=${busy||project.errors.length>0} onClick=${submit}>${busy?'Sending…':'Request final quote'} ${I('arrow',{width:17})}</button>`}
+        ${project.errors.map(message=>html`<p key=${message} role="alert" className="help">${message}</p>`)}
+        ${v2&&project.errors.length===0&&html`<${DeliveryBoundary}><${ProjectDeliveryPanel} key=${JSON.stringify(project.lines)} lines=${project.lines} automatic=${items.every(i=>i.p.checkoutMode==='v2')} approved=${ctx.me.verified}/></>`}
         ${err&&html`<p className="help" style=${{color:'var(--bad)'}}>${err}</p>`}
         ${step>0&&step<3&&html`<button className="lnk" onClick=${()=>setStep(step-1)}>Back</button>`}
-        ${items.length>0&&html`<button className="tv-quote" onClick=${()=>setQc(true)}>${I('link',{width:17})}<span><b>Create a client quote</b><small>One link, your branding, your pricing</small></span>${I('arrow',{width:16})}</button>`}
+        ${!v2&&project.errors.length===0&&items.length>0&&html`<button className="tv-quote" onClick=${()=>setQc(true)}>${I('link',{width:17})}<span><b>Create a client quote</b><small>One link, your branding, your pricing</small></span>${I('arrow',{width:16})}</button>`}
         <div className="note">${I('pin',{width:18})}<span>We confirm availability, lead time and your final price before any payment.</span></div>
       </aside>
     </div>
@@ -3856,7 +3863,7 @@ export function App(){
   const trayCount=activeProject.items.reduce((s,i)=>s+i.qty,0);
   const fly=(fromEl)=>{try{const btn=document.getElementById('trayBtn');if(!fromEl||!btn)return;const a=fromEl.getBoundingClientRect(),b=btn.getBoundingClientRect();const im=document.createElement('img');im.src=fromEl.src||fromEl.style.backgroundImage.slice(5,-2);im.className='fly';const sz=Math.min(140,a.width);Object.assign(im.style,{left:a.left+a.width/2-sz/2+'px',top:a.top+a.height/2-sz/2+'px',width:sz+'px',height:sz+'px'});document.body.appendChild(im);
     im.animate([{transform:'translate(0,0) scale(1)',opacity:1},{transform:`translate(${b.left+b.width/2-(a.left+a.width/2)}px,${b.top+b.height/2-(a.top+a.height/2)}px) scale(.12)`,opacity:.6}],{duration:700,easing:'cubic-bezier(.5,0,.2,1)'}).onfinish=()=>im.remove()}catch(e){}};
-  const addToTray=(pid,qty=1,fromEl,quiet)=>{setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==t.active)return p;const z=p.zones[0];const ex=p.items.find(i=>i.pid===pid&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,qty,zone:z}]}})}));
+  const addToTray=(pid,qty=1,fromEl,quiet)=>{const selected=BY_ID.get(pid);if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==t.active)return p;const z=p.zones[0];const ex=p.items.find(i=>i.pid===pid&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,vid:selected.vid,qty,zone:z}]}})}));
     fly(fromEl);if(!quiet)toast(`${byId(pid).name} added to ${activeProject.name}`,{label:'Open tray',fn:()=>setTray(true)})};
   const saveTo=(pid,bid,quiet)=>{setBoards(bs=>bs.map(b=>b.id===bid?{...b,t:Date.now(),pins:b.pins.some(x=>x.pid===pid)?b.pins:[{pid,sec:b.sections[0]||''},...b.pins]}:b).sort((a,b)=>b.t-a.t));if(!quiet){const b=boards.find(x=>x.id===bid);toast(`Saved to ${b?b.title:'board'}`,{label:'View',fn:()=>{setBoard(bid);go('board')}})}};
   const createBoard=(title,pid,secret=false)=>{const id='b'+uid();setBoards(bs=>[{id,title,secret,collab:0,sections:[],pins:pid?[{pid,sec:''}]:[],t:Date.now()},...bs]);if(pid)toast('Saved to '+title);return id};
@@ -3865,7 +3872,7 @@ export function App(){
     const pal=Object.values(buckets).sort((a,b)=>b.n-a.n).slice(0,5).map(B=>rgb2hex(B.r/B.n,B.g/B.n,B.b/B.n));setImgQ({src:r.result,pal});setQuery('');go('discover')};img.src=r.result};r.readAsDataURL(f)};
   const toStudio=(ids,title)=>{setStudioSeed({ids,title:title||'New collage'});setNonce(n=>n+1);setPin(null);go('studio')};
   const openPin=id=>{setPin(id);if(id)setRecent(r=>[id,...r.filter(x=>x!==id)].slice(0,8))};
-  const addToProject=(pid,qty,projId,zone,fromEl,quiet)=>{setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==projId)return p;const z=zone||p.zones[0];const ex=p.items.find(i=>i.pid===pid&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,qty,zone:z}]}})}));fly(fromEl);if(!quiet){const pn=(tray.projects.find(p=>p.id===projId)||{}).name||'project';toast(byId(pid).name+' added to '+pn+(zone?' · '+zone:''),{label:'Open tray',fn:()=>{setPin(null);setTray(true)}})}};
+  const addToProject=(pid,qty,projId,zone,fromEl,quiet)=>{const selected=BY_ID.get(pid);if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==projId)return p;const z=zone||p.zones[0];const ex=p.items.find(i=>i.pid===pid&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,vid:selected.vid,qty,zone:z}]}})}));fly(fromEl);if(!quiet){const pn=(tray.projects.find(p=>p.id===projId)||{}).name||'project';toast(byId(pid).name+' added to '+pn+(zone?' · '+zone:''),{label:'Open tray',fn:()=>{setPin(null);setTray(true)}})}};
   const createProject=name=>{const id=uid();setTrayState(t=>({...t,projects:[...t.projects,{id,name,target:20,zones:['Main room'],items:[]}]}));toast(`Project "${name}" created`);return id};
   const addZone=(pid,z)=>setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===pid&&!p.zones.includes(z)?{...p,zones:[...p.zones,z]}:p)}));
   const inspoCtx={inspo,addInspo:items=>setInspo(l=>[...items,...l]),removeInspo:id=>setInspo(l=>l.filter(x=>x.id!==id)),updateInspo:(id,o)=>setInspo(l=>l.map(x=>x.id===id?{...x,...o}:x)),roomWall,setRoomWall,inspoToStudio:(x,ids=[])=>{setStudioSeed({inspo:x,ids,title:x.title});setNonce(n=>n+1);go('studio')}};
