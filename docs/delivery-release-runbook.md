@@ -319,3 +319,9 @@ Use the immutable order-line cost revision and accepted pack/SKU snapshot for a 
 ## 28. Legacy refund timing
 
 Provider event timestamps have whole-second precision. For legacy proofs without a successful refund-ID set, a matching failure in the same second as verification is uncertain and reopens reconciliation. Do not dismiss it solely because the proof contains later milliseconds. Newer proofs retain explicit successful IDs; a refund already excluded by that authoritative read does not reopen its replacement resolution. Preserve all historical proof and ledger records and verify the current provider state before any reviewed corrective action.
+
+## 29. Internal pricing/source export version 2
+
+Use **Delivery & freight → Export all internal pricing/source records** for a paginated finance-only JSON export. `recordVersion: 2` preserves approved prices and adds expense completeness, source/effective-date references, margin policy/version, price validity, commission qualification reserve and current economic results. A failed calculation returns `economics.status: review_required` and its reason; it never fabricates a margin from unknown costs. Computed merchandise contribution is not destination-specific delivery profitability or permission to publish.
+
+`images`, `sourceImages`, `publishedImages` and `imageSource` distinguish staged supplier references from currently published retail media. A source image does not clear MEDIA_RIGHTS or MEDIA_MISSING. The $10 handling allocation is per physical piece; actual supplier-order fees remain a separate delivery-rule input. Retain the downloaded file privately with its export timestamp and re-export after evidence changes. Verify all expected unique variant IDs rather than only the first visible page.
