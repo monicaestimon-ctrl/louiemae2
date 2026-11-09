@@ -4,7 +4,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, startTran
 import htm from 'htm';
 import type { HolmProduct } from './catalog';
 import { useQuery, useMutation, useAction } from 'convex/react';
-import { deliveryCents, DELIVERY_TIERS } from '../lib/holmDelivery';
+import { SPLIT_MAY } from '../lib/customerCopy';
 import { partnerCopy, partnerTerms, rateRows } from '../lib/holmPartners';
 import { activeRef, captureRefFromUrl, pieceShareUrl, rememberRef, shareOrigin, visitorId } from '../lib/partnerLink';
 import { useAuthActions } from '@convex-dev/auth/react';
@@ -1194,9 +1194,6 @@ const CAT_OF={sofa:'Seating',sectional:'Seating',bench:'Seating',ottoman:'Seatin
 const PROJECT_TIERS=[];
 const tierOf=t=>({rate:0,next:null});
 const pct=r=>Math.round(r*100)+'%';
-// One flat delivery fee per order, tiered by subtotal (dollars in, dollars out).
-const deliveryOf=sub=>deliveryCents(Math.round(sub*100))/100;
-const deliveryText=()=>DELIVERY_TIERS.map((t,i)=>(t.underCents===Infinity?fmt(DELIVERY_TIERS[i-1].underCents/100)+'+':'under '+fmt(t.underCents/100))+' '+fmt(t.feeCents/100,t.feeCents%100>0)).join(' · ');
 const tierLine=()=> 'Project pricing is confirmed for eligible items in your quote.';
 function pairsFor(p,n=3){
   const want=p.type==='lighting'?['sofa','sectional','bench','ottoman']:p.type==='ottoman'?['sofa','sectional','bench','lighting']:['ottoman','lighting','bench'];
@@ -1600,11 +1597,12 @@ function Tray({ctx}){
   const [step,setStep]=useState(0);const [view,setView]=useState('staged');const [tab,setTab]=useState('tray');
   const [newP,setNewP]=useState(false);const [pn,setPn]=useState('');const [drag,setDrag]=useState(null);const [over,setOver]=useState(null);
   const [qc,setQc]=useState(false);
-  const [del,setDel]=useState(()=>{const d=load('del',{});return {when:'asap',date:'',recv:d.recv||'white',notes:'',teamNote:'',name:d.name||'',email:ctx.me.email||d.email||'',phone:d.phone||'',business:ctx.me.businessName||d.business||'',line1:d.line1||'',city:d.city||'',state:d.state||'',postal:d.postal||''}});
+  const [del,setDel]=useState(()=>{const d=load('del',{});return {when:'asap',date:'',recv:['white','threshold','dock'].includes(d.recv)?d.recv:'white',notes:'',teamNote:'',name:'',email:ctx.me.email||'',phone:'',business:ctx.me.businessName||'',line1:'',city:'',state:'',postal:''}});
   const [ref,setRef]=useState('');const [busy,setBusy]=useState(false);const [err,setErr]=useState('');const tokRef=useRef(null);const requestQuote=useMutation(api.holm.requestQuote);
   // Store credit: pre-set from the Hub setting, changeable for this request.
   const credit=useQuery(api.holmCredit.myCredit,ctx.me.signedIn?{}:'skip');const [useCredit,setUseCredit]=useState(false);useEffect(()=>{if(credit)setUseCredit(credit.autoApply)},[credit?.autoApply]);
-  useEffect(()=>{const {name,email,phone,business,line1,city,state,postal,recv}=del;store('del',{name,email,phone,business,line1,city,state,postal,recv})},[del]);
+  // Replace old saved contact/address data with a non-personal service preference only.
+  useEffect(()=>{store('del',{recv:del.recv})},[del.recv]);
   useEffect(()=>{const k=e=>e.key==='Escape'&&ctx.setTray(false);addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[]);
   useEffect(()=>{setStep(0)},[tray.active]);
   const upd=fn=>setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===t.active?fn(p):p)}));
@@ -1681,7 +1679,8 @@ function Tray({ctx}){
         <h3 className="tv-h">When</h3>
         <div className="tv-opts">${[['asap','As soon as ready','Ships when every piece is confirmed'],['date','Schedule a date','Hold delivery until opening week'],['split','Ship as available','Pieces arrive as each is ready']].map(([k,t,d])=>html`<button key=${k} className=${'modecard'+(del.when===k?' on':'')} onClick=${()=>setDel({...del,when:k})}><b>${t}</b><p>${d}</p></button>`)}</div>
         ${del.when==='date'&&html`<div style=${{maxWidth:260}}><label className="lbl" htmlFor="tv-date">Target delivery date</label><input id="tv-date" type="date" className="field" value=${del.date} onInput=${e=>setDel({...del,date:e.target.value})}/></div>`}
-        <h3 className="tv-h">How it's received</h3>
+        <h3 className="tv-h">Requested delivery service</h3>
+        <p className="help">Service availability, access requirements, charges and dates are confirmed in your final quote. Your selection is a request, not a booking.</p>
         <div className="tv-opts">${[['white','White glove','Placed in the room, packaging removed'],['threshold','Threshold','Delivered inside the first door'],['dock','Commercial dock','Booked to your receiving hours']].map(([k,t,d])=>html`<button key=${k} className=${'modecard'+(del.recv===k?' on':'')} onClick=${()=>setDel({...del,recv:k})}><b>${t}</b><p>${d}</p></button>`)}</div>
         <div><label className="lbl" htmlFor="tv-notes">Access notes</label><textarea id="tv-notes" className="field" rows="3" placeholder="Stairs, elevator size, loading hours, parking" value=${del.notes} onInput=${e=>setDel({...del,notes:e.target.value})}></textarea></div>
         <div className="note">${I('pin',{width:18})}<span>Sales tax is added to the final quote. Tax exemption applies once your resale certificate is approved on your trade account.</span></div>
@@ -1698,7 +1697,8 @@ function Tray({ctx}){
       ${step===3&&html`<div className="tv-done">
         <span className="pulse" style=${{background:'var(--ok)'}}>${I('check')}</span>
         <h3>Quote request received</h3><p className="mono">${ref} · ${proj.name}</p>
-        <ol className="tv-time">${[['Received','Just now'],['Availability check','Supplier stock and lead times'],['Final quote','Within one business day'],['Approve & pay','Only after you approve'],['Delivery booked','On your chosen date']].map(([t,d],i)=>html`<li key=${t} className=${i===0?'on':''}><i></i><b>${t}</b><span>${d}</span></li>`)}</ol>
+        <ol className="tv-time">${[['Received','Just now'],['Availability check','Supplier stock and lead times'],['Final quote','After stock and delivery review'],['Approve & pay','Only after you approve'],['Delivery scheduled','Date confirmed with the carrier']].map(([t,d],i)=>html`<li key=${t} className=${i===0?'on':''}><i></i><b>${t}</b><span>${d}</span></li>`)}</ol>
+        <p className="help">${SPLIT_MAY}</p>
         <div className="row" style=${{flexWrap:'wrap',justifyContent:'center'}}><button className="btn btn-ink" onClick=${()=>setQc(true)}>${I('link',{width:15})} Create client quote</button><button className="btn btn-line" onClick=${()=>{ctx.setTray(false);ctx.go('home')}}>Back to the floor</button></div>
       </div>`}
       </div>
@@ -1713,11 +1713,11 @@ function Tray({ctx}){
           <div className="sumrow"><span>Retail subtotal</span><span>${fmt(retail,true)}</span></div>
           ${ctx.mode==='trade'&&html`<div className="sumrow" style=${{color:'var(--ok)'}}><span>Trade savings</span><span>−${fmt(retail-trade,true)}</span></div>`}
           ${tierOn&&html`<div className="sumrow" style=${{color:'var(--ok)'}}><span>Project pricing · ${pct(tier.rate)}</span><span>−${fmt(tierSave,true)}</span></div>`}
-          <div className="sumrow"><span>Delivery · flat rate</span><span>${fmt(deliveryOf(sub),true)}</span></div>
+          <div className="sumrow"><span>Delivery</span><span>On final quote</span></div>
           <div className="sumrow"><span>Sales tax</span><span>${tray.taxExempt?'Exempt':'On final quote'}</span></div>
           ${credit?.balanceCents>0&&html`<label className="sumrow" style=${{cursor:'pointer'}}><span><input type="checkbox" checked=${useCredit} onChange=${e=>setUseCredit(e.target.checked)} style=${{marginRight:8}}/>Use my ${fmt(credit.balanceCents/100,true)} credit</span><span>${useCredit?'−'+fmt(Math.min(credit.balanceCents/100,sub),true):''}</span></label>`}
-          <div className="sumrow total"><span>Estimated total</span><span>${fmt(sub-(useCredit&&credit?Math.min(credit.balanceCents/100,sub):0)+deliveryOf(sub),true)}</span></div>
-          <p className="help" style=${{marginTop:8}}>One delivery fee per order: ${deliveryText()}.</p>
+          <div className="sumrow total"><span>Merchandise estimate</span><span>${fmt(sub-(useCredit&&credit?Math.min(credit.balanceCents/100,sub):0),true)}</span></div>
+          <p className="help" style=${{marginTop:8}}>Excludes delivery and tax. We confirm your complete total before payment. ${SPLIT_MAY}</p>
         </div>
         ${step<2&&html`<button className="btn btn-ink btn-lg" disabled=${!items.length} onClick=${()=>{if(step===1){const m=contactErr();if(m){setErr(m);return}}setErr('');setStep(step+1)}}>${step===0?'Continue to delivery':'Review request'} ${I('arrow',{width:17})}</button>`}
         ${step===2&&html`<button className="btn btn-cog btn-lg" disabled=${busy} onClick=${submit}>${busy?'Sending…':'Request final quote'} ${I('arrow',{width:17})}</button>`}
@@ -3571,7 +3571,7 @@ function PricingAdmin({ctx}){
   if(rows===undefined)return html`<p className="help" style=${{marginTop:18}}>Loading…</p>`;
   const flagged=rows.filter(r=>r.flags.length);const list=only?flagged:rows;const m=b=>b==null?'—':(b/100).toFixed(1)+'%';const $=c=>fmt(c/100,true);
   return html`<div style=${{marginTop:18,display:'grid',gap:14}}>
-    <p className="help">Cost is the dealer cost plus the supplier freight allowance. Margins are after card processing (2.9% + 30¢). "Retail after Elite" is the retail margin left after the top partner rate for the piece's type (held to 40% of profit); under 20% is flagged, so you can exclude or reprice it.</p><p className="help"> Trade never goes below a 25% margin; where that would happen, the floor holds the price and the piece is flagged. Delivery is one flat fee per order: ${deliveryText()}.</p>
+    <p className="help">Cost is the dealer cost plus the supplier freight allowance. Margins are after card processing (2.9% + 30¢). "Retail after Elite" is the retail margin left after the top partner rate for the piece's type (held to 40% of profit); under 20% is flagged, so you can exclude or reprice it.</p><p className="help"> Trade never goes below a 25% margin; where that would happen, the floor holds the price and the piece is flagged. This legacy pricing view does not confirm delivery coverage or charges; review delivery in the final project quote.</p>
     <div className="row" style=${{gap:8}}><button className=${'chip'+(only?' on':'')} onClick=${()=>setOnly(true)}>Flagged · ${flagged.length}</button><button className=${'chip'+(!only?' on':'')} onClick=${()=>setOnly(false)}>All pieces · ${rows.length}</button></div>
     ${list.length?html`<div style=${{overflowX:'auto'}}><table className="ptable" style=${{width:'100%',borderCollapse:'collapse',fontSize:13}}>
       <thead><tr>${['Piece','SKU','Cost','Retail','Trade','Project 5%','Trade margin','Project margin','Retail after Elite','Flags'].map(h=>html`<th key=${h} style=${{textAlign:'left',padding:'8px 10px',borderBottom:'1px solid var(--line2)',whiteSpace:'nowrap'}}>${h}</th>`)}</tr></thead>
