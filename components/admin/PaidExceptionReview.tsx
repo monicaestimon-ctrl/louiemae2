@@ -3,6 +3,7 @@ import { useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
 import { customerMessage } from '../../lib/errors';
+import OriginalOrderRecovery from './OriginalOrderRecovery';
 
 export default function PaidExceptionReview() {
   const rows = useQuery(api.v2Admin.paidExceptions, {});
@@ -45,6 +46,7 @@ function Review({ id }: { id: Id<'ordPaidExceptions'> }) {
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState('');
   const [retry, setRetry] = useState<{ payload: string; key: string } | null>(null);
+  const [recoveryProof, setRecoveryProof] = useState<Id<'ordPaymentVerifications'> | null>(null);
   if (!data) return <p role="status">Loading payment exception…</p>;
   const proof = data.proof;
   const complete =
@@ -55,6 +57,15 @@ function Review({ id }: { id: Id<'ordPaidExceptions'> }) {
     proof.currency === 'usd' &&
     proof.amountMinor > 0 &&
     proof.amountMinor === proof.succeededRefundMinor &&
+    !proof.pendingRefundMinor;
+  const recoverable =
+    !!proof &&
+    proof._id === verifiedId &&
+    proof.captured &&
+    !proof.disputed &&
+    proof.currency === 'usd' &&
+    proof.amountMinor > 0 &&
+    !proof.succeededRefundMinor &&
     !proof.pendingRefundMinor;
   if (data.exception.status === 'resolved')
     return <p role="status">Resolution saved. Payment and audit history remain available.</p>;
@@ -100,8 +111,8 @@ function Review({ id }: { id: Id<'ordPaidExceptions'> }) {
       )}
       {!complete && (
         <p>
-          A full successful refund and fresh verification are required before closing this
-          exception. Partial/pending refunds and fulfillment requests stay open.
+          A full successful refund and fresh verification are required before closing this exception
+          as refunded. An unrefunded original payment can instead be reviewed for fulfillment below.
         </p>
       )}
       {data.canApprove && (
@@ -167,6 +178,22 @@ function Review({ id }: { id: Id<'ordPaidExceptions'> }) {
             Record completed refund resolution
           </button>
         </form>
+      )}
+      {data.canApprove && (
+        <button
+          className="border p-2"
+          disabled={busy || !recoverable}
+          onClick={() => setRecoveryProof(verifiedId)}
+        >
+          Review original fulfillment recovery
+        </button>
+      )}
+      {recoveryProof && data.canApprove && (
+        <OriginalOrderRecovery
+          id={id}
+          verificationId={verifiedId ?? recoveryProof}
+          eligible={recoverable}
+        />
       )}
       {message && <p role="status">{message}</p>}
     </div>

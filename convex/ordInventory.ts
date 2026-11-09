@@ -88,6 +88,9 @@ export async function paymentStockFailure(ctx: MutationCtx, intent: Doc<'ordChec
   const wanted = new Map<Id<'catVariants'>, number>();
   for (const line of intent.lineSnapshot) {
     if (line.supplierCode !== 'zuo') continue; // Preserve the approved legacy Ashcroft route.
+    const variant = await ctx.db.get(line.variantId);
+    if (!variant || (line.supplierSku && line.supplierSku !== variant.supplierSku) ||
+      (line.warehouseId && line.warehouseId !== variant.warehouseId)) return 'Original supplier identity changed';
     wanted.set(line.variantId, (wanted.get(line.variantId) ?? 0) + line.packs);
   }
   for (const [id, packs] of wanted) {

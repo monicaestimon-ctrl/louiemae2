@@ -51,7 +51,10 @@ export async function createOrderFromIntent(ctx: MutationCtx, intent: Doc<'ordCh
     createdAt: Date.now(),
   });
   const lineIds: Id<'ordOrderLines'>[] = [];
-  for (const [i, l] of lines.entries())
+  for (const [i, l] of lines.entries()) {
+    const variant = l.supplierSku ? null : await ctx.db.get(l.variantId);
+    const supplierSku = l.supplierSku ?? variant?.supplierSku;
+    if (!supplierSku) throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED', 'Missing supplier identity');
     lineIds.push(
       await ctx.db.insert('ordOrderLines', {
         orderId,
@@ -70,12 +73,16 @@ export async function createOrderFromIntent(ctx: MutationCtx, intent: Doc<'ordCh
         deliveryAllocMinor: l.deliveryAllocMinor ?? deliveryShares[i],
         commissionCategory: l.commissionCategory,
         supplierCode: l.supplierCode,
+        supplierSku,
+        supplierSkuSource: l.supplierSku ? 'checkout_snapshot' : 'canonical_at_order',
+        ...(l.warehouseId ? { warehouseId: l.warehouseId } : {}),
         ...(l.costRevisionId ? { costRevisionId: l.costRevisionId } : {}),
         ...(l.priceRevisionId ? { priceRevisionId: l.priceRevisionId } : {}),
         refundedMinor: 0,
         status: 'open',
       })
     );
+  }
   const now = Date.now();
   for (const [, idx] of groups) {
     const first=lines[idx[0]],supplierCode=first.supplierCode;
@@ -149,7 +156,7 @@ export const dealerQueue = query({
           allocs.map(async (al) => {
             const line = await ctx.db.get(al.orderLineId);
             const variant = line ? await ctx.db.get(line.variantId) : null;
-            return { allocationId: al._id, name: line?.name ?? '', supplierSku: variant?.supplierSku ?? '', packs: al.packs, pieces: al.pieces, status: al.status };
+            return { allocationId: al._id, name: line?.name ?? '', supplierSku: line?.supplierSku ?? variant?.supplierSku ?? '', packs: al.packs, pieces: al.pieces, status: al.status };
           })
         );
         return { ...c, orderNumber: order?.number, shippingAddress: order?.shippingAddress, paidAt: order?.paidAt, items };

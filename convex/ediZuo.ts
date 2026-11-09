@@ -33,7 +33,9 @@ export async function buildPayload(ctx: MutationCtx, child: Doc<'ordSupplierOrde
     const variant = line ? await ctx.db.get(line.variantId) : null;
     const cost = line?.costRevisionId ? await ctx.db.get(line.costRevisionId) : null;
     if (!line || !variant || line.supplierCode !== 'zuo') throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED', 'Allocation outside the Zuo child order');
-    lines.push({ supplierSku: variant.supplierSku, quantityPacks: al.packs, agreedUnitCostMinor: cost?.wholesaleMinor !== null && cost?.wholesaleMinor !== undefined ? cost.wholesaleMinor * variant.piecesPerPack : null });
+    const piecesPerPack = line.pieces / line.packs;
+    if (!Number.isSafeInteger(piecesPerPack) || piecesPerPack < 1) throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED', 'Invalid frozen order pack basis');
+    lines.push({ supplierSku: line.supplierSku ?? variant.supplierSku, quantityPacks: al.packs, agreedUnitCostMinor: cost?.wholesaleMinor !== null && cost?.wholesaleMinor !== undefined ? cost.wholesaleMinor * piecesPerPack : null });
   }
   return { poNumber: `LM-${String(child._id).slice(-10).toUpperCase()}`, mappingVersion: 'zuo-edi-mapping-1', shipTo: { name: order.email, ...order.shippingAddress, state: order.shippingAddress.state ?? '' }, lines };
 }

@@ -69,6 +69,19 @@ async function attributedOrder(t: ReturnType<typeof convexTest>, opts: { buyerUs
 const obligations = (t: Awaited<ReturnType<typeof setup>>['t'], orderId: Id<'ordOrders'>) => t.run((ctx) => ctx.db.query('ldgObligations').withIndex('by_order', (q) => q.eq('orderId', orderId)).collect());
 
 describe('commission ledger v2 (S29, LED01, LED02)', () => {
+  it('honors an existing frozen retail rate during recovery while new accrual is paused, without rewarding trade purchases', async () => {
+    const s = await setup();
+    process.env.COMMISSION_ACCRUAL_V2_ENABLED = 'false';
+    const retail = await attributedOrder(s.t);
+    expect(await obligations(s.t, retail.orderId)).toHaveLength(0);
+    await s.t.run(ctx => accrueForOrder(ctx, retail.orderId, true));
+    await s.t.run(ctx => accrueForOrder(ctx, retail.orderId, true));
+    expect((await obligations(s.t, retail.orderId)).map(o => o.earnedMinor).sort()).toEqual([10000, 5000].sort());
+    const trade = await attributedOrder(s.t);
+    await s.t.run(ctx => ctx.db.patch(trade.orderId, { channel: 'trade' }));
+    expect(await s.t.run(ctx => accrueForOrder(ctx, trade.orderId, true))).toBe(0);
+    expect(await obligations(s.t, trade.orderId)).toHaveLength(0);
+  });
   it('accrues one obligation per eligible line exactly once', async () => {
     const s = await setup();
     const o = await attributedOrder(s.t);

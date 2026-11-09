@@ -29,8 +29,10 @@ export const lineBasis = (l: Pick<Doc<'ordOrderLines'>, 'unitPackMinor' | 'packs
  * Trade orders, self-referrals and ineligible lines earn nothing because they have no eligible
  * snapshot line. The order records which accrual path it used so legacy and v2 never both pay.
  */
-export async function accrueForOrder(ctx: MutationCtx, orderId: Id<'ordOrders'>) {
-  if (!flag('COMMISSION_ACCRUAL_V2_ENABLED')) return 0;
+export async function accrueForOrder(ctx: MutationCtx, orderId: Id<'ordOrders'>, honorFrozenRates = false) {
+  // Recovery honors an already accepted attribution snapshot even if new accrual is paused.
+  // Payout execution remains separately gated; no new eligibility or rate is invented.
+  if (!flag('COMMISSION_ACCRUAL_V2_ENABLED') && !honorFrozenRates) return 0;
   const order = await ctx.db.get(orderId);
   if (!order?.intentId || order.channel !== 'retail' || order.accrualPath === 'legacy') return 0;
   const intent = await ctx.db.get(order.intentId);

@@ -5,6 +5,7 @@
 import { v } from 'convex/values';
 import { internalMutation, internalQuery } from './_generated/server';
 import type { MutationCtx } from './_generated/server';
+import type { Doc } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import { bumpMetric, openReview } from './sysCore';
 import { createOrderFromIntent } from './ordFulfillment';
@@ -65,10 +66,17 @@ async function handleSession(ctx: MutationCtx, s: SessionPayload, kind: 'complet
     await bumpMetric(ctx, 'payment.exception');
     return 'processed';
   }
+  await finishVerifiedOrder(ctx, intent, { ...(s.payment_intent ? { paymentIntentId: s.payment_intent } : {}), email: (s.email || intent.buyer.email || '').toLowerCase(), ...((intent.shippingAddress ?? s.shipping) ? { shippingAddress: intent.shippingAddress ?? s.shipping } : {}), paidAt: Date.now() });
+  return 'processed';
+}
+
+/** One transactional order/credit/attribution/tax path for verified normal or recovered payments. */
+export async function finishVerifiedOrder(ctx: MutationCtx, intent: Doc<'ordCheckoutIntents'>,
+  payment: Parameters<typeof createOrderFromIntent>[2], honorFrozenRates = false) {
   await ctx.db.patch(intent._id, { status: 'paid' });
-  const orderId = await createOrderFromIntent(ctx, intent, { ...(s.payment_intent ? { paymentIntentId: s.payment_intent } : {}), email: (s.email || intent.buyer.email || '').toLowerCase(), ...((intent.shippingAddress ?? s.shipping) ? { shippingAddress: intent.shippingAddress ?? s.shipping } : {}), paidAt: Date.now() });
+  const orderId = await createOrderFromIntent(ctx, intent, payment);
   if (intent.creditReservationRef) await settleCredit(ctx, intent.creditReservationRef, 'redeemed', intent.creditMinor, orderId);
-  await accrueForOrder(ctx, orderId);
+  await accrueForOrder(ctx, orderId, honorFrozenRates);
   await convertPaidQuote(ctx, intent.estimateId, orderId);
   await onOrderPaid(ctx, orderId);
   if(intent.taxCalculationRef){
@@ -77,7 +85,7 @@ async function handleSession(ctx: MutationCtx, s: SessionPayload, kind: 'complet
   }
   if (!intent.taxCalculationRef) await openReview(ctx,'manual_sale_tax_reporting','ordOrders',orderId,'Paid manual quote requires tax-reporting evidence. Use the frozen quote tax and address; do not charge the customer again.');
   await bumpMetric(ctx, 'payment.order_created');
-  return 'processed';
+  return orderId;
 }
 
 export const process = internalMutation({
