@@ -26,6 +26,7 @@ import type * as catPolicies from "../catPolicies.js";
 import type * as catPricing from "../catPricing.js";
 import type * as catPublication from "../catPublication.js";
 import type * as catStock from "../catStock.js";
+import type * as catShipping from "../catShipping.js";
 import type * as catalog from "../catalog.js";
 import type * as catalogMaintenance from "../catalogMaintenance.js";
 import type * as catalogMigration from "../catalogMigration.js";
@@ -196,6 +197,7 @@ declare const fullApi: ApiFromModules<{
   catEvidence: typeof catEvidence;
   catPublication: typeof catPublication;
   catStock: typeof catStock;
+  catShipping: typeof catShipping;
   catalog: typeof catalog;
   catalogMaintenance: typeof catalogMaintenance;
   catalogMigration: typeof catalogMigration;

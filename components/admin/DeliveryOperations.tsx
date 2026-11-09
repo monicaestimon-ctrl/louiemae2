@@ -5,6 +5,7 @@ import NotificationOperations from './NotificationOperations';
 import DeliveryBoundary from '../delivery/DeliveryBoundary';
 import DeliveryActualCosts from './DeliveryActualCosts';
 import LegacyFreightReview from './LegacyFreightReview';
+import CatalogShippingEvidence from './CatalogShippingEvidence';
 import React, { useState } from 'react';
 import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
@@ -118,6 +119,7 @@ function DeliveryOperationsWorkspace({
     <section className="space-y-5 text-sm">
       <h3 className="font-serif text-xl">Delivery quotes and actual freight</h3>
       <NotificationOperations canResolve={approver} />
+      <CatalogShippingEvidence />
       {finance && (
         <>
           <DeliveryDiagnostics />

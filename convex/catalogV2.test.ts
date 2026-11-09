@@ -75,6 +75,55 @@ describe('cost evidence authoring', () => {
   });
 });
 
+describe('shipping evidence authoring', () => {
+  async function fixture() {
+    const { t, admin } = await setup();
+    await importPackage(admin, [row('SHIP')], 'dry_run');
+    await importPackage(admin, [row('SHIP')], 'commit');
+    const variant = (await t.run(ctx => ctx.db.query('catVariants').first()))!;
+    const warehouseArgs = { supplierId: variant.supplierId, warehouseId: null, expectedUpdatedAt: null, requestKey: 'warehouse-test-create', code: 'stockton', originZip: '95206', state: 'CA', active: true, evidence: 'Supplier fixture warehouse source', observedAt: NOW - 1000, validUntil: NOW + 86400000, timezone: 'America/Los_Angeles', cutoffLocal: '14:00', services: ['ground' as const, 'ltl' as const] };
+    return { t, admin, variant, warehouseArgs };
+  }
+  it('preserves prices and source history while replacing current cartons, with safe retries', async () => {
+    const { t, admin, variant, warehouseArgs } = await fixture();
+    const warehouseId = await admin.mutation(api.catShipping.saveWarehouse, warehouseArgs);
+    expect(await admin.mutation(api.catShipping.saveWarehouse, warehouseArgs)).toBe(warehouseId);
+    const before = await admin.query(api.catShipping.detail, { variantId: variant._id });
+    const args = { variantId: variant._id, expectedFingerprint: before.fingerprint, requestKey: 'shipping-test-create', warehouseId, cartons: [{ count: 1, length: '24', width: '20', height: '36', weight: '30', dimensionsUnit: 'in' as const, weightUnit: 'lb' as const, supplierMethod: 'ltl' as const }], evidence: 'Supplier fixture shipping sheet', observedAt: NOW - 1000, note: 'Verified packaged dimensions and required LTL' };
+    const id = await admin.mutation(api.catShipping.saveCartons, args);
+    expect(await admin.mutation(api.catShipping.saveCartons, args)).toBe(id);
+    const after = await admin.query(api.catShipping.detail, { variantId: variant._id });
+    expect(after.history).toHaveLength(1);
+    expect(after.history[0].extractedValue).toContain('carton-evidence-v1-ceil-mm-g');
+    expect(after.variant).not.toHaveProperty('currentCostRevisionId');
+    expect(after.cartons).toHaveLength(1);
+    expect(after.cartons[0]).toMatchObject({ lengthMm: 915, widthMm: 610, heightMm: 508, grossWeightG: 13608, supplierMethod: 'ltl', sourceObservationId: id });
+    const current = (await t.run(ctx => ctx.db.query('catVariants').first()))!;
+    expect(current).toMatchObject({ retailPriceRevisionId: variant.retailPriceRevisionId, tradePriceRevisionId: variant.tradePriceRevisionId, warehouseId });
+    expect(current.holds).toEqual(expect.arrayContaining(['MANUAL', 'METHOD_CHANGED']));
+    const audit = (await t.run(ctx => ctx.db.query('sysAuditEvents').filter(q => q.eq(q.field('action'), 'shipping.evidence')).collect()))[0];
+    expect(audit.before).toMatchObject({ cartons: before.cartons });
+    await expect(admin.mutation(api.catShipping.saveCartons, { ...args, note: 'Changed retry' })).rejects.toThrow(/Retry differs/);
+    await expect(admin.mutation(api.catShipping.saveCartons, { ...args, requestKey: 'shipping-new-request' })).rejects.toThrow(/Reload/);
+  });
+  it('enforces approver/operations separation and warehouse concurrency', async () => {
+    const { t, admin, variant, warehouseArgs } = await fixture();
+    process.env.DELIVERY_ADMIN_ROLES = JSON.stringify({ [ADMIN]: ['operations'] });
+    expect((await admin.query(api.catShipping.detail, { variantId: variant._id })).canApprove).toBe(false);
+    await expect(admin.mutation(api.catShipping.saveWarehouse, warehouseArgs)).rejects.toThrow();
+    process.env.DELIVERY_ADMIN_ROLES = JSON.stringify({ [ADMIN]: ['support'] });
+    await expect(admin.query(api.catShipping.detail, { variantId: variant._id })).rejects.toThrow();
+    delete process.env.DELIVERY_ADMIN_ROLES;
+    const id = await admin.mutation(api.catShipping.saveWarehouse, warehouseArgs);
+    const w = (await t.run(ctx => ctx.db.get(id)))!;
+    const update = { ...warehouseArgs, warehouseId: id, expectedUpdatedAt: w.updatedAt!, requestKey: 'warehouse-test-edit', cutoffLocal: '15:00' };
+    await admin.mutation(api.catShipping.saveWarehouse, update);
+    await expect(admin.mutation(api.catShipping.saveWarehouse, { ...update, requestKey: 'warehouse-stale-edit' })).rejects.toThrow(/Reload/);
+    await expect(admin.mutation(api.catShipping.saveWarehouse, { ...warehouseArgs, requestKey: 'warehouse-duplicate' })).rejects.toThrow(/already exists/);
+    await expect(admin.mutation(api.catShipping.saveWarehouse, { ...warehouseArgs, validUntil: NOW - 1, requestKey: 'warehouse-expired' })).rejects.toThrow();
+  });
+});
+
 const row = (sku: string, over: Record<string, unknown> = {}) => ({
   sku,
   name: `Zuo dining chair ${sku}`,

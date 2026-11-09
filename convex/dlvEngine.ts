@@ -23,6 +23,7 @@ import { digest } from './dlvSecurity';
 import { parseDecimal, mul, rat, toMinor } from '../lib/decimal';
 import { checkPackQuantity, physicalUnits } from '../lib/catUnits';
 import { currentObservation } from '../lib/catFreshness';
+import { warehouseCurrent } from '../lib/shipping/evidence';
 import type {
   DeliveryLadder,
   ConfigKind,
@@ -98,6 +99,7 @@ export type ResolvedLine = {
   engine?: Omit<EngineLine, 'key'>;
   cartons: Doc<'catCartons'>[];
   originZip: string;
+  warehouseServices?: ('ground' | 'ltl')[];
 };
 
 /**
@@ -243,6 +245,8 @@ export async function resolveLines(
       const netMinor = price.packPriceMinor * l.packs;
       const supplier = await ctx.db.get(cv.supplierId);
       const warehouse = cv.warehouseId ? await ctx.db.get(cv.warehouseId) : null;
+      const originCurrent =
+        warehouse?.supplierId === cv.supplierId && warehouseCurrent(warehouse, now);
       const reserve =
         channel === 'retail'
           ? await commissionReserve(ctx, product._id, category, cv.referralEligible, now)
@@ -268,7 +272,8 @@ export async function resolveLines(
         price.effectiveTo ?? Infinity,
         freshness.effectiveTo ?? Infinity,
         margin?.effectiveTo ?? Infinity,
-        reserve.validUntil ?? Infinity
+        reserve.validUntil ?? Infinity,
+        warehouse?.validUntil ?? Infinity
       );
       out.push({
         validUntil,
@@ -303,8 +308,8 @@ export async function resolveLines(
           .query('catCartons')
           .withIndex('by_variant', (q) => q.eq('variantId', cv._id))
           .collect(),
-        originZip:
-          warehouse?.active && warehouse.supplierId === cv.supplierId ? warehouse.originZip : '',
+        originZip: originCurrent ? warehouse!.originZip : '',
+        warehouseServices: originCurrent ? warehouse!.services : [],
         engine: {
           netMinor,
           // Landed merchandise cost incl. supplier payment cost; unknown extras block via margin.
@@ -433,6 +438,16 @@ export function groupFreight(
     return null;
   }
   if (rated) rated.mode = c.mode;
+  if (
+    lines.some(
+      (line) =>
+        line.warehouseServices !== undefined &&
+        !line.warehouseServices.includes(c.mode as 'ground' | 'ltl')
+    )
+  ) {
+    reasons.push('Warehouse dispatch service is not documented for this shipping mode');
+    return null;
+  }
   if (reasons.length) return null;
   if (
     f.rule.effectiveFrom > Date.now() ||

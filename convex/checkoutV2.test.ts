@@ -282,6 +282,8 @@ async function setup(opts: { approveMixed?: boolean } = {}) {
     const warehouseId = await ctx.db.insert('catWarehouses', {
       supplierId,
       code: 'stockton',
+      evidenceRef: 'Fixture warehouse evidence', verifiedAt: NOW - 3600000, validUntil: NOW + 86400000,
+      timezone: 'America/Los_Angeles', cutoffLocal: '14:00', services: ['ground', 'ltl'],
       originZip: '95206',
       state: 'CA',
       active: true,
@@ -505,6 +507,15 @@ async function paidOrder(
 }
 
 describe('delivery estimates (S17, S18)', () => {
+  it('routes expired warehouse evidence and unsupported dispatch modes to quotes', async () => {
+    const s = await setup();
+    await s.t.run(async ctx => { const w = (await ctx.db.query('catWarehouses').first())!; await ctx.db.patch(w._id, { validUntil: NOW - 1 }); });
+    const expired = await estimateViaGateway(s.t, { lines: [zuoLine(s)], channel: 'retail', zip: '95206', visitorKey: 'warehouse-fixture-1' });
+    expect(expired.status).toBe('quote_required');
+    await s.t.run(async ctx => { const w = (await ctx.db.query('catWarehouses').first())!; await ctx.db.patch(w._id, { validUntil: NOW + 86400000, services: ['ltl'] }); });
+    const unsupported = await estimateViaGateway(s.t, { lines: [zuoLine(s)], channel: 'retail', zip: '95206', visitorKey: 'warehouse-fixture-2' });
+    expect(unsupported.status).toBe('quote_required');
+  });
   it('does not extend an estimate lifetime with unverified or future inventory observations', async () => {
     const s = await setup();
     await s.t.run(async ctx => {
