@@ -12,7 +12,8 @@ import { ensureSupplier, openHold } from './catCore';
 import { audit } from './sysCore';
 import { blankCommerceDraft } from '../lib/commerce';
 import { CommerceError } from '../lib/errors';
-import { dollarsToMinor, mul, parseDecimal, rat, toMinor } from '../lib/decimal';
+import { dollarsToMinor } from '../lib/decimal';
+import { supplierPackCostMinor } from '../lib/supplierPackCost';
 import { proposeCategory } from '../lib/catCategory';
 import { slugify } from '../lib/slug';
 import { piecePriceInfo } from '../lib/catUnits';
@@ -394,19 +395,13 @@ export async function projectDraftVariants(ctx: MutationCtx, productId: Id<'comm
       );
       continue; // Keep unpriced records for review, never create a zero-price draft variant.
     }
+    const packCost = supplierPackCostMinor(cost, cv.piecesPerPack);
     draftVariants.push({
       ...(previous ?? {}),
       id: cv._id,
       name: cv.louieMaeVariantName,
       sku: cv.supplierSku,
-      cost: cost?.wholesalePrecise
-        ? toMinor(
-            mul(parseDecimal(cost.wholesalePrecise), rat(cv.piecesPerPack * 100)),
-            'half_up'
-          ) / 100
-        : cost?.wholesaleMinor != null
-          ? (cost.wholesaleMinor * cv.piecesPerPack) / 100
-          : (previous?.cost ?? 0),
+      cost: packCost === null ? (previous?.cost ?? 0) : packCost / 100,
       minimum: cv.orderMinimumPacks,
       increment: cv.orderIncrementPacks,
       retail: retail.packPriceMinor,

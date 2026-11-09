@@ -1293,17 +1293,29 @@ describe('fulfillment (S21, FUL04, FUL05, DEL05)', () => {
     expect((await s.t.run(ctx => ctx.db.get(order._id)))?.status).toBe('delivered');
     expect((await s.t.run(ctx => ctx.db.query('sysNotifications').collect())).filter(n => n.template === 'line_cancelled')).toHaveLength(1);
   });
-  it('keeps the accepted supplier SKU and pack basis after later catalog edits', async () => {
+  it('keeps the accepted supplier SKU, cost revision and pack basis after later catalog edits', async () => {
     const s = await setup();
+    await s.t.run(async ctx => {
+      const cv = (await ctx.db.get(s.variantId))!;
+      await ctx.db.patch(cv.currentCostRevisionId!, { wholesaleMinor: 11413, wholesalePrecise: '114.125' });
+    });
     await paidOrder(s, [zuoLine(s, 2)]);
     const before = await s.t.run(async ctx => buildPayload(ctx, (await ctx.db.query('ordSupplierOrders').first())!));
-    await s.t.run(ctx => ctx.db.patch(s.variantId, { supplierSku: 'replacement-sku', piecesPerPack: 8 }));
+    expect(before.lines[0]).toMatchObject({ quantityPacks: 2, agreedUnitCostMinor: 22825 });
+    expect(before.shipTo.name).toBe(ADDRESS.recipientName);
+    expect(before.shipTo).not.toHaveProperty('access');
+    await s.t.run(ctx => ctx.db.patch(s.variantId, { supplierSku: 'replacement-sku', piecesPerPack: 8, currentCostRevisionId: undefined }));
     const queue = await s.admin.query(api.ordFulfillment.dealerQueue, { route: 'manual_dealer_zuo' });
     expect(queue[0].items[0]).toMatchObject({ supplierSku: '111182', packs: 2, pieces: 4 });
     const after = await s.t.run(async ctx => buildPayload(ctx, (await ctx.db.query('ordSupplierOrders').first())!));
     expect(after.lines).toEqual(before.lines);
     const line = (await s.t.run(ctx => ctx.db.query('ordOrderLines').first()))!;
     expect(line).toMatchObject({ supplierSku: '111182', supplierSkuSource: 'checkout_snapshot' });
+    await s.t.run(async ctx => {
+      const order = (await ctx.db.query('ordOrders').first())!;
+      await ctx.db.patch(order._id, { shippingAddress: { ...order.shippingAddress!, recipientName: undefined } });
+    });
+    await expect(s.t.run(async ctx => buildPayload(ctx, (await ctx.db.query('ordSupplierOrders').first())!))).rejects.toThrow(/delivery recipient/);
   });
   it('ships partially, keeps the other supplier intact on cancel, and never marks the whole order delivered early', async () => {
     const s = await setup({ approveMixed: true });

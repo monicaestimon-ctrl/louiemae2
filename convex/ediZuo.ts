@@ -12,6 +12,7 @@ import { audit, claimKey } from './sysCore';
 import { requireFlag } from '../lib/flags';
 import { CommerceError } from '../lib/errors';
 import { stableStringify } from '../lib/zuoImport';
+import { supplierPackCostMinor } from '../lib/supplierPackCost';
 
 export type EdiPayload = {
   poNumber: string;
@@ -25,6 +26,9 @@ export async function buildPayload(ctx: MutationCtx, child: Doc<'ordSupplierOrde
   if (child.supplierCode !== 'zuo') throw new CommerceError('FORBIDDEN', 'EDI is only for Zuo child orders');
   const order = await ctx.db.get(child.orderId);
   if (!order?.shippingAddress) throw new CommerceError('INVALID_INPUT', 'Missing ship-to address');
+  const address = order.shippingAddress;
+  const recipientName = address.recipientName?.trim();
+  if (!recipientName || !address.state?.trim()) throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED', 'Confirm the accepted delivery recipient and state before supplier submission');
   const allocs = await ctx.db.query('ordAllocations').withIndex('by_supplier_order', (q) => q.eq('supplierOrderId', child._id)).collect();
   const lines = [];
   for (const al of allocs) {
@@ -35,9 +39,13 @@ export async function buildPayload(ctx: MutationCtx, child: Doc<'ordSupplierOrde
     if (!line || !variant || line.supplierCode !== 'zuo') throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED', 'Allocation outside the Zuo child order');
     const piecesPerPack = line.pieces / line.packs;
     if (!Number.isSafeInteger(piecesPerPack) || piecesPerPack < 1) throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED', 'Invalid frozen order pack basis');
-    lines.push({ supplierSku: line.supplierSku ?? variant.supplierSku, quantityPacks: al.packs, agreedUnitCostMinor: cost?.wholesaleMinor !== null && cost?.wholesaleMinor !== undefined ? cost.wholesaleMinor * piecesPerPack : null });
+    lines.push({ supplierSku: line.supplierSku ?? variant.supplierSku, quantityPacks: al.packs, agreedUnitCostMinor: supplierPackCostMinor(cost, piecesPerPack) });
   }
-  return { poNumber: `LM-${String(child._id).slice(-10).toUpperCase()}`, mappingVersion: 'zuo-edi-mapping-1', shipTo: { name: order.email, ...order.shippingAddress, state: order.shippingAddress.state ?? '' }, lines };
+  return { poNumber: `LM-${String(child._id).slice(-10).toUpperCase()}`, mappingVersion: 'zuo-edi-mapping-1', shipTo: {
+    name: recipientName, line1: address.line1, ...(address.line2 ? { line2: address.line2 } : {}),
+    city: address.city, state: address.state!, postalCode: address.postalCode, country: address.country,
+    ...(address.phone ? { phone: address.phone } : {}),
+  }, lines };
 }
 
 export type Transport = { send: (payload: EdiPayload) => Promise<{ outcome: 'accepted' | 'rejected' | 'uncertain'; transmissionId?: string }> };
