@@ -203,3 +203,10 @@ Audit each subsection as phases progress. Features not covered by a passing test
 - A shared current-price predicate checks variant, channel, approval, positive whole-cent price and effective window. Retail catalog projection, the delivery engine and the trade calculator use it. An expired retail reference produces no retail savings or referral comparison while an otherwise valid approved trade price can still be calculated.
 - Regression coverage includes unauthenticated access, newly added holds, aged evidence, future/expired trade prices, changed listing prices, wrong price channel and expired retail comparison. No production price, cost, inventory, publication or rollout setting changes.
 - This is a calculator eligibility correction. Integrating canonical Zuo items into the main HOLM catalog and replacing the legacy project tray remain separate outstanding work.
+
+## Phase 6i: legacy project delivery disclosures
+
+- The legacy project tray shows a merchandise estimate and delivery/tax pending the final quote, rather than adding a subtotal-derived flat shipping fee to a purported total. Delivery service selection is explicitly a request, not confirmed coverage or a booking. The request confirmation no longer promises a one-business-day turnaround or a chosen delivery date.
+- The shared split-shipment disclosure appears before submission and on the quote-request confirmation. Admin legacy pricing help identifies delivery as unconfirmed rather than advertising a universal fee.
+- The tray retains address/contact information in component state only. Its old local-storage delivery object is overwritten with a service preference when opened, and old stored personal details are no longer restored into the form.
+- This presentation change does not rewrite historical quotes or change the legacy server quote calculation. Final delivery pricing still requires staff review; migration of the main project tray to v2 remains outstanding.
