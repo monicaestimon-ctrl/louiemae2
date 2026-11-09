@@ -489,6 +489,15 @@ export const v2Tables = {
     createdAt:v.number(),updatedAt:v.number(),
   }).index('by_status_updated',['status','updatedAt']).index('by_status_expiry',['status','quoteExpiresAt']).index('by_quote',['quoteVersionId']).index('by_user',['userId','createdAt']).index('by_project',['projectId']).index('by_request_key',['requestKeyHash']),
   dlvActualCostStatements:defineTable({orderId:v.id('ordOrders'),wholesaleMinor:v.number(),dutiesMinor:v.number(),inboundMinor:v.number(),otherSupplierFeesMinor:v.number(),paymentMinor:v.number(),commissionMinor:v.number(),overheadMinor:v.number(),returnLossMinor:v.number(),advertisingMinor:v.number(),recoveriesMinor:v.number(),merchandiseRefundMinor:v.number(),deliveryRefundMinor:v.number(),freightFinal:v.boolean(),evidence:v.string(),sourceHash:v.string(),createdBy:v.string(),createdAt:v.number()}).index('by_order',['orderId','createdAt']),
+  dlvLegacyFreightReviews: defineTable({
+    legacyId: v.id('ordFreightActuals'),
+    resolution: v.union(v.literal('matched_invoice'), v.literal('duplicate_or_invalid')),
+    invoiceIds: v.array(v.id('dlvFreightInvoices')),
+    evidence: v.string(),
+    note: v.string(),
+    createdBy: v.string(),
+    createdAt: v.number(),
+  }).index('by_legacy', ['legacyId', 'createdAt']),
   dlvFreightInvoices: defineTable({
     supplierOrderId:v.id('ordSupplierOrders'), shipmentId:v.optional(v.id('ordShipments')),
     invoiceKey:v.string(),reference:v.string(),carrier:v.string(),currency:v.literal('USD'),

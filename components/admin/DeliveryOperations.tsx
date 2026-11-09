@@ -4,6 +4,7 @@ import DeliveryAccessFields from '../delivery/DeliveryAccessFields';
 import NotificationOperations from './NotificationOperations';
 import DeliveryBoundary from '../delivery/DeliveryBoundary';
 import DeliveryActualCosts from './DeliveryActualCosts';
+import LegacyFreightReview from './LegacyFreightReview';
 import React, { useState } from 'react';
 import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
@@ -174,7 +175,7 @@ function DeliveryOperationsWorkspace({
           </button>
           {invoiceOrder && (
             <DeliveryBoundary key={invoiceOrder}>
-              <InvoiceEditor id={invoiceOrder as Id<'ordSupplierOrders'>} />
+              <InvoiceEditor id={invoiceOrder as Id<'ordSupplierOrders'>} approver={approver} />
             </DeliveryBoundary>
           )}
         </div>
@@ -486,21 +487,22 @@ function LoadedQuoteEditor({
     </div>
   );
 }
-function InvoiceEditor({ id }: { id: Id<'ordSupplierOrders'> }) {
+export function InvoiceEditor({ id, approver }: { id: Id<'ordSupplierOrders'>; approver: boolean }) {
   const data = useQuery(api.dlvOperations.reconciliation, { supplierOrderId: id }),
     record = useMutation(api.dlvOperations.recordInvoice);
   const [fields, setFields] = useState({
     reference: '',
     carrier: '',
     base: '',
-    fuel: '0',
-    accessorial: '0',
-    supplierFee: '0',
-    credit: '0',
+    fuel: '',
+    accessorial: '',
+    supplierFee: '',
+    credit: '',
     evidence: '',
     note: '',
   });
   const [message, setMessage] = useState(''),
+    [shipmentId, setShipmentId] = useState(''),
     [busy, setBusy] = useState(false);
   if (data === undefined) return <p>Loading freight record…</p>;
   if (data === null) return <p>Supplier order not found.</p>;
@@ -515,11 +517,20 @@ function InvoiceEditor({ id }: { id: Id<'ordSupplierOrders'> }) {
         Freight variance: {money(data.freightVarianceMinor)}
       </p>
       <p>{data.note}</p>
+      <p>Enter each amount from the invoice, including a confirmed 0. Blank means unknown. Supplier fees are separate from freight. An allocation from a multi-order invoice must identify its allocated amount in the evidence.</p>
       {data.invoices.map((i) => (
         <p key={i._id}>
           {i.carrier} · {i.reference} · {money(i.totalMinor)}
         </p>
       ))}
+      {data.legacyFreight.map(row => <LegacyFreightReview key={row._id} row={row} invoices={data.invoices} approver={approver} />)}
+      <label>
+        Shipment covered
+        <select className={input} value={shipmentId} onChange={e => setShipmentId(e.target.value)}>
+          <option value="">Whole supplier order / not shipment-specific</option>
+          {data.shipments.map(s => <option key={s._id} value={s._id}>{s.carrier || 'Shipment'} · {s._id}</option>)}
+        </select>
+      </label>
       <div className="grid sm:grid-cols-2 gap-2">
         {(Object.keys(fields) as (keyof typeof fields)[]).map((k) => (
           <label key={k}>
@@ -534,12 +545,13 @@ function InvoiceEditor({ id }: { id: Id<'ordSupplierOrders'> }) {
         ))}
       </div>
       <button
-        disabled={busy}
+        disabled={busy || ['base', 'fuel', 'accessorial', 'supplierFee', 'credit', 'reference', 'carrier', 'evidence'].some(k => !fields[k as keyof typeof fields].trim())}
         onClick={async () => {
           setBusy(true);
           try {
             await record({
               supplierOrderId: id,
+              ...(shipmentId ? { shipmentId: shipmentId as Id<'ordShipments'> } : {}),
               reference: fields.reference,
               carrier: fields.carrier,
               baseMinor: dollarsToMinor(fields.base),

@@ -956,13 +956,13 @@ describe('fulfillment (S21, FUL04, FUL05, DEL05)', () => {
     expect(status!.disclosure).toBe(SPLIT_WILL);
     expect(JSON.stringify(status)).not.toMatch(/zuo|ashcroft|111182/i); // no supplier names or SKUs
     // Freight invoice above the estimate: internal variance only
-    const v = await s.admin.mutation(api.ordFulfillment.recordFreightActual, {
+    await expect(s.admin.mutation(api.ordFulfillment.recordFreightActual, {
       supplierOrderId: zuoQueue[0]._id,
       estimatedMinor: 4_000,
       actualMinor: 6_000,
       invoiceRef: 'INV-1',
-    });
-    expect(v).toEqual({ varianceMinor: 2_000, customerCharged: 0 });
+    })).rejects.toThrow(/Legacy freight entry is retired/);
+    expect(await s.t.run(ctx => ctx.db.query('ordFreightActuals').collect())).toHaveLength(0);
   });
 });
 
@@ -1570,12 +1570,18 @@ describe('delivery tool security and operations regressions', () => {
     };
     const a = await s.admin.mutation(api.dlvOperations.recordInvoice, invoice);
     expect(await s.admin.mutation(api.dlvOperations.recordInvoice, invoice)).toBe(a);
+    expect(await s.admin.mutation(api.dlvOperations.recordInvoice, { ...invoice, reference: ' inv-001 ', carrier: 'fixture CARRIER' })).toBe(a);
+    for (const changed of [{ evidence: 'different evidence' }, { note: 'changed explanation' }])
+      await expect(s.admin.mutation(api.dlvOperations.recordInvoice, { ...invoice, ...changed })).rejects.toThrow(/different shipment or evidence/);
+    const shipmentId = await s.t.run(ctx => ctx.db.insert('ordShipments', { supplierOrderId: child._id, status: 'shipped', createdAt: Date.now() }));
+    await expect(s.admin.mutation(api.dlvOperations.recordInvoice, { ...invoice, shipmentId })).rejects.toThrow(/different shipment or evidence/);
     await expect(
       s.admin.mutation(api.dlvOperations.recordInvoice, { ...invoice, baseMinor: 25001 })
     ).rejects.toThrow();
     const r = await s.admin.query(api.dlvOperations.reconciliation, { supplierOrderId: child._id });
     expect(r!.actualFreightMinor).toBe(30000);
     expect(r!.actualSupplierFeeMinor).toBe(1000);
+    expect((await s.t.run(ctx => ctx.db.query('sysReviewItems').collect())).some(r => r.kind === 'freight_variance')).toBe(true);
     const statement = {
       orderId: child.orderId,
       wholesaleMinor: 10000,
@@ -1604,6 +1610,28 @@ describe('delivery tool security and operations regressions', () => {
     expect(contribution?.contributionMinor).toBe(
       before.totals.merchandise + before.totals.delivery - 41600
     );
+    const legacyId = await s.t.run(ctx => ctx.db.insert('ordFreightActuals', {
+      supplierOrderId: child._id, estimatedMinor: 25000, actualMinor: 30000,
+      varianceMinor: 5000, invoiceRef: 'Historical INV-001', createdAt: Date.now(),
+    }));
+    expect(await s.admin.query(api.dlvOperations.actualContribution, { orderId: child.orderId })).toMatchObject({ complete: false, unresolvedLegacy: 1, contributionMinor: null });
+    await expect(s.admin.mutation(api.dlvOperations.recordActualCosts, statement)).rejects.toThrow(/historical freight/);
+    const review = { legacyId, resolution: 'matched_invoice' as const, invoiceIds: [a], evidence: 'Fixture source invoice', note: 'Verified this historical total matches itemized freight; not another expense.' };
+    process.env.DELIVERY_ADMIN_ROLES = JSON.stringify({ [ADMIN]: ['finance'] });
+    await expect(s.admin.mutation(api.dlvOperations.reviewLegacyFreight, review)).rejects.toSatisfy(e => isCommerceError(e, 'FORBIDDEN'));
+    delete process.env.DELIVERY_ADMIN_ROLES;
+    await expect(s.admin.mutation(api.dlvOperations.reviewLegacyFreight, { ...review, invoiceIds: [] })).rejects.toThrow();
+    await expect(s.admin.mutation(api.dlvOperations.reviewLegacyFreight, { ...review, invoiceIds: [a, a] })).rejects.toThrow();
+    const reviewId = await s.admin.mutation(api.dlvOperations.reviewLegacyFreight, review);
+    expect(await s.admin.mutation(api.dlvOperations.reviewLegacyFreight, review)).toBe(reviewId);
+    expect(await s.admin.query(api.dlvOperations.actualContribution, { orderId: child.orderId })).toMatchObject({ complete: false, unresolvedLegacy: 0 });
+    await s.admin.mutation(api.dlvOperations.recordActualCosts, statement);
+    expect(await s.admin.query(api.dlvOperations.actualContribution, { orderId: child.orderId })).toMatchObject({ complete: true, contributionMinor: contribution!.contributionMinor });
+    expect((await s.admin.query(api.dlvOperations.reconciliation, { supplierOrderId: child._id }))!.legacyFreight[0].review?._id).toBe(reviewId);
+    await s.admin.mutation(api.dlvOperations.reviewLegacyFreight, { ...review, resolution: 'duplicate_or_invalid', invoiceIds: [], note: 'Corrected review: duplicate historical record. Original invoice remains counted.' });
+    expect(await s.admin.query(api.dlvOperations.actualContribution, { orderId: child.orderId })).toMatchObject({ complete: false });
+    expect(await s.t.run(ctx => ctx.db.query('dlvLegacyFreightReviews').collect())).toHaveLength(2);
+    expect((await s.t.run(ctx => ctx.db.get(legacyId)))!.actualMinor).toBe(30000);
     await s.admin.mutation(api.dlvOperations.recordActualCosts, {
       ...statement,
       wholesaleMinor: before.totals.total * 2,
