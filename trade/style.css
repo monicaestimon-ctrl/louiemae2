@@ -874,6 +874,15 @@ a.pin-act{text-decoration:none}
 .pp-price b{font-family:var(--display);font-size:42px;font-weight:500}
 .pp-price .mono{color:var(--mute);text-decoration:line-through}
 .pp-block{display:grid;gap:10px;padding-top:18px;border-top:1px solid var(--line)}
+.pp-zip form{display:grid;gap:12px;min-width:0}
+.pp-zip form>div{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+.pp-zip label{display:grid;gap:5px;max-width:100%;font-size:13px}
+.pp-zip input:not([type=checkbox]),.pp-zip textarea,.pp-zip select{box-sizing:border-box;max-width:100%;min-height:44px;border:1px solid var(--line2);background:var(--card);color:var(--ink);padding:8px}
+.pp-zip input[type=number]{width:90px}
+.pp-zip button{min-height:44px;border:1px solid var(--line2);padding:8px 12px;background:var(--paper);color:var(--ink)}
+.pp-zip button:disabled{opacity:.5;cursor:not-allowed}
+.pp-zip :is(button,input,textarea,select):focus-visible{outline:2px solid var(--cognac);outline-offset:3px}
+.pp-zip p{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
 .pp-lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
 .pp-swatch{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 14px 0 6px;border-radius:999px;border:1px solid var(--line2);font-size:13px}
 .pp-swatch i{width:26px;height:26px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)}

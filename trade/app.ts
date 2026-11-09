@@ -12,6 +12,8 @@ import { api } from '../convex/_generated/api';
 import { phoneCut } from './phoneCut.mjs';
 import {DeliveryQuoteAccess} from '../components/delivery/DeliveryQuoteStatus';
 import TradeDeliveryCalculator from '../components/delivery/TradeDeliveryCalculator';
+import ProductDeliveryEstimate from '../components/delivery/ProductDeliveryEstimate';
+import DeliveryBoundary from '../components/delivery/DeliveryBoundary';
 import ProgramHubV2, { TeamPanel } from '../components/partner/ProgramHubV2';
 import { area as polyArea, inside as inPoly, centroid as polyCentre, bounds as polyBounds, setWallLength } from '../lib/holmPlan';
 export const html = htm.bind(React.createElement);
@@ -1276,14 +1278,14 @@ function IndexMenu({ctx}){
 function PinDetail({ctx}){
   const p=byId(ctx.pin);const idx=PRODUCTS.findIndex(x=>x.id===p.id);
   const [view,setView]=useState('studio');const [bd,setBd]=useState('#ECE3D5');const [scale,setScale]=useState(false);
-  const [qty,setQty]=useState(1);const [proj,setProj]=useState(ctx.tray.active);const [zone,setZone]=useState('');
-  const [save,setSave]=useState(false);const [open,setOpen]=useState('details');const [zip,setZip]=useState('');const [zipMsg,setZipMsg]=useState('');
+  const [qty,setQty]=useState(p.minimum||1);const [proj,setProj]=useState(ctx.tray.active);const [zone,setZone]=useState('');
+  const [save,setSave]=useState(false);const [open,setOpen]=useState('details');
   const [simF,setSimF]=useState('tone');const [bundle,setBundle]=useState([]);const [mini,setMini]=useState(false);const [loupe,setLoupe]=useState(null);const [tilt,setTilt]=useState([0,0]);
   
   const scRef=useRef(),addRef=useRef(),stageRef=useRef();
   const P=ctx.tray.projects.find(x=>x.id===proj)||ctx.tray.projects[0];const Z=zone||P.zones[0];
   const pairs=useMemo(()=>pairsFor(p,3),[p.id]);
-  useEffect(()=>{setQty(1);setBundle(pairs.map(x=>x.id));setView('studio');setScale(false);scRef.current&&scRef.current.scrollTo(0,0)},[p.id]);
+  useEffect(()=>{setQty(p.minimum||1);setBundle(pairs.map(x=>x.id));setView('studio');setScale(false);scRef.current&&scRef.current.scrollTo(0,0)},[p.id]);
   useEffect(()=>{const k=e=>{if(document.activeElement&&['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName))return;if(e.key==='Escape')ctx.openPin(null);if(e.key==='ArrowRight')ctx.openPin(PRODUCTS[(idx+1)%PRODUCTS.length].id);if(e.key==='ArrowLeft')ctx.openPin(PRODUCTS[(idx-1+PRODUCTS.length)%PRODUCTS.length].id)};addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[idx]);
   useEffect(()=>{const el=addRef.current,root=scRef.current;if(!el||!root)return;const io=new IntersectionObserver(([e])=>setMini(!e.isIntersecting&&e.boundingClientRect.top<0),{root});io.observe(el);return()=>io.disconnect()},[p.id]);
   const liked=ctx.likes.includes(p.id);const unit=pr(p,ctx.mode);
@@ -1364,8 +1366,8 @@ function PinDetail({ctx}){
         <div className="pp-block">
           <span className="pp-lbl">Quantity</span>
           <div className="row" style=${{flexWrap:'wrap',gap:8}}>
-            <div className="qty"><button onClick=${()=>setQty(Math.max(1,qty-1))} aria-label="Fewer">−</button><span>${qty}</span><button onClick=${()=>setQty(qty+1)} aria-label="More">+</button></div>
-            ${[2,4,8,12].map(n=>html`<button key=${n} className=${'chip'+(qty===n?' on':'')} onClick=${()=>setQty(n)}>×${n}</button>`)}
+            <div className="qty"><button onClick=${()=>setQty(Math.max(p.minimum||1,qty-(p.increment||1)))} aria-label="Fewer">−</button><span>${qty}</span><button onClick=${()=>setQty(qty+(p.increment||1))} aria-label="More">+</button></div>
+            ${[2,4,8,12].filter(n=>n>=(p.minimum||1)&&(n-(p.minimum||1))%(p.increment||1)===0).map(n=>html`<button key=${n} className=${'chip'+(qty===n?' on':'')} onClick=${()=>setQty(n)}>×${n}</button>`)}
           </div>
           <div className="pp-math"><span>${p.seats?`${p.seats*qty} seats`:'Lighting'}</span><span>·</span><span className="num">${fmt(unit*qty)} ${ctx.mode}</span></div>
         </div>
@@ -1388,11 +1390,10 @@ function PinDetail({ctx}){
           </div>
         </div>
 
-        <form className="pp-block pp-zip" onSubmit=${e=>{e.preventDefault();setZipMsg(/^\d{5}$/.test(zip)?`We deliver to ${zip}. One flat fee per order: ${deliveryText()}.`:'Enter a 5-digit ZIP code.')}}>
+        <div className="pp-block pp-zip">
           <span className="pp-lbl">Delivering to</span>
-          <div className="row" style=${{gap:6}}><input className="field" style=${{height:40}} inputMode="numeric" maxLength="5" placeholder="ZIP code" aria-label="Delivery ZIP code" value=${zip} onInput=${e=>setZip(e.target.value.replace(/\D/g,''))}/><button className="btn btn-line btn-sm">Check</button></div>
-          ${zipMsg&&html`<p className="help">${zipMsg}</p>`}
-        </form>
+          ${ctx.me.verified?html`<${DeliveryBoundary} key=${p.id}><${ProductDeliveryEstimate} productId=${p.lid} variantId=${p.vid} selectedPacks=${qty} channel="trade" disabledMessage="Add this item to your project to request confirmed delivery pricing. Delivery depends on the items, destination and service."/></>`:html`<p className="help">Sign in with an approved trade account for project delivery estimates. Retail purchases are available on Louie Mae.</p>`}
+        </div>
 
         ${onBoards.length>0&&html`<div className="pp-block"><span className="pp-lbl">Saved on ${onBoards.length} board${onBoards.length>1?'s':''}</span>${onBoards.slice(0,3).map(b=>html`<div key=${b.t} className="pp-board"><span>${b.t}</span><small>${b.by}</small></div>`)}</div>`}
 

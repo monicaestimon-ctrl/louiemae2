@@ -729,6 +729,30 @@ describe('Zuo import (CAT01, PRI01)', () => {
 });
 
 describe('sellability gates and publication (CAT02, OPS01)', () => {
+  it('resolves published Ashcroft selling-unit profiles without canonical variant IDs', async () => {
+    const t = convexTest(schema, modules);
+    const ids = await t.run(async ctx => {
+      const productId = await ctx.db.insert('commerceProducts', { provider: 'ashcroft', sourceKey: 'fixture-profile', draft: blankCommerceDraft(), revision: 1, updatedAt: NOW });
+      const listingId = await ctx.db.insert('commerceListings', { productId, channel: 'retail', published: true, revision: 1, updatedAt: NOW,
+        snapshot: { name: 'Fixture chair', description: '', category: 'Chairs', images: [], facts: '', variants: [{ id: 'supplier-variant-1', name: 'Chair', minimum: 2, increment: 2, price: 10000 }] } });
+      return { productId, listingId };
+    });
+    const args = { productId: ids.productId, variantId: 'supplier-variant-1', channel: 'retail' as const };
+    expect(await t.query(api.dlvEstimates.productProfile, args)).toEqual({ piecesPerPack: 1, minimumPacks: 2, incrementPacks: 2 });
+    expect(await t.query(api.dlvEstimates.productProfile, { ...args, variantId: 'missing' })).toBeNull();
+    await expect(t.query(api.dlvEstimates.productProfile, { ...args, channel: 'trade' })).rejects.toThrow();
+    const userId = await t.run(async ctx => {
+      const userId = await ctx.db.insert('users', { email: 'profile-trade@example.com' });
+      await ctx.db.insert('holmProfiles', { userId, displayName: 'Studio', tradeStatus: 'approved', createdAt: NOW, updatedAt: NOW });
+      const listing = (await ctx.db.get(ids.listingId))!;
+      await ctx.db.insert('commerceListings', { productId: ids.productId, channel: 'house', published: true, revision: 1, updatedAt: NOW, snapshot: listing.snapshot });
+      return userId;
+    });
+    const trade = t.withIdentity({ subject: `${userId}|s` });
+    expect(await trade.query(api.dlvEstimates.productProfile, { ...args, channel: 'trade' })).toEqual({ piecesPerPack: 1, minimumPacks: 2, incrementPacks: 2, requiresProjectQuote: true });
+    await t.run(ctx => ctx.db.patch(ids.listingId, { published: false }));
+    expect(await t.query(api.dlvEstimates.productProfile, args)).toBeNull();
+  });
   async function readyProduct() {
     const { t, admin } = await setup();
     await approve(t, admin, 'freshness-default');
