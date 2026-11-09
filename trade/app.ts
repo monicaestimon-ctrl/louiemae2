@@ -13,6 +13,7 @@ import { phoneCut } from './phoneCut.mjs';
 import {DeliveryQuoteAccess} from '../components/delivery/DeliveryQuoteStatus';
 import TradeDeliveryCalculator from '../components/delivery/TradeDeliveryCalculator';
 import ProductDeliveryEstimate from '../components/delivery/ProductDeliveryEstimate';
+import { SafeImage } from '../components/SafeImage';
 import DeliveryBoundary from '../components/delivery/DeliveryBoundary';
 import ProgramHubV2, { TeamPanel } from '../components/partner/ProgramHubV2';
 import { area as polyArea, inside as inPoly, centroid as polyCentre, bounds as polyBounds, setWallLength } from '../lib/holmPlan';
@@ -192,7 +193,7 @@ function PinCard({p,ctx}){
   const lastBoard=ctx.boards[0];
   return html`<div className="pin">
     <div className="pin-img" onClick=${()=>ctx.openPin(p.id)}>
-      <img src=${p.img} alt=${p.name+' '+p.line} loading="lazy" style=${{aspectRatio:p.ar}}/>
+      <${SafeImage} src=${p.img} media=${p.imageMedia} sizes="(min-width: 1024px) 25vw, 50vw" alt=${p.name+' '+p.line} loading="lazy" style=${{aspectRatio:p.ar}}/>
       ${p.oos&&html`<span className="oos">Restock on request</span>`}
       <div className="pin-ov">
         <div className="r1" onClick=${e=>e.stopPropagation()}>
@@ -1322,7 +1323,7 @@ function PinDetail({ctx}){
         ${view==='studio'&&html`<div className="pp-set" style=${{background:`radial-gradient(ellipse 80% 70% at 50% 42%, color-mix(in srgb, ${bd} 70%, #fff), ${bd})`}} onPointerMove=${onTilt} onPointerLeave=${()=>setTilt([0,0])}>
           <div className="pp-floorline" style=${{background:`linear-gradient(180deg, transparent, color-mix(in srgb, ${bd} 80%, #000) )`}}></div>
           <div className="pp-obj" style=${{width:p.type==='lighting'?'34%':['sofa','sectional'].includes(p.type)?'78%':'56%',transform:`perspective(1200px) translateX(${scale&&cm>=120?-10:0}%) rotateY(${tilt[0]}deg) rotateX(${tilt[1]}deg)`}}>
-            <img className="pp-cut" src=${cut(p.id)} alt=${p.name+' '+p.line}/>
+            <${SafeImage} className="pp-cut" src=${cut(p.id)} media=${p.imageMedia} sizes="(min-width: 768px) 50vw, 100vw" alt=${p.name+' '+p.line}/>
             <span className="pp-contact"></span>
             ${scale&&html`<div className="pp-dim"><i></i><span>≈ ${cm} cm · ${inch(cm)} in</span><i></i></div>`}${scale&&cm>=120&&html`<div className="pp-human" style=${{width:(40/cm*100)+'%'}} title="1.75 m person for scale"><svg viewBox="0 0 40 175"><circle cx="20" cy="12" r="10"/><path d="M8 30h24l4 60h-8l-2 85h-8l-2-60-2 60h-8l-2-85H4z"/></svg><span>1.75 m</span></div>`}
           </div>
@@ -1339,7 +1340,7 @@ function PinDetail({ctx}){
           <span className="pp-roomcap mono">${SPACES[ctx.space].label} set · change the space from the header</span>
         </div>`}
         ${view==='photo'&&html`<div className="pp-set photo" onPointerMove=${onLoupe} onPointerLeave=${()=>setLoupe(null)}>
-          <img src=${p.img} alt=${p.name+' in a room'}/>
+          <${SafeImage} src=${p.img} media=${p.imageMedia} sizes="(min-width: 768px) 60vw, 100vw" alt=${p.name}/>
           ${loupe&&html`<span className="pp-loupe" style=${{left:loupe.x,top:loupe.y,backgroundImage:`url(${p.img})`,backgroundSize:`${loupe.w*2.6}px ${loupe.h*2.6}px`,backgroundPosition:`${-loupe.x*2.6+90}px ${-loupe.y*2.6+90}px`}}></span>`}
           <span className="pp-roomcap mono">Move over the photo to see the ${MAT[p.mat].toLowerCase()} up close</span>
         </div>`}

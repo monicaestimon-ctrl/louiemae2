@@ -36,7 +36,15 @@ export interface CjInventorySnapshot {
   error?: string;
 }
 
+export interface ProductImageMedia {
+  url: string;
+  altText: string;
+  variantIds: string[];
+  renditions: { url: string; width: number }[];
+}
+
 export interface Product {
+  imageMedia?: ProductImageMedia[];
   fulfillmentProvider?: 'ashcroft' | 'zuo';
   deliveryFee?: number;
   id: string;

@@ -39,6 +39,10 @@ export const snapshot = v.object({
   description: v.string(),
   category: v.string(),
   images: v.array(v.string()),
+  imageMedia: v.optional(v.array(v.object({
+    url: v.string(), altText: v.string(), variantIds: v.array(v.string()),
+    renditions: v.array(v.object({ url: v.string(), width: v.number() })),
+  }))),
   facts: v.string(),
   variants: v.array(
     v.object({

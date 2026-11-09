@@ -51,6 +51,7 @@ const CatalogUnavailable = () => <p role="status" className="py-8 text-center te
         )}
         <SafeImage
           src={product.images[0]}
+          media={product.imageMedia} sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
           alt={product.name}
           className="w-full h-full object-contain"
         />
@@ -895,6 +896,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                         )}
                         <SafeImage
                           src={product.images[0]}
+                          media={product.imageMedia} sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
                           alt={product.name}
                           className="w-full h-full object-contain"
                         />
@@ -951,6 +953,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
               <SafeImage
                 src={selectedVariant?.image || (activeImageGroupKey && activeImageGroupKey !== NO_IMAGE_KEY ? activeImageGroupKey : selectedProduct.images[0])}
                 alt={selectedProduct.name}
+                media={selectedProduct.imageMedia} sizes="(min-width: 768px) 512px, 100vw"
                 className="w-full h-full object-contain"
               />
             </div>

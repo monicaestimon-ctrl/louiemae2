@@ -96,12 +96,20 @@ export const advance = mutation({
 async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, meta: Doc<'catProductMeta'>, channel: 'retail' | 'house', variants: Doc<'catVariants'>[]) {
   const media = await ctx.db.query('catMediaAssets').withIndex('by_product', (q) => q.eq('productId', product._id)).collect();
   const verified = media.filter(m => variants.some(cv => verifiedImageMatches(m, cv))).sort((x, y) => (x.role === 'hero' ? -1 : y.role === 'hero' ? 1 : 0));
-  const publicStorage = (m: Doc<'catMediaAssets'>) => [...m.derivatives].sort((a, b) => b.width - a.width)[0]?.storageId
-    ?? (m.rights.privateOriginal ? undefined : m.storageId);
-  const images = (await Promise.all(verified.map(m => {
-    const storageId = publicStorage(m);
-    return storageId ? ctx.storage.getUrl(storageId) : null;
-  }))).filter((u): u is string => !!u);
+  const prepared = await Promise.all(verified.map(async m => {
+    const renditions = (await Promise.all(m.derivatives.map(async d => ({
+      width: d.width, url: await ctx.storage.getUrl(d.storageId),
+    })))).filter((d): d is { width: number; url: string } => !!d.url && d.width > 0)
+      .sort((a, b) => a.width - b.width);
+    const url = renditions.at(-1)?.url ?? (m.rights.privateOriginal || !m.storageId ? null : await ctx.storage.getUrl(m.storageId));
+    return { asset: m, url, renditions };
+  }));
+  const imageMedia = prepared.flatMap(({ asset, url, renditions }) => url ? [{
+    url, altText: asset.altText,
+    variantIds: variants.filter(cv => verifiedImageMatches(asset, cv)).map(cv => String(cv._id)),
+    renditions,
+  }] : []);
+  const images = imageMedia.map(m => m.url);
   if (!images.length) throw new CommerceError('COST_REVIEW_REQUIRED', 'No usable public product photography');
   const snapVariants = [];
   const fulfillment = [];
@@ -111,9 +119,7 @@ async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, m
     const price = channel === 'retail' ? retail : trade;
     if (price?.status !== 'approved') throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: no approved ${channel === 'retail' ? 'retail' : 'trade'} price`);
     const cost = cv.currentCostRevisionId ? await ctx.db.get(cv.currentCostRevisionId) : null;
-    const image = verified.find(m => verifiedImageMatches(m, cv));
-    const imageStorageId = image ? publicStorage(image) : undefined;
-    const imageUrl = imageStorageId ? await ctx.storage.getUrl(imageStorageId) : null;
+    const imageUrl = imageMedia.find(m => m.variantIds.includes(cv._id))?.url;
     if (!imageUrl) throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: public variant photograph is unavailable`);
     const packCost = supplierPackCostMinor(cost, cv.piecesPerPack);
     if (packCost === null) throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: supplier cost missing`);
@@ -136,7 +142,7 @@ async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, m
       commercial: trade?.status === 'approved' ? trade.packPriceMinor : 0,
     });
   }
-  return { snapshot: { name: meta.louieMaeName, description: product.draft.description, category: meta.navCategory, images, facts: product.draft.facts, variants: snapVariants }, fulfillment };
+  return { snapshot: { name: meta.louieMaeName, description: product.draft.description, category: meta.navCategory, images, imageMedia, facts: product.draft.facts, variants: snapVariants }, fulfillment };
 }
 
 /**

@@ -880,6 +880,10 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     const listings = await t.run((ctx) => ctx.db.query('commerceListings').collect());
     const publicUrl = await t.run(ctx => ctx.storage.getUrl(publicImageId));
     expect(listings.every(l => l.snapshot.images[0] === publicUrl && l.snapshot.variants[0].image === publicUrl)).toBe(true);
+    expect(listings.every(l => l.snapshot.imageMedia?.[0].altText === 'Oak dining chair, pair')).toBe(true);
+    expect(listings[0].snapshot.imageMedia).toEqual([{ url: publicUrl, altText: 'Oak dining chair, pair', variantIds: [cv._id], renditions: [{ url: publicUrl, width: 1200 }] }]);
+    const privateUrl = await t.run(ctx => ctx.storage.getUrl(storageId));
+    expect(JSON.stringify(listings.map(l => l.snapshot))).not.toContain(privateUrl);
     expect(listings.every(l => l.fulfillment?.[0].cost === 228.25)).toBe(true);
     expect(listings.map((l) => [l.channel, l.published, l.snapshot.variants[0].price]).sort()).toEqual([
       ['house', true, 41_226],
@@ -890,11 +894,15 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     const read = () => t.run(ctx => retailDetail(ctx, productId));
     const page = () => t.query(api.retailLaunch.storefrontPage, { paginationOpts: { cursor: null, numItems: 20 } });
     expect(await read()).toMatchObject({ inStock: true, price: 458.06 });
+    expect(await read()).toMatchObject({ imageMedia: retail.snapshot.imageMedia });
     expect((await page()).page).toHaveLength(1);
     const withStaleSibling = { ...retail, snapshot: { ...retail.snapshot, variants: [
       { ...retail.snapshot.variants[0], id: 'removed-variant', price: 100 }, ...retail.snapshot.variants,
+    ], images: [...retail.snapshot.images, 'https://example.com/removed.webp'], imageMedia: [
+      ...retail.snapshot.imageMedia!, { url: 'https://example.com/removed.webp', altText: 'Removed variant', variantIds: ['removed-variant'], renditions: [] },
     ] } };
     expect(await t.run(ctx => currentZuoStorefrontListing(ctx, withStaleSibling, 'furniture'))).toMatchObject({ variantCount: 1, price: 458.06 });
+    expect(await t.run(ctx => currentZuoStorefrontListing(ctx, withStaleSibling, 'furniture'))).toMatchObject({ images: [publicUrl], imageMedia: retail.snapshot.imageMedia });
     await t.run(ctx => ctx.db.patch(cv._id, { holds: ['MANUAL'] }));
     expect(await read()).toBeNull();
     expect((await page()).page).toHaveLength(0);
