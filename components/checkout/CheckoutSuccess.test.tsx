@@ -33,7 +33,7 @@ describe('verified checkout return', () => {
     rememberCheckout('cs_fixture', 'a'.repeat(64), cartLines(mock.items));
     const view = render(<CheckoutSuccess />);
     expect(mock.clear).not.toHaveBeenCalled();
-    for (const state of ['pending', 'review_required', 'not_completed', 'unavailable']) {
+    for (const state of ['pending', 'review_required', 'not_completed', 'unavailable', 'refunded']) {
       mock.result = { state };
       view.rerender(<CheckoutSuccess />);
       expect(screen.queryByText('Order confirmed')).not.toBeInTheDocument();

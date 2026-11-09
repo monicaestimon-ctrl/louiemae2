@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const APPEND_ONLY = ['ldgCommissionEvents', 'ldgCreditEvents', 'sysAuditEvents', 'catSourceObservations', 'catStockRevisions', 'dlvFreightInvoices', 'dlvTaxAdjustments', 'dlvActualCostStatements', 'dlvLegacyFreightReviews', 'ordFreightActuals'];
+const APPEND_ONLY = ['ldgCommissionEvents', 'ldgCreditEvents', 'sysAuditEvents', 'catSourceObservations', 'catStockRevisions', 'dlvFreightInvoices', 'dlvTaxAdjustments', 'dlvActualCostStatements', 'dlvLegacyFreightReviews', 'ordFreightActuals', 'ordPaymentVerifications'];
 const files = fs.readdirSync('convex', { recursive: true })
   .map(String)
   .filter((f) => f.endsWith('.ts') && !f.includes('.test.') && !f.startsWith('_generated'));

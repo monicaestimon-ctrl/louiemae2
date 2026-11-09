@@ -7,6 +7,7 @@ import { normalizePackage, parseCsv, parseJsonPackage } from '../../lib/zuoImpor
 import { KNOWN_METADATA_CORRECTIONS } from '../../lib/zuoImportNotes';
 import { dollarsToMinor } from '../../lib/decimal';
 import DeliveryOperations from './DeliveryOperations';
+import PaidExceptionReview from './PaidExceptionReview';
 
 // Commerce v2 operations console (spec S35, v2 §20, §26). Admin-only: every query behind it
 // requires the admin allowlist on the server.
@@ -346,30 +347,12 @@ function DealerQueue({ route }: { route: 'manual_dealer_zuo' | 'manual_dealer_as
   );
 }
 
-function Fulfillment({ finance, approver }: { finance: boolean; approver: boolean }) {
-  const exceptions = useQuery(api.v2Admin.paidExceptions, finance ? {} : 'skip');
-  const resolve = useMutation(api.v2Admin.resolvePaidException);
-  const [note, setNote] = useState('');
-  return (
-    <div className="space-y-4">
-      <DealerQueue route="manual_dealer_zuo" />
-      <DealerQueue route="manual_dealer_ashcroft" />
-      {finance && <div className={card}>
-        <h3 className="font-serif text-lg">Paid orders needing resolution ({exceptions?.length ?? '…'})</h3>
-        <input className="border border-earth/20 px-2 py-1 w-full text-xs" placeholder="What was agreed with the customer" aria-label="Resolution" value={note} onChange={(e) => setNote(e.target.value)} />
-        {(exceptions ?? []).map((x) => (
-          <div key={x._id} className="flex justify-between text-xs border-t border-earth/10 pt-2">
-            <span>
-              {x.reason} · {x.paymentIntentId ?? x.stripeSessionId} · {new Date(x.createdAt).toLocaleString()}
-            </span>
-            <button className={btn} disabled={!approver || note.trim().length < 5} onClick={() => resolve({ id: x._id, resolution: note })}>
-              Resolve
-            </button>
-          </div>
-        ))}
-      </div>}
-    </div>
-  );
+function Fulfillment({ finance }: { finance: boolean }) {
+  return <div className="space-y-4">
+    <DealerQueue route="manual_dealer_zuo" />
+    <DealerQueue route="manual_dealer_ashcroft" />
+    {finance && <PaidExceptionReview />}
+  </div>;
 }
 
 function TermsPublisher() {
@@ -520,7 +503,7 @@ export default function CommerceV2Admin() {
       {section === 'health' && <Health />}
       {section === 'reviews' && <Reviews />}
       {section === 'catalog' && <Catalog />}
-      {section === 'fulfillment' && <Fulfillment finance={permissions.finance} approver={permissions.approver} />}
+      {section === 'fulfillment' && <Fulfillment finance={permissions.finance} />}
       {section === 'delivery' && <DeliveryOperations />}
       {section === 'partners' && <Partners />}
       {section === 'integrations' && <IntegrationReadiness />}

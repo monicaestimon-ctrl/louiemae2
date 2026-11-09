@@ -310,6 +310,7 @@ http.route({
                 eventId: event.id,
                 type: event.type,
                 livemode: event.livemode,
+                ...(event.account ? { account: event.account } : {}),
                 payloadHash: digest,
                 payload: {
                     id: session.id,

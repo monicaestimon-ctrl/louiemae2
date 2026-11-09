@@ -93,10 +93,9 @@ export const paidExceptions = query({
 export const resolvePaidException = mutation({
   args: { id: v.id('ordPaidExceptions'), resolution: v.string() },
   handler: async (ctx, a) => {
-    const admin = await requireDeliveryRole(ctx, 'approver');
-    if (a.resolution.trim().length < 5) throw new CommerceError('INVALID_INPUT', 'Record what was agreed with the customer');
-    await ctx.db.patch(a.id, { status: 'resolved', resolution: a.resolution.slice(0, 1000) });
-    await audit(ctx, { actor: admin.email, action: 'paid_exception.resolve', entityTable: 'ordPaidExceptions', entityId: a.id, reason: a.resolution });
+    await requireDeliveryRole(ctx, 'approver');
+    void a;
+    throw new CommerceError('INVALID_INPUT', 'Use verified payment reconciliation. A note alone cannot resolve a paid obligation.');
   },
 });
 
