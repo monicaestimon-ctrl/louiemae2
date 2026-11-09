@@ -21,6 +21,8 @@ export default function ProductDeliveryEstimate({
   minimumPacks = 1,
   incrementPacks = 1,
   channel = 'retail',
+  selectedPacks,
+  disabledMessage,
 }: {
   productId: string;
   variantId?: string;
@@ -28,6 +30,8 @@ export default function ProductDeliveryEstimate({
   minimumPacks?: number;
   incrementPacks?: number;
   channel?: 'retail' | 'trade';
+  selectedPacks?: number;
+  disabledMessage?: string;
 }) {
   const enabled = useQuery(api.dlvEstimates.enabled);
   const profile = useQuery(
@@ -37,12 +41,12 @@ export default function ProductDeliveryEstimate({
   piecesPerPack = profile?.piecesPerPack ?? piecesPerPack;
   minimumPacks = profile?.minimumPacks ?? minimumPacks;
   incrementPacks = profile?.incrementPacks ?? incrementPacks;
-  if (!enabled || !variantId) return null;
+  if (!enabled || !variantId) return disabledMessage ? <p>{disabledMessage}</p> : null;
   if (!profile) return <p className="text-sm">Checking delivery availability…</p>;
   return (
     <DeliveryForm
-      key={`${productId}:${variantId}:${piecesPerPack}:${minimumPacks}:${incrementPacks}:${channel}`}
-      {...{ productId, variantId, piecesPerPack, minimumPacks, incrementPacks, channel }}
+      key={`${productId}:${variantId}:${piecesPerPack}:${minimumPacks}:${incrementPacks}:${channel}:${selectedPacks ?? 'editable'}`}
+      {...{ productId, variantId, piecesPerPack, minimumPacks, incrementPacks, channel, selectedPacks }}
     />
   );
 }
@@ -53,6 +57,7 @@ function DeliveryForm({
   minimumPacks,
   incrementPacks,
   channel,
+  selectedPacks,
 }: {
   productId: string;
   variantId: string;
@@ -60,10 +65,11 @@ function DeliveryForm({
   minimumPacks: number;
   incrementPacks: number;
   channel: 'retail' | 'trade';
+  selectedPacks?: number;
 }) {
   const estimate = useDeliveryRequest('estimate');
   const [zip, setZip] = useState('');
-  const [qty, setQty] = useState(minimumPacks);
+  const [qty, setQty] = useState(selectedPacks ?? minimumPacks);
   const sequence = useRef(0);
   const [state, setState] = useState<{
     status: 'idle' | 'loading' | 'done' | 'error';
@@ -85,6 +91,8 @@ function DeliveryForm({
     e.preventDefault();
     if (!/^\d{5}$/.test(zip))
       return setState({ status: 'error', text: 'Enter a 5-digit ZIP code.' });
+    if (!Number.isSafeInteger(qty) || qty < minimumPacks || (qty - minimumPacks) % incrementPacks !== 0)
+      return setState({ status: 'error', text: `Choose at least ${minimumPacks} packs, in increments of ${incrementPacks}.` });
     setState({ status: 'loading' });
     const requestId = ++sequence.current;
     try {
@@ -112,7 +120,8 @@ function DeliveryForm({
     }
   };
   return (
-    <form onSubmit={run} className="mt-3 text-sm text-earth/70" aria-label="Estimate delivery">
+    <div className="mt-3 text-sm text-earth/70">
+    <form onSubmit={run} aria-label="Estimate delivery">
       <div className="flex flex-wrap gap-2 items-end">
         <label className="flex flex-col text-[10px] uppercase tracking-widest">
           ZIP code
@@ -136,6 +145,7 @@ function DeliveryForm({
             min={minimumPacks}
             step={incrementPacks}
             value={qty}
+            readOnly={selectedPacks !== undefined}
             onChange={(e) => {
               sequence.current++;
               setState({ status: 'idle' });
@@ -175,6 +185,7 @@ function DeliveryForm({
         )}
         {state.status === 'error' && <span className="text-red-700">{state.text}</span>}
       </p>
+      </form>
       {state.quote && (
         <DeliveryQuoteRequest
           lines={[{ productId, variantId, packs: qty }]}
@@ -182,6 +193,6 @@ function DeliveryForm({
           channel={channel}
         />
       )}
-    </form>
+    </div>
   );
 }
