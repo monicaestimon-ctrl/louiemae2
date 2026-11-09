@@ -8,7 +8,7 @@ import type { FunctionArgs } from 'convex/server';
 import schema from './schema';
 import { api, internal } from './_generated/api';
 import type { DataModel, Id } from './_generated/dataModel';
-import { submitWith, type Transport } from './ediZuo';
+import { buildPayload, submitWith, type Transport } from './ediZuo';
 import { refundSplit } from './ordReturns';
 import { isCommerceError, commerceErrorData } from '../lib/errors';
 import { SPLIT_MAY, SPLIT_WILL, splitDisclosure } from '../lib/customerCopy';
@@ -18,7 +18,7 @@ import { groupFreight, resolveLines, type FreightConfig, type ResolvedLine } fro
 import { digest } from './dlvSecurity';
 import { availableAfterCommitments } from './ordInventory';
 import { applyCreditEvent } from './ldgCore';
-import { reserve as reserveCredit } from './ldgCredits';
+import { reserve as reserveCredit, settle as settleCredit } from './ldgCredits';
 
 const PERIMETER_SECRET = '1'.repeat(64);
 async function estimateViaGateway(
@@ -119,6 +119,7 @@ afterEach(() => {
     'DELIVERY_AUTOMATION_ENABLED',
     'RETAIL_ZUO_CHECKOUT_ENABLED',
     'EDI_ZUO_ENABLED',
+    'CREDIT_V2_ENABLED',
   ])
     delete process.env[k];
 });
@@ -721,6 +722,77 @@ describe('delivery estimates (S17, S18)', () => {
 });
 
 describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
+  it('recovers the original mixed order once without repricing and re-reserves released credit atomically', async () => {
+    const s = await setup({ approveMixed: true });
+    process.env.CREDIT_V2_ENABLED = 'true';
+    const user = await s.t.run(async ctx => {
+      const id = await ctx.db.insert('users', { email: 'recovery-buyer@example.com' });
+      const variant = (await ctx.db.get(s.variantId))!;
+      await ctx.db.insert('catSupplierPolicies', { supplierId: variant.supplierId, kind: 'store_credit',
+        summary: 'Synthetic credit permission for recovery test only', evidenceRefs: ['fixture'], scope: { all: true },
+        status: 'documented', createdAt: Date.now(), createdBy: 'fixture', effectiveFrom: 0, source: 'fixture' });
+      await applyCreditEvent(ctx, { eventKey: 'recovery-credit-opening', userId: id, type: 'opening_balance', amountMinor: 1000, actor: 'fixture' });
+      return id;
+    });
+    const buyer = s.t.withIdentity({ subject: `${user}|s`, email: 'recovery-buyer@example.com' });
+    const lines = [zuoLine(s), { productId: s.ashId, variantId: 'b1', packs: 1 }];
+    const est = await estimateViaGateway(buyer, { lines, channel: 'retail', zip: '95206', address: ADDRESS, useCredit: true, visitorKey: 'recovery-original-fixture' });
+    const intent = await buyer.mutation(internal.ordCheckout.createIntent, { idempotencyKey: 'recovery-original-fixture-key', estimateId: est.estimateId, lines, address: ADDRESS, service: 'curbside', acceptTotalMinor: est.totalMinor!, useCredit: true });
+    if (intent.status === 'price_changed') throw new Error('Unexpected price change');
+    const original = (await s.t.run(ctx => ctx.db.get(intent.intentId)))!;
+    expect(original.creditMinor).toBe(1000);
+    expect(original.lineSnapshot.find(l => l.supplierCode === 'zuo')).toMatchObject({ supplierSku: '111182' });
+    await s.t.mutation(internal.ordCheckout.attachSession, { intentId: intent.intentId, sessionId: 'cs_recovery' });
+    await s.t.mutation(internal.ordCheckout.fail, { intentId: intent.intentId });
+    await s.t.mutation(internal.ordPayments.receive, { eventId: 'evt_recovery', type: 'checkout.session.completed', livemode: false, payloadHash: 'fixture', payload: { id: 'cs_recovery', intentId: intent.intentId, payment_status: 'paid', amount_total: intent.totalMinor, currency: 'usd', payment_intent: 'pi_recovery', email: 'recovery-buyer@example.com' } });
+    await processEvents(s.t);
+    const exception = (await s.t.run(ctx => ctx.db.query('ordPaidExceptions').first()))!;
+    const verificationId = await s.admin.mutation(internal.ordExceptionRefunds.record, { id: exception._id, intentId: intent.intentId, sessionId: 'cs_recovery', paymentIntentId: 'pi_recovery', chargeId: 'ch_recovery', amountMinor: intent.totalMinor, currency: 'usd', livemode: false, captured: true, disputed: false, succeededRefundMinor: 0, pendingRefundMinor: 0, refundIds: [] });
+    const detail = await s.admin.query(api.ordExceptionFulfillment.detail, { id: exception._id });
+    const args = { id: exception._id, verificationId, expectedFingerprint: detail.fingerprint, requestKey: 'resume-original-fixture-key', customerAgreement: 'Customer agreed to original paid order and delivery service', acceptedCostRisk: true, noPriorSupplierHandoff: true,
+      confirmations: detail.lines.map(line => ({ lineKey: line.lineKey, source: 'Verified supplier stock and original service fixture', observedAt: Date.now(), availablePacks: line.packs })) };
+    await expect(s.t.mutation(api.ordExceptionFulfillment.resumeOriginal, args)).rejects.toThrow();
+    await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, { ...args, expectedFingerprint: 'stale' })).rejects.toThrow(/changed/);
+    await s.t.run(ctx => ctx.db.patch(s.variantId, { supplierSku: 'changed-sku' }));
+    const changedIdentity = await s.admin.query(api.ordExceptionFulfillment.detail, { id: exception._id });
+    await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, { ...args, expectedFingerprint: changedIdentity.fingerprint })).rejects.toThrow(/exact original SKU/);
+    await s.t.run(ctx => ctx.db.patch(s.variantId, { supplierSku: '111182' }));
+    await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, { ...args, confirmations: args.confirmations.slice(0, 1) })).rejects.toThrow(/every original line/);
+    await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, { ...args, noPriorSupplierHandoff: false })).rejects.toThrow(/absence/);
+    await expect(s.t.query(api.ordExceptionFulfillment.detail, { id: exception._id })).rejects.toThrow();
+    await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, { ...args, confirmations: args.confirmations.map(c => ({ ...c, observedAt: Date.now() + 10000 })) })).rejects.toThrow(/exact original SKU/);
+    await s.t.run(ctx => ctx.db.patch(verificationId, { succeededRefundMinor: 1 }));
+    await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, args)).rejects.toThrow(/unrefunded original/);
+    await s.t.run(async ctx => {
+      await ctx.db.patch(verificationId, { succeededRefundMinor: 0 });
+      const stock = (await ctx.db.query('catStockRevisions').first())!;
+      await ctx.db.patch(stock._id, { quantity: '0' });
+    });
+    await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, args)).rejects.toThrow(/warehouse capacity/);
+    await s.t.run(async ctx => { const stock = (await ctx.db.query('catStockRevisions').first())!; await ctx.db.patch(stock._id, { quantity: '1000' }); });
+    await s.t.run(ctx => reserveCredit(ctx, user, 1000, 'other-checkout-fixture'));
+    await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, args)).rejects.toThrow(/Available credit/);
+    expect(await s.t.run(ctx => ctx.db.query('ordOrders').collect())).toHaveLength(0);
+    await s.t.run(ctx => settleCredit(ctx, 'other-checkout-fixture', 'released'));
+    const orderId = await s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, args);
+    expect(await s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, args)).toBe(orderId);
+    await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, { ...args, customerAgreement: 'Changed recovery notes' })).rejects.toThrow(/Changed recovery retry/);
+    const order = (await s.t.run(ctx => ctx.db.get(orderId)))!;
+    expect(order.totals.total).toBe(original.totalMinor); expect(order.totals.credit).toBe(original.creditMinor);
+    expect(order.shippingAddress).toEqual(original.shippingAddress); expect(order.serviceTerms).toEqual(original.serviceTerms);
+    expect(order.paidAt).toBe(exception.createdAt);
+    const children = await s.t.run(ctx => ctx.db.query('ordSupplierOrders').collect());
+    expect(children).toHaveLength(2); expect(children.every(c => c.status === 'queued' && c.submission.mode === 'none')).toBe(true);
+    const orderLines = await s.t.run(ctx => ctx.db.query('ordOrderLines').collect());
+    expect(orderLines.map(l => l.unitPackMinor)).toEqual(original.lineSnapshot.map(l => l.unitPackMinor));
+    expect((await s.t.run(ctx => ctx.db.query('ldgCreditAccounts').first()))?.reservedMinor).toBe(0);
+    const creditEvents = await s.t.run(ctx => ctx.db.query('ldgCreditEvents').collect());
+    expect(creditEvents.filter(e => e.type === 'redeemed')).toHaveLength(1);
+    expect((await s.t.run(ctx => ctx.db.get(exception._id)))?.resolutionOrderId).toBe(orderId);
+    expect((await buyer.query(api.ordReceipts.receipt, { sessionId: 'cs_recovery' })).state).toBe('confirmed');
+    expect(await s.t.run(ctx => ctx.db.query('dlvTaxTransactions').collect())).toHaveLength(1);
+    expect(await s.t.run(ctx => ctx.db.query('sysNotifications').collect())).toHaveLength(1);
+  });
   it('rejects wrong-mode and connected-account payment events before storing platform work', async () => {
     const s = await setup();
     const event = { eventId: 'evt_wrong_mode', type: 'checkout.session.completed', livemode: true, payloadHash: 'fixture', payload: {} };
@@ -1118,6 +1190,18 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
 });
 
 describe('fulfillment (S21, FUL04, FUL05, DEL05)', () => {
+  it('keeps the accepted supplier SKU and pack basis after later catalog edits', async () => {
+    const s = await setup();
+    await paidOrder(s, [zuoLine(s, 2)]);
+    const before = await s.t.run(async ctx => buildPayload(ctx, (await ctx.db.query('ordSupplierOrders').first())!));
+    await s.t.run(ctx => ctx.db.patch(s.variantId, { supplierSku: 'replacement-sku', piecesPerPack: 8 }));
+    const queue = await s.admin.query(api.ordFulfillment.dealerQueue, { route: 'manual_dealer_zuo' });
+    expect(queue[0].items[0]).toMatchObject({ supplierSku: '111182', packs: 2, pieces: 4 });
+    const after = await s.t.run(async ctx => buildPayload(ctx, (await ctx.db.query('ordSupplierOrders').first())!));
+    expect(after.lines).toEqual(before.lines);
+    const line = (await s.t.run(ctx => ctx.db.query('ordOrderLines').first()))!;
+    expect(line).toMatchObject({ supplierSku: '111182', supplierSkuSource: 'checkout_snapshot' });
+  });
   it('ships partially, keeps the other supplier intact on cancel, and never marks the whole order delivered early', async () => {
     const s = await setup({ approveMixed: true });
     const { est } = await paidOrder(s, [

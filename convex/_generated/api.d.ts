@@ -119,6 +119,7 @@ import type * as ordFulfillment from "../ordFulfillment.js";
 import type * as ordInventory from "../ordInventory.js";
 import type * as ordExceptionActions from "../ordExceptionActions.js";
 import type * as ordExceptionRefunds from "../ordExceptionRefunds.js";
+import type * as ordExceptionFulfillment from "../ordExceptionFulfillment.js";
 import type * as ordPayments from "../ordPayments.js";
 import type * as ordQuotes from "../ordQuotes.js";
 import type * as ordReturns from "../ordReturns.js";
@@ -293,6 +294,7 @@ declare const fullApi: ApiFromModules<{
   ordInventory: typeof ordInventory;
   ordExceptionActions: typeof ordExceptionActions;
   ordExceptionRefunds: typeof ordExceptionRefunds;
+  ordExceptionFulfillment: typeof ordExceptionFulfillment;
   ordPayments: typeof ordPayments;
   ordQuotes: typeof ordQuotes;
   ordReturns: typeof ordReturns;

@@ -251,6 +251,8 @@ export const createIntent = internalMutation({
         ...(l.engine?.marginBps != null ? { marginFloorBps: l.engine.marginBps } : {}),
         commissionCategory: l.category,
         supplierCode: l.supplierCode,
+        supplierSku: l.variant.supplierSku,
+        ...(l.variant.warehouseId ? { warehouseId: l.variant.warehouseId } : {}),
         originZip: l.originZip,
         service: est.service,
         ...(l.costRevisionId ? { costRevisionId: l.costRevisionId } : {}),
