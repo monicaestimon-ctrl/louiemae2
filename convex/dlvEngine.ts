@@ -5,7 +5,7 @@ import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { activeConfig, maybeConfig } from './sysConfig';
 import { availableAfterCommitments } from './ordInventory';
-import { assertSellable, ensureSupplier } from './catCore';
+import { assertSellable, ensureSupplier, isCurrentPrice } from './catCore';
 import { viewer, isVerified } from './holmAccess';
 import { CommerceError } from '../lib/errors';
 import {
@@ -219,11 +219,7 @@ export async function resolveLines(
       checkPackQuantity(cv, l.packs);
       const priceId = channel === 'retail' ? cv.retailPriceRevisionId : cv.tradePriceRevisionId;
       const price = priceId ? await ctx.db.get(priceId) : null;
-      if (
-        price?.status !== 'approved' ||
-        price.effectiveFrom > now ||
-        (price.effectiveTo !== undefined && price.effectiveTo <= now)
-      )
+      if (!isCurrentPrice(price, cv._id, channel, now))
         throw new CommerceError('COST_REVIEW_REQUIRED', `No current approved ${channel} price`);
       // The listing must still show the approved price (a changed price needs republishing).
       if (option.price !== price.packPriceMinor)

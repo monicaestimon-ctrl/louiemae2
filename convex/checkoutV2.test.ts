@@ -1668,6 +1668,36 @@ describe('delivery tool security and operations regressions', () => {
     expect(r.baseTradeSavingsMinor).toBe(3806);
     expect(r.projectSavingsMinor).toBe(0);
     expect(r.lines[0].eligibleProject).toBe(false);
+    const picker = () => trade.query(api.dlvTradeCalculator.catalog, { paginationOpts: { cursor: null, numItems: 20 } });
+    await expect(s.t.query(api.dlvTradeCalculator.catalog, { paginationOpts: { cursor: null, numItems: 20 } })).rejects.toThrow();
+    expect((await picker()).page).toHaveLength(1);
+    const currentTime = Date.now();
+    vi.setSystemTime(currentTime + 2 * 86400000);
+    expect((await picker()).page).toHaveLength(0);
+    await expect(trade.query(api.dlvTradeCalculator.calculate, { lines: [zuoLine(s)] })).rejects.toThrow();
+    vi.setSystemTime(currentTime);
+    await s.t.run(ctx => ctx.db.patch(s.variantId, { holds: ['MANUAL'] }));
+    expect((await picker()).page).toHaveLength(0);
+    await s.t.run(ctx => ctx.db.patch(s.variantId, { holds: [] }));
+    const cv = (await s.t.run(ctx => ctx.db.get(s.variantId)))!;
+    const price = (await s.t.run(ctx => ctx.db.get(cv.tradePriceRevisionId!)))!;
+    for (const patch of [
+      { effectiveFrom: Date.now() + 60000 }, { effectiveTo: Date.now() },
+      { packPriceMinor: 42001 }, { channel: 'retail' as const },
+    ]) {
+      await s.t.run(ctx => ctx.db.patch(price._id, patch));
+      expect((await picker()).page).toHaveLength(0);
+      await expect(trade.query(api.dlvTradeCalculator.calculate, { lines: [zuoLine(s)] })).rejects.toThrow();
+      await expect(s.t.run(ctx => resolveLines(ctx, [zuoLine(s)], 'trade'))).rejects.toThrow();
+      await s.t.run(ctx => ctx.db.patch(price._id, { effectiveFrom: price.effectiveFrom, effectiveTo: price.effectiveTo, packPriceMinor: price.packPriceMinor, channel: price.channel }));
+    }
+    const retail = (await s.t.run(ctx => ctx.db.get(cv.retailPriceRevisionId!)))!;
+    await s.t.run(ctx => ctx.db.patch(retail._id, { effectiveTo: Date.now() }));
+    const noComparison = await trade.query(api.dlvTradeCalculator.calculate, { lines: [zuoLine(s)] });
+    expect(noComparison.tradeSubtotalMinor).toBe(42000);
+    expect(noComparison.retailComparisonMinor).toBeNull();
+    expect(noComparison.referralEstimateMinor).toBeNull();
+    await s.t.run(ctx => ctx.db.patch(retail._id, { effectiveTo: retail.effectiveTo }));
     const e = await estimateViaGateway(trade, {
       lines: [zuoLine(s)],
       channel: 'trade',

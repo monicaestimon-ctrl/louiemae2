@@ -6,10 +6,10 @@ import { query } from './_generated/server';
 import { viewer, isVerified } from './holmAccess';
 import { activeConfig, maybeConfig } from './sysConfig';
 import type { CommissionSchedule, TradeDiscountSchedule } from '../lib/config';
-import { CommerceError } from '../lib/errors';
+import { CommerceError, isCommerceError } from '../lib/errors';
 import { beneficiaryOf } from './prgCore';
 import { productRate } from './prgAttribution';
-import { assertSellable } from './catCore';
+import { assertSellable, isCurrentPrice } from './catCore';
 import { checkPackQuantity } from '../lib/catUnits';
 import { projectPrices, approvedProjectPolicy } from './dlvProjectPricing';
 import { lineArg } from './dlvEstimates';
@@ -54,25 +54,25 @@ export const catalog = query({
         .withIndex('by_channel_published', (q) => q.eq('channel', 'house').eq('published', true))
         .paginate(a.paginationOpts);
       const products = [];
+      const now = Date.now();
       for (const p of page.page) {
         const variants = [];
         for (const x of p.snapshot.variants) {
           const id = ctx.db.normalizeId('catVariants', x.id);
-          const cv = id ? await ctx.db.get(id) : null;
-          const price = cv?.tradePriceRevisionId ? await ctx.db.get(cv.tradePriceRevisionId) : null;
-          if (
-            cv &&
-            price?.status === 'approved' &&
-            cv.currentCostRevisionId &&
-            !cv.holds.length &&
-            cv.availability === 'in_stock'
-          )
+          if (!id) continue;
+          try {
+            const cv = await assertSellable(ctx, id, 'estimate', now);
+            const price = cv.tradePriceRevisionId ? await ctx.db.get(cv.tradePriceRevisionId) : null;
+            if (cv.productId !== p.productId || !isCurrentPrice(price, id, 'trade', now) || price.packPriceMinor !== x.price) continue;
             variants.push({
               id: x.id,
               name: x.name,
               minimum: cv.orderMinimumPacks,
               increment: cv.orderIncrementPacks,
             });
+          } catch (error) {
+            if (!isCommerceError(error)) throw error;
+          }
         }
         if (variants.length) products.push({ id: p.productId, name: p.snapshot.name, variants });
       }
@@ -97,6 +97,7 @@ export const calculate = query({
       const seen = new Set<string>();
       const lines = [];
       const projectInputs = [];
+      const now = Date.now();
       for (const l of a.lines) {
         if (seen.has(l.variantId)) throw new CommerceError('INVALID_INPUT');
         seen.add(l.variantId);
@@ -132,8 +133,7 @@ export const calculate = query({
         ]);
         if (
           !tradeListing?.published ||
-          trade?.status !== 'approved' ||
-          trade.packPriceMinor <= 0 ||
+          !isCurrentPrice(trade, cv._id, 'trade', now) ||
           tradeListing.snapshot.variants.find((v) => v.id === cv._id)?.price !==
             trade.packPriceMinor
         )
@@ -141,8 +141,7 @@ export const calculate = query({
         const category = meta?.commissionCategory;
         const comparable =
           retailListing?.published &&
-          retail?.status === 'approved' &&
-          retail.packPriceMinor > 0 &&
+          isCurrentPrice(retail, cv._id, 'retail', now) &&
           retailListing.snapshot.variants.find((v) => v.id === cv._id)?.price ===
             retail.packPriceMinor;
         const eligibleProject =

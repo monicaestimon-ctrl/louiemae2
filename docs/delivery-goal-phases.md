@@ -196,3 +196,10 @@ Audit each subsection as phases progress. Features not covered by a passing test
 - Retail projections carry that metadata to cards and product views and omit photos associated only with variants removed by current eligibility checks. HOLM's catalog adapter, product cards and main product photography also accept responsive metadata. Cart item photography uses a thumbnail-sized request.
 - Matching photography uses reviewed alt text and responsive candidates; metadata for another image cannot override the selected photo. Failed candidates are cleared before proxy/fallback retries. Prepared catalog media uses an explicit unavailable placeholder rather than an unrelated product photo on final failure.
 - Historical snapshots remain valid without metadata. No bulk republish, image approval, rights approval, stock/cost confirmation or rollout activation occurs in this phase. The 577 prepared images remain pending visual review; 226 excluded/no-source records were not prepared.
+
+## Phase 6h: current trade calculator eligibility
+
+- The approved-product picker now re-evaluates current cost/stock evidence and holds, checks the exact product association and requires the listing price to match the effective approved trade revision. Expected eligibility failures omit the item; unexpected infrastructure failures still surface.
+- A shared current-price predicate checks variant, channel, approval, positive whole-cent price and effective window. Retail catalog projection, the delivery engine and the trade calculator use it. An expired retail reference produces no retail savings or referral comparison while an otherwise valid approved trade price can still be calculated.
+- Regression coverage includes unauthenticated access, newly added holds, aged evidence, future/expired trade prices, changed listing prices, wrong price channel and expired retail comparison. No production price, cost, inventory, publication or rollout setting changes.
+- This is a calculator eligibility correction. Integrating canonical Zuo items into the main HOLM catalog and replacing the legacy project tray remain separate outstanding work.
