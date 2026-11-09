@@ -23,6 +23,7 @@ export const CartItem: React.FC<CartItemProps> = ({ item }) => {
             <div className="w-20 h-20 bg-cream flex-shrink-0 overflow-hidden">
                 <SafeImage
                     src={displayImage}
+                    media={product.imageMedia} sizes="80px"
                     alt={product.name}
                     className="w-full h-full object-cover"
                 />

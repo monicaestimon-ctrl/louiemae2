@@ -4,7 +4,7 @@ import { api } from '../convex/_generated/api';
 import { buildCatalogCategoryFilter, matchesCatalogCategoryFilter } from '../lib/productCategories';
 import type { CollectionConfig, Product } from '../types';
 
-export type StoreCardProduct = Pick<Product, 'id' | 'name' | 'images' | 'price' | 'category' | 'isNew' | 'inStock'> & { variantCount: number };
+export type StoreCardProduct = Pick<Product, 'id' | 'name' | 'images' | 'imageMedia' | 'price' | 'category' | 'isNew' | 'inStock'> & { variantCount: number };
 export type StoreSort = 'newest' | 'price-asc' | 'price-desc' | 'featured';
 
 export function useStoreCatalog(config: CollectionConfig, category: string, ready: boolean, sort?: StoreSort, previewLimit?: number) {
@@ -27,7 +27,7 @@ export function useStoreCatalog(config: CollectionConfig, category: string, read
     category: row.category, isNew: row.isNew, variantCount: row.variantCount, inStock: false,
   })) : [];
   const eligible = retailEnabled ? retail.results.filter(p => p.collection === config.id && (!categoryFilter || matchesCatalogCategoryFilter(p, categoryFilter)))
-    .map(p => ({ id: p._id, name: p.name, images: p.images, price: p.price, category: p.category, isNew: p.isNew, variantCount: p.variantCount, inStock: p.inStock })) : [];
+    .map(p => ({ id: p._id, name: p.name, images: p.images, imageMedia: p.imageMedia, price: p.price, category: p.category, isNew: p.isNew, variantCount: p.variantCount, inStock: p.inStock })) : [];
   let products = [...eligible, ...legacy];
   if (sort === 'price-asc') products.sort((a, b) => a.price - b.price);
   if (sort === 'price-desc') products.sort((a, b) => b.price - a.price);

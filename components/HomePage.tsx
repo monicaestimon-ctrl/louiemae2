@@ -533,7 +533,7 @@ export const HomePage: React.FC = () => {
 
             {/* Image Gallery */}
             <div className="w-full md:w-1/2 bg-earth/5 h-[42%] shrink-0 md:h-auto overflow-hidden relative group">
-              <SafeImage src={selectedVariant?.image || (activeImageGroupKey && activeImageGroupKey !== NO_IMAGE_KEY ? activeImageGroupKey : selectedProduct.images[0])} alt={selectedProduct.name} className="w-full h-full object-contain" />
+              <SafeImage src={selectedVariant?.image || (activeImageGroupKey && activeImageGroupKey !== NO_IMAGE_KEY ? activeImageGroupKey : selectedProduct.images[0])} media={selectedProduct.imageMedia} sizes="(min-width: 768px) 512px, 100vw" alt={selectedProduct.name} className="w-full h-full object-contain" />
               <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent pointer-events-none" />
             </div>
 

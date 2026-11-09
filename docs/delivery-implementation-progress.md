@@ -1,10 +1,10 @@
 # Delivery implementation and release evidence
 
-Updated 2026-11-08. Branch: `codex/delivery-tool-completion`, based on main `a788dd4`. Read with [the full specification](louiemae-delivery-estimator-end-to-end-spec.md) and [release runbook](delivery-release-runbook.md).
+Updated 2026-11-09. Read with [the full specification](louiemae-delivery-estimator-end-to-end-spec.md), [the phase ledger](delivery-goal-phases.md) and [release runbook](delivery-release-runbook.md). The original implementation evidence below is retained as a dated baseline; subsequent deployment receipts and remaining work are tracked in the phase ledger.
 
 ## Status
 
-The branch implements the delivery engine, customer/staff interfaces, tax adapter, quote workflow, checkout protection, reconciliation and approved-price trade calculator. This ledger is not a production completion certificate. At writing, code had not been deployed or enabled. No live provider/payment tests, transfers, payouts, catalog activation or bulk repricing occurred.
+The delivery engine, customer/staff interfaces, tax adapter, quote workflow, checkout protection, reconciliation and approved-price trade calculator have been merged and deployed, followed by the fixes recorded in the phase ledger. PR 272's frontend and Convex production deployments are verified. Deployment is not rollout activation or an operational completion certificate: catalog evidence, current carrier coverage, visual/rights review and permitted payment verification remain required. No live test payments, transfers, payouts or bulk catalog activation occurred. Production media preparation completed for 577 included sources with zero processing errors; 226 excluded/no-source records were skipped, and preparation does not approve images for sale.
 
 The actual 803-product packet replay passed all 20 catalog tests, preserving prices, packs, images, identifiers and holds. Migration parity is not current supplier-stock or carrier-coverage verification.
 

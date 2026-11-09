@@ -208,6 +208,7 @@ export const catalog = query({
         description: s.description,
         category: s.category,
         images: s.images,
+        imageMedia: s.imageMedia,
         facts: s.facts,
         assets: await publicAssets(ctx, assets.get(listing.productId), s.facts),
         inStock: priced.inStock,

@@ -16,7 +16,7 @@ export function storefrontListing(listing: Doc<'commerceListings'>) {
   const price = Math.min(...variants.map(v => v.price));
   return { _id: listing.productId, name: s.name, description: [retailDescription(s.description), s.facts].filter(Boolean).join('\n\n'),
     category: s.category, collection: s.category === 'Lighting' ? 'decor' : 'furniture',
-    images: s.images, price, deliveryFee: (rate?.delivery ?? 0) / 100,
+    images: s.images, imageMedia: s.imageMedia, price, deliveryFee: (rate?.delivery ?? 0) / 100,
     fulfillmentProvider: 'ashcroft' as const, inStock: variants.some(v => v.inStock),
     variants: variants.map(({ price: variantPrice, ...v }) => ({ ...v, priceAdjustment: variantPrice - price })),
     variantCount: variants.length, isNew: false,
@@ -29,10 +29,11 @@ export function storefrontListing(listing: Doc<'commerceListings'>) {
  */
 export function zuoStorefrontListing(listing: Doc<'commerceListings'>, collection: 'furniture' | 'decor') {
   const s = listing.snapshot;
+  const imageMedia = s.imageMedia?.filter(m => m.variantIds.some(id => s.variants.some(v => v.id === id)));
   const variants = s.variants.map(v => ({ id: v.id, name: v.name, image: v.image, price: v.price / 100, inStock: true }));
   const price = Math.min(...variants.map(v => v.price));
   return { _id: listing.productId, name: s.name, description: s.description, category: s.category, collection,
-    images: s.images, price, deliveryFee: 0, fulfillmentProvider: 'zuo' as const, inStock: true,
+    images: imageMedia ? imageMedia.map(m => m.url) : s.images, imageMedia, price, deliveryFee: 0, fulfillmentProvider: 'zuo' as const, inStock: true,
     variants: variants.map(({ price: variantPrice, ...v }) => ({ ...v, priceAdjustment: variantPrice - price })),
     variantCount: variants.length, isNew: false,
   };

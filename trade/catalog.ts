@@ -12,6 +12,7 @@ export type LiveVariant = {
   retail: number;
   trade: number | null;
 };
+import type { ProductImageMedia } from '../types';
 import { parseDims, type DimsCm } from '../lib/holmDims';
 
 export type LiveAssets = {
@@ -25,6 +26,7 @@ export type LiveAssets = {
   mountHeightCm: number | null;
 };
 export type LiveItem = {
+  imageMedia?: ProductImageMedia[];
   id: string;
   name: string;
   description: string;
@@ -36,6 +38,7 @@ export type LiveItem = {
   assets?: LiveAssets;
 };
 export type HolmProduct = {
+  imageMedia?: ProductImageMedia[];
   id: number;
   lid: string; // commerceProducts id
   vid: string; // default variant
@@ -217,6 +220,7 @@ export function liveProducts(items: LiveItem[]): HolmProduct[] {
       facts: item.facts,
       img: v0.image || item.images[0] || '',
       imgs: item.images,
+      imageMedia: item.imageMedia,
       ar: 1,
       sku: `HL-${String(id).padStart(3, '0')}`,
       likes: 0,
