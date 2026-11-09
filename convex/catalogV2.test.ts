@@ -6,6 +6,7 @@ import schema from './schema';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { assertSellable } from './catCore';
+import { currentZuoStorefrontListing, retailDetail } from './retailStorefront';
 import { computeScenarios, recordScenarios } from './catPricing';
 import { assertLineMechanism } from './catPolicies';
 import { normalizePackage, parseJsonPackage } from '../lib/zuoImport';
@@ -27,6 +28,7 @@ afterEach(() => {
   delete process.env.CJ_ADMIN_EMAILS;
   delete process.env.DELIVERY_ADMIN_ROLES;
   delete process.env.CATALOG_PUBLICATION_V2_ENABLED;
+  delete process.env.RETAIL_ZUO_CHECKOUT_ENABLED;
 });
 
 describe('cost evidence authoring', () => {
@@ -859,6 +861,32 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
       ['house', true, 41_226],
       ['retail', true, 45_806],
     ]);
+    process.env.RETAIL_ZUO_CHECKOUT_ENABLED = 'true';
+    const retail = listings.find(l => l.channel === 'retail')!;
+    const read = () => t.run(ctx => retailDetail(ctx, productId));
+    const page = () => t.query(api.retailLaunch.storefrontPage, { paginationOpts: { cursor: null, numItems: 20 } });
+    expect(await read()).toMatchObject({ inStock: true, price: 458.06 });
+    expect((await page()).page).toHaveLength(1);
+    const withStaleSibling = { ...retail, snapshot: { ...retail.snapshot, variants: [
+      { ...retail.snapshot.variants[0], id: 'removed-variant', price: 100 }, ...retail.snapshot.variants,
+    ] } };
+    expect(await t.run(ctx => currentZuoStorefrontListing(ctx, withStaleSibling, 'furniture'))).toMatchObject({ variantCount: 1, price: 458.06 });
+    await t.run(ctx => ctx.db.patch(cv._id, { holds: ['MANUAL'] }));
+    expect(await read()).toBeNull();
+    expect((await page()).page).toHaveLength(0);
+    await t.run(ctx => ctx.db.patch(cv._id, { holds: [] }));
+    await t.run(ctx => ctx.db.patch(cv.currentCostRevisionId!, { feesConfirmedZero: false }));
+    expect(await read()).toBeNull();
+    await t.run(ctx => ctx.db.patch(cv.currentCostRevisionId!, { feesConfirmedZero: true }));
+    expect(await t.run(ctx => currentZuoStorefrontListing(ctx, retail, 'furniture', NOW + 2 * 86400000))).toBeNull();
+    const originalPrice = (await t.run(ctx => ctx.db.get(cv.retailPriceRevisionId!)))!;
+    for (const patch of [{ packPriceMinor: 45807 }, { effectiveFrom: Date.now() + 86400000 }, { effectiveTo: Date.now() - 1000 }]) {
+      await t.run(ctx => ctx.db.patch(originalPrice._id, patch));
+      expect(await read()).toBeNull();
+      await t.run(ctx => ctx.db.patch(originalPrice._id, { packPriceMinor: originalPrice.packPriceMinor, effectiveFrom: originalPrice.effectiveFrom, effectiveTo: originalPrice.effectiveTo }));
+    }
+    expect(await read()).toMatchObject({ inStock: true, price: 458.06 });
+    expect((await t.run(ctx => ctx.db.get(retail._id)))!.snapshot).toEqual(retail.snapshot);
     // A paid order exists; unpublish stops new sales but the order is untouched.
     const orderId = await t.run((ctx) => ctx.db.insert('orders', { customerEmail: 'c@x.com', items: [], subtotal: 1, total: 1, currency: 'usd', status: 'paid', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }));
     await admin.mutation(api.catPublication.unpublish, { productIds: [productId], channels: ['retail'], reason: 'test' });

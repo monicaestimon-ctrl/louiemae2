@@ -341,3 +341,7 @@ Inspect the photograph against the SKU, pack and color, write accurate alt text,
 The Node runtime installs the locked Sharp dependency via `convex.json`. Verify a real staged preparation after deployment before bulk processing. If attachment returns an uncertain failure, retry; do not delete outputs that could already be referenced. Any cleanup of uncertain orphan files requires checking current references first.
 
 The media workspace also supports **Prepare all included stored sources**. It walks every page sequentially, skips excluded/discontinued records, reports per-SKU errors and supports stopping after the current image. Retrying verifies source bytes and reuses an already prepared association. It never calls visual approval or publication in the batch loop.
+
+## 32. Current storefront eligibility verification
+
+After deploying the current-eligibility phase, verify an eligible Zuo listing appears only when its rollout flag, current cost/stock evidence and approved effective price pass. A newly held variant, expired evidence or price that differs from the published snapshot must disappear from new retail list/detail results. With multiple variants, eligible siblings remain. Cart/checkout still revalidate; an already open browser card is not an inventory reservation. Never change a paid order snapshot to repair the current catalog.
