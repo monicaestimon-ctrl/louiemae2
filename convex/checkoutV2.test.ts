@@ -14,7 +14,7 @@ import { isCommerceError, commerceErrorData } from '../lib/errors';
 import { SPLIT_MAY, SPLIT_WILL, splitDisclosure } from '../lib/customerCopy';
 import { quoteOnlyReasons, zipRegion, STANDARD_ACCESS } from '../lib/delivery/destination';
 import { exemptionFor } from './dlvTaxExemptions';
-import { groupFreight, type FreightConfig, type ResolvedLine } from './dlvEngine';
+import { groupFreight, resolveLines, type FreightConfig, type ResolvedLine } from './dlvEngine';
 
 const PERIMETER_SECRET = '1'.repeat(64);
 async function estimateViaGateway(
@@ -505,6 +505,19 @@ async function paidOrder(
 }
 
 describe('delivery estimates (S17, S18)', () => {
+  it('does not extend an estimate lifetime with unverified or future inventory observations', async () => {
+    const s = await setup();
+    await s.t.run(async ctx => {
+      const old = (await ctx.db.query('catSourceObservations').first())!;
+      await ctx.db.patch(old._id, { observedAt: NOW - 86400000 + 30000 });
+      const { _id, _creationTime, ...data } = old;
+      void _id; void _creationTime;
+      await ctx.db.insert('catSourceObservations', { ...data, observedAt: NOW, confidence: 'unverified', contentHash: 'unverified-test' });
+      await ctx.db.insert('catSourceObservations', { ...data, observedAt: NOW + 86400000, contentHash: 'future-test' });
+    });
+    const lines = await s.t.run(ctx => resolveLines(ctx, [zuoLine(s)], 'retail', NOW));
+    expect(lines[0].validUntil).toBe(NOW + 30000);
+  });
   it('estimates a Zuo item, keeps ZIP estimates non-binding and shows tax only with a full address', async () => {
     const s = await setup();
     const zip = await estimateViaGateway(s.t, {
