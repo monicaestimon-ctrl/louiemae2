@@ -3,9 +3,9 @@
 // products, variants, cartons, immutable observations, cost revisions, the approved cohort's
 // prices and holds. Every Zuo variant starts as an imported draft with retail, trade and
 // referrals disabled; a repeated commit of the same package changes nothing.
-import { v } from 'convex/values';
-import { mutation, query } from './_generated/server';
-import type { MutationCtx } from './_generated/server';
+import { v, type ObjectType } from 'convex/values';
+import { internalMutation, internalQuery, mutation, query } from './_generated/server';
+import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { ensureSupplier, openHold } from './catCore';
@@ -19,6 +19,7 @@ import { piecePriceInfo } from '../lib/catUnits';
 import { countMismatches, fingerprint, identityKey, type ZuoRecord } from '../lib/zuoImport';
 import { HOLD_REASONS, type HoldReason } from './v2Validators';
 import { stableStringify } from '../lib/canonicalJson';
+import { stagedCatalogRecord } from '../lib/zuoStagedCatalog';
 
 const CHUNK = 25;
 const zuoRecord = v.any(); // validated field by field in validateRecord (the shape is lib/zuoImport ZuoRecord)
@@ -93,17 +94,15 @@ async function protectStagedPack(ctx: MutationCtx, r: ZuoRecord) {
     throw new CommerceError('INVALID_INPUT', `Staged exclusion cannot be removed by import: ${r.sku}`);
 }
 
-export const begin = mutation({
-  args: {
+const beginArgs = {
     mode: v.union(v.literal('dry_run'), v.literal('commit')),
     sourceKey: v.string(),
     files: v.array(v.object({ name: v.string(), sha256: v.string(), rows: v.number() })),
     codeRevision: v.string(),
     expectedRecords: v.number(),
     rejected: v.array(v.object({ row: v.number(), sku: v.string(), reasons: v.array(v.string()) })),
-  },
-  handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+  };
+async function beginImport(ctx: MutationCtx, a: ObjectType<typeof beginArgs>, actor: string) {
     if (!Number.isSafeInteger(a.expectedRecords) || a.expectedRecords < 0 || a.expectedRecords > 10000)
       throw new CommerceError('INVALID_INPUT', 'Expected record count must be an integer from 0 to 10000.');
     const packageBinding = await contentHash({ files: [...a.files].sort((x, y) => x.name.localeCompare(y.name)),
@@ -142,13 +141,16 @@ export const begin = mutation({
       packageBinding,
       expectedRecords: a.expectedRecords,
       ...(reviewedBatchId ? { reviewedBatchId } : {}),
-      startedBy: admin.email,
+      startedBy: actor,
       startedAt: Date.now(),
     });
     for (const r of a.rejected)
       await ctx.db.insert('catImportRecords', { batchId, sourceRowKey: `${r.sku || 'row'}:${r.row}`, action: 'reject', reasons: r.reasons });
     return { batchId, alreadyCommitted: false };
-  },
+}
+export const begin = mutation({
+  args: beginArgs,
+  handler: async (ctx, a) => beginImport(ctx, a, (await requireCjAdminIdentity(ctx)).email),
 });
 
 type StagedRecord = { record: ZuoRecord; holdReasons: string[] };
@@ -212,11 +214,12 @@ async function commitRecord(ctx: MutationCtx, s: StagedRecord, batch: Doc<'catIm
   const r = s.record;
   const supplierId = batch.supplierId;
   const fp = fingerprint(r);
+  const evidenceFp = await contentHash(r);
   const existing = await ctx.db
     .query('catVariants')
     .withIndex('by_identity', (q) => q.eq('supplierId', supplierId).eq('supplierSku', r.sku).eq('packId', r.packId))
     .first();
-  if (existing && existing.importFingerprint === fp && (!r.approvedRetailPack || (existing.retailPriceRevisionId && existing.tradePriceRevisionId))) {
+  if (existing && existing.importFingerprint === fp && existing.importEvidenceFingerprint === evidenceFp && (!r.approvedRetailPack || (existing.retailPriceRevisionId && existing.tradePriceRevisionId))) {
     // Identical prices/facts do not authorize dropping a newly reviewed safety hold.
     for (const h of s.holdReasons) if ((HOLD_REASONS as readonly string[]).includes(h))
       await openHold(ctx, existing._id, h as HoldReason, `Zuo import: ${h}`, by);
@@ -236,6 +239,7 @@ async function commitRecord(ctx: MutationCtx, s: StagedRecord, batch: Doc<'catIm
     orderIncrementPacks: r.incrementPacks,
     cohort: r.cohort,
     importFingerprint: fp,
+    importEvidenceFingerprint: evidenceFp,
     updatedAt: now,
   };
   let variantId: Id<'catVariants'>;
@@ -250,7 +254,7 @@ async function commitRecord(ctx: MutationCtx, s: StagedRecord, batch: Doc<'catIm
       supplierSku: r.sku,
       packId: r.packId,
       optionKey: [r.material, r.color, r.size].filter(Boolean).join('|').toLowerCase() || 'default',
-      louieMaeVariantName: base.supplierVariantName,
+      louieMaeVariantName: r.louieMaeVariantName || base.supplierVariantName,
       availability: 'unknown',
       fulfillmentRoute: 'manual_dealer_zuo',
       holds: [],
@@ -268,7 +272,7 @@ async function commitRecord(ctx: MutationCtx, s: StagedRecord, batch: Doc<'catIm
   for (const url of r.images) await observe(ctx, { supplierId, variantId, sku: r.sku, field: 'image', value: url, r, confidence: 'unverified', batchId: batch._id });
   // Cartons: replaced only when the package's carton set changes.
   const oldCartons = await ctx.db.query('catCartons').withIndex('by_variant', (q) => q.eq('variantId', variantId)).collect();
-  const cartonKey = (c: { cartonsPerPack: number; lengthMm: number; widthMm: number; heightMm: number; grossWeightG: number }) => [c.cartonsPerPack, c.lengthMm, c.widthMm, c.heightMm, c.grossWeightG].join('x');
+  const cartonKey = (c: { cartonsPerPack: number; lengthMm: number; widthMm: number; heightMm: number; grossWeightG: number; netWeightG?: number; method?: string; supplierMethod?: string }) => [c.cartonsPerPack, c.lengthMm, c.widthMm, c.heightMm, c.grossWeightG, c.netWeightG ?? null, c.method ?? c.supplierMethod ?? 'unknown'].join('x');
   if (oldCartons.map(cartonKey).join(',') !== r.cartons.map(cartonKey).join(',')) {
     for (const c of oldCartons) await ctx.db.delete(c._id);
     for (const [index, c] of r.cartons.entries()) {
@@ -280,7 +284,7 @@ async function commitRecord(ctx: MutationCtx, s: StagedRecord, batch: Doc<'catIm
   const wholesaleMinor = r.wholesalePiece === null ? null : dollarsToMinor(r.wholesalePiece, 'half_up');
   const mapMinor = r.mapPack === null ? null : dollarsToMinor(r.mapPack, 'half_up');
   const cur = existing?.currentCostRevisionId ? await ctx.db.get(existing.currentCostRevisionId) : null;
-  if (!cur || cur.wholesaleMinor !== wholesaleMinor || cur.mapMinor !== mapMinor || cur.mapSource !== r.mapSource || cur.mapApplicability !== r.mapApplicability) {
+  if (!cur || cur.wholesaleMinor !== wholesaleMinor || cur.wholesalePrecise !== (r.wholesalePiece ?? undefined) || cur.mapMinor !== mapMinor || cur.mapSource !== r.mapSource || cur.mapApplicability !== r.mapApplicability || cur.costSource !== `zuo package ${r.sourceFile}` || cur.verifiedAt !== (r.costConfidence !== 'unverified' && wholesaleMinor !== null ? r.observedAt : undefined)) {
     if (cur) await ctx.db.patch(cur._id, { effectiveTo: now });
     const costId = await ctx.db.insert('catCostRevisions', {
       variantId,
@@ -431,7 +435,7 @@ async function diffRecord(ctx: MutationCtx, s: StagedRecord, supplierId: Id<'cat
     (existing.retailPriceRevisionId && existing.tradePriceRevisionId);
   return {
     action:
-      existing.importFingerprint === fingerprint(s.record) && pricesPresent
+      existing.importFingerprint === fingerprint(s.record) && existing.importEvidenceFingerprint === await contentHash(s.record) && pricesPresent
         ? ('unchanged' as const)
         : ('update' as const),
     variantId: existing._id,
@@ -439,10 +443,8 @@ async function diffRecord(ctx: MutationCtx, s: StagedRecord, supplierId: Id<'cat
 }
 
 /** Stages a chunk of normalized records: a dry run reports, a commit writes. */
-export const stage = mutation({
-  args: { batchId: v.id('catImportBatches'), records: v.array(v.object({ record: zuoRecord, holdReasons: v.array(v.string()) })) },
-  handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+const stageArgs = { batchId: v.id('catImportBatches'), records: v.array(v.object({ record: zuoRecord, holdReasons: v.array(v.string()) })) };
+async function stageImport(ctx: MutationCtx, a: ObjectType<typeof stageArgs>, actor: string) {
     if (a.records.length > CHUNK) throw new CommerceError('INVALID_INPUT', `Send at most ${CHUNK} records per chunk`);
     const batch = await ctx.db.get(a.batchId);
     if (!batch || batch.status !== 'running') throw new CommerceError('INVALID_INPUT', 'Batch is not running');
@@ -471,7 +473,7 @@ export const stage = mutation({
       const processed = (summary.create ?? 0) + (summary.update ?? 0) + (summary.unchanged ?? 0);
       if (processed >= batch.expectedRecords)
         throw new CommerceError('INVALID_INPUT', 'Batch exceeds its declared record count.');
-      const res = batch.mode === 'commit' ? await commitRecord(ctx, staged, batch, admin.email) : await diffRecord(ctx, staged, batch.supplierId);
+      const res = batch.mode === 'commit' ? await commitRecord(ctx, staged, batch, actor) : await diffRecord(ctx, staged, batch.supplierId);
       const action = res.action;
       summary[action] = (summary[action] ?? 0) + 1;
       if (s.holdReasons.length) summary.hold = (summary.hold ?? 0) + 1;
@@ -492,17 +494,18 @@ export const stage = mutation({
     }
     await ctx.db.patch(batch._id, { summary });
     return summary;
-  },
+}
+export const stage = mutation({
+  args: stageArgs,
+  handler: async (ctx, a) => stageImport(ctx, a, (await requireCjAdminIdentity(ctx)).email),
 });
 
 /**
  * Closes the batch. With `expectPackageCounts`, the cohort counts must equal the reconciled
  * package's counts exactly (865/803/306/135/296/66/62/226/639) or the batch fails.
  */
-export const finish = mutation({
-  args: { batchId: v.id('catImportBatches'), expectPackageCounts: v.boolean(), metadataCorrections: v.optional(v.array(v.string())) },
-  handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+const finishArgs = { batchId: v.id('catImportBatches'), expectPackageCounts: v.boolean(), metadataCorrections: v.optional(v.array(v.string())) };
+async function finishImport(ctx: MutationCtx, a: ObjectType<typeof finishArgs>, actor: string) {
     const batch = await ctx.db.get(a.batchId);
     if (!batch || batch.status !== 'running') throw new CommerceError('INVALID_INPUT', 'Batch is not running');
     const c = batch.summary.cohorts ?? {};
@@ -520,9 +523,12 @@ export const finish = mutation({
       ...(mismatches.length ? { error: mismatches.join('; ') } : {}),
       ...(a.metadataCorrections ? { metadataCorrections: a.metadataCorrections } : {}),
     });
-    await audit(ctx, { actor: admin.email, action: `zuo.import.${batch.mode}`, entityTable: 'catImportBatches', entityId: batch._id, after: { counts, mismatches } });
+    await audit(ctx, { actor: actor, action: `zuo.import.${batch.mode}`, entityTable: 'catImportBatches', entityId: batch._id, after: { counts, mismatches } });
     return { status: mismatches.length ? 'failed' : 'done', counts, mismatches };
-  },
+}
+export const finish = mutation({
+  args: finishArgs,
+  handler: async (ctx, a) => finishImport(ctx, a, (await requireCjAdminIdentity(ctx)).email),
 });
 
 export const batches = query({
@@ -541,6 +547,93 @@ export const batchRecords = query({
       ? ctx.db.query('catImportRecords').withIndex('by_batch_action', (x) => x.eq('batchId', a.batchId).eq('action', a.action!))
       : ctx.db.query('catImportRecords').withIndex('by_batch', (x) => x.eq('batchId', a.batchId));
     return q.take(1000);
+  },
+});
+
+const storedPacketArgs = {
+  runId: v.string(), manifestSha256: v.string(), skus: v.array(v.string()),
+};
+async function storedRows(ctx: MutationCtx | QueryCtx, a: ObjectType<typeof storedPacketArgs>) {
+  if (!/^[\w-]{1,100}$/.test(a.runId) || !/^[a-f0-9]{64}$/.test(a.manifestSha256) ||
+      !a.skus.length || a.skus.length > 20 || new Set(a.skus).size !== a.skus.length)
+    throw new CommerceError('INVALID_INPUT');
+  const rows = [];
+  for (const sku of a.skus) {
+    const product = await ctx.db.query('commerceProducts').withIndex('by_source', q => q.eq('sourceKey', `zuo:${sku}`)).unique();
+    const source = product?.zuoStaging;
+    if (!product || product.provider !== 'zuo' || !source || source.sku !== sku || source.runId !== a.runId ||
+        source.manifestSha256 !== a.manifestSha256 || source.unitsPerSellUnit !== source.pack)
+      throw new CommerceError('INVALID_INPUT', `Staged identity differs: ${sku}`);
+    const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', product._id)).unique();
+    const listings = await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', product._id)).collect();
+    if (!meta || meta.stage !== 'imported_draft' || listings.some(l => l.published))
+      throw new CommerceError('INVALID_INPUT', `Product has advanced beyond draft migration: ${sku}`);
+    rows.push({ productId: product._id, row: { sku, pack: source.pack, draft: product.draft,
+      sourceEvidence: source.sourceEvidence, excluded: source.excluded,
+      exclusionReasons: source.exclusionReasons, holdReasons: source.holdReasons } });
+  }
+  return rows;
+}
+
+/** Deployment-admin only: no customer endpoint and no publication or policy approval. */
+export const stagedSnapshot = internalQuery({
+  args: storedPacketArgs,
+  handler: async (ctx, a) => {
+    const rows = await storedRows(ctx, a);
+    return Promise.all(rows.map(async item => {
+      const variants = await ctx.db.query('catVariants').withIndex('by_product', q => q.eq('productId', item.productId)).collect();
+      const catalog = await Promise.all(variants.map(async variant => ({
+        variant,
+        cost: variant.currentCostRevisionId ? await ctx.db.get(variant.currentCostRevisionId) : null,
+        retail: variant.retailPriceRevisionId ? await ctx.db.get(variant.retailPriceRevisionId) : null,
+        trade: variant.tradePriceRevisionId ? await ctx.db.get(variant.tradePriceRevisionId) : null,
+        cartons: await ctx.db.query('catCartons').withIndex('by_variant', q => q.eq('variantId', variant._id)).collect(),
+      })));
+      return { ...item, catalog };
+    }));
+  },
+});
+
+export const beginStagedMigration = internalMutation({
+  args: { mode: beginArgs.mode, runId: v.string(), manifestSha256: v.string(), expectedRecords: v.number(), observedAt: v.number() },
+  handler: async (ctx, a) => {
+    if (!/^[\w-]{1,100}$/.test(a.runId) || !/^[a-f0-9]{64}$/.test(a.manifestSha256) ||
+        !Number.isSafeInteger(a.observedAt) || a.observedAt <= 0 || a.observedAt > Date.now() || a.expectedRecords < 1)
+      throw new CommerceError('INVALID_INPUT');
+    const result = await beginImport(ctx, {
+      mode: a.mode, sourceKey: `staged-catalog-v1:${a.runId}:${a.manifestSha256}:${a.observedAt}`,
+      files: [{ name: a.runId, sha256: a.manifestSha256, rows: a.expectedRecords }],
+      codeRevision: 'staged-catalog-v1', expectedRecords: a.expectedRecords, rejected: [],
+    }, 'deployment-admin:staged-catalog-v1');
+    if (!result.alreadyCommitted) await ctx.db.patch(result.batchId, {
+      configVersions: { stagedMigration: { runId: a.runId, manifestSha256: a.manifestSha256, observedAt: a.observedAt } },
+    });
+    return result;
+  },
+});
+
+export const stageStoredMigration = internalMutation({
+  args: { batchId: v.id('catImportBatches'), skus: v.array(v.string()) },
+  handler: async (ctx, a) => {
+    const batch = await ctx.db.get(a.batchId);
+    const settings = batch?.configVersions?.stagedMigration;
+    if (!batch || batch.codeRevision !== 'staged-catalog-v1' || !settings ||
+        typeof settings.runId !== 'string' || typeof settings.manifestSha256 !== 'string' || !Number.isSafeInteger(settings.observedAt))
+      throw new CommerceError('INVALID_INPUT', 'Not a stored-catalog migration batch.');
+    const rows = await storedRows(ctx, { runId: settings.runId, manifestSha256: settings.manifestSha256, skus: a.skus });
+    const records = await Promise.all(rows.map(async ({ row }) => stagedCatalogRecord(row,
+      `staged:${settings.runId}:${settings.manifestSha256}:${await contentHash({ sourceEvidence: row.sourceEvidence, exclusionReasons: row.exclusionReasons })}`, settings.observedAt)));
+    return stageImport(ctx, { batchId: a.batchId, records }, 'deployment-admin:staged-catalog-v1');
+  },
+});
+
+export const finishStagedMigration = internalMutation({
+  args: { batchId: v.id('catImportBatches') },
+  handler: async (ctx, a) => {
+    const batch = await ctx.db.get(a.batchId);
+    if (batch?.codeRevision !== 'staged-catalog-v1' || !batch.configVersions?.stagedMigration)
+      throw new CommerceError('INVALID_INPUT');
+    return finishImport(ctx, { batchId: a.batchId, expectPackageCounts: false }, 'deployment-admin:staged-catalog-v1');
   },
 });
 

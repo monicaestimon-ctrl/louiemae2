@@ -38,6 +38,7 @@ export type ZuoRecord = {
   packId: string;
   supplierName: string;
   louieMaeName?: string;
+  louieMaeVariantName?: string;
   navCategory: string;
   material?: string;
   color?: string;
@@ -274,6 +275,7 @@ export function normalizeRow(p: ParsedRow, sourceFile: string, defaultObservedAt
       packId: text(pick(r, 'packId')) || '1',
       supplierName: text(pick(r, 'supplierName')) || sku,
       ...(text(pick(r, 'louieMaeName')) ? { louieMaeName: text(pick(r, 'louieMaeName')) } : {}),
+      ...(text(pick(r, 'louieMaeVariantName')) ? { louieMaeVariantName: text(pick(r, 'louieMaeVariantName')) } : {}),
       navCategory: text(pick(r, 'navCategory')),
       ...(text(pick(r, 'material')) ? { material: text(pick(r, 'material')) } : {}),
       ...(text(pick(r, 'color')) ? { color: text(pick(r, 'color')) } : {}),

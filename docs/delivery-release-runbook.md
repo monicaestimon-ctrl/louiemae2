@@ -146,3 +146,28 @@ Use the delivery console's itemized invoice form for all new freight expenses. T
 - Canonical invoices alone supply freight expense to contribution. Matched legacy totals are not added again. After resolving every legacy entry and confirming all expenses, record a new final cost statement. Every supplier child still needs an itemized invoice or an explicitly confirmed zero invoice.
 
 Fixture verification covers conflicting invoice retries, unchanged paid totals, retired legacy writes, final-cost blocking, approver-only review, idempotent review, review corrections, absence of double counting, explicit zero entry and internal freight-variance alerts. No production invoices, payments, refunds or customer messages were created for testing.
+
+Deployment evidence: PR 253 merged as `adc1139`; main CI 42537859079, Convex deploy/seed and Vercel production succeeded. There were no review comments; automatic CodeRabbit review was skipped by repository eligibility.
+
+## 15. Stored 803-product catalog conversion
+
+Deployment-admin-only functions in `zuoImport` migrate the stored draft packet through the same protected dry-run/commit implementation as the owner import screen. They are internal Convex functions, not browser/customer endpoints. They record the actor as `deployment-admin:staged-catalog-v1` rather than impersonating an owner account. They cannot publish products, approve policies, clear exclusions or turn on checkout.
+
+Before executing: wait for both production deployments, retain the original private packet and obtain a fresh `stagedSnapshot` for every selected SKU. Keep that backup outside git. Verify the 803 requested SKUs, original packet identity, prices, costs, names, images, exclusions and draft status. Snapshot/stage calls are limited to 20 unique SKUs. A product that has advanced beyond imported draft or has a published listing requires its separate review workflow.
+
+1. Call `beginStagedMigration` with `mode: dry_run`, the exact run ID and manifest SHA-256, `expectedRecords: 803`, and the frozen timestamp of the source observation. It must not be a future timestamp or a fabricated new supplier-verification date.
+2. Call `stageStoredMigration` with the returned batch ID and each SKU chunk. The server reads stored product evidence and performs conversion; the caller cannot submit replacement product values through this API.
+3. Call `finishStagedMigration`. Review the returned counts and the batch report. Rejected, missing or mismatched identities must be investigated before commit. Expected cohorts are 306 / 135 / 296 / 66 for this 803-row scope, not the separate historical 865-row package.
+4. Begin `mode: commit` with identical inputs, then repeat the same chunks and finish. A row's full source evidence and exclusion reasons are hashed into its source reference. Changes between review and commit fail. Exact chunk retries work even after catalog variant IDs replace the old draft IDs. Retain the running batch ID for interruption recovery.
+5. Take fresh snapshots, verify every requested row and its canonical cost, price and carton records, and retain a private parity report. Confirm that no listings were created and that manual publication holds remain. Record production batch IDs and counts in the operational evidence packet, not supplier costs in public PRs.
+
+Conversion rules:
+
+- Approved retail/trade prices stay per sellable pack. Original names, descriptions, images, permissions, reference media and raw source evidence remain preserved. Original exclusions are retained even when stock later recovers.
+- Only a current supplier row with matching pack and rounded pack cost, no source blockers, and the packet's fresh-candidate designation corroborates wholesale. Keep the supplier's exact per-piece decimal in that case. Other wholesale values remain the unverified approved-packet snapshot with stale/conflict holds. Corroboration of wholesale does not verify duties, inbound charges, supplier fees, freight, rights or commissions; missing expenses remain null.
+- Use current supplier cartons only when the current pack matches. Normalize the three physical sides longest-first for carrier length/width/height, preserving the original axis order in source evidence. Missing/nonpositive dimensions or weights remain a carton hold. Never reuse an older carton merely because the current supplier row is absent.
+- Preserve the current supplier shipping method. A Ground-to-LTL change is recognized even when dimensions are identical. Shipping-method changes, net-weight changes, sub-cent wholesale changes and new verification/source evidence can no longer be silently treated as unchanged imports.
+- Do not invent a size allowance class for a parcel from its name. Existing approved allowance values remain in source evidence for the delivery-policy reconciliation; an unapproved class remains UNKNOWN and delivery-held. The 5% cohort stays limited to its approved products; the MAP-based cohort's separate floor hold remains.
+- Retain stock-unit-basis, media-rights, mapping, commission and manual publication holds. This conversion is not a new inventory reservation or permission to sell an unavailable/discontinued product.
+
+Rollback: stop further chunks and keep affected products unpublished. Preserve all batch, observation and revision history. Resume an unchanged running batch or perform a reviewed correction from the saved snapshot; do not delete records or overwrite a later owner review. No financial order, payment, notification or supplier order is created by this migration.

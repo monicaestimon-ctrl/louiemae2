@@ -235,27 +235,19 @@ describe('Zuo import (CAT01, PRI01)', () => {
           ...manifest,
           rows: batchRows.slice(i, i + 10),
         });
-      const cohorts: Record<string, string> = {
-        APPROVED_5_PERCENT: 'approved_306',
-        MAP_BASED_10_PERCENT_TRADE: 'map_135',
-        ORIGINAL_20_PERCENT_MODEL: 'original_296',
-        RECONCILED_20_PERCENT_MODEL: 'reconciled_66',
-      };
-      const rows = batchRows.map((r) => {
-        const ev = JSON.parse(r.sourceEvidence);
-        const v = r.draft.variants[0];
-        return row(r.sku, {
-          cohort: cohorts[ev.pricingRegime],
-          piecesPerPack: r.pack,
-          wholesale: String(v.cost / r.pack),
-          approvedRetailPack: (v.retail / 100).toFixed(2),
-          approvedTradePack: (v.commercial / 100).toFixed(2),
-          excluded: r.excluded,
-          images: r.draft.images,
+      for (const mode of ['dry_run', 'commit'] as const) {
+        const migration = await t.mutation(internal.zuoImport.beginStagedMigration, {
+          mode, runId: manifest.runId, manifestSha256: manifest.manifestSha256,
+          expectedRecords: batchRows.length, observedAt: NOW - 3_600_000,
         });
-      });
-      await importPackage(admin, rows, 'dry_run');
-      await importPackage(admin, rows, 'commit');
+        for (let i = 0; i < batchRows.length; i += 10) {
+          const skus = batchRows.slice(i, i + 10).map(r => r.sku);
+          await t.mutation(internal.zuoImport.stageStoredMigration, { batchId: migration.batchId, skus });
+          // A lost response must not change prices or fail after draft variant IDs migrate.
+          await t.mutation(internal.zuoImport.stageStoredMigration, { batchId: migration.batchId, skus });
+        }
+        expect(await t.mutation(internal.zuoImport.finishStagedMigration, { batchId: migration.batchId })).toMatchObject({ status: 'done' });
+      }
       const products = await t.run((ctx) => ctx.db.query('commerceProducts').collect());
       expect(products).toHaveLength(batchRows.length);
       for (const r of batchRows) {
@@ -264,6 +256,7 @@ describe('Zuo import (CAT01, PRI01)', () => {
         const expected = r.draft.variants[0];
         expect({
           sku: r.sku,
+          name: v.name,
           retail: v.retail,
           commercial: v.commercial,
           cost: v.cost,
@@ -272,6 +265,7 @@ describe('Zuo import (CAT01, PRI01)', () => {
           increment: v.increment,
         }).toEqual({
           sku: r.sku,
+          name: expected.name,
           retail: expected.retail,
           commercial: expected.commercial,
           cost: expected.cost,
@@ -376,6 +370,70 @@ describe('Zuo import (CAT01, PRI01)', () => {
     const metas = await t.run((ctx) => ctx.db.query('catProductMeta').collect());
     expect(metas.every((m) => m.stage === 'imported_draft')).toBe(true);
     expect(variants.find((x) => x.supplierSku === '110799')!.holds).toContain('METHOD_CHANGED');
+  });
+
+  it('refreshes method-only carton changes, precise costs and revised verification evidence', async () => {
+    const { t, admin } = await setup();
+    const first = [row('A', { method: 'Ground', wholesale: '115.001' })];
+    await importPackage(admin, first, 'dry_run');
+    await importPackage(admin, first, 'commit');
+    const changed = [row('A', { method: 'LTL', wholesale: '115.002' })];
+    await importPackage(admin, changed, 'dry_run', 'method');
+    await importPackage(admin, changed, 'commit', 'method');
+    expect((await t.run(ctx => ctx.db.query('catCartons').first()))!.supplierMethod).toBe('ltl');
+    const variant = (await t.run(ctx => ctx.db.query('catVariants').first()))!;
+    expect((await t.run(ctx => ctx.db.get(variant.currentCostRevisionId!)))!.wholesalePrecise).toBe('115.002');
+    const newer = [row('A', { method: 'LTL', wholesale: '115.002', observedAt: new Date(NOW - 1000).toISOString() })];
+    const dry = await importPackage(admin, newer, 'dry_run', 'fresh-evidence');
+    expect(dry.counts.total).toBe(1);
+    expect((await admin.query(api.zuoImport.batchRecords, { batchId: dry.batchId }))[0].action).toBe('update');
+    await importPackage(admin, newer, 'commit', 'fresh-evidence');
+    const latest = (await t.run(ctx => ctx.db.query('catVariants').first()))!;
+    expect((await t.run(ctx => ctx.db.get(latest.currentCostRevisionId!)))!.verifiedAt).toBe(NOW - 1000);
+    expect(await t.run(ctx => ctx.db.query('catCostRevisions').collect())).toHaveLength(3);
+  });
+
+  it('migrates stored evidence only after a matching dry run and rejects source changes', async () => {
+    const { t, admin } = await setup();
+    const packet = { runId: 'stored-fixture', manifestSha256: 'b'.repeat(64) };
+    const staged = {
+      sku: 'A', pack: 2, excluded: false, exclusionReasons: [], holdReasons: ['Original hold'],
+      draft: { ...blankCommerceDraft(), name: 'Willow', supplierName: 'Zuo', sourceUrl: 'https://www.zuomod.com/fixture',
+        packaging: JSON.stringify({ unitsPerSellUnit: 2, shippingMethod: 'Ground', cartons: [{ dimensionOrder: 'W,L,H', dims: [20, 24, 36], weight: 30 }] }),
+        variants: [{ id: 'A', sku: 'A', name: 'Default', cost: 230, minimum: 1, increment: 1, retail: 45806, commercial: 41226 }],
+      },
+      sourceEvidence: JSON.stringify({ pricingRegime: 'APPROVED_5_PERCENT', originalSupplierName: 'Original chair', deliveryAllowanceEach: 60,
+        freshObservation: { currentInstallRow: 2, currentPack: 2, currentCostEach: 115, currentMapEach: 180, currentAvailability: 'IN_STOCK', currentShip: 'Ground' } }),
+    };
+    await admin.mutation(api.zuoStaging.importBatch, { ...packet, rows: [staged] });
+    const args = { ...packet, expectedRecords: 1, observedAt: NOW - 1000 };
+    await expect(t.mutation(internal.zuoImport.beginStagedMigration, { ...args, mode: 'commit' })).rejects.toThrow(/dry run/);
+    const before = await t.query(internal.zuoImport.stagedSnapshot, { ...packet, skus: ['A'] });
+    expect(before[0].catalog).toEqual([]);
+    await expect(t.query(internal.zuoImport.stagedSnapshot, { ...packet, manifestSha256: 'c'.repeat(64), skus: ['A'] })).rejects.toThrow(/identity differs/);
+    const dry = await t.mutation(internal.zuoImport.beginStagedMigration, { ...args, mode: 'dry_run' });
+    await t.mutation(internal.zuoImport.stageStoredMigration, { batchId: dry.batchId, skus: ['A'] });
+    await t.mutation(internal.zuoImport.finishStagedMigration, { batchId: dry.batchId });
+    const commit = await t.mutation(internal.zuoImport.beginStagedMigration, { ...args, mode: 'commit' });
+    const product = (await t.run(ctx => ctx.db.get(before[0].productId as Id<'commerceProducts'>)))!;
+    await t.run(ctx => ctx.db.patch(product._id, { zuoStaging: { ...product.zuoStaging!, sourceEvidence: staged.sourceEvidence.replace('60', '70') } }));
+    await expect(t.mutation(internal.zuoImport.stageStoredMigration, { batchId: commit.batchId, skus: ['A'] })).rejects.toThrow(/reviewed dry run/);
+    expect(await t.run(ctx => ctx.db.query('catVariants').collect())).toHaveLength(0);
+    await t.run(ctx => ctx.db.patch(product._id, { zuoStaging: product.zuoStaging }));
+    await t.mutation(internal.zuoImport.stageStoredMigration, { batchId: commit.batchId, skus: ['A'] });
+    await t.mutation(internal.zuoImport.stageStoredMigration, { batchId: commit.batchId, skus: ['A'] });
+    expect(await t.mutation(internal.zuoImport.finishStagedMigration, { batchId: commit.batchId })).toMatchObject({ status: 'done', counts: { total: 1 } });
+    const after = await t.query(internal.zuoImport.stagedSnapshot, { ...packet, skus: ['A'] });
+    expect(after[0].catalog[0].retail?.packPriceMinor).toBe(45806);
+    expect(after[0].catalog[0].trade?.packPriceMinor).toBe(41226);
+    expect(after[0].catalog[0].variant.holds).toEqual(expect.arrayContaining(['MANUAL', 'MEDIA_RIGHTS']));
+    expect(after[0].catalog[0].cost).toMatchObject({ dutiesMinor: null, inboundFreightMinor: null, supplierFeesMinor: null });
+    expect(after[0].row.sourceEvidence).toBe(staged.sourceEvidence);
+    expect(after[0].row.draft.variants[0].name).toBe('Default');
+    expect(await t.run(ctx => ctx.db.query('commerceListings').collect())).toHaveLength(0);
+    const meta = (await t.run(ctx => ctx.db.query('catProductMeta').first()))!;
+    await t.run(ctx => ctx.db.patch(meta._id, { stage: 'evidence_review' }));
+    await expect(t.query(internal.zuoImport.stagedSnapshot, { ...packet, skus: ['A'] })).rejects.toThrow(/advanced beyond/);
   });
 
   it('never extends the 5% policy and requires a document for 18%', async () => {
