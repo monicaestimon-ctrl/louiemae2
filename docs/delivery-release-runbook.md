@@ -315,3 +315,7 @@ Check the delivery, decisions and dealer-order views in both owner and scoped st
 The supplier unit cost in a pack-based PO is the exact source piece cost multiplied by the accepted pieces per pack, rounded half-up once to cents. It is not a rounded piece cost multiplied afterward. Publication and import projections use the same conversion. Pricing calculations retain their exact rational inputs and their own final retail rounding rules.
 
 Use the immutable order-line cost revision and accepted pack/SKU snapshot for a paid order, even after a current catalog cost changes or disappears. The EDI draft uses the accepted recipient name, phone and address; it excludes internal access metadata from the generic ship-to object. A missing legacy recipient name or state requires reviewed correction, not an invented name. Production EDI still requires approved supplier mappings/service fields, onboarding and transport verification; this cost fix neither enables EDI nor submits an order.
+
+## 28. Legacy refund timing
+
+Provider event timestamps have whole-second precision. For legacy proofs without a successful refund-ID set, a matching failure in the same second as verification is uncertain and reopens reconciliation. Do not dismiss it solely because the proof contains later milliseconds. Newer proofs retain explicit successful IDs; a refund already excluded by that authoritative read does not reopen its replacement resolution. Preserve all historical proof and ledger records and verify the current provider state before any reviewed corrective action.

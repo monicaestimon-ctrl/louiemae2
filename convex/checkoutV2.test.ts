@@ -808,7 +808,7 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
     expect((await s.t.run(ctx => ctx.db.get(old)))?.status).toBe('ignored');
   });
 
-  it('closes a verified full refund once, releases credit and stock, and returns truthful private receipt status', async () => {
+  it.each([false, true])('closes a verified full refund once and follows up failure (legacy proof: %s)', async (legacyProof) => {
     const s = await setup();
     const lines = [zuoLine(s)];
     const est = await estimateViaGateway(s.t, { lines, channel: 'retail', zip: '95206', address: ADDRESS, visitorKey: 'refund-exception-fixture' });
@@ -865,7 +865,9 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
     // An in-flight provider read cannot save a proof against a newer event version.
     const oldProof = (await s.t.run(ctx => ctx.db.get(refreshed)))!;
     await expect(s.admin.mutation(internal.ordExceptionRefunds.record, { id: ex, intentId: intent.intentId, sessionId: oldProof.sessionId, paymentIntentId: oldProof.paymentIntentId, chargeId: oldProof.chargeId, amountMinor: oldProof.amountMinor, currency: oldProof.currency, livemode: false, captured: true, disputed: false, succeededRefundMinor: oldProof.amountMinor, pendingRefundMinor: 0, refundIds: ['re_fixture'], expectedPaymentStateVersion: 0 })).rejects.toThrow(/changed during/);
+    vi.setSystemTime(Math.floor(Date.now() / 1000) * 1000 + 999);
     const currentProof = await s.admin.action(api.ordExceptionActions.verify, { id: ex });
+    if (legacyProof) await s.t.run(ctx => ctx.db.patch(currentProof, { succeededRefundIds: undefined }));
     const update = { ...args, verificationId: currentProof };
     await expect(s.t.mutation(api.ordExceptionRefunds.closeRefunded, update)).rejects.toThrow();
     await s.admin.mutation(api.ordExceptionRefunds.closeRefunded, update);
