@@ -26,6 +26,7 @@ export type LiveAssets = {
   mountHeightCm: number | null;
 };
 export type LiveItem = {
+  checkoutMode?: 'v2' | 'quote';
   imageMedia?: ProductImageMedia[];
   id: string;
   name: string;
@@ -38,6 +39,7 @@ export type LiveItem = {
   assets?: LiveAssets;
 };
 export type HolmProduct = {
+  checkoutMode?: 'v2' | 'quote';
   imageMedia?: ProductImageMedia[];
   id: number;
   lid: string; // commerceProducts id
@@ -221,6 +223,7 @@ export function liveProducts(items: LiveItem[]): HolmProduct[] {
       img: v0.image || item.images[0] || '',
       imgs: item.images,
       imageMedia: item.imageMedia,
+      checkoutMode: item.checkoutMode,
       ar: 1,
       sku: `HL-${String(id).padStart(3, '0')}`,
       likes: 0,

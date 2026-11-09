@@ -1,6 +1,6 @@
-import React, { useDeferredValue, useLayoutEffect, useMemo } from 'react';
+import React, { useDeferredValue, useEffect, useLayoutEffect, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ConvexReactClient, useQuery } from 'convex/react';
+import { ConvexReactClient, usePaginatedQuery, useQuery } from 'convex/react';
 import { ConvexAuthProvider } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { liveProducts, type LiveItem } from './catalog';
@@ -36,12 +36,15 @@ class Boundary extends React.Component<{ children: React.ReactNode }, { failed: 
 function Shell() {
   // Deferred, so the whole site renders as a background pass in short slices instead of one
   // long task the moment the catalog arrives; the shell stays on screen meanwhile.
-  const catalog = useDeferredValue(useQuery(api.holm.catalog));
+  const me = useQuery(api.holm.me);
+  const { results, status, loadMore } = usePaginatedQuery(api.holm.catalogPage, {}, { initialNumItems: 50 });
+  useEffect(() => { if (status === 'CanLoadMore') loadMore(50); }, [status, loadMore]);
+  const catalog = useDeferredValue(results);
   const ready = useMemo(() => {
-    if (!catalog) return false;
-    setProducts(liveProducts(catalog.items as LiveItem[]));
+    if (status !== 'Exhausted' || me === undefined || catalog !== results) return false;
+    setProducts(liveProducts(catalog as LiveItem[]));
     return true;
-  }, [catalog]);
+  }, [catalog, results, status, me]);
   // index.html paints the hero while the catalog loads; hand over in the same frame.
   const shell = document.getElementById('holm-shell');
   useLayoutEffect(() => {
@@ -53,7 +56,7 @@ function Shell() {
         <p>Opening House of Louie Mae…</p>
       </main>
     );
-  if (!catalog?.items.length)
+  if (!catalog.length)
     return (
       <main className="holm-boot">
         <h1>House of Louie Mae</h1>
@@ -61,7 +64,7 @@ function Shell() {
       </main>
     );
   // Re-mount when pricing changes (for example after trade approval) so every price refreshes.
-  return <App key={catalog.trade ? 'trade' : 'retail'} />;
+  return <App key={me?.signedIn && me.verified ? 'trade' : 'retail'} />;
 }
 
 const client = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL);

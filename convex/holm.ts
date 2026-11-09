@@ -1,4 +1,7 @@
 import { v } from 'convex/values';
+import { paginationOptsValidator } from 'convex/server';
+import { assertSellable, isCurrentPrice } from './catCore';
+import { isCommerceError } from '../lib/errors';
 import { syncTrade } from './prgCore';
 import { maybeConfig } from './sysConfig';
 import { applyProjectTier } from '../lib/projectDiscount';
@@ -187,6 +190,61 @@ export async function houseUnitCosts(
 }
 
 // ---------- catalog ----------
+/** Main floor: bounded pages, current canonical prices, and no legacy pricing fallback for Zuo. */
+export const catalogPage = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, a) => {
+    if (!Number.isInteger(a.paginationOpts.numItems) || a.paginationOpts.numItems < 1 || a.paginationOpts.numItems > 50)
+      throw new CommerceError('INVALID_INPUT');
+    const me = await viewer(ctx);
+    const trade = !!me && isVerified(me.profile);
+    const page = await ctx.db.query('commerceListings')
+      .withIndex('by_channel_published', q => q.eq('channel', 'house').eq('published', true))
+      .paginate(a.paginationOpts);
+    const assets = await assetIndex(ctx);
+    const items = [];
+    const now = Date.now();
+    for (const listing of page.page) {
+      const product = await ctx.db.get(listing.productId);
+      if (!product) continue;
+      const s = listing.snapshot;
+      let variants: { id: string; name: string; image?: string; minimum: number; increment: number; retail: number; trade: number | null }[] = [];
+      let inStock = true;
+      if (product.provider === 'zuo') {
+        if (!flag('TRADE_CHECKOUT_V2_ENABLED')) continue;
+        for (const option of s.variants) {
+          const id = ctx.db.normalizeId('catVariants', option.id);
+          if (!id) continue;
+          try {
+            const cv = await assertSellable(ctx, id, 'estimate', now);
+            const retail = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
+            const approved = cv.tradePriceRevisionId ? await ctx.db.get(cv.tradePriceRevisionId) : null;
+            if (cv.productId !== product._id || !isCurrentPrice(retail, id, 'retail', now) ||
+              !isCurrentPrice(approved, id, 'trade', now) || approved.packPriceMinor !== option.price) continue;
+            variants.push({ id, name: option.name, image: option.image, minimum: cv.orderMinimumPacks,
+              increment: cv.orderIncrementPacks, retail: retail.packPriceMinor, trade: trade ? approved.packPriceMinor : null });
+          } catch (error) {
+            if (!isCommerceError(error)) throw error;
+          }
+        }
+      } else {
+        const priced = await pricedListing(ctx, listing);
+        if (!priced) continue;
+        inStock = priced.inStock;
+        variants = priced.variants.map(x => ({ id: x.id, name: x.name, image: x.image,
+          minimum: x.minimum, increment: x.increment, retail: x.retail, trade: trade ? x.trade : null }));
+      }
+      if (!variants.length) continue;
+      const imageMedia = s.imageMedia?.filter(m => m.variantIds.some(id => variants.some(v => v.id === id)));
+      items.push({ id: product._id, name: s.name, description: s.description, category: s.category,
+        images: imageMedia ? imageMedia.map(m => m.url) : s.images, imageMedia, facts: s.facts,
+        assets: await publicAssets(ctx, assets.get(product._id), s.facts), inStock, variants,
+        checkoutMode: product.provider === 'zuo' ? 'v2' as const : 'quote' as const });
+    }
+    return { ...page, page: items };
+  },
+});
+
 export const catalog = query({
   args: {},
   handler: async (ctx) => {

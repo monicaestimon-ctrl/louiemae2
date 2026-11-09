@@ -29,6 +29,7 @@ afterEach(() => {
   delete process.env.DELIVERY_ADMIN_ROLES;
   delete process.env.CATALOG_PUBLICATION_V2_ENABLED;
   delete process.env.RETAIL_ZUO_CHECKOUT_ENABLED;
+  delete process.env.TRADE_CHECKOUT_V2_ENABLED;
 });
 
 describe('cost evidence authoring', () => {
@@ -896,6 +897,14 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     expect(await read()).toMatchObject({ inStock: true, price: 458.06 });
     expect(await read()).toMatchObject({ imageMedia: retail.snapshot.imageMedia });
     expect((await page()).page).toHaveLength(1);
+    const housePage = () => t.query(api.holm.catalogPage, { paginationOpts: { cursor: null, numItems: 50 } });
+    expect((await housePage()).page).toHaveLength(0);
+    process.env.TRADE_CHECKOUT_V2_ENABLED = 'true';
+    expect((await housePage()).page).toMatchObject([{ id: productId, checkoutMode: 'v2', variants: [{ id: cv._id, retail: 45806, trade: null }] }]);
+    const approvedTradePrice = (await t.run(ctx => ctx.db.get(cv.tradePriceRevisionId!)))!;
+    await t.run(ctx => ctx.db.patch(approvedTradePrice._id, { effectiveTo: Date.now() - 1000 }));
+    expect((await housePage()).page).toHaveLength(0);
+    await t.run(ctx => ctx.db.patch(approvedTradePrice._id, { effectiveTo: approvedTradePrice.effectiveTo }));
     const withStaleSibling = { ...retail, snapshot: { ...retail.snapshot, variants: [
       { ...retail.snapshot.variants[0], id: 'removed-variant', price: 100 }, ...retail.snapshot.variants,
     ], images: [...retail.snapshot.images, 'https://example.com/removed.webp'], imageMedia: [
@@ -904,6 +913,7 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     expect(await t.run(ctx => currentZuoStorefrontListing(ctx, withStaleSibling, 'furniture'))).toMatchObject({ variantCount: 1, price: 458.06 });
     expect(await t.run(ctx => currentZuoStorefrontListing(ctx, withStaleSibling, 'furniture'))).toMatchObject({ images: [publicUrl], imageMedia: retail.snapshot.imageMedia });
     await t.run(ctx => ctx.db.patch(cv._id, { holds: ['MANUAL'] }));
+    expect((await housePage()).page).toHaveLength(0);
     expect(await read()).toBeNull();
     expect((await page()).page).toHaveLength(0);
     await t.run(ctx => ctx.db.patch(cv._id, { holds: [] }));

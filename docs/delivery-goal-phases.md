@@ -210,3 +210,11 @@ Audit each subsection as phases progress. Features not covered by a passing test
 - The shared split-shipment disclosure appears before submission and on the quote-request confirmation. Admin legacy pricing help identifies delivery as unconfirmed rather than advertising a universal fee.
 - The tray retains address/contact information in component state only. Its old local-storage delivery object is overwritten with a service preference when opened, and old stored personal details are no longer restored into the form.
 - This presentation change does not rewrite historical quotes or change the legacy server quote calculation. Final delivery pricing still requires staff review; migration of the main project tray to v2 remains outstanding.
+
+
+## Phase 6j: main HOLM catalog and project delivery connection
+
+- The main trade floor loads bounded published-listing pages through exhaustion, replacing the 300-listing ceiling. Zuo uses current canonical cost/stock/holds and exact effective retail/trade revisions; approved trade prices are shown only to approved trade members. Legacy supplier projections remain separate. Zuo stays hidden while trade checkout is disabled.
+- Project lines resolve exact saved IDs. Missing products or changed saved variants block submission and can be removed; they never become the first catalog item. Pack quantities honor minimum/increment, combine across rooms and retain exact product/variant identities for checkout.
+- Projects containing canonical Zuo use shared guarded trade checkout when fully supported. Mixed-supplier projects preserve every line in the delivery quote request. Legacy project reductions, legacy credit estimates and legacy client-quote actions are not applied to this route.
+- This connection does not certify current supplier evidence or switch on rollout flags. Mixed-supplier request intake is supported; payable Ashcroft trade quotes still require completion of their manual economics route. Current supplier files remain blocked at the dealer's document host, and prepared photographs still require exact-SKU visual and rights review.

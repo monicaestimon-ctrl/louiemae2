@@ -345,3 +345,10 @@ The media workspace also supports **Prepare all included stored sources**. It wa
 ## 32. Current storefront eligibility verification
 
 After deploying the current-eligibility phase, verify an eligible Zuo listing appears only when its rollout flag, current cost/stock evidence and approved effective price pass. A newly held variant, expired evidence or price that differs from the published snapshot must disappear from new retail list/detail results. With multiple variants, eligible siblings remain. Cart/checkout still revalidate; an already open browser card is not an inventory reservation. Never change a paid order snapshot to repair the current catalog.
+
+
+## 33. HOLM catalog and project connection
+
+Verify all published-listing pages load, including eligible entries after position 300. For Zuo, confirm disabled trade checkout hides entries; current evidence and price parity are required even for published records. Guest/unapproved viewers must not receive trade prices.
+
+Check a saved unavailable product and a changed saved default variant: submission blocks and offers removal, never a replacement. Check required pack increments, repeated items in different rooms, and exact product/variant/pack transfer. Canonical-only projects enter guarded trade checkout; mixed-provider projects retain every line in a quote request. A quote request is not a payable quote or a confirmed freight charge. Do not enable supplier publication until evidence and media review pass. Do not perform real test payments or transmit supplier orders without authorization.
