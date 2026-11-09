@@ -5,15 +5,25 @@
 import { v } from 'convex/values';
 import { action, internalMutation, mutation, query } from './_generated/server';
 import { internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { audit } from './sysCore';
-import { resolveHold } from './catCore';
+import { openHold, resolveHold } from './catCore';
 import { CommerceError } from '../lib/errors';
 import { safeFetch, sniffImage } from '../lib/safeFetch';
 import { nameProblems, slugify } from '../lib/slug';
 
 const MIN_EDGE = 800;
+
+export function verifiedImageMatches(asset: Doc<'catMediaAssets'>, cv: Doc<'catVariants'>) {
+  return asset.productId === cv.productId && (!asset.variantId || asset.variantId === cv._id)
+    && asset.status === 'verified' && !!asset.storageId
+    && (asset.role === 'hero' || asset.role === 'gallery')
+    && !!asset.rights.basis.trim() && asset.altText.trim().length >= 8
+    && asset.verifiedAgainst?.sku.trim() === cv.supplierSku
+    && asset.verifiedAgainst?.pack?.trim() === cv.packId
+    && (!cv.color || asset.verifiedAgainst?.color?.trim().toLowerCase() === cv.color.trim().toLowerCase());
+}
 
 export const record = internalMutation({
   args: {
@@ -32,8 +42,18 @@ export const record = internalMutation({
     rejectReason: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
-    const dup = await ctx.db.query('catMediaAssets').withIndex('by_hash', (q) => q.eq('contentHash', a.contentHash)).first();
-    if (dup && dup.productId === a.productId) return { id: dup._id, duplicate: true };
+    if (!await ctx.db.get(a.productId)) throw new CommerceError('INVALID_INPUT', 'Product not found');
+    if (a.variantId && (await ctx.db.get(a.variantId))?.productId !== a.productId)
+      throw new CommerceError('INVALID_INPUT', 'Image variant does not belong to this product');
+    // Content identity is not merchandising identity. The same photo can have distinct
+    // roles and SKU associations; retries must also preserve their rights evidence.
+    const matches = await ctx.db.query('catMediaAssets').withIndex('by_product', q => q.eq('productId', a.productId).eq('role', a.role)).collect();
+    const dup = matches.find(m => m.contentHash === a.contentHash && m.variantId === a.variantId
+      && m.sourceUrl === a.sourceUrl && m.rights.basis === a.rights.basis
+      && m.rights.evidenceRef === a.rights.evidenceRef
+      && m.rights.attributionRequired === a.rights.attributionRequired
+      && m.rights.privateOriginal === a.rights.privateOriginal);
+    if (dup) return { id: dup._id, duplicate: true };
     const id = await ctx.db.insert('catMediaAssets', { ...a, derivatives: [], altText: '', createdAt: Date.now() });
     return { id, duplicate: false };
   },
@@ -74,6 +94,8 @@ export const ingest = action({
       status: reason ? 'rejected' : 'pending',
       ...(reason ? { rejectReason: reason } : {}),
     });
+    // This action created this blob. An idempotent record retry must not orphan it.
+    if (r.duplicate && storageId) await ctx.storage.delete(storageId);
     return { ...r, status: reason ? 'rejected' : 'pending', ...(reason ? { reason } : {}) };
   },
 });
@@ -89,11 +111,31 @@ export const verify = mutation({
       if (a.altText.trim().length < 8) throw new CommerceError('INVALID_INPUT', 'Write accurate alt text (8 characters or more).');
       if (!asset.rights.basis.trim()) throw new CommerceError('INVALID_INPUT', 'Record the rights basis for this image.');
     }
+    const variants = await ctx.db.query('catVariants').withIndex('by_product', q => q.eq('productId', asset.productId)).collect();
+    const matching = variants.filter(cv => (!asset.variantId || cv._id === asset.variantId)
+      && cv.supplierSku === a.sku.trim() && cv.packId === a.pack?.trim()
+      && (!cv.color || cv.color.trim().toLowerCase() === a.color?.trim().toLowerCase()));
+    if (a.approve && matching.length !== 1)
+      throw new CommerceError('INVALID_INPUT', 'Verify the exact SKU, pack ID and color for one matching variant.');
+    if (a.approve && asset.verifiedAgainst && (
+      asset.verifiedAgainst.sku.trim() !== a.sku.trim()
+      || asset.verifiedAgainst.pack?.trim() !== a.pack?.trim()
+      || asset.verifiedAgainst.color?.trim().toLowerCase() !== a.color?.trim().toLowerCase()
+    )) throw new CommerceError('INVALID_INPUT', 'Create a separate media association to review a different SKU, pack or color.');
+    if (a.approve && !await ctx.storage.getUrl(asset.storageId))
+      throw new CommerceError('INVALID_INPUT', 'Stored image is unavailable');
     await ctx.db.patch(asset._id, a.approve ? { status: 'verified', altText: a.altText.trim(), verifiedAgainst: { sku: a.sku, ...(a.color ? { color: a.color } : {}), ...(a.pack ? { pack: a.pack } : {}) } } : { status: 'rejected', rejectReason: a.reason ?? 'Rejected in review' });
     // A verified image clears the import's media hold for the variants it was verified against.
     if (a.approve) {
-      const variants = await ctx.db.query('catVariants').withIndex('by_product', (q) => q.eq('productId', asset.productId)).collect();
-      for (const cv of variants) if ((asset.variantId ? cv._id === asset.variantId : cv.supplierSku === a.sku) || asset.role === 'hero') await resolveHold(ctx, cv._id, 'MEDIA_MISSING', admin.email, 'Verified image');
+      // An assembly sheet or swatch cannot substitute for a product photograph.
+      if (asset.role === 'hero' || asset.role === 'gallery')
+        await resolveHold(ctx, matching[0]._id, 'MEDIA_MISSING', admin.email, 'Verified exact SKU and pack image');
+    } else if (asset.status === 'verified') {
+      // Withdrawal must immediately stop new sales until another image is reviewed.
+      // Historical paid snapshots are intentionally left intact.
+      for (const cv of variants) if (asset.variantId ? cv._id === asset.variantId
+        : cv.supplierSku === asset.verifiedAgainst?.sku && cv.packId === asset.verifiedAgainst?.pack)
+        await openHold(ctx, cv._id, 'MEDIA_MISSING', 'Previously verified image rejected; review replacement media', admin.email);
     }
     await audit(ctx, { actor: admin.email, action: a.approve ? 'media.verify' : 'media.reject', entityTable: 'catMediaAssets', entityId: asset._id, reason: a.reason });
   },

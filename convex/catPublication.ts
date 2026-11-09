@@ -13,6 +13,7 @@ import { audit } from './sysCore';
 import { requireFlag } from '../lib/flags';
 import { CommerceError, commerceErrorData } from '../lib/errors';
 import { supplierPackCostMinor } from '../lib/supplierPackCost';
+import { verifiedImageMatches } from './catMedia';
 
 type Ctx = QueryCtx | MutationCtx;
 type Stage = Doc<'catProductMeta'>['stage'];
@@ -56,7 +57,9 @@ export async function gates(ctx: Ctx, productId: Id<'commerceProducts'>) {
   for (const h of meta.holds) out.ready.push(`Product hold ${h}`);
   const media = await ctx.db.query('catMediaAssets').withIndex('by_product', (q) => q.eq('productId', productId)).collect();
   const verified = media.filter((m) => m.status === 'verified' && m.storageId);
-  if (!verified.some((m) => m.role === 'hero')) out.ready.push('No verified hero image');
+  if (!verified.some(m => m.role === 'hero' && live.some(cv => verifiedImageMatches(m, cv)))) out.ready.push('No verified hero image');
+  for (const cv of live) if (!verified.some(m => verifiedImageMatches(m, cv)))
+    out.ready.push(`${cv.supplierSku}/${cv.packId}: no image verified for this SKU, pack and color`);
   if (verified.some((m) => !m.rights.basis.trim())) out.ready.push('An image has no rights basis');
   if (!meta.louieMaeName.trim()) out.ready.push('No Louie Mae name');
   return { meta, variants, live, gates: out };
@@ -90,7 +93,7 @@ export const advance = mutation({
 
 async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, meta: Doc<'catProductMeta'>, channel: 'retail' | 'house', variants: Doc<'catVariants'>[]) {
   const media = await ctx.db.query('catMediaAssets').withIndex('by_product', (q) => q.eq('productId', product._id)).collect();
-  const verified = media.filter((m) => m.status === 'verified' && m.storageId).sort((x, y) => (x.role === 'hero' ? -1 : y.role === 'hero' ? 1 : 0));
+  const verified = media.filter(m => variants.some(cv => verifiedImageMatches(m, cv))).sort((x, y) => (x.role === 'hero' ? -1 : y.role === 'hero' ? 1 : 0));
   const images = (await Promise.all(verified.filter((m) => m.role !== 'assembly').map((m) => ctx.storage.getUrl(m.storageId!)))).filter((u): u is string => !!u);
   const snapVariants = [];
   const fulfillment = [];
@@ -100,7 +103,7 @@ async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, m
     const price = channel === 'retail' ? retail : trade;
     if (price?.status !== 'approved') throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: no approved ${channel === 'retail' ? 'retail' : 'trade'} price`);
     const cost = cv.currentCostRevisionId ? await ctx.db.get(cv.currentCostRevisionId) : null;
-    const image = verified.find((m) => m.variantId === cv._id);
+    const image = verified.find(m => verifiedImageMatches(m, cv));
     const packCost = supplierPackCostMinor(cost, cv.piecesPerPack);
     if (packCost === null) throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: supplier cost missing`);
     snapVariants.push({

@@ -212,6 +212,83 @@ async function approve(t: ReturnType<typeof convexTest>, admin: Awaited<ReturnTy
   await admin.mutation(api.sysConfig.approve, { id: rec._id });
 }
 
+describe('media identity and review', () => {
+  async function fixture() {
+    const { t, admin } = await setup();
+    await importPackage(admin, [row('PHOTO')], 'dry_run');
+    await importPackage(admin, [row('PHOTO')], 'commit');
+    const cv = (await t.run(ctx => ctx.db.query('catVariants').first()))!;
+    const otherId = await t.run(async ctx => {
+      const { _id, _creationTime, ...copy } = cv;
+      void _id; void _creationTime;
+      return ctx.db.insert('catVariants', { ...copy, supplierSku: 'PHOTO-B', color: 'Blue' });
+    });
+    const storageId = await t.run(ctx => ctx.storage.store(new Blob(['image fixture'])));
+    const args = { productId: cv.productId, variantId: cv._id, role: 'hero' as const, storageId,
+      contentHash: 'fixture-photo-hash', mime: 'image/jpeg', width: 1200, height: 1200, bytes: 13,
+      sourceUrl: 'https://www.zuomod.com/fixture.jpg', status: 'pending' as const,
+      rights: { basis: 'fixture license', evidenceRef: 'fixture evidence', attributionRequired: false, privateOriginal: true } };
+    return { t, admin, cv, otherId, args };
+  }
+  it('deduplicates exact associations, retaining separate roles, variants and rights evidence', async () => {
+    const { t, cv, otherId, args } = await fixture();
+    const first = await t.mutation(internal.catMedia.record, args);
+    expect(await t.mutation(internal.catMedia.record, args)).toEqual({ id: first.id, duplicate: true });
+    for (const change of [{ role: 'gallery' as const }, { variantId: otherId }, { rights: { ...args.rights, evidenceRef: 'new evidence' } }]) {
+      expect(await t.mutation(internal.catMedia.record, { ...args, ...change })).toMatchObject({ duplicate: false });
+    }
+    const otherProduct = await t.run(async ctx => {
+      const { _id, _creationTime, ...copy } = (await ctx.db.get(cv.productId))!;
+      void _id; void _creationTime;
+      return ctx.db.insert('commerceProducts', copy);
+    });
+    await expect(t.mutation(internal.catMedia.record, { ...args, productId: otherProduct })).rejects.toThrow(/does not belong/);
+    expect(await t.run(ctx => ctx.db.query('catMediaAssets').collect())).toHaveLength(4);
+  });
+  it('requires exact SKU, pack and color and never clears another variant from a hero approval', async () => {
+    const { t, admin, cv, otherId, args } = await fixture();
+    const { id } = await t.mutation(internal.catMedia.record, args);
+    const review = { assetId: id, approve: true, sku: cv.supplierSku, pack: cv.packId, altText: 'Fixture dining chair in oak' };
+    await expect(t.mutation(api.catMedia.verify, review)).rejects.toThrow();
+    await expect(admin.mutation(api.catMedia.verify, { ...review, sku: 'PHOTO-B' })).rejects.toThrow(/exact SKU/);
+    await expect(admin.mutation(api.catMedia.verify, { ...review, pack: 'wrong-pack' })).rejects.toThrow(/exact SKU/);
+    await admin.mutation(api.catMedia.verify, review);
+    expect((await t.run(ctx => ctx.db.get(cv._id)))!.holds).not.toContain('MEDIA_MISSING');
+    expect((await t.run(ctx => ctx.db.get(otherId)))!.holds).toContain('MEDIA_MISSING');
+    const blue = await t.mutation(internal.catMedia.record, { ...args, variantId: otherId });
+    await expect(admin.mutation(api.catMedia.verify, { ...review, assetId: blue.id, sku: 'PHOTO-B' })).rejects.toThrow(/exact SKU/);
+    await admin.mutation(api.catMedia.verify, { ...review, assetId: blue.id, sku: 'PHOTO-B', color: 'Blue' });
+    await admin.mutation(api.catMedia.verify, { ...review, approve: false, reason: 'Wrong furniture shown' });
+    expect((await t.run(ctx => ctx.db.get(cv._id)))!.holds).toContain('MEDIA_MISSING');
+    expect((await t.run(ctx => ctx.db.get(otherId)))!.holds).not.toContain('MEDIA_MISSING');
+    const status = await admin.query(api.catPublication.status, { productId: cv.productId });
+    // Clearing an image hold manually is not an alternate publication approval.
+    await t.run(ctx => ctx.db.patch(cv._id, { holds: [] }));
+    const after = await admin.query(api.catPublication.status, { productId: cv.productId });
+    expect(after.gates.ready.some(r => r.includes('PHOTO/') && r.includes('no image verified'))).toBe(true);
+    expect(status.stage).toBe('imported_draft');
+  });
+  it('does not use swatches or assembly media to qualify a product photo', async () => {
+    const { t, admin, cv, args } = await fixture();
+    for (const role of ['assembly', 'swatch'] as const) {
+      const { id } = await t.mutation(internal.catMedia.record, { ...args, role });
+      await admin.mutation(api.catMedia.verify, { assetId: id, sku: cv.supplierSku, pack: cv.packId, approve: true, altText: 'Fixture assembly information' });
+    }
+    expect((await t.run(ctx => ctx.db.get(cv._id)))!.holds).toContain('MEDIA_MISSING');
+  });
+  it('cannot retarget a reviewed product-level photo and leave the original SKU qualified', async () => {
+    const { t, admin, cv, otherId, args } = await fixture();
+    const { variantId, ...productPhoto } = args;
+    void variantId;
+    const { id } = await t.mutation(internal.catMedia.record, productPhoto);
+    const review = { assetId: id, approve: true, sku: cv.supplierSku, pack: cv.packId, altText: 'Oak fixture dining chair' };
+    await admin.mutation(api.catMedia.verify, review);
+    await expect(admin.mutation(api.catMedia.verify, { ...review, sku: 'PHOTO-B', color: 'Blue' })).rejects.toThrow(/separate media association/);
+    expect((await t.run(ctx => ctx.db.get(id)))!.verifiedAgainst?.sku).toBe(cv.supplierSku);
+    expect((await t.run(ctx => ctx.db.get(otherId)))!.holds).toContain('MEDIA_MISSING');
+  });
+});
+
 describe('Zuo import (CAT01, PRI01)', () => {
   it.each(['approved_306', 'map_135', 'original_296', 'reconciled_66'])(
     'preserves both prices and the existing image for %s',
@@ -721,7 +798,7 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     await t.run(ctx => ctx.db.patch(cv.currentCostRevisionId!, { wholesaleMinor: 11413, wholesalePrecise: '114.125' }));
     const storageId = await t.run((ctx) => ctx.storage.store(new Blob(['img'])));
     await t.run(async (ctx) => {
-      await ctx.db.insert('catMediaAssets', { productId, role: 'hero', storageId, derivatives: [], contentHash: 'h', mime: 'image/jpeg', width: 1200, height: 1200, bytes: 3, sourceUrl: 'https://www.zuomod.com/x.jpg', rights: { basis: 'dealer media license', attributionRequired: false, privateOriginal: true }, altText: 'Oak dining chair, pair', status: 'verified', createdAt: NOW });
+      await ctx.db.insert('catMediaAssets', { productId, role: 'hero', storageId, derivatives: [], contentHash: 'h', mime: 'image/jpeg', width: 1200, height: 1200, bytes: 3, sourceUrl: 'https://www.zuomod.com/x.jpg', rights: { basis: 'dealer media license', attributionRequired: false, privateOriginal: true }, altText: 'Oak dining chair, pair', verifiedAgainst: { sku: cv.supplierSku, pack: cv.packId }, status: 'verified', createdAt: NOW });
       for (const h of await ctx.db.query('catHolds').collect()) await ctx.db.patch(h._id, { resolvedAt: NOW });
       await ctx.db.patch(cv._id, { holds: [], referralEligible: true });
       await ctx.db.patch(cv.currentCostRevisionId!, { verifiedAt: NOW - 3_600_000, dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true });
