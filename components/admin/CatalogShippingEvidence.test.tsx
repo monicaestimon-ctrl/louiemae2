@@ -2,6 +2,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import CatalogShippingEvidence from './CatalogShippingEvidence';
+vi.mock('./InventoryCommitments', () => ({ default: () => null }));
 
 const mock = vi.hoisted(() => ({ save: vi.fn(), data: {} as Record<string, unknown> }));
 vi.mock('convex/react', () => ({

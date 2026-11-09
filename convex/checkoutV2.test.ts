@@ -16,6 +16,7 @@ import { quoteOnlyReasons, zipRegion, STANDARD_ACCESS } from '../lib/delivery/de
 import { exemptionFor } from './dlvTaxExemptions';
 import { groupFreight, resolveLines, type FreightConfig, type ResolvedLine } from './dlvEngine';
 import { digest } from './dlvSecurity';
+import { availableAfterCommitments } from './ordInventory';
 
 const PERIMETER_SECRET = '1'.repeat(64);
 async function estimateViaGateway(
@@ -714,6 +715,104 @@ describe('delivery estimates (S17, S18)', () => {
 });
 
 describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
+  it('atomically deducts other checkout holds, preserves retries, and frees expired unpaid capacity', async () => {
+    const s = await setup();
+    await s.t.run(async ctx => {
+      const stock = (await ctx.db.query('catStockRevisions').first())!;
+      await ctx.db.patch(stock._id, { quantity: '1' });
+    });
+    const lines = [zuoLine(s)];
+    const first = await estimateViaGateway(s.t, { lines, channel: 'retail', zip: '95206', address: ADDRESS, visitorKey: 'inventory-first-cart' });
+    const second = await estimateViaGateway(s.t, { lines, channel: 'retail', zip: '95206', address: ADDRESS, visitorKey: 'inventory-second-cart' });
+    expect(first.status).toBe('ok'); expect(second.status).toBe('ok');
+    const args = { idempotencyKey: 'inventory-hold-first-key', estimateId: first.estimateId, guestCapability: first.guestCapability, lines, address: ADDRESS, service: 'curbside', acceptTotalMinor: first.totalMinor! };
+    const held = await s.t.mutation(internal.ordCheckout.createIntent, args);
+    expect(held.status).toBe('created');
+    expect((await s.t.mutation(internal.ordCheckout.createIntent, args)).status).toBe('existing');
+    await expect(s.t.mutation(internal.ordCheckout.createIntent, { ...args, idempotencyKey: 'inventory-hold-second-key', estimateId: second.estimateId, guestCapability: second.guestCapability, acceptTotalMinor: second.totalMinor! })).rejects.toThrow(/committed/);
+    const rows = await s.t.run(ctx => ctx.db.query('ordInventoryReservations').collect());
+    expect(rows).toHaveLength(1); expect(rows[0].stockRevisionId).toBeTruthy(); expect(rows[0].piecesPerPack).toBe(2);
+    await s.t.run(ctx => ctx.db.patch(rows[0]._id, { expiresAt: Date.now() }));
+    const cv = (await s.t.run(ctx => ctx.db.get(s.variantId)))!;
+    expect(await s.t.run(ctx => availableAfterCommitments(ctx, cv, 1, Date.now()))).toBe(1);
+  });
+
+  it('retains paid demand across feed refreshes until an approver reconciles a newer supplier count', async () => {
+    const s = await setup();
+    const { intent } = await paidOrder(s, [zuoLine(s)]);
+    const row = (await s.t.run(ctx => ctx.db.query('ordInventoryReservations').first()))!;
+    expect(row.status).toBe('consumed');
+    const cv = (await s.t.run(ctx => ctx.db.get(s.variantId)))!;
+    expect(await s.t.run(ctx => availableAfterCommitments(ctx, cv, 1000, Date.now()))).toBe(999);
+    const args = { reservationId: row._id, expectedRevisionId: cv.currentStockRevisionId!, evidence: 'Supplier PO allocation evidence', note: 'Supplier confirms this order is included in the new available-to-sell quantity', confirmed: true, requestKey: 'inventory-reconcile-fixture-key' };
+    await expect(s.admin.mutation(api.ordInventory.reconcile, args)).rejects.toThrow(/newer/);
+    const revision = await s.t.run(async ctx => {
+      const old = (await ctx.db.get(cv.currentStockRevisionId!))!;
+      const { _id: _oldId, _creationTime: _oldTime, ...source } = old;
+      void _oldId; void _oldTime;
+      const id = await ctx.db.insert('catStockRevisions', { ...source, observedAt: Date.now(), createdAt: Date.now(), quantity: '999', source: 'Updated supplier ATS' });
+      await ctx.db.patch(cv._id, { currentStockRevisionId: id });
+      return id;
+    });
+    const current = (await s.t.run(ctx => ctx.db.get(cv._id)))!;
+    expect(await s.t.run(ctx => availableAfterCommitments(ctx, current, 999, Date.now()))).toBe(998);
+    await expect(s.t.mutation(api.ordInventory.reconcile, { ...args, expectedRevisionId: revision })).rejects.toThrow();
+    const update = { ...args, expectedRevisionId: revision };
+    await expect(s.admin.mutation(api.ordInventory.reconcile, update)).rejects.toThrow(/handoff and acknowledgement/);
+    const supplierOrder = (await s.t.run(ctx => ctx.db.query('ordSupplierOrders').first()))!;
+    await s.admin.mutation(api.ordFulfillment.markSubmitted, { supplierOrderId: supplierOrder._id, supplierPo: 'FIXTURE-PO', acceptedCostMinor: 10000 });
+    await s.admin.mutation(api.ordFulfillment.acknowledge, { supplierOrderId: supplierOrder._id, confirmation: 'FIXTURE supplier allocation confirmed' });
+    await s.admin.mutation(api.ordInventory.reconcile, update);
+    await s.admin.mutation(api.ordInventory.reconcile, update);
+    await expect(s.admin.mutation(api.ordInventory.reconcile, { ...update, note: 'Changed retry' })).rejects.toThrow(/Retry/);
+    expect(await s.t.run(ctx => availableAfterCommitments(ctx, current, 999, Date.now()))).toBe(999);
+    expect((await s.t.run(ctx => ctx.db.get(row._id)))?.status).toBe('reconciled');
+    expect((await s.t.run(ctx => ctx.db.get(intent.intentId)))?.status).toBe('paid');
+    const audits = await s.t.run(ctx => ctx.db.query('sysAuditEvents').collect());
+    expect(audits.filter(a => a.action === 'inventory.supplier_allocation_reconciled')).toHaveLength(1);
+  });
+
+  it.each(['changed_stock', 'missing_hold'])('keeps payment evidence and stock commitments for %s during checkout', async (failure) => {
+    const s = await setup();
+    const lines = [zuoLine(s)];
+    const est = await estimateViaGateway(s.t, { lines, channel: 'retail', zip: '95206', address: ADDRESS, visitorKey: 'inventory-payment-stock-change' });
+    const intent = await s.t.mutation(internal.ordCheckout.createIntent, { idempotencyKey: 'inventory-payment-fixture-key', estimateId: est.estimateId, guestCapability: est.guestCapability, lines, address: ADDRESS, service: 'curbside', acceptTotalMinor: est.totalMinor! });
+    if (intent.status === 'price_changed') throw new Error('Unexpected fixture price change');
+    await s.t.mutation(internal.ordCheckout.attachSession, { intentId: intent.intentId, sessionId: 'cs_stock_change' });
+    await s.t.run(async ctx => {
+      if (failure === 'missing_hold') {
+        const hold = (await ctx.db.query('ordInventoryReservations').first())!;
+        await ctx.db.delete(hold._id);
+      } else {
+        const stock = (await ctx.db.query('catStockRevisions').first())!;
+        await ctx.db.patch(stock._id, { quantity: '0', availability: 'out_of_stock' });
+      }
+    });
+    const event = { eventId: 'evt_stock_change', type: 'checkout.session.completed', livemode: false, payloadHash: 'fixture', payload: { id: 'cs_stock_change', intentId: intent.intentId, payment_status: 'paid', amount_total: intent.totalMinor, currency: 'usd', payment_intent: 'pi_stock_change', email: 'buyer@example.com' } };
+    await s.t.mutation(internal.ordPayments.receive, event); await processEvents(s.t);
+    await s.t.mutation(internal.ordPayments.receive, { ...event, eventId: 'evt_stock_change_again' }); await processEvents(s.t);
+    const exceptions = await s.t.run(ctx => ctx.db.query('ordPaidExceptions').collect());
+    expect(exceptions).toHaveLength(1); expect(exceptions[0].reason).toBe('stock_failed');
+    expect(await s.t.run(ctx => ctx.db.query('ordOrders').collect())).toHaveLength(0);
+    expect((await s.t.run(ctx => ctx.db.query('ordInventoryReservations').first()))?.status).toBe('consumed');
+    expect((await s.t.run(ctx => ctx.db.get(intent.intentId)))?.status).toBe('exception');
+  });
+
+  it('fails closed for unknown legacy commitments and excessive unreconciled backlog', async () => {
+    const s = await setup();
+    await paidOrder(s, [zuoLine(s)]);
+    const cv = (await s.t.run(ctx => ctx.db.get(s.variantId)))!;
+    const row = (await s.t.run(ctx => ctx.db.query('ordInventoryReservations').first()))!;
+    await s.t.run(ctx => ctx.db.patch(row._id, { warehouseId: undefined }));
+    await expect(s.t.run(ctx => availableAfterCommitments(ctx, cv, 1000, Date.now()))).rejects.toThrow(/warehouse and pack/);
+    await s.t.run(async ctx => {
+      await ctx.db.patch(row._id, { warehouseId: cv.warehouseId });
+      const { _id: _rowId, _creationTime: _rowTime, ...fields } = row;
+      void _rowId; void _rowTime;
+      for (let i = 0; i < 500; i++) await ctx.db.insert('ordInventoryReservations', fields);
+    });
+    await expect(s.t.run(ctx => availableAfterCommitments(ctx, cv, 1000, Date.now()))).rejects.toThrow(/operational reconciliation/);
+  });
   it('creates one order and one child per supplier from a verified event, exactly once', async () => {
     const s = await setup({ approveMixed: true });
     const lines = [zuoLine(s, 2), { productId: s.ashId, variantId: 'b1', packs: 1 }];

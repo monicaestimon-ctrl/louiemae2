@@ -4,6 +4,7 @@
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { activeConfig, maybeConfig } from './sysConfig';
+import { availableAfterCommitments } from './ordInventory';
 import { assertSellable, ensureSupplier } from './catCore';
 import { viewer, isVerified } from './holmAccess';
 import { CommerceError } from '../lib/errors';
@@ -286,6 +287,9 @@ export async function resolveLines(
           'STOCK_UNAVAILABLE',
           'Requested packs exceed the current warehouse quantity'
         );
+      if (inventory.automatic && inventory.availablePacks !== null &&
+        l.packs > await availableAfterCommitments(ctx, cv, inventory.availablePacks, now))
+        throw new CommerceError('STOCK_UNAVAILABLE', 'Available warehouse quantity is committed to other checkouts or paid orders');
       const stockAt = stockRevision
         ? (inventory.observedAt ?? 0)
         : currentStock && currentStock !== 'conflict'
