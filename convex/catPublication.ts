@@ -12,6 +12,7 @@ import { computeScenarios } from './catPricing';
 import { audit } from './sysCore';
 import { requireFlag } from '../lib/flags';
 import { CommerceError, commerceErrorData } from '../lib/errors';
+import { supplierPackCostMinor } from '../lib/supplierPackCost';
 
 type Ctx = QueryCtx | MutationCtx;
 type Stage = Doc<'catProductMeta'>['stage'];
@@ -100,6 +101,8 @@ async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, m
     if (price?.status !== 'approved') throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: no approved ${channel === 'retail' ? 'retail' : 'trade'} price`);
     const cost = cv.currentCostRevisionId ? await ctx.db.get(cv.currentCostRevisionId) : null;
     const image = verified.find((m) => m.variantId === cv._id);
+    const packCost = supplierPackCostMinor(cost, cv.piecesPerPack);
+    if (packCost === null) throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: supplier cost missing`);
     snapVariants.push({
       id: cv._id as string,
       name: cv.louieMaeVariantName,
@@ -112,7 +115,7 @@ async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, m
       id: cv._id as string,
       name: cv.louieMaeVariantName,
       sku: cv.supplierSku,
-      cost: cost?.wholesaleMinor ? (cost.wholesaleMinor * cv.piecesPerPack) / 100 : 0,
+      cost: packCost / 100,
       minimum: cv.orderMinimumPacks,
       increment: cv.orderIncrementPacks,
       retail: retail?.status === 'approved' ? retail.packPriceMinor : 0,

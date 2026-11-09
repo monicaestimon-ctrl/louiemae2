@@ -309,3 +309,9 @@ Publication rechecks current economics even if stored holds were removed. Approv
 ## 26. Operations workspace accessibility
 
 Check the delivery, decisions and dealer-order views in both owner and scoped staff shells. At 320px and desktop widths, headings, selected options, placeholders and entered values must remain readable; controls must fit their cards. Tab through section navigation and forms to verify visible focus, then check a touch viewport for usable control targets. Long internal evidence and JSON may scroll within their own containers without widening the page. Do not submit operational mutations merely to test presentation.
+
+## 27. Supplier fulfillment cost and recipient integrity
+
+The supplier unit cost in a pack-based PO is the exact source piece cost multiplied by the accepted pieces per pack, rounded half-up once to cents. It is not a rounded piece cost multiplied afterward. Publication and import projections use the same conversion. Pricing calculations retain their exact rational inputs and their own final retail rounding rules.
+
+Use the immutable order-line cost revision and accepted pack/SKU snapshot for a paid order, even after a current catalog cost changes or disappears. The EDI draft uses the accepted recipient name, phone and address; it excludes internal access metadata from the generic ship-to object. A missing legacy recipient name or state requires reviewed correction, not an invented name. Production EDI still requires approved supplier mappings/service fields, onboarding and transport verification; this cost fix neither enables EDI nor submits an order.

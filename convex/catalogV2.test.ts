@@ -691,6 +691,7 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
 
   it('publishes only named, ready products atomically and unpublishes without touching orders', async () => {
     const { t, admin, cv, productId } = await readyProduct();
+    await t.run(ctx => ctx.db.patch(cv.currentCostRevisionId!, { wholesaleMinor: 11413, wholesalePrecise: '114.125' }));
     const storageId = await t.run((ctx) => ctx.storage.store(new Blob(['img'])));
     await t.run(async (ctx) => {
       await ctx.db.insert('catMediaAssets', { productId, role: 'hero', storageId, derivatives: [], contentHash: 'h', mime: 'image/jpeg', width: 1200, height: 1200, bytes: 3, sourceUrl: 'https://www.zuomod.com/x.jpg', rights: { basis: 'dealer media license', attributionRequired: false, privateOriginal: true }, altText: 'Oak dining chair, pair', status: 'verified', createdAt: NOW });
@@ -704,6 +705,7 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     const res = await admin.mutation(api.catPublication.publish, { productIds: [productId], channels: ['retail', 'house'] });
     expect(res[0].variants).toBe(1);
     const listings = await t.run((ctx) => ctx.db.query('commerceListings').collect());
+    expect(listings.every(l => l.fulfillment?.[0].cost === 228.25)).toBe(true);
     expect(listings.map((l) => [l.channel, l.published, l.snapshot.variants[0].price]).sort()).toEqual([
       ['house', true, 41_226],
       ['retail', true, 45_806],
