@@ -62,6 +62,7 @@ function VariantMedia({ row }: { row: Row }) {
   return <details className="border border-earth/20 p-3 rounded">
     <summary className="cursor-pointer">{row.sku} · {row.name} · {row.mediaHold ? 'Photo review needed' : 'Photo reviewed'}</summary>
     <div className="space-y-3 pt-3">
+      <p>Supplier: {row.supplierName} · {row.supplierVariantName} · Louie Mae variant: {row.variantName}</p>
       <p>Pack {row.packId} · {row.piecesPerPack} physical pieces · {row.rightsHold ? 'Publication rights still require review' : 'Check current supplier rights before publishing'}</p>
       <button className={button} disabled={busy || !row.hasStagedSource} onClick={run}>Prepare uploaded source image</button>
       <p role="status">{message}</p>

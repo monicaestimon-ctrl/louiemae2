@@ -76,9 +76,12 @@ export const reviewQueue = query({
     const page = await ctx.db.query('catVariants').paginate(a.paginationOpts);
     return { ...page, page: await Promise.all(page.page.map(async cv => {
       const product = await ctx.db.get(cv.productId);
+      const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', cv.productId)).unique();
       const assets = await ctx.db.query('catMediaAssets').withIndex('by_product', q => q.eq('productId', cv.productId)).collect();
       return { variantId: cv._id, productId: cv.productId, sku: cv.supplierSku, packId: cv.packId,
         piecesPerPack: cv.piecesPerPack, color: cv.color ?? null, name: product?.draft.name ?? cv.louieMaeVariantName,
+        supplierName: meta?.supplierName ?? cv.supplierVariantName, supplierVariantName: cv.supplierVariantName,
+        variantName: cv.louieMaeVariantName,
         hasStagedSource: !!product?.zuoStaging && !product.zuoStaging.excluded && cv.availability !== 'discontinued',
         mediaHold: cv.holds.includes('MEDIA_MISSING'), rightsHold: cv.holds.includes('MEDIA_RIGHTS'),
         assets: await Promise.all(assets.filter(m => m.variantId === cv._id || (!m.variantId && m.verifiedAgainst?.sku === cv.supplierSku)).map(async m => ({
