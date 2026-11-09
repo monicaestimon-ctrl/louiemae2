@@ -1,6 +1,8 @@
 import type { QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { launchPrice, retailDelivery, retailDescription, supplierAvailable } from '../lib/retailLaunch';
+import { assertSellable } from './catCore';
+import { isCommerceError } from '../lib/errors';
 
 // Adapt the retail listing into LouieMae's existing product modal and cards.
 export function storefrontListing(listing: Doc<'commerceListings'>) {
@@ -38,6 +40,29 @@ export function zuoStorefrontListing(listing: Doc<'commerceListings'>, collectio
 
 export const zuoRetailEnabled = () => process.env.RETAIL_ZUO_CHECKOUT_ENABLED === 'true';
 
+/** Published snapshots are historical content, not proof of current availability. */
+export async function currentZuoStorefrontListing(ctx: QueryCtx, listing: Doc<'commerceListings'>, collection: 'furniture' | 'decor', now = Date.now()) {
+  if (!listing.published || listing.channel !== 'retail') return null;
+  const current = await Promise.all(listing.snapshot.variants.map(async option => {
+    const id = ctx.db.normalizeId('catVariants', option.id);
+    if (!id) return null;
+    try {
+      const variant = await assertSellable(ctx, id, 'purchase', now);
+      if (variant.productId !== listing.productId) return null;
+      const price = variant.retailPriceRevisionId ? await ctx.db.get(variant.retailPriceRevisionId) : null;
+      if (!price || price.status !== 'approved' || price.effectiveFrom > now ||
+        (price.effectiveTo !== undefined && price.effectiveTo <= now) || price.packPriceMinor !== option.price) return null;
+      return option;
+    } catch (error) {
+      if (isCommerceError(error)) return null;
+      throw error;
+    }
+  }));
+  const variants = current.filter(option => option !== null);
+  if (!variants.length) return null;
+  return zuoStorefrontListing({ ...listing, snapshot: { ...listing.snapshot, variants } }, collection);
+}
+
 export async function retailDetail(ctx: QueryCtx, id: Id<'commerceProducts'>) {
   const product = await ctx.db.get(id);
   if (product?.provider !== 'ashcroft' && !(product?.provider === 'zuo' && zuoRetailEnabled())) return null;
@@ -45,7 +70,7 @@ export async function retailDetail(ctx: QueryCtx, id: Id<'commerceProducts'>) {
   if (!listing?.published) return null;
   if (product.provider === 'zuo') {
     const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', id)).first();
-    return zuoStorefrontListing(listing, meta?.commissionCategory === 'decor' ? 'decor' : 'furniture');
+    return currentZuoStorefrontListing(ctx, listing, meta?.commissionCategory === 'decor' ? 'decor' : 'furniture');
   }
   return storefrontListing(listing);
 }

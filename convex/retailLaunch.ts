@@ -5,7 +5,7 @@ import { internalMutation, internalQuery, query } from './_generated/server';
 import { paginationOptsValidator } from 'convex/server';
 import { checkQuantity } from '../lib/commerce';
 import { launchPrice, retailDelivery, supplierAvailable, retailDescription } from '../lib/retailLaunch';
-import { storefrontListing, zuoStorefrontListing, zuoRetailEnabled } from './retailStorefront';
+import { storefrontListing, currentZuoStorefrontListing, zuoRetailEnabled } from './retailStorefront';
 import { resolveAttribution } from './holmPartners';
 
 export const storefrontPage = query({
@@ -18,7 +18,7 @@ export const storefrontPage = query({
       // v2 Zuo listings appear only once Zuo retail checkout is switched on.
       if (product?.provider === 'zuo' && zuoRetailEnabled()) {
         const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', product._id)).first();
-        return zuoStorefrontListing(listing, meta?.commissionCategory === 'decor' ? 'decor' : 'furniture');
+        return currentZuoStorefrontListing(ctx, listing, meta?.commissionCategory === 'decor' ? 'decor' : 'furniture');
       }
       return null;
     }));
