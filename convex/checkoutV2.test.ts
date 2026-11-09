@@ -15,6 +15,7 @@ import { SPLIT_MAY, SPLIT_WILL, splitDisclosure } from '../lib/customerCopy';
 import { quoteOnlyReasons, zipRegion, STANDARD_ACCESS } from '../lib/delivery/destination';
 import { exemptionFor } from './dlvTaxExemptions';
 import { groupFreight, resolveLines, type FreightConfig, type ResolvedLine } from './dlvEngine';
+import { digest } from './dlvSecurity';
 
 const PERIMETER_SECRET = '1'.repeat(64);
 async function estimateViaGateway(
@@ -321,6 +322,8 @@ async function setup(opts: { approveMixed?: boolean } = {}) {
       createdAt: 1,
     });
     void obs;
+    const stockRevisionId = await ctx.db.insert('catStockRevisions', { variantId, warehouseId, warehouseFingerprint: await digest(await ctx.db.get(warehouseId)), quantity: '1000', unitBasis: 'pack', kind: 'available_to_sell', availability: 'in_stock', confirmed: true, piecesPerPack: 2, source: 'Fixture available-to-sell feed', note: 'Fixture', observedAt: NOW - 3600000, createdAt: 1, createdBy: 'fixture' });
+    await ctx.db.patch(variantId, { currentStockRevisionId: stockRevisionId });
     const costId = await ctx.db.insert('catCostRevisions', {
       variantId,
       wholesaleMinor: 11_500,
@@ -507,12 +510,23 @@ async function paidOrder(
 }
 
 describe('delivery estimates (S17, S18)', () => {
+  it('limits demand to the warehouse count and requires confirmation for on-hand stock', async () => {
+    const s = await setup();
+    await s.t.run(async ctx => { const stock = (await ctx.db.query('catStockRevisions').first())!; await ctx.db.patch(stock._id, { validUntil: NOW + 15000 }); });
+    expect((await s.t.run(ctx => resolveLines(ctx, [zuoLine(s)], 'retail', NOW)))[0].validUntil).toBe(NOW + 15000);
+    await expect(s.t.run(ctx => resolveLines(ctx, [zuoLine(s, 1001)], 'retail', NOW))).rejects.toThrow(/warehouse quantity/);
+    await s.t.run(async ctx => { const stock = (await ctx.db.query('catStockRevisions').first())!; await ctx.db.patch(stock._id, { kind: 'on_hand' }); });
+    const response = await estimateViaGateway(s.t, { lines: [zuoLine(s)], channel: 'retail', zip: '95206', visitorKey: 'stock-on-hand-fixture' });
+    expect(response.status).toBe('quote_required');
+    await s.t.run(async ctx => { const w = (await ctx.db.query('catWarehouses').first())!; await ctx.db.patch(w._id, { code: 'changed-origin' }); });
+    await expect(s.t.run(ctx => resolveLines(ctx, [zuoLine(s)], 'retail', NOW))).rejects.toThrow(/availability unknown/);
+  });
   it('routes expired warehouse evidence and unsupported dispatch modes to quotes', async () => {
     const s = await setup();
-    await s.t.run(async ctx => { const w = (await ctx.db.query('catWarehouses').first())!; await ctx.db.patch(w._id, { validUntil: NOW - 1 }); });
+    await s.t.run(async ctx => { const w = (await ctx.db.query('catWarehouses').first())!; await ctx.db.patch(w._id, { validUntil: NOW - 1 }); const stock = (await ctx.db.query('catStockRevisions').first())!; await ctx.db.patch(stock._id, { warehouseFingerprint: await digest(await ctx.db.get(w._id)) }); });
     const expired = await estimateViaGateway(s.t, { lines: [zuoLine(s)], channel: 'retail', zip: '95206', visitorKey: 'warehouse-fixture-1' });
     expect(expired.status).toBe('quote_required');
-    await s.t.run(async ctx => { const w = (await ctx.db.query('catWarehouses').first())!; await ctx.db.patch(w._id, { validUntil: NOW + 86400000, services: ['ltl'] }); });
+    await s.t.run(async ctx => { const w = (await ctx.db.query('catWarehouses').first())!; await ctx.db.patch(w._id, { validUntil: NOW + 86400000, services: ['ltl'] }); const stock = (await ctx.db.query('catStockRevisions').first())!; await ctx.db.patch(stock._id, { warehouseFingerprint: await digest(await ctx.db.get(w._id)) }); });
     const unsupported = await estimateViaGateway(s.t, { lines: [zuoLine(s)], channel: 'retail', zip: '95206', visitorKey: 'warehouse-fixture-2' });
     expect(unsupported.status).toBe('quote_required');
   });
@@ -521,6 +535,8 @@ describe('delivery estimates (S17, S18)', () => {
     await s.t.run(async ctx => {
       const old = (await ctx.db.query('catSourceObservations').first())!;
       await ctx.db.patch(old._id, { observedAt: NOW - 86400000 + 30000 });
+      const revision = (await ctx.db.query('catStockRevisions').first())!;
+      await ctx.db.patch(revision._id, { observedAt: NOW - 86400000 + 30000 });
       const { _id, _creationTime, ...data } = old;
       void _id; void _creationTime;
       await ctx.db.insert('catSourceObservations', { ...data, observedAt: NOW, confidence: 'unverified', contentHash: 'unverified-test' });

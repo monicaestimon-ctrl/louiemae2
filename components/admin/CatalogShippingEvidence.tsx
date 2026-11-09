@@ -7,6 +7,7 @@ import type { CartonEvidence } from '../../lib/shipping/evidence';
 import { warehouseCurrent } from '../../lib/shipping/evidence';
 import { customerMessage } from '../../lib/errors';
 import DeliveryBoundary from '../delivery/DeliveryBoundary';
+import CatalogStockEvidence from './CatalogStockEvidence';
 
 type Detail = FunctionReturnType<typeof api.catShipping.detail>;
 const blankCarton = (): CartonEvidence => ({
@@ -71,6 +72,7 @@ function ShippingDetail({ variantId }: { variantId: Id<'catVariants'> }) {
         latest={data}
         reload={() => setGeneration((n) => n + 1)}
       />
+      <CatalogStockEvidence variantId={variantId} />
       {data.canApprove && <WarehouseEditor data={data} />}
     </div>
   );

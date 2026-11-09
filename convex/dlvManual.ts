@@ -42,6 +42,11 @@ export async function computeManualQuote(
     );
   const channel = project.channel === 'retail' ? 'retail' : 'trade';
   const lines = await resolveLines(ctx, q.lines, channel, Date.now(), false, 100);
+  if (lines.some((line) => line.stockReadiness === 'confirmation_required'))
+    throw new CommerceError(
+      'STOCK_UNAVAILABLE',
+      'Confirm warehouse quantity available for these orders before issuing a payable quote'
+    );
   const cfg = await activeConfig<PricingAssumptions>(
     ctx,
     'pricingAssumptions',

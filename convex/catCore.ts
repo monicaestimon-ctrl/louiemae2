@@ -7,6 +7,8 @@ import { availabilityAllows, evaluateVariant, type Observation } from '../lib/ca
 import type { FreshnessPolicy } from '../lib/config';
 import { maybeConfig } from './sysConfig';
 import type { HoldReason } from './v2Validators';
+import { stockView } from '../lib/stockEvidence';
+import { digest } from './dlvSecurity';
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -76,7 +78,7 @@ export async function evaluate(ctx: Ctx, v: Doc<'catVariants'>, now = Date.now()
     .withIndex('by_variant_field_observed', (q) => q.eq('variantId', v._id))
     .order('desc')
     .take(200)) as unknown as Observation[];
-  return evaluateVariant({
+  const result = evaluateVariant({
     cost: cost ? { ...cost, effectiveTo: cost.effectiveTo } : null,
     piecesPerPack: v.piecesPerPack,
     cartons: cartons.length,
@@ -84,6 +86,14 @@ export async function evaluate(ctx: Ctx, v: Doc<'catVariants'>, now = Date.now()
     policy,
     now,
   });
+  if (v.currentStockRevisionId) {
+    const stock = stockView(await ctx.db.get(v.currentStockRevisionId), v.warehouseId, v.piecesPerPack, now, policy.stockSyncMaxHours * 3600000, v.orderMinimumPacks, await digest(v.warehouseId ? await ctx.db.get(v.warehouseId) : null));
+    result.availability = stock.availability;
+    result.stockObservedAt = stock.observedAt;
+    result.holds = result.holds.filter(h => h !== 'STOCK_UNVERIFIED');
+    if (!stock.current || stock.availability === 'unknown') result.holds.push('STOCK_UNVERIFIED');
+  }
+  return result;
 }
 
 /** Persists the evaluation: opens or resolves freshness holds and updates availability. */

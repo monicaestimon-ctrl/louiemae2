@@ -68,7 +68,7 @@ it('keeps shipping inputs unknown and records raw carton units without multiplyi
       })
     )
   );
-  expect(await screen.findByRole('status')).toHaveTextContent('Prices are unchanged');
+  expect(await screen.findByText(/Shipping evidence saved/)).toHaveTextContent('Prices are unchanged');
 });
 it('retains edited measurements on a concurrent change and requires explicit reload', () => {
   const { rerender } = open();
