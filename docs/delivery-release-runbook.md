@@ -331,3 +331,13 @@ Use **Delivery & freight → Export all internal pricing/source records** for a 
 Verify a supplier photograph against the exact SKU, pack ID and color shown in the canonical variant record. A hero image is not approval for all sibling variants. Record a separate association for each different role, variant or rights basis even when the bytes are identical. A product-level photo can qualify only its recorded SKU/pack/color; retargeting requires a separate association. Assembly instructions and swatches cannot satisfy the product-photo requirement.
 
 Rejecting an already verified photo reopens the matching media hold for reviewed replacement. It does not alter a paid order's snapshot. Publication also checks the actual media association, so clearing a hold alone cannot publish a variant with unreviewed photography. Media rights remain a separate requirement; ingest, stored bytes and a source URL do not grant a license or prove private-label permission.
+
+## 31. Preparing previously uploaded supplier photographs
+
+In **Catalog & import → Supplier image preparation and review**, open a SKU and choose **Prepare uploaded source image**. This uses the source already attached to that exact staged SKU/pack, validates its SHA-256 and generates web copies. No stored upload means an explicit source-review error; the action does not guess a URL. Preparing is safe to retry and never clears publication holds or approves the image.
+
+Inspect the photograph against the SKU, pack and color, write accurate alt text, and explicitly confirm the visual check before saving. Source provenance is not a license: MEDIA_RIGHTS and other cost, inventory, MAP and delivery checks remain separate. Do not approve an image solely because preparation succeeded. Private originals are not used in new public snapshots; prepare web derivatives first. Preserve paid snapshots and original source evidence.
+
+The Node runtime installs the locked Sharp dependency via `convex.json`. Verify a real staged preparation after deployment before bulk processing. If attachment returns an uncertain failure, retry; do not delete outputs that could already be referenced. Any cleanup of uncertain orphan files requires checking current references first.
+
+The media workspace also supports **Prepare all included stored sources**. It walks every page sequentially, skips excluded/discontinued records, reports per-SKU errors and supports stopping after the current image. Retrying verifies source bytes and reuses an already prepared association. It never calls visual approval or publication in the batch loop.

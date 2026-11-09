@@ -3,7 +3,8 @@
 // a person verifies each against SKU, colour and pack and writes the alt text before it can be
 // used. A failed or unverified image keeps the listing in draft.
 import { v } from 'convex/values';
-import { action, internalMutation, mutation, query } from './_generated/server';
+import { action, internalMutation, internalQuery, mutation, query } from './_generated/server';
+import { paginationOptsValidator } from 'convex/server';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { requireCjAdminIdentity } from './cjAdminAccess';
@@ -14,6 +15,81 @@ import { safeFetch, sniffImage } from '../lib/safeFetch';
 import { nameProblems, slugify } from '../lib/slug';
 
 const MIN_EDGE = 800;
+
+export const stagedPrimary = internalQuery({
+  args: { variantId: v.id('catVariants') },
+  handler: async (ctx, a) => {
+    await requireCjAdminIdentity(ctx);
+    const cv = await ctx.db.get(a.variantId);
+    const product = cv ? await ctx.db.get(cv.productId) : null;
+    const staging = product?.zuoStaging;
+    if (!cv || cv.availability === 'discontinued' || !product || product.provider !== 'zuo' || !staging || staging.excluded
+      || staging.sku !== cv.supplierSku || staging.pack !== cv.piecesPerPack)
+      throw new CommerceError('INVALID_INPUT', 'No matching included staged SKU and pack');
+    let evidence;
+    try { evidence = JSON.parse(staging.sourceEvidence); } catch { throw new CommerceError('INVALID_INPUT', 'Source evidence is invalid'); }
+    const primary = evidence?.primaryMedia;
+    if (!primary || typeof primary.storageId !== 'string' || typeof primary.sha256 !== 'string'
+      || !/^[a-f0-9]{64}$/.test(primary.sha256) || typeof primary.sourceURL !== 'string'
+      || !Array.isArray(evidence.sourceImageUrls) || !evidence.sourceImageUrls.includes(primary.sourceURL))
+      throw new CommerceError('INVALID_INPUT', 'No uploaded primary image with source hash and URL evidence');
+    const storageId = ctx.db.system.normalizeId('_storage', primary.storageId);
+    const url = storageId ? await ctx.storage.getUrl(storageId) : null;
+    if (!storageId || !url || url !== primary.url || !product.draft.images.includes(url))
+      throw new CommerceError('INVALID_INPUT', 'Uploaded image is not mapped to this staged product');
+    const existing = (await ctx.db.query('catMediaAssets').withIndex('by_product', q => q.eq('productId', cv.productId).eq('role', 'hero')).collect())
+      .find(m => m.variantId === cv._id && m.storageId === storageId && m.contentHash === primary.sha256
+        && m.sourceUrl === primary.sourceURL && m.derivatives.length > 0);
+    return { productId: cv.productId, storageId, sha256: primary.sha256 as string,
+      sourceUrl: primary.sourceURL as string, evidenceRef: `Staging manifest ${staging.manifestSha256}; SKU ${cv.supplierSku}`,
+      prepared: existing ? { assetId: existing._id, widths: existing.derivatives.map(d => d.width) } : null };
+  },
+});
+
+export const attachDerivatives = internalMutation({
+  args: { assetId: v.id('catMediaAssets'), sourceStorageId: v.id('_storage'), contentHash: v.string(),
+    derivatives: v.array(v.object({ width: v.number(), storageId: v.id('_storage'), format: v.string() })) },
+  handler: async (ctx, a) => {
+    const asset = await ctx.db.get(a.assetId);
+    if (!asset || asset.storageId !== a.sourceStorageId || asset.contentHash !== a.contentHash)
+      throw new CommerceError('INVALID_INPUT', 'Image source changed');
+    if (!a.derivatives.length || a.derivatives.length > 3 || new Set(a.derivatives.map(d => d.width)).size !== a.derivatives.length)
+      throw new CommerceError('INVALID_INPUT', 'Invalid derivative set');
+    for (const d of a.derivatives) {
+      const metadata = await ctx.db.system.get(d.storageId);
+      if (!Number.isInteger(d.width) || d.width < 1 || d.width > 2048 || d.format !== 'webp'
+        || d.storageId === asset.storageId || !metadata?.size
+        || (metadata.contentType !== undefined && metadata.contentType !== 'image/webp'))
+        throw new CommerceError('INVALID_INPUT', 'Invalid stored WebP derivative');
+    }
+    if (asset.derivatives.length) return false;
+    await ctx.db.patch(asset._id, { derivatives: a.derivatives });
+    return true;
+  },
+});
+
+export const reviewQueue = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, a) => {
+    await requireCjAdminIdentity(ctx);
+    if (a.paginationOpts.numItems < 1 || a.paginationOpts.numItems > 25) throw new CommerceError('INVALID_INPUT');
+    const page = await ctx.db.query('catVariants').paginate(a.paginationOpts);
+    return { ...page, page: await Promise.all(page.page.map(async cv => {
+      const product = await ctx.db.get(cv.productId);
+      const assets = await ctx.db.query('catMediaAssets').withIndex('by_product', q => q.eq('productId', cv.productId)).collect();
+      return { variantId: cv._id, productId: cv.productId, sku: cv.supplierSku, packId: cv.packId,
+        piecesPerPack: cv.piecesPerPack, color: cv.color ?? null, name: product?.draft.name ?? cv.louieMaeVariantName,
+        hasStagedSource: !!product?.zuoStaging && !product.zuoStaging.excluded && cv.availability !== 'discontinued',
+        mediaHold: cv.holds.includes('MEDIA_MISSING'), rightsHold: cv.holds.includes('MEDIA_RIGHTS'),
+        assets: await Promise.all(assets.filter(m => m.variantId === cv._id || (!m.variantId && m.verifiedAgainst?.sku === cv.supplierSku)).map(async m => ({
+          id: m._id, role: m.role, status: m.status, altText: m.altText, rejectReason: m.rejectReason ?? null,
+          widths: m.derivatives.map(d => d.width), rights: m.rights,
+          url: m.derivatives[0]?.storageId || m.storageId ? await ctx.storage.getUrl(m.derivatives[0]?.storageId ?? m.storageId!) : null,
+        }))),
+      };
+    })) };
+  },
+});
 
 export function verifiedImageMatches(asset: Doc<'catMediaAssets'>, cv: Doc<'catVariants'>) {
   return asset.productId === cv.productId && (!asset.variantId || asset.variantId === cv._id)

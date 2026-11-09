@@ -61,6 +61,8 @@ export async function gates(ctx: Ctx, productId: Id<'commerceProducts'>) {
   for (const cv of live) if (!verified.some(m => verifiedImageMatches(m, cv)))
     out.ready.push(`${cv.supplierSku}/${cv.packId}: no image verified for this SKU, pack and color`);
   if (verified.some((m) => !m.rights.basis.trim())) out.ready.push('An image has no rights basis');
+  if (verified.some(m => live.some(cv => verifiedImageMatches(m, cv)) && m.rights.privateOriginal && !m.derivatives.length))
+    out.ready.push('A private original needs a public web derivative');
   if (!meta.louieMaeName.trim()) out.ready.push('No Louie Mae name');
   return { meta, variants, live, gates: out };
 }
@@ -94,7 +96,13 @@ export const advance = mutation({
 async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, meta: Doc<'catProductMeta'>, channel: 'retail' | 'house', variants: Doc<'catVariants'>[]) {
   const media = await ctx.db.query('catMediaAssets').withIndex('by_product', (q) => q.eq('productId', product._id)).collect();
   const verified = media.filter(m => variants.some(cv => verifiedImageMatches(m, cv))).sort((x, y) => (x.role === 'hero' ? -1 : y.role === 'hero' ? 1 : 0));
-  const images = (await Promise.all(verified.filter((m) => m.role !== 'assembly').map((m) => ctx.storage.getUrl(m.storageId!)))).filter((u): u is string => !!u);
+  const publicStorage = (m: Doc<'catMediaAssets'>) => [...m.derivatives].sort((a, b) => b.width - a.width)[0]?.storageId
+    ?? (m.rights.privateOriginal ? undefined : m.storageId);
+  const images = (await Promise.all(verified.map(m => {
+    const storageId = publicStorage(m);
+    return storageId ? ctx.storage.getUrl(storageId) : null;
+  }))).filter((u): u is string => !!u);
+  if (!images.length) throw new CommerceError('COST_REVIEW_REQUIRED', 'No usable public product photography');
   const snapVariants = [];
   const fulfillment = [];
   for (const cv of variants) {
@@ -104,12 +112,15 @@ async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, m
     if (price?.status !== 'approved') throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: no approved ${channel === 'retail' ? 'retail' : 'trade'} price`);
     const cost = cv.currentCostRevisionId ? await ctx.db.get(cv.currentCostRevisionId) : null;
     const image = verified.find(m => verifiedImageMatches(m, cv));
+    const imageStorageId = image ? publicStorage(image) : undefined;
+    const imageUrl = imageStorageId ? await ctx.storage.getUrl(imageStorageId) : null;
+    if (!imageUrl) throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: public variant photograph is unavailable`);
     const packCost = supplierPackCostMinor(cost, cv.piecesPerPack);
     if (packCost === null) throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: supplier cost missing`);
     snapVariants.push({
       id: cv._id as string,
       name: cv.louieMaeVariantName,
-      ...(image?.storageId ? { image: (await ctx.storage.getUrl(image.storageId)) ?? undefined } : {}),
+      image: imageUrl,
       minimum: cv.orderMinimumPacks,
       increment: cv.orderIncrementPacks,
       price: price.packPriceMinor,
