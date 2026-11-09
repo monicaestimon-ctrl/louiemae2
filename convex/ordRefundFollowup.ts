@@ -41,9 +41,11 @@ export async function handleRefundUpdate(ctx: MutationCtx, ev: Doc<'sysPaymentEv
     if (!failure) continue;
     const proof = ex.paymentVerificationId ? await ctx.db.get(ex.paymentVerificationId) : null;
     // A failed refund already excluded by a later provider read must not undo that newer resolution.
+    // Legacy proofs have no successful-ID set. Provider event times have whole-second precision;
+    // a same-second failure is ambiguous and must reopen review, not be dismissed by milliseconds.
     const previouslySuccessful = proof?.succeededRefundIds
       ? proof.succeededRefundIds.includes(p.id)
-      : !!proof?.refundIds.includes(p.id) && p.created * 1000 >= proof.verifiedAt;
+      : !!proof?.refundIds.includes(p.id) && p.created >= Math.floor(proof.verifiedAt / 1000);
     if (
       ex.status !== 'resolved' ||
       ex.resolutionKind !== 'verified_refund' ||
