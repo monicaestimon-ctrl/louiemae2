@@ -667,12 +667,21 @@ export const v2Tables = {
 
   ordInventoryReservations: defineTable({
     variantId: v.id('catVariants'),
+    warehouseId: v.optional(v.id('catWarehouses')),
+    stockRevisionId: v.optional(v.id('catStockRevisions')),
+    piecesPerPack: v.optional(v.number()),
+    createdAt: v.optional(v.number()),
+    reconciledRevisionId: v.optional(v.id('catStockRevisions')),
+    reconciliationEvidence: v.optional(v.string()),
+    reconciledAt: v.optional(v.number()),
+    reconciledBy: v.optional(v.string()),
     packs: v.number(),
     intentId: v.id('ordCheckoutIntents'),
     expiresAt: v.number(),
-    status: v.union(v.literal('held'), v.literal('released'), v.literal('consumed')),
+    status: v.union(v.literal('held'), v.literal('released'), v.literal('consumed'), v.literal('reconciled')),
   })
     .index('by_variant_status', ['variantId', 'status'])
+    .index('by_variant_status_expires', ['variantId', 'status', 'expiresAt'])
     .index('by_intent', ['intentId']),
 
   ordOrders: defineTable({

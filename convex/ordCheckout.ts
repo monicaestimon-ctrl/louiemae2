@@ -266,12 +266,16 @@ export const createIntent = internalMutation({
       expiresAt: now + INTENT_MS,
       createdAt: now,
     });
-    // Zuo has no live stock count: the reservation records the packs held for this intent, and
     if (manual) await ctx.db.patch(manual._id, { checkoutIntentId: intentId });
-    // operations confirms supplier availability before ordering (paid-order exceptions otherwise).
+    // The fresh calculation read all competing commitments in this same serializable mutation.
+    // These are internal capacity holds, not proof of a supplier-side reservation.
     for (const l of fresh.lines)
       await ctx.db.insert('ordInventoryReservations', {
         variantId: l.variant._id,
+        ...(l.variant.warehouseId ? { warehouseId: l.variant.warehouseId } : {}),
+        ...(l.variant.currentStockRevisionId ? { stockRevisionId: l.variant.currentStockRevisionId } : {}),
+        piecesPerPack: l.variant.piecesPerPack,
+        createdAt: now,
         packs: l.packs,
         intentId,
         expiresAt: now + INTENT_MS,

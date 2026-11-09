@@ -12,6 +12,7 @@ import { releaseIntent } from './ordCheckout';
 import { accrueForOrder } from './ldgCommissions';
 import { onOrderPaid, settle as settleCredit } from './ldgCredits';
 import { convertPaidQuote } from './dlvQuoteLifecycle';
+import { paymentStockFailure, retainPaidCommitments } from './ordInventory';
 
 export type SessionPayload = {
   id: string;
@@ -50,12 +51,14 @@ async function handleSession(ctx: MutationCtx, s: SessionPayload, kind: 'complet
   if (existing && s.payment_intent) return 'processed';
   const evidence = { sessionId: s.id, amount: s.amount_total, currency: s.currency, paymentIntent: s.payment_intent, intentStatus: intent.status };
   const mismatch = s.currency !== 'usd' || s.amount_total !== intent.totalMinor || (intent.stripeSessionId && intent.stripeSessionId !== s.id);
-  const expired = intent.status !== 'session_open' || intent.expiresAt < Date.now();
-  if (mismatch || expired) {
+  const expired = intent.status !== 'session_open' || intent.expiresAt <= Date.now();
+  const stockFailure = !mismatch && !expired ? await paymentStockFailure(ctx, intent) : null;
+  if (mismatch || expired || stockFailure) {
     const prior=await ctx.db.query('ordPaidExceptions').withIndex('by_session',q=>q.eq('stripeSessionId',s.id)).first();
     if(prior)return 'processed';
-    await ctx.db.insert('ordPaidExceptions', { intentId: intent._id, ...(s.payment_intent ? { paymentIntentId: s.payment_intent } : {}), stripeSessionId: s.id, reason: mismatch ? 'total_mismatch' : 'intent_expired', evidence, status: 'open', createdAt: Date.now() });
+    await ctx.db.insert('ordPaidExceptions', { intentId: intent._id, ...(s.payment_intent ? { paymentIntentId: s.payment_intent } : {}), stripeSessionId: s.id, reason: mismatch ? 'total_mismatch' : expired ? 'intent_expired' : 'stock_failed', evidence: { ...evidence, stockFailure }, status: 'open', createdAt: Date.now() });
     await ctx.db.patch(intent._id, { status: 'exception' });
+    await retainPaidCommitments(ctx, intent._id);
     await bumpMetric(ctx, 'payment.exception');
     return 'processed';
   }
