@@ -36,6 +36,7 @@ describe('delivery staff authorization', () => {
       () => staff.query(api.blogPosts.listAdmin, {}),
       () => staff.query(api.campaigns.list, {}),
       () => staff.query(api.dlvAccess.integrations, {}),
+      () => staff.query(api.dlvAdmin.records, { paginationOpts: { cursor: null, numItems: 20 } }),
     ])
       await forbidden(call());
   });

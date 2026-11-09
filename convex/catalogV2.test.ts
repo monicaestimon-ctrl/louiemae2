@@ -617,6 +617,33 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     return { t, admin, cv, productId: cv.productId };
   }
 
+  it('exports staged images and complete expenses without disguising unknown economics', async () => {
+    const { t, admin, cv, productId } = await readyProduct();
+    const args = { paginationOpts: { cursor: null, numItems: 20 } };
+    await expect(t.query(api.dlvAdmin.records, args)).rejects.toThrow();
+    await t.run(async ctx => {
+      const product = (await ctx.db.get(productId))!;
+      await ctx.db.patch(productId, { draft: { ...product.draft, images: ['https://www.zuomod.com/fixture-source.jpg'] } });
+    });
+    const blocked = (await admin.query(api.dlvAdmin.records, args)).page[0];
+    expect(blocked).toMatchObject({
+      recordVersion: 2, imageSource: 'staged_source', images: ['https://www.zuomod.com/fixture-source.jpg'], publishedImages: [],
+      publication: { published: false }, marginPolicyVersion: 1,
+      expensesPerPack: { duties: { amountMinor: null, confirmedZero: false, resolvedMinor: null, state: 'unknown' } },
+      economics: { status: 'review_required' }, commission: { bps: 1800 },
+    });
+    await t.run(ctx => ctx.db.patch(cv.currentCostRevisionId!, { dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true }));
+    const complete = (await admin.query(api.dlvAdmin.records, args)).page[0];
+    expect(complete.expensesPerPack.duties).toMatchObject({ resolvedMinor: 0, state: 'confirmed_zero' });
+    expect(complete.economics.status).toBe('computed');
+    if (complete.economics.status === 'computed') {
+      expect(complete.economics.result.scenarios.find(s => s.name === 'trade_approved')).toMatchObject({ priceMinor: 41226, passes: true });
+      expect(complete.economics.result.scenarios.find(s => s.name === 'retail_max_commission')?.contributionBps).toBeTypeOf('number');
+    }
+    expect(complete.publication.published).toBe(false);
+    expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).toEqual(cv.holds); // Export is read-only.
+  });
+
   it('repairs cached pricing holds, uses actual trade prices and never enables an unfunded referral', async () => {
     const { t, admin, cv, productId } = await readyProduct();
     await t.run(ctx => ctx.db.patch(cv.currentCostRevisionId!, { dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true }));

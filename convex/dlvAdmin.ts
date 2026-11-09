@@ -6,7 +6,15 @@ import { maybeConfig } from './sysConfig';
 import { computeEstimate, type FreightConfig } from './dlvEngine';
 import { lineArg } from './dlvEstimates';
 import { evaluate } from './catCore';
-import type { DeliveryControls, DeliveryLadder, PricingAssumptions } from '../lib/config';
+import { computeScenarios } from './catPricing';
+import { commissionReserve } from './dlvCommission';
+import { ENGINE_VERSION } from '../lib/economics/pricing';
+import type {
+  DeliveryControls,
+  DeliveryLadder,
+  PricingAssumptions,
+  MarginPolicy,
+} from '../lib/config';
 import { US_STATES } from '../lib/delivery/destination';
 import { CommerceError, commerceErrorData } from '../lib/errors';
 
@@ -73,7 +81,18 @@ export const records = query({
     );
     const rows = [];
     for (const cv of page.page) {
-      const [supplier, meta, cost, retail, trade, cartons, warehouse, listing] = await Promise.all([
+      const [
+        supplier,
+        meta,
+        cost,
+        retail,
+        trade,
+        cartons,
+        warehouse,
+        listing,
+        product,
+        marginPolicy,
+      ] = await Promise.all([
         ctx.db.get(cv.supplierId),
         ctx.db
           .query('catProductMeta')
@@ -93,6 +112,10 @@ export const records = query({
             q.eq('productId', cv.productId).eq('channel', 'retail')
           )
           .unique(),
+        ctx.db.get(cv.productId),
+        cv.marginPolicyKey
+          ? maybeConfig<MarginPolicy>(ctx, 'marginPolicy', cv.marginPolicyKey)
+          : null,
       ]);
       let freshness: unknown;
       try {
@@ -100,6 +123,53 @@ export const records = query({
       } catch (e) {
         freshness = { review: commerceErrorData(e)?.detail ?? 'Evidence review required' };
       }
+      let economics;
+      try {
+        economics = {
+          status: 'computed' as const,
+          engineVersion: ENGINE_VERSION,
+          result: await computeScenarios(ctx, cv),
+        };
+      } catch (e) {
+        economics = {
+          status: 'review_required' as const,
+          engineVersion: ENGINE_VERSION,
+          reason: commerceErrorData(e)?.detail ?? 'Current economics require review',
+        };
+      }
+      let commission;
+      try {
+        if (!meta?.commissionCategory || meta.commissionCategory === 'review_required')
+          throw new CommerceError('COST_REVIEW_REQUIRED', 'Commission category needs review');
+        commission = {
+          ...(await commissionReserve(
+            ctx,
+            cv.productId,
+            meta.commissionCategory,
+            true,
+            Date.now()
+          )),
+          purpose:
+            'Retail qualification reserve, including protected rates; not a trade purchase commission',
+        };
+      } catch (e) {
+        commission = {
+          review: commerceErrorData(e)?.detail ?? 'Commission policy requires review',
+        };
+      }
+      const publishedImages = listing?.published ? listing.snapshot.images : [];
+      const sourceImages = product?.draft.images ?? [];
+      const expense = (amount: number | null | undefined, confirmedZero: boolean | undefined) => ({
+        amountMinor: amount ?? null,
+        confirmedZero: confirmedZero === true,
+        resolvedMinor: amount ?? (confirmedZero === true ? 0 : null),
+        state:
+          amount !== null && amount !== undefined
+            ? 'known'
+            : confirmedZero === true
+              ? 'confirmed_zero'
+              : 'unknown',
+      });
       rows.push({
         variantId: cv._id,
         productId: cv.productId,
@@ -121,12 +191,41 @@ export const records = query({
         mapEvidence: cost?.mapSource ?? null,
         costRevisionId: cost?._id ?? null,
         costVerifiedAt: cost?.verifiedAt ?? null,
+        costSource: cost?.costSource ?? null,
+        costObservationIds: cost?.observationIds ?? [],
+        costEffectiveFrom: cost?.effectiveFrom ?? null,
+        costEffectiveTo: cost?.effectiveTo ?? null,
+        expensesPerPack: {
+          duties: expense(cost?.dutiesMinor, cost?.dutiesConfirmedZero),
+          inboundFreight: expense(cost?.inboundFreightMinor, cost?.inboundConfirmedZero),
+          supplierFees: expense(cost?.supplierFeesMinor, cost?.feesConfirmedZero),
+        },
         retailPackMinor: retail?.status === 'approved' ? retail.packPriceMinor : null,
         tradePackMinor: trade?.status === 'approved' ? trade.packPriceMinor : null,
         retailRevisionId: retail?._id ?? null,
         tradeRevisionId: trade?._id ?? null,
         marginPolicyKey: cv.marginPolicyKey ?? null,
+        marginPolicyVersion: marginPolicy?.version ?? null,
+        marginPolicy: marginPolicy?.value ?? null,
+        priceValidity: {
+          retail: retail
+            ? {
+                status: retail.status,
+                effectiveFrom: retail.effectiveFrom,
+                effectiveTo: retail.effectiveTo ?? null,
+              }
+            : null,
+          trade: trade
+            ? {
+                status: trade.status,
+                effectiveFrom: trade.effectiveFrom,
+                effectiveTo: trade.effectiveTo ?? null,
+              }
+            : null,
+        },
         commissionCategory: meta?.commissionCategory ?? null,
+        commission,
+        economics,
         referralEligible: cv.referralEligible ?? null,
         sizeClass: cv.sizeClass ?? 'UNKNOWN',
         handlingPerPieceMinor: assumptions?.value.handlingPerPieceMinor ?? null,
@@ -141,11 +240,31 @@ export const records = query({
         holds: cv.holds,
         availability: cv.availability,
         freshness,
-        images: listing?.snapshot.images ?? [],
+        images: publishedImages.length ? publishedImages : sourceImages,
+        imageSource: publishedImages.length
+          ? 'published_listing'
+          : sourceImages.length
+            ? 'staged_source'
+            : 'none',
+        publishedImages,
+        sourceImages,
+        publication: { published: listing?.published === true, stage: meta?.stage ?? null },
+        deliveryEstimate: {
+          status: 'not_quoted',
+          reason:
+            'A destination, basket, service and current freight evidence are required; merchandise scenarios are not delivered totals',
+        },
+        recordVersion: 2,
         exportedAt: Date.now(),
         recordKind: 'internal_approved_and_source_records',
         units: {
           money: 'USD cents unless explicitly precise decimal',
+          expenses: 'per sellable pack; unknown is null, never implied zero',
+          handlingAllocation: 'per physical piece; not the actual per-order supplier fee',
+          economics:
+            'Merchandise scenarios, not a destination-specific delivered quote or permission to publish',
+          images:
+            'Staged source references do not establish media verification or publication rights',
           dimensions: 'mm',
           weight: 'g',
         },
