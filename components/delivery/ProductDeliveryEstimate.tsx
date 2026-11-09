@@ -42,7 +42,8 @@ export default function ProductDeliveryEstimate({
   minimumPacks = profile?.minimumPacks ?? minimumPacks;
   incrementPacks = profile?.incrementPacks ?? incrementPacks;
   if (!enabled || !variantId) return disabledMessage ? <p>{disabledMessage}</p> : null;
-  if (!profile) return <p className="text-sm">Checking delivery availability…</p>;
+  if (profile === undefined) return <p className="text-sm">Checking delivery availability…</p>;
+  if (profile === null) return <p className="text-sm">This item is currently unavailable for delivery estimates.</p>;
   return (
     <DeliveryForm
       key={`${productId}:${variantId}:${piecesPerPack}:${minimumPacks}:${incrementPacks}:${channel}:${selectedPacks ?? 'editable'}`}

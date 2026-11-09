@@ -61,9 +61,9 @@ export const productProfile = query({
         throw new CommerceError('TRADE_APPROVAL_REQUIRED');
       const pid = ctx.db.normalizeId('commerceProducts', a.productId),
         vid = ctx.db.normalizeId('catVariants', a.variantId);
-      if (!pid || !vid) return null;
-      const [cv, listing] = await Promise.all([
-        ctx.db.get(vid),
+      if (!pid) return null;
+      const [product, listing] = await Promise.all([
+        ctx.db.get(pid),
         ctx.db
           .query('commerceListings')
           .withIndex('by_product_channel', (q) =>
@@ -71,6 +71,15 @@ export const productProfile = query({
           )
           .unique(),
       ]);
+      const option = listing?.snapshot.variants.find(v => v.id === a.variantId);
+      if (!listing?.published || !option) return null;
+      // Legacy Ashcroft variants use supplier IDs rather than canonical catVariant IDs.
+      // These are selling-unit quantities; actual eligibility is rechecked by the engine.
+      if (product?.provider === 'ashcroft') return {
+        piecesPerPack: 1, minimumPacks: option.minimum, incrementPacks: option.increment,
+      };
+      if (!vid || product?.provider !== 'zuo') return null;
+      const cv = await ctx.db.get(vid);
       if (
         !cv ||
         cv.productId !== pid ||

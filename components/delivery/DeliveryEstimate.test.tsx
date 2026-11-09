@@ -8,14 +8,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getFunctionName } from 'convex/server';
 import ProductDeliveryEstimate from './ProductDeliveryEstimate';
 
-const mock = vi.hoisted(() => ({ estimate: vi.fn(), request: vi.fn(), enabled: true }));
+const mock = vi.hoisted(() => ({ estimate: vi.fn(), request: vi.fn(), enabled: true, missing: false }));
 vi.mock('convex/react', () => ({
   useQuery: (ref: unknown) =>
     getFunctionName(ref as never).endsWith('.enabled') ||
     getFunctionName(ref as never).endsWith(':enabled')
       ? mock.enabled
       : getFunctionName(ref as never).includes('productProfile')
-        ? { piecesPerPack: 2, minimumPacks: 3, incrementPacks: 2 }
+        ? mock.missing ? null : { piecesPerPack: 2, minimumPacks: 3, incrementPacks: 2 }
         : undefined,
   useAction: () => mock.estimate,
   useMutation: () => mock.request,
@@ -25,6 +25,7 @@ beforeEach(() => {
   mock.estimate.mockReset();
   mock.request.mockReset();
   mock.enabled = true;
+  mock.missing = false;
 });
 const response = (amount: number) => ({
   status: 'ok',
@@ -34,6 +35,12 @@ const response = (amount: number) => ({
   expiresAt: Date.now() + 60000,
 });
 describe('shared delivery product UI', () => {
+  it('shows unavailable instead of loading forever for a missing product profile', () => {
+    mock.missing = true;
+    render(<ProductDeliveryEstimate productId="p" variantId="v" />);
+    expect(screen.getByText('This item is currently unavailable for delivery estimates.')).toBeInTheDocument();
+    expect(screen.queryByText('Checking delivery availability…')).not.toBeInTheDocument();
+  });
   it('explains the quote fallback without inventing coverage when automation is off', () => {
     mock.enabled = false;
     render(<ProductDeliveryEstimate productId="p" variantId="v" channel="trade" disabledMessage="Request confirmed project delivery pricing." />);
