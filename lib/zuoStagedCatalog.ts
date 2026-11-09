@@ -103,6 +103,7 @@ export function stagedCatalogRecord(row: ZuoStagingRow, sourceFile: string, obse
         packId: '1',
         supplierName: evidence.originalSupplierName,
         louieMaeName: row.draft.name,
+      louieMaeVariantName: variant.name,
         navCategory: row.draft.category,
         piecesPerPack: row.pack,
         minimumPacks: variant.minimum,

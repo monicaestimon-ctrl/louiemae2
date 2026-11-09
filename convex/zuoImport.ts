@@ -254,7 +254,7 @@ async function commitRecord(ctx: MutationCtx, s: StagedRecord, batch: Doc<'catIm
       supplierSku: r.sku,
       packId: r.packId,
       optionKey: [r.material, r.color, r.size].filter(Boolean).join('|').toLowerCase() || 'default',
-      louieMaeVariantName: base.supplierVariantName,
+      louieMaeVariantName: r.louieMaeVariantName || base.supplierVariantName,
       availability: 'unknown',
       fulfillmentRoute: 'manual_dealer_zuo',
       holds: [],

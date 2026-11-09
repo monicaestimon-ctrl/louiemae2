@@ -256,6 +256,7 @@ describe('Zuo import (CAT01, PRI01)', () => {
         const expected = r.draft.variants[0];
         expect({
           sku: r.sku,
+          name: v.name,
           retail: v.retail,
           commercial: v.commercial,
           cost: v.cost,
@@ -264,6 +265,7 @@ describe('Zuo import (CAT01, PRI01)', () => {
           increment: v.increment,
         }).toEqual({
           sku: r.sku,
+          name: expected.name,
           retail: expected.retail,
           commercial: expected.commercial,
           cost: expected.cost,
@@ -427,6 +429,7 @@ describe('Zuo import (CAT01, PRI01)', () => {
     expect(after[0].catalog[0].variant.holds).toEqual(expect.arrayContaining(['MANUAL', 'MEDIA_RIGHTS']));
     expect(after[0].catalog[0].cost).toMatchObject({ dutiesMinor: null, inboundFreightMinor: null, supplierFeesMinor: null });
     expect(after[0].row.sourceEvidence).toBe(staged.sourceEvidence);
+    expect(after[0].row.draft.variants[0].name).toBe('Default');
     expect(await t.run(ctx => ctx.db.query('commerceListings').collect())).toHaveLength(0);
     const meta = (await t.run(ctx => ctx.db.query('catProductMeta').first()))!;
     await t.run(ctx => ctx.db.patch(meta._id, { stage: 'evidence_review' }));
