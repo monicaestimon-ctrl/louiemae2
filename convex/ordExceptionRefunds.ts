@@ -19,6 +19,7 @@ export const proofFields = {
   succeededRefundMinor: v.number(),
   pendingRefundMinor: v.number(),
   refundIds: v.array(v.string()),
+  succeededRefundIds: v.optional(v.array(v.string())),
 };
 
 export const work = internalQuery({
@@ -44,6 +45,7 @@ export const work = internalQuery({
       intentId: intent._id,
       sessionId: exception.stripeSessionId,
       paymentIntentId: exception.paymentIntentId,
+      paymentStateVersion: exception.paymentStateVersion ?? 0,
     };
   },
 });
@@ -58,7 +60,12 @@ export const permit = internalMutation({
 });
 
 export const record = internalMutation({
-  args: { id: v.id('ordPaidExceptions'), intentId: v.id('ordCheckoutIntents'), ...proofFields },
+  args: {
+    id: v.id('ordPaidExceptions'),
+    intentId: v.id('ordCheckoutIntents'),
+    expectedPaymentStateVersion: v.optional(v.number()),
+    ...proofFields,
+  },
   handler: async (ctx, a) => {
     const actor = await requireDeliveryRole(ctx, 'finance');
     if (!acceptsPlatformPayment(a.livemode))
@@ -71,6 +78,7 @@ export const record = internalMutation({
       exception.intentId !== a.intentId ||
       exception.stripeSessionId !== a.sessionId ||
       exception.paymentIntentId !== a.paymentIntentId ||
+      (exception.paymentStateVersion ?? 0) !== (a.expectedPaymentStateVersion ?? 0) ||
       intent?.status !== 'exception'
     )
       throw new CommerceError('INVALID_INPUT', 'Exception changed during provider verification');
@@ -80,13 +88,15 @@ export const record = internalMutation({
       ) ||
       a.amountMinor <= 0 ||
       a.succeededRefundMinor + a.pendingRefundMinor > a.amountMinor ||
-      a.refundIds.length > 100
+      a.refundIds.length > 100 ||
+      (a.succeededRefundIds?.some((id) => !a.refundIds.includes(id)) ?? false)
     )
       throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED');
-    const { id, ...proof } = a;
+    const { id, expectedPaymentStateVersion, ...proof } = a;
     const verificationId = await ctx.db.insert('ordPaymentVerifications', {
       ...proof,
       exceptionId: id,
+      paymentStateVersion: expectedPaymentStateVersion ?? 0,
       verifiedAt: Date.now(),
       validUntil: Date.now() + 5 * 60000,
       verifiedBy: actor.email,
@@ -169,6 +179,7 @@ export const closeRefunded = mutation({
       proof.intentId !== intent._id ||
       proof.sessionId !== ex.stripeSessionId ||
       proof.paymentIntentId !== ex.paymentIntentId ||
+      (proof.paymentStateVersion ?? 0) !== (ex.paymentStateVersion ?? 0) ||
       proof.validUntil <= Date.now() ||
       proof.verifiedAt > Date.now()
     )

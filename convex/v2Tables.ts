@@ -822,8 +822,10 @@ export const v2Tables = {
     resolutionKind: v.optional(v.union(v.literal('verified_refund'), v.literal('fulfilled_original'))),
     paymentVerificationId: v.optional(v.id('ordPaymentVerifications')),
     resolutionOrderId: v.optional(v.id('ordOrders')),
+    paymentStateVersion: v.optional(v.number()),
+    refundFollowup: v.optional(v.object({ eventId: v.string(), refundId: v.string(), status: v.string(), receivedAt: v.number() })),
     createdAt: v.number(),
-  }).index('by_status', ['status', 'createdAt']).index('by_session',['stripeSessionId']),
+  }).index('by_status', ['status', 'createdAt']).index('by_session',['stripeSessionId']).index('by_payment', ['paymentIntentId']),
 
   ordPaymentVerifications: defineTable({
     exceptionId: v.id('ordPaidExceptions'),
@@ -839,6 +841,8 @@ export const v2Tables = {
     succeededRefundMinor: v.number(),
     pendingRefundMinor: v.number(),
     refundIds: v.array(v.string()),
+    succeededRefundIds: v.optional(v.array(v.string())),
+    paymentStateVersion: v.optional(v.number()),
     verifiedAt: v.number(),
     validUntil: v.number(),
     verifiedBy: v.string(),

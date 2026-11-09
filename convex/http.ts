@@ -19,6 +19,7 @@ import { parseCjWebhookPayload, type ParsedCjWebhookPayload } from "../lib/cjWeb
 import { parseCjSourcingWebhookEvidence } from "../lib/cjSourcingWebhook";
 import { getStripeWebhookVerificationError, shouldAllowUnsignedStripeWebhook } from "../lib/stripeWebhook";
 import { customerMessage } from "../lib/errors";
+import { acceptsPlatformPayment } from '../lib/paymentMode';
 
 const http = httpRouter();
 
@@ -299,6 +300,11 @@ http.route({
             return new Response(`Webhook Error: ${err.message}`, { status: 400 });
         }
 
+        if (['charge.refunded', 'charge.dispute.created', 'charge.dispute.closed'].includes(event.type) &&
+            !acceptsPlatformPayment(event.livemode, event.account)) {
+            return new Response(JSON.stringify({ received: true, ignored: 'payment_scope' }), { status: 200 });
+        }
+
         // v2 checkout (docs/production-v2 S19): store the verified event first, then process it
         // durably. Duplicate or out-of-order deliveries are no-ops.
         if (event.type.startsWith('checkout.session.') && (event.data.object as Stripe.Checkout.Session).metadata?.intentId) {
@@ -323,6 +329,22 @@ http.route({
                     ...(shipping?.address ? { shipping: { line1: shipping.address.line1 || '', ...(shipping.address.line2 ? { line2: shipping.address.line2 } : {}), city: shipping.address.city || '', state: shipping.address.state || '', postalCode: shipping.address.postal_code || '', country: shipping.address.country || '' } } : {}),
                 },
             });
+            return new Response(JSON.stringify({ received: true }), { status: 200 });
+        }
+
+        if (['refund.created', 'refund.updated', 'refund.failed', 'charge.refund.updated'].includes(event.type)) {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            const refund = event.data.object as Stripe.Refund;
+            const paymentIntentId = typeof refund.payment_intent === 'string' ? refund.payment_intent : refund.payment_intent?.id;
+            const chargeId = typeof refund.charge === 'string' ? refund.charge : refund.charge?.id;
+            if (paymentIntentId && chargeId) {
+                const digest = Array.from(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', new globalThis.TextEncoder().encode(body))), b => b.toString(16).padStart(2, '0')).join('');
+                await ctx.runMutation(internal.ordPayments.receive, {
+                    eventId: event.id, type: event.type, livemode: event.livemode,
+                    ...(event.account ? { account: event.account } : {}), payloadHash: digest,
+                    payload: { id: refund.id, paymentIntentId, chargeId, status: refund.status, created: event.created },
+                });
+            }
             return new Response(JSON.stringify({ received: true }), { status: 200 });
         }
 

@@ -129,6 +129,7 @@ export const resumeOriginal = mutation({
       proof.sessionId !== ex.stripeSessionId ||
       proof.sessionId !== intent.stripeSessionId ||
       proof.paymentIntentId !== ex.paymentIntentId ||
+      (proof.paymentStateVersion ?? 0) !== (ex.paymentStateVersion ?? 0) ||
       proof.validUntil <= Date.now() ||
       proof.verifiedAt > Date.now()
     )

@@ -81,6 +81,8 @@ export const verify = action({
         succeededRefundMinor,
         pendingRefundMinor,
         refundIds: refunds.data.map((r) => r.id),
+        succeededRefundIds: refunds.data.filter((r) => r.status === 'succeeded').map((r) => r.id),
+        expectedPaymentStateVersion: work.paymentStateVersion,
       });
     } catch {
       throw new CommerceError(

@@ -7,7 +7,7 @@ const mock = vi.hoisted(() => ({
   verify: vi.fn(),
   close: vi.fn(),
   data: {
-    exception: { status: 'open' },
+    exception: { status: 'open', paymentStateVersion: 0 },
     canApprove: true,
     proof: {
       _id: 'proof-1',
@@ -18,6 +18,7 @@ const mock = vi.hoisted(() => ({
       succeededRefundMinor: 10000,
       pendingRefundMinor: 0,
       validUntil: Date.now() + 300000,
+      paymentStateVersion: 0,
     },
   },
 }));
@@ -37,12 +38,26 @@ beforeEach(() => {
   mock.data.proof._id = 'proof-1';
   mock.data.proof.pendingRefundMinor = 0;
   mock.data.proof.succeededRefundMinor = 10000;
+  mock.data.proof.paymentStateVersion = 0;
+  mock.data.exception.paymentStateVersion = 0;
 });
 function open() {
   const result = render(<PaidExceptionReview />);
   fireEvent.click(screen.getByRole('button', { name: 'stock_failed · pi_fixture' }));
   return result;
 }
+it('keeps notes and blocks a previously verified proof after a provider update', async () => {
+  const view = open();
+  fireEvent.click(screen.getByRole('button', { name: 'Verify existing payment and refunds' }));
+  await waitFor(() => expect(mock.verify).toHaveBeenCalled());
+  fireEvent.change(screen.getByLabelText('Customer agreement reference and note'), { target: { value: 'Keep these support notes' } });
+  mock.data.exception.paymentStateVersion = 1;
+  view.rerender(<PaidExceptionReview />);
+  expect(screen.getByText(/provider reported a payment change/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Record completed refund resolution' })).toBeDisabled();
+  expect(screen.getByLabelText('Customer agreement reference and note')).toHaveValue('Keep these support notes');
+  expect(mock.close).not.toHaveBeenCalled();
+});
 it('requires read-only verification, customer agreement and supplier confirmation before recording refund closure', async () => {
   open();
   const close = screen.getByRole('button', { name: 'Record completed refund resolution' });
