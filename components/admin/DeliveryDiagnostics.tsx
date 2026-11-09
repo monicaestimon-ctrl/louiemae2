@@ -1,4 +1,5 @@
 import DeliveryMonitoring from './DeliveryMonitoring';
+import CatalogCostEvidence from './CatalogCostEvidence';
 import React, { useState } from 'react';
 import { useConvex, useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
@@ -6,6 +7,7 @@ import type { Id } from '../../convex/_generated/dataModel';
 import { customerMessage } from '../../lib/errors';
 
 export default function DeliveryDiagnostics() {
+  const [costVariant, setCostVariant] = useState<Id<'catVariants'> | null>(null);
   const calibration = useQuery(api.dlvAdmin.calibration, {});
   const coverage = useQuery(api.dlvAdmin.coverage, {}),
     client = useConvex(),
@@ -133,13 +135,19 @@ export default function DeliveryDiagnostics() {
                 <td>
                   {r.piecesPerPack} / {r.cartons.reduce((n, c) => n + c.cartonsPerPack, 0)}
                 </td>
-                <td>{r.holds.join(', ') || r.availability}</td>
+                <td>
+                  {r.holds.join(', ') || r.availability}
+                  <button className="block underline" onClick={() => setCostVariant(r.variantId)}>
+                    Review cost evidence
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       {status === 'CanLoadMore' && <button onClick={() => loadMore(20)}>Load next variants</button>}
+      {costVariant && <CatalogCostEvidence key={costVariant} variantId={costVariant} />}
       <button
         disabled={busy}
         onClick={() =>

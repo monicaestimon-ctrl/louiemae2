@@ -171,3 +171,18 @@ Conversion rules:
 - Retain stock-unit-basis, media-rights, mapping, commission and manual publication holds. This conversion is not a new inventory reservation or permission to sell an unavailable/discontinued product.
 
 Rollback: stop further chunks and keep affected products unpublished. Preserve all batch, observation and revision history. Resume an unchanged running batch or perform a reviewed correction from the saved snapshot; do not delete records or overwrite a later owner review. No financial order, payment, notification or supplier order is created by this migration.
+
+Production execution (2026-11-08): PR 254 deployed; the private 803-row before/dry-run/review/commit/after packet contains zero parity issues. Created 803 canonical variants and 835 carton records; 427 wholesale costs corroborated; 226 original exclusions retained; all 803 variants manually held. Approved prices, names and images match. Feature flags remained disabled. This is catalog conversion, not sale activation.
+
+## 16. Cost and MAP evidence authoring
+
+Finance staff use Readiness → Review cost evidence for a specific selling pack. The authenticated backend independently checks the role; support and public clients cannot read or write cost records.
+
+1. Review the current revision and pack quantity. Enter wholesale USD per piece; blank explicitly invalidates it as unknown. Keep source precision (up to six decimals). Additional duties, inbound freight and supplier fees are per selling pack, with distinct unknown, documented-zero and positive-amount states. Do not repeat customer delivery freight or the separate modeled handling allowance.
+2. Record an explicit SKU MAP with piece/pack basis, unknown status, or an approver-documented exemption. Zero MAP is not an exemption. Policy-derived MAP remains in the policy-review workflow; do not relabel a multiplier as an explicit SKU minimum.
+3. Cite the supplier source and actual observation time, plus a review note explaining zero costs where applicable. Verification starts unchecked. Saving today does not refresh an old source. Unknown wholesale cannot be verified; future timestamps are rejected. A populated cost is not automatically a confirmed cost.
+4. Saving appends a revision and source observations, closes the previous revision's effective interval, and retains original cost values. Concurrent edits fail against the expected revision. Exact retries reuse the saved result; changed retries are rejected. The form retains edits when another staff member updates the record and requires an explicit reload.
+5. Approved retail/trade prices and financial history are unchanged. A manual hold and review task require requalification and explicit owner release review through the existing hold/publication workflow. No save action publishes, clears another hold, approves a supplier policy, changes a commission already earned, or changes an accepted customer order.
+6. Recompute scenarios against approved settings; reconcile MAP and expense completeness, preserved prices, commission schedule, margin, inventory and delivery evidence before owner release. Unavailable/discontinued and original exclusions still require their independent review. Canonical revisions are authoritative; old draft/import snapshots remain historical until the reviewed catalog projection/publication workflow updates them.
+
+Freshness checks reject future/nonfinite observations and unverified inventory. A valid price-list date does not bless an absent/future cost-verification timestamp. Numerically equivalent decimal cost observations are not conflicting solely because of trailing zeros; current genuine conflicts still block. Expired conflict observations no longer invalidate current evidence.

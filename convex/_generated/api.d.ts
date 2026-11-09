@@ -20,6 +20,7 @@ import type * as brandVoice from "../brandVoice.js";
 import type * as campaigns from "../campaigns.js";
 import type * as catCategories from "../catCategories.js";
 import type * as catCore from "../catCore.js";
+import type * as catEvidence from "../catEvidence.js";
 import type * as catMedia from "../catMedia.js";
 import type * as catPolicies from "../catPolicies.js";
 import type * as catPricing from "../catPricing.js";
@@ -192,6 +193,7 @@ declare const fullApi: ApiFromModules<{
   catMedia: typeof catMedia;
   catPolicies: typeof catPolicies;
   catPricing: typeof catPricing;
+  catEvidence: typeof catEvidence;
   catPublication: typeof catPublication;
   catStock: typeof catStock;
   catalog: typeof catalog;

@@ -22,6 +22,7 @@ import { commissionReserve } from './dlvCommission';
 import { digest } from './dlvSecurity';
 import { parseDecimal, mul, rat, toMinor } from '../lib/decimal';
 import { checkPackQuantity, physicalUnits } from '../lib/catUnits';
+import { currentObservation } from '../lib/catFreshness';
 import type {
   DeliveryLadder,
   ConfigKind,
@@ -256,10 +257,8 @@ export async function resolveLines(
         'freshnessPolicy',
         supplier?.freshnessKey ?? 'freshness-default'
       );
-      const stockAt = Math.max(
-        0,
-        ...observations.filter((o) => o.field === 'stock').map((o) => o.observedAt)
-      );
+      const currentStock = currentObservation(observations, 'stock', now);
+      const stockAt = currentStock && currentStock !== 'conflict' ? currentStock.observedAt : 0;
       const validUntil = Math.min(
         stockAt +
           Math.min(freshness.value.stockSyncMaxHours, freshness.value.checkoutSourceMaxHours) *
