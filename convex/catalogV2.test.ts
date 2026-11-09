@@ -22,7 +22,57 @@ beforeEach(() => {
 });
 afterEach(() => {
   delete process.env.CJ_ADMIN_EMAILS;
+  delete process.env.DELIVERY_ADMIN_ROLES;
   delete process.env.CATALOG_PUBLICATION_V2_ENABLED;
+});
+
+describe('cost evidence authoring', () => {
+  async function fixture() {
+    const { t, admin } = await setup();
+    await importPackage(admin, [row('EVIDENCE')], 'dry_run');
+    await importPackage(admin, [row('EVIDENCE')], 'commit');
+    const variant = (await t.run(ctx => ctx.db.query('catVariants').first()))!;
+    const args = {
+      variantId: variant._id, expectedRevisionId: variant.currentCostRevisionId ?? null,
+      requestKey: 'cost-evidence-fixture', wholesaleUsd: '115.125', verified: true,
+      observedAt: NOW - 3600000, evidence: 'Supplier fixture revision / SKU EVIDENCE', note: 'Reviewed source; duties included in supplier price.',
+      duties: { state: 'confirmed_zero' as const }, inbound: { state: 'unknown' as const }, fees: { state: 'amount' as const, minor: 125 },
+      map: { state: 'explicit_sku' as const, minor: 30000, basis: 'pack' as const },
+    };
+    return { t, admin, variant, args };
+  }
+  it('appends evidence, preserves prices/history and retains unknown versus documented zero', async () => {
+    const { t, admin, variant, args } = await fixture();
+    const old = await admin.query(api.catEvidence.detail, { variantId: variant._id });
+    const id = await admin.mutation(api.catEvidence.recordCost, args);
+    expect(await admin.mutation(api.catEvidence.recordCost, args)).toBe(id);
+    const updated = await admin.query(api.catEvidence.detail, { variantId: variant._id });
+    expect(updated.history).toHaveLength(2);
+    expect(updated.current).toMatchObject({ wholesalePrecise: '115.125', wholesaleMinor: 11513, verifiedAt: args.observedAt, dutiesMinor: null, dutiesConfirmedZero: true, inboundFreightMinor: null, inboundConfirmedZero: false, supplierFeesMinor: 125, feesConfirmedZero: false, mapMinor: 30000, mapUnitBasis: 'pack' });
+    expect(updated.variant).toMatchObject({ retailPriceRevisionId: variant.retailPriceRevisionId, tradePriceRevisionId: variant.tradePriceRevisionId });
+    expect(updated.variant.holds).toEqual(expect.arrayContaining([...variant.holds, 'MANUAL']));
+    expect(updated.history.find(r => r._id === old.current!._id)).toMatchObject({ wholesaleMinor: old.current!.wholesaleMinor, effectiveTo: expect.any(Number) });
+    expect(await t.run(ctx => ctx.db.query('sysAuditEvents').filter(q => q.eq(q.field('action'), 'cost.evidence')).collect())).toHaveLength(1);
+    await expect(admin.mutation(api.catEvidence.recordCost, { ...args, note: 'Changed retry' })).rejects.toThrow(/Retry differs/);
+    await expect(admin.mutation(api.catEvidence.recordCost, { ...args, requestKey: 'new-request-stale' })).rejects.toThrow(/Reload/);
+  });
+  it('rejects invalid source dates, ambiguous zeros and unauthorized exemptions', async () => {
+    const { t, admin, args } = await fixture();
+    for (const over of [
+      { observedAt: Date.now() + 100000 }, { evidence: ' ' }, { wholesaleUsd: null },
+      { fees: { state: 'amount' as const, minor: 0 } },
+      { map: { state: 'explicit_sku' as const, minor: 0, basis: 'piece' as const } },
+    ]) await expect(admin.mutation(api.catEvidence.recordCost, { ...args, ...over })).rejects.toThrow();
+    process.env.DELIVERY_ADMIN_ROLES = JSON.stringify({ [ADMIN]: ['finance'] });
+    await expect(admin.mutation(api.catEvidence.recordCost, { ...args, map: { state: 'not_applicable' } })).rejects.toThrow(/approver/);
+    process.env.DELIVERY_ADMIN_ROLES = JSON.stringify({ [ADMIN]: ['support'] });
+    await expect(admin.query(api.catEvidence.detail, { variantId: args.variantId })).rejects.toThrow();
+    await expect(admin.mutation(api.catEvidence.recordCost, args)).rejects.toThrow();
+    delete process.env.DELIVERY_ADMIN_ROLES;
+    const id = await admin.mutation(api.catEvidence.recordCost, { ...args, wholesaleUsd: null, verified: false, map: { state: 'unknown' } });
+    expect(await t.run(ctx => ctx.db.get(id))).toMatchObject({ wholesaleMinor: null, mapApplicability: 'unknown' });
+    expect((await t.run(ctx => ctx.db.get(id)))!.verifiedAt).toBeUndefined();
+  });
 });
 
 const row = (sku: string, over: Record<string, unknown> = {}) => ({
