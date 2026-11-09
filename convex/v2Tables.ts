@@ -241,6 +241,7 @@ export const v2Tables = {
     holds: v.array(holdReason),
     referralEligible: v.optional(v.boolean()),
     importFingerprint: v.optional(v.string()),
+    importEvidenceFingerprint: v.optional(v.string()),
     legacyVariantId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
