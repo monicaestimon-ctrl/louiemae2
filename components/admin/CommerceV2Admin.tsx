@@ -9,6 +9,7 @@ import { dollarsToMinor } from '../../lib/decimal';
 import DeliveryOperations from './DeliveryOperations';
 import PaidExceptionReview from './PaidExceptionReview';
 import FulfillmentShipments from './FulfillmentShipments';
+import './commerce-v2-admin.css';
 
 // Commerce v2 operations console (spec S35, v2 §20, §26). Admin-only: every query behind it
 // requires the admin allowlist on the server.
@@ -496,7 +497,7 @@ export default function CommerceV2Admin() {
   if (!sections.length) return <p role="alert">No staff permissions are assigned to this account.</p>;
   const section = sections.some(([id]) => id === selected) ? selected : sections[0][0];
   return (
-    <div className="space-y-6">
+    <div className="commerce-v2-admin space-y-6">
       <h2 className="font-serif text-3xl text-earth">Commerce operations</h2>
       <nav aria-label="Commerce v2 sections" className="flex flex-wrap gap-2">
         {sections.map(([id, label]) => (

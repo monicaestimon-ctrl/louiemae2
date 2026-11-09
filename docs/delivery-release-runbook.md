@@ -305,3 +305,7 @@ Recompute after any cost, policy or price change. A populated wholesale cost alo
 The internal scenarios now include `trade_approved` using the actual approved pack price, separately from hypothetical 5%/10% comparisons. Its minimum is `max(base pack cost / (1 - processing - returns - overhead - required margin), pack MAP)`, rounded up once. Retail referral commission is excluded from a trade purchase. This is an internal economic floor, not permission for a new public discount, coupon, project stack or price change; those mechanisms and approval controls remain separate.
 
 Publication rechecks current economics even if stored holds were removed. Approving only a trade price cannot qualify an underpriced retail item. Zuo referral enablement requires current evidence and retail qualification; existing paid attribution is never changed by requalification. Price revision records retain the effective margin and rounding policy versions rather than a hardcoded version 1.
+
+## 26. Operations workspace accessibility
+
+Check the delivery, decisions and dealer-order views in both owner and scoped staff shells. At 320px and desktop widths, headings, selected options, placeholders and entered values must remain readable; controls must fit their cards. Tab through section navigation and forms to verify visible focus, then check a touch viewport for usable control targets. Long internal evidence and JSON may scroll within their own containers without widening the page. Do not submit operational mutations merely to test presentation.
