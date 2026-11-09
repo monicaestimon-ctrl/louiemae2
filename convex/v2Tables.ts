@@ -189,6 +189,13 @@ export const v2Tables = {
     originZip: v.string(),
     state: v.string(),
     active: v.boolean(),
+    evidenceRef: v.optional(v.string()),
+    verifiedAt: v.optional(v.number()),
+    validUntil: v.optional(v.number()),
+    timezone: v.optional(v.string()),
+    cutoffLocal: v.optional(v.string()),
+    services: v.optional(v.array(v.union(v.literal('ground'), v.literal('ltl')))),
+    updatedAt: v.optional(v.number()),
   }).index('by_supplier', ['supplierId', 'code']),
 
   catProductMeta: defineTable({
