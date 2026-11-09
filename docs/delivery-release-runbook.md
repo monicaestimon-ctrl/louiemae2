@@ -296,3 +296,12 @@ Ordinary verified payments and approved original-order recovery both honor an at
 Verification: fixture payment after attribution/accrual switches are disabled must record the frozen rate once, on merchandise after discounts/credit only. Repeat the event under a new provider event ID and confirm no duplicate obligation. Trade purchases and missing/ineligible snapshots must remain commission-free. Production confirmation uses existing authorized transaction evidence; do not create a real test payment or payout.
 
 Dealer evidence observation (November 8, 2026 America/Chicago): an existing Zuo session showed the account signed in, but its dashboard returned a MalCare firewall block. This is not evidence of current account rates, private-label permission, inventory basis or supplier approval. Continue only from accessible verified documents/account evidence; do not bypass the block.
+
+
+## 25. Pricing qualification before publication
+
+Recompute after any cost, policy or price change. A populated wholesale cost alone is insufficient: duties, inbound freight and supplier fees must each be known or explicitly confirmed zero. Failed economics opens PRICING_UNVERIFIED and the shared sellability gate independently checks expense completeness. Do not manually clear a hold as a substitute for correcting its evidence.
+
+The internal scenarios now include `trade_approved` using the actual approved pack price, separately from hypothetical 5%/10% comparisons. Its minimum is `max(base pack cost / (1 - processing - returns - overhead - required margin), pack MAP)`, rounded up once. Retail referral commission is excluded from a trade purchase. This is an internal economic floor, not permission for a new public discount, coupon, project stack or price change; those mechanisms and approval controls remain separate.
+
+Publication rechecks current economics even if stored holds were removed. Approving only a trade price cannot qualify an underpriced retail item. Zuo referral enablement requires current evidence and retail qualification; existing paid attribution is never changed by requalification. Price revision records retain the effective margin and rounding policy versions rather than a hardcoded version 1.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { basePiece, minimumRetail, scenarios, scenario, tradePrice, type PricingInput } from './pricing';
+import { basePiece, minimumRetail, minimumTrade, scenarios, scenario, tradePrice, type PricingInput } from './pricing';
 import { rat, toMinor } from '../decimal';
 import { CONFIG_SEED } from '../config/seed';
 import type { PricingAssumptions } from '../config';
@@ -42,6 +42,16 @@ describe('golden G1: SKU 111182 pair', () => {
 });
 
 describe('minimum retail rules', () => {
+  it('uses the independent no-commission trade floor, rounded up and bounded by pack MAP', () => {
+    const floor = minimumTrade(sku111182);
+    expect(floor).toBe(36106);
+    expect(scenario('trade', floor, 0, rat(30690), assumptions, 500).passes).toBe(true);
+    expect(scenario('trade', floor - 1, 0, rat(30690), assumptions, 500).passes).toBe(false);
+    expect(minimumTrade({ ...sku111182, maxCommissionBps: 9000 })).toBe(floor);
+    expect(minimumTrade({ ...sku111182, mapPackMinor: 50000 })).toBe(50000);
+    expect(() => minimumTrade({ ...sku111182, extraPackCostsMinor: [null] })).toThrow();
+    expect(() => minimumTrade({ ...sku111182, marginBps: 9500 })).toThrow();
+  });
   it('lets MAP set the floor on the matching pack basis', () => {
     const r = minimumRetail({ ...sku111182, mapPackMinor: 50_000 });
     expect(r.retailMinor).toBe(55_556); // 500 / 0.9 rounded up

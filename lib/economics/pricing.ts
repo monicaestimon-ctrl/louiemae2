@@ -4,7 +4,7 @@ import { CommerceError } from '../errors';
 import { add, bpsRat, cmp, div, max, minorRat, mul, rat, sub, toMinor, type Rational } from '../decimal';
 import type { PricingAssumptions } from '../config';
 
-export const ENGINE_VERSION = 'zuo-pricing-1';
+export const ENGINE_VERSION = 'zuo-pricing-2';
 export type SizeClass = 'SMALL' | 'MEDIUM' | 'LARGE' | 'OVERSIZE' | 'LTL' | 'UNKNOWN';
 
 export type PricingInput = {
@@ -37,6 +37,13 @@ export function basePack(i: PricingInput): Rational {
 }
 
 const variableBps = (a: PricingAssumptions) => a.processingBps + a.returnsBps + a.overheadBps;
+
+/** A trade purchase funds its own costs and margin, with no retail referral commission. */
+export function minimumTrade(i: PricingInput): number {
+  const denominator = sub(rat(1), bpsRat(variableBps(i.assumptions) + i.marginBps));
+  if (cmp(denominator, rat(0)) <= 0) throw new CommerceError('INVALID_INPUT', 'Trade rates leave no room for costs');
+  return toMinor(max(div(basePack(i), denominator), minorRat(i.mapPackMinor ?? 0)), 'ceil');
+}
 
 /** Minimum retail per pack: max(B/D1, B/D2, MAP/(1−d)), rounded up to the cent (02 §8.2). */
 export function minimumRetail(i: PricingInput) {

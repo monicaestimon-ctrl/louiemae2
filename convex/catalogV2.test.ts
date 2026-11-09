@@ -6,6 +6,7 @@ import schema from './schema';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { assertSellable } from './catCore';
+import { computeScenarios, recordScenarios } from './catPricing';
 import { assertLineMechanism } from './catPolicies';
 import { normalizePackage, parseJsonPackage } from '../lib/zuoImport';
 import { isCommerceError } from '../lib/errors';
@@ -616,6 +617,57 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     return { t, admin, cv, productId: cv.productId };
   }
 
+  it('repairs cached pricing holds, uses actual trade prices and never enables an unfunded referral', async () => {
+    const { t, admin, cv, productId } = await readyProduct();
+    await t.run(ctx => ctx.db.patch(cv.currentCostRevisionId!, { dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true }));
+    await t.run(ctx => recordScenarios(ctx, cv._id, 'fixture'));
+    const start = await t.run(async ctx => computeScenarios(ctx, (await ctx.db.get(cv._id))!));
+    expect(start.scenarios.find(x => x.name === 'trade_approved')?.priceMinor).toBe(41226);
+    expect(start.belowTradeMinimum).toBe(false); // 10% trade still funds its own costs without a retail commission.
+    await t.run(ctx => ctx.db.patch(cv.retailPriceRevisionId!, { packPriceMinor: 10000 }));
+    const scenarioId = await t.run(ctx => recordScenarios(ctx, cv._id, 'fixture'));
+    await t.run(async ctx => {
+      const current = (await ctx.db.get(cv._id))!;
+      await ctx.db.patch(cv._id, { holds: current.holds.filter(h => h !== 'MARGIN_BELOW_POLICY' && h !== 'COMMISSION_UNQUALIFIED'), referralEligible: true });
+    });
+    expect(await t.run(ctx => recordScenarios(ctx, cv._id, 'fixture'))).toBe(scenarioId);
+    expect(await t.run(ctx => ctx.db.get(cv._id))).toMatchObject({ referralEligible: false, holds: expect.arrayContaining(['MARGIN_BELOW_POLICY', 'COMMISSION_UNQUALIFIED']) });
+    await expect(admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, eligible: true, reason: 'Attempt to override qualification' })).rejects.toThrow();
+    await admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, channel: 'trade', packPriceMinor: 42000, reason: 'Trade price reviewed' });
+    expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).toContain('MARGIN_BELOW_POLICY');
+    const simulation = await t.run(async ctx => computeScenarios(ctx, (await ctx.db.get(cv._id))!));
+    const { records } = await admin.query(api.sysConfig.list, { status: 'approved' });
+    for (const key of ['zuo-approved-5', 'rounding-pack-up-cents']) {
+      const current = records.find(r => r.key === key)!;
+      const id = await admin.mutation(api.sysConfig.propose, { kind: current.kind as 'marginPolicy' | 'roundingPolicy', key, value: current.value, note: 'Fixture new policy version with unchanged commercial terms' });
+      await admin.mutation(api.sysConfig.approve, { id });
+    }
+    const priceId = await admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, channel: 'retail', packPriceMinor: simulation.minimumRetailMinor, reason: 'Retail funds full schedule' });
+    expect(await t.run(ctx => ctx.db.get(priceId))).toMatchObject({ marginPolicyVersion: 2, roundingPolicyVersion: 2 });
+    await admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, eligible: true, reason: 'Fresh qualification supports full schedule' });
+    expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).not.toContain('MARGIN_BELOW_POLICY');
+    // A later cost gap cannot reuse an old successful qualification.
+    await t.run(ctx => ctx.db.patch(cv.currentCostRevisionId!, { feesConfirmedZero: false }));
+    expect(await t.run(ctx => recordScenarios(ctx, cv._id, 'fixture'))).toBeNull();
+    expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).toContain('PRICING_UNVERIFIED');
+    const status = await admin.query(api.catPublication.status, { productId });
+    expect(status.gates.economics_review.join(' ')).toContain('unknown');
+    await expect(admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, eligible: true, reason: 'Missing expense cannot be overridden' })).rejects.toThrow();
+  });
+
+  it('revalidates actual approved trade economics even when stored holds were cleared', async () => {
+    const { t, admin, cv, productId } = await readyProduct();
+    await t.run(async ctx => {
+      await ctx.db.patch(cv.currentCostRevisionId!, { dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true });
+      await ctx.db.patch(cv.tradePriceRevisionId!, { packPriceMinor: 1000 });
+      await ctx.db.patch(cv._id, { holds: [], referralEligible: true });
+    });
+    const status = await admin.query(api.catPublication.status, { productId });
+    expect(status.gates.economics_review).toContain('111182/1: trade price is below the current minimum');
+    await t.run(ctx => recordScenarios(ctx, cv._id, 'fixture'));
+    expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).toContain('MARGIN_BELOW_POLICY');
+  });
+
   it('refuses publish and purchase while holds or stale evidence exist, through any path', async () => {
     const { t, admin, cv, productId } = await readyProduct();
     // Media is unverified and the cost was never verified for MAP: both hold.
@@ -631,6 +683,9 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
       await ctx.db.patch(cv._id, { holds: [], referralEligible: true });
     });
     await expect(t.run((ctx) => assertSellable(ctx, cv._id, 'purchase', NOW + 2 * 86_400_000))).rejects.toSatisfy((e) => isCommerceError(e, 'STOCK_UNAVAILABLE'));
+    // Removing a hold does not turn unknown expenses into verified zero costs.
+    await expect(t.run((ctx) => assertSellable(ctx, cv._id, 'purchase', NOW))).rejects.toThrow(/COST_MISSING/);
+    await t.run(ctx => ctx.db.patch(cv.currentCostRevisionId!, { dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true }));
     await expect(t.run((ctx) => assertSellable(ctx, cv._id, 'purchase', NOW))).resolves.toBeTruthy();
   });
 
@@ -641,7 +696,7 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
       await ctx.db.insert('catMediaAssets', { productId, role: 'hero', storageId, derivatives: [], contentHash: 'h', mime: 'image/jpeg', width: 1200, height: 1200, bytes: 3, sourceUrl: 'https://www.zuomod.com/x.jpg', rights: { basis: 'dealer media license', attributionRequired: false, privateOriginal: true }, altText: 'Oak dining chair, pair', status: 'verified', createdAt: NOW });
       for (const h of await ctx.db.query('catHolds').collect()) await ctx.db.patch(h._id, { resolvedAt: NOW });
       await ctx.db.patch(cv._id, { holds: [], referralEligible: true });
-      await ctx.db.patch(cv.currentCostRevisionId!, { verifiedAt: NOW - 3_600_000 });
+      await ctx.db.patch(cv.currentCostRevisionId!, { verifiedAt: NOW - 3_600_000, dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true });
     });
     for (const to of ['evidence_review', 'economics_review', 'content_review', 'ready'] as const) await admin.mutation(api.catPublication.advance, { productId, to });
     await expect(admin.mutation(api.catPublication.publish, { productIds: [productId], channels: ['retail', 'house'] })).rejects.toSatisfy((e) => isCommerceError(e, 'FEATURE_DISABLED'));

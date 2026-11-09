@@ -86,6 +86,13 @@ export async function evaluate(ctx: Ctx, v: Doc<'catVariants'>, now = Date.now()
     policy,
     now,
   });
+  // A wholesale number does not make the variant cost-complete. Never publish or
+  // generate new referrals by treating an unknown expense as a confirmed zero.
+  if (cost && (
+    (cost.dutiesMinor === null && !cost.dutiesConfirmedZero) ||
+    (cost.inboundFreightMinor === null && !cost.inboundConfirmedZero) ||
+    (cost.supplierFeesMinor === null && !cost.feesConfirmedZero)
+  ) && !result.holds.includes('COST_MISSING')) result.holds.push('COST_MISSING');
   if (v.currentStockRevisionId) {
     const stock = stockView(await ctx.db.get(v.currentStockRevisionId), v.warehouseId, v.piecesPerPack, now, policy.stockSyncMaxHours * 3600000, v.orderMinimumPacks, await digest(v.warehouseId ? await ctx.db.get(v.warehouseId) : null));
     result.availability = stock.availability;
