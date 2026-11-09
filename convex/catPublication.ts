@@ -8,6 +8,7 @@ import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { assertSellable } from './catCore';
+import { computeScenarios } from './catPricing';
 import { audit } from './sysCore';
 import { requireFlag } from '../lib/flags';
 import { CommerceError, commerceErrorData } from '../lib/errors';
@@ -37,6 +38,14 @@ export async function gates(ctx: Ctx, productId: Id<'commerceProducts'>) {
     if (cost && cost.mapApplicability === 'unknown') out.economics_review.push(`${tag}: MAP applicability unresolved`);
     if (cost && !cost.verifiedAt) out.economics_review.push(`${tag}: cost not verified`);
     if (!cv.marginPolicyKey) out.economics_review.push(`${tag}: no margin policy assigned`);
+    try {
+      const economics = await computeScenarios(ctx, cv);
+      if (economics.belowMinimum) out.economics_review.push(`${tag}: retail price is below the current minimum`);
+      if (economics.belowTradeMinimum) out.economics_review.push(`${tag}: trade price is below the current minimum`);
+      if (cv.referralEligible && !economics.referralQualified) out.economics_review.push(`${tag}: promised commission is not funded`);
+    } catch (error) {
+      out.economics_review.push(`${tag}: ${commerceErrorData(error)?.detail ?? 'Current economics need review'}`);
+    }
     for (const h of cv.holds) out.economics_review.push(`${tag}: hold ${h}`);
     const retail = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
     if (retail?.status !== 'approved') out.content_review.push(`${tag}: no approved retail price`);

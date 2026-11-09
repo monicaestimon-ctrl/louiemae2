@@ -14,7 +14,7 @@ import { CommerceError, commerceErrorData } from '../lib/errors';
 import { rat, mul, parseDecimal } from '../lib/decimal';
 import { commissionReserve } from './dlvCommission';
 import { piecePriceInfo } from '../lib/catUnits';
-import { ENGINE_VERSION, minimumRetail, scenarios, type PricingInput, type SizeClass } from '../lib/economics/pricing';
+import { ENGINE_VERSION, minimumRetail, minimumTrade, scenarios, type PricingInput, type SizeClass } from '../lib/economics/pricing';
 import type { MarginPolicy, PricingAssumptions, TradeDiscountSchedule } from '../lib/config';
 import { stableStringify } from '../lib/zuoImport';
 
@@ -64,11 +64,18 @@ export async function pricingInput(ctx: Ctx, cv: Doc<'catVariants'>, o: Opts = {
 export async function computeScenarios(ctx: Ctx, cv: Doc<'catVariants'>, o: Opts = {}) {
   const { input, category } = await pricingInput(ctx, cv, o);
   const min = minimumRetail(input);
+  const tradeFloor = minimumTrade(input);
   const approved = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
+  const trade = cv.tradePriceRevisionId ? await ctx.db.get(cv.tradePriceRevisionId) : null;
   const retailMinor = approved?.status === 'approved' ? approved.packPriceMinor : min.retailMinor;
-  const s = scenarios({ ...input, retailMinor, fullScheduleBps: input.maxCommissionBps });
-  const inputsHash = stableStringify({ ...input, wholesalePiece: `${input.wholesalePiece.n}/${input.wholesalePiece.d}`, retailMinor });
-  return { minimumRetailMinor: min.retailMinor, minimumTradeMinor: min.tradeMinor, retailMinor, belowMinimum: retailMinor < min.retailMinor, inputsHash, category, ...s };
+  const tradeMinor = trade?.status === 'approved' ? trade.packPriceMinor : null;
+  const s = scenarios({ ...input, retailMinor, fullScheduleBps: input.maxCommissionBps,
+    extra: tradeMinor === null ? [] : [{ name: 'trade_approved', priceMinor: tradeMinor, commissionBps: 0 }],
+  });
+  const inputsHash = stableStringify({ ...input, wholesalePiece: `${input.wholesalePiece.n}/${input.wholesalePiece.d}`, retailMinor, tradeMinor });
+  return { minimumRetailMinor: min.retailMinor, minimumTradeMinor: tradeFloor, retailMinor, tradeMinor,
+    belowMinimum: retailMinor < min.retailMinor, belowTradeMinimum: tradeMinor !== null && tradeMinor < tradeFloor,
+    inputsHash, category, ...s };
 }
 
 export const simulate = query({
@@ -98,13 +105,14 @@ export async function recordScenarios(ctx: MutationCtx, variantId: Id<'catVarian
   try {
     res = await computeScenarios(ctx, cv);
   } catch (e) {
-    // Missing inputs are already held by freshness evaluation; record why pricing could not run.
+    await openHold(ctx, variantId, 'PRICING_UNVERIFIED', 'Current economics could not be verified', by);
     await openReview(ctx, 'pricing_blocked', 'catVariants', variantId, commerceErrorData(e)?.detail ?? String((e as Error).message));
     return null;
   }
   const last = await ctx.db.query('catScenarioResults').withIndex('by_variant_computed', (q) => q.eq('variantId', variantId)).order('desc').first();
-  if (last?.inputsHash === res.inputsHash) return last._id;
-  const id = await ctx.db.insert('catScenarioResults', { variantId, inputsHash: res.inputsHash, scenarios: res.scenarios, minimumRetailMinor: res.minimumRetailMinor, computedAt: Date.now(), engineVersion: ENGINE_VERSION });
+  const id = last?.inputsHash === res.inputsHash && last.engineVersion === ENGINE_VERSION ? last._id : await ctx.db.insert('catScenarioResults', { variantId, inputsHash: res.inputsHash, scenarios: res.scenarios, minimumRetailMinor: res.minimumRetailMinor, computedAt: Date.now(), engineVersion: ENGINE_VERSION });
+  // Reusing an identical calculation must still repair eligibility and holds.
+  await resolveHold(ctx, variantId, 'PRICING_UNVERIFIED', by, 'Current economics verified');
   // Commission prequalification against the full schedule (v2 §7): a visible state, never a hidden cap.
   if (res.referralQualified) {
     await resolveHold(ctx, variantId, 'COMMISSION_UNQUALIFIED', by, 'Full schedule supported');
@@ -113,10 +121,11 @@ export async function recordScenarios(ctx: MutationCtx, variantId: Id<'catVarian
     await openHold(ctx, variantId, 'COMMISSION_UNQUALIFIED', 'Full-schedule commission scenario is below the margin policy', by);
     if (cv.referralEligible) await ctx.db.patch(variantId, { referralEligible: false });
   }
-  if (res.belowMinimum) {
-    await openHold(ctx, variantId, 'MARGIN_BELOW_POLICY', `Approved price ${res.retailMinor} is below the engine minimum ${res.minimumRetailMinor}`, by);
-    await openReview(ctx, 'price_below_minimum', 'catVariants', variantId, `Approved ${res.retailMinor} < minimum ${res.minimumRetailMinor}`);
-  }
+  if (res.belowMinimum || res.belowTradeMinimum) {
+    const detail = `Retail ${res.retailMinor} / minimum ${res.minimumRetailMinor}; trade ${res.tradeMinor ?? 'unapproved'} / minimum ${res.minimumTradeMinor}`;
+    await openHold(ctx, variantId, 'MARGIN_BELOW_POLICY', detail, by);
+    await openReview(ctx, 'price_below_minimum', 'catVariants', variantId, detail);
+  } else await resolveHold(ctx, variantId, 'MARGIN_BELOW_POLICY', by, 'Both approved prices meet their current minimums');
   return id;
 }
 
@@ -148,7 +157,9 @@ export const approvePrice = mutation({
     const floor = a.channel === 'retail' ? res.minimumRetailMinor : res.minimumTradeMinor;
     if (a.packPriceMinor < floor) throw new CommerceError('COST_REVIEW_REQUIRED', `Below the ${cv.marginPolicyKey ?? 'zuo-standard-20'} minimum of ${floor}`, `This price is below the approved minimum of $${(floor / 100).toFixed(2)}.`);
     const cost = cv.currentCostRevisionId ? await ctx.db.get(cv.currentCostRevisionId) : null;
-    if (cost?.mapApplicability === 'applies' && cost.mapMinor !== null && a.packPriceMinor < cost.mapMinor) throw new CommerceError('MAP_POLICY_REVIEW', 'Below MAP');
+    if (cost?.mapApplicability === 'applies' && cost.mapMinor !== null && a.packPriceMinor < cost.mapMinor * (cost.mapUnitBasis === 'piece' ? cv.piecesPerPack : 1)) throw new CommerceError('MAP_POLICY_REVIEW', 'Below pack MAP');
+    const marginPolicy = await activeConfig(ctx, 'marginPolicy', cv.marginPolicyKey ?? 'zuo-standard-20');
+    const roundingPolicy = await activeConfig(ctx, 'roundingPolicy', 'rounding-pack-up-cents');
     const field = a.channel === 'retail' ? 'retailPriceRevisionId' : 'tradePriceRevisionId';
     const now = Date.now();
     const current = cv[field] ? await ctx.db.get(cv[field]!) : null;
@@ -159,8 +170,8 @@ export const approvePrice = mutation({
       packPriceMinor: a.packPriceMinor,
       piecePriceMinorInfo: piecePriceInfo(a.packPriceMinor, cv.piecesPerPack),
       marginPolicyKey: cv.marginPolicyKey ?? 'zuo-standard-20',
-      marginPolicyVersion: 1,
-      roundingPolicyVersion: 1,
+      marginPolicyVersion: marginPolicy.version,
+      roundingPolicyVersion: roundingPolicy.version,
       approvedBy: admin.email,
       approvedAt: now,
       status: 'approved',
@@ -195,6 +206,7 @@ export const assignPolicy = mutation({
     if (policy.requiresDocumentRef && !a.documentRef?.trim()) throw new CommerceError('INVALID_INPUT', `${a.policyKey} needs the document that approves it`);
     await ctx.db.patch(cv._id, { marginPolicyKey: a.policyKey, updatedAt: Date.now() });
     if (!policy.blocksAutomaticSale) await resolveHold(ctx, cv._id, 'MAP_FLOOR_UNAPPROVED', admin.email, `Policy ${a.policyKey}`);
+    await recordScenarios(ctx, cv._id, admin.email);
     await audit(ctx, { actor: admin.email, action: 'policy.assign', entityTable: 'catVariants', entityId: cv._id, before: cv.marginPolicyKey, after: a.policyKey, reason: [a.reason, a.documentRef].filter(Boolean).join(' · ') });
   },
 });
