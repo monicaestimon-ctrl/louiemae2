@@ -77,6 +77,7 @@ export const productProfile = query({
       // These are selling-unit quantities; actual eligibility is rechecked by the engine.
       if (product?.provider === 'ashcroft') return {
         piecesPerPack: 1, minimumPacks: option.minimum, incrementPacks: option.increment,
+        ...(a.channel === 'trade' ? { requiresProjectQuote: true } : {}),
       };
       if (!vid || product?.provider !== 'zuo') return null;
       const cv = await ctx.db.get(vid);

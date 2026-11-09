@@ -741,6 +741,15 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     expect(await t.query(api.dlvEstimates.productProfile, args)).toEqual({ piecesPerPack: 1, minimumPacks: 2, incrementPacks: 2 });
     expect(await t.query(api.dlvEstimates.productProfile, { ...args, variantId: 'missing' })).toBeNull();
     await expect(t.query(api.dlvEstimates.productProfile, { ...args, channel: 'trade' })).rejects.toThrow();
+    const userId = await t.run(async ctx => {
+      const userId = await ctx.db.insert('users', { email: 'profile-trade@example.com' });
+      await ctx.db.insert('holmProfiles', { userId, displayName: 'Studio', tradeStatus: 'approved', createdAt: NOW, updatedAt: NOW });
+      const listing = (await ctx.db.get(ids.listingId))!;
+      await ctx.db.insert('commerceListings', { productId: ids.productId, channel: 'house', published: true, revision: 1, updatedAt: NOW, snapshot: listing.snapshot });
+      return userId;
+    });
+    const trade = t.withIdentity({ subject: `${userId}|s` });
+    expect(await trade.query(api.dlvEstimates.productProfile, { ...args, channel: 'trade' })).toEqual({ piecesPerPack: 1, minimumPacks: 2, incrementPacks: 2, requiresProjectQuote: true });
     await t.run(ctx => ctx.db.patch(ids.listingId, { published: false }));
     expect(await t.query(api.dlvEstimates.productProfile, args)).toBeNull();
   });

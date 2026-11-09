@@ -44,6 +44,8 @@ export default function ProductDeliveryEstimate({
   if (!enabled || !variantId) return disabledMessage ? <p>{disabledMessage}</p> : null;
   if (profile === undefined) return <p className="text-sm">Checking delivery availability…</p>;
   if (profile === null) return <p className="text-sm">This item is currently unavailable for delivery estimates.</p>;
+  if ('requiresProjectQuote' in profile && profile.requiresProjectQuote)
+    return <p className="text-sm">Add this item to your project to request confirmed delivery pricing.</p>;
   return (
     <DeliveryForm
       key={`${productId}:${variantId}:${piecesPerPack}:${minimumPacks}:${incrementPacks}:${channel}:${selectedPacks ?? 'editable'}`}

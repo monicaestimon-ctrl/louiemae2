@@ -8,14 +8,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getFunctionName } from 'convex/server';
 import ProductDeliveryEstimate from './ProductDeliveryEstimate';
 
-const mock = vi.hoisted(() => ({ estimate: vi.fn(), request: vi.fn(), enabled: true, missing: false }));
+const mock = vi.hoisted(() => ({ estimate: vi.fn(), request: vi.fn(), enabled: true, missing: false, projectQuote: false }));
 vi.mock('convex/react', () => ({
   useQuery: (ref: unknown) =>
     getFunctionName(ref as never).endsWith('.enabled') ||
     getFunctionName(ref as never).endsWith(':enabled')
       ? mock.enabled
       : getFunctionName(ref as never).includes('productProfile')
-        ? mock.missing ? null : { piecesPerPack: 2, minimumPacks: 3, incrementPacks: 2 }
+        ? mock.missing ? null : { piecesPerPack: 2, minimumPacks: 3, incrementPacks: 2, requiresProjectQuote: mock.projectQuote }
         : undefined,
   useAction: () => mock.estimate,
   useMutation: () => mock.request,
@@ -26,6 +26,7 @@ beforeEach(() => {
   mock.request.mockReset();
   mock.enabled = true;
   mock.missing = false;
+  mock.projectQuote = false;
 });
 const response = (amount: number) => ({
   status: 'ok',
@@ -35,6 +36,13 @@ const response = (amount: number) => ({
   expiresAt: Date.now() + 60000,
 });
 describe('shared delivery product UI', () => {
+  it('routes project-only supplier trade delivery to the project quote workflow', () => {
+    mock.projectQuote = true;
+    render(<ProductDeliveryEstimate productId="p" variantId="v" channel="trade" />);
+    expect(screen.getByText('Add this item to your project to request confirmed delivery pricing.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Estimate delivery' })).not.toBeInTheDocument();
+    expect(mock.estimate).not.toHaveBeenCalled();
+  });
   it('shows unavailable instead of loading forever for a missing product profile', () => {
     mock.missing = true;
     render(<ProductDeliveryEstimate productId="p" variantId="v" />);
