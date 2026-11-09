@@ -61,9 +61,11 @@ function Receipt() {
       <h1 className="font-serif text-4xl text-earth mb-4">
         {confirmed
           ? (order?.statusLabel ?? 'Order confirmed')
-          : unavailable
-            ? 'Order access needed'
-            : 'Checking your order'}
+          : receipt?.state === 'refunded'
+            ? 'Refund recorded'
+            : unavailable
+              ? 'Order access needed'
+              : 'Checking your order'}
       </h1>
       <div aria-live="polite" role="status" className="space-y-4">
         {unavailable ? (
@@ -78,6 +80,12 @@ function Receipt() {
               customer support
             </a>
             .
+          </p>
+        ) : receipt?.state === 'refunded' ? (
+          <p>
+            The full payment refund has been verified with our payment provider. Your bank may take
+            additional time to display it. This checkout will not be fulfilled; your cart has been
+            preserved. Contact support before placing a replacement order.
           </p>
         ) : receipt?.state === 'review_required' ? (
           <p>

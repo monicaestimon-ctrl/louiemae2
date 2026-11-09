@@ -17,6 +17,8 @@ import { exemptionFor } from './dlvTaxExemptions';
 import { groupFreight, resolveLines, type FreightConfig, type ResolvedLine } from './dlvEngine';
 import { digest } from './dlvSecurity';
 import { availableAfterCommitments } from './ordInventory';
+import { applyCreditEvent } from './ldgCore';
+import { reserve as reserveCredit } from './ldgCredits';
 
 const PERIMETER_SECRET = '1'.repeat(64);
 async function estimateViaGateway(
@@ -48,8 +50,11 @@ afterEach(() => {
 });
 
 const taxFixture = vi.hoisted(() => ({ fail: false }));
+const paymentReadFixture = vi.hoisted(() => ({ session: vi.fn(), refunds: vi.fn() }));
 vi.mock('stripe', () => ({
   default: class {
+    checkout = { sessions: { retrieve: paymentReadFixture.session } };
+    refunds = { list: paymentReadFixture.refunds };
     tax = {
       calculations: {
         create: async (a: any) => {
@@ -94,6 +99,7 @@ const ADDRESS = {
 
 beforeEach(() => {
   taxFixture.fail = false;
+  paymentReadFixture.session.mockReset(); paymentReadFixture.refunds.mockReset();
   // Scheduled work (payment processing, email delivery) runs only when a test drives it.
   vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'], now: Date.now() });
   process.env.CJ_ADMIN_EMAILS = ADMIN;
@@ -715,6 +721,84 @@ describe('delivery estimates (S17, S18)', () => {
 });
 
 describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
+  it('rejects wrong-mode and connected-account payment events before storing platform work', async () => {
+    const s = await setup();
+    const event = { eventId: 'evt_wrong_mode', type: 'checkout.session.completed', livemode: true, payloadHash: 'fixture', payload: {} };
+    expect(await s.t.mutation(internal.ordPayments.receive, event)).toBe(false);
+    expect(await s.t.mutation(internal.ordPayments.receive, { ...event, livemode: false, account: 'acct_other' })).toBe(false);
+    expect(await s.t.run(ctx => ctx.db.query('sysPaymentEvents').collect())).toHaveLength(0);
+    const old = await s.t.run(ctx => ctx.db.insert('sysPaymentEvents', { ...event, provider: 'stripe', receivedAt: Date.now(), status: 'received', attempts: 0 }));
+    await s.t.mutation(internal.ordPayments.process, { id: old });
+    expect((await s.t.run(ctx => ctx.db.get(old)))?.status).toBe('ignored');
+  });
+
+  it('closes a verified full refund once, releases credit and stock, and returns truthful private receipt status', async () => {
+    const s = await setup();
+    const lines = [zuoLine(s)];
+    const est = await estimateViaGateway(s.t, { lines, channel: 'retail', zip: '95206', address: ADDRESS, visitorKey: 'refund-exception-fixture' });
+    const intent = await s.t.mutation(internal.ordCheckout.createIntent, { idempotencyKey: 'refund-exception-fixture-key', estimateId: est.estimateId, guestCapability: est.guestCapability, lines, address: ADDRESS, service: 'curbside', acceptTotalMinor: est.totalMinor! });
+    if (intent.status === 'price_changed') throw new Error('Unexpected price change');
+    await s.t.mutation(internal.ordCheckout.attachSession, { intentId: intent.intentId, sessionId: 'cs_refund_exception' });
+    const ex = await s.t.run(async ctx => {
+      await ctx.db.patch(intent.intentId, { status: 'exception' });
+      const userId = await ctx.db.insert('users', { email: 'refund-credit-fixture@example.com' });
+      await applyCreditEvent(ctx, { eventKey: 'refund-credit-opening', userId, type: 'opening_balance', amountMinor: 1000, actor: 'fixture' });
+      await reserveCredit(ctx, userId, 1000, `intent:${intent.intentId}`);
+      await ctx.db.patch(intent.intentId, { creditReservationRef: `intent:${intent.intentId}` });
+      const hold = (await ctx.db.query('ordInventoryReservations').first())!;
+      await ctx.db.patch(hold._id, { status: 'consumed' });
+      return ctx.db.insert('ordPaidExceptions', { intentId: intent.intentId, paymentIntentId: 'pi_refund_exception', stripeSessionId: 'cs_refund_exception', reason: 'stock_failed', evidence: {}, status: 'open', createdAt: Date.now() });
+    });
+    const session = { id: 'cs_refund_exception', metadata: { intentId: intent.intentId }, livemode: false, payment_status: 'paid', amount_total: intent.totalMinor, currency: 'usd', payment_intent: {
+      id: 'pi_refund_exception', livemode: false, status: 'succeeded', amount_received: intent.totalMinor, currency: 'usd', latest_charge: { id: 'ch_refund_exception', amount: intent.totalMinor, currency: 'usd', livemode: false, paid: true, captured: true, disputed: false }
+    } };
+    const refund = { id: 're_fixture', payment_intent: 'pi_refund_exception', charge: 'ch_refund_exception', currency: 'usd', amount: intent.totalMinor, status: 'pending' };
+    paymentReadFixture.session.mockResolvedValue(session);
+    paymentReadFixture.refunds.mockResolvedValue({ data: [refund], has_more: false });
+    await expect(s.t.action(api.ordExceptionActions.verify, { id: ex })).rejects.toThrow();
+    expect(paymentReadFixture.session).not.toHaveBeenCalled();
+    await expect(s.admin.mutation(api.v2Admin.resolvePaidException, { id: ex, resolution: 'Customer says refund' })).rejects.toThrow(/note alone/);
+    for (const invalid of [
+      { ...session, livemode: true },
+      { ...session, metadata: { intentId: 'another-checkout' } },
+      { ...session, amount_total: session.amount_total + 1 },
+    ]) {
+      paymentReadFixture.session.mockResolvedValueOnce(invalid);
+      await expect(s.admin.action(api.ordExceptionActions.verify, { id: ex })).rejects.toThrow(/verification is incomplete/);
+    }
+    paymentReadFixture.refunds.mockResolvedValueOnce({ data: [refund], has_more: true });
+    await expect(s.admin.action(api.ordExceptionActions.verify, { id: ex })).rejects.toThrow(/verification is incomplete/);
+    const pending = await s.admin.action(api.ordExceptionActions.verify, { id: ex });
+    const args = { id: ex, verificationId: pending, customerAgreement: 'Customer approved cancellation by support case fixture', supplierCancellationEvidence: 'Confirmed no supplier order was submitted', noOutstandingFulfillment: true, requestKey: 'refund-close-fixture-key' };
+    await expect(s.admin.mutation(api.ordExceptionRefunds.closeRefunded, args)).rejects.toThrow(/full successful refund/);
+    paymentReadFixture.refunds.mockResolvedValue({ data: [{ ...refund, status: 'succeeded', amount: Math.floor(intent.totalMinor / 2) }], has_more: false });
+    const partial = await s.admin.action(api.ordExceptionActions.verify, { id: ex });
+    await expect(s.admin.mutation(api.ordExceptionRefunds.closeRefunded, { ...args, verificationId: partial })).rejects.toThrow(/full successful refund/);
+    paymentReadFixture.refunds.mockResolvedValue({ data: [{ ...refund, status: 'succeeded' }], has_more: false });
+    paymentReadFixture.session.mockResolvedValueOnce({ ...session, payment_intent: { ...session.payment_intent, latest_charge: { ...session.payment_intent.latest_charge, disputed: true } } });
+    const disputed = await s.admin.action(api.ordExceptionActions.verify, { id: ex });
+    await expect(s.admin.mutation(api.ordExceptionRefunds.closeRefunded, { ...args, verificationId: disputed })).rejects.toThrow(/full successful refund/);
+    const succeeded = await s.admin.action(api.ordExceptionActions.verify, { id: ex });
+    await expect(s.admin.mutation(api.ordExceptionRefunds.closeRefunded, args)).rejects.toThrow(/Refresh payment/);
+    vi.setSystemTime(Date.now() + 5 * 60000 + 1);
+    await expect(s.admin.mutation(api.ordExceptionRefunds.closeRefunded, { ...args, verificationId: succeeded })).rejects.toThrow(/Refresh payment/);
+    const refreshed = await s.admin.action(api.ordExceptionActions.verify, { id: ex });
+    const update = { ...args, verificationId: refreshed };
+    await expect(s.t.mutation(api.ordExceptionRefunds.closeRefunded, update)).rejects.toThrow();
+    await s.admin.mutation(api.ordExceptionRefunds.closeRefunded, update);
+    await s.admin.mutation(api.ordExceptionRefunds.closeRefunded, update);
+    await expect(s.admin.mutation(api.ordExceptionRefunds.closeRefunded, { ...update, customerAgreement: 'Changed retry notes' })).rejects.toThrow(/Changed reconciliation retry/);
+    expect((await s.t.run(ctx => ctx.db.get(intent.intentId)))?.status).toBe('refunded');
+    expect((await s.t.run(ctx => ctx.db.query('ordInventoryReservations').first()))?.status).toBe('released');
+    const credits = (await s.t.run(ctx => ctx.db.query('ldgCreditAccounts').first()))!;
+    expect(credits.availableMinor).toBe(1000); expect(credits.reservedMinor).toBe(0);
+    expect(await s.t.query(api.ordReceipts.receipt, { sessionId: 'cs_refund_exception', guestCapability: est.guestCapability })).toEqual({ state: 'refunded' });
+    expect(await s.t.query(api.ordReceipts.receipt, { sessionId: 'cs_refund_exception' })).toEqual({ state: 'unavailable' });
+    await s.t.mutation(internal.ordCheckout.fail, { intentId: intent.intentId });
+    expect((await s.t.run(ctx => ctx.db.get(intent.intentId)))?.status).toBe('refunded');
+    expect(await s.t.run(ctx => ctx.db.query('ordOrders').collect())).toHaveLength(0);
+    expect(await s.t.run(ctx => ctx.db.query('sysNotifications').collect())).toHaveLength(0);
+  });
   it('atomically deducts other checkout holds, preserves retries, and frees expired unpaid capacity', async () => {
     const s = await setup();
     await s.t.run(async ctx => {

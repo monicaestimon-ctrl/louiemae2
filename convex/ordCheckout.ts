@@ -342,7 +342,7 @@ export async function releaseIntent(
   intent: Doc<'ordCheckoutIntents'>,
   status: 'expired' | 'failed'
 ) {
-  if (intent.status === 'paid' || intent.status === 'exception') return;
+  if (intent.status === 'paid' || intent.status === 'exception' || intent.status === 'refunded') return;
   await ctx.db.patch(intent._id, { status });
   if (intent.creditReservationRef) await settleCredit(ctx, intent.creditReservationRef, 'released');
   for (const r of await ctx.db

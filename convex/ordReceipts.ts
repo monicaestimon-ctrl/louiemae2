@@ -19,6 +19,7 @@ export const receipt = query({
         if (!(await ownsOrder(ctx, intent.buyer, intent, a.guestCapability)))
           return { state: 'unavailable' as const };
         if (intent.status === 'exception') return { state: 'review_required' as const };
+        if (intent.status === 'refunded') return { state: 'refunded' as const };
         if (intent.status === 'failed' || intent.status === 'expired')
           return { state: 'not_completed' as const };
         const order = await ctx.db

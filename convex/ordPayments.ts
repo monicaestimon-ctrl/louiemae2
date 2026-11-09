@@ -13,6 +13,7 @@ import { accrueForOrder } from './ldgCommissions';
 import { onOrderPaid, settle as settleCredit } from './ldgCredits';
 import { convertPaidQuote } from './dlvQuoteLifecycle';
 import { paymentStockFailure, retainPaidCommitments } from './ordInventory';
+import { acceptsPlatformPayment } from '../lib/paymentMode';
 
 export type SessionPayload = {
   id: string;
@@ -29,6 +30,8 @@ export type SessionPayload = {
 export const receive = internalMutation({
   args: { eventId: v.string(), type: v.string(), livemode: v.boolean(), account: v.optional(v.string()), payloadHash: v.string(), payload: v.any() },
   handler: async (ctx, a) => {
+    if (!acceptsPlatformPayment(a.livemode, a.account))
+      return false; // A different mode or connected account cannot mutate platform checkout.
     const seen = await ctx.db.query('sysPaymentEvents').withIndex('by_event', (q) => q.eq('eventId', a.eventId)).first();
     if (seen) return false;
     const id = await ctx.db.insert('sysPaymentEvents', { provider: 'stripe', eventId: a.eventId, type: a.type, livemode: a.livemode, ...(a.account ? { account: a.account } : {}), payloadHash: a.payloadHash, payload: a.payload, receivedAt: Date.now(), status: 'received', attempts: 0 });
@@ -82,6 +85,10 @@ export const process = internalMutation({
   handler: async (ctx, a) => {
     const ev = await ctx.db.get(a.id);
     if (!ev || ev.status === 'processed' || ev.status === 'ignored') return;
+    if (!acceptsPlatformPayment(ev.livemode, ev.account)) {
+      await ctx.db.patch(ev._id, { status: 'ignored', attempts: ev.attempts + 1, processedAt: Date.now() });
+      return;
+    }
     let outcome: 'processed' | 'ignored' = 'ignored';
     if (ev.type === 'checkout.session.completed' || ev.type === 'checkout.session.async_payment_succeeded') outcome = await handleSession(ctx, ev.payload as SessionPayload, 'completed');
     else if (ev.type === 'checkout.session.expired' || ev.type === 'checkout.session.async_payment_failed') outcome = await handleSession(ctx, ev.payload as SessionPayload, 'expired');
