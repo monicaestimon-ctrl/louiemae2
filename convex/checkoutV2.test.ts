@@ -1214,6 +1214,56 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
 });
 
 describe('fulfillment (S21, FUL04, FUL05, DEL05)', () => {
+  it('records exact shipment retries, protects partial cancellations and keeps incident evidence private', async () => {
+    const s = await setup({ approveMixed: true });
+    const { est } = await paidOrder(s, [zuoLine(s, 2), { productId: s.ashId, variantId: 'b1', packs: 1 }]);
+    const zuo = (await s.admin.query(api.ordFulfillment.dealerQueue, { route: 'manual_dealer_zuo' }))[0];
+    const ash = (await s.admin.query(api.ordFulfillment.dealerQueue, { route: 'manual_dealer_ashcroft' }))[0];
+    await expect(s.t.query(api.ordFulfillment.shipmentDetail, { supplierOrderId: zuo._id })).rejects.toThrow();
+    const shipment = { supplierOrderId: zuo._id, requestKey: 'shipment-retry-fixture', items: [{ allocationId: zuo.items[0].allocationId, pieces: 1 }], trackingNumber: 'TRACK-1' };
+    await expect(s.admin.mutation(api.ordFulfillment.recordShipment, shipment)).rejects.toThrow(/handoff/);
+    await expect(s.admin.mutation(api.ordFulfillment.markSubmitted, { supplierOrderId: zuo._id, supplierPo: 'PO-fixture', acceptedCostMinor: -1 })).rejects.toThrow();
+    const submitted = { supplierOrderId: zuo._id, supplierPo: 'PO-fixture', acceptedCostMinor: 10000 };
+    await s.admin.mutation(api.ordFulfillment.markSubmitted, submitted);
+    await s.admin.mutation(api.ordFulfillment.markSubmitted, submitted);
+    const ack = { supplierOrderId: zuo._id, confirmation: 'Confirmed fixture PO', invoicedCostMinor: 10100 };
+    await s.admin.mutation(api.ordFulfillment.acknowledge, ack);
+    await s.admin.mutation(api.ordFulfillment.acknowledge, ack);
+    expect((await s.t.run(ctx => ctx.db.get(zuo._id)))?.exceptions).toHaveLength(1);
+    await expect(s.admin.mutation(api.ordFulfillment.recordShipment, { ...shipment, items: [{ ...shipment.items[0], pieces: 0.5 }] })).rejects.toThrow(/whole physical/);
+    await expect(s.admin.mutation(api.ordFulfillment.recordShipment, { ...shipment, items: [...shipment.items, ...shipment.items] })).rejects.toThrow(/distinct/);
+    const first = await s.admin.mutation(api.ordFulfillment.recordShipment, shipment);
+    expect(await s.admin.mutation(api.ordFulfillment.recordShipment, shipment)).toBe(first);
+    await expect(s.admin.mutation(api.ordFulfillment.recordShipment, { ...shipment, trackingNumber: 'changed' })).rejects.toThrow(/Changed shipment retry/);
+    expect(await s.t.run(ctx => ctx.db.query('ordShipments').collect())).toHaveLength(1);
+    await expect(s.admin.mutation(api.ordFulfillment.cancelAllocations, { supplierOrderId: zuo._id, allocationIds: [zuo.items[0].allocationId], reason: 'Supplier partial cancellation', requestKey: 'partial-cancel-fixture' })).rejects.toThrow(/Partly shipped/);
+    const detail = await s.admin.query(api.ordFulfillment.shipmentDetail, { supplierOrderId: zuo._id });
+    expect(detail.items[0]).toMatchObject({ shippedPieces: 1, remainingPieces: 3 });
+    const second = await s.admin.mutation(api.ordFulfillment.recordShipment, { ...shipment, requestKey: 'shipment-last-fixture', items: [{ ...shipment.items[0], pieces: 3 }] });
+    await s.admin.mutation(api.ordFulfillment.markDelivered, { shipmentId: first });
+    const issue = { shipmentId: second, kind: 'lost' as const, message: 'The carrier is locating this shipment. Contact support for help.', evidence: 'Private carrier case fixture with supplier cost', notifyCustomer: true, requestKey: 'shipment-issue-fixture' };
+    await expect(s.t.mutation(api.ordFulfillment.recordShipmentIssue, issue)).rejects.toThrow();
+    await s.admin.mutation(api.ordFulfillment.recordShipmentIssue, issue);
+    await s.admin.mutation(api.ordFulfillment.recordShipmentIssue, issue);
+    await expect(s.admin.mutation(api.ordFulfillment.recordShipmentIssue, { ...issue, message: 'Changed retry message' })).rejects.toThrow(/Changed shipment issue retry/);
+    await expect(s.admin.mutation(api.ordFulfillment.markDelivered, { shipmentId: second })).rejects.toThrow(/Resolve/);
+    const order = (await s.t.run(ctx => ctx.db.query('ordOrders').first()))!;
+    expect(order.status).toBe('partially_delivered');
+    const customer = await s.t.query(api.ordFulfillment.orderStatus, { number: order.number, guestCapability: est.guestCapability });
+    expect(JSON.stringify(customer)).toContain(issue.message);
+    expect(JSON.stringify(customer)).not.toContain(issue.evidence);
+    const notifications = await s.t.run(ctx => ctx.db.query('sysNotifications').collect());
+    expect(notifications.filter(n => n.template === 'shipment_update')).toHaveLength(1);
+    expect(JSON.stringify(notifications)).not.toContain(issue.evidence);
+    await s.admin.mutation(api.ordFulfillment.recordShipmentIssue, { ...issue, kind: 'resolved', message: 'Carrier found the shipment and confirmed arrival.', notifyCustomer: false, requestKey: 'shipment-resolved-fixture' });
+    await s.admin.mutation(api.ordFulfillment.markDelivered, { shipmentId: second });
+    await s.admin.mutation(api.ordFulfillment.markDelivered, { shipmentId: second });
+    const cancel = { supplierOrderId: ash._id, allocationIds: [ash.items[0].allocationId], reason: 'Supplier confirmed cancellation', requestKey: 'supplier-cancel-retry-fixture' };
+    await s.admin.mutation(api.ordFulfillment.cancelAllocations, cancel);
+    await s.admin.mutation(api.ordFulfillment.cancelAllocations, cancel);
+    expect((await s.t.run(ctx => ctx.db.get(order._id)))?.status).toBe('delivered');
+    expect((await s.t.run(ctx => ctx.db.query('sysNotifications').collect())).filter(n => n.template === 'line_cancelled')).toHaveLength(1);
+  });
   it('keeps the accepted supplier SKU and pack basis after later catalog edits', async () => {
     const s = await setup();
     await paidOrder(s, [zuoLine(s, 2)]);
@@ -1247,19 +1297,22 @@ describe('fulfillment (S21, FUL04, FUL05, DEL05)', () => {
     });
     // Partial shipment of 2 of 4 pieces
     const shipId = await s.admin.mutation(api.ordFulfillment.recordShipment, {
+      requestKey: 'shipment-first-fixture',
       supplierOrderId: zuoQueue[0]._id,
       items: [{ allocationId: zuoQueue[0].items[0].allocationId, pieces: 2 }],
       trackingUrl: 'https://track.example/1',
     });
     let order = (await s.t.run((ctx) => ctx.db.query('ordOrders').first()))!;
-    expect(order.status).toBe('paid'); // nothing fully shipped yet
+    expect(order.status).toBe('partially_shipped'); // physical pieces, not only completed selling packs
     await expect(
       s.admin.mutation(api.ordFulfillment.recordShipment, {
+        requestKey: 'shipment-excess-fixture',
         supplierOrderId: zuoQueue[0]._id,
         items: [{ allocationId: zuoQueue[0].items[0].allocationId, pieces: 3 }],
       })
     ).rejects.toThrow(/More pieces/);
     await s.admin.mutation(api.ordFulfillment.recordShipment, {
+      requestKey: 'shipment-second-fixture',
       supplierOrderId: zuoQueue[0]._id,
       items: [{ allocationId: zuoQueue[0].items[0].allocationId, pieces: 2 }],
     });
@@ -1267,9 +1320,10 @@ describe('fulfillment (S21, FUL04, FUL05, DEL05)', () => {
     expect(order.status).toBe('partially_shipped');
     await s.admin.mutation(api.ordFulfillment.markDelivered, { shipmentId: shipId });
     order = (await s.t.run((ctx) => ctx.db.query('ordOrders').first()))!;
-    expect(order.status).toBe('partially_shipped'); // first shipment only covers half the pair set
+    expect(order.status).toBe('partially_delivered'); // first shipment covers half the pair set
     // Ashcroft rejects: only its allocation changes
     await s.admin.mutation(api.ordFulfillment.cancelAllocations, {
+      requestKey: 'supplier-cancel-fixture',
       supplierOrderId: ashQueue[0]._id,
       allocationIds: [ashQueue[0].items[0].allocationId],
       reason: 'Dealer rejected',

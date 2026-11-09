@@ -29,6 +29,17 @@ beforeEach(() => {
   window.location.hash = '#checkout/success?session_id=cs_fixture';
 });
 describe('verified checkout return', () => {
+  it('shows the actual pieces in each shipment and its customer-safe incident update', () => {
+    mock.result = { state: 'confirmed', emailStatus: 'pending', order: {
+      number: 'LM-TRACK', statusLabel: 'Partially delivered', totals: { merchandise: 10000, delivery: 4999, tax: 0, total: 14999, credit: 0, discount: 0 },
+      disclosure: 'Your order may arrive in separate shipments.', serviceTerms: null,
+      shipments: [{ label: 'Shipment group 1', items: [], tracking: [{ status: 'shipped', carrier: 'Fixture carrier', trackingUrl: null, estimatedWindow: null,
+        items: [{ name: 'Fixture chair', pieces: 1 }], update: { message: 'Carrier is arranging a new appointment.' } }] }],
+    } };
+    render(<CheckoutSuccess />);
+    expect(screen.getByText('Fixture chair — 1 piece(s) in this shipment')).toBeInTheDocument();
+    expect(screen.getByText('Delivery update: Carrier is arranging a new appointment.')).toBeInTheDocument();
+  });
   it('does not confirm or clear for loading, pending, review, failed or inaccessible payment', () => {
     rememberCheckout('cs_fixture', 'a'.repeat(64), cartLines(mock.items));
     const view = render(<CheckoutSuccess />);
