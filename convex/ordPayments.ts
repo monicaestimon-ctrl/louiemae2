@@ -79,11 +79,13 @@ async function handleSession(ctx: MutationCtx, s: SessionPayload, kind: 'complet
 
 /** One transactional order/credit/attribution/tax path for verified normal or recovered payments. */
 export async function finishVerifiedOrder(ctx: MutationCtx, intent: Doc<'ordCheckoutIntents'>,
-  payment: Parameters<typeof createOrderFromIntent>[2], honorFrozenRates = false) {
+  payment: Parameters<typeof createOrderFromIntent>[2]) {
   await ctx.db.patch(intent._id, { status: 'paid' });
   const orderId = await createOrderFromIntent(ctx, intent, payment);
   if (intent.creditReservationRef) await settleCredit(ctx, intent.creditReservationRef, 'redeemed', intent.creditMinor, orderId);
-  await accrueForOrder(ctx, orderId, honorFrozenRates);
+  // A rollout pause must not erase terms already accepted in this payment's snapshot.
+  // Normal and recovered payments have the same obligation; payout remains separately gated.
+  await accrueForOrder(ctx, orderId, true);
   await convertPaidQuote(ctx, intent.estimateId, orderId);
   await onOrderPaid(ctx, orderId);
   if(intent.taxCalculationRef){

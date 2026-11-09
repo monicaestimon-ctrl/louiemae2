@@ -120,6 +120,8 @@ afterEach(() => {
     'RETAIL_ZUO_CHECKOUT_ENABLED',
     'EDI_ZUO_ENABLED',
     'CREDIT_V2_ENABLED',
+    'COMMISSION_ACCRUAL_V2_ENABLED',
+    'ATTRIBUTION_V2_ENABLED',
   ])
     delete process.env[k];
 });
@@ -471,7 +473,8 @@ const zuoLine = (
 async function paidOrder(
   s: Awaited<ReturnType<typeof setup>>,
   lines: { productId: string; variantId: string; packs: number }[],
-  eventId = 'evt_1'
+  eventId = 'evt_1',
+  beforePayment?: (intentId: Id<'ordCheckoutIntents'>) => Promise<void>
 ) {
   const est = await estimateViaGateway(s.t, {
     lines,
@@ -496,6 +499,7 @@ async function paidOrder(
     intentId: intent.intentId,
     sessionId: 'cs_1',
   });
+  await beforePayment?.(intent.intentId);
   const payload = {
     id: 'cs_1',
     intentId: intent.intentId,
@@ -1214,6 +1218,31 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
 });
 
 describe('fulfillment (S21, FUL04, FUL05, DEL05)', () => {
+  it('honors accepted retail commissions when a verified payment arrives after rollout is paused', async () => {
+    const s = await setup();
+    const { payload } = await paidOrder(s, [zuoLine(s)], 'evt_paused_commission', async intentId => {
+      await s.t.run(async ctx => {
+        const intent = (await ctx.db.get(intentId))!;
+        const partner = await ctx.db.insert('users', { email: 'frozen-partner@example.com' });
+        const beneficiaryId = await ctx.db.insert('prgBeneficiaries', { kind: 'person', userId: partner, displayName: 'Fixture partner', payoutReadiness: 'not_started', taxReadiness: 'none', tierKey: 'base', status: 'active', createdAt: NOW, updatedAt: NOW });
+        const attributionSnapshotId = await ctx.db.insert('prgAttributionSnapshots', {
+          intentId, clickId: 'accepted-fixture-click', beneficiaryId, membershipSource: 'creator', scope: 'basket',
+          lines: intent.lineSnapshot.map(l => ({ lineKey: l.lineKey, productId: l.productId, category: l.commissionCategory, protectedRateBps: 1000, currentRateBps: 1000, appliedRateBps: 1000, eligible: true })),
+          tierKeyAtPurchase: 'base', scheduleVersion: 1, createdAt: NOW,
+        });
+        await ctx.db.patch(intentId, { attributionSnapshotId });
+      });
+      process.env.COMMISSION_ACCRUAL_V2_ENABLED = 'false';
+      process.env.ATTRIBUTION_V2_ENABLED = 'false';
+    });
+    await s.t.mutation(internal.ordPayments.receive, { eventId: 'evt_paused_commission_repeat', type: 'checkout.session.completed', livemode: false, payloadHash: 'h', payload });
+    await processEvents(s.t);
+    const rows = await s.t.run(ctx => ctx.db.query('ldgObligations').collect());
+    const line = (await s.t.run(ctx => ctx.db.query('ordOrderLines').first()))!;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ rateBps: 1000, state: 'pending', category: 'furniture', earnedMinor: Math.floor((line.unitPackMinor * line.packs - line.discountMinor - line.creditMinor) / 10) });
+    expect((await s.t.run(ctx => ctx.db.query('ordOrders').first()))?.accrualPath).toBe('v2');
+  });
   it('records exact shipment retries, protects partial cancellations and keeps incident evidence private', async () => {
     const s = await setup({ approveMixed: true });
     const { est } = await paidOrder(s, [zuoLine(s, 2), { productId: s.ashId, variantId: 'b1', packs: 1 }]);

@@ -30,7 +30,7 @@ export const lineBasis = (l: Pick<Doc<'ordOrderLines'>, 'unitPackMinor' | 'packs
  * snapshot line. The order records which accrual path it used so legacy and v2 never both pay.
  */
 export async function accrueForOrder(ctx: MutationCtx, orderId: Id<'ordOrders'>, honorFrozenRates = false) {
-  // Recovery honors an already accepted attribution snapshot even if new accrual is paused.
+  // Verified payment completion honors its accepted snapshot even if new accrual is paused.
   // Payout execution remains separately gated; no new eligibility or rate is invented.
   if (!flag('COMMISSION_ACCRUAL_V2_ENABLED') && !honorFrozenRates) return 0;
   const order = await ctx.db.get(orderId);

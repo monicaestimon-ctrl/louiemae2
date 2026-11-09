@@ -327,8 +327,7 @@ export const resumeOriginal = mutation({
         email: intent.buyer.email,
         shippingAddress: intent.shippingAddress,
         paidAt: ex.createdAt,
-      },
-      true
+      }
     );
     await ctx.db.patch(ex._id, {
       status: 'resolved',
