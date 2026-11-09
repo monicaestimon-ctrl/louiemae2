@@ -124,6 +124,51 @@ describe('shipping evidence authoring', () => {
   });
 });
 
+describe('stock evidence authoring', () => {
+  async function fixture() {
+    const { t, admin } = await setup();
+    await importPackage(admin, [row('STOCK')], 'dry_run');
+    await importPackage(admin, [row('STOCK')], 'commit');
+    const cv = (await t.run(ctx => ctx.db.query('catVariants').first()))!;
+    const warehouseId = await t.run(ctx => ctx.db.insert('catWarehouses', { supplierId: cv.supplierId, code: 'CA', originZip: '95206', state: 'CA', active: true }));
+    await t.run(ctx => ctx.db.patch(cv._id, { warehouseId }));
+    const warehouseFingerprint = (await admin.query(api.catStock.detail, { variantId: cv._id })).warehouseFingerprint;
+    const args = { variantId: cv._id, expectedRevisionId: null, expectedWarehouseId: warehouseId, expectedWarehouseFingerprint: warehouseFingerprint, expectedPiecesPerPack: 2, requestKey: 'stock-evidence-fixture', quantity: '5.000000000', unitBasis: 'piece' as const, kind: 'on_hand' as const, availability: 'in_stock' as const, confirmed: true, observedAt: NOW - 1000, source: 'CA_QTY fixture column', note: 'California only; excludes transit and Florida. Physical on-hand, not supplier allocation.' };
+    return { t, admin, cv, args };
+  }
+  it('appends source revisions, binds origin and pack, and retains exclusions and prices', async () => {
+    const { t, admin, cv, args } = await fixture();
+    const id = await admin.mutation(api.catStock.recordEvidence, args);
+    expect(await admin.mutation(api.catStock.recordEvidence, args)).toBe(id);
+    const detail = await admin.query(api.catStock.detail, { variantId: cv._id });
+    expect(detail.history).toHaveLength(1);
+    expect(detail.current).toMatchObject({ quantity: '5.000000000', warehouseId: args.expectedWarehouseId, piecesPerPack: 2, kind: 'on_hand', observedAt: args.observedAt });
+    expect(detail.variant).not.toHaveProperty('currentCostRevisionId');
+    const updated = (await t.run(ctx => ctx.db.query('catVariants').first()))!;
+    expect(updated.holds).toEqual(expect.arrayContaining([...cv.holds, 'MANUAL']));
+    expect(updated).toMatchObject({ retailPriceRevisionId: cv.retailPriceRevisionId, tradePriceRevisionId: cv.tradePriceRevisionId });
+    await expect(admin.mutation(api.catStock.recordEvidence, { ...args, quantity: '6' })).rejects.toThrow(/Retry differs/);
+    await expect(admin.mutation(api.catStock.recordEvidence, { ...args, requestKey: 'stock-stale-edit' })).rejects.toThrow(/Reload/);
+    const unknown = await admin.mutation(api.catStock.recordEvidence, { ...args, expectedRevisionId: id, requestKey: 'stock-unknown-basis', unitBasis: 'unknown' });
+    expect((await admin.query(api.catStock.detail, { variantId: cv._id })).current!._id).toBe(unknown);
+    expect((await t.run(ctx => ctx.db.query('catVariants').first()))!.holds).toContain('STOCK_UNVERIFIED');
+  });
+  it('rejects bad dates, fractional quantities, legacy binary writes and unauthorized reactivation', async () => {
+    const { t, admin, cv, args } = await fixture();
+    for (const change of [{ observedAt: Date.now() + 100000 }, { quantity: '0.5' }, { quantity: '0' }, { kind: 'binary' as const }, { source: ' ' }, { expectedPiecesPerPack: 1 }, { expectedWarehouseFingerprint: 'stale-origin-evidence' }]) await expect(admin.mutation(api.catStock.recordEvidence, { ...args, ...change })).rejects.toThrow();
+    await expect(admin.mutation(api.catStock.recordStock, { variantId: cv._id, availability: 'in_stock', source: 'old' })).rejects.toThrow(/stock evidence form/);
+    await t.run(ctx => ctx.db.patch(cv._id, { availability: 'discontinued' }));
+    process.env.DELIVERY_ADMIN_ROLES = JSON.stringify({ [ADMIN]: ['operations'] });
+    await expect(admin.mutation(api.catStock.recordEvidence, args)).rejects.toThrow(/approver/);
+    process.env.DELIVERY_ADMIN_ROLES = JSON.stringify({ [ADMIN]: ['support'] });
+    await expect(admin.query(api.catStock.detail, { variantId: cv._id })).rejects.toThrow();
+    await expect(admin.mutation(api.catStock.recordEvidence, args)).rejects.toThrow();
+    delete process.env.DELIVERY_ADMIN_ROLES;
+    await admin.mutation(api.catStock.recordEvidence, args);
+    expect((await t.run(ctx => ctx.db.query('catVariants').first()))!.holds).toContain('MANUAL');
+  });
+});
+
 const row = (sku: string, over: Record<string, unknown> = {}) => ({
   sku,
   name: `Zuo dining chair ${sku}`,

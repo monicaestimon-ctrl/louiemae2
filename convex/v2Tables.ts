@@ -243,6 +243,7 @@ export const v2Tables = {
     marginPolicyKey: v.optional(v.string()),
     cohort: v.optional(v.string()),
     currentCostRevisionId: v.optional(v.id('catCostRevisions')),
+    currentStockRevisionId: v.optional(v.id('catStockRevisions')),
     retailPriceRevisionId: v.optional(v.id('catPriceRevisions')),
     tradePriceRevisionId: v.optional(v.id('catPriceRevisions')),
     holds: v.array(holdReason),
@@ -293,6 +294,24 @@ export const v2Tables = {
   })
     .index('by_variant_field_observed', ['variantId', 'field', 'observedAt'])
     .index('by_hash', ['contentHash']),
+
+  catStockRevisions: defineTable({
+    variantId: v.id('catVariants'),
+    warehouseId: v.union(v.id('catWarehouses'), v.null()),
+    warehouseFingerprint: v.string(),
+    quantity: v.union(v.string(), v.null()),
+    unitBasis: v.union(v.literal('piece'), v.literal('pack'), v.literal('piece_or_pack'), v.literal('unknown')),
+    kind: v.union(v.literal('available_to_sell'), v.literal('on_hand'), v.literal('binary'), v.literal('unknown')),
+    availability,
+    confirmed: v.boolean(),
+    piecesPerPack: v.number(),
+    source: v.string(),
+    note: v.string(),
+    observedAt: v.number(),
+    validUntil: v.optional(v.number()),
+    createdAt: v.number(),
+    createdBy: v.string(),
+  }).index('by_variant_created', ['variantId', 'createdAt']),
 
   catCostRevisions: defineTable({
     variantId: v.id('catVariants'),

@@ -24,6 +24,7 @@ import { parseDecimal, mul, rat, toMinor } from '../lib/decimal';
 import { checkPackQuantity, physicalUnits } from '../lib/catUnits';
 import { currentObservation } from '../lib/catFreshness';
 import { warehouseCurrent } from '../lib/shipping/evidence';
+import { stockView } from '../lib/stockEvidence';
 import type {
   DeliveryLadder,
   ConfigKind,
@@ -100,6 +101,7 @@ export type ResolvedLine = {
   cartons: Doc<'catCartons'>[];
   originZip: string;
   warehouseServices?: ('ground' | 'ltl')[];
+  stockReadiness?: 'counted' | 'confirmation_required';
 };
 
 /**
@@ -262,7 +264,33 @@ export async function resolveLines(
         supplier?.freshnessKey ?? 'freshness-default'
       );
       const currentStock = currentObservation(observations, 'stock', now);
-      const stockAt = currentStock && currentStock !== 'conflict' ? currentStock.observedAt : 0;
+      const stockRevision = cv.currentStockRevisionId
+        ? await ctx.db.get(cv.currentStockRevisionId)
+        : null;
+      const inventory = stockView(
+        stockRevision,
+        cv.warehouseId,
+        cv.piecesPerPack,
+        now,
+        Math.min(freshness.value.stockSyncMaxHours, freshness.value.checkoutSourceMaxHours) *
+          3600000,
+        cv.orderMinimumPacks,
+        await digest(warehouse)
+      );
+      if (
+        inventory.current &&
+        inventory.availablePacks !== null &&
+        l.packs > inventory.availablePacks
+      )
+        throw new CommerceError(
+          'STOCK_UNAVAILABLE',
+          'Requested packs exceed the current warehouse quantity'
+        );
+      const stockAt = stockRevision
+        ? (inventory.observedAt ?? 0)
+        : currentStock && currentStock !== 'conflict'
+          ? currentStock.observedAt
+          : 0;
       const validUntil = Math.min(
         stockAt +
           Math.min(freshness.value.stockSyncMaxHours, freshness.value.checkoutSourceMaxHours) *
@@ -273,7 +301,8 @@ export async function resolveLines(
         freshness.effectiveTo ?? Infinity,
         margin?.effectiveTo ?? Infinity,
         reserve.validUntil ?? Infinity,
-        warehouse?.validUntil ?? Infinity
+        warehouse?.validUntil ?? Infinity,
+        stockRevision?.validUntil ?? Infinity
       );
       out.push({
         validUntil,
@@ -286,6 +315,7 @@ export async function resolveLines(
           observations,
           reserve,
           warehouse,
+          stockRevision,
           supplier,
         }),
         lineKey: `${i}:${product._id}:${cv._id}`,
@@ -310,6 +340,7 @@ export async function resolveLines(
           .collect(),
         originZip: originCurrent ? warehouse!.originZip : '',
         warehouseServices: originCurrent ? warehouse!.services : [],
+        stockReadiness: inventory.automatic ? 'counted' : 'confirmation_required',
         engine: {
           netMinor,
           // Landed merchandise cost incl. supplier payment cost; unknown extras block via margin.
@@ -827,6 +858,10 @@ export async function computeEstimate(
       reasons.push(`Origin ${gl[0].originZip} has no approved delivery rule`);
     if (gl.some((l) => l.variant.holds.includes('METHOD_CHANGED')))
       reasons.push('Supplier shipping method changed; needs a quote');
+    if (gl.some((l) => l.stockReadiness === 'confirmation_required'))
+      reasons.push(
+        'Supplier inventory quantity or allocation needs confirmation before automatic checkout'
+      );
     const rated: { mode?: 'ground' | 'ltl' } = {};
     let freightMinor =
       freightCfg && !reasons.length
