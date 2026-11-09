@@ -161,6 +161,8 @@ function Receipt() {
                       <p key={i}>
                         {tracking.carrier ?? 'Carrier'} · {tracking.status.replaceAll('_', ' ')}{' '}
                         {tracking.estimatedWindow ?? ''}{' '}
+                        {tracking.items?.map((item, itemIndex) => <span className="block" key={itemIndex}>{item.name} — {item.pieces} piece(s) in this shipment</span>)}
+                        {(tracking.update ?? tracking.issue) && <span className="block">Delivery update: {(tracking.update ?? tracking.issue)!.message}</span>}
                         {safeTracking(tracking.trackingUrl) && (
                           <a
                             className="underline"

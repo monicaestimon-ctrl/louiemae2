@@ -8,6 +8,7 @@ import { KNOWN_METADATA_CORRECTIONS } from '../../lib/zuoImportNotes';
 import { dollarsToMinor } from '../../lib/decimal';
 import DeliveryOperations from './DeliveryOperations';
 import PaidExceptionReview from './PaidExceptionReview';
+import FulfillmentShipments from './FulfillmentShipments';
 
 // Commerce v2 operations console (spec S35, v2 §20, §26). Admin-only: every query behind it
 // requires the admin allowlist on the server.
@@ -310,6 +311,7 @@ function Catalog() {
 }
 
 function DealerQueue({ route }: { route: 'manual_dealer_zuo' | 'manual_dealer_ashcroft' }) {
+  const [selected, setSelected] = useState<Id<'ordSupplierOrders'> | null>(null);
   const rows = useQuery(api.ordFulfillment.dealerQueue, { route });
   const submit = useMutation(api.ordFulfillment.markSubmitted);
   const [po, setPo] = useState<Record<string, string>>({});
@@ -331,6 +333,8 @@ function DealerQueue({ route }: { route: 'manual_dealer_zuo' | 'manual_dealer_as
               </li>
             ))}
           </ul>
+          <button className={btn} onClick={() => setSelected(selected === c._id ? null : c._id)}>{selected === c._id ? 'Close shipment details' : 'Manage shipments'}</button>
+          {selected === c._id && <FulfillmentShipments key={c._id} supplierOrderId={c._id} />}
           {c.status === 'queued' && (
             <div className="flex gap-2">
               <input className="border border-earth/20 px-2 py-1 text-xs" placeholder="Supplier PO" aria-label="Supplier PO" value={po[c._id] ?? ''} onChange={(e) => setPo({ ...po, [c._id]: e.target.value })} />

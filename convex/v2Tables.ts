@@ -751,6 +751,7 @@ export const v2Tables = {
     route: fulfillmentRoute,
     supplierPo: v.optional(v.string()),
     acceptedCostMinor: v.optional(v.number()),
+    acknowledgedCostMinor: v.optional(v.number()),
     status: v.union(
       v.literal('queued'),
       v.literal('submitted'),
@@ -798,6 +799,8 @@ export const v2Tables = {
     deliveredAt: v.optional(v.number()),
     estimatedWindow: v.optional(v.string()),
     status: v.union(v.literal('shipped'), v.literal('delivered'), v.literal('lost'), v.literal('damaged')),
+    activeIssue: v.optional(v.object({ kind: v.union(v.literal('delayed'), v.literal('lost'), v.literal('damaged'), v.literal('delivery_exception')), message: v.string(), recordedAt: v.number() })),
+    customerUpdate: v.optional(v.object({ kind: v.string(), message: v.string(), recordedAt: v.number() })),
     createdAt: v.number(),
   }).index('by_supplier_order', ['supplierOrderId']),
 
