@@ -11,6 +11,8 @@ import { assertLineMechanism } from './catPolicies';
 import { normalizePackage, parseJsonPackage } from '../lib/zuoImport';
 import { isCommerceError } from '../lib/errors';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import sharp from 'sharp';
 import { blankCommerceDraft } from '../lib/commerce';
 import type { ZuoStagingRow } from '../lib/zuoStaging';
 
@@ -286,6 +288,46 @@ describe('media identity and review', () => {
     await expect(admin.mutation(api.catMedia.verify, { ...review, sku: 'PHOTO-B', color: 'Blue' })).rejects.toThrow(/separate media association/);
     expect((await t.run(ctx => ctx.db.get(id)))!.verifiedAgainst?.sku).toBe(cv.supplierSku);
     expect((await t.run(ctx => ctx.db.get(otherId)))!.holds).toContain('MEDIA_MISSING');
+  });
+  it('prepares only the manifest-bound stored photo, with idempotent derivatives and no automatic approval', async () => {
+    const { t, admin, cv } = await fixture();
+    const image = await sharp({ create: { width: 1000, height: 1000, channels: 3, background: 'white' } }).png().toBuffer();
+    const storageId = await t.run(ctx => ctx.storage.store(new Blob([image], { type: 'image/png' })));
+    const sha256 = createHash('sha256').update(image).digest('hex');
+    const sourceURL = 'https://images.salsify.com/fixture-photo.png';
+    await t.run(async ctx => {
+      const product = (await ctx.db.get(cv.productId))!;
+      const url = (await ctx.storage.getUrl(storageId))!;
+      await ctx.db.patch(product._id, { draft: { ...product.draft, images: [url] },
+        zuoStaging: { sku: cv.supplierSku, pack: cv.piecesPerPack, unitsPerSellUnit: cv.piecesPerPack,
+          runId: 'fixture', manifestSha256: 'a'.repeat(64), payload: 'fixture', excluded: false,
+          exclusionReasons: [], holdReasons: [], status: 'staged_not_orderable',
+          sourceEvidence: JSON.stringify({ sourceImageUrls: [sourceURL], primaryMedia: { storageId, sha256, sourceURL, url } }) } });
+    });
+    await expect(t.action(api.catMediaProcessing.prepareStagedPrimary, { variantId: cv._id })).rejects.toThrow();
+    const prepared = await admin.action(api.catMediaProcessing.prepareStagedPrimary, { variantId: cv._id });
+    expect(prepared.widths).toEqual([640, 1000]);
+    const saved = (await t.run(ctx => ctx.db.get(prepared.assetId)))!;
+    expect(saved).toMatchObject({ storageId, contentHash: sha256, status: 'pending' });
+    expect(saved.derivatives).toHaveLength(2);
+    expect(saved.derivatives.every(d => d.storageId !== storageId)).toBe(true);
+    expect((await t.run(ctx => ctx.db.get(cv._id)))!.holds).toContain('MEDIA_MISSING');
+    expect(await admin.action(api.catMediaProcessing.prepareStagedPrimary, { variantId: cv._id })).toMatchObject({ assetId: prepared.assetId, duplicate: true });
+    expect((await t.run(ctx => ctx.db.get(prepared.assetId)))!.derivatives).toEqual(saved.derivatives);
+    const queue = await admin.query(api.catMedia.reviewQueue, { paginationOpts: { cursor: null, numItems: 20 } });
+    expect(queue.page.find(r => r.variantId === cv._id)?.assets[0].widths).toEqual([640, 1000]);
+    await t.run(async ctx => {
+      const product = (await ctx.db.get(cv.productId))!;
+      const evidence = JSON.parse(product.zuoStaging!.sourceEvidence);
+      evidence.primaryMedia.sha256 = 'b'.repeat(64);
+      await ctx.db.patch(product._id, { zuoStaging: { ...product.zuoStaging!, sourceEvidence: JSON.stringify(evidence) } });
+    });
+    await expect(admin.action(api.catMediaProcessing.prepareStagedPrimary, { variantId: cv._id })).rejects.toThrow(/does not match/);
+    await t.run(async ctx => {
+      const product = (await ctx.db.get(cv.productId))!;
+      await ctx.db.patch(product._id, { draft: { ...product.draft, images: [] } });
+    });
+    await expect(admin.action(api.catMediaProcessing.prepareStagedPrimary, { variantId: cv._id })).rejects.toThrow(/not mapped/);
   });
 });
 
@@ -797,8 +839,9 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     const { t, admin, cv, productId } = await readyProduct();
     await t.run(ctx => ctx.db.patch(cv.currentCostRevisionId!, { wholesaleMinor: 11413, wholesalePrecise: '114.125' }));
     const storageId = await t.run((ctx) => ctx.storage.store(new Blob(['img'])));
+    const publicImageId = await t.run(ctx => ctx.storage.store(new Blob(['web image'], { type: 'image/webp' })));
     await t.run(async (ctx) => {
-      await ctx.db.insert('catMediaAssets', { productId, role: 'hero', storageId, derivatives: [], contentHash: 'h', mime: 'image/jpeg', width: 1200, height: 1200, bytes: 3, sourceUrl: 'https://www.zuomod.com/x.jpg', rights: { basis: 'dealer media license', attributionRequired: false, privateOriginal: true }, altText: 'Oak dining chair, pair', verifiedAgainst: { sku: cv.supplierSku, pack: cv.packId }, status: 'verified', createdAt: NOW });
+      await ctx.db.insert('catMediaAssets', { productId, role: 'hero', storageId, derivatives: [{ width: 1200, format: 'webp', storageId: publicImageId }], contentHash: 'h', mime: 'image/jpeg', width: 1200, height: 1200, bytes: 3, sourceUrl: 'https://www.zuomod.com/x.jpg', rights: { basis: 'dealer media license', attributionRequired: false, privateOriginal: true }, altText: 'Oak dining chair, pair', verifiedAgainst: { sku: cv.supplierSku, pack: cv.packId }, status: 'verified', createdAt: NOW });
       for (const h of await ctx.db.query('catHolds').collect()) await ctx.db.patch(h._id, { resolvedAt: NOW });
       await ctx.db.patch(cv._id, { holds: [], referralEligible: true });
       await ctx.db.patch(cv.currentCostRevisionId!, { verifiedAt: NOW - 3_600_000, dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true });
@@ -809,6 +852,8 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     const res = await admin.mutation(api.catPublication.publish, { productIds: [productId], channels: ['retail', 'house'] });
     expect(res[0].variants).toBe(1);
     const listings = await t.run((ctx) => ctx.db.query('commerceListings').collect());
+    const publicUrl = await t.run(ctx => ctx.storage.getUrl(publicImageId));
+    expect(listings.every(l => l.snapshot.images[0] === publicUrl && l.snapshot.variants[0].image === publicUrl)).toBe(true);
     expect(listings.every(l => l.fulfillment?.[0].cost === 228.25)).toBe(true);
     expect(listings.map((l) => [l.channel, l.published, l.snapshot.variants[0].price]).sort()).toEqual([
       ['house', true, 41_226],

@@ -9,6 +9,7 @@ import { dollarsToMinor } from '../../lib/decimal';
 import DeliveryOperations from './DeliveryOperations';
 import PaidExceptionReview from './PaidExceptionReview';
 import FulfillmentShipments from './FulfillmentShipments';
+import CatalogMediaReview from './CatalogMediaReview';
 import './commerce-v2-admin.css';
 
 // Commerce v2 operations console (spec S35, v2 §20, §26). Admin-only: every query behind it
@@ -272,6 +273,7 @@ function Catalog() {
   return (
     <div className="space-y-4">
       <ZuoImport />
+      <CatalogMediaReview />
       <div className={card}>
         <h3 className="font-serif text-lg">Publication pipeline</h3>
         {pipeline ? (

@@ -22,6 +22,7 @@ import type * as catCategories from "../catCategories.js";
 import type * as catCore from "../catCore.js";
 import type * as catEvidence from "../catEvidence.js";
 import type * as catMedia from "../catMedia.js";
+import type * as catMediaProcessing from "../catMediaProcessing.js";
 import type * as catPolicies from "../catPolicies.js";
 import type * as catPricing from "../catPricing.js";
 import type * as catPublication from "../catPublication.js";
@@ -196,6 +197,7 @@ declare const fullApi: ApiFromModules<{
   catCategories: typeof catCategories;
   catCore: typeof catCore;
   catMedia: typeof catMedia;
+  catMediaProcessing: typeof catMediaProcessing;
   catPolicies: typeof catPolicies;
   catPricing: typeof catPricing;
   catEvidence: typeof catEvidence;
