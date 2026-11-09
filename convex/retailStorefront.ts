@@ -1,7 +1,7 @@
 import type { QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { launchPrice, retailDelivery, retailDescription, supplierAvailable } from '../lib/retailLaunch';
-import { assertSellable } from './catCore';
+import { assertSellable, isCurrentPrice } from './catCore';
 import { isCommerceError } from '../lib/errors';
 
 // Adapt the retail listing into LouieMae's existing product modal and cards.
@@ -51,8 +51,7 @@ export async function currentZuoStorefrontListing(ctx: QueryCtx, listing: Doc<'c
       const variant = await assertSellable(ctx, id, 'purchase', now);
       if (variant.productId !== listing.productId) return null;
       const price = variant.retailPriceRevisionId ? await ctx.db.get(variant.retailPriceRevisionId) : null;
-      if (!price || price.status !== 'approved' || price.effectiveFrom > now ||
-        (price.effectiveTo !== undefined && price.effectiveTo <= now) || price.packPriceMinor !== option.price) return null;
+      if (!isCurrentPrice(price, id, 'retail', now) || price.packPriceMinor !== option.price) return null;
       return option;
     } catch (error) {
       if (isCommerceError(error)) return null;

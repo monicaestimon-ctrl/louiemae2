@@ -121,6 +121,13 @@ export async function refreshVariant(ctx: MutationCtx, variantId: Id<'catVariant
 
 export type SellPurpose = 'publish' | 'purchase' | 'link' | 'estimate';
 
+/** Approved prices belong to one exact variant/channel and a bounded effective window. */
+export function isCurrentPrice(price: Doc<'catPriceRevisions'> | null, variantId: Id<'catVariants'>, channel: 'retail' | 'trade', now = Date.now()): price is Doc<'catPriceRevisions'> {
+  return !!price && price.variantId === variantId && price.channel === channel &&
+    price.status === 'approved' && Number.isSafeInteger(price.packPriceMinor) && price.packPriceMinor > 0 &&
+    price.effectiveFrom <= now && (price.effectiveTo === undefined || price.effectiveTo > now);
+}
+
 /**
  * The single sellability gate (v2 §6). Throws a typed error unless the variant has no open
  * holds, current evidence, an allowed availability and (for purchase and links) an approved
