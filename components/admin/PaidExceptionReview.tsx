@@ -49,8 +49,11 @@ function Review({ id }: { id: Id<'ordPaidExceptions'> }) {
   const [recoveryProof, setRecoveryProof] = useState<Id<'ordPaymentVerifications'> | null>(null);
   if (!data) return <p role="status">Loading payment exception…</p>;
   const proof = data.proof;
+  const currentProof =
+    !!proof && (proof.paymentStateVersion ?? 0) === (data.exception.paymentStateVersion ?? 0);
   const complete =
     proof &&
+    currentProof &&
     proof._id === verifiedId &&
     proof.captured &&
     !proof.disputed &&
@@ -60,6 +63,7 @@ function Review({ id }: { id: Id<'ordPaidExceptions'> }) {
     !proof.pendingRefundMinor;
   const recoverable =
     !!proof &&
+    currentProof &&
     proof._id === verifiedId &&
     proof.captured &&
     !proof.disputed &&
@@ -71,6 +75,18 @@ function Review({ id }: { id: Id<'ordPaidExceptions'> }) {
     return <p role="status">Resolution saved. Payment and audit history remain available.</p>;
   return (
     <div className="border-t pt-3 space-y-3">
+      {data.exception.refundFollowup && (
+        <p role="alert">
+          A previously recorded refund failed or was canceled. Review the current payment and
+          customer resolution. No replacement refund or supplier order was created.
+        </p>
+      )}
+      {proof && !currentProof && (
+        <p role="alert">
+          The provider reported a payment change. Verify the payment again before resolving this
+          exception.
+        </p>
+      )}
       <button
         className="border p-2"
         disabled={busy}

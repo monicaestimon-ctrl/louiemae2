@@ -855,7 +855,14 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
     vi.setSystemTime(Date.now() + 5 * 60000 + 1);
     await expect(s.admin.mutation(api.ordExceptionRefunds.closeRefunded, { ...args, verificationId: succeeded })).rejects.toThrow(/Refresh payment/);
     const refreshed = await s.admin.action(api.ordExceptionActions.verify, { id: ex });
-    const update = { ...args, verificationId: refreshed };
+    const refundEvent = { eventId: 'evt_refund_updated', type: 'refund.updated', livemode: false, payloadHash: 'fixture', payload: { id: 're_fixture', paymentIntentId: 'pi_refund_exception', chargeId: 'ch_refund_exception', status: 'succeeded', created: Math.floor(Date.now() / 1000) } };
+    await s.t.mutation(internal.ordPayments.receive, refundEvent);
+    await expect(s.admin.mutation(api.ordExceptionRefunds.closeRefunded, { ...args, verificationId: refreshed })).rejects.toThrow(/Refresh payment/);
+    // An in-flight provider read cannot save a proof against a newer event version.
+    const oldProof = (await s.t.run(ctx => ctx.db.get(refreshed)))!;
+    await expect(s.admin.mutation(internal.ordExceptionRefunds.record, { id: ex, intentId: intent.intentId, sessionId: oldProof.sessionId, paymentIntentId: oldProof.paymentIntentId, chargeId: oldProof.chargeId, amountMinor: oldProof.amountMinor, currency: oldProof.currency, livemode: false, captured: true, disputed: false, succeededRefundMinor: oldProof.amountMinor, pendingRefundMinor: 0, refundIds: ['re_fixture'], expectedPaymentStateVersion: 0 })).rejects.toThrow(/changed during/);
+    const currentProof = await s.admin.action(api.ordExceptionActions.verify, { id: ex });
+    const update = { ...args, verificationId: currentProof };
     await expect(s.t.mutation(api.ordExceptionRefunds.closeRefunded, update)).rejects.toThrow();
     await s.admin.mutation(api.ordExceptionRefunds.closeRefunded, update);
     await s.admin.mutation(api.ordExceptionRefunds.closeRefunded, update);
@@ -870,6 +877,23 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
     expect((await s.t.run(ctx => ctx.db.get(intent.intentId)))?.status).toBe('refunded');
     expect(await s.t.run(ctx => ctx.db.query('ordOrders').collect())).toHaveLength(0);
     expect(await s.t.run(ctx => ctx.db.query('sysNotifications').collect())).toHaveLength(0);
+    const failure = { ...refundEvent, eventId: 'evt_refund_failed', type: 'refund.failed', payload: { ...refundEvent.payload, status: 'failed' } };
+    expect(await s.t.mutation(internal.ordPayments.receive, { ...failure, livemode: true })).toBe(false);
+    expect(await s.t.mutation(internal.ordPayments.receive, { ...failure, account: 'acct_other' })).toBe(false);
+    await s.t.mutation(internal.ordPayments.receive, { ...failure, eventId: 'evt_unrelated_failed_refund', payload: { ...failure.payload, id: 're_previously_failed' } });
+    expect((await s.t.run(ctx => ctx.db.get(ex)))?.status).toBe('resolved');
+    expect(await s.t.mutation(internal.ordPayments.receive, failure)).toBe(true);
+    expect(await s.t.mutation(internal.ordPayments.receive, failure)).toBe(false);
+    const reopened = (await s.t.run(ctx => ctx.db.get(ex)))!;
+    expect(reopened).toMatchObject({ status: 'open', resolutionKind: 'verified_refund', paymentVerificationId: currentProof, refundFollowup: { refundId: 're_fixture', status: 'failed' } });
+    expect(await s.t.query(api.ordReceipts.receipt, { sessionId: 'cs_refund_exception', guestCapability: est.guestCapability })).toEqual({ state: 'review_required' });
+    expect((await s.t.run(ctx => ctx.db.query('ordInventoryReservations').first()))?.status).toBe('released');
+    expect((await s.t.run(ctx => ctx.db.query('ldgCreditAccounts').first()))?.availableMinor).toBe(1000);
+    expect(await s.t.run(ctx => ctx.db.query('ordOrders').collect())).toHaveLength(0);
+    const replacementProof = await s.admin.mutation(internal.ordExceptionRefunds.record, { id: ex, intentId: intent.intentId, sessionId: oldProof.sessionId, paymentIntentId: oldProof.paymentIntentId, chargeId: oldProof.chargeId, amountMinor: oldProof.amountMinor, currency: 'usd', livemode: false, captured: true, disputed: false, succeededRefundMinor: oldProof.amountMinor, pendingRefundMinor: 0, refundIds: ['re_fixture', 're_replacement'], succeededRefundIds: ['re_replacement'], expectedPaymentStateVersion: reopened.paymentStateVersion });
+    await s.admin.mutation(api.ordExceptionRefunds.closeRefunded, { ...args, verificationId: replacementProof, requestKey: 'refund-followup-close-key' });
+    await s.t.mutation(internal.ordPayments.receive, { ...failure, eventId: 'evt_delayed_old_failure' });
+    expect((await s.t.run(ctx => ctx.db.get(ex)))?.status).toBe('resolved');
   });
   it('atomically deducts other checkout holds, preserves retries, and frees expired unpaid capacity', async () => {
     const s = await setup();

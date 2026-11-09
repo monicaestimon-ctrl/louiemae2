@@ -15,6 +15,7 @@ import { onOrderPaid, settle as settleCredit } from './ldgCredits';
 import { convertPaidQuote } from './dlvQuoteLifecycle';
 import { paymentStockFailure, retainPaidCommitments } from './ordInventory';
 import { acceptsPlatformPayment } from '../lib/paymentMode';
+import { handleRefundUpdate, refundEventTypes } from './ordRefundFollowup';
 
 export type SessionPayload = {
   id: string;
@@ -36,6 +37,12 @@ export const receive = internalMutation({
     const seen = await ctx.db.query('sysPaymentEvents').withIndex('by_event', (q) => q.eq('eventId', a.eventId)).first();
     if (seen) return false;
     const id = await ctx.db.insert('sysPaymentEvents', { provider: 'stripe', eventId: a.eventId, type: a.type, livemode: a.livemode, ...(a.account ? { account: a.account } : {}), payloadHash: a.payloadHash, payload: a.payload, receivedAt: Date.now(), status: 'received', attempts: 0 });
+    if (refundEventTypes.has(a.type)) {
+      // Invalidate stale staff proofs in the same transaction that acknowledges this event.
+      await handleRefundUpdate(ctx, (await ctx.db.get(id))!);
+      await ctx.db.patch(id, { status: 'processed', attempts: 1, processedAt: Date.now() });
+      return true;
+    }
     await ctx.scheduler.runAfter(0, internal.ordPayments.process, { id });
     return true;
   },
@@ -98,7 +105,8 @@ export const process = internalMutation({
       return;
     }
     let outcome: 'processed' | 'ignored' = 'ignored';
-    if (ev.type === 'checkout.session.completed' || ev.type === 'checkout.session.async_payment_succeeded') outcome = await handleSession(ctx, ev.payload as SessionPayload, 'completed');
+    if (refundEventTypes.has(ev.type)) outcome = await handleRefundUpdate(ctx, ev);
+    else if (ev.type === 'checkout.session.completed' || ev.type === 'checkout.session.async_payment_succeeded') outcome = await handleSession(ctx, ev.payload as SessionPayload, 'completed');
     else if (ev.type === 'checkout.session.expired' || ev.type === 'checkout.session.async_payment_failed') outcome = await handleSession(ctx, ev.payload as SessionPayload, 'expired');
     await ctx.db.patch(ev._id, { status: outcome, attempts: ev.attempts + 1, processedAt: Date.now() });
   },
