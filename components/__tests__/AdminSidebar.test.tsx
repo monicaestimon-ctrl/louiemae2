@@ -24,7 +24,7 @@ vi.mock('../../contexts/BlogContext', () => ({ useSite: () => mocks.site }));
 vi.mock('../../contexts/AdminCatalogDemand', () => ({ useAdminCatalog: () => undefined }));
 vi.mock('../../contexts/NewsletterContext', () => ({ useNewsletterAdmin: () => { mocks.newsletter(); return { subscribers: [], campaigns: [], stats: {} }; } }));
 vi.mock('../admin/CommerceV2Admin', () => ({ default: () => <p>Scoped staff workspace</p> }));
-vi.mock('convex/react', () => ({ useMutation: () => vi.fn(), useAction: () => vi.fn(), useQuery: (ref: Parameters<typeof getFunctionName>[0]) => getFunctionName(ref) === 'cjAdminAccess:session' ? mocks.session : undefined }));
+vi.mock('convex/react', () => ({ useQueries: () => ({ session: mocks.session }), useMutation: () => vi.fn(), useAction: () => vi.fn(), useQuery: (ref: Parameters<typeof getFunctionName>[0]) => getFunctionName(ref) === 'cjAdminAccess:session' ? mocks.session : undefined }));
 vi.mock('../useAdminProductDetail', () => ({ useAdminProductDetail: () => ({ load: vi.fn(), cancel: vi.fn(), loadingId: null, error: null }) }));
 vi.mock('../useAdminDescriptionBatch', () => ({ useAdminDescriptionBatch: () => ({ busy: false, previews: [], setPreviews: vi.fn(), run: vi.fn() }) }));
 vi.mock('../FadeIn', () => ({ FadeIn: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));

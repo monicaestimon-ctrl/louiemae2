@@ -4,6 +4,7 @@ import { afterEach, expect, it } from 'vitest';
 import { ConvexProvider, type ConvexReactClient } from 'convex/react';
 import { usePublicEditorialPosts } from '../usePublicEditorialPosts';
 import { usePublicSiteContent } from '../usePublicSiteContent';
+import { useSiteAccount } from '../useSiteAccount';
 
 afterEach(cleanup);
 
@@ -22,7 +23,8 @@ it('uses the real Convex subscription lifecycle without render loops across upda
   function Probe({ enabled }: { enabled: boolean }) {
     const editorial = usePublicEditorialPosts(enabled);
     const content = usePublicSiteContent();
-    return <p>{editorial.status}/{content.siteContentStatus}/{content.customPagesStatus}</p>;
+    const account = useSiteAccount(enabled, false);
+    return <><p>{editorial.status}/{content.siteContentStatus}/{content.customPagesStatus}</p><span>{account.status}</span></>;
   }
   const tree = (enabled: boolean) => <React.StrictMode><ConvexProvider client={client}><Probe enabled={enabled} /></ConvexProvider></React.StrictMode>;
   const view = render(tree(true));
@@ -31,8 +33,10 @@ it('uses the real Convex subscription lifecycle without render loops across upda
   unavailable = true;
   act(() => { for (const listener of listeners) listener(); });
   expect(screen.getByText('unavailable/unavailable/unavailable')).toBeTruthy();
+  expect(screen.getByText('unavailable')).toBeTruthy();
   view.rerender(tree(false));
   expect(screen.getByText('empty/unavailable/unavailable')).toBeTruthy();
+  expect(screen.getByText('anonymous')).toBeTruthy();
   view.unmount();
   expect(listeners.size).toBe(0);
 });
