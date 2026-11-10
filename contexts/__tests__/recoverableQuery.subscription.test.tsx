@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import { ConvexProvider, type ConvexReactClient } from 'convex/react';
 import { api } from '../../convex/_generated/api';
@@ -32,4 +32,30 @@ it('uses stable SDK watches for equivalent fresh arguments and never retains ano
   view.rerender(tree());
   expect(screen.getByText('idle:')).toBeTruthy();
   view.unmount(); expect(listeners.size).toBe(0);
+});
+
+
+it('detaches and reattaches the real SDK watch on manual retry', () => {
+  let subscriptions = 0;
+  let removals = 0;
+  let result: unknown = new Error('offline');
+  const client = { watchQuery: () => ({
+    localQueryResult: () => { if (result instanceof Error) throw result; return result; },
+    onUpdate: () => { subscriptions++; return () => { removals++; }; },
+    journal: () => undefined,
+  }) } as unknown as ConvexReactClient;
+  function Probe() {
+    const request = useRecoverableQuery(api.products.searchStorefront, { term: 'chair', limit: 20 });
+    return <><p>{request.status}</p><button onClick={request.retry}>Retry</button></>;
+  }
+  const view = render(<ConvexProvider client={client}><Probe /></ConvexProvider>);
+  expect(screen.getByText('unavailable')).toBeInTheDocument();
+  expect(subscriptions).toBe(1);
+  result = [];
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(removals).toBe(1);
+  expect(subscriptions).toBe(2);
+  expect(screen.getByText('ready')).toBeInTheDocument();
+  view.unmount();
+  expect(removals).toBe(2);
 });
