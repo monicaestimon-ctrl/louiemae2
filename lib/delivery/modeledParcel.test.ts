@@ -32,5 +32,9 @@ describe('approved modeled parcel rates', () => {
     expect(validModeledParcel({ ...model, packageMinorByZone: { west: [0] } })).toBe(false);
     expect(validModeledParcel({ ...model, sourceObservedAt: Date.now() + 10000 })).toBe(false);
     expect(validModeledParcel({ ...model, sourceSha256: 'unverified' })).toBe(false);
+    const exact = { ...seed, rateBasis: 'modeled_parcel', modeledParcel: model, modeledZip5Zones: { '94103': 'west' } };
+    expect(() => parseConfig('carrierRule', exact)).not.toThrow();
+    expect(() => parseConfig('carrierRule', { ...exact, modeledZip5Zones: { '941': 'west' } })).toThrow();
+    expect(() => parseConfig('carrierRule', { ...exact, modeledZip5Zones: { '94103': 'missing' } })).toThrow();
   });
 });

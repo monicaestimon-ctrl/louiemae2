@@ -71,6 +71,8 @@ export type FreightConfig = {
   rule: CarrierRule;
   originZip: string;
   zip3Zones: Record<string, string>;
+  /** When present, exact ZIP coverage replaces prefix coverage for modeled parcels. */
+  modeledZip5Zones?: Record<string, string>;
   groundPerKgMinorByZone: Record<string, number>;
   groundMinimumMinor: number;
   ltlPerKgMinorByZone: Record<string, number>;
@@ -491,7 +493,9 @@ export function groupFreight(
     return null;
   }
   if (f.rateBasis === 'modeled_parcel') {
-    const zone = f.zip3Zones[dest.zip.slice(0, 3)];
+    const zone = f.modeledZip5Zones !== undefined
+      ? f.modeledZip5Zones[dest.zip.trim().slice(0, 5)]
+      : f.zip3Zones[dest.zip.slice(0, 3)];
     if (c.mode !== 'ground' || !zone || !f.modeledParcel) {
       reasons.push('Shipment or destination is outside the approved parcel model');
       return null;
