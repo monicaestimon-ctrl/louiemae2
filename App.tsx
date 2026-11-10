@@ -18,18 +18,20 @@ import { safeRedirect } from './lib/enrollment';
 import {DeliveryQuoteAccess} from './components/delivery/DeliveryQuoteStatus';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ContentStatusPage } from './components/ContentStatusPage';
+import { SearchLoadState } from './components/SearchLoadState';
+import { loadModule } from './lib/moduleRecovery';
 
 // Everything past the home page loads on demand so the first visit only downloads
 // what it shows. Each page keeps its named export; lazy() needs a default.
 const named = <T extends Record<string, unknown>, K extends keyof T>(load: () => Promise<T>, key: K) =>
-  lazy(() => load().then((m) => ({ default: m[key] as React.ComponentType<any> })));
+  lazy(() => loadModule(load).then((m) => ({ default: m[key] as React.ComponentType<any> })));
 const StoryPage = named(() => import('./components/StoryPage'), 'StoryPage');
 const BlogPage = named(() => import('./components/BlogPage'), 'BlogPage');
 const BlogPostView = named(() => import('./components/BlogPostView'), 'BlogPostView');
 const AdminPage = named(() => import('./components/AdminPage'), 'AdminPage');
 const StorePage = named(() => import('./components/StorePage'), 'StorePage');
 const SupportPage = named(() => import('./components/SupportPage'), 'SupportPage');
-const CreatorHub = lazy(() => import('./components/CreatorHub'));
+const CreatorHub = lazy(() => loadModule(() => import('./components/CreatorHub')));
 const NewArrivalsPage = named(() => import('./components/NewArrivalsPage'), 'NewArrivalsPage');
 const NewCollectionPage = named(() => import('./components/NewCollectionPage'), 'NewCollectionPage');
 const ShopLandingPage = named(() => import('./components/ShopLandingPage'), 'ShopLandingPage');
@@ -37,7 +39,7 @@ const CheckoutSuccess = named(() => import('./components/checkout'), 'CheckoutSu
 const CheckoutCancel = named(() => import('./components/checkout'), 'CheckoutCancel');
 const SearchModal = named(() => import('./components/SearchModal'), 'SearchModal');
 
-const PageFallback = () => <div className="min-h-[100svh]" aria-busy="true" />;
+const PageFallback = () => <main className="min-h-[100svh] flex items-center justify-center text-earth" aria-busy="true"><p role="status">Loading page…</p></main>;
 
 // The full desktop navigation only shows at 1600px and wider; narrower screens never build it.
 const WIDE_NAV = '(min-width: 1600px)';
@@ -466,14 +468,14 @@ const AppContent = () => {
       <DeliveryQuoteAccess />
 
       {/* Search Modal */}
-      {searchOpen && <Suspense fallback={null}><SearchModal
+      {searchOpen && <ErrorBoundary fallback={<SearchLoadState failed onClose={() => setSearchOpen(false)} />}><Suspense fallback={<SearchLoadState onClose={() => setSearchOpen(false)} />}><SearchModal
         isOpen={searchOpen}
         onClose={() => setSearchOpen(false)}
         onProductClick={(productId) => {
           setSelectedProductId(productId);
           setSearchOpen(false);
         }}
-      /></Suspense>}
+      /></Suspense></ErrorBoundary>}
 
       {/* Main Content Area */}
       <ErrorBoundary key={activePage} retryLocally>

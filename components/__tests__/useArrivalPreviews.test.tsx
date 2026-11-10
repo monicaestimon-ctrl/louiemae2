@@ -1,5 +1,5 @@
-import { renderHook } from '@testing-library/react';
-import { beforeEach, expect, it, vi } from 'vitest';
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { getFunctionName } from 'convex/server';
 import { useArrivalPreviews, useCollectionArrivalPreview, useDropPreviews, useCollectionDropPreview } from '../useArrivalPreviews';
 
@@ -14,11 +14,21 @@ vi.mock('convex/react', () => ({
   },
 }));
 const row = (id: string) => ({ _id: id, name: id, price: 20, images: ['image'], category: 'chair', collection: 'furniture', descriptionExcerpt: 'not a full description' });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.ready = undefined;
   mocks.dated.results = []; mocks.dated.status = 'LoadingFirstPage';
   mocks.legacy.results = []; mocks.legacy.status = 'LoadingFirstPage';
+});
+
+it('bounds unresolved readiness for arrivals and collection drops', () => {
+  vi.useFakeTimers();
+  const arrivals = renderHook(() => useArrivalPreviews());
+  const drops = renderHook(() => useDropPreviews());
+  act(() => vi.advanceTimersByTime(10_000));
+  expect(arrivals.result.current).toMatchObject({ unavailable: true, loading: false });
+  expect(drops.result.current).toMatchObject({ unavailable: true, loading: false });
 });
 
 it('skips unavailable catalogs, exposes loading separately, and keeps one cutoff across rerenders', () => {

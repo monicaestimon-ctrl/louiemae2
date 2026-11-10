@@ -277,7 +277,7 @@ export const AdminPage: React.FC = () => {
 };
 /** Owner workspace with visible save failures and independently loaded administrative tools. */
 const OwnerAdminPage: React.FC = () => {
-   const { isAuthenticated, isAuthLoading, signIn, logout, posts, addPost, updatePost, deletePost, siteContent, updateSiteContent: writeSiteContent, addCustomPage, updateCustomPage: writeCustomPage, deleteCustomPage, addProduct, addProducts, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
+   const { isAuthenticated, isAuthLoading, signIn, logout, posts, editorialStatus, retryEditorial, addPost, updatePost, deletePost, siteContent, updateSiteContent: writeSiteContent, addCustomPage, updateCustomPage: writeCustomPage, deleteCustomPage, addProduct, addProducts, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
    const updateSiteContent = withAdminWriteFeedback(writeSiteContent, message => alert(message));
    const updateCustomPage = withAdminWriteFeedback(writeCustomPage, message => alert(message));
    const { subscribers, subscriberListTruncated, campaigns, createCampaign, updateCampaign, sendCampaign, deleteCampaign, stats } = useNewsletterAdmin();
@@ -1648,7 +1648,8 @@ const OwnerAdminPage: React.FC = () => {
             )}
 
             {/* JOURNAL TAB */}
-            {activeTab === 'journal' && (
+            {activeTab === 'journal' && (editorialStatus === 'loading' || editorialStatus === 'unavailable') && <div role="status" className="p-8 text-cream"><p>{editorialStatus === 'loading' ? 'Loading journal…' : 'Journal is temporarily unavailable.'}</p>{editorialStatus === 'unavailable' && <button className="min-h-11 underline" onClick={retryEditorial}>Try again</button>}</div>}
+            {activeTab === 'journal' && editorialStatus !== 'loading' && editorialStatus !== 'unavailable' && (
                <FadeIn>
                   <div className="flex flex-col md:flex-row gap-3 md:gap-0 justify-between md:items-end mb-8 md:mb-12 border-b border-white/10 pb-4 md:pb-6">
                      <div><span className="text-bronze text-xs uppercase tracking-[0.4em] mb-2 block glow-text">Content Marketing</span><h1 className="font-serif text-2xl md:text-4xl text-cream drop-shadow-md">Simply Mae Journal</h1></div>

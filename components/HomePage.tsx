@@ -48,7 +48,7 @@ export const HomePage: React.FC = () => {
   const { addSubscriber } = useNewsletter();
   const furniture = siteContent.collections.find(collection => collection.id === 'furniture') ?? furnitureFallback;
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
-  const { product: selectedProduct, loading: detailLoading, unavailable: detailUnavailable } = useStorefrontProductDetail(selectedProductId);
+  const { product: selectedProduct, loading: detailLoading, unavailable: detailUnavailable, failed: detailFailed, retry: retryDetail } = useStorefrontProductDetail(selectedProductId);
   const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>();
   const [activeImageGroupKey, setActiveImageGroupKey] = useState<string | null>(null);
   const selectedVariant = selectedProduct?.variants?.length === 1
@@ -471,8 +471,9 @@ export const HomePage: React.FC = () => {
         </FadeIn>
       </section>
 
-      {selectedProductId && (detailLoading || detailUnavailable) && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6" role="dialog" aria-modal="true" aria-label="Product details">
+      {selectedProductId && (detailLoading || detailUnavailable || detailFailed) && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6" role="dialog" aria-modal="true" aria-label="Product details">
         <div className="bg-white rounded-2xl p-8 text-center">
+          {detailFailed && <button onClick={retryDetail} className="min-h-11 underline">Try again</button>}
           <p role="status">{detailLoading ? 'Loading product details…' : 'This product is no longer available.'}</p>
           <button onClick={() => openProduct(null)} className="mt-4 underline">Close</button>
         </div>

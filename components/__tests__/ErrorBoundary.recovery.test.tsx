@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { CartProvider, useCart } from '../../contexts/CartContext';
+import { ModuleLoadError } from '../../lib/moduleRecovery';
 
 let failing = true;
 function Page() { if (failing) throw new Error('page failed'); return <p>Recovered content</p>; }
@@ -16,6 +17,12 @@ beforeEach(() => {
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
 });
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
+it('offers a genuine reload for cached lazy module errors instead of a futile local remount', () => {
+  function FailedModule(): never { throw new ModuleLoadError(); }
+  render(<ErrorBoundary retryLocally><FailedModule /></ErrorBoundary>);
+  expect(screen.getByRole('button', { name: 'Refresh Page' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+});
 it('preserves navigation and cart state while retrying only the failed page', () => {
   render(<Shell />);
   expect(screen.getByRole('navigation')).toBeTruthy();

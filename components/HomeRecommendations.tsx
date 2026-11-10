@@ -22,7 +22,7 @@ function RecommendationResults({ config, onOpen, retry }: Props & { retry: () =>
   const recommendations = useStoreCatalog(config, 'All', readiness?.ready === true, 'featured', 6);
   const pending = readiness === undefined || recommendations.loading;
   const timedOut = usePendingTimeout(pending);
-  if (timedOut || (readiness !== undefined && !readiness.ready)) return <SectionUnavailable label="Products" retry={retry} />;
+  if (timedOut || recommendations.unavailable || (readiness !== undefined && !readiness.ready)) return <SectionUnavailable label="Products" retry={retry} />;
   return <>
           {pending && <p role="status" className="text-center text-earth/80 mb-6">Loading recommendations…</p>}
           {recommendations.complete && recommendations.products.length === 0 && <p className="text-center text-earth/80 mb-6">New pieces are coming soon.</p>}

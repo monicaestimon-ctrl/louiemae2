@@ -3,6 +3,7 @@ import { usePaginatedQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { buildCatalogCategoryFilter, matchesCatalogCategoryFilter } from '../lib/productCategories';
 import type { CollectionConfig, Product } from '../types';
+import { usePendingTimeout } from '../contexts/usePendingTimeout';
 
 export type StoreCardProduct = Pick<Product, 'id' | 'name' | 'images' | 'imageMedia' | 'price' | 'category' | 'isNew' | 'inStock'> & { variantCount: number };
 export type StoreSort = 'newest' | 'price-asc' | 'price-desc' | 'featured';
@@ -32,9 +33,11 @@ export function useStoreCatalog(config: CollectionConfig, category: string, read
   if (sort === 'price-asc') products.sort((a, b) => a.price - b.price);
   if (sort === 'price-desc') products.sort((a, b) => b.price - a.price);
   if (previewLimit) products = products.slice(0, previewLimit);
-  return { products, loading: ready && ((retailEnabled && retail.status === 'LoadingFirstPage') || status === 'LoadingFirstPage' || Boolean(previewLimit && count < previewLimit && status !== 'Exhausted')),
+  const pending = ready && ((retailEnabled && retail.status === 'LoadingFirstPage') || status === 'LoadingFirstPage' || status === 'LoadingMore' || Boolean(previewLimit && count < previewLimit && status !== 'Exhausted'));
+  const unavailable = usePendingTimeout(pending, `${config.id}:${category}:${sort}:${previewLimit}`);
+  return { products, unavailable, loading: !unavailable && ready && ((retailEnabled && retail.status === 'LoadingFirstPage') || status === 'LoadingFirstPage' || Boolean(previewLimit && count < previewLimit && status !== 'Exhausted')),
     complete: ready && status === 'Exhausted' && (!retailEnabled || retail.status === 'Exhausted'), canLoadMore: ready && status === 'CanLoadMore',
-    loadingMore: ready && status === 'LoadingMore', loadMore: () => loadMore(25) };
+    loadingMore: !unavailable && ready && status === 'LoadingMore', loadMore: () => loadMore(25) };
 }
 
 export function useStoreCategoryOptions(config: CollectionConfig, selected: string, ready: boolean) {

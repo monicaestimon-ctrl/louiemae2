@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import type { Product } from '../types';
+import { usePendingTimeout } from '../contexts/usePendingTimeout';
 
 export type CatalogPreviewProduct = Pick<Product, 'id' | 'name' | 'price' | 'images' | 'category' | 'collection' | 'isNew'>;
 const previewProduct = (row: Omit<CatalogPreviewProduct, 'id'> & { _id: string }): CatalogPreviewProduct => ({
@@ -48,10 +49,12 @@ export function useArrivalPreviews() {
   const kids = useCollectionArrivalPreview('kids', since, ready);
   const furniture = useCollectionArrivalPreview('furniture', since, ready);
   const decor = useCollectionArrivalPreview('decor', since, ready);
+  const pending = readiness === undefined || fashion.loading || kids.loading || furniture.loading || decor.loading;
+  const timedOut = usePendingTimeout(pending);
   return {
     collectionProducts: { fashion: fashion.products, kids: kids.products, furniture: furniture.products, decor: decor.products } as Record<string, CatalogPreviewProduct[]>,
-    loading: readiness === undefined || fashion.loading || kids.loading || furniture.loading || decor.loading,
-    unavailable: readiness !== undefined && !ready,
+    loading: pending && !timedOut,
+    unavailable: timedOut || (readiness !== undefined && !ready),
   };
 }
 
@@ -73,9 +76,11 @@ export function useDropPreviews() {
   const kids = useCollectionDropPreview('kids', ready);
   const furniture = useCollectionDropPreview('furniture', ready);
   const decor = useCollectionDropPreview('decor', ready);
+  const pending = readiness === undefined || fashion.loading || kids.loading || furniture.loading || decor.loading;
+  const timedOut = usePendingTimeout(pending);
   return {
     dropProducts: { fashion: fashion.products, kids: kids.products, furniture: furniture.products, decor: decor.products } as Record<string, CatalogPreviewProduct[]>,
-    loading: readiness === undefined || fashion.loading || kids.loading || furniture.loading || decor.loading,
-    unavailable: readiness !== undefined && !ready,
+    loading: pending && !timedOut,
+    unavailable: timedOut || (readiness !== undefined && !ready),
   };
 }

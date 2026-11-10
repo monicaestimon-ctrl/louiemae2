@@ -17,6 +17,7 @@ import { useStoreCatalog, useStoreCategoryOptions, type StoreCardProduct } from 
 
 import { VariantSelector, NO_IMAGE_KEY } from './VariantSelector';
 import { responsiveImage } from '../lib/responsiveImage';
+import { usePendingTimeout } from '../contexts/usePendingTimeout';
 const navigateToStoreHash = (hash: string) => { window.location.hash = hash; };
 
 interface StorePageProps {
@@ -35,7 +36,7 @@ interface PreviewProps {
   handleCategoryChange: (category: string) => void;
   onSelect: (product: StoreCardProduct) => void;
 }
-const CatalogUnavailable = () => <p role="status" className="py-8 text-center text-earth/60">Products are temporarily unavailable. Please check back shortly.</p>;
+const CatalogUnavailable = () => <div role="status" className="py-8 text-center text-earth"><p>Products are temporarily unavailable. Please try again.</p><button className="min-h-11 underline" onClick={() => window.location.reload()}>Reload products</button></div>;
 
   // Render a product card (reusable for both preview and full grid)
   const ProductCard: React.FC<{ product: StoreCardProduct; index: number; compact?: boolean; onSelect: (product: StoreCardProduct) => void }> = ({ product, index, compact, onSelect }) => (
@@ -183,7 +184,7 @@ const CatalogUnavailable = () => <p role="status" className="py-8 text-center te
         {/* Product Previews */}
         {checking || preview.loading ? (
           <ProductLoadingGrid compact />
-        ) : !ready ? <CatalogUnavailable /> : previewProducts.length > 0 ? (
+        ) : !ready || preview.unavailable ? <CatalogUnavailable /> : previewProducts.length > 0 ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
             {previewProducts.map((product, idx) => (
               <ProductCard key={product.id} product={product} index={idx} compact onSelect={onSelect} />
@@ -244,7 +245,7 @@ const CatalogUnavailable = () => <p role="status" className="py-8 text-center te
     const featuredProducts = preview.products;
     const collection = config.id;
     if (checking || preview.loading) return <ProductLoadingGrid />;
-    if (!ready) return <CatalogUnavailable />;
+    if (!ready || preview.unavailable) return <CatalogUnavailable />;
 
     if (featuredProducts.length === 0) return null;
 
@@ -320,8 +321,9 @@ const CatalogUnavailable = () => <p role="status" className="py-8 text-center te
 export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategory = 'All', forceProductView = false }) => {
   const { siteContent, isLoading } = useSite();
   const readiness = useQuery(api.catalogReadiness.status, {});
+  const readinessTimedOut = usePendingTimeout(readiness === undefined, collection);
   const catalogReady = readiness?.ready === true;
-  const catalogUnavailable = readiness !== undefined && !catalogReady;
+  const readinessUnavailable = readinessTimedOut || (readiness !== undefined && !catalogReady);
   const [sortOption, setSortOption] = useState<'newest' | 'price-asc' | 'price-desc'>('newest');
 
   // Find the configuration for this collection from the dynamic state
@@ -342,7 +344,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
     const q = window.location.hash.split('?')[1];
     return q ? new URLSearchParams(q).get('product') : null;
   });
-  const { product: selectedProduct, loading: detailLoading, unavailable: detailUnavailable } = useStorefrontProductDetail(selectedProductId);
+  const { product: selectedProduct, loading: detailLoading, unavailable: detailUnavailable, failed: detailFailed, retry: retryDetail } = useStorefrontProductDetail(selectedProductId);
   const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(() => {
     const q = window.location.hash.split('?')[1];
     return (q && new URLSearchParams(q).get('variant')) || undefined;
@@ -432,7 +434,8 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
   const categoryOptions = useStoreCategoryOptions(config, selectedCategory, catalogReady && viewLevel === 'PRODUCT');
   const filteredProducts = grid.products;
   const categories = categoryOptions.categories;
-  const storefrontIsLoading = isLoading || readiness === undefined || (viewLevel === 'PRODUCT' ? grid.loading : rootPreview.loading);
+  const catalogUnavailable = readinessUnavailable || grid.unavailable || rootPreview.unavailable;
+  const storefrontIsLoading = !catalogUnavailable && (isLoading || readiness === undefined || (viewLevel === 'PRODUCT' ? grid.loading : rootPreview.loading));
 
   const handleCategoryChange = (cat: string) => {
     if (cat === selectedCategory) return;
@@ -776,13 +779,13 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
             <div className="container mx-auto">
 
               {/* NEW: Hero Slider at the Top */}
-              <HeroProductSlider categoryTitle={selectedCategory} config={config} ready={catalogReady} checking={isLoading || readiness === undefined} handleCategoryChange={handleCategoryChange} onSelect={handleSelectProduct} />
+              <HeroProductSlider categoryTitle={selectedCategory} config={config} ready={catalogReady} checking={!readinessUnavailable && (isLoading || readiness === undefined)} handleCategoryChange={handleCategoryChange} onSelect={handleSelectProduct} />
 
               <div id="sub-cats-start" className="h-px w-full bg-earth/10 mb-16"></div>
 
               {/* Subcategory Swimlanes */}
               {childCategories.map((cat, idx) => (
-                <SubcategoryWithPreviews key={cat.id} category={cat} index={idx} config={config} ready={catalogReady} checking={isLoading || readiness === undefined} handleCategoryChange={handleCategoryChange} onSelect={handleSelectProduct} />
+                <SubcategoryWithPreviews key={cat.id} category={cat} index={idx} config={config} ready={catalogReady} checking={!readinessUnavailable && (isLoading || readiness === undefined)} handleCategoryChange={handleCategoryChange} onSelect={handleSelectProduct} />
               ))}
             </div>
           </section>
@@ -931,8 +934,9 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
       )}
 
       {/* Product Modal */}
-      {selectedProductId && (detailLoading || detailUnavailable) && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6" role="dialog" aria-modal="true" aria-label="Product details">
+      {selectedProductId && (detailLoading || detailUnavailable || detailFailed) && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6" role="dialog" aria-modal="true" aria-label="Product details">
         <div className="rounded-lg bg-cream p-8 text-earth">
+          {detailFailed && <button onClick={retryDetail} className="min-h-11 underline">Try again</button>}
           <p role="status">{detailLoading ? 'Loading product details…' : 'This product is no longer available.'}</p>
           <button type="button" onClick={() => handleSelectProduct(null)} className="mt-5 underline">Close</button>
         </div>
