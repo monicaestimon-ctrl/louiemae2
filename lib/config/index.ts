@@ -302,6 +302,17 @@ export function parseConfig(kind: ConfigKind, value: unknown): unknown {
         if (!/^\d{3}$/.test(zip)) bad(kind, 'invalid ZIP prefix');
         str(kind, zone, 'zone');
       }
+      if (o.modeledZip5Zones !== undefined) {
+        if (o.rateBasis !== 'modeled_parcel') bad(kind, 'Exact modeled ZIP coverage requires modeled parcel rates');
+        const zones = obj(kind, o.modeledZip5Zones);
+        if (Object.keys(zones).length > 50_000) bad(kind, 'Too many modeled ZIP entries');
+        for (const [zip, zone] of Object.entries(zones)) {
+          if (!/^\d{5}$/.test(zip)) bad(kind, 'Invalid modeled ZIP');
+          str(kind, zone, 'modeled zone');
+          const model = o.modeledParcel as { packageMinorByZone: Record<string, unknown> };
+          if (!Object.prototype.hasOwnProperty.call(model.packageMinorByZone, zone as string)) bad(kind, 'Modeled ZIP has no rate table');
+        }
+      }
       for (const k of ['groundPerKgMinorByZone', 'ltlPerKgMinorByZone'])
         for (const [zone, rate] of Object.entries(obj(kind, o[k]))) int(kind, rate, `${k}.${zone}`);
       for (const k of [

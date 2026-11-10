@@ -2133,6 +2133,10 @@ describe('delivery tool security and operations regressions', () => {
     const line = { packs: 2, cartons: [{ lengthMm: 100, widthMm: 100, heightMm: 100,
       grossWeightG: 400, cartonsPerPack: 1, supplierMethod: 'ground' }] } as unknown as ResolvedLine;
     expect(groupFreight([line], { zip: '95206' }, f, [])).toBe(2200);
+    const exact = { ...f, modeledZip5Zones: { '95206': 'test' } };
+    expect(groupFreight([line], { zip: '95206-1234' }, exact, [])).toBe(2200);
+    expect(groupFreight([line], { zip: '95207' }, exact, [])).toBeNull();
+    expect(groupFreight([line], { zip: '95206' }, { ...exact, modeledZip5Zones: {} }, [])).toBeNull();
     const reasons: string[] = [];
     expect(groupFreight([{ ...line, cartons: [{ ...line.cartons[0], supplierMethod: 'ltl' }] }],
       { zip: '95206' }, f, reasons)).toBeNull();
