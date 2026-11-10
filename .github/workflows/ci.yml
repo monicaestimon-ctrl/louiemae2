@@ -50,6 +50,9 @@ jobs:
       - name: Run tests
         run: npm run test:run
 
+      - name: Verify Lighthouse acceptance policy
+        run: npm run test:lighthouse-policy
+
       - name: Build
         run: npm run build
 

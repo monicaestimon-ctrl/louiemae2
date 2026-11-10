@@ -315,7 +315,7 @@ export const HomePage: React.FC = () => {
           {(isLoading || readiness === undefined || recommendations.loading) && <p role="status" className="text-center text-earth/80 mb-6">Loading recommendations…</p>}
           {readiness !== undefined && !readiness.ready && <p role="status" className="text-center text-earth/80 mb-6">Products are temporarily unavailable. Please check back shortly.</p>}
           {recommendations.complete && recommendations.products.length === 0 && <p className="text-center text-earth/80 mb-6">New pieces are coming soon.</p>}
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
+          <div data-catalog-ready={readiness?.ready === true && !recommendations.loading && recommendations.products.length > 0 ? 'true' : 'false'} className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
             {recommendations.products.map((product, idx) => (
               <FadeIn key={product.id} delay={idx * 100} className="group cursor-pointer">
                 <div
