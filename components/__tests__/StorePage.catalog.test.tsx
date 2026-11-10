@@ -3,7 +3,7 @@ import { fireEvent, render, screen, cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StorePage } from '../StorePage';
 import type { Product } from '../../types';
-const mocks = vi.hoisted(() => ({ detailProduct: null as Product | null, addToCart: vi.fn(), ready: true, complete: false, products: [] as unknown[], load: vi.fn(), detail: vi.fn(), query: vi.fn() }));
+const mocks = vi.hoisted(() => ({ detailProduct: null as Product | null, detailFailed: false, addToCart: vi.fn(), ready: true, complete: false, products: [] as unknown[], load: vi.fn(), detail: vi.fn(), query: vi.fn() }));
 vi.mock('convex/react', () => ({ useQuery: (...args: unknown[]) => { mocks.query(...args); return { ready: mocks.ready }; } }));
 vi.mock('../../contexts/BlogContext', () => ({ useSite: () => ({ isLoading: false, siteContent: { collections: [{
   id: 'kids', title: 'Kids', subtitle: '', heroImage: '', subcategories: [{ id: 'dresses', title: 'Dresses', image: '' }],
@@ -12,13 +12,13 @@ vi.mock('../../contexts/NewsletterContext', () => ({ useNewsletter: () => ({ add
 vi.mock('../FadeIn', () => ({ FadeIn: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 vi.mock('../SafeImage', () => ({ SafeImage: ({ src, alt }: { src: string; alt: string }) => <img src={src} alt={alt} /> }));
 vi.mock('../../contexts/CartContext', () => ({ useCart: () => ({ addToCart: mocks.addToCart }) }));
-vi.mock('../useStorefrontProductDetail', () => ({ useStorefrontProductDetail: (id: string | null) => { mocks.detail(id); return { product: id ? mocks.detailProduct : null, loading: Boolean(id) && !mocks.detailProduct, unavailable: false }; } }));
+vi.mock('../useStorefrontProductDetail', () => ({ useStorefrontProductDetail: (id: string | null) => { mocks.detail(id); return { product: id ? mocks.detailProduct : null, loading: Boolean(id) && !mocks.detailProduct && !mocks.detailFailed, unavailable: false, failed: Boolean(id) && mocks.detailFailed, retry: vi.fn() }; } }));
 vi.mock('../useStoreCatalog', () => ({
   useStoreCatalog: (_config: unknown, _category: string, ready: boolean) => ({ products: ready ? mocks.products : [], loading: false,
     complete: ready && mocks.complete, canLoadMore: ready && !mocks.complete, loadingMore: false, loadMore: mocks.load }),
   useStoreCategoryOptions: () => ({ categories: ['All', 'Dresses', 'Legacy beyond first page'], canLoadMore: true, loading: false, loadMore: mocks.load }),
 }));
-beforeEach(() => { vi.clearAllMocks(); mocks.detailProduct = null; mocks.ready = true; mocks.complete = false; mocks.products = []; });
+beforeEach(() => { vi.clearAllMocks(); mocks.detailProduct = null; mocks.detailFailed = false; mocks.ready = true; mocks.complete = false; mocks.products = []; });
 afterEach(cleanup);
 describe('store catalog integration', () => {
   it('distinguishes incomplete filtered pages from true emptiness and exposes continuation', () => {
@@ -40,6 +40,14 @@ describe('store catalog integration', () => {
     expect(mocks.detail).toHaveBeenLastCalledWith('late-product');
     expect(screen.getByText('Loading product details…')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Close' })); expect(mocks.detail).toHaveBeenLastCalledWith(null);
+  });
+  it('keeps transport failures distinct from missing referral-linked products', () => {
+    mocks.detailFailed = true;
+    mocks.products = [{ id: 'single', name: 'One sofa', images: ['image'], price: 2889, category: 'Sofas', variantCount: 1 }];
+    render(<StorePage collection="kids" initialCategory="All" forceProductView />);
+    fireEvent.click(screen.getByRole('button', { name: 'View One sofa' }));
+    expect(screen.getByText('Product details could not be loaded. Please try again.')).toBeInTheDocument();
+    expect(screen.queryByText('This product is no longer available.')).toBeNull();
   });
   it('does not call a single variant multiple options and supports keyboard product opening', () => {
     mocks.products = [{ id: 'single', name: 'One sofa', images: ['image'], price: 2889, category: 'Sofas', isNew: false, variantCount: 1, inStock: true }];

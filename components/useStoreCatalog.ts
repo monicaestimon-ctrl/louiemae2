@@ -3,10 +3,12 @@ import { usePaginatedQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { buildCatalogCategoryFilter, matchesCatalogCategoryFilter } from '../lib/productCategories';
 import type { CollectionConfig, Product } from '../types';
+import { usePendingTimeout } from '../contexts/usePendingTimeout';
 
 export type StoreCardProduct = Pick<Product, 'id' | 'name' | 'images' | 'imageMedia' | 'price' | 'category' | 'isNew' | 'inStock'> & { variantCount: number };
 export type StoreSort = 'newest' | 'price-asc' | 'price-desc' | 'featured';
 
+/** Read bounded storefront pages, retaining loaded cards if a later page stalls. */
 export function useStoreCatalog(config: CollectionConfig, category: string, ready: boolean, sort?: StoreSort, previewLimit?: number) {
   const categoryFilter = useMemo(() => category === 'All' ? undefined : buildCatalogCategoryFilter(category, config), [category, config]);
   const page = usePaginatedQuery(api.catalog.storefrontPage,
@@ -32,11 +34,15 @@ export function useStoreCatalog(config: CollectionConfig, category: string, read
   if (sort === 'price-asc') products.sort((a, b) => a.price - b.price);
   if (sort === 'price-desc') products.sort((a, b) => b.price - a.price);
   if (previewLimit) products = products.slice(0, previewLimit);
-  return { products, loading: ready && ((retailEnabled && retail.status === 'LoadingFirstPage') || status === 'LoadingFirstPage' || Boolean(previewLimit && count < previewLimit && status !== 'Exhausted')),
+  const pending = ready && ((retailEnabled && retail.status === 'LoadingFirstPage') || status === 'LoadingFirstPage' || status === 'LoadingMore' || Boolean(previewLimit && count < previewLimit && status !== 'Exhausted'));
+  const timedOut = usePendingTimeout(pending, `${config.id}:${category}:${sort}:${previewLimit}`);
+  const unavailable = timedOut && products.length === 0;
+  return { products, unavailable, loading: !timedOut && ready && ((retailEnabled && retail.status === 'LoadingFirstPage') || status === 'LoadingFirstPage' || Boolean(previewLimit && count < previewLimit && status !== 'Exhausted')),
     complete: ready && status === 'Exhausted' && (!retailEnabled || retail.status === 'Exhausted'), canLoadMore: ready && status === 'CanLoadMore',
-    loadingMore: ready && status === 'LoadingMore', loadMore: () => loadMore(25) };
+    additionalLoadingFailed: timedOut && products.length > 0, loadingMore: !timedOut && ready && status === 'LoadingMore', loadMore: () => loadMore(25) };
 }
 
+/** Combine configured categories with explicitly paged legacy category names. */
 export function useStoreCategoryOptions(config: CollectionConfig, selected: string, ready: boolean) {
   const page = usePaginatedQuery(api.catalog.categoryOptionsPage, ready ? { collection: config.id } : 'skip', { initialNumItems: 25 });
   const categories = Array.from(new Set([...config.subcategories.map(category => category.title),

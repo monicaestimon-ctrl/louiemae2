@@ -19,8 +19,8 @@ vi.mock('@convex-dev/auth/react', () => ({ useAuthActions: () => ({ signIn: vi.f
 function View({ admin, storefront = true }: { admin: boolean; storefront?: boolean }) {
   useAdminCatalog(admin);
   useStorefrontCatalog(storefront);
-  const { products, isCatalogLoading } = useSite();
-  return <output data-loading={isCatalogLoading}>{products.map(product => product.name).join(',')}</output>;
+  const { products, isCatalogLoading, catalogStatus } = useSite();
+  return <output data-loading={isCatalogLoading} data-catalog-status={catalogStatus}>{products.map(product => product.name).join(',')}</output>;
 }
 
 beforeEach(() => {
@@ -51,7 +51,7 @@ describe('SiteProvider catalog isolation', () => {
     expect(screen.getByRole('status')).toHaveAttribute('data-loading', 'false');
     mocks.query.mockClear();
     view.rerender(<SiteProvider><View admin={false} storefront={false} /></SiteProvider>);
-    expect(catalogCalls().filter(([name]) => name === 'products:listForStorefront').at(-1)?.[1]).toBe('skip');
+    expect(screen.getByRole('status')).toHaveAttribute('data-catalog-status', 'idle');
     expect(mocks.mutation).not.toHaveBeenCalled();
   });
   it('keeps public demand while another consumer remains mounted', () => {
@@ -59,7 +59,7 @@ describe('SiteProvider catalog isolation', () => {
     view.rerender(<React.StrictMode><SiteProvider><View admin={false} storefront={false} /><View admin={false} /></SiteProvider></React.StrictMode>);
     expect(mocks.query.mock.calls.filter(([name]) => name === 'products:listForStorefront').at(-1)?.[1]).toEqual({});
     view.rerender(<React.StrictMode><SiteProvider><View admin={false} storefront={false} /><View admin={false} storefront={false} /></SiteProvider></React.StrictMode>);
-    expect(mocks.query.mock.calls.filter(([name]) => name === 'products:listForStorefront').at(-1)?.[1]).toBe('skip');
+    expect(screen.getAllByRole('status')[0]).toHaveAttribute('data-catalog-status', 'idle');
   });
   it('uses public products for authenticated browsing and releases private reads after navigation', () => {
     const view = render(<SiteProvider><View admin={false} /></SiteProvider>);
@@ -70,7 +70,7 @@ describe('SiteProvider catalog isolation', () => {
     mocks.query.mockClear();
     view.rerender(<SiteProvider><View admin={false} /></SiteProvider>);
     expect(screen.getByRole('status')).toHaveTextContent('Published product');
-    expect(mocks.query.mock.calls.filter(([name]) => name === 'products:list').at(-1)?.[1]).toBe('skip');
+    expect(screen.getByRole('status')).not.toHaveTextContent('Private product');
     expect(mocks.mutation).not.toHaveBeenCalled();
   });
 

@@ -1,4 +1,5 @@
 import './index.css';
+import { loadModule, showStartupFailure } from './lib/moduleRecovery';
 
 // index.html paints the home hero on its own. Start the app once that first paint has
 // happened so the bundle never stands between the visitor and the hero. Other entry
@@ -7,7 +8,7 @@ let started = false;
 const start = () => {
   if (started) return;
   started = true;
-  void import('./boot');
+  void loadModule(() => import('./boot')).catch(showStartupFailure);
 };
 
 if (document.documentElement.dataset.shell === 'home' && document.visibilityState === 'visible' && 'PerformanceObserver' in window) {

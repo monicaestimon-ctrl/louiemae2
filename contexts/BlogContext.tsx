@@ -1,7 +1,7 @@
 import { serializeSourceProperties } from '../lib/sourceProperties';
 
 import React, { createContext, useContext, ReactNode, useEffect, useRef } from 'react';
-import { useQuery, useMutation, useConvexAuth } from 'convex/react';
+import { useMutation, useConvexAuth } from 'convex/react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
@@ -11,10 +11,13 @@ import { AdminCatalogDemandContext, StorefrontCatalogDemandContext, useCatalogDe
 import { usePublicEditorialPosts, type EditorialStatus } from './usePublicEditorialPosts';
 import { usePublicSiteContent, type PublicContentStatus } from './usePublicSiteContent';
 import { useSiteAccount, type AccountStatus } from './useSiteAccount';
+import { useRecoverableQuery } from './useRecoverableQuery';
 
 interface SiteContextType {
   posts: BlogPost[];
   editorialStatus: EditorialStatus;
+  retryEditorial: () => void;
+  catalogStatus: 'idle' | 'loading' | 'ready' | 'unavailable';
   siteContentStatus: PublicContentStatus;
   customPagesStatus: PublicContentStatus;
   products: Product[];
@@ -65,14 +68,17 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const needsAdminCatalog = siteOwner && adminCatalogRequested;
 
   // --- Convex Queries ---
-  const adminPosts = useQuery(api.blogPosts.listAdmin, siteOwner ? {} : 'skip');
+  const adminEditorial = useRecoverableQuery(api.blogPosts.listAdmin, siteOwner ? {} : 'skip');
+  const adminPosts = adminEditorial.data;
   const publicEditorial = usePublicEditorialPosts(!siteOwner);
   const convexPosts = siteOwner ? adminPosts : publicEditorial.posts;
   const editorialStatus: EditorialStatus = siteOwner
-    ? adminPosts === undefined ? 'loading' : adminPosts.length ? 'ready' : 'empty'
+    ? adminEditorial.status === 'unavailable' ? 'unavailable' : adminPosts === undefined ? 'loading' : adminPosts.length ? 'ready' : 'empty'
     : publicEditorial.status;
-  const adminProducts = useQuery(api.products.list, needsAdminCatalog ? {} : 'skip');
-  const storefrontProducts = useQuery(api.products.listForStorefront, !needsAdminCatalog && storefrontCatalogRequested ? {} : 'skip');
+  const adminCatalog = useRecoverableQuery(api.products.list, needsAdminCatalog ? {} : 'skip');
+  const storefrontCatalog = useRecoverableQuery(api.products.listForStorefront, !needsAdminCatalog && storefrontCatalogRequested ? {} : 'skip');
+  const adminProducts = adminCatalog.data;
+  const storefrontProducts = storefrontCatalog.data;
   const convexProducts = needsAdminCatalog ? adminProducts : storefrontProducts;
   const publicContent = usePublicSiteContent();
   const convexSiteContent = publicContent.siteContent;
@@ -413,6 +419,8 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       siteContentStatus: publicContent.siteContentStatus,
       customPagesStatus: publicContent.customPagesStatus,
       products,
+      catalogStatus: needsAdminCatalog ? adminCatalog.status : storefrontCatalog.status,
+      retryEditorial: siteOwner ? adminEditorial.retry : () => window.location.reload(),
       siteContent,
       isLoading,
       isCatalogLoading: convexProducts === undefined,

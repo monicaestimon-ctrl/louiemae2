@@ -1,4 +1,5 @@
 import './style.css';
+import { loadModule, showStartupFailure } from '../lib/moduleRecovery';
 
 // Lazy photos stay clear until they have arrived, then fade in over their warm placeholder
 // (style.css, "Photos arrive gently"). Load and error don't bubble, so listen in capture.
@@ -15,7 +16,7 @@ let started = false;
 const start = () => {
   if (started) return;
   started = true;
-  void import('./boot');
+  void loadModule(() => import('./boot')).catch(showStartupFailure);
 };
 
 if (document.getElementById('holm-shell') && document.visibilityState === 'visible' && 'PerformanceObserver' in window) {

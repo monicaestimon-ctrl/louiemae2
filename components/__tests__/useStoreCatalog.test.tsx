@@ -1,5 +1,5 @@
-import { renderHook } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStoreCatalog, useStoreCategoryOptions } from '../useStoreCatalog';
 import type { CollectionConfig } from '../../types';
 
@@ -13,8 +13,29 @@ const config: CollectionConfig = { id: 'kids', title: 'Kids', subtitle: '', hero
 ] };
 const row = (id: string) => ({ _id: id, name: id, images: ['image'], price: 12, category: 'Dresses', isNew: true, variantCount: 150, variants: [{ id: 'partial' }] });
 beforeEach(() => { vi.clearAllMocks(); mocks.rows = []; mocks.status = 'LoadingFirstPage'; });
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('bounded store readers', () => {
+  it('bounds stalled pages without treating them as empty, resets on filter changes and recovers', () => {
+    vi.useFakeTimers();
+    const view = renderHook(({ category }) => useStoreCatalog(config, category, true), { initialProps: { category: 'Girls' } });
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(view.result.current).toMatchObject({ unavailable: true, loading: false, complete: false });
+    view.rerender({ category: 'Dresses' });
+    expect(view.result.current).toMatchObject({ unavailable: false, loading: true });
+    mocks.status = 'Exhausted'; mocks.rows = [row('verified')]; view.rerender({ category: 'Dresses' });
+    expect(view.result.current.unavailable).toBe(false);
+    expect(view.result.current.products[0].id).toBe('verified');
+  });
+  it('keeps loaded products visible when an additional page times out', () => {
+    vi.useFakeTimers(); mocks.status = 'LoadingMore'; mocks.rows = [row('already-loaded')];
+    const view = renderHook(() => useStoreCatalog(config, 'All', true));
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(view.result.current).toMatchObject({ unavailable: false, additionalLoadingFailed: true, loadingMore: false });
+    expect(view.result.current.products[0].id).toBe('already-loaded');
+    mocks.status = 'Exhausted'; view.rerender();
+    expect(view.result.current.additionalLoadingFailed).toBe(false);
+  });
   it('skips inactive readers and forwards exact hierarchical filters and server sorting', () => {
     const view = renderHook(({ ready }) => useStoreCatalog(config, 'Girls', ready, 'price-asc'), { initialProps: { ready: false } });
     expect(mocks.query.mock.lastCall?.[1]).toBe('skip');

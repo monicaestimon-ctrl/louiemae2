@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 
 /** Bound a pending UI episode without polling or cancelling a recoverable subscription. */
-export function usePendingTimeout(pending: boolean) {
-  const request = useMemo(() => ({ pending }), [pending]);
+export function usePendingTimeout(pending: boolean, requestKey?: string) {
+  const request = useMemo(() => ({ pending, requestKey }), [pending, requestKey]);
   const [expiredRequest, setExpiredRequest] = useState<typeof request | null>(null);
   useEffect(() => {
     if (!request.pending) return;

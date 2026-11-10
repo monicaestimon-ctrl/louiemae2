@@ -4,11 +4,11 @@ vi.mock('./useDeliveryRequest', () => ({
 }));
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getFunctionName } from 'convex/server';
 import ProductDeliveryEstimate from './ProductDeliveryEstimate';
 
-const mock = vi.hoisted(() => ({ estimate: vi.fn(), request: vi.fn(), enabled: true, missing: false, projectQuote: false }));
+const mock = vi.hoisted(() => ({ estimate: vi.fn(), request: vi.fn(), enabled: true, missing: false, projectQuote: false, pending: false, failed: false }));
 vi.mock('convex/react', () => ({
   useQuery: (ref: unknown) =>
     getFunctionName(ref as never).endsWith('.enabled') ||
@@ -17,6 +17,10 @@ vi.mock('convex/react', () => ({
       : getFunctionName(ref as never).includes('productProfile')
         ? mock.missing ? null : { piecesPerPack: 2, minimumPacks: 3, incrementPacks: 2, requiresProjectQuote: mock.projectQuote }
         : undefined,
+  useQueries: (queries: Record<string, { query: unknown }>) => Object.fromEntries(Object.entries(queries).map(([key, { query }]) => [key,
+    mock.failed ? new Error('Unavailable') : mock.pending ? undefined : getFunctionName(query as never).endsWith(':enabled')
+      ? mock.enabled : mock.missing ? null : { piecesPerPack: 2, minimumPacks: 3, incrementPacks: 2, requiresProjectQuote: mock.projectQuote }
+  ])),
   useAction: () => mock.estimate,
   useMutation: () => mock.request,
 }));
@@ -27,7 +31,10 @@ beforeEach(() => {
   mock.enabled = true;
   mock.missing = false;
   mock.projectQuote = false;
+  mock.pending = false;
+  mock.failed = false;
 });
+afterEach(() => vi.useRealTimers());
 const response = (amount: number) => ({
   status: 'ok',
   deliveryChargeMinor: amount,
@@ -36,6 +43,25 @@ const response = (amount: number) => ({
   expiresAt: Date.now() + 60000,
 });
 describe('shared delivery product UI', () => {
+  it('bounds pending availability without enabling an unverified estimate and supports retry', () => {
+    vi.useFakeTimers();
+    mock.pending = true;
+    render(<ProductDeliveryEstimate productId="p" variantId="v" />);
+    expect(screen.getByText('Checking delivery availability…')).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(10000));
+    expect(screen.getByText(/Delivery availability could not be verified/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Estimate delivery' })).not.toBeInTheDocument();
+    mock.pending = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry delivery availability' }));
+    expect(screen.getByRole('button', { name: 'Estimate delivery' })).toBeInTheDocument();
+    expect(mock.estimate).not.toHaveBeenCalled();
+  });
+  it('keeps query failure local instead of treating it as disabled delivery', () => {
+    mock.failed = true;
+    render(<ProductDeliveryEstimate productId="p" variantId="v" />);
+    expect(screen.getByText(/Delivery availability could not be verified/)).toBeInTheDocument();
+    expect(mock.estimate).not.toHaveBeenCalled();
+  });
   it('routes project-only supplier trade delivery to the project quote workflow', () => {
     mock.projectQuote = true;
     render(<ProductDeliveryEstimate productId="p" variantId="v" channel="trade" />);

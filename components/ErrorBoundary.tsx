@@ -1,4 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
+import { ModuleLoadError } from '../lib/moduleRecovery';
 
 interface Props {
     children: ReactNode;
@@ -31,7 +32,7 @@ class ErrorBoundary extends Component<Props, State> {
 
     /** Retry only the failed subtree when requested; otherwise reload the document. */
     handleReload = (): void => {
-        if (this.props.retryLocally) this.setState({ hasError: false, error: null });
+        if (this.props.retryLocally && !(this.state.error instanceof ModuleLoadError)) this.setState({ hasError: false, error: null });
         else window.location.reload();
     };
 
@@ -61,7 +62,7 @@ class ErrorBoundary extends Component<Props, State> {
                                 onClick={this.handleReload}
                                 className="bg-earth text-cream px-6 py-3 text-xs uppercase tracking-widest hover:bg-bronze transition-colors"
                             >
-                                {this.props.retryLocally ? 'Try again' : 'Refresh Page'}
+                                {this.props.retryLocally && !(this.state.error instanceof ModuleLoadError) ? 'Try again' : 'Refresh Page'}
                             </button>
                             <button
                                 onClick={this.handleGoHome}

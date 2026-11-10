@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Search, ArrowRight } from 'lucide-react';
-import { useQuery } from 'convex/react';
+import { useRecoverableQuery } from '../contexts/useRecoverableQuery';
 import { api } from '../convex/_generated/api';
 import { SafeImage } from './SafeImage';
 
@@ -19,15 +19,16 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
         const timer = window.setTimeout(() => setDebouncedSearchTerm(normalizedSearchTerm), 250);
         return () => window.clearTimeout(timer);
     }, [normalizedSearchTerm]);
-    const filteredProducts = useQuery(
+    const search = useRecoverableQuery(
         api.products.searchStorefront,
         isOpen && debouncedSearchTerm.length >= 2
             ? { term: debouncedSearchTerm, limit: 20 }
             : 'skip',
     );
     const isSearching = normalizedSearchTerm.length >= 2
-        && (debouncedSearchTerm !== normalizedSearchTerm || filteredProducts === undefined);
-    const results = filteredProducts ?? [];
+        && (debouncedSearchTerm !== normalizedSearchTerm || search.status === 'loading');
+    const results = search.data ?? [];
+    const searchUnavailable = debouncedSearchTerm === normalizedSearchTerm && search.status === 'unavailable';
 
     const handleClose = () => {
         setSearchTerm('');
@@ -107,6 +108,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         placeholder="Search for furniture, decor, and more..."
+                        aria-label="Search products"
                         className="w-full relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-full py-5 pl-14 pr-6 text-cream placeholder:text-cream/40 focus:outline-none focus:border-bronze focus:bg-white/15 transition-all duration-300 font-sans shadow-inner"
                     />
                 </div>
@@ -118,6 +120,11 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
                     {normalizedSearchTerm.length < 2 ? (
                         <div className="text-center py-16">
                             <p className="text-cream/50 text-sm font-light tracking-wide">Type at least two characters to search products...</p>
+                        </div>
+                    ) : searchUnavailable ? (
+                        <div role="status" className="text-center py-16 text-cream">
+                            <p>Search is temporarily unavailable. Your search has been kept.</p>
+                            <button className="mt-4 min-h-11 border border-cream px-5 py-3" onClick={search.retry}>Try again</button>
                         </div>
                     ) : isSearching ? (
                         <div className="text-center py-16">

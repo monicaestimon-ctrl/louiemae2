@@ -1,7 +1,7 @@
 import { useDeliveryRequest } from './useDeliveryRequest';
 import React, { useState, useRef, useEffect } from 'react';
 import DeliveryQuoteRequest from './DeliveryQuoteRequest';
-import { useQuery } from 'convex/react';
+import { useRecoverableQuery } from '../../contexts/useRecoverableQuery';
 import { api } from '../../convex/_generated/api';
 import { visitorId } from '../../lib/partnerLink';
 import { customerMessage } from '../../lib/errors';
@@ -33,14 +33,22 @@ export default function ProductDeliveryEstimate({
   selectedPacks?: number;
   disabledMessage?: string;
 }) {
-  const enabled = useQuery(api.dlvEstimates.enabled);
-  const profile = useQuery(
+  const availability = useRecoverableQuery(api.dlvEstimates.enabled, variantId ? {} : 'skip');
+  const enabled = availability.data;
+  const profileQuery = useRecoverableQuery(
     api.dlvEstimates.productProfile,
     enabled && variantId ? { productId, variantId, channel } : 'skip'
   );
+  const profile = profileQuery.data;
   piecesPerPack = profile?.piecesPerPack ?? piecesPerPack;
   minimumPacks = profile?.minimumPacks ?? minimumPacks;
   incrementPacks = profile?.incrementPacks ?? incrementPacks;
+  if (variantId && (availability.status === 'unavailable' || profileQuery.status === 'unavailable'))
+    return <div role="status" className="text-sm text-earth">
+      <p>Delivery availability could not be verified. Please try again.</p>
+      <button type="button" className="min-h-11 underline" onClick={() => { availability.retry(); profileQuery.retry(); }}>Retry delivery availability</button>
+    </div>;
+  if (availability.status === 'loading') return <p role="status" className="text-sm">Checking delivery availability…</p>;
   if (!enabled || !variantId) return disabledMessage ? <p>{disabledMessage}</p> : null;
   if (profile === undefined) return <p className="text-sm">Checking delivery availability…</p>;
   if (profile === null) return <p className="text-sm">This item is currently unavailable for delivery estimates.</p>;

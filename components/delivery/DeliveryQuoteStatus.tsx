@@ -6,12 +6,14 @@ import { rememberCheckout } from '../../lib/delivery/checkoutReturn';
 import { customerMessage } from '../../lib/errors';
 import { SPLIT_MAY } from '../../lib/customerCopy';
 import { useAuthToken } from '@convex-dev/auth/react';
+import { usePendingTimeout } from '../../contexts/usePendingTimeout';
 const money = (n: number) => `$${(n / 100).toFixed(2)}`;
 export type QuoteAccess = { id: Id<'dlvQuoteRequests'>; guestCapability?: string };
 
 export default function DeliveryQuoteStatus({ request }: { request: QuoteAccess }) {
   const status = useQuery(api.dlvOperations.requestStatus, request),
     accept = useMutation(api.dlvOperations.acceptQuote);
+  const statusTimedOut = usePendingTimeout(status === undefined, request.id);
   const prepare = useMutation(api.dlvOperations.prepareCheckout),
     authToken = useAuthToken();
   const closeRequest = useMutation(api.dlvOperations.closeRequest);
@@ -32,8 +34,9 @@ export default function DeliveryQuoteStatus({ request }: { request: QuoteAccess 
       <p>Reference: {request.id}</p>
       <p>
         Status:{' '}
-        {status === null ? 'Quote unavailable' : (status?.status.replaceAll('_', ' ') ?? 'Loading')}
+        {statusTimedOut ? 'Quote status temporarily unavailable' : status === null ? 'Quote unavailable' : (status?.status.replaceAll('_', ' ') ?? 'Loading')}
       </p>
+      {statusTimedOut && <button className="min-h-11 underline" onClick={() => window.location.reload()}>Reload quote</button>}
       {status?.message && <p>{status.message}</p>}
       {status?.orderPlaced && (
         <p role="status">

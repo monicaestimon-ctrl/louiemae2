@@ -1,6 +1,6 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getFunctionName } from 'convex/server';
 import type { Id } from '../../convex/_generated/dataModel';
 import DeliveryQuoteStatus from './DeliveryQuoteStatus';
@@ -20,8 +20,17 @@ beforeEach(() => {
   state.close.mockReset();
   state.other.mockReset();
 });
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('private delivery request lifecycle UI', () => {
+  it('bounds pending quote status without accepting or preparing any payment', () => {
+    vi.useFakeTimers(); state.value = undefined;
+    render(<DeliveryQuoteStatus request={request} />);
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(screen.getByText(/Quote status temporarily unavailable/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Reload quote' })).toBeTruthy();
+    expect(state.other).not.toHaveBeenCalled();
+  });
   it('closes a request with its private capability and shows a saved result', async () => {
     state.value = {
       status: 'requested',
