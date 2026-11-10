@@ -1,11 +1,11 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HomePage } from '../HomePage';
 import { CartProvider, useCart } from '../../contexts/CartContext';
 import type { Product } from '../../types';
-const mocks = vi.hoisted(() => ({ ready: true, product: null as Product | null, loading: false, unavailable: false, catalog: vi.fn(), detail: vi.fn() }));
-vi.mock('convex/react', () => ({ useQuery: () => ({ ready: mocks.ready }) }));
+const mocks = vi.hoisted(() => ({ ready: true as boolean | undefined, failed: false, product: null as Product | null, loading: false, unavailable: false, catalog: vi.fn(), detail: vi.fn() }));
+vi.mock('convex/react', () => ({ useQuery: () => { if (mocks.failed) throw new Error('private catalog error'); return mocks.ready === undefined ? undefined : { ready: mocks.ready }; } }));
 vi.mock('../../contexts/BlogContext', async () => {
   const { INITIAL_SITE_CONTENT } = await import('../../constants');
   return { useSite: () => ({ isLoading: false, siteContent: INITIAL_SITE_CONTENT }) };
@@ -25,12 +25,30 @@ const CartProof = () => { const cart = useCart(); return <output aria-label="Car
 const App = () => <CartProvider><HomePage /><CartProof /></CartProvider>;
 const open = () => fireEvent.click(screen.getByRole('button', { name: 'Quick View' }));
 beforeEach(() => {
-  vi.clearAllMocks(); localStorage.clear(); mocks.ready = true; mocks.loading = false; mocks.unavailable = false;
+  vi.clearAllMocks(); localStorage.clear(); mocks.ready = true; mocks.failed = false; mocks.loading = false; mocks.unavailable = false;
   mocks.product = { id: 'real-product', name: 'Authoritative chair', fulfillmentProvider: 'ashcroft', description: 'Real details', category: 'Chairs', price: 420, images: ['chair.jpg'], inStock: true,
     variants: [{ id: 'linen', name: 'Linen', inStock: true, priceAdjustment: 20 }, { id: 'sold-out', name: 'Velvet', inStock: false, priceAdjustment: 30 }] } as Product;
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 describe('homepage real catalog purchase flow', () => {
+  it('keeps homepage content through a failed recommendation query and local retry', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    mocks.failed = true; render(<App />);
+    expect(screen.getByText('Recommendations are temporarily unavailable.')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Louie Kids & Co.', level: 2 })).toBeTruthy();
+    expect(document.querySelector('[data-catalog-ready="true"]')).toBeNull();
+    mocks.failed = false; fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(screen.getByText('Catalog chair')).toBeTruthy();
+  });
+  it('bounds pending recommendations without removing the homepage and recovers on data arrival', () => {
+    vi.useFakeTimers(); mocks.ready = undefined; const view = render(<App />);
+    expect(screen.getByText('Loading recommendations…')).toBeTruthy();
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(screen.getByText('Products are temporarily unavailable.')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Louie Kids & Co.', level: 2 })).toBeTruthy();
+    mocks.ready = true; view.rerender(<App />);
+    expect(screen.getByText('Catalog chair')).toBeTruthy();
+  });
   it('blocks legacy non-Ashcroft products as Coming Soon', () => {
     mocks.product = { ...mocks.product!, fulfillmentProvider: undefined };
     render(<App />); open();
@@ -89,3 +107,4 @@ describe('homepage real catalog purchase flow', () => {
     expect(mocks.catalog).toHaveBeenLastCalledWith(expect.anything(), 'All', false, 'featured', 6);
   });
 });
+

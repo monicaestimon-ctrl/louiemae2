@@ -8,9 +8,7 @@ import { FASHION_CATEGORIES, KIDS_CATEGORIES, INITIAL_SITE_CONTENT } from '../co
 import { useSite } from '../contexts/BlogContext';
 import { useNewsletter } from '../contexts/NewsletterContext';
 import type { ProductVariant, CollectionConfig } from '../types';
-import { useQuery } from 'convex/react';
-import { api } from '../convex/_generated/api';
-import { useStoreCatalog } from './useStoreCatalog';
+import { HomeRecommendations } from './HomeRecommendations';
 import { useStorefrontProductDetail } from './useStorefrontProductDetail';
 import { VariantSelector, NO_IMAGE_KEY } from './VariantSelector';
 import { AddToCartButton } from './cart/AddToCartButton';
@@ -48,9 +46,7 @@ export const HomePage: React.FC = () => {
     if (line2.textContent !== home.hero.titleLine2) line2.textContent = home.hero.titleLine2;
   }, [home.hero.pretitle, home.hero.titleLine1, home.hero.titleLine2]);
   const { addSubscriber } = useNewsletter();
-  const readiness = useQuery(api.catalogReadiness.status, {});
   const furniture = siteContent.collections.find(collection => collection.id === 'furniture') ?? furnitureFallback;
-  const recommendations = useStoreCatalog(furniture, 'All', readiness?.ready === true, 'featured', 6);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const { product: selectedProduct, loading: detailLoading, unavailable: detailUnavailable } = useStorefrontProductDetail(selectedProductId);
   const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>();
@@ -105,7 +101,7 @@ export const HomePage: React.FC = () => {
   ) : null;
 
   return (
-    <>
+    <main aria-label="Louie Mae home">
       {/* Hero Section: index.html's when there is one, otherwise the same hero drawn here.
           The default photo stays underneath and a saved replacement fades in over it once it
           has downloaded. */}
@@ -312,43 +308,7 @@ export const HomePage: React.FC = () => {
             <h3 className="font-serif text-lg md:text-xl text-earth italic">Recommended Products</h3>
           </FadeIn>
 
-          {(isLoading || readiness === undefined || recommendations.loading) && <p role="status" className="text-center text-earth/80 mb-6">Loading recommendations…</p>}
-          {readiness !== undefined && !readiness.ready && <p role="status" className="text-center text-earth/80 mb-6">Products are temporarily unavailable. Please check back shortly.</p>}
-          {recommendations.complete && recommendations.products.length === 0 && <p className="text-center text-earth/80 mb-6">New pieces are coming soon.</p>}
-          <div data-catalog-ready={readiness?.ready === true && !recommendations.loading && recommendations.products.length > 0 ? 'true' : 'false'} className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
-            {recommendations.products.map((product, idx) => (
-              <FadeIn key={product.id} delay={idx * 100} className="group cursor-pointer">
-                <div
-                  className="relative aspect-square overflow-hidden bg-white mb-4 rounded-2xl shadow-sm hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-500 border border-earth/5"
-                  onClick={() => openProduct(product.id)}
-                >
-                  {product.isNew && (
-                    <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-2 py-1 text-[9px] uppercase tracking-widest text-earth z-10 rounded-sm shadow-sm border border-white/50">
-                      New
-                    </span>
-                  )}
-                  <SafeImage
-                    src={product.images[0]}
-                    alt={product.name}
-                    className="w-full h-full object-contain"
-                  />
-
-                  {/* Quick View Overlay (Glass) */}
-                  <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-full group-hover:translate-y-0 transition-transform duration-500">
-                    <button className="w-full bg-white/80 backdrop-blur-md text-earth border border-white/50 py-3 rounded-lg text-[10px] uppercase tracking-[0.2em] shadow-[0_10px_20px_rgba(0,0,0,0.1)] hover:bg-earth hover:text-white transition-colors duration-300">
-                      Quick View
-                    </button>
-                  </div>
-                </div>
-                <div onClick={() => openProduct(product.id)} className="px-1">
-                  <h3 className="font-serif text-lg md:text-xl text-earth leading-tight mb-1 group-hover:text-bronze transition-colors">
-                    {product.name}
-                  </h3>
-                  {!product.inStock && <p className="text-xs uppercase tracking-widest text-bronze">Coming Soon</p>}<p className="font-serif italic text-earth/80 text-base group-hover:text-bronze/80 transition-colors">${product.price}</p>
-                </div>
-              </FadeIn>
-            ))}
-          </div>
+          <HomeRecommendations config={furniture} onOpen={id => openProduct(id)} />
         </div>
       </section>
 
@@ -572,6 +532,6 @@ export const HomePage: React.FC = () => {
           </div>
         </div>
       )}
-    </>
+    </main>
   );
 };

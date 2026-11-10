@@ -5,9 +5,9 @@ import { getFunctionName } from 'convex/server';
 import { SiteProvider, useSite } from '../BlogContext';
 import { ContentStatusPage } from '../../components/ContentStatusPage';
 
-const mocks = vi.hoisted(() => ({ settings: undefined as unknown, pages: undefined as unknown, mutate: vi.fn() }));
+const mocks = vi.hoisted(() => ({ settings: undefined as unknown, pages: undefined as unknown, session: { owner: true } as unknown, mutate: vi.fn() }));
 vi.mock('convex/react', () => ({
-  useQueries: () => ({ settings: mocks.settings, pages: mocks.pages, posts: [] }),
+  useQueries: () => ({ settings: mocks.settings, pages: mocks.pages, posts: [], session: mocks.session }),
   useQuery: (query: Parameters<typeof getFunctionName>[0], args: unknown) => args === 'skip' ? undefined
     : getFunctionName(query) === 'cjAdminAccess:session' ? { owner: true } : [{ _id: 'existing' }],
   useMutation: () => mocks.mutate,
@@ -19,12 +19,21 @@ function Probe() {
   return <><nav>{site.siteContent.collections.map(collection => <a key={collection.id} href={`#collection/${collection.id}`}>{collection.title}</a>)}</nav>
     <span data-testid="settings">{site.siteContentStatus}</span>
     <span data-testid="loading">{String(site.isLoading)}</span>
+    <span data-testid="account">{site.accountStatus}</span>
     <ContentStatusPage status={site.customPagesStatus} /></>;
 }
-beforeEach(() => { mocks.settings = undefined; mocks.pages = undefined; mocks.mutate.mockReset(); vi.useFakeTimers(); });
+beforeEach(() => { mocks.settings = undefined; mocks.pages = undefined; mocks.session = { owner: true }; mocks.mutate.mockReset(); vi.useFakeTimers(); });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('public site content resilience', () => {
+  it('retains public navigation and cannot seed when signed-in account access fails', () => {
+    mocks.session = new Error('private account diagnostic'); mocks.settings = null; mocks.pages = [];
+    render(<SiteProvider><Probe /></SiteProvider>);
+    expect(screen.getByRole('link', { name: 'Furniture' })).toBeTruthy();
+    expect(screen.getByTestId('account')).toHaveTextContent('unavailable');
+    expect(mocks.mutate).not.toHaveBeenCalled();
+    expect(screen.queryByText('private account diagnostic')).toBeNull();
+  });
   it('prevents fallback configuration from being saved over unknown supplier-independent site settings', async () => {
     mocks.settings = new Error('offline'); mocks.pages = new Error('offline');
     const { result } = renderHook(() => useSite(), { wrapper: SiteProvider });

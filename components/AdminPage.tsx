@@ -6,6 +6,7 @@ import { useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
 import { useSite } from '../contexts/BlogContext';
+import { useSiteAccount } from '../contexts/useSiteAccount';
 import { useAdminCatalog } from '../contexts/AdminCatalogDemand';
 import { RichTextEditor } from './RichTextEditor';
 import { useNewsletterAdmin } from '../contexts/NewsletterContext';
@@ -264,8 +265,10 @@ const ImageUploader: React.FC<{
 
 export const AdminPage: React.FC = () => {
    const { isAuthenticated, isAuthLoading, logout } = useSite();
-   const access = useQuery(api.cjAdminAccess.session, isAuthenticated ? {} : 'skip');
-   if (isAuthLoading || (isAuthenticated && !access)) return <p role="status">Checking staff access…</p>;
+   const account = useSiteAccount(isAuthenticated, isAuthLoading);
+   const access = account.session;
+   if (account.status === 'loading') return <main className="p-6 pt-28"><p role="status">Checking staff access…</p></main>;
+   if (account.status === 'unavailable') return <main className="p-6 pt-28"><h1>Account access temporarily unavailable</h1><p role="status">We cannot verify staff permissions. Please try again.</p><button onClick={() => window.location.reload()}>Try again</button><a href="/#support">Contact support</a></main>;
    if (!isAuthenticated || access?.owner) return <OwnerAdminPage />;
    return <main className="mx-auto max-w-6xl p-6 pt-28 space-y-6">
       <button type="button" onClick={() => logout()}>Sign out</button>

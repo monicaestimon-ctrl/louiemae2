@@ -10,6 +10,7 @@ import { BLOG_POSTS as INITIAL_POSTS, INITIAL_SITE_CONTENT, PRODUCTS as INITIAL_
 import { AdminCatalogDemandContext, StorefrontCatalogDemandContext, useCatalogDemand } from './AdminCatalogDemand';
 import { usePublicEditorialPosts, type EditorialStatus } from './usePublicEditorialPosts';
 import { usePublicSiteContent, type PublicContentStatus } from './usePublicSiteContent';
+import { useSiteAccount, type AccountStatus } from './useSiteAccount';
 
 interface SiteContextType {
   posts: BlogPost[];
@@ -22,6 +23,7 @@ interface SiteContextType {
   isCatalogLoading: boolean;
   isAuthenticated: boolean;
   isAuthLoading: boolean;  // True while auth state is loading
+  accountStatus: AccountStatus;
   signIn: (email: string, password: string, flow: 'signIn' | 'signUp') => Promise<void>;
   logout: () => void;
   // Blog Actions
@@ -57,7 +59,8 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const { signIn: authSignIn, signOut: authSignOut } = useAuthActions();
   const { requested: adminCatalogRequested, register: registerAdminCatalog } = useCatalogDemand();
   const { requested: storefrontCatalogRequested, register: registerStorefrontCatalog } = useCatalogDemand();
-  const adminSession = useQuery(api.cjAdminAccess.session, isAuthenticated ? {} : 'skip');
+  const account = useSiteAccount(isAuthenticated, isAuthLoading);
+  const adminSession = account.session;
   const siteOwner = isAuthenticated && adminSession?.owner === true;
   const needsAdminCatalog = siteOwner && adminCatalogRequested;
 
@@ -414,6 +417,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       isLoading,
       isCatalogLoading: convexProducts === undefined,
       isAuthenticated,
+      accountStatus: account.status,
       isAuthLoading,
       signIn,
       logout,
