@@ -218,3 +218,11 @@ Audit each subsection as phases progress. Features not covered by a passing test
 - Project lines resolve exact saved IDs. Missing products or changed saved variants block submission and can be removed; they never become the first catalog item. Pack quantities honor minimum/increment, combine across rooms and retain exact product/variant identities for checkout.
 - Projects containing canonical Zuo use shared guarded trade checkout when fully supported. Mixed-supplier projects preserve every line in the delivery quote request. Legacy project reductions, legacy credit estimates and legacy client-quote actions are not applied to this route.
 - This connection does not certify current supplier evidence or switch on rollout flags. Mixed-supplier request intake is supported; payable Ashcroft trade quotes still require completion of their manual economics route. Current supplier files remain blocked at the dealer's document host, and prepared photographs still require exact-SKU visual and rights review.
+
+
+## Phase 6k: current supplier source reconciliation
+
+- Added a deployment-admin-only, bounded evidence refresh with an initial snapshot and dry-run mode. Exact supplier/SKU/pack identity, current cost revision and carton fingerprint must match. Retries bind to the complete source manifest and row payload; changed retries fail.
+- The refresh appends cost revisions and raw source observations, updates the current carton projection and preserves approved retail/trade prices, unknown expense states and historical orders. Prior carton data stays in the evidence record. Source hashes, row numbers and true file observation times remain attached.
+- Zero MAP is recorded as unresolved, never as an exemption. Discontinued source rows remain discontinued. Raw on-hand counts do not become available-to-sell inventory, and source refresh never publishes or removes review holds.
+- The authorized supplier FTP provides current inventory and product-data files independently of the browser document host. New evidence is reconciled by SKU before applying; deployment success alone does not apply supplier data or activate checkout.

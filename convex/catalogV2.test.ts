@@ -33,6 +33,53 @@ afterEach(() => {
 });
 
 describe('cost evidence authoring', () => {
+  it('reconciles current supplier evidence with dry-run, exact identity and safe retry without activating sales', async () => {
+    const { t, admin } = await setup();
+    await importPackage(admin, [row('SOURCE-REFRESH')], 'dry_run');
+    await importPackage(admin, [row('SOURCE-REFRESH')], 'commit');
+    const cv = (await t.run(ctx => ctx.db.query('catVariants').first()))!;
+    const [sourceSnapshot] = await t.query(internal.catEvidence.supplierSourceSnapshot, { variantIds: [cv._id] });
+    const payload = {
+      dryRun: true, sourceSha256: 'a'.repeat(64), inventorySha256: 'b'.repeat(64),
+      sourceName: 'Supplier fixture install sheet', sourceObservedAt: NOW - 3600000, inventoryObservedAt: NOW - 1000,
+      rows: [{ variantId: cv._id, sku: cv.supplierSku, piecesPerPack: cv.piecesPerPack, sourceRow: 2,
+        expectedCostRevisionId: cv.currentCostRevisionId ?? null, wholesaleUsd: '115.125', mapPackMinor: 30000,
+        expectedCartonFingerprint: sourceSnapshot.cartonFingerprint,
+        status: 'ACTIVE' as const, caOnHand: 20, flOnHand: 0,
+        cartons: [{ length: '20', width: '15', height: '10', weight: '12.5', supplierMethod: 'ground' as const }] }],
+    };
+    const counts = () => t.run(async ctx => ({ costs: (await ctx.db.query('catCostRevisions').collect()).length,
+      observations: (await ctx.db.query('catSourceObservations').collect()).length }));
+    const before = await counts();
+    expect((await t.mutation(internal.catEvidence.reconcileZuoSource, payload)).results[0].status).toBe('ready');
+    expect(await counts()).toEqual(before);
+    await expect(t.mutation(internal.catEvidence.reconcileZuoSource, { ...payload, dryRun: false,
+      rows: [{ ...payload.rows[0], piecesPerPack: cv.piecesPerPack + 1 }] })).rejects.toThrow(/mismatch/);
+    const result = await t.mutation(internal.catEvidence.reconcileZuoSource, { ...payload, dryRun: false });
+    expect(result.results[0].status).toBe('applied');
+    const updated = (await t.run(ctx => ctx.db.get(cv._id)))!;
+    expect(updated).toMatchObject({ retailPriceRevisionId: cv.retailPriceRevisionId, tradePriceRevisionId: cv.tradePriceRevisionId });
+    expect(updated.currentStockRevisionId).toBe(cv.currentStockRevisionId);
+    expect(updated.holds).toEqual(expect.arrayContaining(['MANUAL', 'STOCK_UNVERIFIED']));
+    const cost = (await t.run(ctx => ctx.db.get(updated.currentCostRevisionId!)))!;
+    expect(cost).toMatchObject({ wholesalePrecise: '115.125', verifiedAt: payload.sourceObservedAt,
+      mapMinor: 30000, mapUnitBasis: 'pack', dutiesConfirmedZero: false, inboundConfirmedZero: false, feesConfirmedZero: false });
+    expect((await t.run(ctx => ctx.db.get(cv.currentCostRevisionId!)))?.effectiveTo).toBeTypeOf('number');
+    const after = await counts();
+    expect((await t.mutation(internal.catEvidence.reconcileZuoSource, { ...payload, dryRun: false })).results[0].status).toBe('already_applied');
+    expect(await counts()).toEqual(after);
+    await expect(t.mutation(internal.catEvidence.reconcileZuoSource, { ...payload, dryRun: false,
+      rows: [{ ...payload.rows[0], caOnHand: 19 }] })).rejects.toThrow(/retry differs/);
+    const [updatedSnapshot] = await t.query(internal.catEvidence.supplierSourceSnapshot, { variantIds: [cv._id] });
+    const second = { ...payload, dryRun: false, sourceSha256: 'c'.repeat(64), rows: [{ ...payload.rows[0],
+      expectedCartonFingerprint: updatedSnapshot.cartonFingerprint,
+      expectedCostRevisionId: updated.currentCostRevisionId ?? null, mapPackMinor: 0, status: 'DISC' as const }] };
+    await t.mutation(internal.catEvidence.reconcileZuoSource, second);
+    const discontinued = (await t.run(ctx => ctx.db.get(cv._id)))!;
+    expect(discontinued.availability).toBe('discontinued');
+    expect(await t.run(ctx => ctx.db.get(discontinued.currentCostRevisionId!))).toMatchObject({ mapMinor: null, mapApplicability: 'unknown' });
+    expect(await t.run(ctx => ctx.db.query('commerceListings').collect())).toHaveLength(0);
+  });
   async function fixture() {
     const { t, admin } = await setup();
     await importPackage(admin, [row('EVIDENCE')], 'dry_run');

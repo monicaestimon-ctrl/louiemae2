@@ -1,6 +1,9 @@
 // Finance evidence authoring. Evidence changes invalidate qualification, never approved prices.
-import { v } from 'convex/values';
-import { mutation, query } from './_generated/server';
+import { v, type ObjectType } from 'convex/values';
+import { internalMutation, internalQuery, mutation, query } from './_generated/server';
+import type { MutationCtx } from './_generated/server';
+import { digest as evidenceDigest } from './dlvSecurity';
+import { normalizeCartons } from '../lib/shipping/evidence';
 import type { Id } from './_generated/dataModel';
 import { requireDeliveryRole } from './dlvAccess';
 import { openHold } from './catCore';
@@ -33,8 +36,7 @@ export const detail = query({
   },
 });
 
-export const recordCost = mutation({
-  args: {
+const costArgs = {
     variantId: v.id('catVariants'),
     expectedRevisionId: v.union(v.id('catCostRevisions'), v.null()),
     requestKey: v.string(),
@@ -55,9 +57,14 @@ export const recordCost = mutation({
     ),
     evidence: v.string(),
     note: v.string(),
-  },
-  handler: async (ctx, a) => {
-    const actor = await requireDeliveryRole(ctx, 'finance');
+};
+
+export const recordCost = mutation({
+  args: costArgs,
+  handler: async (ctx, a) => saveCostEvidence(ctx, a, await requireDeliveryRole(ctx, 'finance')),
+});
+
+async function saveCostEvidence(ctx: MutationCtx, a: ObjectType<typeof costArgs>, actor: { email: string; approver: boolean }) {
     const now = Date.now();
     if (
       !/^[\w-]{8,80}$/.test(a.requestKey) ||
@@ -226,5 +233,117 @@ export const recordCost = mutation({
     });
     await ctx.db.insert('sysIdempotencyKeys', { key, scope, resultRef: id, createdAt: now });
     return id;
+}
+
+export const supplierSourceSnapshot = internalQuery({
+  args: { variantIds: v.array(v.id('catVariants')) },
+  handler: async (ctx, a) => {
+    if (a.variantIds.length < 1 || a.variantIds.length > 20) throw new CommerceError('INVALID_INPUT');
+    return Promise.all(a.variantIds.map(async id => {
+      const cv = await ctx.db.get(id);
+      const supplier = cv ? await ctx.db.get(cv.supplierId) : null;
+      if (!cv || supplier?.code !== 'zuo') throw new CommerceError('INVALID_INPUT');
+      const cartons = await ctx.db.query('catCartons').withIndex('by_variant', q => q.eq('variantId', id)).collect();
+      return { variantId: id, sku: cv.supplierSku, piecesPerPack: cv.piecesPerPack,
+        costRevisionId: cv.currentCostRevisionId ?? null, cartonFingerprint: await evidenceDigest(cartons) };
+    }));
+  },
+});
+
+/** Deployment-admin reconciliation of a reviewed supplier file, never a publication endpoint. */
+export const reconcileZuoSource = internalMutation({
+  args: {
+    dryRun: v.boolean(),
+    sourceSha256: v.string(),
+    sourceName: v.string(),
+    sourceObservedAt: v.number(),
+    inventorySha256: v.string(),
+    inventoryObservedAt: v.number(),
+    rows: v.array(v.object({
+      variantId: v.id('catVariants'), sku: v.string(), piecesPerPack: v.number(), sourceRow: v.number(),
+      expectedCostRevisionId: v.union(v.id('catCostRevisions'), v.null()),
+      expectedCartonFingerprint: v.string(),
+      wholesaleUsd: v.string(), mapPackMinor: v.union(v.number(), v.null()),
+      status: v.union(v.literal('ACTIVE'), v.literal('MD'), v.literal('DISC')),
+      caOnHand: v.union(v.number(), v.null()), flOnHand: v.union(v.number(), v.null()),
+      cartons: v.array(v.object({ length: v.string(), width: v.string(), height: v.string(), weight: v.string(),
+        supplierMethod: v.union(v.literal('ground'), v.literal('ltl')) })),
+    })),
+  },
+  handler: async (ctx, a) => {
+    const actor = { email: 'deployment-admin:zuo-source-reconciliation', approver: false };
+    const now = Date.now();
+    if (!/^[a-f0-9]{64}$/.test(a.sourceSha256) || !/^[a-f0-9]{64}$/.test(a.inventorySha256) ||
+      !a.sourceName.trim() || a.sourceName.length > 180 || a.rows.length < 1 || a.rows.length > 20 ||
+      new Set(a.rows.map(r => r.variantId)).size !== a.rows.length ||
+      [a.sourceObservedAt, a.inventoryObservedAt].some(t => !Number.isSafeInteger(t) || t <= 0 || t > now))
+      throw new CommerceError('INVALID_INPUT', 'Invalid source manifest');
+    const results = [];
+    for (const row of a.rows) {
+      const cv = await ctx.db.get(row.variantId);
+      const supplier = cv ? await ctx.db.get(cv.supplierId) : null;
+      if (!cv || supplier?.code !== 'zuo' || cv.supplierSku !== row.sku || cv.piecesPerPack !== row.piecesPerPack ||
+        !Number.isSafeInteger(row.sourceRow) || row.sourceRow < 2 ||
+        (row.mapPackMinor !== null && (!Number.isSafeInteger(row.mapPackMinor) || row.mapPackMinor < 0)) ||
+        [row.caOnHand, row.flOnHand].some(q => q !== null && (!Number.isSafeInteger(q) || q < 0)) ||
+        !/^\d{1,9}(\.\d{1,6})?$/.test(row.wholesaleUsd) || dollarsToMinor(row.wholesaleUsd, 'ceil') <= 0)
+        throw new CommerceError('INVALID_INPUT', 'Supplier SKU, pack or source value mismatch');
+      const cartons = normalizeCartons(row.cartons.map(c => ({ ...c, count: 1, dimensionsUnit: 'in', weightUnit: 'lb' })));
+      const scope = await evidenceDigest({ ...a, dryRun: undefined, rows: undefined, row });
+      const key = `zuo-source-v1:${a.sourceSha256}:${a.inventorySha256}:${cv._id}`;
+      const prior = await ctx.db.query('sysIdempotencyKeys').withIndex('by_key', q => q.eq('key', key)).first();
+      if (prior) {
+        if (prior.scope !== scope) throw new CommerceError('INVALID_INPUT', 'Source retry differs');
+        results.push({ sku: row.sku, status: 'already_applied' as const });
+        continue;
+      }
+      if ((cv.currentCostRevisionId ?? null) !== row.expectedCostRevisionId)
+        throw new CommerceError('INVALID_INPUT', 'Current cost changed; reconcile again');
+      const old = cv.currentCostRevisionId ? await ctx.db.get(cv.currentCostRevisionId) : null;
+      const oldCartons = await ctx.db.query('catCartons').withIndex('by_variant', q => q.eq('variantId', cv._id)).collect();
+      if (await evidenceDigest(oldCartons) !== row.expectedCartonFingerprint)
+        throw new CommerceError('INVALID_INPUT', 'Shipping evidence changed; reconcile again');
+      if (a.dryRun) {
+        results.push({ sku: row.sku, status: 'ready' as const });
+        continue;
+      }
+      // Unknown expenses stay unknown, and source refresh cannot approve exemptions or prices.
+      const expenseState = (minor: number | null | undefined, zero: boolean | undefined) =>
+        minor !== null && minor !== undefined && minor > 0 ? { state: 'amount' as const, minor } :
+          zero || minor === 0 ? { state: 'confirmed_zero' as const } : { state: 'unknown' as const };
+      const source = `${a.sourceName}; SHA256 ${a.sourceSha256}; row ${row.sourceRow}; SKU ${row.sku}`;
+      const costId = await saveCostEvidence(ctx, {
+        variantId: cv._id, expectedRevisionId: row.expectedCostRevisionId, requestKey: `source-${scope.slice(0,64)}`,
+        wholesaleUsd: row.wholesaleUsd, verified: true, observedAt: a.sourceObservedAt,
+        duties: expenseState(old?.dutiesMinor, old?.dutiesConfirmedZero),
+        inbound: expenseState(old?.inboundFreightMinor, old?.inboundConfirmedZero),
+        fees: expenseState(old?.supplierFeesMinor, old?.feesConfirmedZero),
+        map: row.mapPackMinor !== null && row.mapPackMinor > 0 ? { state: 'explicit_sku', minor: row.mapPackMinor, basis: 'pack' } : { state: 'unknown' },
+        evidence: source, note: 'Supplier file reconciliation. Existing prices and unresolved expenses retained; requalification required.',
+      }, actor);
+      const shippingId = await ctx.db.insert('catSourceObservations', {
+        supplierId: cv.supplierId, variantId: cv._id, supplierSku: row.sku, field: 'shipping_evidence',
+        extractedValue: stableStringify({ raw: row.cartons, normalized: cartons, previousCartons: oldCartons, sourceStatus: row.status, rawMapPackMinor: row.mapPackMinor }),
+        sourceFile: source, observedAt: a.sourceObservedAt, contentHash: scope, verifier: actor.email, confidence: 'confirmed', createdAt: now,
+      });
+      for (const carton of oldCartons) await ctx.db.delete(carton._id);
+      for (const carton of cartons) await ctx.db.insert('catCartons', { ...carton, variantId: cv._id, sourceObservationId: shippingId, createdAt: now });
+      await ctx.db.insert('catSourceObservations', {
+        supplierId: cv.supplierId, variantId: cv._id, supplierSku: row.sku, field: 'supplier_inventory_on_hand',
+        extractedValue: stableStringify({ CA_QTY: row.caOnHand, FL_QTY: row.flOnHand, kind: 'on_hand', unitBasis: 'unknown', availableToSellConfirmed: false }),
+        sourceFile: `ZUO_Daily_Inventory.csv; SHA256 ${a.inventorySha256}`, observedAt: a.inventoryObservedAt,
+        contentHash: scope, verifier: actor.email, confidence: 'confirmed', createdAt: now,
+      });
+      await openHold(ctx, cv._id, 'STOCK_UNVERIFIED', 'On-hand source recorded; quantity basis and available-to-sell treatment still require confirmation.', actor.email);
+      if (oldCartons.map(c => c.supplierMethod).join() !== cartons.map(c => c.supplierMethod).join())
+        await openHold(ctx, cv._id, 'METHOD_CHANGED', 'Supplier shipping method changed; review current routing.', actor.email);
+      if (row.status === 'DISC') await ctx.db.patch(cv._id, { availability: 'discontinued', updatedAt: now });
+      await audit(ctx, { actor: actor.email, action: 'supplier.source_reconciled', entityTable: 'catVariants', entityId: cv._id,
+        before: { costRevisionId: old?._id ?? null }, after: { costRevisionId: costId, shippingId, status: row.status },
+        reason: source, requestId: key });
+      await ctx.db.insert('sysIdempotencyKeys', { key, scope, resultRef: costId, createdAt: now });
+      results.push({ sku: row.sku, status: 'applied' as const });
+    }
+    return { dryRun: a.dryRun, results };
   },
 });
