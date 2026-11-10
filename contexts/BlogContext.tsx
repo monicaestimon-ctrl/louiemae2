@@ -35,14 +35,14 @@ interface SiteContextType {
   updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => void;
   // Site Content Actions
-  updateSiteContent: (section: keyof SiteContent, data: Partial<SiteContent[keyof SiteContent]>) => void;
+  updateSiteContent: (section: keyof SiteContent, data: Partial<SiteContent[keyof SiteContent]>) => Promise<void>;
   // Custom Page Actions
-  addCustomPage: (page: CustomPage) => void;
-  updateCustomPage: (id: string, page: Partial<CustomPage>) => void;
-  deleteCustomPage: (id: string) => void;
+  addCustomPage: (page: CustomPage) => Promise<void>;
+  updateCustomPage: (id: string, page: Partial<CustomPage>) => Promise<void>;
+  deleteCustomPage: (id: string) => Promise<void>;
   getCustomPage: (slug: string) => CustomPage | undefined;
   // Navigation & Collection Actions
-  updateNavigation: (navLinks: NavLink[]) => void;
+  updateNavigation: (navLinks: NavLink[]) => Promise<void>;
   addCollection: (collection: CollectionConfig) => Promise<void>;
   updateCollection: (id: string, collection: Partial<CollectionConfig>) => Promise<void>;
   deleteCollection: (id: string) => Promise<void>;
@@ -340,7 +340,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       throw new Error('Custom pages are unavailable. Reload verified pages before saving changes.');
     }
   };
-  const updateSiteContentAction = (section: keyof SiteContent, data: Partial<SiteContent[keyof SiteContent]>) => {
+  const updateSiteContentAction = async (section: keyof SiteContent, data: Partial<SiteContent[keyof SiteContent]>) => {
     if (section === 'customPages') return; // Handled separately
     requireCurrentSettings();
 
@@ -348,25 +348,25 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // Use deep merge to properly handle nested objects like home.hero, home.categoryImages, etc.
     const updatedValue = deepMerge(currentValue, data);
 
-    updateSiteContentMutation({ [section]: updatedValue } as any);
+    await updateSiteContentMutation({ [section]: updatedValue } as any);
   };
 
   // --- Custom Page Actions ---
-  const addCustomPage = (page: CustomPage) => {
+  const addCustomPage = async (page: CustomPage) => {
     requireCurrentPages();
     const { id, ...pageData } = page;
-    createCustomPage(pageData);
+    await createCustomPage(pageData);
   };
 
-  const updateCustomPageAction = (id: string, pageData: Partial<CustomPage>) => {
+  const updateCustomPageAction = async (id: string, pageData: Partial<CustomPage>) => {
     requireCurrentPages();
     const { id: _, ...updates } = pageData as any;
-    updateCustomPageMutation({ id: id as Id<"customPages">, ...updates });
+    await updateCustomPageMutation({ id: id as Id<"customPages">, ...updates });
   };
 
-  const deleteCustomPageAction = (id: string) => {
+  const deleteCustomPageAction = async (id: string) => {
     requireCurrentPages();
-    removeCustomPage({ id: id as Id<"customPages"> });
+    await removeCustomPage({ id: id as Id<"customPages"> });
   };
 
   const getCustomPage = (slug: string) => {
@@ -374,9 +374,9 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   // --- Navigation & Collection Actions ---
-  const updateNavigation = (navLinks: NavLink[]) => {
+  const updateNavigation = async (navLinks: NavLink[]) => {
     requireCurrentSettings();
-    updateSiteContentMutation({ navLinks });
+    await updateSiteContentMutation({ navLinks });
   };
 
   const addCollection = async (collection: CollectionConfig): Promise<void> => {

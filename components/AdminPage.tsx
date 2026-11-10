@@ -24,6 +24,7 @@ import { SafeImage } from './SafeImage';
 import { productStorefrontStatusLabel } from '../lib/productVisibility';
 import { getEffectiveSubcategoryIds } from '../lib/productCategories';
 import { getUserFacingErrorMessage } from '../lib/errorMessages';
+import { withAdminWriteFeedback } from '../lib/adminWriteFeedback';
 import { type CjProductConnectionState } from '../lib/cjProductStatus';
 import { cjListingUrl } from '../lib/cjPricingReview';
 import { useAdminProductDetail } from './useAdminProductDetail';
@@ -272,7 +273,9 @@ export const AdminPage: React.FC = () => {
    </main>;
 };
 const OwnerAdminPage: React.FC = () => {
-   const { isAuthenticated, isAuthLoading, signIn, logout, posts, addPost, updatePost, deletePost, siteContent, updateSiteContent, addCustomPage, updateCustomPage, deleteCustomPage, addProduct, addProducts, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
+   const { isAuthenticated, isAuthLoading, signIn, logout, posts, addPost, updatePost, deletePost, siteContent, updateSiteContent: writeSiteContent, addCustomPage, updateCustomPage: writeCustomPage, deleteCustomPage, addProduct, addProducts, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
+   const updateSiteContent = withAdminWriteFeedback(writeSiteContent, message => alert(message));
+   const updateCustomPage = withAdminWriteFeedback(writeCustomPage, message => alert(message));
    const { subscribers, subscriberListTruncated, campaigns, createCampaign, updateCampaign, sendCampaign, deleteCampaign, stats } = useNewsletterAdmin();
    const linkDescriptionAuditToProduct = useMutation(api.descriptionAudits.linkAuditToProduct);
    const launchNextProducts = useMutation(api.products.launchNextProducts);
@@ -384,7 +387,7 @@ const OwnerAdminPage: React.FC = () => {
    };
 
    // --- HELPER: ADD SECTION ---
-   const handleAddSection = (type: PageSection['type']) => {
+   const handleAddSection = async (type: PageSection['type']) => {
       const newSection: PageSection = {
          id: Date.now().toString(),
          type,
@@ -398,17 +401,18 @@ const OwnerAdminPage: React.FC = () => {
          productId: type === 'product-feature' ? firstContentProduct?.page[0]?.id : undefined
       };
 
+      let saved = false;
       if (activePageEditor === 'home') {
-         updateSiteContent('home', { sections: [...(siteContent.home.sections || []), newSection] });
+         saved = await updateSiteContent('home', { sections: [...(siteContent.home.sections || []), newSection] });
       } else if (activePageEditor === 'story') {
-         updateSiteContent('story', { sections: [...(siteContent.story.sections || []), newSection] });
+         saved = await updateSiteContent('story', { sections: [...(siteContent.story.sections || []), newSection] });
       } else if (activePageEditor && activePageEditor !== 'story') {
          const page = siteContent.customPages.find(p => p.id === activePageEditor);
          if (page) {
-            updateCustomPage(page.id, { sections: [...page.sections, newSection] });
+            saved = await updateCustomPage(page.id, { sections: [...page.sections, newSection] });
          }
       }
-      setShowSectionPicker(false);
+      if (saved) setShowSectionPicker(false);
    };
 
    // --- NEWSLETTER HANDLERS ---
@@ -603,9 +607,10 @@ const OwnerAdminPage: React.FC = () => {
       }
    };
 
-   const handleDeleteCollection = (id: string) => {
+   const handleDeleteCollection = async (id: string) => {
       if (confirm(`Delete collection "${id}"? Products in this collection will remain but be uncategorized.`)) {
-         deleteCollection(id);
+         try { await deleteCollection(id); }
+         catch (error) { alert(getUserFacingErrorMessage(error, 'This collection could not be deleted.')); }
       }
    };
 
@@ -630,21 +635,23 @@ const OwnerAdminPage: React.FC = () => {
             })),
          };
 
-         addCustomPage(newPage);
+         await addCustomPage(newPage);
          setShowPageGenerator(false);
          setGeneratorPrompt({ title: '', description: '' });
          setActivePageEditor(newPage.id);
-      } catch {
-         alert("Failed to generate page. Please try again.");
+      } catch (error) {
+         alert(getUserFacingErrorMessage(error, 'Failed to generate or save this page. Please try again.'));
       } finally {
          setIsGenerating(false);
       }
    };
 
-   const handleDeleteCustomPage = (id: string) => {
+   const handleDeleteCustomPage = async (id: string) => {
       if (confirm('Are you sure you want to delete this entire page?')) {
-         deleteCustomPage(id);
-         setActivePageEditor(null);
+         try {
+            await deleteCustomPage(id);
+            setActivePageEditor(null);
+         } catch (error) { alert(getUserFacingErrorMessage(error, 'This page could not be deleted.')); }
       }
    };
 

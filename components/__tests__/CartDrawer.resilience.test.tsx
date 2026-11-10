@@ -34,6 +34,9 @@ it('blocks checkout on unknown or failed credit while retaining the cart and all
   view.rerender(<App />);
   expect(screen.getByRole('button', { name: 'Proceed to Checkout' })).toBeDisabled();
   expect(screen.getByTestId('count').textContent).toBe('2');
+  mocks.credit = null;
+  view.rerender(<App />);
+  expect(screen.getByRole('button', { name: 'Proceed to Checkout' })).toBeDisabled();
   mocks.credit = { balanceCents: 0, autoApply: false };
   view.rerender(<App />);
   expect(screen.getByRole('button', { name: 'Proceed to Checkout' })).not.toBeDisabled();

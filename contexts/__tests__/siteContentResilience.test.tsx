@@ -28,9 +28,9 @@ describe('public site content resilience', () => {
   it('prevents fallback configuration from being saved over unknown supplier-independent site settings', async () => {
     mocks.settings = new Error('offline'); mocks.pages = new Error('offline');
     const { result } = renderHook(() => useSite(), { wrapper: SiteProvider });
-    expect(() => result.current.updateNavigation([])).toThrow('Site settings are unavailable');
-    expect(() => result.current.updateSiteContent('home', {})).toThrow('Site settings are unavailable');
-    expect(() => result.current.deleteCustomPage('page')).toThrow('Custom pages are unavailable');
+    await expect(result.current.updateNavigation([])).rejects.toThrow('Site settings are unavailable');
+    await expect(result.current.updateSiteContent('home', {})).rejects.toThrow('Site settings are unavailable');
+    await expect(result.current.deleteCustomPage('page')).rejects.toThrow('Custom pages are unavailable');
     await expect(result.current.deleteCollection('furniture')).rejects.toThrow('Site settings are unavailable');
     expect(mocks.mutate).not.toHaveBeenCalled();
   });

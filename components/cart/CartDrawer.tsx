@@ -28,7 +28,7 @@ export const CartDrawer: React.FC = () => {
     const credit = needsCredit && !(creditResult instanceof Error) ? creditResult : undefined;
     const creditPending = needsCredit && creditResult === undefined;
     const creditTimedOut = usePendingTimeout(creditPending);
-    const creditBlocked = needsCredit && (creditPending || creditResult instanceof Error);
+    const creditBlocked = needsCredit && (creditPending || creditResult === null || creditResult instanceof Error);
     const [useCredit, setUseCredit] = useState(false);
     useEffect(() => { if (credit) setUseCredit(credit.autoApply); }, [credit?.autoApply]);
     const creditOff = credit && useCredit ? Math.min(credit.balanceCents / 100, subtotal) : 0;
