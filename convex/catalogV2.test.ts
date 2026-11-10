@@ -282,6 +282,28 @@ describe('media identity and review', () => {
       rights: { basis: 'fixture license', evidenceRef: 'fixture evidence', attributionRequired: false, privateOriginal: true } };
     return { t, admin, cv, otherId, args };
   }
+  it('applies hash-bound external reviews without publishing or clearing unrelated holds', async () => {
+    const { t, cv, args } = await fixture();
+    const contentHash = 'c'.repeat(64);
+    const { id } = await t.mutation(internal.catMedia.record, { ...args, contentHash });
+    const payload = { dryRun: true, reviewSha256: 'a'.repeat(64), sourceSha256: 'b'.repeat(64),
+      rows: [{ variantId: cv._id, sku: cv.supplierSku, piecesPerPack: cv.piecesPerPack,
+        contentHash, sourceUrl: args.sourceUrl, altText: 'Oak dining chair, supplier product photograph',
+        reviewNote: 'Visually reviewed exact supplier image and SKU description.' }] };
+    expect((await t.mutation(internal.catMedia.applyReviewedZuoPhotos, payload)).results[0].status).toBe('ready');
+    expect((await t.run(ctx => ctx.db.get(id)))!.status).toBe('pending');
+    await expect(t.mutation(internal.catMedia.applyReviewedZuoPhotos, { ...payload,
+      rows: [{ ...payload.rows[0], contentHash: 'd'.repeat(64) }] })).rejects.toThrow(/association/);
+    await expect(t.mutation(internal.catMedia.applyReviewedZuoPhotos, { ...payload,
+      rows: [{ ...payload.rows[0], piecesPerPack: cv.piecesPerPack + 1 }] })).rejects.toThrow(/mismatch/);
+    expect((await t.mutation(internal.catMedia.applyReviewedZuoPhotos, { ...payload, dryRun: false })).results[0].status).toBe('verified');
+    const updated = (await t.run(ctx => ctx.db.get(cv._id)))!;
+    expect(updated.holds).toEqual(cv.holds.filter(h => h !== 'MEDIA_MISSING'));
+    expect(await t.run(ctx => ctx.db.query('commerceListings').collect())).toHaveLength(0);
+    expect((await t.mutation(internal.catMedia.applyReviewedZuoPhotos, { ...payload, dryRun: false })).results[0].status).toBe('already_verified');
+    await t.run(ctx => ctx.db.patch(id, { status: 'rejected' }));
+    await expect(t.mutation(internal.catMedia.applyReviewedZuoPhotos, payload)).rejects.toThrow(/rejected/);
+  });
   it('deduplicates exact associations, retaining separate roles, variants and rights evidence', async () => {
     const { t, cv, otherId, args } = await fixture();
     const first = await t.mutation(internal.catMedia.record, args);

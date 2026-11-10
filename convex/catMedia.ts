@@ -2,8 +2,8 @@
 // allowlisted hosts only, validated from their bytes, deduplicated by hash and stored privately;
 // a person verifies each against SKU, colour and pack and writes the alt text before it can be
 // used. A failed or unverified image keeps the listing in draft.
-import { v } from 'convex/values';
-import { action, internalMutation, internalQuery, mutation, query } from './_generated/server';
+import { v, type Infer } from 'convex/values';
+import { action, internalMutation, internalQuery, mutation, query, type MutationCtx } from './_generated/server';
 import { paginationOptsValidator } from 'convex/server';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -180,10 +180,9 @@ export const ingest = action({
 });
 
 /** A person confirms an image shows this SKU, colour and pack, and writes its alt text. */
-export const verify = mutation({
-  args: { assetId: v.id('catMediaAssets'), altText: v.string(), sku: v.string(), color: v.optional(v.string()), pack: v.optional(v.string()), approve: v.boolean(), reason: v.optional(v.string()) },
-  handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+const verifyArgs = { assetId: v.id('catMediaAssets'), altText: v.string(), sku: v.string(), color: v.optional(v.string()), pack: v.optional(v.string()), approve: v.boolean(), reason: v.optional(v.string()) };
+
+async function verifyAsset(ctx: MutationCtx, a: Infer<typeof verifyValidator>, admin: { email: string }) {
     const asset = await ctx.db.get(a.assetId);
     if (!asset || !asset.storageId) throw new CommerceError('INVALID_INPUT', 'Image not found or not stored');
     if (a.approve) {
@@ -217,6 +216,48 @@ export const verify = mutation({
         await openHold(ctx, cv._id, 'MEDIA_MISSING', 'Previously verified image rejected; review replacement media', admin.email);
     }
     await audit(ctx, { actor: admin.email, action: a.approve ? 'media.verify' : 'media.reject', entityTable: 'catMediaAssets', entityId: asset._id, reason: a.reason });
+}
+const verifyValidator = v.object(verifyArgs);
+export const verify = mutation({
+  args: verifyValidator,
+  handler: async (ctx, a) => verifyAsset(ctx, a, await requireCjAdminIdentity(ctx)),
+});
+
+/** Admin-CLI application of an externally reviewed, hash-bound supplier photo manifest.
+ * Does not grant media rights, change prices, or publish products. */
+export const applyReviewedZuoPhotos = internalMutation({
+  args: { dryRun: v.boolean(), reviewSha256: v.string(), sourceSha256: v.string(),
+    rows: v.array(v.object({ variantId: v.id('catVariants'), sku: v.string(),
+      piecesPerPack: v.number(), contentHash: v.string(), sourceUrl: v.string(),
+      altText: v.string(), reviewNote: v.string() })) },
+  handler: async (ctx, a) => {
+    if (!/^[a-f0-9]{64}$/.test(a.reviewSha256) || !/^[a-f0-9]{64}$/.test(a.sourceSha256)
+      || a.rows.length < 1 || a.rows.length > 20 || new Set(a.rows.map(r => r.variantId)).size !== a.rows.length)
+      throw new CommerceError('INVALID_INPUT', 'Invalid reviewed manifest');
+    const results = [];
+    for (const row of a.rows) {
+      const cv = await ctx.db.get(row.variantId);
+      const product = cv ? await ctx.db.get(cv.productId) : null;
+      if (!cv || !product || product.provider !== 'zuo' || cv.supplierSku !== row.sku
+        || cv.piecesPerPack !== row.piecesPerPack || cv.availability === 'discontinued'
+        || !/^[a-f0-9]{64}$/.test(row.contentHash) || row.altText.trim().length < 8
+        || row.reviewNote.trim().length < 20)
+        throw new CommerceError('INVALID_INPUT', 'Reviewed SKU or pack mismatch');
+      const assets = (await ctx.db.query('catMediaAssets').withIndex('by_product', q => q.eq('productId', cv.productId).eq('role', 'hero')).collect())
+        .filter(m => m.variantId === cv._id && m.contentHash === row.contentHash && m.sourceUrl === row.sourceUrl);
+      if (assets.length !== 1) throw new CommerceError('INVALID_INPUT', 'Reviewed image association is not unique');
+      const asset = assets[0];
+      if (asset.status === 'rejected' || !asset.storageId || !asset.rights.basis.trim()
+        || !await ctx.storage.getUrl(asset.storageId))
+        throw new CommerceError('INVALID_INPUT', 'Reviewed image is unavailable or rejected');
+      const already = verifiedImageMatches(asset, cv) && asset.altText === row.altText.trim();
+      if (!a.dryRun && !already) await verifyAsset(ctx, { assetId: asset._id, sku: cv.supplierSku,
+        pack: cv.packId, color: cv.color, approve: true, altText: row.altText,
+        reason: `Visual manifest ${a.reviewSha256}; supplier image workbook ${a.sourceSha256}; ${row.reviewNote}` },
+        { email: 'system:reviewed-zuo-photo-manifest' });
+      results.push({ variantId: cv._id, assetId: asset._id, status: already ? 'already_verified' : a.dryRun ? 'ready' : 'verified' });
+    }
+    return { results };
   },
 });
 
