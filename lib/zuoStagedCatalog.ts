@@ -15,6 +15,15 @@ function object(value: unknown): Record<string, unknown> {
 const positive = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value > 0;
 
+/** This is a merchandise allowance class, not a carrier/service classification. */
+export function stagedAllowanceClass(evidence: Record<string, unknown>) {
+  const allowance = evidence.deliveryAllowanceEach;
+  if (typeof allowance !== 'number' || !Number.isFinite(allowance)) return null;
+  const classes = { 15: 'SMALL', 25: 'MEDIUM', 40: 'LARGE', 60: 'OVERSIZE', 100: 'LTL' } as const;
+  const sizeClass = classes[allowance as keyof typeof classes];
+  return sizeClass ? { sizeClass, allowanceMinor: allowance * 100 } : null;
+}
+
 /** Convert preserved source evidence, never a sample/template product, into held catalog rows. */
 export function stagedCatalogRecord(row: ZuoStagingRow, sourceFile: string, observedAt: number) {
   validateZuoStagingRow(row);
@@ -117,7 +126,7 @@ export function stagedCatalogRecord(row: ZuoStagingRow, sourceFile: string, obse
         mapApplicability: mapEach === null ? 'unknown' : 'applies',
         cartons,
         method,
-        sizeClass: method === 'LTL' ? 'LTL' : 'UNKNOWN',
+        sizeClass: stagedAllowanceClass(evidence)?.sizeClass ?? (method === 'LTL' ? 'LTL' : 'UNKNOWN'),
         stock,
         excluded: row.excluded,
         cohort,

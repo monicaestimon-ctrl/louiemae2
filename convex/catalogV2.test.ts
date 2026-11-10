@@ -33,6 +33,34 @@ afterEach(() => {
 });
 
 describe('cost evidence authoring', () => {
+  it('restores packet delivery allowances without changing approved prices or other publication gates', async () => {
+    const { t, admin } = await setup();
+    await importPackage(admin, [row('ALLOWANCE')], 'dry_run');
+    await importPackage(admin, [row('ALLOWANCE')], 'commit');
+    const cv = (await t.run(ctx => ctx.db.query('catVariants').first()))!;
+    const sourceEvidence = JSON.stringify({ deliveryAllowanceEach: 60 });
+    await t.run(async ctx => {
+      await ctx.db.patch(cv._id, { sizeClass: 'UNKNOWN' });
+      await ctx.db.patch(cv.productId, { zuoStaging: { sku: cv.supplierSku, pack: cv.piecesPerPack,
+        unitsPerSellUnit: cv.piecesPerPack, runId: 'fixture', manifestSha256: 'a'.repeat(64),
+        payload: 'fixture', excluded: false, exclusionReasons: [], holdReasons: [],
+        status: 'staged_not_orderable', sourceEvidence } });
+    });
+    const payload = { dryRun: true, rows: [{ variantId: cv._id, expectedSizeClass: 'UNKNOWN',
+      sourceSha256: createHash('sha256').update(JSON.stringify(sourceEvidence)).digest('hex') }] };
+    expect((await t.mutation(internal.catEvidence.restoreStagedAllowances, payload)).results[0]).toMatchObject({ status: 'ready', sizeClass: 'OVERSIZE', allowanceMinor: 6000 });
+    expect((await t.run(ctx => ctx.db.get(cv._id)))!.sizeClass).toBe('UNKNOWN');
+    await expect(t.mutation(internal.catEvidence.restoreStagedAllowances, { ...payload,
+      rows: [{ ...payload.rows[0], sourceSha256: 'b'.repeat(64) }] })).rejects.toThrow(/identity changed/);
+    await t.mutation(internal.catEvidence.restoreStagedAllowances, { ...payload, dryRun: false });
+    const updated = (await t.run(ctx => ctx.db.get(cv._id)))!;
+    expect(updated).toMatchObject({ sizeClass: 'OVERSIZE', retailPriceRevisionId: cv.retailPriceRevisionId,
+      tradePriceRevisionId: cv.tradePriceRevisionId, currentCostRevisionId: cv.currentCostRevisionId });
+    expect(updated.holds).toEqual(expect.arrayContaining(cv.holds));
+    expect((await t.mutation(internal.catEvidence.restoreStagedAllowances, { ...payload, dryRun: false })).results[0].status).toBe('already_restored');
+    await t.run(ctx => ctx.db.patch(cv._id, { sizeClass: 'LARGE' }));
+    await expect(t.mutation(internal.catEvidence.restoreStagedAllowances, payload)).rejects.toThrow(/must not be overwritten/);
+  });
   it('reconciles current supplier evidence with dry-run, exact identity and safe retry without activating sales', async () => {
     const { t, admin } = await setup();
     await importPackage(admin, [row('SOURCE-REFRESH')], 'dry_run');

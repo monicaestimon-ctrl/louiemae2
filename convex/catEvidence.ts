@@ -11,6 +11,9 @@ import { audit, openReview } from './sysCore';
 import { CommerceError } from '../lib/errors';
 import { dollarsToMinor } from '../lib/decimal';
 import { stableStringify } from '../lib/zuoImport';
+import { stagedAllowanceClass } from '../lib/zuoStagedCatalog';
+import { activeConfig } from './sysConfig';
+import type { PricingAssumptions } from '../lib/config';
 
 const expense = v.union(
   v.object({ state: v.literal('unknown') }),
@@ -345,5 +348,43 @@ export const reconcileZuoSource = internalMutation({
       results.push({ sku: row.sku, status: 'applied' as const });
     }
     return { dryRun: a.dryRun, results };
+  },
+});
+
+/** Restore the approved packet allowance lost by the original staged migration.
+ * Never changes prices, carrier methods, stock, commission eligibility or publication. */
+export const restoreStagedAllowances = internalMutation({
+  args: { dryRun: v.boolean(), rows: v.array(v.object({ variantId: v.id('catVariants'),
+    expectedSizeClass: v.string(), sourceSha256: v.string() })) },
+  handler: async (ctx, a) => {
+    if (!a.rows.length || a.rows.length > 20 || new Set(a.rows.map(r => r.variantId)).size !== a.rows.length)
+      throw new CommerceError('INVALID_INPUT', 'Choose 1–20 distinct variants');
+    const assumptions = await activeConfig<PricingAssumptions>(ctx, 'pricingAssumptions', 'zuo-pricing-assumptions');
+    const results = [];
+    for (const row of a.rows) {
+      const cv = await ctx.db.get(row.variantId);
+      const product = cv ? await ctx.db.get(cv.productId) : null;
+      const source = product?.zuoStaging;
+      if (!cv || !product || product.provider !== 'zuo' || !source || source.sku !== cv.supplierSku
+        || source.pack !== cv.piecesPerPack || source.unitsPerSellUnit !== cv.piecesPerPack
+        || !/^[a-f0-9]{64}$/.test(row.sourceSha256) || await evidenceDigest(source.sourceEvidence) !== row.sourceSha256)
+        throw new CommerceError('INVALID_INPUT', 'Preserved source identity changed');
+      const allowance = stagedAllowanceClass(JSON.parse(source.sourceEvidence));
+      if (!allowance || assumptions.value.allowanceBySize[allowance.sizeClass] !== allowance.allowanceMinor)
+        throw new CommerceError('INVALID_INPUT', 'Packet allowance does not match approved pricing assumptions');
+      const current = cv.sizeClass ?? 'UNKNOWN';
+      const already = current === allowance.sizeClass;
+      if (!already && (current !== 'UNKNOWN' || current !== row.expectedSizeClass))
+        throw new CommerceError('INVALID_INPUT', 'Existing reviewed allowance must not be overwritten');
+      if (!a.dryRun && !already) {
+        await ctx.db.patch(cv._id, { sizeClass: allowance.sizeClass, updatedAt: Date.now() });
+        await openHold(ctx, cv._id, 'MANUAL', 'Restored packet delivery allowance; requalify economics before publication', 'system:staged-allowance-reconciliation');
+        await audit(ctx, { actor: 'system:staged-allowance-reconciliation', action: 'pricing.restore_allowance',
+          entityTable: 'catVariants', entityId: cv._id, before: current, after: allowance,
+          reason: `Preserved source SHA-256 ${row.sourceSha256}; pricing assumptions v${assumptions.version}` });
+      }
+      results.push({ variantId: cv._id, sku: cv.supplierSku, ...allowance, status: already ? 'already_restored' : a.dryRun ? 'ready' : 'restored' });
+    }
+    return { results };
   },
 });
