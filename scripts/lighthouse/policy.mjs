@@ -1,5 +1,6 @@
 export const categories = ['performance', 'accessibility', 'best-practices', 'seo'];
 
+/** Validate one Lighthouse report against independent route health and the pinned audit profile. */
 export function assessRun(lhr, health, expected) {
   const errors = [];
   if (!health?.ok || health.url !== expected.url) errors.push('Healthy route content was not verified');
@@ -17,6 +18,7 @@ export function assessRun(lhr, health, expected) {
   return { valid: errors.length === 0, errors, scores };
 }
 
+/** Apply the five-run release score policy; diagnostic or unhealthy batches cannot pass. */
 export function assessBatch(runs) {
   const errors = [];
   if (runs.length !== 5) errors.push('Release requires exactly five retained runs per route/device');

@@ -9,8 +9,8 @@ import { assessRun, assessBatch } from './policy.mjs';
 
 // Public read-only navigation only. No login, cart mutation or payment action.
 const base = new URL(process.env.AUDIT_BASE_URL || 'https://www.louiemae.com');
-if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash) {
-  throw new Error('Use a plain HTTP(S) origin without credentials, query or hash');
+if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash || base.pathname !== '/') {
+  throw new Error('Use a plain HTTP(S) origin without credentials, path, query or hash');
 }
 if (!process.env.CHROME_PATH || !process.env.AUDIT_CHROME_VERSION) {
   throw new Error('Set CHROME_PATH and the exact AUDIT_CHROME_VERSION to pin the browser');
