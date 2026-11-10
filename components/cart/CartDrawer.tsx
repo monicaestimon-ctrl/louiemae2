@@ -11,6 +11,8 @@ import { activeRef, visitorId } from '../../lib/partnerLink';
 import CheckoutV2 from '../delivery/CheckoutV2';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { usePendingTimeout } from '../../contexts/usePendingTimeout';
+const CREDIT_QUERY = { credit: { query: api.holmCredit.myCredit, args: {} } };
+const NO_QUERIES = {};
 
 export const CartDrawer: React.FC = () => {
     const { isOpen, closeCart, items, subtotal, itemCount, removeFromCart } = useCart();
@@ -21,7 +23,7 @@ export const CartDrawer: React.FC = () => {
     // Store credit (signed-in members): pre-set from their Hub setting, changeable per order.
     const authToken = useAuthToken();
     const needsCredit = isOpen && !hasV2 && Boolean(authToken);
-    const creditResults = useQueries(needsCredit ? { credit: { query: api.holmCredit.myCredit, args: {} } } : {});
+    const creditResults = useQueries(needsCredit ? CREDIT_QUERY : NO_QUERIES);
     const creditResult = creditResults.credit as FunctionReturnType<typeof api.holmCredit.myCredit> | Error | undefined;
     const credit = needsCredit && !(creditResult instanceof Error) ? creditResult : undefined;
     const creditPending = needsCredit && creditResult === undefined;

@@ -5,10 +5,12 @@ import { usePendingTimeout } from './usePendingTimeout';
 
 export type EditorialStatus = 'loading' | 'ready' | 'empty' | 'unavailable';
 type Posts = FunctionReturnType<typeof api.blogPosts.list>;
+const PUBLIC_POSTS = { posts: { query: api.blogPosts.list, args: {} } };
+const NO_QUERIES = {};
 
 /** Optional public editorial data must never throw through the shopping shell. */
 export function usePublicEditorialPosts(enabled: boolean) {
-  const results = useQueries(enabled ? { posts: { query: api.blogPosts.list, args: {} } } : {});
+  const results = useQueries(enabled ? PUBLIC_POSTS : NO_QUERIES);
   const result = results.posts as Posts | Error | undefined;
   const pending = enabled && result === undefined;
   const timedOut = usePendingTimeout(pending);

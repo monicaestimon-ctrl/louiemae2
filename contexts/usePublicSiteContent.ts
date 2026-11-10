@@ -4,13 +4,14 @@ import { api } from '../convex/_generated/api';
 import { usePendingTimeout } from './usePendingTimeout';
 
 export type PublicContentStatus = 'loading' | 'ready' | 'unavailable';
+const CONTENT_QUERIES = {
+  settings: { query: api.siteContent.get, args: {} },
+  pages: { query: api.customPages.list, args: {} },
+};
 
 /** Preserve the static navigation shell when optional public configuration fails. */
 export function usePublicSiteContent() {
-  const results = useQueries({
-    settings: { query: api.siteContent.get, args: {} },
-    pages: { query: api.customPages.list, args: {} },
-  });
+  const results = useQueries(CONTENT_QUERIES);
   const settings = results.settings as FunctionReturnType<typeof api.siteContent.get> | Error | undefined;
   const pages = results.pages as FunctionReturnType<typeof api.customPages.list> | Error | undefined;
   const settingsTimeout = usePendingTimeout(settings === undefined);
