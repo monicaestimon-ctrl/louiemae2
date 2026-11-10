@@ -1,10 +1,11 @@
+import { ashcroftAvailable } from './ashcroftInventory';
 import { v } from 'convex/values';
 import { viewer } from './holmAccess';
 import { reserveCredit } from './holmCredit';
 import { internalMutation, internalQuery, query } from './_generated/server';
 import { paginationOptsValidator } from 'convex/server';
 import { checkQuantity } from '../lib/commerce';
-import { launchPrice, retailDelivery, supplierAvailable, retailDescription } from '../lib/retailLaunch';
+import { launchPrice, retailDelivery, retailDescription } from '../lib/retailLaunch';
 import { storefrontListing, currentZuoStorefrontListing, zuoRetailEnabled } from './retailStorefront';
 import { resolveAttribution } from './holmPartners';
 
@@ -14,7 +15,7 @@ export const storefrontPage = query({
     const batch = await ctx.db.query('commerceListings').withIndex('by_channel_published', q => q.eq('channel', 'retail').eq('published', true)).paginate(args.paginationOpts);
     const page = await Promise.all(batch.page.map(async listing => {
       const product = await ctx.db.get(listing.productId);
-      if (product?.provider === 'ashcroft') return storefrontListing(listing);
+      if (product?.provider === 'ashcroft') return storefrontListing(ctx, listing);
       // v2 Zuo listings appear only once Zuo retail checkout is switched on.
       if (product?.provider === 'zuo' && zuoRetailEnabled()) {
         const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', product._id)).first();
@@ -43,13 +44,13 @@ export const catalog = query({
           ...listing.snapshot,
           description: retailDescription(listing.snapshot.description),
           deliveryFee: rate ? rate.delivery / 100 : null,
-          variants: listing.snapshot.variants.map((option) => ({
+          variants: await Promise.all(listing.snapshot.variants.map(async (option) => ({
             ...option,
             price: rate ? launchPrice(option.price, rate.freight, rate.delivery) : option.price,
             purchasable:
               !!rate &&
-              supplierAvailable(listing.fulfillment?.find((x) => x.id === option.id)?.sku, listing.snapshot.description),
-          })),
+              await ashcroftAvailable(ctx, listing.fulfillment?.find((x) => x.id === option.id)?.sku, listing.snapshot.description, option.minimum),
+          }))),
         };
       })
     );
@@ -91,7 +92,7 @@ export const createSnapshot = internalMutation({
       const option = listing.snapshot.variants.find((x) => x.id === item.variantId);
       const supplier = listing.fulfillment?.find((x) => x.id === item.variantId);
       const rate = retailDelivery(listing.snapshot.category, listing.snapshot.name);
-      if (!option || !supplier?.sku || !supplierAvailable(supplier.sku, listing.snapshot.description) || !rate)
+      if (!option || !supplier?.sku || !(await ashcroftAvailable(ctx, supplier.sku, listing.snapshot.description, item.quantity)) || !rate)
         throw new Error('This item is Coming Soon.');
       checkQuantity(item.quantity, option);
       if (item.quantity > 20) throw new Error('Please contact us for orders above 20 units.');

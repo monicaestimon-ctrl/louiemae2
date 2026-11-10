@@ -76,6 +76,10 @@ export const projectLine = v.object({
   cjSku: v.optional(v.string()),
 });
 export const commerceTables = {
+  ashcroftInventoryFeeds: defineTable({
+    source: v.string(), sha256: v.string(), observedAt: v.number(), validUntil: v.number(), importedAt: v.number(),
+    rows: v.array(v.object({ sku: v.string(), quantity: v.number() })),
+  }).index('by_observed', ['observedAt']),
   retailCheckouts: defineTable({
     items: v.array(v.object({ productId: v.string(), variantId: v.string(), variantName: v.string(), name: v.string(), price: v.number(), quantity: v.number(), image: v.optional(v.string()), supplierSku: v.string(), fulfillmentProvider: v.literal('ashcroft') })),
     subtotal: v.number(), shipping: v.number(), createdAt: v.number(),

@@ -1,3 +1,4 @@
+import { ashcroftAvailable } from './ashcroftInventory';
 import { v } from 'convex/values';
 import { paginationOptsValidator } from 'convex/server';
 import { assertSellable, isCurrentPrice } from './catCore';
@@ -132,7 +133,9 @@ async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>) {
   const product = await ctx.db.get(listing.productId);
   if (!product || !(await listingReady(ctx, product, listing))) return null;
   const { linked, store, rate } = await pricingParts(ctx, product, listing);
-  const variants = listing.snapshot.variants.flatMap((sv) => {
+  const availableOptions = await Promise.all(listing.snapshot.variants.map(async sv =>
+    product.provider !== 'ashcroft' || await ashcroftAvailable(ctx, listing.fulfillment?.find(f => f.id === sv.id)?.sku, listing.snapshot.description, sv.minimum) ? sv : null));
+  const variants = availableOptions.filter(sv => sv !== null).flatMap((sv) => {
     const route = listing.fulfillment?.find((f) => f.id === sv.id);
     if (!route) return [];
     const base = store?.snapshot.variants.find((v) => v.id === sv.id)?.price || retailCents(route);
@@ -524,6 +527,8 @@ async function priceSelection(
     const route = listing?.fulfillment?.find((x) => x.id === s.variantId);
     if (!priced || !variant || !route) throw new Error('A piece is no longer available. Refresh the tray.');
     checkQuantity(s.quantity, variant);
+    if (priced.product.provider === 'ashcroft' && !(await ashcroftAvailable(ctx, route.sku, listing!.snapshot.description, s.quantity)))
+      throw new Error('Supplier inventory cannot cover this quantity. Refresh the tray.');
     rows.push({ s, priced, variant, route });
   }
   // v2 (S32): project tiers apply only to stackable lines, on the eligible trade subtotal, from the
