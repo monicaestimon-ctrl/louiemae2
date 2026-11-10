@@ -1,3 +1,4 @@
+import { validModeledParcel } from '../delivery/modeledParcel';
 // Versioned configuration (spec 02 §6). Every business number lives in a sysConfig record with a
 // status; customer paths only read `approved` records. These parsers validate a record's value
 // for its kind, so a typo can't become a live price, rate or schedule.
@@ -271,6 +272,13 @@ export function parseConfig(kind: ConfigKind, value: unknown): unknown {
         if (!/^\d{5}$/.test(zip)) bad(kind, 'blocked destination must be a five-digit ZIP');
       return o as DeliveryControls;
     case 'carrierRule': {
+      if (o.rateBasis !== undefined && !['supplier_rate', 'modeled_parcel'].includes(String(o.rateBasis)))
+        bad(kind, 'Unknown delivery rate basis');
+      if (o.rateBasis === 'modeled_parcel' && !validModeledParcel(o.modeledParcel))
+        bad(kind, 'A complete dated modeled-parcel table and package limits are required');
+      if (o.modeledParcel !== undefined && o.rateBasis !== 'modeled_parcel')
+        bad(kind, 'Parcel planning data requires an explicit modeled rate basis');
+
       const r = obj(kind, o.rule),
         ground = obj(kind, r.ground),
         ltl = obj(kind, r.ltl);

@@ -2123,6 +2123,22 @@ describe('delivery tool security and operations regressions', () => {
 
     expect((await s.t.run((ctx) => ctx.db.get(child.orderId)))!.totals).toEqual(before.totals);
   });
+  it('uses approved parcel planning rates without treating them as supplier LTL rates', () => {
+    const model = { sourceSha256: 'a'.repeat(64), sourceObservedAt: NOW - 1000,
+      maxCartons: 4, maxLongestMm: 1200, maxSecondLongestMm: 760, maxLengthPlusGirthMm: 2600,
+      maxVolumeMm3: 160_000_000, maxActualWeightG: 22000,
+      packageMinorByZone: { test: [1000, 2000, 3000] } };
+    const f = { ...FREIGHT, rateBasis: 'modeled_parcel', modeledParcel: model,
+      zip3Zones: { '952': 'test' }, uncertaintyBps: 1000 } as FreightConfig;
+    const line = { packs: 2, cartons: [{ lengthMm: 100, widthMm: 100, heightMm: 100,
+      grossWeightG: 400, cartonsPerPack: 1, supplierMethod: 'ground' }] } as unknown as ResolvedLine;
+    expect(groupFreight([line], { zip: '95206' }, f, [])).toBe(2200);
+    const reasons: string[] = [];
+    expect(groupFreight([{ ...line, cartons: [{ ...line.cartons[0], supplierMethod: 'ltl' }] }],
+      { zip: '95206' }, f, reasons)).toBeNull();
+    expect(reasons.join(' ')).toContain('outside the approved parcel model');
+    expect(groupFreight([line], { zip: '95206' }, { ...f, validUntil: NOW - 1 }, [])).toBeNull();
+  });
   it('charges each parcel minimum and accepts an explicitly supported supplier LTL method', () => {
     const carton = {
       lengthMm: 100,
