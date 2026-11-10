@@ -107,4 +107,3 @@ describe('homepage real catalog purchase flow', () => {
     expect(mocks.catalog).toHaveBeenLastCalledWith(expect.anything(), 'All', false, 'featured', 6);
   });
 });
-

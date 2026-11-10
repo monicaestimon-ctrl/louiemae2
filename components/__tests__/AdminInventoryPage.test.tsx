@@ -15,7 +15,7 @@ vi.mock('../RichTextEditor', () => ({ RichTextEditor: () => null }));
 vi.mock('../../contexts/BlogContext', () => ({ useSite: () => mocks.site }));
 vi.mock('../../contexts/AdminCatalogDemand', () => ({ useAdminCatalog: (...args: unknown[]) => mocks.demand(...args) }));
 vi.mock('../../contexts/NewsletterContext', () => ({ useNewsletterAdmin: () => ({ subscribers: [], campaigns: [], stats: {} }) }));
-vi.mock('convex/react', () => ({ useMutation: () => vi.fn(), useAction: () => vi.fn(), useQuery: (...args: unknown[]) => { mocks.query(...args); return getFunctionName(args[0] as Parameters<typeof getFunctionName>[0]) === 'cjAdminAccess:session' ? {owner: true, delivery: true} : mocks.health; } }));
+vi.mock('convex/react', () => ({ useQueries: () => ({ session: { owner: true, delivery: true } }), useMutation: () => vi.fn(), useAction: () => vi.fn(), useQuery: (...args: unknown[]) => { mocks.query(...args); return getFunctionName(args[0] as Parameters<typeof getFunctionName>[0]) === 'cjAdminAccess:session' ? {owner: true, delivery: true} : mocks.health; } }));
 vi.mock('../useAdminProductDetail', () => ({ useAdminProductDetail: () => ({ load: mocks.loadDetail, cancel: vi.fn(), loadingId: null, error: null }) }));
 vi.mock('../useAdminDescriptionBatch', () => ({ useAdminDescriptionBatch: () => ({ busy: false, previews: [], setPreviews: vi.fn(), run: mocks.batch }) }));
 vi.mock('../FadeIn', () => ({ FadeIn: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
