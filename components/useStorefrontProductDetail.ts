@@ -3,6 +3,7 @@ import { useRecoverableQuery } from '../contexts/useRecoverableQuery';
 import { api } from '../convex/_generated/api';
 import type { Product } from '../types';
 
+/** Resolve only the selected product, distinguishing transport failure from confirmed absence. */
 export function useStorefrontProductDetail(id?: string | null) {
   const request = useRecoverableQuery(api.products.getStorefrontDetail, id ? { id } : 'skip');
   const detail = request.data;

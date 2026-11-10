@@ -926,6 +926,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
               )}
               {catalogReady && <div className="mt-8 text-center">
                 <p role="status" className="text-sm text-earth/60">{filteredProducts.length} products loaded{grid.complete ? ' · All matching products shown' : ''}</p>
+                {grid.additionalLoadingFailed && <div role="status" className="mt-4 text-earth"><p>More products could not be loaded. You can keep browsing the products above.</p><button type="button" className="min-h-11 underline" onClick={() => window.location.reload()}>Reload products</button></div>}
                 {(grid.canLoadMore || grid.loadingMore) && <button type="button" disabled={grid.loadingMore} onClick={grid.loadMore} className="mt-4 border border-earth/20 rounded-full px-6 py-3">{grid.loadingMore ? 'Loading products…' : 'Load more products'}</button>}
               </div>}
             </div>
@@ -936,8 +937,8 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
       {/* Product Modal */}
       {selectedProductId && (detailLoading || detailUnavailable || detailFailed) && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6" role="dialog" aria-modal="true" aria-label="Product details">
         <div className="rounded-lg bg-cream p-8 text-earth">
+          <p role="status">{detailLoading ? 'Loading product details…' : detailFailed ? 'Product details could not be loaded. Please try again.' : 'This product is no longer available.'}</p>
           {detailFailed && <button onClick={retryDetail} className="min-h-11 underline">Try again</button>}
-          <p role="status">{detailLoading ? 'Loading product details…' : 'This product is no longer available.'}</p>
           <button type="button" onClick={() => handleSelectProduct(null)} className="mt-5 underline">Close</button>
         </div>
       </div>}

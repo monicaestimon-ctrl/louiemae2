@@ -473,8 +473,8 @@ export const HomePage: React.FC = () => {
 
       {selectedProductId && (detailLoading || detailUnavailable || detailFailed) && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6" role="dialog" aria-modal="true" aria-label="Product details">
         <div className="bg-white rounded-2xl p-8 text-center">
+          <p role="status">{detailLoading ? 'Loading product details…' : detailFailed ? 'Product details could not be loaded. Please try again.' : 'This product is no longer available.'}</p>
           {detailFailed && <button onClick={retryDetail} className="min-h-11 underline">Try again</button>}
-          <p role="status">{detailLoading ? 'Loading product details…' : 'This product is no longer available.'}</p>
           <button onClick={() => openProduct(null)} className="mt-4 underline">Close</button>
         </div>
       </div>}

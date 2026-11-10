@@ -27,6 +27,15 @@ describe('bounded store readers', () => {
     expect(view.result.current.unavailable).toBe(false);
     expect(view.result.current.products[0].id).toBe('verified');
   });
+  it('keeps loaded products visible when an additional page times out', () => {
+    vi.useFakeTimers(); mocks.status = 'LoadingMore'; mocks.rows = [row('already-loaded')];
+    const view = renderHook(() => useStoreCatalog(config, 'All', true));
+    act(() => vi.advanceTimersByTime(10_000));
+    expect(view.result.current).toMatchObject({ unavailable: false, additionalLoadingFailed: true, loadingMore: false });
+    expect(view.result.current.products[0].id).toBe('already-loaded');
+    mocks.status = 'Exhausted'; view.rerender();
+    expect(view.result.current.additionalLoadingFailed).toBe(false);
+  });
   it('skips inactive readers and forwards exact hierarchical filters and server sorting', () => {
     const view = renderHook(({ ready }) => useStoreCatalog(config, 'Girls', ready, 'price-asc'), { initialProps: { ready: false } });
     expect(mocks.query.mock.lastCall?.[1]).toBe('skip');

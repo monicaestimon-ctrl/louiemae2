@@ -134,6 +134,7 @@ export const DynamicSectionRenderer: React.FC<{ section: PageSection, index: num
         case 'product-feature': {
             const product = featuredProduct;
             if (!product) {
+                if (!section.productId || (!featureLoading && !featureFailed)) return null;
                 return <section className="min-h-96 p-8 text-center text-earth" role="status"><p>{featureLoading ? 'Loading featured product…' : featureFailed ? 'Featured product is temporarily unavailable.' : 'This featured product is no longer available.'}</p>{featureFailed && <button className="min-h-11 underline" onClick={retryFeature}>Try again</button>}</section>;
             }
             return (

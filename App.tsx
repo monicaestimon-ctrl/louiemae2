@@ -23,8 +23,9 @@ import { loadModule } from './lib/moduleRecovery';
 
 // Everything past the home page loads on demand so the first visit only downloads
 // what it shows. Each page keeps its named export; lazy() needs a default.
-const named = <T extends Record<string, unknown>, K extends keyof T>(load: () => Promise<T>, key: K) =>
-  lazy(() => loadModule(load).then((m) => ({ default: m[key] as React.ComponentType<any> })));
+/** Load a named page export with a bounded import while preserving its prop type. */
+const named = <K extends string, T extends Record<K, React.ComponentType<never>>>(load: () => Promise<T>, key: K) =>
+  lazy(() => loadModule(load).then((m) => ({ default: m[key] })));
 const StoryPage = named(() => import('./components/StoryPage'), 'StoryPage');
 const BlogPage = named(() => import('./components/BlogPage'), 'BlogPage');
 const BlogPostView = named(() => import('./components/BlogPostView'), 'BlogPostView');
