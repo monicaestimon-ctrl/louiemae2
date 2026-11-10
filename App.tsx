@@ -16,6 +16,8 @@ import { api } from './convex/_generated/api';
 import { captureRefFromUrl, visitorId } from './lib/partnerLink';
 import { safeRedirect } from './lib/enrollment';
 import {DeliveryQuoteAccess} from './components/delivery/DeliveryQuoteStatus';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { ContentStatusPage } from './components/ContentStatusPage';
 
 // Everything past the home page loads on demand so the first visit only downloads
 // what it shows. Each page keeps its named export; lazy() needs a default.
@@ -98,7 +100,7 @@ const NavDropdown: React.FC<{ links: NavLink[]; handleNavigation: (href: string)
 
 // We need a wrapper component to use the context inside App
 const AppContent = () => {
-  const { siteContent } = useSite();
+  const { siteContent, customPagesStatus, siteContentStatus } = useSite();
   // A visit through a partner link (?ref=CODE&ch=channel) on any storefront page: saved for
   // 30 days and shared with /trade, then taken out of the address bar.
   const recordPartnerClick = useMutation(api.holmPartners.recordClick);
@@ -324,7 +326,7 @@ const AppContent = () => {
   else if (activePage.startsWith('#pages/')) {
     const slug = activePage.replace('#pages/', '');
     dynamicPageData = siteContent.customPages.find(p => p.slug === slug);
-    currentView = dynamicPageData ? <DynamicPage page={dynamicPageData} /> : <HomePage />;
+    currentView = dynamicPageData ? <DynamicPage page={dynamicPageData} /> : <ContentStatusPage status={customPagesStatus} />;
   }
   else if (activePage.startsWith('#collection/')) {
     const [path, query] = activePage.split('?');
@@ -473,6 +475,7 @@ const AppContent = () => {
       /></Suspense>}
 
       {/* Main Content Area */}
+      <ErrorBoundary key={activePage} retryLocally>
       <Suspense fallback={<PageFallback />}>
         {activePage.startsWith('#support') ? (
           <SupportPage section={activePage.match(/#support\/(.+)/)?.[1]} />
@@ -480,10 +483,14 @@ const AppContent = () => {
           <>{currentView}</>
         )}
       </Suspense>
+      </ErrorBoundary>
 
       {/* Hyper-Glassmorphic Footer */}
       {activePage !== 'admin' && (
         <footer className="below-fold relative bg-gradient-to-b from-[#2a1a0f] to-[#1a130a] text-cream border-t border-bronze/20 overflow-hidden">
+          <div className="min-h-12 px-6 py-3 text-sm text-cream" role="status">
+            {siteContentStatus === 'unavailable' ? 'Some site information is temporarily unavailable. Navigation uses our default collections.' : ''}
+          </div>
           {/* Decorative Glossy Glow */}
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-32 bg-bronze/10 filter blur-[80px] rounded-full pointer-events-none" />
           

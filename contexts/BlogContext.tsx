@@ -9,10 +9,13 @@ import { BlogPost, SiteContent, CustomPage, Product, NavLink, CollectionConfig }
 import { BLOG_POSTS as INITIAL_POSTS, INITIAL_SITE_CONTENT, PRODUCTS as INITIAL_PRODUCTS } from '../constants';
 import { AdminCatalogDemandContext, StorefrontCatalogDemandContext, useCatalogDemand } from './AdminCatalogDemand';
 import { usePublicEditorialPosts, type EditorialStatus } from './usePublicEditorialPosts';
+import { usePublicSiteContent, type PublicContentStatus } from './usePublicSiteContent';
 
 interface SiteContextType {
   posts: BlogPost[];
   editorialStatus: EditorialStatus;
+  siteContentStatus: PublicContentStatus;
+  customPagesStatus: PublicContentStatus;
   products: Product[];
   siteContent: SiteContent;
   isLoading: boolean;  // True while Convex data is loading
@@ -67,8 +70,9 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const adminProducts = useQuery(api.products.list, needsAdminCatalog ? {} : 'skip');
   const storefrontProducts = useQuery(api.products.listForStorefront, !needsAdminCatalog && storefrontCatalogRequested ? {} : 'skip');
   const convexProducts = needsAdminCatalog ? adminProducts : storefrontProducts;
-  const convexSiteContent = useQuery(api.siteContent.get);
-  const convexCustomPages = useQuery(api.customPages.list);
+  const publicContent = usePublicSiteContent();
+  const convexSiteContent = publicContent.siteContent;
+  const convexCustomPages = publicContent.customPages;
 
   // --- Convex Mutations ---
   const createPost = useMutation(api.blogPosts.create);
@@ -180,7 +184,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     : { ...INITIAL_SITE_CONTENT, customPages };
 
   // Track loading state - undefined means still loading from Convex
-  const isLoading = convexSiteContent === undefined;
+  const isLoading = publicContent.siteContentStatus === 'loading';
 
   // --- Auth ---
   const signIn = async (email: string, password: string, flow: 'signIn' | 'signUp') => {
@@ -326,8 +330,19 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   // --- Site Content Actions ---
+  const requireCurrentSettings = () => {
+    if (publicContent.siteContentStatus !== 'ready' || !convexSiteContent) {
+      throw new Error('Site settings are unavailable. Reload verified settings before saving changes.');
+    }
+  };
+  const requireCurrentPages = () => {
+    if (publicContent.customPagesStatus !== 'ready') {
+      throw new Error('Custom pages are unavailable. Reload verified pages before saving changes.');
+    }
+  };
   const updateSiteContentAction = (section: keyof SiteContent, data: Partial<SiteContent[keyof SiteContent]>) => {
     if (section === 'customPages') return; // Handled separately
+    requireCurrentSettings();
 
     const currentValue = siteContent[section];
     // Use deep merge to properly handle nested objects like home.hero, home.categoryImages, etc.
@@ -338,16 +353,19 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // --- Custom Page Actions ---
   const addCustomPage = (page: CustomPage) => {
+    requireCurrentPages();
     const { id, ...pageData } = page;
     createCustomPage(pageData);
   };
 
   const updateCustomPageAction = (id: string, pageData: Partial<CustomPage>) => {
+    requireCurrentPages();
     const { id: _, ...updates } = pageData as any;
     updateCustomPageMutation({ id: id as Id<"customPages">, ...updates });
   };
 
   const deleteCustomPageAction = (id: string) => {
+    requireCurrentPages();
     removeCustomPage({ id: id as Id<"customPages"> });
   };
 
@@ -357,15 +375,18 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // --- Navigation & Collection Actions ---
   const updateNavigation = (navLinks: NavLink[]) => {
+    requireCurrentSettings();
     updateSiteContentMutation({ navLinks });
   };
 
   const addCollection = async (collection: CollectionConfig): Promise<void> => {
+    requireCurrentSettings();
     const newCollections = [...siteContent.collections, collection];
     await updateSiteContentMutation({ collections: newCollections });
   };
 
   const updateCollection = async (id: string, collectionData: Partial<CollectionConfig>): Promise<void> => {
+    requireCurrentSettings();
     const updatedCollections = siteContent.collections.map(c =>
       c.id === id ? { ...c, ...collectionData } : c
     );
@@ -373,6 +394,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const deleteCollection = async (id: string): Promise<void> => {
+    requireCurrentSettings();
     const filteredCollections = siteContent.collections.filter(c => c.id !== id);
     await updateSiteContentMutation({ collections: filteredCollections });
   };
@@ -381,6 +403,8 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     <SiteContext.Provider value={{
       posts,
       editorialStatus,
+      siteContentStatus: publicContent.siteContentStatus,
+      customPagesStatus: publicContent.customPagesStatus,
       products,
       siteContent,
       isLoading,
