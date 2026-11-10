@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({ authenticated: true, owner: true, query: vi.fn
 vi.mock('convex/react', () => ({
   useConvexAuth: () => ({ isAuthenticated: mocks.authenticated, isLoading: false }),
   useQuery: (reference: Parameters<typeof getFunctionName>[0], args: unknown) => mocks.query(getFunctionName(reference), args),
+  useQueries: (queries: Record<string, { query: Parameters<typeof getFunctionName>[0]; args: unknown }>) =>
+    Object.fromEntries(Object.entries(queries).map(([key, { query, args }]) => [key, mocks.query(getFunctionName(query), args)])),
   useMutation: () => mocks.mutation,
 }));
 vi.mock('@convex-dev/auth/react', () => ({ useAuthActions: () => ({ signIn: vi.fn(), signOut: vi.fn() }) }));
