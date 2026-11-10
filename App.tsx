@@ -99,6 +99,7 @@ const NavDropdown: React.FC<{ links: NavLink[]; handleNavigation: (href: string)
 );
 
 // We need a wrapper component to use the context inside App
+/** Keep shared navigation and cart state outside recoverable route content. */
 const AppContent = () => {
   const { siteContent, customPagesStatus, siteContentStatus } = useSite();
   // A visit through a partner link (?ref=CODE&ch=channel) on any storefront page: saved for

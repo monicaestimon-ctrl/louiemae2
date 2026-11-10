@@ -14,6 +14,7 @@ import { usePendingTimeout } from '../../contexts/usePendingTimeout';
 const CREDIT_QUERY = { credit: { query: api.holmCredit.myCredit, args: {} } };
 const NO_QUERIES = {};
 
+/** Preserve cart drafts while gating checkout on verified account credit and delivery data. */
 export const CartDrawer: React.FC = () => {
     const { isOpen, closeCart, items, subtotal, itemCount, removeFromCart } = useCart();
     // Zuo items (or a mixed cart) use the v2 checkout: full-address delivery and tax before payment.

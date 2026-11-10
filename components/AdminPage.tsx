@@ -272,6 +272,7 @@ export const AdminPage: React.FC = () => {
       {access?.delivery ? <DeliveryBoundary><CommerceV2Admin /></DeliveryBoundary> : <p role="alert">This account does not have staff access.</p>}
    </main>;
 };
+/** Owner workspace with visible save failures and independently loaded administrative tools. */
 const OwnerAdminPage: React.FC = () => {
    const { isAuthenticated, isAuthLoading, signIn, logout, posts, addPost, updatePost, deletePost, siteContent, updateSiteContent: writeSiteContent, addCustomPage, updateCustomPage: writeCustomPage, deleteCustomPage, addProduct, addProducts, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
    const updateSiteContent = withAdminWriteFeedback(writeSiteContent, message => alert(message));
@@ -387,6 +388,7 @@ const OwnerAdminPage: React.FC = () => {
    };
 
    // --- HELPER: ADD SECTION ---
+   /** Retain the section picker until its requested section has actually been saved. */
    const handleAddSection = async (type: PageSection['type']) => {
       const newSection: PageSection = {
          id: Date.now().toString(),
@@ -607,6 +609,7 @@ const OwnerAdminPage: React.FC = () => {
       }
    };
 
+   /** Confirm deletion and surface guard or server failures to the owner. */
    const handleDeleteCollection = async (id: string) => {
       if (confirm(`Delete collection "${id}"? Products in this collection will remain but be uncategorized.`)) {
          try { await deleteCollection(id); }
@@ -615,6 +618,7 @@ const OwnerAdminPage: React.FC = () => {
    };
 
    // --- PAGE GENERATION HANDLERS ---
+   /** Keep the generation prompt until generated content is successfully persisted. */
    const handleGeneratePage = async () => {
       if (!generatorPrompt.title || !generatorPrompt.description) return;
 
@@ -646,6 +650,7 @@ const OwnerAdminPage: React.FC = () => {
       }
    };
 
+   /** Keep the page editor open when deletion is rejected. */
    const handleDeleteCustomPage = async (id: string) => {
       if (confirm('Are you sure you want to delete this entire page?')) {
          try {

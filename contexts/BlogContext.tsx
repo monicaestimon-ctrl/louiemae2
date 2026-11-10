@@ -50,6 +50,7 @@ interface SiteContextType {
 
 const SiteContext = createContext<SiteContextType | undefined>(undefined);
 
+/** Supply public fallback presentation without treating unavailable configuration as writable data. */
 export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // --- Auth State (using Convex Auth) ---
   const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
@@ -330,16 +331,19 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   // --- Site Content Actions ---
+  /** Reject writes derived from fallback or unresolved settings. */
   const requireCurrentSettings = () => {
     if (publicContent.siteContentStatus !== 'ready' || !convexSiteContent) {
       throw new Error('Site settings are unavailable. Reload verified settings before saving changes.');
     }
   };
+  /** Require a completed custom-page read before editing the page collection. */
   const requireCurrentPages = () => {
     if (publicContent.customPagesStatus !== 'ready') {
       throw new Error('Custom pages are unavailable. Reload verified pages before saving changes.');
     }
   };
+  /** Merge a section only against verified settings and return the mutation outcome. */
   const updateSiteContentAction = async (section: keyof SiteContent, data: Partial<SiteContent[keyof SiteContent]>) => {
     if (section === 'customPages') return; // Handled separately
     requireCurrentSettings();

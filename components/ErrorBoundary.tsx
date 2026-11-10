@@ -29,6 +29,7 @@ class ErrorBoundary extends Component<Props, State> {
         }
     }
 
+    /** Retry only the failed subtree when requested; otherwise reload the document. */
     handleReload = (): void => {
         if (this.props.retryLocally) this.setState({ hasError: false, error: null });
         else window.location.reload();
@@ -38,6 +39,7 @@ class ErrorBoundary extends Component<Props, State> {
         window.location.href = '/';
     };
 
+    /** Render the supplied fallback or an accessible recovery view after a child failure. */
     render(): ReactNode {
         if (this.state.hasError) {
             if (this.props.fallback) {
