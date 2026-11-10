@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "scope": "Initial public landing-page baseline only; not full-spec acceptance",
+  "routes": [
+    { "id": "retail-home", "path": "/", "readySelector": "[data-catalog-ready='true']", "requiredText": "Recommended Products" },
+    { "id": "holm-home", "path": "/trade/", "readySelector": "#root main.home", "requiredText": "House" }
+  ],
+  "pendingCoverage": ["collections", "product-variants", "search", "cart", "delivery", "authenticated-trade", "projects", "referrals", "outages", "metadata"]
+}
