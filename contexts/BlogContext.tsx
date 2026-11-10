@@ -9,10 +9,13 @@ import { BlogPost, SiteContent, CustomPage, Product, NavLink, CollectionConfig }
 import { BLOG_POSTS as INITIAL_POSTS, INITIAL_SITE_CONTENT, PRODUCTS as INITIAL_PRODUCTS } from '../constants';
 import { AdminCatalogDemandContext, StorefrontCatalogDemandContext, useCatalogDemand } from './AdminCatalogDemand';
 import { usePublicEditorialPosts, type EditorialStatus } from './usePublicEditorialPosts';
+import { usePublicSiteContent, type PublicContentStatus } from './usePublicSiteContent';
 
 interface SiteContextType {
   posts: BlogPost[];
   editorialStatus: EditorialStatus;
+  siteContentStatus: PublicContentStatus;
+  customPagesStatus: PublicContentStatus;
   products: Product[];
   siteContent: SiteContent;
   isLoading: boolean;  // True while Convex data is loading
@@ -32,14 +35,14 @@ interface SiteContextType {
   updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => void;
   // Site Content Actions
-  updateSiteContent: (section: keyof SiteContent, data: Partial<SiteContent[keyof SiteContent]>) => void;
+  updateSiteContent: (section: keyof SiteContent, data: Partial<SiteContent[keyof SiteContent]>) => Promise<void>;
   // Custom Page Actions
-  addCustomPage: (page: CustomPage) => void;
-  updateCustomPage: (id: string, page: Partial<CustomPage>) => void;
-  deleteCustomPage: (id: string) => void;
+  addCustomPage: (page: CustomPage) => Promise<void>;
+  updateCustomPage: (id: string, page: Partial<CustomPage>) => Promise<void>;
+  deleteCustomPage: (id: string) => Promise<void>;
   getCustomPage: (slug: string) => CustomPage | undefined;
   // Navigation & Collection Actions
-  updateNavigation: (navLinks: NavLink[]) => void;
+  updateNavigation: (navLinks: NavLink[]) => Promise<void>;
   addCollection: (collection: CollectionConfig) => Promise<void>;
   updateCollection: (id: string, collection: Partial<CollectionConfig>) => Promise<void>;
   deleteCollection: (id: string) => Promise<void>;
@@ -47,6 +50,7 @@ interface SiteContextType {
 
 const SiteContext = createContext<SiteContextType | undefined>(undefined);
 
+/** Supply public fallback presentation without treating unavailable configuration as writable data. */
 export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // --- Auth State (using Convex Auth) ---
   const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
@@ -67,8 +71,9 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const adminProducts = useQuery(api.products.list, needsAdminCatalog ? {} : 'skip');
   const storefrontProducts = useQuery(api.products.listForStorefront, !needsAdminCatalog && storefrontCatalogRequested ? {} : 'skip');
   const convexProducts = needsAdminCatalog ? adminProducts : storefrontProducts;
-  const convexSiteContent = useQuery(api.siteContent.get);
-  const convexCustomPages = useQuery(api.customPages.list);
+  const publicContent = usePublicSiteContent();
+  const convexSiteContent = publicContent.siteContent;
+  const convexCustomPages = publicContent.customPages;
 
   // --- Convex Mutations ---
   const createPost = useMutation(api.blogPosts.create);
@@ -180,7 +185,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     : { ...INITIAL_SITE_CONTENT, customPages };
 
   // Track loading state - undefined means still loading from Convex
-  const isLoading = convexSiteContent === undefined;
+  const isLoading = publicContent.siteContentStatus === 'loading';
 
   // --- Auth ---
   const signIn = async (email: string, password: string, flow: 'signIn' | 'signUp') => {
@@ -326,29 +331,46 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   // --- Site Content Actions ---
-  const updateSiteContentAction = (section: keyof SiteContent, data: Partial<SiteContent[keyof SiteContent]>) => {
+  /** Reject writes derived from fallback or unresolved settings. */
+  const requireCurrentSettings = () => {
+    if (publicContent.siteContentStatus !== 'ready' || !convexSiteContent) {
+      throw new Error('Site settings are unavailable. Reload verified settings before saving changes.');
+    }
+  };
+  /** Require a completed custom-page read before editing the page collection. */
+  const requireCurrentPages = () => {
+    if (publicContent.customPagesStatus !== 'ready') {
+      throw new Error('Custom pages are unavailable. Reload verified pages before saving changes.');
+    }
+  };
+  /** Merge a section only against verified settings and return the mutation outcome. */
+  const updateSiteContentAction = async (section: keyof SiteContent, data: Partial<SiteContent[keyof SiteContent]>) => {
     if (section === 'customPages') return; // Handled separately
+    requireCurrentSettings();
 
     const currentValue = siteContent[section];
     // Use deep merge to properly handle nested objects like home.hero, home.categoryImages, etc.
     const updatedValue = deepMerge(currentValue, data);
 
-    updateSiteContentMutation({ [section]: updatedValue } as any);
+    await updateSiteContentMutation({ [section]: updatedValue } as any);
   };
 
   // --- Custom Page Actions ---
-  const addCustomPage = (page: CustomPage) => {
+  const addCustomPage = async (page: CustomPage) => {
+    requireCurrentPages();
     const { id, ...pageData } = page;
-    createCustomPage(pageData);
+    await createCustomPage(pageData);
   };
 
-  const updateCustomPageAction = (id: string, pageData: Partial<CustomPage>) => {
+  const updateCustomPageAction = async (id: string, pageData: Partial<CustomPage>) => {
+    requireCurrentPages();
     const { id: _, ...updates } = pageData as any;
-    updateCustomPageMutation({ id: id as Id<"customPages">, ...updates });
+    await updateCustomPageMutation({ id: id as Id<"customPages">, ...updates });
   };
 
-  const deleteCustomPageAction = (id: string) => {
-    removeCustomPage({ id: id as Id<"customPages"> });
+  const deleteCustomPageAction = async (id: string) => {
+    requireCurrentPages();
+    await removeCustomPage({ id: id as Id<"customPages"> });
   };
 
   const getCustomPage = (slug: string) => {
@@ -356,16 +378,19 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   // --- Navigation & Collection Actions ---
-  const updateNavigation = (navLinks: NavLink[]) => {
-    updateSiteContentMutation({ navLinks });
+  const updateNavigation = async (navLinks: NavLink[]) => {
+    requireCurrentSettings();
+    await updateSiteContentMutation({ navLinks });
   };
 
   const addCollection = async (collection: CollectionConfig): Promise<void> => {
+    requireCurrentSettings();
     const newCollections = [...siteContent.collections, collection];
     await updateSiteContentMutation({ collections: newCollections });
   };
 
   const updateCollection = async (id: string, collectionData: Partial<CollectionConfig>): Promise<void> => {
+    requireCurrentSettings();
     const updatedCollections = siteContent.collections.map(c =>
       c.id === id ? { ...c, ...collectionData } : c
     );
@@ -373,6 +398,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const deleteCollection = async (id: string): Promise<void> => {
+    requireCurrentSettings();
     const filteredCollections = siteContent.collections.filter(c => c.id !== id);
     await updateSiteContentMutation({ collections: filteredCollections });
   };
@@ -381,6 +407,8 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     <SiteContext.Provider value={{
       posts,
       editorialStatus,
+      siteContentStatus: publicContent.siteContentStatus,
+      customPagesStatus: publicContent.customPagesStatus,
       products,
       siteContent,
       isLoading,

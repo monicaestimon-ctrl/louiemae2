@@ -1,14 +1,20 @@
 import { rememberCheckout, cartLines } from '../../lib/delivery/checkoutReturn';
 import React, { useEffect, useState } from 'react';
 import { X, ShoppingBag, Loader2 } from 'lucide-react';
-import { useQuery } from 'convex/react';
+import { useQueries } from 'convex/react';
+import type { FunctionReturnType } from 'convex/server';
 import { useAuthToken } from '@convex-dev/auth/react';
 import { api } from '../../convex/_generated/api';
 import { useCart } from '../../contexts/CartContext';
 import CartItem from './CartItem';
 import { activeRef, visitorId } from '../../lib/partnerLink';
 import CheckoutV2 from '../delivery/CheckoutV2';
+import { ErrorBoundary } from '../ErrorBoundary';
+import { usePendingTimeout } from '../../contexts/usePendingTimeout';
+const CREDIT_QUERY = { credit: { query: api.holmCredit.myCredit, args: {} } };
+const NO_QUERIES = {};
 
+/** Preserve cart drafts while gating checkout on verified account credit and delivery data. */
 export const CartDrawer: React.FC = () => {
     const { isOpen, closeCart, items, subtotal, itemCount, removeFromCart } = useCart();
     // Zuo items (or a mixed cart) use the v2 checkout: full-address delivery and tax before payment.
@@ -17,7 +23,13 @@ export const CartDrawer: React.FC = () => {
     const [isCheckingOut, setIsCheckingOut] = useState(false);
     // Store credit (signed-in members): pre-set from their Hub setting, changeable per order.
     const authToken = useAuthToken();
-    const credit = useQuery(api.holmCredit.myCredit);
+    const needsCredit = isOpen && !hasV2 && Boolean(authToken);
+    const creditResults = useQueries(needsCredit ? CREDIT_QUERY : NO_QUERIES);
+    const creditResult = creditResults.credit as FunctionReturnType<typeof api.holmCredit.myCredit> | Error | undefined;
+    const credit = needsCredit && !(creditResult instanceof Error) ? creditResult : undefined;
+    const creditPending = needsCredit && creditResult === undefined;
+    const creditTimedOut = usePendingTimeout(creditPending);
+    const creditBlocked = needsCredit && (creditPending || creditResult === null || creditResult instanceof Error);
     const [useCredit, setUseCredit] = useState(false);
     useEffect(() => { if (credit) setUseCredit(credit.autoApply); }, [credit?.autoApply]);
     const creditOff = credit && useCredit ? Math.min(credit.balanceCents / 100, subtotal) : 0;
@@ -33,7 +45,7 @@ export const CartDrawer: React.FC = () => {
     } | null>(null);
 
     const handleCheckout = async () => {
-        if (items.length === 0) return;
+        if (items.length === 0 || creditBlocked) return;
 
         setIsCheckingOut(true);
         setError(null);
@@ -206,7 +218,10 @@ export const CartDrawer: React.FC = () => {
                             </label>
                         )}
 
-                        {hasV2 ? <CheckoutV2 /> : (<>
+                        {hasV2 ? <ErrorBoundary fallback={<p role="alert" className="text-earth">Checkout is temporarily unavailable. Close and reopen your cart to try again. Your items are saved.</p>}><CheckoutV2 /></ErrorBoundary> : (<>
+                        {creditBlocked && <p role="status" className="text-earth mb-4">
+                            {creditPending && !creditTimedOut ? 'Checking your store credit…' : 'Store credit could not be verified. Close and reopen your cart to try again. Your items are saved.'}
+                        </p>}
                         <p className="text-[10px] text-earth/40 mb-4 text-center">
                             Economy delivery: ${delivery.toFixed(2)} · Total before tax: ${(subtotal - creditOff + delivery).toFixed(2)}. Delivery is charged per item; tax is calculated at checkout.{creditOff > 0 ? ' Store credit comes off the items, not delivery or tax.' : ''}
                         </p>
@@ -250,7 +265,7 @@ export const CartDrawer: React.FC = () => {
                         <button
                             className="w-full bg-earth text-cream py-4 text-[10px] uppercase tracking-[0.2em] hover:bg-bronze transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                             onClick={handleCheckout}
-                            disabled={isCheckingOut}
+                            disabled={isCheckingOut || creditBlocked}
                         >
                             {isCheckingOut ? (
                                 <>

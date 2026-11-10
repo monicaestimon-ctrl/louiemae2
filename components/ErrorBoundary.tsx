@@ -3,6 +3,7 @@ import React, { Component, ErrorInfo, ReactNode } from 'react';
 interface Props {
     children: ReactNode;
     fallback?: ReactNode;
+    retryLocally?: boolean;
 }
 
 interface State {
@@ -28,14 +29,17 @@ class ErrorBoundary extends Component<Props, State> {
         }
     }
 
+    /** Retry only the failed subtree when requested; otherwise reload the document. */
     handleReload = (): void => {
-        window.location.reload();
+        if (this.props.retryLocally) this.setState({ hasError: false, error: null });
+        else window.location.reload();
     };
 
     handleGoHome = (): void => {
         window.location.href = '/';
     };
 
+    /** Render the supplied fallback or an accessible recovery view after a child failure. */
     render(): ReactNode {
         if (this.state.hasError) {
             if (this.props.fallback) {
@@ -43,21 +47,21 @@ class ErrorBoundary extends Component<Props, State> {
             }
 
             return (
-                <div className="min-h-screen flex items-center justify-center bg-cream">
+                <main className="min-h-screen flex items-center justify-center bg-cream" aria-labelledby="page-error-heading">
                     <div className="max-w-md text-center p-8">
-                        <div className="text-6xl mb-4">🌿</div>
-                        <h1 className="font-serif text-2xl text-earth mb-4">
+                        <div className="text-6xl mb-4" aria-hidden="true">🌿</div>
+                        <h1 id="page-error-heading" className="font-serif text-2xl text-earth mb-4">
                             Something went wrong
                         </h1>
-                        <p className="text-earth/60 mb-6">
-                            We're sorry, but something unexpected happened. Please try refreshing the page.
+                        <p className="text-earth mb-6">
+                            This page could not be loaded. Please try again. Purchases require verified pricing and availability.
                         </p>
                         <div className="space-x-4">
                             <button
                                 onClick={this.handleReload}
                                 className="bg-earth text-cream px-6 py-3 text-xs uppercase tracking-widest hover:bg-bronze transition-colors"
                             >
-                                Refresh Page
+                                {this.props.retryLocally ? 'Try again' : 'Refresh Page'}
                             </button>
                             <button
                                 onClick={this.handleGoHome}
@@ -67,7 +71,7 @@ class ErrorBoundary extends Component<Props, State> {
                             </button>
                         </div>
                         {process.env.NODE_ENV !== 'production' && this.state.error && (
-                            <details className="mt-8 text-left text-sm text-earth/50">
+                            <details className="mt-8 text-left text-sm text-earth">
                                 <summary className="cursor-pointer hover:text-earth">
                                     Error Details (Development Only)
                                 </summary>
@@ -77,7 +81,7 @@ class ErrorBoundary extends Component<Props, State> {
                             </details>
                         )}
                     </div>
-                </div>
+                </main>
             );
         }
 
