@@ -74,6 +74,20 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 describe('Ashcroft retail checkout', () => {
+  it('uses the imported supplier quantity in storefront and checkout instead of static availability', async () => {
+    const t = convexTest(schema, modules);
+    const { id } = await fixture(t);
+    const feed = { source: 'Daily active inventory attachment', sha256: 'a'.repeat(64), observedAt: Date.now() - 2000,
+      rows: [{ sku: 'SOF00401401', quantity: 2 }] };
+    await t.mutation(internal.ashcroftInventory.reconcile, feed);
+    const page = await t.query(api.retailLaunch.storefrontPage, { paginationOpts: { numItems: 25, cursor: null } });
+    expect(page.page[0].inStock).toBe(true);
+    await expect(t.mutation(internal.retailLaunch.createSnapshot, { items: [{ productId: id, variantId: 'tan', quantity: 3 }] })).rejects.toThrow();
+    await t.mutation(internal.ashcroftInventory.reconcile, { ...feed, sha256: 'b'.repeat(64), observedAt: Date.now() - 1000, rows: [{ sku: 'SOF00401401', quantity: 0 }] });
+    const updated = await t.query(api.retailLaunch.storefrontPage, { paginationOpts: { numItems: 25, cursor: null } });
+    expect(updated.page[0].inStock).toBe(false);
+    await expect(t.mutation(internal.retailLaunch.createSnapshot, { items: [{ productId: id, variantId: 'tan', quantity: 1 }] })).rejects.toThrow();
+  });
   it('uses the existing LouieMae card and detail shape with the same checkout prices', async () => {
     const t = convexTest(schema, modules);
     const { id, listing } = await fixture(t);

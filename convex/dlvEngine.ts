@@ -1,3 +1,4 @@
+import { ashcroftAvailable } from './ashcroftInventory';
 import { modeledParcelFreight, type ModeledParcelRates } from '../lib/delivery/modeledParcel';
 // Server-owned delivery service (spec S17, S18, v2 §9–§12). One engine serves product, cart,
 // checkout and trade estimates. The server reloads prices, membership, stock and source versions;
@@ -19,7 +20,7 @@ import {
 } from '../lib/delivery/engine';
 import { classify, type CarrierRule } from '../lib/shipping/classify';
 import { quoteOnlyReasons, addressKey, type AddressIn } from '../lib/delivery/destination';
-import { launchPrice, retailDelivery, supplierAvailable } from '../lib/retailLaunch';
+import { launchPrice, retailDelivery } from '../lib/retailLaunch';
 import { commissionReserve } from './dlvCommission';
 import { digest } from './dlvSecurity';
 import { parseDecimal, mul, rat, toMinor } from '../lib/decimal';
@@ -388,7 +389,7 @@ export async function resolveLines(
       if (
         !supplierRow?.sku ||
         !rate ||
-        !supplierAvailable(supplierRow.sku, listing.snapshot.description)
+        !(await ashcroftAvailable(ctx, supplierRow.sku, listing.snapshot.description, l.packs))
       )
         throw new CommerceError(
           'STOCK_UNAVAILABLE',

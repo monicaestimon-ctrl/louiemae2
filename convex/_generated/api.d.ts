@@ -11,6 +11,7 @@
 import type * as ai from "../ai.js";
 import type * as aiUsage from "../aiUsage.js";
 import type * as aliexpress from "../aliexpress.js";
+import type * as ashcroftInventory from "../ashcroftInventory.js";
 import type * as auth from "../auth.js";
 import type * as authLinking from "../authLinking.js";
 import type * as batchImportCompletion from "../batchImportCompletion.js";
@@ -201,6 +202,7 @@ declare const fullApi: ApiFromModules<{
   catPolicies: typeof catPolicies;
   catPricing: typeof catPricing;
   catEvidence: typeof catEvidence;
+  ashcroftInventory: typeof ashcroftInventory;
   catPublication: typeof catPublication;
   catStock: typeof catStock;
   catShipping: typeof catShipping;

@@ -1,3 +1,4 @@
+import { ashcroftAvailable } from './ashcroftInventory';
 import { v } from 'convex/values';
 import { paginationOptsValidator } from 'convex/server';
 import { query, mutation, internalQuery, internalMutation } from './_generated/server';
@@ -48,6 +49,8 @@ async function resolveLines(
       if (!(await listingReady(ctx, product, listing)))
         throw new Error('An item requires supplier mapping or availability review.');
       checkQuantity(s.quantity, variant);
+      if (product.provider === 'ashcroft' && !(await ashcroftAvailable(ctx, route.sku, listing.snapshot.description, s.quantity)))
+        throw new Error('Supplier inventory cannot cover this quantity. Refresh your selection.');
       return {
         productId: product._id,
         variantId: variant.id,

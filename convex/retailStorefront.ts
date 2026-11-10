@@ -1,18 +1,19 @@
 import type { QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
-import { launchPrice, retailDelivery, retailDescription, supplierAvailable } from '../lib/retailLaunch';
+import { launchPrice, retailDelivery, retailDescription } from '../lib/retailLaunch';
 import { assertSellable, isCurrentPrice } from './catCore';
+import { ashcroftAvailable } from './ashcroftInventory';
 import { isCommerceError } from '../lib/errors';
 
 // Adapt the retail listing into LouieMae's existing product modal and cards.
-export function storefrontListing(listing: Doc<'commerceListings'>) {
+export async function storefrontListing(ctx: QueryCtx, listing: Doc<'commerceListings'>) {
   const s = listing.snapshot;
   const rate = retailDelivery(s.category, s.name);
-  const variants = s.variants.map(v => ({
+  const variants = await Promise.all(s.variants.map(async v => ({
     id: v.id, name: v.name, image: v.image,
     price: rate ? launchPrice(v.price, rate.freight, rate.delivery) / 100 : v.price / 100,
-    inStock: !!rate && supplierAvailable(listing.fulfillment?.find(f => f.id === v.id)?.sku, s.description),
-  }));
+    inStock: !!rate && await ashcroftAvailable(ctx, listing.fulfillment?.find(f => f.id === v.id)?.sku, s.description, v.minimum),
+  })));
   const price = Math.min(...variants.map(v => v.price));
   return { _id: listing.productId, name: s.name, description: [retailDescription(s.description), s.facts].filter(Boolean).join('\n\n'),
     category: s.category, collection: s.category === 'Lighting' ? 'decor' : 'furniture',
@@ -72,5 +73,5 @@ export async function retailDetail(ctx: QueryCtx, id: Id<'commerceProducts'>) {
     const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', id)).first();
     return currentZuoStorefrontListing(ctx, listing, meta?.commissionCategory === 'decor' ? 'decor' : 'furniture');
   }
-  return storefrontListing(listing);
+  return storefrontListing(ctx, listing);
 }

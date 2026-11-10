@@ -1,3 +1,4 @@
+import { ashcroftAvailable } from './ashcroftInventory';
 import { v } from 'convex/values';
 import { mutation, query } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
@@ -5,7 +6,6 @@ import type { Id } from './_generated/dataModel';
 import { requireDeliveryRole } from './dlvAccess';
 import { CommerceError } from '../lib/errors';
 import { acceptsPlatformPayment } from '../lib/paymentMode';
-import { supplierAvailable } from '../lib/retailLaunch';
 import { digest } from './dlvSecurity';
 import { audit } from './sysCore';
 import { currentInventory, availableAfterCommitments } from './ordInventory';
@@ -233,7 +233,7 @@ export const resumeOriginal = mutation({
         if (
           !listing?.published ||
           supplierLine?.sku !== variant.supplierSku ||
-          !supplierAvailable(supplierLine.sku, listing.snapshot.description)
+          !(await ashcroftAvailable(ctx, supplierLine.sku, listing.snapshot.description, line.packs))
         )
           throw new CommerceError(
             'STOCK_UNAVAILABLE',
