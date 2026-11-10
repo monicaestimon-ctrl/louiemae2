@@ -1,3 +1,4 @@
+import { modeledParcelFreight, type ModeledParcelRates } from '../lib/delivery/modeledParcel';
 // Server-owned delivery service (spec S17, S18, v2 §9–§12). One engine serves product, cart,
 // checkout and trade estimates. The server reloads prices, membership, stock and source versions;
 // client-supplied prices, roles, allowances and rates are never used.
@@ -47,8 +48,10 @@ type Ctx = QueryCtx | MutationCtx;
 export type LineInput = { productId: string; variantId: string; packs: number };
 export type Destination = { zip: string; address?: AddressIn };
 
-/** The carrier/zone pricing record (sysConfig kind carrierRule). Rates come from carrier evidence. */
+/** The carrier/zone pricing record (sysConfig kind carrierRule). Rates use supplier evidence or explicitly approved planning benchmarks. */
 export type FreightConfig = {
+  rateBasis?: 'supplier_rate' | 'modeled_parcel';
+  modeledParcel?: ModeledParcelRates;
   evidenceRef?: string;
   verifiedAt?: number;
   validUntil?: number;
@@ -443,7 +446,7 @@ export function groupFreight(
     f.verifiedAt! > Date.now() ||
     f.validUntil! <= Date.now()
   ) {
-    reasons.push('Carrier evidence missing or expired');
+    reasons.push('Delivery rate evidence missing or expired');
     return null;
   }
   const cartons = lines.flatMap((l) => {
@@ -486,6 +489,16 @@ export function groupFreight(
   ) {
     reasons.push('Carrier rate outside its effective dates');
     return null;
+  }
+  if (f.rateBasis === 'modeled_parcel') {
+    const zone = f.zip3Zones[dest.zip.slice(0, 3)];
+    if (c.mode !== 'ground' || !zone || !f.modeledParcel) {
+      reasons.push('Shipment or destination is outside the approved parcel model');
+      return null;
+    }
+    const modeled = modeledParcelFreight(cartons, f.rule, zone, f.modeledParcel);
+    if ('reason' in modeled) { reasons.push(modeled.reason); return null; }
+    return modeled.freightMinor + Math.ceil(modeled.freightMinor * f.uncertaintyBps / 10_000);
   }
   if (c.mode === 'ltl' && f.ltlRatingBasis !== 'actual_weight') {
     reasons.push(
