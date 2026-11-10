@@ -8,7 +8,7 @@ import { responsiveImage } from '../lib/responsiveImage';
 
 export const BlogPage: React.FC = () => {
    // Use the hook to get dynamic posts
-   const { posts } = useSite();
+   const { posts, editorialStatus } = useSite();
    const { addSubscriber } = useNewsletter();
 
    // Newsletter Form State
@@ -45,7 +45,13 @@ export const BlogPage: React.FC = () => {
       return (
          <div className="min-h-screen bg-cream flex items-center justify-center">
             <FadeIn>
-               <h1 className="font-serif text-4xl text-earth opacity-50">Coming Soon...</h1>
+               <h1 className="font-serif text-4xl text-earth">Simply Mae</h1>
+               <p role="status" className="mt-6 text-earth">
+                  {editorialStatus === 'loading' ? 'Loading stories…'
+                     : editorialStatus === 'unavailable' ? 'Stories are temporarily unavailable. Please try again later.'
+                     : 'New stories are coming soon.'}
+               </p>
+               <a href="#shop" className="mt-6 inline-block underline text-earth">Continue shopping</a>
             </FadeIn>
          </div>
       );

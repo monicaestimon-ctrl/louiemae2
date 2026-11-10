@@ -9,7 +9,7 @@ interface BlogPostViewProps {
 }
 
 export const BlogPostView: React.FC<BlogPostViewProps> = ({ postId }) => {
-    const { posts } = useSite();
+    const { posts, editorialStatus } = useSite();
     const post = posts.find(p => p.id === postId);
     const [showShareMenu, setShowShareMenu] = useState(false);
     const [copied, setCopied] = useState(false);
@@ -30,10 +30,14 @@ export const BlogPostView: React.FC<BlogPostViewProps> = ({ postId }) => {
         return (
             <div className="min-h-screen bg-cream flex items-center justify-center">
                 <FadeIn>
-                    <h1 className="font-serif text-4xl text-earth opacity-50">Post not found...</h1>
+                    <h1 className="font-serif text-4xl text-earth">
+                        {editorialStatus === 'loading' ? 'Loading story…'
+                            : editorialStatus === 'unavailable' ? 'Story temporarily unavailable' : 'Post not found'}
+                    </h1>
+                    {editorialStatus === 'unavailable' && <p role="status" className="mt-4 text-earth">Please try again later. You can still browse the shop.</p>}
                     <button
                         onClick={() => { window.location.hash = '#blog'; }}
-                        className="mt-6 mx-auto block text-xs uppercase tracking-[0.2em] text-earth/50 hover:text-bronze transition-colors"
+                        className="mt-6 mx-auto block text-xs uppercase tracking-[0.2em] text-earth hover:underline transition-colors"
                     >
                         ← Back to Blog
                     </button>

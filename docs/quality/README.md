@@ -21,3 +21,9 @@ Run npm run test:lighthouse-policy to verify rejection of high-scoring error pag
 Lighthouse navigation metrics and content health are distinct. A later DOM check cannot prove every interaction worked or the page was healthy throughout measurement; retain screenshots and console audits and add flow tests before production acceptance. Never relax the data/health checks to make an outage score pass.
 
 No billing changes, production data writes, purchases or supplier dispatch are performed by this harness.
+
+## Resilience implementation: editorial isolation
+
+The public blog subscription now returns a local unavailable state instead of throwing through SiteProvider. Pending editorial UI is bounded to ten seconds; the existing Convex subscription may recover without a reload. There is no added polling or automatic retry loop. The blog index and article view distinguish pending, unavailable, confirmed empty and confirmed missing results. Public failures cannot trigger owner-only seed mutations.
+
+This is the first resilience increment, not completion of the resilience phase. Site configuration, custom pages, account queries, catalog recommendations, the HOLM startup shell, manual retry controls and stable-layout verification still need independent treatment. Commerce qualification and admin query error behavior remain strict. Run the editorialResilience and HomePage.catalog test suites for this increment.

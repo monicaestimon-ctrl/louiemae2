@@ -8,9 +8,11 @@ import { Id } from '../convex/_generated/dataModel';
 import { BlogPost, SiteContent, CustomPage, Product, NavLink, CollectionConfig } from '../types';
 import { BLOG_POSTS as INITIAL_POSTS, INITIAL_SITE_CONTENT, PRODUCTS as INITIAL_PRODUCTS } from '../constants';
 import { AdminCatalogDemandContext, StorefrontCatalogDemandContext, useCatalogDemand } from './AdminCatalogDemand';
+import { usePublicEditorialPosts, type EditorialStatus } from './usePublicEditorialPosts';
 
 interface SiteContextType {
   posts: BlogPost[];
+  editorialStatus: EditorialStatus;
   products: Product[];
   siteContent: SiteContent;
   isLoading: boolean;  // True while Convex data is loading
@@ -57,8 +59,11 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // --- Convex Queries ---
   const adminPosts = useQuery(api.blogPosts.listAdmin, siteOwner ? {} : 'skip');
-  const publicPosts = useQuery(api.blogPosts.list, siteOwner ? 'skip' : {});
-  const convexPosts = siteOwner ? adminPosts : publicPosts;
+  const publicEditorial = usePublicEditorialPosts(!siteOwner);
+  const convexPosts = siteOwner ? adminPosts : publicEditorial.posts;
+  const editorialStatus: EditorialStatus = siteOwner
+    ? adminPosts === undefined ? 'loading' : adminPosts.length ? 'ready' : 'empty'
+    : publicEditorial.status;
   const adminProducts = useQuery(api.products.list, needsAdminCatalog ? {} : 'skip');
   const storefrontProducts = useQuery(api.products.listForStorefront, !needsAdminCatalog && storefrontCatalogRequested ? {} : 'skip');
   const convexProducts = needsAdminCatalog ? adminProducts : storefrontProducts;
@@ -375,6 +380,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   return (
     <SiteContext.Provider value={{
       posts,
+      editorialStatus,
       products,
       siteContent,
       isLoading,
