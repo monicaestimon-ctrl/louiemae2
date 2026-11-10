@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { blankCommerceDraft } from './commerce';
 import type { ZuoStagingRow } from './zuoStaging';
-import { stagedCatalogRecord } from './zuoStagedCatalog';
+import { stagedCatalogRecord, stagedAllowanceClass } from './zuoStagedCatalog';
 
 const fixture = (): ZuoStagingRow => ({
   sku: 'FIXTURE',
@@ -48,6 +48,13 @@ const fixture = (): ZuoStagingRow => ({
   }),
 });
 describe('stored catalog conversion', () => {
+  it('preserves the approved per-piece delivery allowance independently of carrier mode', () => {
+    for (const [amount, sizeClass] of [[15, 'SMALL'], [25, 'MEDIUM'], [40, 'LARGE'], [60, 'OVERSIZE'], [100, 'LTL']] as const) {
+      const row = fixture(); row.sourceEvidence = JSON.stringify({ ...JSON.parse(row.sourceEvidence), deliveryAllowanceEach: amount });
+      expect(stagedCatalogRecord(row, 'packet', 1000).record.sizeClass).toBe(sizeClass);
+    }
+    for (const value of [undefined, null, '25', 0, -15, 24.99]) expect(stagedAllowanceClass({ deliveryAllowanceEach: value })).toBeNull();
+  });
   it('corroborates only a matching current supplier cost without clearing other publishing gates', () => {
     const row = fixture(), source = JSON.parse(row.sourceEvidence);
     source.freshObservation.freshLocalCandidate = true;
