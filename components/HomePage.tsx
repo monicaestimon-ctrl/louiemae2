@@ -424,7 +424,7 @@ export const HomePage: React.FC = () => {
 
         <FadeIn className="relative z-10">
           <h2 className="font-serif text-4xl md:text-6xl text-cream mb-4 tracking-tight drop-shadow-lg">Join The Mae Letter</h2>
-          <p className="font-serif text-2xl md:text-3xl italic text-bronze mb-12 font-light">Newsletter</p>
+          <p className="font-serif text-2xl md:text-3xl italic text-[#D6B99C] mb-12 font-light">Newsletter</p>
 
           <div className="max-w-xl mx-auto space-y-2 text-muted-cream font-sans text-sm md:text-base leading-relaxed mb-16">
             <p>To Get First Look At New Product Drops, Personal Notifications</p>
@@ -434,7 +434,7 @@ export const HomePage: React.FC = () => {
 
           <form className="max-w-xl mx-auto space-y-8" onSubmit={handleSubscribe}>
             <div className="text-left group relative">
-              <label htmlFor="home-letter-name" className="block font-serif text-xl text-cream/90 mb-2 pl-4 transition-colors group-focus-within:text-bronze">First Name</label>
+              <label htmlFor="home-letter-name" className="block font-serif text-xl text-cream/90 mb-2 pl-4 transition-colors group-focus-within:text-[#D6B99C]">First Name</label>
               <div className="absolute -inset-0.5 bg-gradient-to-r from-bronze/0 via-bronze/20 to-bronze/0 rounded-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-500 blur-sm"></div>
               <input
                 id="home-letter-name"
@@ -446,7 +446,7 @@ export const HomePage: React.FC = () => {
               />
             </div>
             <div className="text-left group relative">
-              <label htmlFor="home-letter-email" className="block font-serif text-xl text-cream/90 mb-2 pl-4 transition-colors group-focus-within:text-bronze">Email</label>
+              <label htmlFor="home-letter-email" className="block font-serif text-xl text-cream/90 mb-2 pl-4 transition-colors group-focus-within:text-[#D6B99C]">Email</label>
               <div className="absolute -inset-0.5 bg-gradient-to-r from-bronze/0 via-bronze/20 to-bronze/0 rounded-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-500 blur-sm"></div>
               <input
                 id="home-letter-email"

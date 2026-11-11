@@ -360,3 +360,9 @@ html :is(button, a, input, select, textarea, [tabindex]):focus-visible { outline
 .placeholder-readable-light::placeholder { color: var(--lm-muted-cream); opacity: 1; }
 .skip-link { position: fixed; top: 8px; left: 8px; z-index: 1000; padding: 12px 20px; background: #4a3b32; color: #fff; transform: translateY(-200%); }
 .skip-link:focus { transform: translateY(0); }
+
+/* A keyboard user must never focus an invisible entrance-animation control. */
+.lm-reveal:focus-within { opacity: 1 !important; transform: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .lm-reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+}
