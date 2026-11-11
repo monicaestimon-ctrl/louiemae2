@@ -3,6 +3,7 @@ export function productUrl(id: string, variantId?: string) {
   return `/products/${encodeURIComponent(id)}${variantId ? `?variant=${encodeURIComponent(variantId)}` : ''}`;
 }
 
+/** Parse public product routes, returning an empty identity for malformed product paths. */
 export function productRoute(route: string): { id: string; variantId?: string } | null {
   if (!route.startsWith('/products/')) return null;
   const [path, query] = route.split('?');

@@ -10,6 +10,7 @@ import { productUrl } from '../lib/storefrontNavigation';
 import { catalogPageOptions } from '../lib/catalogPagination';
 import { CommerceError } from '../lib/errors';
 
+/** Cut over only when this index version is both verified and explicitly enabled. */
 export async function searchReady(ctx: Pick<QueryCtx, 'db'>) {
   const state = await ctx.db
     .query('publicSearchState')

@@ -12,11 +12,13 @@ import {
 } from './publicSearchMaintenance';
 import { catalogPageOptions } from '../lib/catalogPagination';
 
+/** Read the unique migration/cutover state for the current index version. */
 const state = (ctx: Pick<QueryCtx, 'db'>) =>
   ctx.db
     .query('publicSearchState')
     .withIndex('by_version', (q) => q.eq('version', PUBLIC_SEARCH_VERSION))
     .unique();
+/** Reconstruct a candidate from its source so orphaned or stale index rows cannot verify. */
 async function expectedRow(ctx: Pick<QueryCtx, 'db'>, row: Doc<'publicSearch'>) {
   if (row.sourceKey.startsWith('legacy:')) {
     const id = ctx.db.normalizeId('products', row.sourceKey.slice(7));

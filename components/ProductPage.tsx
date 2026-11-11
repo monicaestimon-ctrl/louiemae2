@@ -24,11 +24,13 @@ export function ProductPage({ id, variantId }: { id: string; variantId?: string 
       ? product.variants[0]
       : undefined;
   const invalidVariant = Boolean(variantId && product && !requested);
+  const needsSelection = Boolean(product?.variants?.length && !selected);
   const price = (product?.price ?? 0) + (selected?.priceAdjustment ?? 0);
   const purchasable = Boolean(
-    product?.fulfillmentProvider &&
+    (product?.fulfillmentProvider === 'ashcroft' || product?.fulfillmentProvider === 'zuo') &&
     product.inStock &&
     !invalidVariant &&
+    !needsSelection &&
     selected?.inStock !== false
   );
   useEffect(() => {
@@ -143,7 +145,9 @@ export function ProductPage({ id, variantId }: { id: string; variantId?: string 
               )}
               <p className="my-6 whitespace-pre-line">{product.description}</p>
               <p className="mb-4">
-                {purchasable ? 'Available to order' : 'Currently unavailable to order'}
+                {needsSelection
+                  ? 'Select an available option to check ordering and delivery.'
+                  : purchasable ? 'Available to order' : 'Currently unavailable to order'}
               </p>
               {product.fulfillmentProvider === 'ashcroft' && purchasable && (
                 <p className="mb-4">${product.deliveryFee} Economy delivery per item</p>

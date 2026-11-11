@@ -11,7 +11,7 @@ const state = vi.hoisted(() => ({
 vi.mock('../useStorefrontProductDetail', () => ({ useStorefrontProductDetail: () => state }));
 vi.mock('../../contexts/CartContext', () => ({ useCart: () => ({ addToCart: state.add }) }));
 vi.mock('../delivery/ProductDeliveryEstimate', () => ({
-  default: ({ variantId }: { variantId?: string }) => <p>Estimate option: {variantId ?? 'none'}</p>,
+  default: ({ variantId, disabledMessage }: { variantId?: string; disabledMessage?: string }) => <p>{disabledMessage ?? `Estimate option: ${variantId ?? 'none'}`}</p>,
 }));
 import { ProductPage } from '../ProductPage';
 const product: Product = {
@@ -54,6 +54,12 @@ it('does not silently substitute an invalid or unavailable linked option', () =>
   view.rerender(<ProductPage id="stable-id" variantId="sold" />);
   expect(screen.getByRole('button', { name: 'Out of Stock' })).toBeDisabled();
   expect(state.add).not.toHaveBeenCalled();
+});
+it('requires a selection before advertising ordering or delivery availability', () => {
+  render(<ProductPage id="stable-id" />);
+  expect(screen.getByRole('button', { name: 'Select Option First' })).toBeDisabled();
+  expect(screen.queryByText('Available to order')).not.toBeInTheDocument();
+  expect(screen.getByText('Select an available option to estimate delivery.')).toBeInTheDocument();
 });
 it('distinguishes outage, loading and confirmed absence without a purchase control', () => {
   state.product = null;

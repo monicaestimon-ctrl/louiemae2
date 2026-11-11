@@ -7,6 +7,7 @@ import { SafeImage } from './SafeImage';
 import { navigatePlainLink } from '../lib/navigation';
 
 type Props = { term: string; onSelect: (id: string) => void };
+/** Preserve the search dialog and offer an explicit subscription retry after failure. */
 const Failure = ({ retry }: { retry: () => void }) => (
   <div role="status" className="text-center py-12 text-cream">
     <p>Search is temporarily unavailable. Your search has been kept.</p>
@@ -27,6 +28,7 @@ export function PaginatedSearchResults(props: Props) {
   );
 }
 
+/** Render one growing candidate stream without confusing a filtered page with exhaustion. */
 function SearchPage({ term, onSelect, retry }: Props & { retry: () => void }) {
   const { results, status, loadMore } = usePaginatedQuery(
     api.publicSearch.search,

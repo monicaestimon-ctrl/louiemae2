@@ -4,6 +4,7 @@ import { isProductVisibleOnStorefront } from '../lib/storefrontVisibility';
 
 export const PUBLIC_SEARCH_VERSION = 1;
 export type SearchProjection = { sourceKey: string; productId: string; text: string };
+/** Bound and normalize public text consistently before writing the search index. */
 const text = (...parts: string[]) =>
   parts.join(' ').normalize('NFKC').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 640);
 
@@ -16,6 +17,7 @@ export function legacySearchProjection(product: Doc<'products'> | null): SearchP
     text: text(product.name, product.category, product.collection),
   };
 }
+/** Only published retail listings contribute text; current sellability is checked at read time. */
 export function listingSearchProjection(
   listing: Doc<'commerceListings'> | null
 ): SearchProjection | null {
@@ -26,6 +28,7 @@ export function listingSearchProjection(
     text: text(listing.snapshot.name, listing.snapshot.category),
   };
 }
+/** Compare the stored public fields without treating unrelated source changes as index changes. */
 export function sameSearchProjection(a: SearchProjection | null, b: SearchProjection | null) {
   return (
     a === b ||
