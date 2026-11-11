@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAction, useMutation, useQuery } from 'convex/react';
-import { useAuthActions } from '@convex-dev/auth/react';
+import { CredentialsForm } from './account/CredentialsForm';
 import { Copy, Download, Check, ArrowUpRight } from 'lucide-react';
 import { api } from '../convex/_generated/api';
 import { partnerCopy, rateRows, TIER_NAMES, type HolmTier } from '../lib/holmPartners';
@@ -89,52 +89,8 @@ function RateTable({ tier }: { tier?: HolmTier | null }) {
 }
 
 function SignIn() {
-  const { signIn } = useAuthActions();
   const opts = useQuery(api.holm.signInOptions);
-  const [flow, setFlow] = useState<'signIn' | 'signUp'>('signUp');
-  const [email, setEmail] = useState('');
-  const [pw, setPw] = useState('');
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErr('');
-    if (!/^\S+@\S+\.\S+$/.test(email)) return setErr('Enter your email address.');
-    if (pw.length < 8) return setErr('Use a password of at least 8 characters.');
-    setBusy(true);
-    try {
-      const fd = new FormData();
-      fd.set('email', email.trim().toLowerCase());
-      fd.set('password', pw);
-      fd.set('flow', flow);
-      await signIn('password', fd);
-    } catch {
-      setErr(flow === 'signIn' ? 'That email and password did not match.' : 'We could not create that account. If you already have one, sign in instead.');
-    } finally {
-      setBusy(false);
-    }
-  };
-  const google = async () => {
-    // Google returns to the home page, so remember to come back here.
-    try { sessionStorage.setItem('lm:after', '#creators'); } catch { /* still signs in */ }
-    try { await signIn('google', { redirectTo: '/' }); } catch { setErr('Google sign-in is not available right now. Use your email instead.'); }
-  };
-  return (
-    <form onSubmit={submit} className="grid gap-3 max-w-sm" noValidate>
-      <h3 className="font-serif text-2xl text-earth">{flow === 'signUp' ? 'Create your account to join' : 'Sign in to your Creator Hub'}</h3>
-      {opts?.google && <button type="button" onClick={google} disabled={busy} className="border border-earth/30 rounded-full py-3 text-sm hover:bg-cream-dark">Continue with Google</button>}
-      <label className="text-xs uppercase tracking-[0.15em] text-earth/60" htmlFor="cr-email">Email</label>
-      <input id="cr-email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="border border-sand rounded-lg px-4 py-3 bg-white" />
-      <label className="text-xs uppercase tracking-[0.15em] text-earth/60" htmlFor="cr-pw">Password</label>
-      <input id="cr-pw" type="password" autoComplete={flow === 'signIn' ? 'current-password' : 'new-password'} value={pw} onChange={(e) => setPw(e.target.value)} className="border border-sand rounded-lg px-4 py-3 bg-white" />
-      {err && <p className="text-sm text-red-700" role="alert">{err}</p>}
-      <button disabled={busy} className="bg-earth text-cream rounded-full py-3 text-sm tracking-wide disabled:opacity-60">{busy ? 'One moment…' : flow === 'signUp' ? 'Create account' : 'Sign in'}</button>
-      <p className="text-sm text-earth/70">
-        {flow === 'signUp' ? 'Already have an account? ' : 'New here? '}
-        <button type="button" className="underline" onClick={() => { setFlow(flow === 'signUp' ? 'signIn' : 'signUp'); setErr(''); }}>{flow === 'signUp' ? 'Sign in' : 'Create an account'}</button>
-      </p>
-    </form>
-  );
+  return <CredentialsForm site="creator" googleEnabled={opts?.google} />;
 }
 
 function Join() {

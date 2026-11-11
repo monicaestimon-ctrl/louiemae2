@@ -3,6 +3,9 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, startTransition } from 'react';
 import htm from 'htm';
 import type { HolmProduct } from './catalog';
+import { TradeWelcome } from './TradeWelcome';
+import { Modal } from '../components/Modal';
+import { navigatePlainLink } from '../lib/navigation';
 import { useQuery, useMutation, useAction } from 'convex/react';
 import { SPLIT_MAY } from '../lib/customerCopy';
 import { partnerCopy, partnerTerms, rateRows } from '../lib/holmPartners';
@@ -194,20 +197,22 @@ function PinCard({p,ctx}){
   const saved=ctx.boards.some(b=>b.pins.some(x=>x.pid===p.id));
   const lastBoard=ctx.boards[0];
   return html`<div className="pin">
-    <div className="pin-img" onClick=${()=>ctx.openPin(p.id)}>
+    <div className="pin-img">
+      <button type="button" className="pin-open" aria-label=${'View '+p.name+' '+p.line} onClick=${()=>ctx.openPin(p.id)}>
       <${SafeImage} src=${p.img} media=${p.imageMedia} sizes="(min-width: 1024px) 25vw, 50vw" alt=${p.name+' '+p.line} loading="lazy" style=${{aspectRatio:p.ar}}/>
+      </button>
       ${p.oos&&html`<span className="oos">Restock on request</span>`}
       <div className="pin-ov">
         <div className="r1" onClick=${e=>e.stopPropagation()}>
-          <button className="pin-board" onClick=${()=>setMenu(!menu)} aria-label="Choose board"><span>${lastBoard?.title||'Boards'}</span>${I('down',{width:14})}</button>
-          <button className=${'pin-save'+(saved?' saved':'')} onClick=${()=>saved?setMenu(true):ctx.saveTo(p.id,lastBoard.id)}>${saved?'Saved':'Save'}</button>
+          <button className="pin-board" onClick=${()=>setMenu(!menu)} aria-label=${'Choose board for '+p.name}><span>${lastBoard?.title||'Boards'}</span>${I('down',{width:14})}</button>
+          <button className=${'pin-save'+(saved?' saved':'')} aria-label=${(saved?'Saved ':'Save ')+p.name+' to board'} onClick=${()=>saved?setMenu(true):ctx.saveTo(p.id,lastBoard.id)}>${saved?'Saved':'Save'}</button>
         </div>
         <div className="r2" onClick=${e=>e.stopPropagation()}>
           <span className="pin-board" style=${{fontFamily:'var(--mono)',fontSize:11.5}}>${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span>
           <span className="row" style=${{gap:6}}>
-            <a className="pin-act" title="Save to Pinterest" aria-label="Save to Pinterest" href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'pin'))} target="_blank" rel="noopener">${I('pint')}</a>
-            <button className="pin-act" title="Place in Studio" aria-label="Place in Studio" onClick=${()=>ctx.toStudio([p.id])}>${I('brush')}</button>
-            <button className="pin-act" title="Add to project tray" aria-label="Add to project tray" onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.pin').querySelector('img'))}>${I('plus')}</button>
+            <a className="pin-act" title="Save to Pinterest" aria-label=${'Save '+p.name+' to Pinterest'} href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'pin'))} target="_blank" rel="noopener">${I('pint')}</a>
+            <button className="pin-act" title="Place in Studio" aria-label=${'Place '+p.name+' in Studio'} onClick=${()=>ctx.toStudio([p.id])}>${I('brush')}</button>
+            <button className="pin-act" title="Add to project tray" aria-label=${'Add '+p.name+' to project tray'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.pin').querySelector('img'))}>${I('plus')}</button>
           </span>
         </div>
       </div>
@@ -256,7 +261,7 @@ function Header({ctx}){
     <button className="ib hide-sm" title="Studio" aria-label="Studio" onClick=${()=>ctx.go('studio')}>${I('brush')}</button>
     <button className="ib tray-btn" id="trayBtn" title="Project tray" aria-label="Open project tray" onClick=${()=>ctx.setTray(true)}>${I('tray')}${ctx.trayCount>0&&html`<span className="badge">${ctx.trayCount}</span>`}</button>
     ${ctx.me.signedIn?html`<button className="hide-sm" onClick=${()=>ctx.go('profile')} aria-label="Your profile"><span className="avatar">${(ctx.me.businessName||ctx.me.displayName||'?')[0].toUpperCase()}</span></button>`:html`<button className="btn btn-line btn-sm hide-sm" onClick=${()=>ctx.go('welcome')}>Sign in</button>`}
-    <button className="ib" title="Menu" aria-label="Open menu" onClick=${()=>ctx.setMenu(true)}>${I('menu')}</button>
+    <button className="ib" title="Menu" aria-label="Open menu" data-modal-return-focus onClick=${()=>ctx.setMenu(true)}>${I('menu')}</button>
   </div></header>`;
 }
 const MENU = [
@@ -1220,21 +1225,16 @@ function IndexMenu({ctx}){
   const [bg,piece]=IX_PIECE[hi];
   const show=r=>({onMouseEnter:()=>setHi(r),onFocus:()=>setHi(r)});
   const close=()=>ctx.setMenu(false);const run=fn=>{close();fn()};
-  useEffect(()=>{
-    panel.current?.querySelector('.ix-main button')?.focus();
-    const k=e=>{
-      if(e.key==='Escape'){close();return}
-      if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return;
-      const links=[...(panel.current?.querySelectorAll('.ix-main button,.ix-more button')||[])];const i=links.indexOf(document.activeElement);
-      if(i<0)return;e.preventDefault();links[(i+(e.key==='ArrowDown'?1:-1)+links.length)%links.length].focus();
-    };
-    addEventListener('keydown',k);return()=>removeEventListener('keydown',k);
-  },[]);
+  const menuKeys=e=>{
+    if(e.key!=='ArrowDown'&&e.key!=='ArrowUp')return;
+    const links=[...(panel.current?.querySelectorAll('.ix-main a,.ix-more a')||[])];const i=links.indexOf(document.activeElement);
+    if(i<0)return;e.preventDefault();links[(i+(e.key==='ArrowDown'?1:-1)+links.length)%links.length].focus();
+  };
   const on=r=>ctx.route===r?'on':'';
   const sp=SPACES[ctx.space];
   const P=ctx.activeProject;const items=P.items.map(i=>({...i,p:byId(i.pid)}));
   const seats=items.reduce((s,i)=>s+i.p.seats*i.qty,0);const tot=items.reduce((s,i)=>s+pr(i.p,ctx.mode)*i.qty,0);
-  return html`<div className="ix" role="dialog" aria-modal="true" aria-label="Menu">
+  return html`<${Modal} open=${true} label="Menu" onClose=${close} initialFocus=".ix-main a"><div className="ix">
     <div className="ix-scrim" onClick=${close}>
       <div className="ix-stage" aria-hidden="true">
         <img key=${'bg'+bg} className="ix-bgimg" src=${byId(bg).img} alt=""/>
@@ -1243,12 +1243,12 @@ function IndexMenu({ctx}){
         <div className="ix-cap"><b>${IX_LABEL[hi]}</b><span>${byId(piece).name} · ${byId(piece).line}</span></div>
       </div>
     </div>
-    <div className="ix-panel" ref=${panel}>
+    <div className="ix-panel" ref=${panel} onKeyDown=${menuKeys}>
       <div className="ix-top"><span className="logo"><b>House of Louie Mae</b></span><button className="ib" onClick=${close} aria-label="Close menu">${I('x')}</button></div>
       <div className="ix-body">
         <form className="ix-search" role="search" onSubmit=${e=>{e.preventDefault();run(()=>{ctx.setQuery(q);ctx.setImgQ(null);ctx.go('discover')})}}>${I('search',{width:17})}<input aria-label="Search the House" placeholder="Search pieces, materials, rooms" value=${q} onInput=${e=>setQ(e.target.value)}/></form>
-        <nav className="ix-main" aria-label="Shop">${IX_MAIN.map(([r,l])=>html`<button key=${r} ...${show(r)} className=${on(r)} aria-current=${ctx.route===r?'page':undefined} onClick=${()=>run(()=>ctx.go(r))}>${l}</button>`)}</nav>
-        <nav className="ix-more" aria-label="Your work">${IX_MORE.map(([r,l])=>html`<button key=${r} ...${show(r)} className=${on(r)} aria-current=${ctx.route===r?'page':undefined} onClick=${()=>run(()=>ctx.go(r))}>${l}</button>`)}</nav>
+        <nav className="ix-main" aria-label="Shop">${IX_MAIN.map(([r,l])=>html`<a key=${r} href=${'#'+r} ...${show(r)} className=${on(r)} aria-current=${ctx.route===r?'page':undefined} onClick=${e=>navigatePlainLink(e,r,()=>run(()=>ctx.go(r)))}>${l}</a>`)}</nav>
+        <nav className="ix-more" aria-label="Your work">${IX_MORE.map(([r,l])=>html`<a key=${r} href=${'#'+r} ...${show(r)} className=${on(r)} aria-current=${ctx.route===r?'page':undefined} onClick=${e=>navigatePlainLink(e,r,()=>run(()=>ctx.go(r)))}>${l}</a>`)}</nav>
         <button className="ix-proj" onClick=${()=>run(()=>ctx.setTray(true))}>
           <span className="ix-proj-h"><span>Active project</span><b>${P.name}</b></span>
           ${items.length>0&&html`<span className="ix-thumbs">${items.slice(0,5).map(i=>html`<span key=${i.pid} style=${{backgroundImage:`url(${cut(i.pid)})`}}></span>`)}</span>`}
@@ -1271,7 +1271,7 @@ function IndexMenu({ctx}){
           :html`<button onClick=${()=>run(()=>ctx.go('welcome'))}>Sign in</button><button onClick=${()=>run(()=>ctx.go('account'))}>Account</button>`}</span>
       </div>
     </div>
-  </div>`;
+  </div><//>`;
 }
 
 /* ================= PRODUCT PAGE v3 ================= */
@@ -1286,7 +1286,7 @@ function PinDetail({ctx}){
   const P=ctx.tray.projects.find(x=>x.id===proj)||ctx.tray.projects[0];const Z=zone||P.zones[0];
   const pairs=useMemo(()=>pairsFor(p,3),[p.id]);
   useEffect(()=>{setQty(p.minimum||1);setBundle(pairs.map(x=>x.id));setView('studio');setScale(false);scRef.current&&scRef.current.scrollTo(0,0)},[p.id]);
-  useEffect(()=>{const k=e=>{if(document.activeElement&&['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName))return;if(e.key==='Escape')ctx.openPin(null);if(e.key==='ArrowRight')ctx.openPin(PRODUCTS[(idx+1)%PRODUCTS.length].id);if(e.key==='ArrowLeft')ctx.openPin(PRODUCTS[(idx-1+PRODUCTS.length)%PRODUCTS.length].id)};addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[idx]);
+  const productKeys=e=>{if(['INPUT','TEXTAREA','SELECT'].includes(e.target?.tagName))return;if(e.key==='ArrowRight')ctx.openPin(PRODUCTS[(idx+1)%PRODUCTS.length].id);if(e.key==='ArrowLeft')ctx.openPin(PRODUCTS[(idx-1+PRODUCTS.length)%PRODUCTS.length].id)};
   useEffect(()=>{const el=addRef.current,root=scRef.current;if(!el||!root)return;const io=new IntersectionObserver(([e])=>setMini(!e.isIntersecting&&e.boundingClientRect.top<0),{root});io.observe(el);return()=>io.disconnect()},[p.id]);
   const liked=ctx.likes.includes(p.id);const unit=pr(p,ctx.mode);
   const sim=PRODUCTS.filter(x=>x.id!==p.id).filter(x=>simF==='mat'?x.mat===p.mat:simF==='type'?x.type===p.type:true).sort((a,b)=>simF==='tone'?cdist(a.tone,p.tone)-cdist(b.tone,p.tone):0).slice(0,8);
@@ -1305,9 +1305,9 @@ function PinDetail({ctx}){
     ['delivery','Delivery & receiving',html`<ul className="pp-list"><li><b>White glove:</b> placed in the room, packaging removed.</li><li><b>Threshold:</b> delivered inside the first door.</li><li><b>Commercial dock:</b> scheduled with your receiving hours.</li></ul><p className="help">Lead time and delivery cost are confirmed with your quote before payment.</p>`],
     ['terms','Trade terms',html`<p>Trade pricing applies to verified businesses. Sales tax is charged unless a valid resale or exemption certificate is on file. Payment is due once you approve the final quote.</p>`],
   ];
-  return html`<div className="pp" ref=${scRef} role="dialog" aria-modal="true" aria-label=${p.name+' '+p.line}>
+  return html`<${Modal} open=${true} label=${p.name+' '+p.line} onClose=${()=>ctx.openPin(null)}><div className="pp" ref=${scRef} onKeyDown=${productKeys}>
     <header className="pp-bar">
-      <button className="pp-back" onClick=${()=>ctx.openPin(null)}>${I('back',{width:16})} <span className="hide-sm">Back to the floor</span></button>
+      <button className="pp-back" aria-label="Back to the floor" onClick=${()=>ctx.openPin(null)}>${I('back',{width:16})} <span className="hide-sm">Back to the floor</span></button>
       <span className="pp-crumb mono hide-sm">${CAT_OF[p.type]} / ${TYPE[p.type]} / ${p.name}</span>
       <span className="row" style=${{gap:4}}>
         <button className="ib" aria-label="Previous piece" title="Previous (←)" onClick=${()=>ctx.openPin(PRODUCTS[(idx-1+PRODUCTS.length)%PRODUCTS.length].id)}>${I('back')}</button>
@@ -1417,11 +1417,11 @@ function PinDetail({ctx}){
       <${Wall} items=${sim} ctx=${ctx}/>
     </section>
 
-    <div className=${'pp-mini'+(mini?' show':'')}>
+    <div className=${'pp-mini'+(mini?' show':'')} inert=${!mini} aria-hidden=${!mini}>
       <img src=${cut(p.id)} alt=""/><span><b>${p.name}</b><small className="mono">${fmt(unit*qty)} · ${qty} × ${ctx.mode}</small></span>
       <button className="btn btn-cog" onClick=${()=>add()}>${I('tray',{width:16})} Add to ${P.name}</button>
     </div>
-  </div>`;
+  </div><//>`;
 }
 
 /* ================= TRAY v3 ================= */
@@ -1448,7 +1448,6 @@ function QuoteComposer({ctx,onClose}){
   const [busy,setBusy]=useState(false);const [link,setLink]=useState('');const [serverErr,setServerErr]=useState('');
   const up=o=>{setSet(s=>({...s,...o}));setLink('')};
   useEffect(()=>{const {show,markup,brand,studio,email,valid,lead}=set;store('qset',{show,markup,brand,studio,email,valid,lead})},[set]);
-  useEffect(()=>{const k=e=>e.key==='Escape'&&onClose();addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[]);
   const items=proj.items.map(i=>({...i,p:byId(i.pid)}));
   const cost=items.reduce((s,i)=>s+tp(i.p)*i.qty,0);const sell=items.reduce((s,i)=>s+qSellOf(i.p,set)*i.qty,0);const profit=sell-cost;
   const errs={client:!set.client.trim()&&'Add who this is for',email:!set.email.trim()?'Add the email where approvals should go':!/^\S+@\S+\.\S+$/.test(set.email)&&'Check this email address',studio:set.brand==='studio'&&!set.studio.trim()&&'Add your studio name'};
@@ -1461,8 +1460,8 @@ function QuoteComposer({ctx,onClose}){
   const share=async()=>{const url=await make();if(url)copyText(url,ctx.toast)};
   const preview=async()=>{const url=await make();if(url){onClose();ctx.setTray(false);location.hash=url.split('#')[1]}};
   const F=(k,label,ph,type='text')=>html`<label className="qc-f"><span>${label}</span><input type=${type} value=${set[k]} placeholder=${ph} onInput=${e=>up({[k]:e.target.value})} aria-invalid=${!!(tried&&errs[k])}/>${tried&&errs[k]&&html`<em>${errs[k]}</em>`}</label>`;
-  if(!me.verified)return html`<div className="qc-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()} role="dialog" aria-modal="true" aria-label="Client quotes"><div className="qc" style=${{gridTemplateColumns:'1fr',maxWidth:560}}><button className="qc-x" aria-label="Close" onClick=${onClose}>${I('x')}</button><div className="qc-set"><h2>Client quotes</h2><p className="qc-sub">Client quotes are part of a verified trade account. Price a project at trade, add your markup, and send your client one link.</p><button className="btn btn-ink btn-lg" style=${{justifySelf:'start'}} onClick=${()=>{onClose();ctx.setTray(false);ctx.go('trade')}}>${me.signedIn&&me.tradeStatus==='pending'?'View your application':'Apply for trade'}</button></div></div></div>`;
-  return html`<div className="qc-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()} role="dialog" aria-modal="true" aria-label="Create a client quote">
+  if(!me.verified)return html`<${Modal} open=${true} label="Client quotes" onClose=${onClose}><div className="qc-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()}><div className="qc" style=${{gridTemplateColumns:'1fr',maxWidth:560}}><button className="qc-x" aria-label="Close" onClick=${onClose}>${I('x')}</button><div className="qc-set"><h2>Client quotes</h2><p className="qc-sub">Client quotes are part of a verified trade account. Price a project at trade, add your markup, and send your client one link.</p><button className="btn btn-ink btn-lg" style=${{justifySelf:'start'}} onClick=${()=>{onClose();ctx.setTray(false);ctx.go('trade')}}>${me.signedIn&&me.tradeStatus==='pending'?'View your application':'Apply for trade'}</button></div></div></div><//>`;
+  return html`<${Modal} open=${true} label="Create a client quote" onClose=${onClose}><div className="qc-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()}>
     <div className="qc">
       <button className="qc-x" aria-label="Close" onClick=${onClose}>${I('x')}</button>
       <div className="qc-set">
@@ -1507,7 +1506,7 @@ function QuoteComposer({ctx,onClose}){
         <p className="qc-fine">Prices are confirmed on our server. Your trade cost never appears on the client's page.</p>
       </div>
     </div>
-  </div>`;
+  </div><//>`;
 }
 function ClientQuote({ctx,code}){
   const sample=code==='sample';
@@ -1605,7 +1604,6 @@ function Tray({ctx}){
   const credit=useQuery(api.holmCredit.myCredit,ctx.me.signedIn?{}:'skip');const [useCredit,setUseCredit]=useState(false);useEffect(()=>{if(credit)setUseCredit(credit.autoApply)},[credit?.autoApply]);
   // Replace old saved contact/address data with a non-personal service preference only.
   useEffect(()=>{store('del',{recv:del.recv})},[del.recv]);
-  useEffect(()=>{const k=e=>e.key==='Escape'&&ctx.setTray(false);addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[]);
   useEffect(()=>{setStep(0)},[tray.active]);
   const upd=fn=>setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===t.active?fn(p):p)}));
   const missing=proj.items.filter(it=>(!BY_ID.has(it.pid)||(it.vid&&BY_ID.get(it.pid).vid!==it.vid)));
@@ -1631,15 +1629,15 @@ function Tray({ctx}){
     catch(e){setErr(e?.data||String(e?.message||'').replace(/^.*Uncaught Error: /,'').split('\n')[0]||'Something went wrong. Try again.')}finally{setBusy(false)}};
   const fld=(k,label,ph,type='text',auto)=>html`<div><label className="lbl" htmlFor=${'tv-'+k}>${label}</label><input id=${'tv-'+k} className="field" type=${type} autoComplete=${auto} value=${del[k]} placeholder=${ph} onInput=${e=>{setDel({...del,[k]:e.target.value});setErr('')}}/></div>`;
   const strip=items.flatMap(i=>Array.from({length:Math.min(i.qty,3)},(_,k)=>({...i,k})));const stripCm=strip.reduce((s,i)=>s+cmW(i.pid)+30,0);
-  return html`<div className="tray-scrim" onClick=${()=>ctx.setTray(false)}></div>
+  return html`<${Modal} open=${true} label="Project tray" onClose=${()=>ctx.setTray(false)}><div className="tray-scrim" onClick=${()=>ctx.setTray(false)}></div>
   ${qc&&html`<${QuoteComposer} ctx=${ctx} onClose=${()=>setQc(false)}/>`}
-  <section className="tv" role="dialog" aria-modal="true" aria-label="Project tray">
+  <section className="tv">
     <header className="tv-head">
       <div className="row" style=${{justifyContent:'space-between'}}>
         <h2>Project tray</h2>
         <button className="ib" aria-label="Close tray" onClick=${()=>ctx.setTray(false)}>${I('x')}</button>
       </div>
-      <div className="ptabs" role="tablist">${tray.projects.map(p=>html`<button key=${p.id} role="tab" aria-selected=${p.id===tray.active} className=${p.id===tray.active?'on':''} onClick=${()=>setTrayState(t=>({...t,active:p.id}))}>${p.name} <span className="mono ix-dim">${p.items.reduce((s,i)=>s+i.qty,0)}</span></button>`)}
+      <div className="ptabs" role="group" aria-label="Projects">${tray.projects.map(p=>html`<button key=${p.id} aria-pressed=${p.id===tray.active} className=${p.id===tray.active?'on':''} onClick=${()=>setTrayState(t=>({...t,active:p.id}))}>${p.name} <span className="mono ix-dim">${p.items.reduce((s,i)=>s+i.qty,0)}</span></button>`)}
         ${newP?html`<form className="row" onSubmit=${e=>{e.preventDefault();if(!pn.trim())return;const id=uid();setTrayState(t=>({...t,active:id,projects:[...t.projects,{id,name:pn.trim(),target:20,zones:['Main room'],items:[]}]}));setPn('');setNewP(false)}}><input className="field" style=${{height:36,width:170}} autoFocus placeholder="Project name" aria-label="New project name" value=${pn} onInput=${e=>setPn(e.target.value)}/><button className="btn btn-ink btn-sm">Add</button></form>`:html`<button onClick=${()=>setNewP(true)}>+ New project</button>`}</div>
       <ol className="tv-steps">${STEPS.map((s,i)=>html`<li key=${s} className=${i===step?'on':i<step?'done':''}><button disabled=${i>step||step===3} onClick=${()=>setStep(i)}><i>${i<step?I('check',{width:12}):i+1}</i>${s}</button></li>`)}</ol>
     </header>
@@ -1734,7 +1732,7 @@ function Tray({ctx}){
         <div className="note">${I('pin',{width:18})}<span>We confirm availability, lead time and your final price before any payment.</span></div>
       </aside>
     </div>
-  </section>`;
+  </section><//>`;
 }
 
 /* ================= STUDIO & PLANNER SHELL ================= */
@@ -3778,34 +3776,9 @@ function Account({ctx}){
   </div></main>`;
 }
 /* ================= WELCOME / LOGIN ================= */
-function Welcome({ctx}){
-  const {signIn}=useAuthActions();const ensure=useMutation(api.holm.ensureProfile);const opts=useQuery(api.holm.signInOptions);
-  // Google returns to /trade/ (OAuth adds ?code=, which can't follow a #route), so the next page waits in session storage.
-  const google=async()=>{setErr('');setBusy(true);try{sessionStorage.setItem('hol:after',ctx.afterSignIn||'home')}catch(x){}try{await signIn('google',{redirectTo:'/trade/'})}catch(x){setBusy(false);setErr('Google sign-in is not available right now. Use your email instead.')}};
-  const [flow,setFlow]=useState('signIn');const [e,setE]=useState('');const [pw,setPw]=useState('');const [err,setErr]=useState('');const [busy,setBusy]=useState(false);
-  const cols=[[1,7,12,17,4,20],[2,8,13,19,9,22],[3,10,14,21,5,11]];
-  useEffect(()=>{if(ctx.me.signedIn){ensure().catch(()=>{});ctx.go(ctx.afterSignIn||'home')}},[ctx.me.signedIn]);
-  const submit=async ev=>{ev.preventDefault();setErr('');
-    if(!/^\S+@\S+\.\S+$/.test(e))return setErr('Enter your email address.');
-    if(pw.length<8)return setErr('Use a password of at least 8 characters.');
-    setBusy(true);try{const fd=new FormData();fd.set('email',e.trim().toLowerCase());fd.set('password',pw);fd.set('flow',flow);await signIn('password',fd)}
-    catch(x){setErr(flow==='signIn'?'That email and password did not match. Try again or create an account.'+(opts?.google?' If you have signed in with Google before, use Continue with Google.':''):'We could not create that account. If you already have one, sign in instead.')}finally{setBusy(false)}};
-  return html`<main className="welcome">
-    <div className="wl-art"><div className="wl-cols">${cols.map((c,i)=>html`<div key=${i} className="wl-col">${[...c,...c].map((id,j)=>html`<img key=${j} src=${byId(id).img} alt="" loading="lazy"/>`)}</div>`)}</div>
-      <div className="wl-mark"><div><h1>House of Louie Mae</h1><p style=${{opacity:.8}}>The trade floor for rooms people remember.</p></div></div></div>
-    <div className="wl-form"><form onSubmit=${submit} noValidate>
-      <h2>${flow==='signIn'?html`Welcome <em style=${{color:'var(--cognac)'}}>back</em>`:html`Create your <em style=${{color:'var(--cognac)'}}>account</em>`}</h2>
-      <p className="mute">${flow==='signIn'?'Sign in to your projects, client quotes and trade pricing.':'Save projects, request quotes and apply for trade pricing.'}</p>
-      ${opts?.google&&html`<button type="button" className="btn btn-line btn-lg" style=${{justifyContent:'center',gap:10}} disabled=${busy} onClick=${google}><svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.4 30.2 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.8 6C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17.5z"/><path fill="#FBBC05" d="M10.5 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.2.8-4.7l-7.8-6C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.8-6z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2.1 1.4-4.8 2.3-8.4 2.3-6.3 0-11.6-4.1-13.5-9.7l-7.8 6C6.6 42.6 14.6 48 24 48z"/></svg>Continue with Google</button>
-      <div className="row" style=${{gap:10,alignItems:'center'}}><span style=${{flex:1,height:1,background:'var(--line2)'}}></span><span className="mono mute">or with email</span><span style=${{flex:1,height:1,background:'var(--line2)'}}></span></div>`}
-      <div><label className="lbl" htmlFor="le">Work email</label><input id="le" className="field" type="email" autoComplete="email" value=${e} onInput=${x=>{setE(x.target.value);setErr('')}} placeholder="you@business.com"/></div>
-      <div><label className="lbl" htmlFor="lp">Password</label><input id="lp" className="field" type="password" autoComplete=${flow==='signIn'?'current-password':'new-password'} value=${pw} onInput=${x=>{setPw(x.target.value);setErr('')}}/>${flow==='signUp'&&html`<p className="help">At least 8 characters.</p>`}</div>
-      ${err&&html`<p className="help" style=${{color:'var(--bad)'}}>${err}</p>`}
-      <button className="btn btn-ink btn-lg" style=${{justifyContent:'center'}} disabled=${busy}>${busy?'One moment…':flow==='signIn'?'Sign in':'Create account'}</button>
-      <p className="help" style=${{textAlign:'center'}}>${flow==='signIn'?html`New to the House? <button type="button" className="lnk" onClick=${()=>{setFlow('signUp');setErr('')}}>Create an account</button>`:html`Already have an account? <button type="button" className="lnk" onClick=${()=>{setFlow('signIn');setErr('')}}>Sign in</button>`}</p>
-      <p className="help" style=${{textAlign:'center'}}>By continuing you agree to our <a href="/terms" target="_blank" rel="noopener">Terms of Service</a> and <a href="/privacy" target="_blank" rel="noopener">Privacy Policy</a>.</p>
-    </form></div>
-  </main>`;
+function Welcome({ctx}) {
+  const artwork = [[1,7,12,17,4,20],[2,8,13,19,9,22],[3,10,14,21,5,11]].map(column => column.map(id => byId(id)?.img).filter(Boolean));
+  return html`<${TradeWelcome} signedIn=${ctx.me.signedIn} afterSignIn=${ctx.afterSignIn || 'home'} onNavigate=${ctx.go} artwork=${artwork}/>`;
 }
 
 /* ================= APP ================= */
@@ -3856,7 +3829,6 @@ export function App(){
   },[me.signedIn,remote]);
   const syncSave=(key,value)=>{if(!me.signedIn||!synced.current)return;const t=setTimeout(()=>saveState({key,value}).catch(()=>{}),1500);return()=>clearTimeout(t)};
   useEffect(()=>store('space',space),[space]);useEffect(()=>syncSave('tray',tray),[tray,me.signedIn]);useEffect(()=>syncSave('boards',boards),[boards,me.signedIn]);useEffect(()=>syncSave('collages',collages.map(c=>({...c,bg:c.bg?.img?.startsWith('data:')?{color:'#EFE6D8'}:c.bg,els:c.els.filter(e=>!String(e.src||'').startsWith('data:'))}))),[collages,me.signedIn]);useEffect(()=>syncSave('inspo',inspo.filter(x=>/^https?:/.test(x.src))),[inspo,me.signedIn]);useEffect(()=>store('mode',modePref),[modePref]);useEffect(()=>store('boards',boards),[boards]);useEffect(()=>store('tray',tray),[tray]);useEffect(()=>store('collages',collages),[collages]);
-  useEffect(()=>{document.body.style.overflow=(pin||trayOpen||menu)?'hidden':''},[pin,trayOpen,menu]);
   const go=r=>{if(getRoute()===r){scrollTo({top:0,behavior:'smooth'});setPin(null)}else location.hash=r};
   const toast=(msg,action)=>setToastS({msg,action,k:Date.now()});
   const activeProject=tray.projects.find(p=>p.id===tray.active);
