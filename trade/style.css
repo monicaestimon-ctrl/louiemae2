@@ -790,11 +790,11 @@ a.pin-act{text-decoration:none}
 .ix-search input{flex:1;background:none;border:0;outline:none;color:var(--ink);min-width:0;font-size:15px}
 .ix-search input::placeholder{color:var(--mute)}
 .ix-main,.ix-more{display:flex;flex-direction:column}
-.ix-main button{text-align:left;font-family:var(--display);font-size:30px;line-height:1.15;padding:6px 0;color:var(--ink)}
+.ix-main a{text-align:left;font-family:var(--display);font-size:30px;line-height:1.15;padding:6px 0;color:var(--ink)}
 .ix-more{padding-top:18px;border-top:1px solid var(--line)}
-.ix-more button{text-align:left;font-size:15px;padding:7px 0;color:var(--bark)}
-.ix-main button:hover,.ix-more button:hover,.ix-main button:focus-visible,.ix-more button:focus-visible{color:var(--cognac)}
-.ix-main button.on,.ix-more button.on{color:var(--cognac)}
+.ix-more a{text-align:left;font-size:15px;padding:7px 0;color:var(--bark)}
+.ix-main a:hover,.ix-more a:hover,.ix-main a:focus-visible,.ix-more a:focus-visible{color:var(--cognac)}
+.ix-main a.on,.ix-more a.on{color:var(--cognac)}
 .ix-dim{opacity:.55}
 .ix-set{display:flex;flex-direction:column;padding-top:12px;border-top:1px solid var(--line)}
 .ix-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;font-size:14px;color:var(--bark);text-align:left;width:100%}
@@ -2075,3 +2075,12 @@ header.top:not(.over){background:color-mix(in srgb,var(--paper) 94%,transparent)
 .ai-spin{width:36px;height:36px;border-radius:50%;border:3px solid var(--plaster,#EFE8DD);border-top-color:var(--cognac,#A0612F);animation:ai-spin 1s linear infinite;margin-bottom:10px}
 @keyframes ai-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.ai-spin{animation-duration:3s}}
+
+/* Product quick views remain native controls without nesting board/project actions. */
+.pin-open{position:relative;display:block;width:100%;padding:0;border:0;background:transparent;cursor:zoom-in}
+.pin-open:focus-visible{outline:none}
+.pin-open:focus-visible::after{content:"";position:absolute;inset:4px;border:2px solid #fff;outline:2px solid #4a3b32;pointer-events:none;z-index:2}
+.pin-ov{pointer-events:none}
+.pin-ov :is(button,a){pointer-events:auto}
+
+.ix-main a,.ix-more a{min-height:44px;display:flex;align-items:center}

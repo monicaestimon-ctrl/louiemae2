@@ -1,4 +1,4 @@
-/* global document */
+/* global document, window */
 import puppeteer from 'puppeteer-core';
 import { build } from 'esbuild';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -7,6 +7,7 @@ const fixture = `import React,{useState} from 'react';import{createRoot}from'rea
 const bundled = await build({
   stdin: { contents: fixture, resolveDir: process.cwd(), loader: 'tsx' },
   bundle: true,
+  outdir: 'artifacts/lighthouse/dialog-fixture',
   write: false,
   format: 'iife',
   define: { 'process.env.NODE_ENV': '"production"' },
@@ -22,10 +23,25 @@ try {
   await page.setContent(
     '<style>dialog{padding:30px}button{margin:10px}</style><div id="root"></div>'
   );
-  await page.addScriptTag({ content: bundled.outputFiles[0].text });
+  for (const file of bundled.outputFiles.filter((file) => file.path.endsWith('.css')))
+    await page.addStyleTag({ content: file.text });
+  await page.addScriptTag({
+    content: bundled.outputFiles.find((file) => file.path.endsWith('.js')).text,
+  });
+  await page.evaluate(() => {
+    window.backgroundEscapeCount = 0;
+    window.backgroundKeyCount = 0;
+    document.addEventListener('keydown', (event) => {
+      window.backgroundKeyCount++;
+      if (event.key === 'Escape') window.backgroundEscapeCount++;
+    });
+  });
   await page.waitForSelector('#trigger');
   await page.evaluate(() => document.body.style.setProperty('overflow', 'auto', 'important'));
   await page.click('#trigger');
+  await page.keyboard.press('ArrowRight');
+  if ((await page.evaluate(() => window.backgroundKeyCount)) !== 0)
+    throw Error('Arrow reached background shortcuts');
   const results = [];
   for (const name of ['Outer', 'Inner']) {
     if (name === 'Inner') await page.click('#nested');
@@ -57,6 +73,8 @@ try {
     throw Error(JSON.stringify(inner));
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => document.activeElement.id === 'trigger');
+  if ((await page.evaluate(() => window.backgroundEscapeCount)) !== 0)
+    throw Error('Escape reached background shortcuts');
   await page.click('#trigger');
   await page.click('#remove');
   await page.waitForFunction(() => document.activeElement.id === 'main-content');

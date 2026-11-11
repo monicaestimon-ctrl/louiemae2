@@ -1,3 +1,4 @@
+import './modal.css';
 import React, { useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -123,6 +124,10 @@ export function Modal({
       }}
       onKeyDown={(event) => {
         const dialog = event.currentTarget;
+        // Modal controls handle their own keys; inert background pages must not receive shortcuts.
+        event.stopPropagation();
+        // Native cancel owns Escape and still runs because its default is not prevented.
+        if (event.key === 'Escape') return;
         if (event.key !== 'Tab' || stacks.get(dialog.ownerDocument)?.dialogs.at(-1) !== dialog)
           return;
         const controls = focusable(dialog);
