@@ -4,7 +4,7 @@ import { sourcePropertiesValidator } from './sourcePropertiesValidator';
 import { query, mutation, internalQuery, type MutationCtx } from "./functions";
 import { ConvexError, v } from "convex/values";
 import { assertCjPricingReady } from '../lib/cjPricingReview';
-import { isCjProductStorefrontReady } from "../lib/cjFulfillmentReadiness";
+import { isProductVisibleOnStorefront } from "../lib/storefrontVisibility";
 import { productHealthProblems } from '../lib/productHealth';
 import { hasCjVariantQueueFootprint, getCjVariantMappingSummary, compareCjVariantQueueRows } from '../lib/cjVariantQueue';
 import { requireCjAdminIdentity } from "./cjAdminAccess";
@@ -149,24 +149,6 @@ const customerVariantValidator = v.object({
     cjVariantId: v.optional(v.string()),
     cjSku: v.optional(v.string()),
 });
-
-const isProductVisibleOnStorefront = (product: {
-    storefrontStatus?: "published" | "hidden" | "next_launch";
-    cjSourcingStatus?: "pending" | "approved" | "rejected" | "none";
-    cjSourcingJobId?: Id<"cjSourcingJobs">;
-    cjSourcingState?: string;
-    cjFulfillmentReadiness?: "not_required" | "not_ready" | "mapping_required" | "ready" | "blocked";
-    inStock?: boolean;
-    cjInventoryStatus?: string;
-    cjProductId?: string;
-    cjVariantId?: string;
-    cjSku?: string;
-}) => {
-    const visibilityReady = !product.storefrontStatus || product.storefrontStatus === "published";
-    const fulfillmentReady = isCjProductStorefrontReady(product);
-    const inventoryReady = product.inStock !== false && product.cjInventoryStatus !== "out_of_stock";
-    return visibilityReady && fulfillmentReady && inventoryReady;
-};
 
 const buildProductSearchText = (product: {
     name?: string;

@@ -12,6 +12,12 @@ import { AiConcierge } from './components/AiConcierge';
 import { SiteMenu } from './components/SiteMenu';
 import { DesktopNavigation } from './components/DesktopNavigation';
 import { navigatePlainLink } from './lib/navigation';
+import {
+  navigateStorefront,
+  productRoute,
+  productUrl,
+  storefrontRoute,
+} from './lib/storefrontNavigation';
 import { HomePage } from './components/HomePage';
 import { DynamicPage } from './components/DynamicPage';
 import { NewsletterPopup } from './components/NewsletterPopup';
@@ -41,6 +47,7 @@ const StoryPage = named(() => import('./components/StoryPage'), 'StoryPage');
 const BlogPage = named(() => import('./components/BlogPage'), 'BlogPage');
 const BlogPostView = named(() => import('./components/BlogPostView'), 'BlogPostView');
 const AdminPage = named(() => import('./components/AdminPage'), 'AdminPage');
+const ProductPage = named(() => import('./components/ProductPage'), 'ProductPage');
 const StorePage = named(() => import('./components/StorePage'), 'StorePage');
 const SupportPage = named(() => import('./components/SupportPage'), 'SupportPage');
 const CreatorHub = lazy(() => loadModule(() => import('./components/CreatorHub')));
@@ -114,7 +121,7 @@ const AppContent = () => {
         .catch(() => ({ kind: 'home' as const }));
       const target =
         dest.kind === 'product'
-          ? `/#collection/${dest.collection}?product=${encodeURIComponent(dest.productId)}${dest.variantId ? `&variant=${encodeURIComponent(dest.variantId)}` : ''}`
+          ? productUrl(dest.productId, dest.variantId)
           : dest.kind === 'page'
             ? safeRedirect(dest.path)
             : '/';
@@ -148,45 +155,51 @@ const AppContent = () => {
   // The menu's contents are built the first time it opens, then kept for the fade.
   const [mobileMenuBuilt, setMobileMenuBuilt] = useState(false);
   const wideNav = useSyncExternalStore(subscribeWideNav, isWideNav);
-  const [activePage, setActivePage] = useState<string>('home');
+  const [activePage, setActivePage] = useState(() => storefrontRoute(window.location));
   const [searchOpen, setSearchOpen] = useState(false);
-  const [, setSelectedProductId] = useState<string | null>(null); // TODO: Wire to product detail navigation
+  const [searchInitialTerm, setSearchInitialTerm] = useState('');
+  const closeSearch = () => {
+    setSearchOpen(false);
+    const state = { ...window.history.state };
+    delete state.lmSearch;
+    window.history.replaceState(state, '', window.location.href);
+  };
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener('scroll', handleScroll);
 
-    // Hash handler
     const handleHash = () => {
-      // Let /admin work as a real entry path so it survives domain redirects.
-      const isAdminPath = window.location.pathname.replace(/\/+$/, '') === '/admin';
-      const fullHash = isAdminPath ? '#admin' : window.location.hash;
-      // Split query params to determine main route
-      const [baseHash] = fullHash.split('?');
-
-      if (baseHash === '#admin') setActivePage('admin');
-      else if (baseHash === '#blog') setActivePage('blog');
-      else if (baseHash.startsWith('#blog/')) setActivePage(baseHash);
-      else if (baseHash === '#story') setActivePage('story');
-      else if (baseHash === '#shop') setActivePage('shop');
-      else if (baseHash === '#new-arrivals') setActivePage('new-arrivals');
-      else if (baseHash === '#creators') setActivePage('creators');
-      else if (baseHash.startsWith('#support')) setActivePage(fullHash);
-      else if (baseHash === '#checkout/success') setActivePage('checkout-success');
-      else if (baseHash === '#checkout/cancel') setActivePage('checkout-cancel');
-      else if (baseHash.startsWith('#pages/')) setActivePage(baseHash);
-      else if (baseHash === '#collection/new') setActivePage('new-collection');
-      else if (baseHash.startsWith('#collection/'))
-        setActivePage(fullHash); // Pass full hash to parse query later
-      else setActivePage('home');
+      const route = storefrontRoute(window.location);
+      if (route.startsWith('/products/') && !window.location.pathname.startsWith('/products')) {
+        const url = new URL(route, window.location.origin);
+        const params = new URLSearchParams(window.location.search);
+        for (const [key, value] of url.searchParams) params.set(key, value);
+        url.search = params.toString();
+        window.history.replaceState(window.history.state, '', url.pathname + url.search);
+      }
+      // Existing hash links must leave the product path, including links from the footer.
+      if (window.location.pathname.startsWith('/products') && !route.startsWith('/products/')) {
+        window.history.replaceState(
+          window.history.state,
+          '',
+          '/' + window.location.search + window.location.hash
+        );
+      }
+      setActivePage(route);
+      const savedSearch = window.history.state?.lmSearch;
+      setSearchInitialTerm(typeof savedSearch === 'string' ? savedSearch.slice(0, 80) : '');
+      setSearchOpen(typeof savedSearch === 'string');
     };
 
     handleHash(); // Initial check
     window.addEventListener('hashchange', handleHash);
+    window.addEventListener('popstate', handleHash);
 
     return () => {
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('hashchange', handleHash);
+      window.removeEventListener('popstate', handleHash);
     };
   }, []);
 
@@ -194,34 +207,12 @@ const AppContent = () => {
 
   const handleNavigation = (href: string) => {
     setMobileMenuOpen(false);
-    window.location.hash = href;
-
-    // Fallback if hashchange doesn't fire immediately
-    const [baseHash] = href.split('?');
-    if (baseHash === '#story') setActivePage('story');
-    else if (baseHash === '#blog') setActivePage('blog');
-    else if (baseHash.startsWith('#blog/')) setActivePage(baseHash);
-    else if (baseHash === '#admin') setActivePage('admin');
-    else if (baseHash === '#shop') setActivePage('shop');
-    else if (baseHash === '#new-arrivals') setActivePage('new-arrivals');
-    else if (baseHash === '#creators') setActivePage('creators');
-    else if (baseHash.startsWith('#support')) setActivePage(href);
-    else if (baseHash.startsWith('#pages/')) setActivePage(baseHash);
-    else if (baseHash === '#collection/new') setActivePage('new-collection');
-    else if (baseHash.startsWith('#collection/')) setActivePage(href);
-    else setActivePage('home');
-
-    // For support sections, don't scroll to top — let SupportPage handle scrolling to the section
-    if (!baseHash.startsWith('#support')) {
-      // Instant scroll to top — smooth scroll gets canceled by re-renders on mobile
-      window.scrollTo(0, 0);
-      // Fallback after React re-render completes
-      requestAnimationFrame(() => window.scrollTo(0, 0));
-    }
+    navigateStorefront(href, { scroll: !href.startsWith('#support') });
   };
 
   // Dynamic meta tags per page
   useEffect(() => {
+    if (productRoute(activePage)) return; // Product metadata belongs to its current detail query.
     const BASE_URL = 'https://louiemae.com';
     const setMeta = (selector: string, content: string) => {
       const el = document.querySelector(selector);
@@ -289,7 +280,10 @@ const AppContent = () => {
   let currentView: React.ReactNode = <HomePage />;
   let dynamicPageData = null;
 
-  if (activePage === 'admin') currentView = <AdminPage />;
+  const selectedProductRoute = productRoute(activePage);
+  if (selectedProductRoute)
+    currentView = <ProductPage key={selectedProductRoute.id} {...selectedProductRoute} />;
+  else if (activePage === 'admin') currentView = <AdminPage />;
   else if (activePage === 'blog') currentView = <BlogPage />;
   else if (activePage.startsWith('#blog/')) {
     const postId = activePage.replace('#blog/', '');
@@ -453,20 +447,21 @@ const AppContent = () => {
 
       {/* Search Modal */}
       {searchOpen && (
-        <Modal
-          open
-          label="Search"
-          onClose={() => setSearchOpen(false)}
-          className="bg-earth text-cream"
-        >
-          <ErrorBoundary fallback={<SearchLoadState failed onClose={() => setSearchOpen(false)} />}>
-            <Suspense fallback={<SearchLoadState onClose={() => setSearchOpen(false)} />}>
+        <Modal open label="Search" onClose={closeSearch} className="bg-earth text-cream">
+          <ErrorBoundary fallback={<SearchLoadState failed onClose={closeSearch} />}>
+            <Suspense fallback={<SearchLoadState onClose={closeSearch} />}>
               <SearchModal
+                key={`${activePage}:${searchInitialTerm}`}
                 isOpen={searchOpen}
-                onClose={() => setSearchOpen(false)}
-                onProductClick={(productId) => {
-                  setSelectedProductId(productId);
-                  setSearchOpen(false);
+                onClose={closeSearch}
+                initialTerm={searchInitialTerm}
+                onProductClick={(productId, term) => {
+                  window.history.replaceState(
+                    { ...window.history.state, lmSearch: term },
+                    '',
+                    window.location.href
+                  );
+                  navigateStorefront(productUrl(productId));
                 }}
               />
             </Suspense>

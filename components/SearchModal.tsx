@@ -3,25 +3,31 @@ import { X, Search, ArrowRight } from 'lucide-react';
 import { useRecoverableQuery } from '../contexts/useRecoverableQuery';
 import { api } from '../convex/_generated/api';
 import { SafeImage } from './SafeImage';
+import { navigatePlainLink } from '../lib/navigation';
+import { productUrl } from '../lib/storefrontNavigation';
+import { PaginatedSearchResults } from './PaginatedSearchResults';
 
 interface SearchModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onProductClick: (productId: string) => void;
+    onProductClick: (productId: string, term: string) => void;
+    initialTerm?: string;
 }
 
-export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onProductClick }) => {
-    const [searchTerm, setSearchTerm] = useState('');
-    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onProductClick, initialTerm = '' }) => {
+    const [searchTerm, setSearchTerm] = useState(initialTerm);
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(initialTerm);
     const inputRef = useRef<HTMLInputElement>(null);
     const normalizedSearchTerm = searchTerm.trim();
     useEffect(() => {
         const timer = window.setTimeout(() => setDebouncedSearchTerm(normalizedSearchTerm), 250);
         return () => window.clearTimeout(timer);
     }, [normalizedSearchTerm]);
+    const readiness = useRecoverableQuery(api.publicSearch.status, isOpen ? {} : 'skip');
+    const unified = readiness.data?.ready === true;
     const search = useRecoverableQuery(
         api.products.searchStorefront,
-        isOpen && debouncedSearchTerm.length >= 2
+        isOpen && !unified && debouncedSearchTerm.length >= 2
             ? { term: debouncedSearchTerm, limit: 20 }
             : 'skip',
     );
@@ -47,7 +53,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
     }, [isOpen]);
 
     const handleProductClick = (productId: string) => {
-        onProductClick(productId);
+        onProductClick(productId, normalizedSearchTerm);
         handleClose();
     };
 
@@ -98,6 +104,8 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
                         <div className="text-center py-16">
                             <p className="text-muted-cream text-sm font-light tracking-wide">Type at least two characters to search products...</p>
                         </div>
+                    ) : unified && normalizedSearchTerm === debouncedSearchTerm ? (
+                        <PaginatedSearchResults key={debouncedSearchTerm} term={debouncedSearchTerm} onSelect={handleProductClick} />
                     ) : searchUnavailable ? (
                         <div role="status" className="text-center py-16 text-cream">
                             <p>Search is temporarily unavailable. Your search has been kept.</p>
@@ -118,9 +126,10 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
                             </p>
                             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
                                 {results.map(product => (
-                                    <button
+                                    <a
                                         key={product._id}
-                                        onClick={() => handleProductClick(product._id)}
+                                        href={productUrl(product._id)}
+                                        onClick={event => navigatePlainLink(event, productUrl(product._id), () => handleProductClick(product._id))}
                                         className="group text-left bg-white/5 backdrop-blur-lg rounded-2xl overflow-hidden border border-white/10 hover:border-bronze/40 hover:bg-white/10 hover:-translate-y-1 hover:shadow-[0_15px_30px_rgba(0,0,0,0.3)] transition-all duration-300"
                                     >
                                         <div className="aspect-square overflow-hidden bg-black/20 relative">
@@ -150,7 +159,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
                                                 <ArrowRight className="w-4 h-4 text-muted-cream group-hover:text-[#D6B99C] group-hover:translate-x-1 transition-all duration-300" />
                                             </div>
                                         </div>
-                                    </button>
+                                    </a>
                                 ))}
                             </div>
                         </>
