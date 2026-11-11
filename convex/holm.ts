@@ -17,7 +17,8 @@ import { requireCjAdminIdentity } from './cjAdminAccess';
 import { listingReady } from './commerceReadiness';
 import { address } from './commerceTables';
 import { clientShow, holmBusinessType } from './holmTables';
-import { assetIndex, publicAssets } from './holmAssets';
+import { assetIndex, assetsFor, publicAssets } from './holmAssets';
+import { catalogPageOptions } from '../lib/catalogPagination';
 import { checkQuantity, totalLines } from '../lib/commerce';
 import { reserveCredit } from './holmCredit';
 import { deliveryCents, freightFor } from '../lib/holmDelivery';
@@ -193,7 +194,46 @@ export async function houseUnitCosts(
 }
 
 // ---------- catalog ----------
-/** Main floor: bounded pages, current canonical prices, and no legacy pricing fallback for Zuo. */
+/** Resolve a House listing through the same current authority for pages and saved identities. */
+async function catalogItem(ctx: QueryCtx, listing: Doc<'commerceListings'>, trade: boolean, now: number) {
+  const product = await ctx.db.get(listing.productId);
+  if (!product || !listing.published || listing.channel !== 'house') return null;
+  const s = listing.snapshot;
+  let variants: { id: string; name: string; image?: string; minimum: number; increment: number; retail: number; trade: number | null }[] = [];
+  let inStock = true;
+  if (product.provider === 'zuo') {
+    if (!flag('TRADE_CHECKOUT_V2_ENABLED')) return null;
+    for (const option of s.variants) {
+      const id = ctx.db.normalizeId('catVariants', option.id);
+      if (!id) continue;
+      try {
+        const cv = await assertSellable(ctx, id, 'estimate', now);
+        const retail = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
+        const approved = cv.tradePriceRevisionId ? await ctx.db.get(cv.tradePriceRevisionId) : null;
+        if (cv.productId !== product._id || !isCurrentPrice(retail, id, 'retail', now) ||
+          !isCurrentPrice(approved, id, 'trade', now) || approved.packPriceMinor !== option.price) continue;
+        variants.push({ id, name: option.name, image: option.image, minimum: cv.orderMinimumPacks,
+          increment: cv.orderIncrementPacks, retail: retail.packPriceMinor, trade: trade ? approved.packPriceMinor : null });
+      } catch (error) {
+        if (!isCommerceError(error)) throw error;
+      }
+    }
+  } else {
+    const priced = await pricedListing(ctx, listing);
+    if (!priced) return null;
+    inStock = priced.inStock;
+    variants = priced.variants.map(x => ({ id: x.id, name: x.name, image: x.image,
+      minimum: x.minimum, increment: x.increment, retail: x.retail, trade: trade ? x.trade : null }));
+  }
+  if (!variants.length) return null;
+  const imageMedia = s.imageMedia?.filter(m => m.variantIds.some(id => variants.some(v => v.id === id)));
+  return { id: product._id, name: s.name, description: s.description, category: s.category,
+    images: imageMedia ? imageMedia.map(m => m.url) : s.images, imageMedia, facts: s.facts,
+    assets: await publicAssets(ctx, (await assetsFor(ctx, product._id)) ?? undefined, s.facts), inStock, variants,
+    checkoutMode: product.provider === 'zuo' ? 'v2' as const : 'quote' as const };
+}
+
+/** Bounded source pages retain their cursor even when current eligibility removes all candidates. */
 export const catalogPage = query({
   args: { paginationOpts: paginationOptsValidator },
   handler: async (ctx, a) => {
@@ -203,48 +243,34 @@ export const catalogPage = query({
     const trade = !!me && isVerified(me.profile);
     const page = await ctx.db.query('commerceListings')
       .withIndex('by_channel_published', q => q.eq('channel', 'house').eq('published', true))
-      .paginate(a.paginationOpts);
-    const assets = await assetIndex(ctx);
-    const items = [];
+      .paginate(catalogPageOptions(a.paginationOpts, 24, 1_000_000));
     const now = Date.now();
+    const items = [];
     for (const listing of page.page) {
-      const product = await ctx.db.get(listing.productId);
-      if (!product) continue;
-      const s = listing.snapshot;
-      let variants: { id: string; name: string; image?: string; minimum: number; increment: number; retail: number; trade: number | null }[] = [];
-      let inStock = true;
-      if (product.provider === 'zuo') {
-        if (!flag('TRADE_CHECKOUT_V2_ENABLED')) continue;
-        for (const option of s.variants) {
-          const id = ctx.db.normalizeId('catVariants', option.id);
-          if (!id) continue;
-          try {
-            const cv = await assertSellable(ctx, id, 'estimate', now);
-            const retail = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
-            const approved = cv.tradePriceRevisionId ? await ctx.db.get(cv.tradePriceRevisionId) : null;
-            if (cv.productId !== product._id || !isCurrentPrice(retail, id, 'retail', now) ||
-              !isCurrentPrice(approved, id, 'trade', now) || approved.packPriceMinor !== option.price) continue;
-            variants.push({ id, name: option.name, image: option.image, minimum: cv.orderMinimumPacks,
-              increment: cv.orderIncrementPacks, retail: retail.packPriceMinor, trade: trade ? approved.packPriceMinor : null });
-          } catch (error) {
-            if (!isCommerceError(error)) throw error;
-          }
-        }
-      } else {
-        const priced = await pricedListing(ctx, listing);
-        if (!priced) continue;
-        inStock = priced.inStock;
-        variants = priced.variants.map(x => ({ id: x.id, name: x.name, image: x.image,
-          minimum: x.minimum, increment: x.increment, retail: x.retail, trade: trade ? x.trade : null }));
-      }
-      if (!variants.length) continue;
-      const imageMedia = s.imageMedia?.filter(m => m.variantIds.some(id => variants.some(v => v.id === id)));
-      items.push({ id: product._id, name: s.name, description: s.description, category: s.category,
-        images: imageMedia ? imageMedia.map(m => m.url) : s.images, imageMedia, facts: s.facts,
-        assets: await publicAssets(ctx, assets.get(product._id), s.facts), inStock, variants,
-        checkoutMode: product.provider === 'zuo' ? 'v2' as const : 'quote' as const });
+      const item = await catalogItem(ctx, listing, trade, now);
+      if (item) items.push(item);
     }
     return { ...page, page: items };
+  },
+});
+
+/** Resolve explicit saved identities independently of the loaded page, without exposing private prices. */
+export const catalogItems = query({
+  args: { productIds: v.array(v.id('commerceProducts')) },
+  handler: async (ctx, args) => {
+    if (args.productIds.length > 24) throw new CommerceError('INVALID_INPUT');
+    const me = await viewer(ctx);
+    const trade = !!me && isVerified(me.profile);
+    const now = Date.now();
+    const results = [];
+    for (const productId of new Set(args.productIds)) {
+      const listing = await ctx.db.query('commerceListings')
+        .withIndex('by_product_channel', q => q.eq('productId', productId).eq('channel', 'house'))
+        .unique();
+      const item = listing ? await catalogItem(ctx, listing, trade, now) : null;
+      results.push({ productId, item });
+    }
+    return results;
   },
 });
 
