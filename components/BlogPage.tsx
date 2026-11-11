@@ -43,7 +43,7 @@ export const BlogPage: React.FC = () => {
 
    if (!featuredPost) {
       return (
-         <div className="min-h-screen bg-cream flex items-center justify-center">
+         <main className="min-h-screen bg-cream flex items-center justify-center">
             <FadeIn>
                <h1 className="font-serif text-4xl text-earth">Simply Mae</h1>
                <p role="status" className="mt-6 text-earth">
@@ -53,12 +53,12 @@ export const BlogPage: React.FC = () => {
                </p>
                <a href="#shop" className="mt-6 inline-block underline text-earth">Continue shopping</a>
             </FadeIn>
-         </div>
+         </main>
       );
    }
 
    return (
-      <div className="bg-cream min-h-screen pt-32 pb-20 w-full overflow-hidden">
+      <main className="bg-cream min-h-screen pt-32 pb-20 w-full overflow-hidden">
          {/* Header */}
          <section className="px-6 md:px-12 mb-20 text-center relative">
             <div aria-hidden="true" className="mx-auto mb-6 h-10 w-px bg-gradient-to-b from-transparent to-bronze/40" />
@@ -67,10 +67,10 @@ export const BlogPage: React.FC = () => {
                <h1 className="font-serif text-5xl sm:text-6xl md:text-8xl text-earth mb-6 leading-tight tracking-tight">Simply Mae</h1>
                <div className="flex items-center justify-center gap-4 mb-6">
                   <div className="h-px w-8 bg-earth/20"></div>
-                  <p className="font-serif text-earth/70 text-xl italic">Curated Reflections</p>
+                  <p className="font-serif text-muted-earth text-xl italic">Curated Reflections</p>
                   <div className="h-px w-8 bg-earth/20"></div>
                </div>
-               <p className="font-sans text-earth/60 max-w-lg mx-auto leading-relaxed text-sm tracking-wide">
+               <p className="font-sans text-muted-earth max-w-lg mx-auto leading-relaxed text-sm tracking-wide">
                   On faith, family, design, and finding beauty in the everyday rhythms of life.
                </p>
             </FadeIn>
@@ -106,7 +106,7 @@ export const BlogPage: React.FC = () => {
                         <h2 className="font-serif text-4xl md:text-6xl text-earth mb-6 group-hover:text-bronze transition-colors duration-300 leading-tight">
                            {featuredPost.title}
                         </h2>
-                        <p className="font-sans text-earth/70 leading-loose mb-8 text-sm md:text-base max-w-2xl mx-auto">
+                        <p className="font-sans text-muted-earth leading-loose mb-8 text-sm md:text-base max-w-2xl mx-auto">
                            {featuredPost.excerpt}
                         </p>
                         <button
@@ -126,7 +126,7 @@ export const BlogPage: React.FC = () => {
             <div className="container mx-auto">
                <FadeIn className="mb-12 flex items-baseline justify-between border-b border-earth/10 pb-4">
                   <h3 className="font-serif text-3xl text-earth">Blog</h3>
-                  <span className="text-[10px] uppercase tracking-widest text-earth/50 hidden md:inline-block">Archive</span>
+                  <span className="text-[10px] uppercase tracking-widest text-muted-earth hidden md:inline-block">Archive</span>
                </FadeIn>
 
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">
@@ -147,14 +147,14 @@ export const BlogPage: React.FC = () => {
                            </div>
 
                            <div className="flex flex-col flex-1 items-start pr-4">
-                              <div className="flex items-center gap-2 mb-3 text-[9px] uppercase tracking-widest text-earth/40">
+                              <div className="flex items-center gap-2 mb-3 text-[9px] uppercase tracking-widest text-muted-earth">
                                  <Calendar className="w-3 h-3" />
                                  <span>{post.date}</span>
                               </div>
                               <h3 className="font-serif text-2xl md:text-3xl text-earth mb-4 leading-tight group-hover:text-bronze transition-colors duration-300">
                                  {post.title}
                               </h3>
-                              <p className="font-sans text-earth/60 text-sm leading-relaxed mb-6 line-clamp-3">
+                              <p className="font-sans text-muted-earth text-sm leading-relaxed mb-6 line-clamp-3">
                                  {post.excerpt}
                               </p>
                               <div className="mt-auto pt-4 w-full border-t border-earth/5 flex justify-between items-center opacity-60 group-hover:opacity-100 transition-opacity duration-300">
@@ -180,7 +180,7 @@ export const BlogPage: React.FC = () => {
                <h3 className="font-serif text-3xl md:text-5xl text-earth italic mb-8 leading-tight">
                   "Simplicity is the ultimate sophistication."
                </h3>
-               <p className="font-sans text-xs uppercase tracking-[0.25em] text-earth/40 mb-10">— Leonardo da Vinci</p>
+               <p className="font-sans text-xs uppercase tracking-[0.25em] text-muted-earth mb-10">— Leonardo da Vinci</p>
 
                <form onSubmit={(event) => { event.preventDefault(); void handleSubscribe(); }} className="flex flex-col md:flex-row items-center justify-center gap-4 max-w-md mx-auto">
                   <input
@@ -201,6 +201,6 @@ export const BlogPage: React.FC = () => {
                {subscribeError && <p role="status" className="mt-4 text-sm text-earth">{subscribeError}</p>}
             </FadeIn>
          </section>
-      </div>
+      </main>
    );
 };

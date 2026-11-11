@@ -29,8 +29,8 @@ function RecommendationResults({ config, onOpen, retry }: Props & { retry: () =>
           <div data-catalog-ready={readiness?.ready === true && !recommendations.loading && recommendations.products.length > 0 ? 'true' : 'false'} className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
             {recommendations.products.map((product, idx) => (
               <FadeIn key={product.id} delay={idx * 100} className="group cursor-pointer">
-                <div
-                  className="relative aspect-square overflow-hidden bg-white mb-4 rounded-2xl shadow-sm hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-500 border border-earth/5"
+                <button type="button" aria-label={`Quick view ${product.name}`}
+                  className="block w-full relative aspect-square overflow-hidden bg-white mb-4 rounded-2xl shadow-sm hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-500 border border-earth/5"
                   onClick={() => onOpen(product.id)}
                 >
                   {product.isNew && (
@@ -45,15 +45,15 @@ function RecommendationResults({ config, onOpen, retry }: Props & { retry: () =>
                   />
 
                   {/* Quick View Overlay (Glass) */}
-                  <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-full group-hover:translate-y-0 transition-transform duration-500">
-                    <button className="w-full bg-white/80 backdrop-blur-md text-earth border border-white/50 py-3 rounded-lg text-[10px] uppercase tracking-[0.2em] shadow-[0_10px_20px_rgba(0,0,0,0.1)] hover:bg-earth hover:text-white transition-colors duration-300">
+                  <span className="absolute bottom-0 left-0 right-0 p-4 translate-y-0 md:translate-y-full md:group-hover:translate-y-0 group-focus-within:translate-y-0 transition-transform duration-500">
+                    <span className="block w-full bg-white/80 backdrop-blur-md text-earth border border-white/50 py-3 rounded-lg text-[10px] uppercase tracking-[0.2em] shadow-[0_10px_20px_rgba(0,0,0,0.1)] hover:bg-earth hover:text-white transition-colors duration-300">
                       Quick View
-                    </button>
-                  </div>
-                </div>
-                <div onClick={() => onOpen(product.id)} className="px-1">
+                    </span>
+                  </span>
+                </button>
+                <div className="px-1">
                   <h3 className="font-serif text-lg md:text-xl text-earth leading-tight mb-1 group-hover:text-bronze transition-colors">
-                    {product.name}
+                    <button type="button" onClick={() => onOpen(product.id)}>{product.name}</button>
                   </h3>
                   {!product.inStock && <p className="text-xs uppercase tracking-widest text-bronze">Coming Soon</p>}<p className="font-serif italic text-earth/80 text-base group-hover:text-bronze/80 transition-colors">${product.price}</p>
                 </div>

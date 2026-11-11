@@ -1,3 +1,5 @@
+import { navigatePlainLink } from '../lib/navigation';
+import { Modal } from './Modal';
 
 import React, { useEffect, useState } from 'react';
 import ProductDeliveryEstimate from './delivery/ProductDeliveryEstimate';
@@ -38,7 +40,7 @@ export const HomePage: React.FC = () => {
   useEffect(() => {
     const shell = heroShell();
     const p = shell?.querySelector('p');
-    const h2 = shell?.querySelector('h2');
+    const h2 = shell?.querySelector('h1');
     const line2 = h2?.querySelector('span');
     if (!p || !h2?.firstChild || !line2) return;
     if (p.textContent !== home.hero.pretitle) p.textContent = home.hero.pretitle;
@@ -118,10 +120,10 @@ export const HomePage: React.FC = () => {
           <div className="absolute inset-0 bg-black/20 z-10"></div>
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-center px-6">
             <p className="motion-safe:animate-hero-in text-white/90 text-xs md:text-base uppercase tracking-[0.3em] mb-6">{home.hero.pretitle}</p>
-            <h2 className="motion-safe:animate-hero-rise font-serif text-[2.75rem] sm:text-5xl md:text-7xl lg:text-8xl text-cream leading-[1.08] mb-10 drop-shadow-lg max-w-5xl text-balance">
+            <h1 className="motion-safe:animate-hero-rise font-serif text-[2.75rem] sm:text-5xl md:text-7xl lg:text-8xl text-cream leading-[1.08] mb-10 drop-shadow-lg max-w-5xl text-balance">
               {home.hero.titleLine1}<br />
               <span className="italic">{home.hero.titleLine2}</span>
-            </h2>
+            </h1>
             <div className="motion-safe:animate-hero-in [animation-delay:300ms]">
               <GlassButton
                 onClick={() => navigateTo('#collection/new')}
@@ -150,102 +152,102 @@ export const HomePage: React.FC = () => {
           {/* Top Row: Furniture & Decor */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
             {/* Furniture */}
-            <div
+            <a
               id="furniture"
-              onClick={() => navigateTo('#collection/furniture')}
-              className="relative group cursor-pointer aspect-[4/3] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
+              href={'#collection/furniture'} onClick={event => navigatePlainLink(event, '#collection/furniture', navigateTo)}
+              className="block relative group cursor-pointer aspect-[4/3] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
                 loading="lazy"
                 decoding="async"
                 {...responsiveImage(home.categoryImages.furniture, '(min-width: 1024px) 50vw, 100vw')}
-                alt="Furniture"
+                alt=""
                 className="w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-105"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent group-hover:opacity-80 transition-opacity duration-500"></div>
               <div className="absolute bottom-6 left-6 md:bottom-8 md:left-8 transform transition-transform duration-500 group-hover:-translate-y-2">
                 <h2 className="font-serif text-2xl md:text-3xl text-white tracking-wide drop-shadow-md">Furniture</h2>
               </div>
-            </div>
+            </a>
 
             {/* Decor */}
-            <div
+            <a
               id="decor"
-              onClick={() => navigateTo('#collection/decor')}
-              className="relative group cursor-pointer aspect-[4/3] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
+              href={'#collection/decor'} onClick={event => navigatePlainLink(event, '#collection/decor', navigateTo)}
+              className="block relative group cursor-pointer aspect-[4/3] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
                 loading="lazy"
                 decoding="async"
                 {...responsiveImage(home.categoryImages.decor, '(min-width: 1024px) 50vw, 100vw')}
-                alt="Decor"
+                alt=""
                 className="w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-105"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent group-hover:opacity-80 transition-opacity duration-500"></div>
               <div className="absolute bottom-6 left-6 md:bottom-8 md:left-8 transform transition-transform duration-500 group-hover:-translate-y-2">
                 <h2 className="font-serif text-2xl md:text-3xl text-white tracking-wide drop-shadow-md">Decor</h2>
               </div>
-            </div>
+            </a>
           </div>
 
           {/* Bottom Row: Mae Collective, Kids, Blog */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
             {/* The Mae Collective */}
-            <div
+            <a
               id="fashion"
-              onClick={() => navigateTo('#collection/fashion')}
-              className="relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
+              href={'#collection/fashion'} onClick={event => navigatePlainLink(event, '#collection/fashion', navigateTo)}
+              className="block relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
                 loading="lazy"
                 decoding="async"
                 {...responsiveImage(home.categoryImages.fashion, '(min-width: 1024px) 50vw, 100vw')}
-                alt="The Mae Collective"
+                alt=""
                 className="w-full h-full object-cover object-top transition-transform duration-[1.5s] group-hover:scale-105"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent group-hover:opacity-80 transition-opacity duration-500"></div>
               <div className="absolute bottom-6 left-6 md:bottom-8 md:left-8 transform transition-transform duration-500 group-hover:-translate-y-2">
                 <h3 className="font-serif text-2xl md:text-3xl text-white drop-shadow-md">The Mae Collective</h3>
               </div>
-            </div>
+            </a>
 
             {/* Louie Kids & Co. */}
-            <div
+            <a
               id="kids"
-              onClick={() => navigateTo('#collection/kids')}
-              className="relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
+              href={'#collection/kids'} onClick={event => navigatePlainLink(event, '#collection/kids', navigateTo)}
+              className="block relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
                 loading="lazy"
                 decoding="async"
                 {...responsiveImage(home.categoryImages.kids, '(min-width: 1024px) 50vw, 100vw')}
-                alt="Louie Kids & Co."
+                alt=""
                 className="w-full h-full object-cover object-top transition-transform duration-[1.5s] group-hover:scale-105"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent group-hover:opacity-80 transition-opacity duration-500"></div>
               <div className="absolute bottom-6 left-6 md:bottom-8 md:left-8 transform transition-transform duration-500 group-hover:-translate-y-2">
                 <h3 className="font-serif text-2xl md:text-3xl text-white drop-shadow-md">Louie Kids & Co.</h3>
               </div>
-            </div>
+            </a>
 
             {/* Blog */}
-            <div
+            <a
               id="journal"
-              onClick={() => navigateTo('#blog')}
-              className="relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
+              href={'#blog'} onClick={event => navigatePlainLink(event, '#blog', navigateTo)}
+              className="block relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
                 loading="lazy"
                 decoding="async"
                 {...responsiveImage(home.categoryImages.journal, '(min-width: 1024px) 50vw, 100vw')}
-                alt="Blog"
+                alt=""
                 className="w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-105"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent group-hover:opacity-80 transition-opacity duration-500"></div>
               <div className="absolute bottom-6 left-6 md:bottom-8 md:left-8 transform transition-transform duration-500 group-hover:-translate-y-2">
                 <h3 className="font-serif text-2xl md:text-3xl text-white drop-shadow-md">Blog</h3>
               </div>
-            </div>
+            </a>
           </div>
 
         </div>
@@ -271,9 +273,9 @@ export const HomePage: React.FC = () => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
             {FASHION_CATEGORIES.map((cat, idx) => (
               <FadeIn key={cat.id} delay={idx * 150} className="group cursor-pointer">
-                <div
-                  onClick={() => navigateTo(`#collection/fashion?cat=${encodeURIComponent(cat.title)}`)}
-                  className="relative aspect-[3/4] overflow-hidden rounded-2xl mb-4 shadow-md group-hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] group-hover:-translate-y-2 transition-all duration-500 border border-white/40"
+                <a
+                  href={`#collection/fashion?cat=${encodeURIComponent(cat.title)}`} onClick={event => navigatePlainLink(event, `#collection/fashion?cat=${encodeURIComponent(cat.title)}`, navigateTo)}
+                  className="block relative aspect-[3/4] overflow-hidden rounded-2xl mb-4 shadow-md group-hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] group-hover:-translate-y-2 transition-all duration-500 border border-white/40"
                 >
                   <img
                     loading="lazy"
@@ -284,12 +286,12 @@ export const HomePage: React.FC = () => {
                   />
                   {/* Subtle Inner Glow Overlay */}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                </div>
+                </a>
                 <h3
-                  onClick={() => navigateTo(`#collection/fashion?cat=${encodeURIComponent(cat.title)}`)}
+
                   className="font-serif text-lg md:text-xl text-earth group-hover:text-bronze transition-colors px-1"
                 >
-                  {cat.title}
+                  <a href={`#collection/fashion?cat=${encodeURIComponent(cat.title)}`}>{cat.title}</a>
                 </h3>
               </FadeIn>
             ))}
@@ -330,9 +332,9 @@ export const HomePage: React.FC = () => {
                 className={`group cursor-pointer relative overflow-hidden rounded-[2.5rem] shadow-sm border border-earth/5 aspect-[4/3] md:aspect-auto ${idx === 0 ? 'md:row-span-2 md:h-auto' : 'md:h-[400px]'
                   }`}
               >
-                <div
-                  onClick={() => navigateTo(`#collection/kids?cat=${encodeURIComponent(cat.title)}`)}
-                  className="w-full h-full relative"
+                <a
+                  href={`#collection/kids?cat=${encodeURIComponent(cat.title)}`} onClick={event => navigatePlainLink(event, `#collection/kids?cat=${encodeURIComponent(cat.title)}`, navigateTo)}
+                  className="block w-full h-full relative"
                 >
                   {/* Mobile-only override for Girls category */}
                   {cat.id === 'girls' ? (
@@ -343,7 +345,7 @@ export const HomePage: React.FC = () => {
                       />
                       <img
                         {...responsiveImage(cat.image, '(min-width: 1024px) 50vw, 100vw')}
-                        alt={cat.title}
+                        alt=""
                         loading="lazy"
                         decoding="async"
                         className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
@@ -352,7 +354,7 @@ export const HomePage: React.FC = () => {
                   ) : (
                     <img
                       {...responsiveImage(cat.image, '(min-width: 1024px) 50vw, 100vw')}
-                      alt={cat.title}
+                      alt=""
                       loading="lazy"
                       decoding="async"
                       className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
@@ -361,7 +363,7 @@ export const HomePage: React.FC = () => {
 
                   {/* Overlay Gradient (Elevated) */}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-80 group-hover:opacity-90 transition-opacity"></div>
-                  
+
                   {/* Subtle Inner Border Glow */}
                   <div className="absolute inset-0 border-[2px] border-white/0 group-hover:border-white/10 rounded-[2.5rem] transition-colors duration-500 pointer-events-none z-10"></div>
 
@@ -377,7 +379,7 @@ export const HomePage: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                </div>
+                </a>
               </FadeIn>
             ))}
           </div>
@@ -423,9 +425,9 @@ export const HomePage: React.FC = () => {
 
         <FadeIn className="relative z-10">
           <h2 className="font-serif text-4xl md:text-6xl text-cream mb-4 tracking-tight drop-shadow-lg">Join The Mae Letter</h2>
-          <p className="font-serif text-2xl md:text-3xl italic text-bronze mb-12 font-light">Newsletter</p>
+          <p className="font-serif text-2xl md:text-3xl italic text-[#D6B99C] mb-12 font-light">Newsletter</p>
 
-          <div className="max-w-xl mx-auto space-y-2 text-cream/70 font-sans text-sm md:text-base leading-relaxed mb-16">
+          <div className="max-w-xl mx-auto space-y-2 text-muted-cream font-sans text-sm md:text-base leading-relaxed mb-16">
             <p>To Get First Look At New Product Drops, Personal Notifications</p>
             <p>To New Blog Posts, And Exclusive Access To Discount Codes</p>
             <p>And Updates From Louie Mae.</p>
@@ -433,7 +435,7 @@ export const HomePage: React.FC = () => {
 
           <form className="max-w-xl mx-auto space-y-8" onSubmit={handleSubscribe}>
             <div className="text-left group relative">
-              <label htmlFor="home-letter-name" className="block font-serif text-xl text-cream/90 mb-2 pl-4 transition-colors group-focus-within:text-bronze">First Name</label>
+              <label htmlFor="home-letter-name" className="block font-serif text-xl text-cream/90 mb-2 pl-4 transition-colors group-focus-within:text-[#D6B99C]">First Name</label>
               <div className="absolute -inset-0.5 bg-gradient-to-r from-bronze/0 via-bronze/20 to-bronze/0 rounded-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-500 blur-sm"></div>
               <input
                 id="home-letter-name"
@@ -445,7 +447,7 @@ export const HomePage: React.FC = () => {
               />
             </div>
             <div className="text-left group relative">
-              <label htmlFor="home-letter-email" className="block font-serif text-xl text-cream/90 mb-2 pl-4 transition-colors group-focus-within:text-bronze">Email</label>
+              <label htmlFor="home-letter-email" className="block font-serif text-xl text-cream/90 mb-2 pl-4 transition-colors group-focus-within:text-[#D6B99C]">Email</label>
               <div className="absolute -inset-0.5 bg-gradient-to-r from-bronze/0 via-bronze/20 to-bronze/0 rounded-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-500 blur-sm"></div>
               <input
                 id="home-letter-email"
@@ -471,7 +473,8 @@ export const HomePage: React.FC = () => {
         </FadeIn>
       </section>
 
-      {selectedProductId && (detailLoading || detailUnavailable || detailFailed) && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6" role="dialog" aria-modal="true" aria-label="Product details">
+      {selectedProductId && <Modal open label="Product details" onClose={() => openProduct(null)}>
+      {(detailLoading || detailUnavailable || detailFailed) && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6">
         <div className="bg-white rounded-2xl p-8 text-center">
           <p role="status">{detailLoading ? 'Loading product details…' : detailFailed ? 'Product details could not be loaded. Please try again.' : 'This product is no longer available.'}</p>
           {detailFailed && <button onClick={retryDetail} className="min-h-11 underline">Try again</button>}
@@ -480,7 +483,7 @@ export const HomePage: React.FC = () => {
       </div>}
       {/* Product Modal - Frosted Glass Upgrade */}
       {selectedProduct && (
-        <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:p-8" role="dialog" aria-modal="true" aria-label="Product details">
+        <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:p-8">
           <div className="absolute inset-0 backdrop-blur-xl motion-reduce:backdrop-blur-none bg-black/50" onClick={() => openProduct(null)}></div>
 
           <div className="bg-white/95 backdrop-blur-xl w-full max-w-5xl h-[92vh] supports-[height:100svh]:h-[92svh] md:h-auto md:max-h-[85vh] rounded-t-3xl md:rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.3)] relative flex flex-col md:flex-row overflow-hidden animate-fade-in-up border border-white/60">
@@ -501,7 +504,7 @@ export const HomePage: React.FC = () => {
             {/* Details */}
             <div className="w-full md:w-1/2 flex-1 min-h-0 p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:p-12 overflow-y-auto overscroll-contain flex flex-col relative bg-gradient-to-br from-white/40 to-white/10">
               <div className="mb-auto relative z-10">
-                <div className="flex items-center gap-3 mb-6 text-[10px] uppercase tracking-[0.2em] text-earth/60 font-medium">
+                <div className="flex items-center gap-3 mb-6 text-[10px] uppercase tracking-[0.2em] text-muted-earth font-medium">
                   <span className="w-1.5 h-1.5 bg-bronze rounded-full shadow-[0_0_8px_rgba(139,90,43,0.5)]"></span>
                   <span>{selectedProduct.category}</span>
                 </div>
@@ -512,7 +515,7 @@ export const HomePage: React.FC = () => {
                 <div className="h-px w-full bg-gradient-to-r from-earth/20 via-earth/5 to-transparent mb-8"></div>
 
                 {(selectedProduct.variants?.length ?? 0) > 1 && <div className="mb-6"><VariantSelector variants={selectedProduct.variants} selectedVariant={selectedVariant} activeImageGroupKey={activeImageGroupKey} onSelectVariant={setSelectedVariant} onSetGroupKey={setActiveImageGroupKey} /></div>}
-                <p className="font-sans text-earth/70 leading-relaxed mb-8 text-sm">
+                <p className="font-sans text-muted-earth leading-relaxed mb-8 text-sm">
                   {selectedProduct.description}
                 </p>
 
@@ -525,7 +528,7 @@ export const HomePage: React.FC = () => {
               </div>
 
               <div className="relative z-10 mt-8">
-                {selectedProduct.fulfillmentProvider === 'ashcroft' && selectedProduct.inStock && <p className="text-sm text-earth/60 mb-3">${selectedProduct.deliveryFee} Economy delivery per item</p>}
+                {selectedProduct.fulfillmentProvider === 'ashcroft' && selectedProduct.inStock && <p className="text-sm text-muted-earth mb-3">${selectedProduct.deliveryFee} Economy delivery per item</p>}
                 {selectedProduct.fulfillmentProvider === 'zuo' && <ProductDeliveryEstimate productId={selectedProduct.id} variantId={selectedVariant?.id ?? selectedProduct.variants?.[0]?.id} />}
                 <AddToCartButton key={selectedProduct.id} product={selectedProduct} selectedVariant={selectedVariant} variantRequired={!!selectedProduct.variants?.length} className="rounded-lg shadow-xl" />
               </div>
@@ -533,6 +536,7 @@ export const HomePage: React.FC = () => {
           </div>
         </div>
       )}
+      </Modal>}
     </main>
   );
 };

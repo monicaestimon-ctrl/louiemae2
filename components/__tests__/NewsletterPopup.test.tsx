@@ -16,6 +16,24 @@ async function openPopup() {
   await act(async () => { vi.advanceTimersByTime(10000); });
 }
 describe('Newsletter popup', () => {
+  it('waits for an existing dialog instead of interrupting the shopper', async () => {
+    const existing = document.createElement('dialog'); existing.open = true; document.body.append(existing);
+    render(<NewsletterPopup />);
+    await act(async () => { vi.advanceTimersByTime(10000); });
+    expect(screen.queryByLabelText('The Mae Letter newsletter')).toBeNull();
+    await act(async () => { existing.remove(); });
+    expect(screen.getByLabelText('The Mae Letter newsletter')).toBeInTheDocument();
+    existing.remove();
+  });
+  it('also resumes after a mounted native dialog closes', async () => {
+    const existing = document.createElement('dialog'); existing.open = true; document.body.append(existing);
+    render(<NewsletterPopup />);
+    await act(async () => { vi.advanceTimersByTime(10000); });
+    existing.open = false;
+    fireEvent(existing, new Event('close'));
+    expect(screen.getByLabelText('The Mae Letter newsletter')).toBeInTheDocument();
+    existing.remove();
+  });
   it('opens a modal, locks background scrolling, and restores it on Escape dismissal', async () => {
     await openPopup();
     expect(screen.getByRole('dialog')).toBeInTheDocument();

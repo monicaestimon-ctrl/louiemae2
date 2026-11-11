@@ -46,29 +46,6 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
         };
     }, [isOpen]);
 
-    // Handle escape key
-    useEffect(() => {
-        const handleEscape = (e: KeyboardEvent) => {
-            if (e.key === 'Escape' && isOpen) {
-                handleClose();
-            }
-        };
-        document.addEventListener('keydown', handleEscape);
-        return () => document.removeEventListener('keydown', handleEscape);
-    }, [isOpen, onClose]);
-
-    // Lock body scroll when open
-    useEffect(() => {
-        if (isOpen) {
-            document.body.style.overflow = 'hidden';
-        } else {
-            document.body.style.overflow = 'unset';
-        }
-        return () => {
-            document.body.style.overflow = 'unset';
-        };
-    }, [isOpen]);
-
     const handleProductClick = (productId: string) => {
         onProductClick(productId);
         handleClose();
@@ -77,7 +54,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[60] flex flex-col backdrop-blur-3xl bg-gradient-to-br from-[#3a2a1a]/95 via-[#2d1f12]/95 to-[#1a130a]/95" role="dialog" aria-modal="true" aria-labelledby="search-modal-title">
+        <div className="fixed inset-0 z-[60] flex flex-col backdrop-blur-3xl bg-gradient-to-br from-[#3a2a1a]/95 via-[#2d1f12]/95 to-[#1a130a]/95">
             {/* Inner Sheen */}
             <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent pointer-events-none" />
             
@@ -85,11 +62,11 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
             <div className="flex justify-between items-center px-6 py-6 md:px-12 border-b border-white/10 relative z-10">
                 <div className="flex flex-col drop-shadow-md">
                     <span id="search-modal-title" className="font-serif text-3xl text-cream italic tracking-tight">Search</span>
-                    <span className="text-[0.55rem] uppercase tracking-[0.3em] text-bronze">Find Products</span>
+                    <span className="text-[0.55rem] uppercase tracking-[0.3em] text-[#D6B99C]">Find Products</span>
                 </div>
                 <button
                     type="button"
-                    onClick={onClose}
+                    onClick={handleClose}
                     aria-label="Close search"
                     className="group relative w-10 h-10 flex items-center justify-center rounded-full border border-white/20 bg-white/5 backdrop-blur-sm hover:bg-white/10 hover:border-white/40 transition-all duration-300 shadow-lg"
                 >
@@ -101,7 +78,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
             <div className="px-6 md:px-12 py-8 relative z-10">
                 <div className="max-w-2xl mx-auto relative group">
                     <div className="absolute -inset-1 bg-gradient-to-r from-bronze/20 via-white/10 to-bronze/20 rounded-full blur-sm opacity-50 group-focus-within:opacity-100 transition-opacity"></div>
-                    <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-cream/50 z-10" />
+                    <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-cream z-10" />
                     <input
                         ref={inputRef}
                         type="text"
@@ -109,7 +86,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
                         onChange={(e) => setSearchTerm(e.target.value)}
                         placeholder="Search for furniture, decor, and more..."
                         aria-label="Search products"
-                        className="w-full relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-full py-5 pl-14 pr-6 text-cream placeholder:text-cream/40 focus:outline-none focus:border-bronze focus:bg-white/15 transition-all duration-300 font-sans shadow-inner"
+                        className="w-full relative bg-white/10 backdrop-blur-xl border border-white/20 rounded-full py-5 pl-14 pr-6 text-cream placeholder-readable-light focus:outline-none focus:border-bronze focus:bg-white/15 transition-all duration-300 font-sans shadow-inner"
                     />
                 </div>
             </div>
@@ -119,7 +96,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
                 <div className="max-w-5xl mx-auto">
                     {normalizedSearchTerm.length < 2 ? (
                         <div className="text-center py-16">
-                            <p className="text-cream/50 text-sm font-light tracking-wide">Type at least two characters to search products...</p>
+                            <p className="text-muted-cream text-sm font-light tracking-wide">Type at least two characters to search products...</p>
                         </div>
                     ) : searchUnavailable ? (
                         <div role="status" className="text-center py-16 text-cream">
@@ -128,15 +105,15 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
                         </div>
                     ) : isSearching ? (
                         <div className="text-center py-16">
-                            <p className="text-cream/50 text-sm font-light tracking-wide">Searching...</p>
+                            <p className="text-muted-cream text-sm font-light tracking-wide">Searching...</p>
                         </div>
                     ) : results.length === 0 ? (
                         <div className="text-center py-16">
-                            <p className="text-cream/50 text-sm font-light tracking-wide">No products found for "{searchTerm}"</p>
+                            <p role="status" className="text-muted-cream text-sm font-light tracking-wide">No products found for "{searchTerm}"</p>
                         </div>
                     ) : (
                         <>
-                            <p className="text-[0.65rem] uppercase tracking-[0.2em] text-cream/50 mb-6">
+                            <p role="status" className="text-[0.65rem] uppercase tracking-[0.2em] text-muted-cream mb-6">
                                 {results.length} result{results.length !== 1 ? 's' : ''} found
                             </p>
                             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
@@ -156,21 +133,21 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
                                                     className="w-full h-full object-contain"
                                                 />
                                             ) : (
-                                                <div className="w-full h-full flex items-center justify-center text-cream/20 font-light">
+                                                <div className="w-full h-full flex items-center justify-center text-muted-cream font-light">
                                                     No Image
                                                 </div>
                                             )}
                                         </div>
                                         <div className="p-4 flex flex-col bg-gradient-to-t from-black/20 to-transparent">
-                                            <h3 className="font-serif text-sm text-cream group-hover:text-bronze transition-colors line-clamp-2 drop-shadow-sm">
+                                            <h3 className="font-serif text-sm text-cream group-hover:text-[#D6B99C] transition-colors line-clamp-2 drop-shadow-sm">
                                                 {product.name}
                                             </h3>
-                                            <p className="text-[0.55rem] uppercase tracking-[0.2em] text-cream/50 mt-1.5">
+                                            <p className="text-[0.55rem] uppercase tracking-[0.2em] text-muted-cream mt-1.5">
                                                 {product.category}
                                             </p>
                                             <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/10">
-                                                <span className="text-bronze font-serif italic text-base">${product.price}</span>
-                                                <ArrowRight className="w-4 h-4 text-cream/30 group-hover:text-bronze group-hover:translate-x-1 transition-all duration-300" />
+                                                <span className="text-[#D6B99C] font-serif italic text-base">${product.price}</span>
+                                                <ArrowRight className="w-4 h-4 text-muted-cream group-hover:text-[#D6B99C] group-hover:translate-x-1 transition-all duration-300" />
                                             </div>
                                         </div>
                                     </button>

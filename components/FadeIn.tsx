@@ -68,7 +68,7 @@ export const FadeIn: React.FC<FadeInProps> = ({
   return (
     <div
       ref={domRef}
-      className={`ease-out transform ${useFastFade
+      className={`lm-reveal ease-out transform ${useFastFade
         ? `transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`
         : `transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-16'}`
         } ${className}`}

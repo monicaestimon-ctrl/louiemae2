@@ -1,3 +1,4 @@
+import { Modal } from '../Modal';
 import { rememberCheckout, cartLines } from '../../lib/delivery/checkoutReturn';
 import React, { useEffect, useState } from 'react';
 import { X, ShoppingBag, Loader2 } from 'lucide-react';
@@ -144,7 +145,7 @@ export const CartDrawer: React.FC = () => {
     if (!isOpen) return null;
 
     return (
-        <>
+        <Modal open={isOpen} label="Your cart" onClose={closeCart}>
             {/* Backdrop */}
             <div
                 className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[200] transition-opacity"
@@ -158,13 +159,13 @@ export const CartDrawer: React.FC = () => {
                     <div className="flex items-center gap-3">
                         <ShoppingBag className="w-5 h-5 text-earth" />
                         <h2 className="font-serif text-xl text-earth">Your Cart</h2>
-                        <span className="text-[10px] uppercase tracking-widest text-earth/50">
+                        <span className="text-[10px] uppercase tracking-widest text-muted-earth">
                             ({itemCount} {itemCount === 1 ? 'item' : 'items'})
                         </span>
                     </div>
                     <button
                         onClick={closeCart}
-                        className="p-2 text-earth/30 hover:text-earth transition-colors"
+                        className="p-2 text-muted-earth hover:text-earth transition-colors"
                         aria-label="Close cart"
                     >
                         <X className="w-5 h-5" />
@@ -176,8 +177,8 @@ export const CartDrawer: React.FC = () => {
                     {items.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full text-center">
                             <ShoppingBag className="w-16 h-16 text-earth/20 mb-4" />
-                            <p className="font-serif text-xl text-earth/50 mb-2">Your cart is empty</p>
-                            <p className="text-sm text-earth/40">
+                            <p className="font-serif text-xl text-muted-earth mb-2">Your cart is empty</p>
+                            <p className="text-sm text-muted-earth">
                                 Add some beautiful pieces to get started
                             </p>
                             <button
@@ -204,7 +205,7 @@ export const CartDrawer: React.FC = () => {
                     <div className="border-t border-earth/10 p-6 bg-cream/30">
                         {/* Subtotal */}
                         <div className="flex justify-between items-center mb-4">
-                            <span className="text-[10px] uppercase tracking-widest text-earth/50">Subtotal</span>
+                            <span className="text-[10px] uppercase tracking-widest text-muted-earth">Subtotal</span>
                             <span className="font-serif text-xl text-earth">${subtotal.toFixed(2)}</span>
                         </div>
 
@@ -222,7 +223,7 @@ export const CartDrawer: React.FC = () => {
                         {creditBlocked && <p role="status" className="text-earth mb-4">
                             {creditPending && !creditTimedOut ? 'Checking your store credit…' : 'Store credit could not be verified. Close and reopen your cart to try again. Your items are saved.'}
                         </p>}
-                        <p className="text-[10px] text-earth/40 mb-4 text-center">
+                        <p className="text-[10px] text-muted-earth mb-4 text-center">
                             Economy delivery: ${delivery.toFixed(2)} · Total before tax: ${(subtotal - creditOff + delivery).toFixed(2)}. Delivery is charged per item; tax is calculated at checkout.{creditOff > 0 ? ' Store credit comes off the items, not delivery or tax.' : ''}
                         </p>
 
@@ -237,7 +238,7 @@ export const CartDrawer: React.FC = () => {
                                                 <div className="min-w-0">
                                                     <p className="text-xs font-medium text-earth truncate">{blockedItem.name}</p>
                                                     {blockedItem.reason && (
-                                                        <p className="mt-1 text-[10px] leading-snug text-earth/55">{blockedItem.reason}</p>
+                                                        <p className="mt-1 text-[10px] leading-snug text-muted-earth">{blockedItem.reason}</p>
                                                     )}
                                                 </div>
                                                 {blockedItem.productId && (
@@ -281,14 +282,14 @@ export const CartDrawer: React.FC = () => {
                         {/* Continue Shopping */}
                         <button
                             onClick={closeCart}
-                            className="w-full mt-3 py-3 text-[10px] uppercase tracking-widest text-earth/50 hover:text-earth transition-colors"
+                            className="w-full mt-3 py-3 text-[10px] uppercase tracking-widest text-muted-earth hover:text-earth transition-colors"
                         >
                             Continue Shopping
                         </button>
                     </div>
                 )}
             </div>
-        </>
+        </Modal>
     );
 };
 

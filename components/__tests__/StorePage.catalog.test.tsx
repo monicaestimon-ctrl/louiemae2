@@ -54,7 +54,7 @@ describe('store catalog integration', () => {
     render(<StorePage collection="kids" initialCategory="All" forceProductView />);
     expect(screen.queryByText('Multiple Options')).toBeNull();
     expect(screen.getByText('$2,889')).toBeTruthy();
-    fireEvent.keyDown(screen.getByRole('button', { name: 'View One sofa' }), { key: 'Enter' });
+    fireEvent.click(screen.getByRole('button', { name: 'View One sofa' }));
     expect(mocks.detail).toHaveBeenLastCalledWith('single');
   });
   it('shows unavailable state without false Coming Soon or a legacy product subscription', () => {
