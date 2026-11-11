@@ -10,6 +10,7 @@ interface CartItemProps {
 export const CartItem: React.FC<CartItemProps> = ({ item }) => {
     const { updateQuantity, removeFromCart } = useCart();
     const { product, quantity, selectedVariant } = item;
+    const itemLabel = selectedVariant?.name ? `${product.name} — ${selectedVariant.name}` : product.name;
 
     // Use variant image if available, otherwise product's first image
     const displayImage = selectedVariant?.image || product.images[0];
@@ -46,7 +47,7 @@ export const CartItem: React.FC<CartItemProps> = ({ item }) => {
                 <button
                     onClick={() => removeFromCart(product.id, selectedVariant?.id)}
                     className="min-w-11 min-h-11 p-2 text-muted-earth hover:text-red-600 transition-colors"
-                    aria-label={`Remove ${product.name}`}
+                    aria-label={`Remove ${itemLabel}`}
                 >
                     <Trash2 className="w-4 h-4" />
                 </button>
@@ -55,7 +56,7 @@ export const CartItem: React.FC<CartItemProps> = ({ item }) => {
                     <button
                         onClick={() => updateQuantity(product.id, quantity - 1, selectedVariant?.id)}
                         className="min-w-11 min-h-11 p-2 hover:bg-earth/5 transition-colors"
-                        aria-label={`Decrease quantity of ${product.name}`}
+                        aria-label={`Decrease quantity of ${itemLabel}`}
                     >
                         <Minus className="w-3 h-3 text-earth" />
                     </button>
@@ -63,7 +64,7 @@ export const CartItem: React.FC<CartItemProps> = ({ item }) => {
                     <button
                         onClick={() => updateQuantity(product.id, quantity + 1, selectedVariant?.id)}
                         className="min-w-11 min-h-11 p-2 hover:bg-earth/5 transition-colors"
-                        aria-label={`Increase quantity of ${product.name}`}
+                        aria-label={`Increase quantity of ${itemLabel}`}
                     >
                         <Plus className="w-3 h-3 text-earth" />
                     </button>

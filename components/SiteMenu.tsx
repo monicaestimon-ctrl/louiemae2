@@ -1,3 +1,4 @@
+import { navigatePlainLink } from '../lib/navigation';
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, Instagram, X } from 'lucide-react';
 import { Modal } from './Modal';
@@ -47,8 +48,7 @@ export const SiteMenu: React.FC<SiteMenuProps> = ({ open, links, onClose, onNavi
   const atTop = !current;
 
   const navigate = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault(); onNavigate(href);
+    navigatePlainLink(event, href, onNavigate);
   };
 
   return (

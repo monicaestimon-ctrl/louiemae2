@@ -22,13 +22,16 @@ export const NewsletterPopup: React.FC = () => {
     const showWhenFree = () => {
       if (localStorage.getItem('lm_newsletter_dismissed') || document.querySelector('dialog[open]')) return;
       observer.disconnect();
+      document.removeEventListener('close', showWhenFree, true);
       setIsVisible(true);
     };
     const timer = setTimeout(() => {
-      observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['open'] });
+      // Shared modals are direct body portals. Native close covers mounted dialogs.
+      observer.observe(document.body, { childList: true });
+      document.addEventListener('close', showWhenFree, true);
       showWhenFree();
     }, 10000);
-    return () => { clearTimeout(timer); observer.disconnect(); };
+    return () => { clearTimeout(timer); observer.disconnect(); document.removeEventListener('close', showWhenFree, true); };
   }, []);
 
   const handleDismiss = () => {

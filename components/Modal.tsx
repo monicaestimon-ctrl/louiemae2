@@ -14,7 +14,7 @@ const stacks = new WeakMap<
   { dialogs: HTMLDialogElement[]; overflow: string; overflowPriority: string }
 >();
 const focusSelector =
-  'button:not(:disabled),a[href],input:not(:disabled):not([type="hidden"]),select:not(:disabled),textarea:not(:disabled),[tabindex]:not([tabindex="-1"]),[contenteditable="true"]';
+  'button:not(:disabled),a[href],input:not(:disabled):not([type="hidden"]),select:not(:disabled),textarea:not(:disabled),iframe,[tabindex]:not([tabindex="-1"]),[contenteditable="true"]';
 /** Find current visible controls, including controls added by asynchronous content. */
 function focusable(dialog: HTMLDialogElement) {
   return [...dialog.querySelectorAll<HTMLElement>(focusSelector)].filter(

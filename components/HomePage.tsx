@@ -1,3 +1,4 @@
+import { navigatePlainLink } from '../lib/navigation';
 import { Modal } from './Modal';
 
 import React, { useEffect, useState } from 'react';
@@ -153,7 +154,7 @@ export const HomePage: React.FC = () => {
             {/* Furniture */}
             <a
               id="furniture"
-              href={'#collection/furniture'} onClick={event => { if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); navigateTo('#collection/furniture'); } }}
+              href={'#collection/furniture'} onClick={event => navigatePlainLink(event, '#collection/furniture', navigateTo)}
               className="block relative group cursor-pointer aspect-[4/3] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
@@ -172,7 +173,7 @@ export const HomePage: React.FC = () => {
             {/* Decor */}
             <a
               id="decor"
-              href={'#collection/decor'} onClick={event => { if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); navigateTo('#collection/decor'); } }}
+              href={'#collection/decor'} onClick={event => navigatePlainLink(event, '#collection/decor', navigateTo)}
               className="block relative group cursor-pointer aspect-[4/3] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
@@ -194,7 +195,7 @@ export const HomePage: React.FC = () => {
             {/* The Mae Collective */}
             <a
               id="fashion"
-              href={'#collection/fashion'} onClick={event => { if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); navigateTo('#collection/fashion'); } }}
+              href={'#collection/fashion'} onClick={event => navigatePlainLink(event, '#collection/fashion', navigateTo)}
               className="block relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
@@ -213,7 +214,7 @@ export const HomePage: React.FC = () => {
             {/* Louie Kids & Co. */}
             <a
               id="kids"
-              href={'#collection/kids'} onClick={event => { if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); navigateTo('#collection/kids'); } }}
+              href={'#collection/kids'} onClick={event => navigatePlainLink(event, '#collection/kids', navigateTo)}
               className="block relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
@@ -232,7 +233,7 @@ export const HomePage: React.FC = () => {
             {/* Blog */}
             <a
               id="journal"
-              href={'#blog'} onClick={event => { if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); navigateTo('#blog'); } }}
+              href={'#blog'} onClick={event => navigatePlainLink(event, '#blog', navigateTo)}
               className="block relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
@@ -273,7 +274,7 @@ export const HomePage: React.FC = () => {
             {FASHION_CATEGORIES.map((cat, idx) => (
               <FadeIn key={cat.id} delay={idx * 150} className="group cursor-pointer">
                 <a
-                  href={`#collection/fashion?cat=${encodeURIComponent(cat.title)}`} onClick={event => { if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); navigateTo(`#collection/fashion?cat=${encodeURIComponent(cat.title)}`); } }}
+                  href={`#collection/fashion?cat=${encodeURIComponent(cat.title)}`} onClick={event => navigatePlainLink(event, `#collection/fashion?cat=${encodeURIComponent(cat.title)}`, navigateTo)}
                   className="block relative aspect-[3/4] overflow-hidden rounded-2xl mb-4 shadow-md group-hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] group-hover:-translate-y-2 transition-all duration-500 border border-white/40"
                 >
                   <img
@@ -332,7 +333,7 @@ export const HomePage: React.FC = () => {
                   }`}
               >
                 <a
-                  href={`#collection/kids?cat=${encodeURIComponent(cat.title)}`} onClick={event => { if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); navigateTo(`#collection/kids?cat=${encodeURIComponent(cat.title)}`); } }}
+                  href={`#collection/kids?cat=${encodeURIComponent(cat.title)}`} onClick={event => navigatePlainLink(event, `#collection/kids?cat=${encodeURIComponent(cat.title)}`, navigateTo)}
                   className="block w-full h-full relative"
                 >
                   {/* Mobile-only override for Girls category */}

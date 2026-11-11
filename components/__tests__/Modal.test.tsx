@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { Modal } from '../Modal';
 afterEach(() => {
   cleanup();
   document.body.style.overflow = '';
+  vi.restoreAllMocks();
 });
 it('closes only the topmost controlled dialog and preserves the outer scroll lock', () => {
   document.body.style.overflow = 'scroll';
@@ -68,4 +69,56 @@ it('restores the original scroll style when a route unmounts open dialogs', () =
   view.unmount();
   expect(document.body.style.overflow).toBe('auto');
   expect(document.querySelector('dialog')).toBeNull();
+});
+
+it('focuses the requested control, wraps Tab in both directions and restores the trigger', async () => {
+  vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([{}] as unknown as ReturnType<
+    HTMLElement['getClientRects']
+  >);
+  function Example() {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button onClick={() => setOpen(true)}>Open details</button>
+        <Modal open={open} label="Details" onClose={() => setOpen(false)} initialFocus="#preferred">
+          <button>First</button>
+          <button id="preferred">Preferred</button>
+          <button onClick={() => setOpen(false)}>Last</button>
+        </Modal>
+      </>
+    );
+  }
+  render(<Example />);
+  const trigger = screen.getByRole('button', { name: 'Open details' });
+  trigger.focus();
+  fireEvent.click(trigger);
+  expect(screen.getByRole('button', { name: 'Preferred' })).toHaveFocus();
+  const first = screen.getByRole('button', { name: 'First' });
+  const last = screen.getByRole('button', { name: 'Last' });
+  last.focus();
+  fireEvent.keyDown(last, { key: 'Tab' });
+  expect(first).toHaveFocus();
+  fireEvent.keyDown(first, { key: 'Tab', shiftKey: true });
+  expect(last).toHaveFocus();
+  await act(async () => {
+    fireEvent.click(last);
+  });
+  expect(trigger).toHaveFocus();
+});
+
+it('does not wrap before a trailing iframe', () => {
+  vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([{}] as unknown as ReturnType<
+    HTMLElement['getClientRects']
+  >);
+  render(
+    <Modal open label="Frame fixture" onClose={vi.fn()}>
+      <button>Before frame</button>
+      <iframe title="Local test frame" />
+    </Modal>
+  );
+  const before = screen.getByRole('button', { name: 'Before frame' });
+  expect(before).toHaveFocus();
+  const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+  fireEvent(before, tab);
+  expect(tab.defaultPrevented).toBe(false);
 });

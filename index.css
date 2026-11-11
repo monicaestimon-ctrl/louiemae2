@@ -353,6 +353,7 @@ dialog.lm-modal::backdrop { background: transparent; }
 dialog.lm-modal:not([open]) { display: none; }
 html { scrollbar-gutter: stable; }
 html :is(button, a, input, select, textarea, [tabindex]):focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+html #main-content:focus-visible, html [data-menu-focus][tabindex="-1"]:focus-visible { outline: none; }
 :root { --lm-muted-earth: #6b5f55; --lm-muted-cream: #ded5cc; }
 .text-muted-earth { color: var(--lm-muted-earth); }
 .text-muted-cream { color: var(--lm-muted-cream); }
