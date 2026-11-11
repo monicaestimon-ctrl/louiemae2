@@ -22,6 +22,7 @@ import {DeliveryQuoteAccess} from '../components/delivery/DeliveryQuoteStatus';
 import TradeDeliveryCalculator from '../components/delivery/TradeDeliveryCalculator';
 import ProjectDeliveryPanel from '../components/delivery/ProjectDeliveryPanel';
 import { projectLines } from './projectLines';
+import { resolveProjectItems, sameProjectSelection, projectItemKey, mergeProjectItem } from './projectIdentity';
 import ProductDeliveryEstimate from '../components/delivery/ProductDeliveryEstimate';
 import { SafeImage } from '../components/SafeImage';
 import DeliveryBoundary from '../components/delivery/DeliveryBoundary';
@@ -80,7 +81,7 @@ const TRAY_SEED = {active:'p1',taxExempt:false,projects:[{id:'p1',name:'My first
 // The header and hero read their ink from these root variables. Changing anything on the root
 // restyles the whole page, so write only when the value really changes.
 const setHeroInk=(fg,inv)=>{const r=document.documentElement.style;if(r.getPropertyValue('--hero-fg')!==fg)r.setProperty('--hero-fg',fg);if(r.getPropertyValue('--hero-inv')!==inv)r.setProperty('--hero-inv',inv)};
-const fmt = (n,dec=false)=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:dec?2:0,maximumFractionDigits:dec?2:0});
+const fmt = (n,dec=false)=>!Number.isFinite(n)?'Review unavailable items':'$'+n.toLocaleString('en-US',{minimumFractionDigits:dec?2:0,maximumFractionDigits:dec?2:0});
 const load=(k,d)=>{try{const v=localStorage.getItem('hol:'+k);return v?JSON.parse(v):d}catch(e){return d}};
 const store=(k,v)=>{try{localStorage.setItem('hol:'+k,JSON.stringify(v))}catch(e){}};
 const hex2rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
@@ -1239,7 +1240,7 @@ function IndexMenu({ctx}){
   };
   const on=r=>ctx.route===r?'on':'';
   const sp=SPACES[ctx.space];
-  const P=ctx.activeProject;const items=P.items.map(i=>({...i,p:byId(i.pid)}));
+  const P=ctx.activeProject;const {resolved:items,missing:missingProjectItems}=resolveProjectItems(P.items,BY_ID);
   const seats=items.reduce((s,i)=>s+i.p.seats*i.qty,0);const tot=items.reduce((s,i)=>s+pr(i.p,ctx.mode)*i.qty,0);
   return html`<${Modal} open=${true} label="Menu" onClose=${close} initialFocus=".ix-main a"><div className="ix">
     <div className="ix-scrim" onClick=${close}>
@@ -1258,9 +1259,9 @@ function IndexMenu({ctx}){
         <nav className="ix-more" aria-label="Your work">${IX_MORE.map(([r,l])=>html`<a key=${r} href=${'#'+r} ...${show(r)} className=${on(r)} aria-current=${ctx.route===r?'page':undefined} onClick=${e=>navigatePlainLink(e,r,()=>run(()=>ctx.go(r)))}>${l}</a>`)}</nav>
         <button className="ix-proj" onClick=${()=>run(()=>ctx.setTray(true))}>
           <span className="ix-proj-h"><span>Active project</span><b>${P.name}</b></span>
-          ${items.length>0&&html`<span className="ix-thumbs">${items.slice(0,5).map(i=>html`<span key=${i.pid} style=${{backgroundImage:`url(${cut(i.pid)})`}}></span>`)}</span>`}
+          ${items.length>0&&html`<span className="ix-thumbs">${items.slice(0,5).map(i=>html`<span key=${projectItemKey(i)} style=${{backgroundImage:`url(${i.p.cutout||i.p.img})`}}></span>`)}</span>`}
           <span className="ix-meter"><i style=${{width:Math.min(100,seats/P.target*100)+'%'}}></i></span>
-          <span className="ix-proj-f"><span>${seats} of ${P.target} seats</span><span className="num">${fmt(tot)}</span></span>
+          <span className="ix-proj-f"><span>${seats} of ${P.target} seats</span><span className="num">${missingProjectItems.length?'Review unavailable items':fmt(tot)}</span></span>
         </button>
         <div className="ix-set">
           <button className="ix-row" aria-expanded=${spaces} onClick=${()=>setSpaces(!spaces)}><span>Furnishing</span><span className="ix-val"><i style=${{background:sp.accent}}></i>${sp.label} ${I('down',{width:14,style:{transform:spaces?'rotate(180deg)':''}})}</span></button>
@@ -1301,7 +1302,7 @@ function PinDetail({ctx}){
   const onBoards=[...ctx.boards.filter(b=>b.pins.some(x=>x.pid===p.id)).map(b=>({t:b.title,by:'You'})),...COMMUNITY.filter(b=>b.items.includes(p.id)).map(b=>({t:b.title,by:b.by}))];
   const room=ROOMS[ctx.space];const F=texture(room.floor);const L=texture('lime');
   const cm=cmW(p.id),hcm=approxH(p.id);
-  const projTrade=P.items.reduce((s,i)=>s+tp(byId(i.pid))*i.qty,0);const after=projTrade+tp(p)*qty;
+  const projectSelection=resolveProjectItems(P.items,BY_ID);const projTrade=projectSelection.missing.length?NaN:projectSelection.resolved.reduce((s,i)=>s+tp(i.p)*i.qty,0);const after=projTrade+tp(p)*qty;
   const add=(el)=>{ctx.addToProject(p.id,qty,P.id,Z,el||stageRef.current?.querySelector('.pp-cut'))};
   const bundleItems=bundle.map(byId);const bundleTot=bundleItems.reduce((s,x)=>s+pr(x,ctx.mode),0);
   const onTilt=e=>{const r=e.currentTarget.getBoundingClientRect();setTilt([((e.clientX-r.left)/r.width-.5)*10,((e.clientY-r.top)/r.height-.5)*-6])};
@@ -1457,11 +1458,11 @@ function QuoteComposer({ctx,onClose}){
   const [busy,setBusy]=useState(false);const [link,setLink]=useState('');const feedback=useFormValidation();const formId=useId();const pending=useRef(false);
   const up=o=>{setSet(s=>({...s,...o}));setLink('');Object.keys(o).forEach(k=>feedback.clear(k));feedback.clear('_form');if(o.brand==='hol')feedback.clear('studio')};
   useEffect(()=>{const {show,markup,brand,studio,email,valid,lead}=set;store('qset',{show,markup,brand,studio,email,valid,lead})},[set]);
-  const items=proj.items.map(i=>({...i,p:byId(i.pid)}));
+  const {resolved:items,missing:missingQuoteItems}=resolveProjectItems(proj.items,BY_ID);const quoteErrors=projectLines(proj.items,BY_ID).errors;
   const cost=items.reduce((s,i)=>s+tp(i.p)*i.qty,0);const sell=items.reduce((s,i)=>s+qSellOf(i.p,set)*i.qty,0);const profit=sell-cost;
   const errs={client:!set.client.trim()&&'Add who this is for',email:!set.email.trim()?'Add the email where approvals should go':!/^\S+@\S+\.\S+$/.test(set.email)&&'Check this email address',studio:set.brand==='studio'&&!set.studio.trim()&&'Add your studio name'};
-  const ok=!errs.client&&!errs.email&&!errs.studio&&items.length>0;
-  const make=async()=>{if(pending.current)return null;if(!ok){feedback.report({...Object.fromEntries(Object.entries(errs).filter(([,message])=>message)),...(!items.length?{_form:'Add at least one piece to the project.'}:{})});return null}feedback.reset();if(link)return link;pending.current=true;setBusy(true);
+  const ok=!errs.client&&!errs.email&&!errs.studio&&items.length>0&&!missingQuoteItems.length&&!quoteErrors.length;
+  const make=async()=>{if(pending.current)return null;if(!ok){feedback.report({...Object.fromEntries(Object.entries(errs).filter(([,message])=>message)),...(!items.length?{_form:'Add at least one piece to the project.'}:{}),...(quoteErrors.length?{_form:quoteErrors.join(' ')}:{})});return null}feedback.reset();if(link)return link;pending.current=true;setBusy(true);
     try{const merged=[];items.forEach(i=>{const ex=merged.find(m=>m.productId===i.p.lid&&m.variantId===i.p.vid);if(ex)ex.quantity+=i.qty;else merged.push({productId:i.p.lid,variantId:i.p.vid,quantity:i.qty,zone:i.zone})});
       const slug=await create({show:set.show,markupBps:Math.round(set.markup*100),studioName:set.brand==='studio'?set.studio:undefined,replyEmail:set.email,clientName:set.client,title:set.title||proj.name,note:set.note,space:ctx.space,deliveryCents:set.delivery?Math.round(+set.delivery*100):undefined,leadTime:set.lead,validDays:set.valid,items:merged});
       const url=location.origin+'/trade#q/'+slug;setLink(url);return url}
@@ -1505,7 +1506,7 @@ function QuoteComposer({ctx,onClose}){
         </div>
         <div className="qc-mini" aria-hidden="true">
           <div className="qc-mini-hero" style=${{backgroundImage:`url(${stillFor(ctx.space)})`}}><i>${set.brand==='studio'?(set.studio||'Your studio'):'House of Louie Mae'}</i><b>${set.title||proj.name}</b></div>
-          ${items.slice(0,4).map(i=>html`<div key=${i.pid+i.zone} className="qc-mini-line"><img src=${cut(i.pid)} alt=""/><span>${i.p.name}</span><b className="num">${fmt(qSellOf(i.p,set)*i.qty)}</b></div>`)}
+          ${items.slice(0,4).map(i=>html`<div key=${projectItemKey(i)} className="qc-mini-line"><img src=${(i.p.cutout||i.p.img)} alt=""/><span>${i.p.name}</span><b className="num">${fmt(qSellOf(i.p,set)*i.qty)}</b></div>`)}
           ${items.length>4&&html`<div className="qc-mini-more">and ${items.length-4} more</div>`}
           <div className="qc-mini-tot"><span>Total</span><b className="num">${fmt(sell+(+set.delivery||0))}</b></div>
         </div>
@@ -1616,17 +1617,17 @@ function Tray({ctx}){
   useEffect(()=>{store('del',{recv:del.recv})},[del.recv]);
   useEffect(()=>{setStep(0);feedback.reset()},[tray.active,feedback.reset]);
   const upd=fn=>setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===t.active?fn(p):p)}));
-  const missing=proj.items.filter(it=>(!BY_ID.has(it.pid)||(it.vid&&BY_ID.get(it.pid).vid!==it.vid)));
-  const items=proj.items.filter(it=>BY_ID.has(it.pid)&&(!it.vid||BY_ID.get(it.pid).vid===it.vid)).map(it=>({...it,p:BY_ID.get(it.pid)}));const later=(tray.later||[]).filter(x=>BY_ID.has(x.pid)).map(x=>({...x,p:BY_ID.get(x.pid)}));
+  const {missing, resolved:items}=resolveProjectItems(proj.items,BY_ID);
+  const {resolved:later,missing:missingLater}=resolveProjectItems(tray.later||[],BY_ID);
   const project=projectLines(proj.items,BY_ID);const v2=items.some(i=>i.p.checkoutMode==='v2');
   const retail=items.reduce((s,i)=>s+i.p.price*i.qty,0);const trade=items.reduce((s,i)=>s+tp(i.p)*i.qty,0);const tier=tierOf(trade);const tierOn=!v2&&ctx.mode==='trade'&&tier.rate>0;const tierSave=tierOn?trade*tier.rate:0;
   const sub=(ctx.mode==='trade'?trade:retail)-tierSave;const seats=items.reduce((s,i)=>s+i.p.seats*i.qty,0);
   const palette=[];items.forEach(i=>{const w=i.p.price*i.qty;const f=palette.find(x=>cdist(x.c,i.p.tone)<20);f?f.w+=w:palette.push({c:i.p.tone,w})});
-  const line=(i,fn)=>upd(p=>({...p,items:p.items.map(x=>x.pid===i.pid&&x.zone===i.zone?fn(x):x).filter(Boolean)}));
-  const remove=i=>{line(i,()=>null);ctx.toast(`${i.p.name} removed`,{label:'Undo',fn:()=>upd(p=>({...p,items:[...p.items,{pid:i.pid,vid:i.vid,qty:i.qty,zone:i.zone}]}))})};
-  const saveLater=i=>{line(i,()=>null);setTrayState(t=>({...t,later:[{pid:i.pid,vid:i.vid,qty:i.qty},...(t.later||[]).filter(x=>x.pid!==i.pid)]}));ctx.toast(`${i.p.name} saved for later`)};
-  const restore=x=>{setTrayState(t=>({...t,later:(t.later||[]).filter(y=>y.pid!==x.pid)}));ctx.addToProject(x.pid,x.qty,proj.id,proj.zones[0],null,true)};
-  const moveTo=(i,z)=>{if(i.zone===z)return;upd(p=>{const rest=p.items.filter(x=>!(x.pid===i.pid&&x.zone===i.zone));const ex=rest.find(x=>x.pid===i.pid&&x.zone===z);return {...p,items:ex?rest.map(x=>x===ex?{...x,qty:x.qty+i.qty}:x):[...rest,{pid:i.pid,vid:i.vid,qty:i.qty,zone:z}]}})};
+  const line=(i,fn)=>upd(p=>({...p,items:p.items.map(x=>sameProjectSelection(x,i)&&x.zone===i.zone?fn(x):x).filter(Boolean)}));
+  const remove=i=>{line(i,()=>null);ctx.toast(`${i.p.name} removed`,{label:'Undo',fn:()=>upd(p=>({...p,items:mergeProjectItem(p.items,{pid:i.pid,lid:i.lid||i.p?.lid,vid:i.vid||i.p?.vid,qty:i.qty,zone:i.zone})}))})};
+  const saveLater=i=>{line(i,()=>null);setTrayState(t=>({...t,later:mergeProjectItem(t.later||[],{pid:i.pid,lid:i.lid||i.p?.lid,vid:i.vid||i.p?.vid,qty:i.qty})}));ctx.toast(`${i.p.name} saved for later`)};
+  const restore=x=>{setTrayState(t=>({...t,later:(t.later||[]).filter(y=>!sameProjectSelection(y,x)),projects:t.projects.map(p=>p.id===t.active?{...p,items:mergeProjectItem(p.items,{pid:x.pid,lid:x.lid||x.p.lid,vid:x.vid||x.p.vid,qty:x.qty,zone:p.zones[0]})}:p)}))};
+  const moveTo=(i,z)=>{if(i.zone===z)return;upd(p=>{const rest=p.items.filter(x=>!(sameProjectSelection(x,i)&&x.zone===i.zone));const ex=rest.find(x=>sameProjectSelection(x,i)&&x.zone===z);return {...p,items:ex?rest.map(x=>x===ex?{...x,qty:x.qty+i.qty}:x):[...rest,{pid:i.pid,lid:i.lid||i.p?.lid,vid:i.vid||i.p?.vid,qty:i.qty,zone:z}]}})};
   const suggest=z=>{const zi=items.filter(i=>i.zone===z);if(!zi.length)return null;const have=new Set(items.map(i=>i.pid));const anchor=zi[0].p;return pairsFor(anchor,4).find(x=>!have.has(x.id))};
   const csv=()=>['Zone,Item,SKU,Material,Approx width (cm),Qty,Unit trade,Line trade,Status',...items.map(i=>[i.zone,`${i.p.name} ${i.p.line}`,i.p.sku,MAT[i.p.mat],cmW(i.p.id),i.qty,tp(i.p).toFixed(2),(tp(i.p)*i.qty).toFixed(2),i.p.oos?'Restock check':'Ready to quote'].map(v=>`"${v}"`).join(','))].join('\n');
   const STEPS=['Tray','Delivery','Review','Requested'];
@@ -1656,23 +1657,24 @@ function Tray({ctx}){
       <div className="tv-main"><div className="delivery-ui"><${ValidationSummary} summaryRef=${feedback.summaryRef} entries=${Object.entries(feedback.errors).map(([key,message])=>({message,fieldId:key==='_form'?undefined:'tv-'+key,label:{name:'Site contact',email:'Email for the quote',line1:'Delivery address',city:'City',postal:'ZIP'}[key]}))}/></div>
       ${step===0&&html`
         <div className="tv-tools">
-          <div className="seg"><button className=${tab==='tray'?'on':''} onClick=${()=>setTab('tray')}>In tray · ${items.reduce((s,i)=>s+i.qty,0)}</button><button className=${tab==='later'?'on':''} onClick=${()=>setTab('later')}>Saved for later · ${later.length}</button></div>
+          <div className="seg"><button className=${tab==='tray'?'on':''} onClick=${()=>setTab('tray')}>In tray · ${items.reduce((s,i)=>s+i.qty,0)}</button><button className=${tab==='later'?'on':''} onClick=${()=>setTab('later')}>Saved for later · ${later.length+missingLater.length}</button></div>
           ${tab==='tray'&&html`<div className="seg"><button className=${view==='staged'?'on':''} onClick=${()=>setView('staged')}>Staged</button><button className=${view==='schedule'?'on':''} onClick=${()=>setView('schedule')}>Schedule</button></div>`}
         </div>
-        ${tab==='later'&&(later.length?later.map(x=>html`<div key=${x.pid} className="tv-line"><span className="tv-th" style=${{backgroundImage:`url(${cut(x.pid)})`}}></span><div><b>${x.p.name}</b> <span className="mute">${x.p.line}</span><div className="meta">${x.qty} × · ${fmt(pr(x.p,ctx.mode))} each</div></div><button className="btn btn-line btn-sm" onClick=${()=>restore(x)}>Move to ${proj.name}</button></div>`):html`<div className="empty"><h3>Nothing saved for later</h3><p>Use "Save for later" on any line to park it here without losing it.</p></div>`)}
-        ${missing.map(i=>html`<div key=${i.pid+i.zone} role="alert"><p>Saved item ${i.pid} is no longer available. Choose a replacement or remove it.</p><button className="btn btn-line" onClick=${()=>line(i,()=>null)}>Remove unavailable item</button></div>`)}
-        ${tab==='tray'&&!items.length&&html`<div className="empty"><h3>This project is empty</h3><p>Add pieces from the floor, a product page, or a whole Studio collage at once.</p><button className="btn btn-ink" onClick=${()=>{ctx.setTray(false);ctx.go('discover')}}>Browse pieces</button></div>`}
+        ${tab==='later'&&(later.length? later.map(x=>html`<div key=${projectItemKey(x)} className="tv-line"><span className="tv-th" style=${{backgroundImage:`url(${(x.p.cutout||x.p.img)})`}}></span><div><b>${x.p.name}</b> <span className="mute">${x.p.line}</span><div className="meta">${x.qty} × · ${fmt(pr(x.p,ctx.mode))} each</div></div><button className="btn btn-line btn-sm" onClick=${()=>restore(x)}>Move to ${proj.name}</button></div>`):!missingLater.length&&html`<div className="empty"><h3>Nothing saved for later</h3><p>Use "Save for later" on any line to park it here without losing it.</p></div>`)}
+        ${tab==='later'&&missingLater.map(i=>html`<div key=${i.pid+':'+(i.vid||'')} role="status"><p>Saved item ${i.pid} is unavailable. It has been kept for review.</p><button className="btn btn-line" onClick=${()=>setTrayState(t=>({...t,later:(t.later||[]).filter(x=>x!==i)}))}>Remove unavailable saved item</button></div>`)}
+        ${tab==='tray'&&missing.map(i=>html`<div key=${projectItemKey(i)} role="alert"><p>Saved item ${i.pid} is no longer available. Choose a replacement or remove it.</p><button className="btn btn-line" onClick=${()=>line(i,()=>null)}>Remove unavailable item</button></div>`)}
+        ${tab==='tray'&&!proj.items.length&&html`<div className="empty"><h3>This project is empty</h3><p>Add pieces from the floor, a product page, or a whole Studio collage at once.</p><button className="btn btn-ink" onClick=${()=>{ctx.setTray(false);ctx.go('discover')}}>Browse pieces</button></div>`}
         ${tab==='tray'&&items.length>0&&view==='staged'&&html`
           <div className="tv-stage" aria-label="Your tray, staged">
             <div className="tv-stage-in" style=${{width:`max(100%, ${stripCm*1.15}px)`}}>
-              ${strip.map((i,n)=>html`<button key=${i.pid+i.zone+i.k} className="tv-piece" style=${{width:cmW(i.pid)*1.15+'px',alignSelf:i.p.type==='lighting'?'flex-start':'flex-end'}} title=${i.p.name+' · '+i.zone} onClick=${()=>document.getElementById('ln-'+i.pid+i.zone.replace(/\W/g,''))?.scrollIntoView({behavior:'smooth',block:'center'})}><img src=${cut(i.pid)} alt=${i.p.name}/>${i.p.type!=='lighting'&&html`<span></span>`}</button>`)}
+              ${strip.map((i,n)=>html`<button key=${projectItemKey(i)+':'+i.k} className="tv-piece" style=${{width:cmW(i.pid)*1.15+'px',alignSelf:i.p.type==='lighting'?'flex-start':'flex-end'}} title=${i.p.name+' · '+i.zone} onClick=${()=>document.getElementById('ln-'+i.pid+i.zone.replace(/\W/g,''))?.scrollIntoView({behavior:'smooth',block:'center'})}><img src=${(i.p.cutout||i.p.img)} alt=${i.p.name}/>${i.p.type!=='lighting'&&html`<span></span>`}</button>`)}
             </div>
             <span className="tv-stage-cap mono">Your tray, staged · ${items.reduce((s,i)=>s+i.qty,0)} pieces · scroll sideways</span>
           </div>
           ${proj.zones.map(z=>{const zi=items.filter(i=>i.zone===z);const sg=suggest(z);return html`<div key=${z} className=${'tv-zone'+(over===z?' over':'')} onDragOver=${e=>{e.preventDefault();setOver(z)}} onDragLeave=${()=>setOver(null)} onDrop=${()=>{if(drag)moveTo(drag,z);setDrag(null);setOver(null)}}>
             <div className="zone-h"><h3>${z}</h3><span className="mono mute">${zi.length} pieces · ${zi.reduce((s,i)=>s+i.p.seats*i.qty,0)} seats${zi.length?'':' · drop pieces here'}</span></div>
-            ${zi.map(i=>html`<div key=${i.pid+z} id=${'ln-'+i.pid+z.replace(/\W/g,'')} className="tv-line" draggable="true" onDragStart=${()=>setDrag(i)} onDragEnd=${()=>setDrag(null)}>
-              <button className="tv-th" style=${{backgroundImage:`url(${cut(i.pid)})`}} aria-label=${'Open '+i.p.name} onClick=${()=>ctx.openPin(i.pid)}></button>
+            ${zi.map(i=>html`<div key=${projectItemKey(i)} id=${'ln-'+i.pid+z.replace(/\W/g,'')} className="tv-line" draggable="true" onDragStart=${()=>setDrag(i)} onDragEnd=${()=>setDrag(null)}>
+              <button className="tv-th" style=${{backgroundImage:`url(${(i.p.cutout||i.p.img)})`}} aria-label=${'Open '+i.p.name} onClick=${()=>ctx.openPin(i.pid)}></button>
               <div style=${{minWidth:0}}><b>${i.p.name}</b> <span className="mute">${i.p.line}</span>
                 <div className="meta"><span className="row" style=${{gap:5}}><span className="dot" style=${{background:i.p.tone}}></span>${MAT[i.p.mat]}</span><span className="mono">${i.p.sku}</span>${i.p.oos?html`<span className="tv-status warn">Restock check</span>`:html`<span className="tv-status">Ready to quote</span>`}</div>
                 <div className="meta"><button className="lnk" onClick=${()=>saveLater(i)}>Save for later</button><button className="lnk" onClick=${()=>remove(i)}>Remove</button><span className="mute hide-sm">Drag to another area</span></div></div>
@@ -1683,7 +1685,7 @@ function Tray({ctx}){
           </div>`})}
           <button className="btn btn-line btn-sm" style=${{marginTop:16}} onClick=${()=>{const n='Area '+(proj.zones.length+1);upd(p=>({...p,zones:[...p.zones,n]}));ctx.toast(n+' added. Drag pieces into it.')}}>${I('plus',{width:15})} Add an area</button>`}
         ${tab==='tray'&&items.length>0&&view==='schedule'&&html`<div className="tv-sched" role="region" aria-label="Project schedule" tabIndex="0"><table className="t"><thead><tr><th>Item</th><th>Area</th><th>Material</th><th className="r">≈ W</th><th className="r">Qty</th><th className="r">Unit</th><th className="r">Line</th><th>Status</th></tr></thead><tbody>
-            ${items.map(i=>html`<tr key=${i.pid+i.zone}><td><span className="row" style=${{gap:10}}><span className="tv-th sm" style=${{backgroundImage:`url(${cut(i.pid)})`}}></span><span><b style=${{fontWeight:500}}>${i.p.name}</b><br/><span className="mono mute">${i.p.sku}</span></span></span></td><td>${i.zone}</td><td><span className="row" style=${{gap:6}}><span className="dot" style=${{background:i.p.tone}}></span>${MAT[i.p.mat]}</span></td><td className="r num">${cmW(i.pid)} cm</td><td className="r num">${i.qty}</td><td className="r num">${fmt(pr(i.p,ctx.mode))}</td><td className="r num">${fmt(pr(i.p,ctx.mode)*i.qty)}</td><td><span className=${'tv-status'+(i.p.oos?' warn':'')}>${i.p.oos?'Restock check':'Ready to quote'}</span></td></tr>`)}
+            ${items.map(i=>html`<tr key=${projectItemKey(i)}><td><span className="row" style=${{gap:10}}><span className="tv-th sm" style=${{backgroundImage:`url(${(i.p.cutout||i.p.img)})`}}></span><span><b style=${{fontWeight:500}}>${i.p.name}</b><br/><span className="mono mute">${i.p.sku}</span></span></span></td><td>${i.zone}</td><td><span className="row" style=${{gap:6}}><span className="dot" style=${{background:i.p.tone}}></span>${MAT[i.p.mat]}</span></td><td className="r num">${cmW(i.pid)} cm</td><td className="r num">${i.qty}</td><td className="r num">${fmt(pr(i.p,ctx.mode))}</td><td className="r num">${fmt(pr(i.p,ctx.mode)*i.qty)}</td><td><span className=${'tv-status'+(i.p.oos?' warn':'')}>${i.p.oos?'Restock check':'Ready to quote'}</span></td></tr>`)}
           </tbody></table><div className="row" style=${{marginTop:12,flexWrap:'wrap'}}><button className="btn btn-line btn-sm" onClick=${()=>copyText(csv(),ctx.toast)}>${I('copy',{width:15})} Copy schedule as CSV</button><span className="help" style=${{margin:0}}>Paste into a spreadsheet or your procurement tool. Widths are planning estimates.</span></div></div>`}
       `}
       ${step===1&&html`<div className="tv-form">
@@ -1729,7 +1731,7 @@ function Tray({ctx}){
           <div className="sumrow"><span>Delivery</span><span>On final quote</span></div>
           <div className="sumrow"><span>Sales tax</span><span>${tray.taxExempt?'Exempt':'On final quote'}</span></div>
           ${!v2&&credit?.balanceCents>0&&html`<label className="sumrow" style=${{cursor:'pointer'}}><span><input type="checkbox" checked=${useCredit} onChange=${e=>setUseCredit(e.target.checked)} style=${{marginRight:8}}/>Use my ${fmt(credit.balanceCents/100,true)} credit</span><span>${useCredit?'−'+fmt(Math.min(credit.balanceCents/100,sub),true):''}</span></label>`}
-          <div className="sumrow total"><span>Merchandise estimate</span><span>${fmt(sub-(!v2&&useCredit&&credit?Math.min(credit.balanceCents/100,sub):0),true)}</span></div>
+          <div className="sumrow total"><span>Merchandise estimate</span><span>${missing.length?'Review unavailable items':fmt(sub-(!v2&&useCredit&&credit?Math.min(credit.balanceCents/100,sub):0),true)}</span></div>
           <p className="help" style=${{marginTop:8}}>Excludes delivery and tax. We confirm your complete total before payment. ${SPLIT_MAY}</p>
         </div>
         ${!v2&&step<2&&html`<button className="btn btn-ink btn-lg" disabled=${!items.length||project.errors.length>0} onClick=${()=>{if(step===1){const errors=contactErrors();if(Object.keys(errors).length){feedback.report(errors);return}}feedback.reset();setStep(step+1)}}>${step===0?'Continue to delivery':'Review request'} ${I('arrow',{width:17})}</button>`}
@@ -3754,7 +3756,7 @@ export function App(){
   const [space,setSpace]=useState(()=>load('space','bar'));
   const [modePref,setModePref]=useState(()=>load('mode','trade'));const mode=me.verified?modePref:'retail';const setMode=m=>{if(me.verified)setModePref(m)};
   const [boards,setBoards]=useState(()=>load('boards',BOARD_SEED).map(b=>({...b,pins:b.pins.filter(x=>has(x.pid))})));
-  const [tray,setTrayState]=useState(()=>{const t=load('tray',TRAY_SEED);const projects=(t.projects||[]).map(p=>({...p,items:(p.items||[]).filter(i=>has(i.pid))}));return projects.length?{...t,taxExempt:false,later:(t.later||[]).filter(x=>has(x.pid)),projects,active:projects.some(p=>p.id===t.active)?t.active:projects[0].id}:TRAY_SEED});
+  const [tray,setTrayState]=useState(()=>{const t=load('tray',TRAY_SEED);const projects=(t.projects||[]).map(p=>({...p,items:(p.items||[])}));return projects.length?{...t,taxExempt:false,later:(t.later||[]),projects,active:projects.some(p=>p.id===t.active)?t.active:projects[0].id}:TRAY_SEED});
   // Collages saved before they carried ids get one as they load, so autosave updates them in place.
   const withIds=cs=>cs.map(c=>c.id?c:{...c,id:uid()});
   const [collages,setCollages]=useState(()=>withIds(load('collages',[]).filter(c=>c.els.every(e=>e.kind!=='img'||has(e.pid)))));
@@ -3775,7 +3777,7 @@ export function App(){
     const push=(key,value)=>saveState({key,value}).catch(()=>{});
     // the account wins on matching ids; work from this device that the account doesn't have is kept
     const localProjects=tray.projects.filter(p=>p.items.length&&!(remote.tray?.projects||[]).some(r=>r.id===p.id));
-    if(remote.tray?.projects?.length){const projects=[...remote.tray.projects.map(p=>({...p,items:(p.items||[]).filter(i=>has(i.pid))})),...localProjects];const merged={...remote.tray,taxExempt:false,later:(remote.tray.later||[]).filter(x=>has(x.pid)),projects,active:projects.some(p=>p.id===remote.tray.active)?remote.tray.active:projects[0].id};setTrayState(merged);if(localProjects.length)push('tray',merged)}
+    if(remote.tray?.projects?.length){const projects=[...remote.tray.projects.map(p=>({...p,items:(p.items||[])})),...localProjects];const merged={...remote.tray,taxExempt:false,later:(remote.tray.later||[]),projects,active:projects.some(p=>p.id===remote.tray.active)?remote.tray.active:projects[0].id};setTrayState(merged);if(localProjects.length)push('tray',merged)}
     else if(tray.projects.some(p=>p.items.length))push('tray',tray);
     const remoteBoards=Array.isArray(remote.boards)?remote.boards:[];
     const localBoards=boards.filter(b=>b.pins.length&&!remoteBoards.some(r=>r.id===b.id));
@@ -3793,7 +3795,7 @@ export function App(){
   const trayCount=activeProject.items.reduce((s,i)=>s+i.qty,0);
   const fly=(fromEl)=>{try{const btn=document.getElementById('trayBtn');if(!fromEl||!btn)return;const a=fromEl.getBoundingClientRect(),b=btn.getBoundingClientRect();const im=document.createElement('img');im.src=fromEl.src||fromEl.style.backgroundImage.slice(5,-2);im.className='fly';const sz=Math.min(140,a.width);Object.assign(im.style,{left:a.left+a.width/2-sz/2+'px',top:a.top+a.height/2-sz/2+'px',width:sz+'px',height:sz+'px'});document.body.appendChild(im);
     im.animate([{transform:'translate(0,0) scale(1)',opacity:1},{transform:`translate(${b.left+b.width/2-(a.left+a.width/2)}px,${b.top+b.height/2-(a.top+a.height/2)}px) scale(.12)`,opacity:.6}],{duration:700,easing:'cubic-bezier(.5,0,.2,1)'}).onfinish=()=>im.remove()}catch(e){}};
-  const addToTray=(pid,qty=1,fromEl,quiet)=>{const selected=BY_ID.get(pid);if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==t.active)return p;const z=p.zones[0];const ex=p.items.find(i=>i.pid===pid&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,vid:selected.vid,qty,zone:z}]}})}));
+  const addToTray=(pid,qty=1,fromEl,quiet)=>{const selected=BY_ID.get(pid);if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==t.active)return p;const z=p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));
     fly(fromEl);if(!quiet)toast(`${byId(pid).name} added to ${activeProject.name}`,{label:'Open tray',fn:()=>setTray(true)})};
   const saveTo=(pid,bid,quiet)=>{setBoards(bs=>bs.map(b=>b.id===bid?{...b,t:Date.now(),pins:b.pins.some(x=>x.pid===pid)?b.pins:[{pid,sec:b.sections[0]||''},...b.pins]}:b).sort((a,b)=>b.t-a.t));if(!quiet){const b=boards.find(x=>x.id===bid);toast(`Saved to ${b?b.title:'board'}`,{label:'View',fn:()=>{setBoard(bid);go('board')}})}};
   const createBoard=(title,pid,secret=false)=>{const id='b'+uid();setBoards(bs=>[{id,title,secret,collab:0,sections:[],pins:pid?[{pid,sec:''}]:[],t:Date.now()},...bs]);if(pid)toast('Saved to '+title);return id};
@@ -3802,7 +3804,7 @@ export function App(){
     const pal=Object.values(buckets).sort((a,b)=>b.n-a.n).slice(0,5).map(B=>rgb2hex(B.r/B.n,B.g/B.n,B.b/B.n));setImgQ({src:r.result,pal});setQuery('');go('discover')};img.src=r.result};r.readAsDataURL(f)};
   const toStudio=(ids,title)=>{setStudioSeed({ids,title:title||'New collage'});setNonce(n=>n+1);setPin(null);go('studio')};
   const openPin=id=>{setPin(id);if(id)setRecent(r=>[id,...r.filter(x=>x!==id)].slice(0,8))};
-  const addToProject=(pid,qty,projId,zone,fromEl,quiet)=>{const selected=BY_ID.get(pid);if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==projId)return p;const z=zone||p.zones[0];const ex=p.items.find(i=>i.pid===pid&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,vid:selected.vid,qty,zone:z}]}})}));fly(fromEl);if(!quiet){const pn=(tray.projects.find(p=>p.id===projId)||{}).name||'project';toast(byId(pid).name+' added to '+pn+(zone?' · '+zone:''),{label:'Open tray',fn:()=>{setPin(null);setTray(true)}})}};
+  const addToProject=(pid,qty,projId,zone,fromEl,quiet)=>{const selected=BY_ID.get(pid);if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==projId)return p;const z=zone||p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));fly(fromEl);if(!quiet){const pn=(tray.projects.find(p=>p.id===projId)||{}).name||'project';toast(byId(pid).name+' added to '+pn+(zone?' · '+zone:''),{label:'Open tray',fn:()=>{setPin(null);setTray(true)}})}};
   const createProject=name=>{const id=uid();setTrayState(t=>({...t,projects:[...t.projects,{id,name,target:20,zones:['Main room'],items:[]}]}));toast(`Project "${name}" created`);return id};
   const addZone=(pid,z)=>setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===pid&&!p.zones.includes(z)?{...p,zones:[...p.zones,z]}:p)}));
   const inspoCtx={inspo,addInspo:items=>setInspo(l=>[...items,...l]),removeInspo:id=>setInspo(l=>l.filter(x=>x.id!==id)),updateInspo:(id,o)=>setInspo(l=>l.map(x=>x.id===id?{...x,...o}:x)),roomWall,setRoomWall,inspoToStudio:(x,ids=[])=>{setStudioSeed({inspo:x,ids,title:x.title});setNonce(n=>n+1);go('studio')}};

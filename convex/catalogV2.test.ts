@@ -1008,11 +1008,27 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     expect(await read()).toMatchObject({ inStock: true, price: 458.06 });
     expect(await read()).toMatchObject({ imageMedia: retail.snapshot.imageMedia });
     expect((await page()).page).toHaveLength(1);
-    const housePage = () => t.query(api.holm.catalogPage, { paginationOpts: { cursor: null, numItems: 50 } });
+    const housePage = async () => {
+      const page = await t.query(api.holm.catalogPage, { paginationOpts: { cursor: null, numItems: 50 } });
+      const resolved = await t.query(api.holm.catalogItems, { productIds: [productId, productId] });
+      expect(resolved).toHaveLength(1);
+      expect(resolved[0]).toEqual({ productId, item: page.page.find(p => p.id === productId) ?? null });
+      return page;
+    };
     expect((await housePage()).page).toHaveLength(0);
     process.env.TRADE_CHECKOUT_V2_ENABLED = 'true';
     expect((await housePage()).page).toMatchObject([{ id: productId, checkoutMode: 'v2', variants: [{ id: cv._id, retail: 45806, trade: null }] }]);
     const approvedTradePrice = (await t.run(ctx => ctx.db.get(cv.tradePriceRevisionId!)))!;
+    const identity = await t.run(async ctx => {
+      const userId = await ctx.db.insert('users', { email: 'catalog-resolution@example.com' });
+      const profileId = await ctx.db.insert('holmProfiles', { userId, displayName: 'Studio', tradeStatus: 'approved', createdAt: NOW, updatedAt: NOW });
+      return { userId, profileId };
+    });
+    const partner = t.withIdentity({ subject: `${identity.userId}|s` });
+    expect((await partner.query(api.holm.catalogItems, { productIds: [productId] }))[0].item?.variants[0].trade).toBe(approvedTradePrice.packPriceMinor);
+    await t.run(ctx => ctx.db.patch(identity.profileId, { tradeStatus: 'pending' }));
+    expect((await partner.query(api.holm.catalogItems, { productIds: [productId] }))[0].item?.variants[0].trade).toBeNull();
+    await expect(t.query(api.holm.catalogItems, { productIds: Array(25).fill(productId) })).rejects.toThrow();
     await t.run(ctx => ctx.db.patch(approvedTradePrice._id, { effectiveTo: Date.now() - 1000 }));
     expect((await housePage()).page).toHaveLength(0);
     await t.run(ctx => ctx.db.patch(approvedTradePrice._id, { effectiveTo: approvedTradePrice.effectiveTo }));
