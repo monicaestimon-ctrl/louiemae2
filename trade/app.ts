@@ -1,10 +1,15 @@
 /* eslint-disable */
 // @ts-nocheck
-import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, startTransition } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useId, useMemo, startTransition } from 'react';
 import htm from 'htm';
 import type { HolmProduct } from './catalog';
 import { TradeWelcome } from './TradeWelcome';
+import { TradeApplication } from './TradeApplication';
+import { BUSINESS_TYPES as BTYPES } from './application';
 import { Modal } from '../components/Modal';
+import { useFormValidation } from '../components/forms/useFormValidation';
+import { ValidationSummary } from '../components/forms/ValidationSummary';
+import { customerMessage } from '../lib/errors';
 import { navigatePlainLink } from '../lib/navigation';
 import { useQuery, useMutation, useAction } from 'convex/react';
 import { SPLIT_MAY } from '../lib/customerCopy';
@@ -1449,38 +1454,39 @@ function QuoteComposer({ctx,onClose}){
   const proj=ctx.activeProject;const me=ctx.me;
   const create=useMutation(api.holm.createClientQuote);
   const [set,setSet]=useState(()=>({show:'markup',markup:40,brand:'studio',studio:me.businessName||'',email:me.email||'',client:'',note:'',valid:30,delivery:'',lead:'8 to 10 weeks',...load('qset',{}),title:proj.name}));
-  const [busy,setBusy]=useState(false);const [link,setLink]=useState('');const [serverErr,setServerErr]=useState('');
-  const up=o=>{setSet(s=>({...s,...o}));setLink('')};
+  const [busy,setBusy]=useState(false);const [link,setLink]=useState('');const feedback=useFormValidation();const formId=useId();const pending=useRef(false);
+  const up=o=>{setSet(s=>({...s,...o}));setLink('');Object.keys(o).forEach(k=>feedback.clear(k));feedback.clear('_form');if(o.brand==='hol')feedback.clear('studio')};
   useEffect(()=>{const {show,markup,brand,studio,email,valid,lead}=set;store('qset',{show,markup,brand,studio,email,valid,lead})},[set]);
   const items=proj.items.map(i=>({...i,p:byId(i.pid)}));
   const cost=items.reduce((s,i)=>s+tp(i.p)*i.qty,0);const sell=items.reduce((s,i)=>s+qSellOf(i.p,set)*i.qty,0);const profit=sell-cost;
   const errs={client:!set.client.trim()&&'Add who this is for',email:!set.email.trim()?'Add the email where approvals should go':!/^\S+@\S+\.\S+$/.test(set.email)&&'Check this email address',studio:set.brand==='studio'&&!set.studio.trim()&&'Add your studio name'};
-  const [tried,setTried]=useState(false);const ok=!errs.client&&!errs.email&&!errs.studio&&items.length>0;
-  const make=async()=>{setTried(true);setServerErr('');if(!ok)return null;if(link)return link;setBusy(true);
+  const ok=!errs.client&&!errs.email&&!errs.studio&&items.length>0;
+  const make=async()=>{if(pending.current)return null;if(!ok){feedback.report({...Object.fromEntries(Object.entries(errs).filter(([,message])=>message)),...(!items.length?{_form:'Add at least one piece to the project.'}:{})});return null}feedback.reset();if(link)return link;pending.current=true;setBusy(true);
     try{const merged=[];items.forEach(i=>{const ex=merged.find(m=>m.productId===i.p.lid&&m.variantId===i.p.vid);if(ex)ex.quantity+=i.qty;else merged.push({productId:i.p.lid,variantId:i.p.vid,quantity:i.qty,zone:i.zone})});
       const slug=await create({show:set.show,markupBps:Math.round(set.markup*100),studioName:set.brand==='studio'?set.studio:undefined,replyEmail:set.email,clientName:set.client,title:set.title||proj.name,note:set.note,space:ctx.space,deliveryCents:set.delivery?Math.round(+set.delivery*100):undefined,leadTime:set.lead,validDays:set.valid,items:merged});
       const url=location.origin+'/trade#q/'+slug;setLink(url);return url}
-    catch(e){setServerErr(e?.data||e?.message?.replace(/^.*Uncaught Error: /,'').split('\n')[0]||'Something went wrong. Try again.');return null}finally{setBusy(false)}};
+    catch(e){feedback.report({_form:customerMessage(e)});return null}finally{pending.current=false;setBusy(false)}};
   const share=async()=>{const url=await make();if(url)copyText(url,ctx.toast)};
   const preview=async()=>{const url=await make();if(url){onClose();ctx.setTray(false);location.hash=url.split('#')[1]}};
-  const F=(k,label,ph,type='text')=>html`<label className="qc-f"><span>${label}</span><input type=${type} value=${set[k]} placeholder=${ph} onInput=${e=>up({[k]:e.target.value})} aria-invalid=${!!(tried&&errs[k])}/>${tried&&errs[k]&&html`<em>${errs[k]}</em>`}</label>`;
+  const F=(k,label,ph,type='text')=>html`<div className="qc-f"><label htmlFor=${formId+'-'+k}>${label}</label><input id=${formId+'-'+k} type=${type} value=${set[k]} placeholder=${ph} onInput=${e=>up({[k]:e.target.value})} aria-invalid=${!!feedback.errors[k]} aria-describedby=${feedback.errors[k]?formId+'-'+k+'-error':undefined}/>${feedback.errors[k]&&html`<em id=${formId+'-'+k+'-error'}>${feedback.errors[k]}</em>`}</div>`;
   if(!me.verified)return html`<${Modal} open=${true} label="Client quotes" onClose=${onClose}><div className="qc-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()}><div className="qc" style=${{gridTemplateColumns:'1fr',maxWidth:560}}><button className="qc-x" aria-label="Close" onClick=${onClose}>${I('x')}</button><div className="qc-set"><h2>Client quotes</h2><p className="qc-sub">Client quotes are part of a verified trade account. Price a project at trade, add your markup, and send your client one link.</p><button className="btn btn-ink btn-lg" style=${{justifySelf:'start'}} onClick=${()=>{onClose();ctx.setTray(false);ctx.go('trade')}}>${me.signedIn&&me.tradeStatus==='pending'?'View your application':'Apply for trade'}</button></div></div></div><//>`;
   return html`<${Modal} open=${true} label="Create a client quote" onClose=${onClose}><div className="qc-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()}>
     <div className="qc">
       <button className="qc-x" aria-label="Close" onClick=${onClose}>${I('x')}</button>
-      <div className="qc-set">
+      <fieldset className="qc-set" disabled=${busy} style=${{border:0,minWidth:0}}><legend className="sr">Client quote details</legend>
         <h2>Client quote</h2>
+        <div className="delivery-ui"><${ValidationSummary} summaryRef=${feedback.summaryRef} entries=${[{label:'Prepared for',fieldId:formId+'-client',message:feedback.errors.client},{label:'Send approvals to',fieldId:formId+'-email',message:feedback.errors.email},{label:'Studio name',fieldId:formId+'-studio',message:feedback.errors.studio},{message:feedback.errors._form}]}/></div>
         <p className="qc-sub">${proj.name} · ${items.reduce((s,i)=>s+i.qty,0)} pieces</p>
         <div className="qc-g">${F('client','Prepared for','Client name or business')}${F('title','Project title',proj.name)}</div>
         <div className="qc-block">
           <span className="qc-l">What your client sees</span>
-          <div className="qc-seg">${[['cost','Your cost'],['markup','Marked up'],['retail','Retail']].map(([k,t])=>html`<button key=${k} className=${set.show===k?'on':''} onClick=${()=>up({show:k})}>${t}</button>`)}</div>
+          <div className="qc-seg" role="group" aria-label="Client pricing display">${[['cost','Your cost'],['markup','Marked up'],['retail','Retail']].map(([k,t])=>html`<button key=${k} className=${set.show===k?'on':''} aria-pressed=${set.show===k} onClick=${()=>up({show:k})}>${t}</button>`)}</div>
           ${set.show==='markup'&&html`<div className="qc-mk"><input className="lux-range qc-range" type="range" min="0" max="80" step="5" value=${set.markup} style=${{'--p':set.markup/80*100+'%'}} onInput=${e=>up({markup:+e.target.value})} aria-label="Markup on your trade cost"/><b className="num">${set.markup}%</b></div>`}
           <p className="qc-hint">${{cost:'Your trade price, passed through. Best when you bill a separate design fee.',markup:'Your margin is added to every piece. Your client only sees the final price.',retail:'Standard retail prices. You keep the full trade discount.'}[set.show]}</p>
         </div>
         <div className="qc-block">
           <span className="qc-l">Presented by</span>
-          <div className="qc-seg">${[['studio','Your studio'],['hol','House of Louie Mae']].map(([k,t])=>html`<button key=${k} className=${set.brand===k?'on':''} onClick=${()=>up({brand:k})}>${t}</button>`)}</div>
+          <div className="qc-seg" role="group" aria-label="Presented by">${[['studio','Your studio'],['hol','House of Louie Mae']].map(([k,t])=>html`<button key=${k} className=${set.brand===k?'on':''} aria-pressed=${set.brand===k} onClick=${()=>up({brand:k})}>${t}</button>`)}</div>
           <div className="qc-g">${set.brand==='studio'&&F('studio','Studio name','Your studio')}${F('email','Send approvals to','you@studio.com','email')}</div>
         </div>
         <div className="qc-g3">
@@ -1489,7 +1495,7 @@ function QuoteComposer({ctx,onClose}){
           <label className="qc-f"><span>Valid for</span><select value=${set.valid} onChange=${e=>up({valid:+e.target.value})}>${[14,30,60].map(v=>html`<option key=${v} value=${v}>${v} days</option>`)}</select></label>
         </div>
         <label className="qc-f"><span>A note to your client</span><textarea rows="3" value=${set.note} placeholder="A few words on the direction, finishes, or next steps" onInput=${e=>up({note:e.target.value})}></textarea></label>
-      </div>
+      </fieldset>
       <div className="qc-side">
         <div className="qc-private">
           <span className="qc-l">${I('lock',{width:14})} Only you see this</span>
@@ -1506,7 +1512,6 @@ function QuoteComposer({ctx,onClose}){
         <button className="btn btn-ink btn-lg qc-cta" disabled=${busy} onClick=${share}>${I('link',{width:16})} ${busy?'Creating link…':link?'Copy client link again':'Copy client link'}</button>
         <button className="btn btn-line" disabled=${busy} onClick=${preview}>Preview as your client</button>
         ${link&&html`<div className="linkbox"><code>${link}</code></div>`}
-        ${serverErr&&html`<p className="help" style=${{color:'var(--bad)',textAlign:'center'}}>${serverErr}</p>`}
         <p className="qc-fine">Prices are confirmed on our server. Your trade cost never appears on the client's page.</p>
       </div>
     </div>
@@ -1780,17 +1785,19 @@ function SxDrawer({title,onClose,children}){
     <div className="sx-drawer-h"><b>${title}</b><button className="ib" aria-label=${'Close '+title} onClick=${onClose}>${I('x')}</button></div>
     <div className="sx-drawer-b">${children}</div></aside>`;
 }
+/** Name the piece-list action from its visible quantity, price and channel text. */
 function SxPill({ctx,count,total,onOpen}){
-  return html`<button className="sx-pill" onClick=${onOpen} aria-label="Open the piece list"><span>${count} piece${count===1?'':'s'}</span><span className="sx-dot"></span><b className="num">${fmt(total)}</b><span>${ctx.mode==='trade'?'trade':'retail'}</span></button>`;
+  return html`<button className="sx-pill" onClick=${onOpen}><span className="sr">Open the piece list: </span><span>${count} piece${count===1?'':'s'}</span><span className="sx-dot"></span><b className="num">${fmt(total)}</b><span>${ctx.mode==='trade'?'trade':'retail'}</span></button>`;
 }
 // Every piece on the canvas with its quantity; hidden pieces show struck through so the total's rule is visible.
+/** Show canvas quantities in a keyboard-scrollable modal before copying items to a local project draft. */
 function SxTray({ctx,rows,onClose}){
   const [proj,setProj]=useState(ctx.tray.active);const live=rows.filter(r=>!r.hidden);
   const total=live.reduce((s,r)=>s+pr(byId(r.pid),ctx.mode)*r.qty,0);
-  return html`<div className="scrim sx-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()} role="dialog" aria-modal="true" aria-label="Pieces">
+  return html`<${Modal} open label="Pieces" onClose=${onClose}><div className="scrim sx-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()}>
     <div className="sx-sheet">
       <div className="sx-drawer-h"><b>Pieces</b><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>
-      <div className="sx-rows">${rows.length?rows.map(r=>{const p=byId(r.pid);return html`<div key=${r.pid+(r.hidden?'h':'')} className=${'sx-row'+(r.hidden?' off':'')}>
+      <div className="sx-rows" tabIndex="0" role="region" aria-label="Piece quantities and prices">${rows.length?rows.map(r=>{const p=byId(r.pid);return html`<div key=${r.pid+(r.hidden?'h':'')} className=${'sx-row'+(r.hidden?' off':'')}>
         <span className="sx-th"><img src=${cut(r.pid)} alt=""/></span><span className="sx-row-t"><b>${p.name}</b><span>${p.line}${r.hidden?' · hidden, not counted':''}</span></span>
         <span className="mono">× ${r.qty}</span><span className="num sx-price">${fmt(pr(p,ctx.mode)*r.qty)}</span></div>`}):html`<p className="sx-note">No pieces yet. Add some from the rail.</p>`}</div>
       <div className="sx-sheet-f">
@@ -1799,12 +1806,12 @@ function SxTray({ctx,rows,onClose}){
           <select className="field" style=${{height:38,width:'auto'}} value=${proj} onChange=${e=>setProj(e.target.value)} aria-label="Project">${ctx.tray.projects.map(p=>html`<option key=${p.id} value=${p.id}>${p.name}</option>`)}</select>
           <button className="btn btn-cog btn-sm" disabled=${!live.length} onClick=${()=>{const P=ctx.tray.projects.find(p=>p.id===proj);live.forEach(r=>ctx.addToProject(r.pid,r.qty,proj,P.zones[0],null,true));ctx.toast(`${live.reduce((s,r)=>s+r.qty,0)} pieces added to ${P.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)});onClose()}}>${I('tray',{width:15})} Add all to project</button>
         </span></div>
-    </div></div>`;
+    </div></div><//>`;
 }
+/** Share native modal focus, dismissal and scroll ownership across Studio tool dialogs. */
 function SxDialog({title,onClose,wide,children}){
-  useEffect(()=>{const k=e=>{if(e.key==='Escape')onClose()};addEventListener('keydown',k);return()=>removeEventListener('keydown',k)},[]);
-  return html`<div className="scrim sx-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()} role="dialog" aria-modal="true" aria-label=${title}>
-    <div className=${'sx-dialog'+(wide?' wide':'')}><div className="sx-drawer-h"><b>${title}</b><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>${children}</div></div>`;
+  return html`<${Modal} open label=${title} onClose=${onClose}><div className="scrim sx-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()}>
+    <div className=${'sx-dialog'+(wide?' wide':'')}><div className="sx-drawer-h"><b>${title}</b><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>${children}</div></div><//>`;
 }
 // The Collage, Room and 3D views show the same pieces: given what a view holds and the pieces the
 // other view has, keep matching items (by index) and list the pieces to add.
@@ -1916,6 +1923,7 @@ function snapBox(b,others){
   return out;
 }
 const ZMIN=.25,ZMAX=4;
+/** Edit the local collage draft; modal tools own keyboard events while the canvas stays inert. */
 function Studio({ctx}){
   const seed=ctx.studioSeed;
   const [doc,setDoc]=useState(()=>{
@@ -2058,7 +2066,7 @@ function Studio({ctx}){
     ...(S.kind==='swatch'?[['color','Colour']]:[]),
     ['arrange','Arrange']];
   const barStyle=box?(()=>{const above=box.t>64;const x=Math.max(8,Math.min(box.W-8,box.l+box.w/2));return {left:x,top:above?box.t-12:box.t+box.h+12,transform:`translate(-50%,${above?'-100%':'0'})`}})():null;
-  return html`<main className="sx studio2">
+  return html`<main className="sx studio2"><h1 className="sr">Collage Studio</h1>
     <${SxTop} ctx=${ctx} title=${title} setTitle=${setTitle} view=${mode} onView=${onView} saved=${ctx.me.signedIn?saved:saved==='Saved'?'Saved on this device':saved} onShare=${()=>setShare(true)}>
       <${SxMenu} ctx=${ctx} hist=${{undo,redo,canUndo:hist.current.past.length>0,canRedo:hist.current.future.length>0,steps:hist.current.past.length}}>
         <div className="sx-pop-sec"><span className="sx-lbl">Page size</span>
@@ -2404,7 +2412,7 @@ function ShareSheet({ctx,title,doc,image,ids,boardKey,room,units,onClose}){
     if(k==='share')return run(k,async()=>{const l=await ensure();if(!l)return;const url=bundleUrl(l.slug,'share');
       if(navigator.share&&isPhone()){try{await navigator.share({title,text:title,url})}catch(e){}}else location.href=`mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(`${title}\n\n${url}`)}`});
     setView(k)};
-  return html`<div className="scrim sx-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()} role="dialog" aria-modal="true" aria-label="Share">
+  return html`<${Modal} open label="Share" onClose=${onClose}><div className="scrim sx-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()}>
     <div className="sx-dialog wide sx-share">
       <div className="sx-drawer-h">${view!=='routes'?html`<button className="lnk" onClick=${()=>setView('routes')}>${I('back',{width:15})} Share</button>`:html`<b>Share</b>`}<button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>
       <div className="modecards">
@@ -2421,7 +2429,7 @@ function ShareSheet({ctx,title,doc,image,ids,boardKey,room,units,onClose}){
       ${err&&html`<p className="sx-note" style=${{color:'var(--bad)'}}>${err}</p>`}
       ${shop&&ctx.me.partner&&html`<p className="sx-note">Posting on social? Add #ad or "I earn commission" to the caption. FTC rules require it, and it's in the partner terms.</p>`}
       ${!shop&&html`<p className="sx-note">Presentation links never carry your partner code and never show prices.</p>`}
-    </div></div>`;
+    </div></div><//>`;
 }
 // Story and Pin/post templates: flip between looks with the arrows, then share or download.
 function StoryBuilder({ctx,doc,boardCanvas,pieces,title,pin,prices,ensure,onQR,busy,run}){
@@ -2482,6 +2490,7 @@ function SharedBoard({ctx,slug}){
 }
 
 /* ================= MY INSPO ================= */
+/** Open uploaded inspiration through native controls while retaining separate Studio actions. */
 function Inspo({ctx}){
   const [open,setOpen]=useState(null);const [drag,setDrag]=useState(false);const [busy,setBusy]=useState(false);const fileRef=useRef();
   const uploadUrl=useMutation(api.holmSync.inspoUploadUrl);const urlOf=useMutation(api.holmSync.inspoUrl);
@@ -2503,20 +2512,21 @@ function Inspo({ctx}){
     <form className="row" style=${{gap:8,marginBottom:14,flexWrap:'wrap'}} onSubmit=${e=>{e.preventDefault();addPin(pinUrl)}}>
       <input className="field" style=${{flex:'1 1 320px',maxWidth:520}} aria-label="Pinterest pin link" placeholder="Paste a Pinterest pin link (pinterest.com/pin/… or pin.it/…)" value=${pinUrl} onInput=${e=>setPinUrl(e.target.value)}/>
       <button className="btn btn-line" disabled=${pinBusy||!pinUrl.trim()}>${I('pint',{width:16})} ${pinBusy?'Importing…':'Import pin'}</button></form>
-    <div className=${'drop'+(drag?' on':'')} style=${{marginBottom:22}} onClick=${()=>fileRef.current.click()} onKeyDown=${e=>e.key==='Enter'&&fileRef.current.click()} role="button" tabIndex="0">${I('upload',{width:22})}<span><b style=${{color:'var(--ink)',fontWeight:500}}>${busy?'Adding…':drag?'Drop to add':'Drop images anywhere on this page'}</b>, paste a screenshot, or click to choose files</span></div>
-    ${list.length?html`<div className="wall">${list.map(x=>html`<div key=${x.id} className="pin"><div className="pin-img" onClick=${()=>setOpen(x.id)}><img src=${x.src} alt=${x.title} style=${{aspectRatio:x.ar||1}}/>
+    <button type="button" className=${'drop'+(drag?' on':'')} style=${{marginBottom:22}} onClick=${()=>fileRef.current.click()}>${I('upload',{width:22})}<span><b style=${{color:'var(--ink)',fontWeight:500}}>${busy?'Adding…':drag?'Drop to add':'Drop images anywhere on this page'}</b>, paste a screenshot, or click to choose files</span></button>
+    ${list.length?html`<div className="wall">${list.map(x=>html`<div key=${x.id} className="pin"><div className="pin-img"><button className="pin-open" aria-label=${'View '+x.title} onClick=${()=>setOpen(x.id)}><img src=${x.src} alt=${x.title} style=${{aspectRatio:x.ar||1}}/></button>
         <div className="pin-ov"><div className="r1"><span className="pin-board"><span>${x.source==='pinterest'?'Pinterest':'Upload'}</span></span></div>
           <div className="r2"><span className="row" style=${{gap:4}}>${x.pal.slice(0,4).map(c=>html`<span key=${c} className="dot" style=${{width:16,height:16,background:c,boxShadow:'0 0 0 2px #fff'}}></span>`)}</span><button className="pin-act" aria-label="Mix in Studio" title="Mix in Studio" onClick=${e=>{e.stopPropagation();ctx.inspoToStudio(x)}}>${I('brush')}</button></div></div></div>
         <div className="pin-meta"><b>${x.title}</b></div></div>`)}</div>`
-      :html`<div className="empty"><h3>Nothing here yet</h3><p>Upload a few photos or paste a screenshot to start.</p></div>`}
+      :html`<div className="empty"><h2>Nothing here yet</h2><p>Upload a few photos or paste a screenshot to start.</p></div>`}
     ${O&&html`<${InspoDetail} ctx=${ctx} x=${O} onClose=${()=>setOpen(null)}/>`}
   </main>`;
 }
 
+/** Present the selected reference and matching pieces with modal containment and return focus. */
 function InspoDetail({ctx,x,onClose}){
   const [t,setT]=useState(x.title);
   const sim=[...PRODUCTS].sort((a,b)=>Math.min(...x.pal.map(c=>cdist(c,a.tone)))-Math.min(...x.pal.map(c=>cdist(c,b.tone)))).slice(0,8);
-  return html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&onClose()} role="dialog" aria-modal="true" aria-label=${x.title}><div className="sheet">
+  return html`<${Modal} open label=${x.title} onClose=${onClose}><div className="scrim" onClick=${e=>e.target===e.currentTarget&&onClose()}><div className="sheet">
     <div className="pd">
       <div className="pd-img"><button className="ib closer" aria-label="Close" onClick=${onClose}>${I('x')}</button><img src=${x.src} alt=${x.title}/></div>
       <div className="pd-body">
@@ -2533,7 +2543,7 @@ function InspoDetail({ctx,x,onClose}){
       </div>
     </div>
     <div className="similar"><div className="sec-h" style=${{margin:'22px 0 16px'}}><h2 style=${{fontSize:34}}>Louie pieces for <em style=${{color:'var(--cognac)'}}>this look</em></h2><span className="mono mute">Ranked by color match</span></div><${Wall} items=${sim} ctx=${ctx}/></div>
-  </div></div>`;
+  </div></div><//>`;
 }
 
 const plShape=(w,h,ops)=>{const T=window.THREE;const s=new T.Shape();s.moveTo(-w/2,0);s.lineTo(w/2,0);s.lineTo(w/2,h);s.lineTo(-w/2,h);s.lineTo(-w/2,0);
@@ -2589,6 +2599,7 @@ const plReflow=doc=>{const placed=[];for(const it of doc.items){const d={...doc,
 const plFit=(W,H,ops)=>ops.map((o,i)=>{const near=Math.min(Infinity,...ops.filter((_,j)=>j!==i).map(p=>Math.abs(p.x-o.x)))-.15;let w=Math.max(.3,Math.min(o.w,near,2*(W/2-.1-Math.abs(o.x))));const y=Math.min(o.y,Math.max(.05,H-.5));const h=Math.max(.3,Math.min(o.h,H-y-.1));if(o.t==='arch')w=Math.min(w,2*(h-.05));return {...o,w:r2(w),y:r2(y),h:r2(h)}});
 const plWord=(it,doc)=>`${it.x<-doc.W/6?'left':it.x>doc.W/6?'right':'centre'}${it.z<-doc.D/6?' back':it.z>doc.D/6?' front':''}`;
 
+/** Keep the planner canvas mounted behind independently dismissible snapshot and render dialogs. */
 function Room({ctx}){
   // Pieces sent here join the saved room. From the Studio's 3D switch (sync) the room follows the board
   // instead: its new pieces arrive and the ones it dropped leave.
@@ -2869,7 +2880,7 @@ function Room({ctx}){
       const pieces=[...new Set(doc.items.map(i=>byId(i.pid)?.lid).filter(Boolean))].slice(0,6);
       const id=await createRender({title,prompt,snapshot:await snap.arrayBuffer(),camera:S?{view:S.view,orbit:S.cam,walk:S.eye}:undefined,pieces});
       setShowPrompt(false);setAiJob(id)}catch(e){ctx.toast(errText(e))}finally{setAiBusy(false)}};
-  return html`<main className="sx planner2">
+  return html`<main className="sx planner2"><h1 className="sr">Room planner</h1>
     <${SxTop} ctx=${ctx} title=${title} setTitle=${t=>setTitle(t.slice(0,TITLE_MAX))} view="3d" onView=${k=>{ctx.setStudioSeed({view:k==='room'?'room':'collage',sync:doc.items.map(i=>i.pid)});ctx.go('studio')}} saved="Saved on this device" onShare=${()=>eng&&setShareImg(E.current.snapshot())}>
       <${SxMenu} ctx=${ctx} hist=${{undo,redo,canUndo:hist.current.past.length>0,canRedo:hist.current.future.length>0,steps:hist.current.past.length}}>
         <div className="sx-pop-sec"><span className="sx-lbl">Placing</span>
@@ -2984,22 +2995,23 @@ function Room({ctx}){
       <div className="row" style=${{gap:8,justifyContent:'flex-end'}}><button className="btn btn-line btn-sm" onClick=${()=>setTplAsk(null)}>Keep my room</button>
         <button className="btn btn-cog btn-sm" onClick=${()=>{const k=tplAsk;const t=JSON.parse(JSON.stringify(PL_TEMPLATES[k]));commit(plReflow({...t,tpl:k,items:t.items.map(it=>({...it,uid:uid()})),rugs:[],wallImg:null}));setSel(null);setTplAsk(null);ctx.toast('Room replaced',{label:'Undo',fn:undo})}}>Replace canvas</button></div>
     <//>`}
-    ${shot&&html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&setShot(null)} role="dialog" aria-modal="true" aria-label="Snapshot"><div className="sheet share" style=${{width:'min(1000px,100%)'}}><div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>Snapshot</h2><button className="ib" aria-label="Close" onClick=${()=>setShot(null)}>${I('x')}</button></div><img src=${shot} alt="Snapshot of the room" style=${{borderRadius:12}}/><div className="row" style=${{gap:8,flexWrap:'wrap'}}><a className="btn btn-cog btn-sm" href=${shot} download=${(title||'room').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.jpg'}>${I('download',{width:15})} Download image</a><button className="btn btn-line btn-sm" onClick=${()=>{setShareImg(shot);setShot(null)}}>${I('share',{width:15})} Share</button></div></div></div>`}
-    ${showPrompt&&html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&setShowPrompt(false)} role="dialog" aria-modal="true" aria-label="Render brief"><div className="sheet share" style=${{width:'min(720px,100%)'}}>
+    ${shot&&html`<${Modal} open label="Snapshot" onClose=${()=>setShot(null)}><div className="scrim" onClick=${e=>e.target===e.currentTarget&&setShot(null)}><div className="sheet share" style=${{width:'min(1000px,100%)'}}><div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>Snapshot</h2><button className="ib" aria-label="Close" onClick=${()=>setShot(null)}>${I('x')}</button></div><img src=${shot} alt="Snapshot of the room" style=${{borderRadius:12}}/><div className="row" style=${{gap:8,flexWrap:'wrap'}}><a className="btn btn-cog btn-sm" href=${shot} download=${(title||'room').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.jpg'}>${I('download',{width:15})} Download image</a><button className="btn btn-line btn-sm" onClick=${()=>{setShareImg(shot);setShot(null)}}>${I('share',{width:15})} Share</button></div></div></div><//>`}
+    ${showPrompt&&html`<${Modal} open label="Render brief" onClose=${()=>setShowPrompt(false)}><div className="scrim" onClick=${e=>e.target===e.currentTarget&&setShowPrompt(false)}><div className="sheet share" style=${{width:'min(720px,100%)'}}>
       <div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>Render <em style=${{color:'var(--cognac)'}}>brief</em></h2><button className="ib" aria-label="Close" onClick=${()=>setShowPrompt(false)}>${I('x')}</button></div>
       <p className="help" style=${{margin:0}}>Written from your exact layout, materials and light. AI render turns this view into a photoreal picture from the brief, keeping your exact layout and pieces.</p>
       <pre style=${{whiteSpace:'pre-wrap',background:'var(--plaster)',padding:16,borderRadius:12,fontFamily:'var(--mono)',fontSize:12.5,lineHeight:1.6,margin:0,maxHeight:320,overflow:'auto'}}>${prompt}</pre>
       <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-ink btn-sm" onClick=${()=>copyText(prompt,ctx.toast)}>${I('copy',{width:14})} Copy brief</button><button className="btn btn-line btn-sm" disabled=${!eng} onClick=${()=>{setShowPrompt(false);setShot(E.current.snapshot())}}>${I('cam',{width:14})} Take snapshot</button><button className="btn btn-cog btn-sm" disabled=${aiBusy||!eng} onClick=${startAi}>${I('wand',{width:14})} ${aiBusy?'Sending…':'Make an AI render'}</button></div>
-    </div></div>`}
+    </div></div><//>`}
     ${aiJob&&html`<${AiRender} ctx=${ctx} id=${aiJob} onClose=${()=>setAiJob(null)} onShare=${u=>{setShareImg(u);setAiJob(null)}} onRetry=${()=>{setAiJob(null);startAi()}}/>`}
   </main>`;
 }
 
 /** Shows an AI render while it's made and when it's ready: download, share or try again. */
+/** Display render progress or results without starting generation merely by opening the dialog. */
 function AiRender({ctx,id,onClose,onShare,onRetry}){
   const r=useQuery(api.holmRender.one,{id});const [busy,setBusy]=useState(false);
   const blobOf=async()=>await (await fetch(r.url)).blob();
-  return html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&onClose()} role="dialog" aria-modal="true" aria-label="AI render"><div className="sheet share" style=${{width:'min(1000px,100%)'}}>
+  return html`<${Modal} open label="AI render" onClose=${onClose}><div className="scrim" onClick=${e=>e.target===e.currentTarget&&onClose()}><div className="sheet share" style=${{width:'min(1000px,100%)'}}>
     <div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>AI <em style=${{color:'var(--cognac)'}}>render</em></h2><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>
     ${!r||r.status==='rendering'?html`<div className="ai-wait" role="status"><span className="ai-spin" aria-hidden="true"></span><p>Making your render. It takes about a minute.</p><p className="help">You can close this and keep planning. We'll email it to you when it's ready.</p></div>`
     :r.status==='ready'&&r.url?html`<img src=${r.url} alt=${'AI render of '+r.title} style=${{borderRadius:12,width:'100%'}}/>
@@ -3009,7 +3021,7 @@ function AiRender({ctx,id,onClose,onShare,onRetry}){
         <button className="btn btn-line btn-sm" disabled=${busy} onClick=${async()=>{setBusy(true);try{onShare(URL.createObjectURL(await blobOf()))}catch(e){ctx.toast(errText(e))}finally{setBusy(false)}}}>${I('share',{width:15})} Share</button>
         <button className="btn btn-line btn-sm" onClick=${onRetry}>${I('wand',{width:15})} Make another</button></div>`
     :html`<p role="alert">${r.error||'The render could not be made.'}</p><div className="row"><button className="btn btn-cog btn-sm" onClick=${onRetry}>Try again</button></div>`}
-  </div></div>`;
+  </div></div><//>`;
 }
 
 /* ================= FLOOR PLANS ================= */
@@ -3026,6 +3038,7 @@ async function pdfFirstPage(file){const pdfjs=await import('pdfjs-dist');pdfjs.G
 async function planImage(file){let c;if(/pdf$/i.test(file.type)||/\.pdf$/i.test(file.name))c=await pdfFirstPage(file);else{const u=URL.createObjectURL(file);const im=await loadImg(u);if(!im)throw new Error('This image could not be opened.');c=document.createElement('canvas');const s=Math.min(1,2000/Math.max(im.width,im.height));c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u)}
   return {img:c.toDataURL('image/jpeg',.82),w:c.width,h:c.height}}
 const snap90=(a,b)=>{const dx=b[0]-a[0],dy=b[1]-a[1];const ang=Math.atan2(dy,dx);const q=Math.round(ang/(Math.PI/4))*(Math.PI/4);if(Math.abs(ang-q)<.12){const L=Math.hypot(dx,dy);return [a[0]+Math.cos(q)*L,a[1]+Math.sin(q)*L]}return b};
+/** Edit a local plan draft; Escape cancels an unfinished polygon before dismissing the modal. */
 function FloorPlanEditor({ctx,doc,units,onClose,onApply}){
   // Work in image pixels; a plan with no underlay draws on a 20 m × 14 m sheet at 50 px a metre.
   const init=()=>{const u=doc.underlay;if(doc.zones?.length&&u){const k=1/u.mPerPx;const px=([x,z])=>[(x-u.ox)*k,(z-u.oz)*k];return {img:u.img,w:u.w,h:u.h,mPerPx:u.mPerPx,opacity:u.opacity??.5,zones:doc.zones.map(z=>({...z,poly:z.poly.map(px)})),blocks:(doc.blocks||[]).map(b=>({...b,x:(b.x-u.ox)*k,z:(b.z-u.oz)*k}))}}
@@ -3044,7 +3057,7 @@ function FloorPlanEditor({ctx,doc,units,onClose,onApply}){
     if(mode==='block'){const [n,w,d,h]=BLOCKS[0];addBlock(p,n,w,d,h);return}};
   const closeDraft=()=>{if(draft.length<3)return;const id=uid();const name=ZONE_NAMES[P.zones.length%ZONE_NAMES.length];setP(p=>({...p,zones:[...p.zones,{id,name,poly:draft,floor:doc.floor,wall:doc.wall}]}));setDraft([]);setSel(id);setMode('select')};
   const addBlock=(p,name,w,d,h)=>setP(s=>({...s,blocks:[...s.blocks,{id:uid(),name,x:p[0],z:p[1],w,d,h,rot:0}]}));
-  useEffect(()=>{const k=e=>{if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))return;if(e.key==='Enter'&&mode==='draw')closeDraft();if(e.key==='Escape'){if(draft.length)setDraft([]);else onClose()}if((e.key==='Backspace'||e.key==='Delete')&&mode==='draw'&&draft.length){e.preventDefault();setDraft(d=>d.slice(0,-1))}};addEventListener('keydown',k);return()=>removeEventListener('keydown',k)});
+  const planKeys=e=>{if(e.key==='Escape'&&draft.length){e.preventDefault();setDraft([]);return}if(['INPUT','TEXTAREA','SELECT','BUTTON','A'].includes(e.target.tagName))return;if(e.key==='Enter'&&mode==='draw'){e.preventDefault();closeDraft()}if((e.key==='Backspace'||e.key==='Delete')&&mode==='draw'&&draft.length){e.preventDefault();setDraft(d=>d.slice(0,-1))}};
   // Drag a corner to move it.
   const dragPt=(e,zid,i)=>{e.stopPropagation();const mv=ev=>{const p=at(ev);setP(s=>({...s,zones:s.zones.map(z=>z.id!==zid?z:{...z,poly:z.poly.map((q,k)=>k===i?p:q)})}))};const up=()=>removeEventListener('pointermove',mv);addEventListener('pointermove',mv);addEventListener('pointerup',up,{once:true})};
   const dragBlock=(e,id)=>{e.stopPropagation();const mv=ev=>{const p=at(ev);setP(s=>({...s,blocks:s.blocks.map(b=>b.id!==id?b:{...b,x:p[0],z:p[1]})}))};const up=()=>removeEventListener('pointermove',mv);addEventListener('pointermove',mv);addEventListener('pointerup',up,{once:true})};
@@ -3061,7 +3074,7 @@ function FloorPlanEditor({ctx,doc,units,onClose,onApply}){
     onApply({zones,blocks:P.blocks.map(bl=>({...bl,x:r2(bl.x*k-cx),z:r2(bl.z*k-cz)})),W:r2(b.maxX-b.minX),D:r2(b.maxZ-b.minZ),underlay:P.img?{img:P.img,w:P.w,h:P.h,mPerPx:k,ox:r2(-cx),oz:r2(-cz),opacity:P.opacity}:null})};
   const Z=P.zones.find(z=>z.id===sel);const k=P.mPerPx;const fmtM=m=>`${toU(m).toFixed(2)} ${uLab}`;
   const hint={upload:'Upload the plan as an image or PDF, or draw on the blank sheet.',scale:'Click both ends of a wall you know, then type its real length.',draw:'Click each corner. Click the first corner or press Enter to close the room; Backspace removes the last corner.',block:'Click to place a column; change its size in the list.',select:'Drag corners to adjust. Type a wall length to set it exactly.'}[mode];
-  return html`<div className="scrim sx-scrim" role="dialog" aria-modal="true" aria-label="Floor plan">
+  return html`<${Modal} open label="Floor plan" onClose=${onClose}><div className="scrim sx-scrim" onKeyDown=${planKeys}>
     <div className="sx-dialog fplan">
       <div className="sx-drawer-h"><b>Floor plan</b><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>
       <div className="fp-tools">
@@ -3074,7 +3087,7 @@ function FloorPlanEditor({ctx,doc,units,onClose,onApply}){
       </div>
       <p className="sx-note">${hint} <span className="mono">1 px = ${(k*100).toFixed(1)} cm</span></p>
       <div className="fp-body">
-        <div className="fp-sheet"><svg ref=${svgRef} viewBox=${`0 0 ${P.w} ${P.h}`} onClick=${onClick} onPointerMove=${e=>mode==='draw'&&draft.length&&setHover(snap90(draft[draft.length-1],at(e)))} style=${{cursor:mode==='select'?'default':'crosshair'}}>
+        <div className="fp-sheet"><svg ref=${svgRef} viewBox=${`0 0 ${P.w} ${P.h}`} tabIndex="0" aria-label="Floor plan drawing area" onClick=${e=>{e.currentTarget.focus();onClick(e)}} onPointerMove=${e=>mode==='draw'&&draft.length&&setHover(snap90(draft[draft.length-1],at(e)))} style=${{cursor:mode==='select'?'default':'crosshair'}}>
           <rect width=${P.w} height=${P.h} fill="#FBF8F2"/>
           ${P.img?html`<image href=${P.img} width=${P.w} height=${P.h} opacity=${P.opacity}/>`:html`<path d=${Array.from({length:Math.ceil(P.w/(1/k))},(_,i)=>`M${i/k} 0V${P.h}`).join('')+Array.from({length:Math.ceil(P.h/(1/k))},(_,i)=>`M0 ${i/k}H${P.w}`).join('')} stroke="rgba(43,33,26,.08)"/>`}
           ${P.zones.map(z=>html`<g key=${z.id} className=${'fp-zone'+(z.id===sel?' on':'')} onClick=${e=>{if(mode==='select'){e.stopPropagation();setSel(z.id)}}}>
@@ -3105,7 +3118,7 @@ function FloorPlanEditor({ctx,doc,units,onClose,onApply}){
       <div className="row" style=${{justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
         ${doc.zones?.length?html`<button className="lnk" onClick=${()=>onApply(null)}>Go back to a rectangular room</button>`:html`<span></span>`}
         <span className="row" style=${{gap:8}}><button className="btn btn-line btn-sm" onClick=${onClose}>Cancel</button><button className="btn btn-cog btn-sm" disabled=${!P.zones.length} onClick=${apply}>Use this plan</button></span></div>
-    </div></div>`;
+    </div></div><//>`;
 }
 // A dimensioned plan PDF: every room with its wall lengths, each piece, rug and block labelled, a
 // seat count per room, then a piece list per room and the bundle link.
@@ -3136,6 +3149,7 @@ async function planPdf(doc,{title,units,link}){
 }
 
 /* ================= BOARDS ================= */
+/** Manage local board drafts and open board creation in a named, focus-contained dialog. */
 function Boards({ctx}){
   const [tab,setTab]=useState('boards');const [sort,setSort]=useState('recent');const [mk,setMk]=useState(false);const [n,setN]=useState('');const [sec,setSec]=useState(false);
   let bs=[...ctx.boards];if(sort==='az')bs.sort((a,b)=>a.title.localeCompare(b.title));else bs.sort((a,b)=>b.t-a.t);
@@ -3157,11 +3171,11 @@ function Boards({ctx}){
     ${tab==='collages'&&html`<div className="boards">${ctx.collages.map((c,i)=>html`<button key=${i} className="bcard" onClick=${()=>{ctx.setStudioSeed({collage:c});ctx.go('studio')}}>
         <div className="cov" style=${{background:'var(--plaster)'}}>${c.els.filter(e=>e.kind==='img').slice(0,3).map((e,j)=>html`<div key=${j} style=${{backgroundImage:`url(${byId(e.pid).img})`}}></div>`)}</div><h2>${c.title}</h2><p>${c.els.filter(e=>e.kind==='img').length} pieces · Open in Studio</p></button>`)}
       <button className="newboard" onClick=${()=>ctx.go('studio')}><span>${I('brush',{width:22})}<br/>New collage</span></button></div>`}
-    ${mk&&html`<div className="scrim" onClick=${e=>e.target===e.currentTarget&&setMk(false)} role="dialog" aria-modal="true" aria-label="Create board"><form className="sheet share" onSubmit=${e=>{e.preventDefault();if(!n.trim())return;const id=ctx.createBoard(n.trim(),null,sec);setMk(false);setN('');ctx.setBoard(id);ctx.go('board')}}>
+    ${mk&&html`<${Modal} open label="Create board" onClose=${()=>setMk(false)} initialFocus="#bn"><div className="scrim" onClick=${e=>e.target===e.currentTarget&&setMk(false)}><form className="sheet share" onSubmit=${e=>{e.preventDefault();if(!n.trim())return;const id=ctx.createBoard(n.trim(),null,sec);setMk(false);setN('');ctx.setBoard(id);ctx.go('board')}}>
       <h2 style=${{fontSize:38}}>Create a board</h2>
       <div><label className="lbl" htmlFor="bn">Name</label><input id="bn" className="field" autoFocus placeholder="e.g. Harbor Street lobby" value=${n} onInput=${e=>setN(e.target.value)}/></div>
       <button type="button" className="toggle" onClick=${()=>setSec(!sec)}><span>Keep this board secret<br/><small className="mute">Only you and collaborators can see it.</small></span><span className=${'sw'+(sec?' on':'')}></span></button>
-      <div className="row" style=${{justifyContent:'flex-end'}}><button type="button" className="btn btn-line" onClick=${()=>setMk(false)}>Cancel</button><button className="btn btn-ink">Create</button></div></form></div>`}
+      <div className="row" style=${{justifyContent:'flex-end'}}><button type="button" className="btn btn-line" onClick=${()=>setMk(false)}>Cancel</button><button className="btn btn-ink">Create</button></div></form></div><//>`}
   </main>`;
 }
 function BoardDetail({ctx}){
@@ -3273,13 +3287,14 @@ function PartnerPanel({ctx}){
     <p className="help" style=${{margin:0}}><a href="#partner-terms">Partner terms</a> · Share any louiemae.com page from the <a href="/#creators">Creator Hub</a>.</p>
   </section>`;
 }
+/** Present trade account and quote states under a primary page heading. */
 function Hub({ctx}){
   const me=ctx.me;
   const quotes=useQuery(api.holm.myQuoteRequests)||[];const cqs=useQuery(api.holm.myClientQuotes)||[];const app=useQuery(api.holm.myApplication);const v2=useQuery(api.v2Admin.publicFlags);
-  if(!me.signedIn)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h3>Sign in to see your quotes</h3><p>Quote requests, client quote links and your trade pass live here.</p><button className="btn btn-ink" onClick=${()=>ctx.go('welcome')}>Sign in</button></div></main>`;
+  if(!me.signedIn)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h1>Sign in to see your quotes</h1><p>Quote requests, client quote links and your trade pass live here.</p><button className="btn btn-ink" onClick=${()=>ctx.go('welcome')}>Sign in</button></div></main>`;
   const status={requested:'Requested',quoted:'Quote ready',accepted:'Accepted',invoiced:'Invoiced',paid:'Paid',fulfilled:'Delivered',cancelled:'Cancelled'};
   const cqStatus={sent:'Sent',viewed:'Viewed',approved:'Approved',changes_requested:'Changes requested'};
-  return html`<main className="wrap">
+  return html`<main className="wrap"><h1 className="sr">Trade Hub</h1>
     ${me.verified?html`<section className="tp-row"><${TradePass} name=${me.businessName||me.displayName} since="trade"/><div className="tp-copy"><h2>Your trade pass</h2><p>Created automatically when your trade account was approved. Trade pricing and project pricing are on for every piece: an extra 3% over $10,000 and 5% over $25,000 in trade per project.</p></div></section>`
     :html`<section className="panel" style=${{margin:'40px 0 18px',display:'grid',gap:10}}><h2 style=${{fontSize:34}}>${app?.status==='pending'?'Your trade application is in review':app?.status==='needs_info'?'We need a little more information':'Trade pricing for businesses'}</h2><p className="mute">${app?.status==='pending'?`We're checking ${app.businessName}. Most applications are reviewed within one business day, and trade prices appear here as soon as you're approved.`:app?.status==='needs_info'?(app.reviewNote||'Check your email for what we need.'):'Verified trade accounts see trade pricing on every piece, project pricing on larger orders and client quotes.'}</p>${app?.status!=='pending'&&html`<button className="btn btn-ink" style=${{justifySelf:'start'}} onClick=${()=>ctx.go('trade')}>Apply for trade</button>`}</section>`}
     <div className="g2" style=${{margin:'18px 0 60px'}}>
@@ -3395,70 +3410,8 @@ function SourcingList({ctx,compact}){
 /* ================= PARTNER HUB: Pinterest, links, sourcing, payouts ================= */
 
 /* ================= TRADE APPLICATION ================= */
-const BTYPES={
-  hosp:{l:'Restaurant, café or bar',s:'Buying for your own space',cred:'Food service permit, health permit or liquor license number',how:'Checked against state or city license lookup. Liquor licenses are public record.'},
-  design:{l:'Interior designer',s:'Buying for clients',cred:'Resale certificate, ASID or IIDA member number, or portfolio link',how:'Checked against the sales tax permit lookup or member directory.'},
-  re:{l:'Real estate or stager',s:'Staging and model homes',cred:'Real estate license number',how:'Checked against your state real estate commission search.'},
-  build:{l:'Home builder or contractor',s:'Builds and developments',cred:'Contractor or builder license number',how:'Checked against state or city contractor license lookup.'},
-  pm:{l:'Project manager',s:'Buying on behalf of a company',cred:'Company work email, or a letter of authorization from the owner',how:'We verify the company itself. Orders ship and bill to that business.'},
-  retail:{l:'Retailer',s:'Reselling in your shop',cred:'Resale certificate',how:'Checked against the state sales tax permit lookup.'},
-};
-const STATES=['Alabama','Arizona','California','Colorado','Connecticut','Florida','Georgia','Illinois','Massachusetts','Michigan','Minnesota','New Jersey','New York','North Carolina','Ohio','Oregon','Pennsylvania','Tennessee','Texas','Virginia','Washington','Other'];
-function Trade({ctx}){
-  const me=ctx.me;const app=useQuery(api.holm.myApplication);const apply=useMutation(api.holm.applyTrade);const uploadUrl=useMutation(api.holm.uploadUrl);
-  const [step,setStep]=useState(0);const [f,setF]=useState({type:'',name:'',state:'New York',ein:'',web:'',cred:'',company:'',email:'',tax:false,cert:null});const [done,setDone]=useState(false);const [busy,setBusy]=useState(false);const [err,setErr]=useState('');const certRef=useRef();
-  const set=(k,v)=>{setF({...f,[k]:v});setErr('')};
-  const steps=['Business type','Business details','Industry credential','Tax exemption','Review'];
-  const einOk=/^\d{2}-\d{7}$/.test(f.ein);
-  const can=[!!f.type,f.name.trim()&&einOk&&f.web.trim(),f.type==='pm'?(f.company.trim()&&f.email.includes('@')):f.cred.trim(),true,true][step];
-  const fmtEin=v=>{const d=v.replace(/\D/g,'').slice(0,9);return d.length>2?d.slice(0,2)+'-'+d.slice(2):d};
-  const T=BTYPES[f.type];
-  const submit=async()=>{setBusy(true);setErr('');try{let certificateId;
-      if(f.tax&&f.cert){const url=await uploadUrl();const r=await fetch(url,{method:'POST',headers:{'Content-Type':f.cert.type||'application/octet-stream'},body:f.cert});if(!r.ok)throw new Error('The certificate did not upload. Try again.');certificateId=(await r.json()).storageId}
-      await apply({businessType:f.type,businessName:f.name,state:f.state,ein:f.ein,website:f.web,credential:f.type==='pm'?'':f.cred,company:f.type==='pm'?f.company:undefined,workEmail:f.type==='pm'?f.email:undefined,taxRequested:f.tax,certificateId});setDone(true)}
-    catch(e){setErr(e?.data||String(e?.message||'').replace(/^.*Uncaught Error: /,'').split('\n')[0]||'Something went wrong. Try again.')}finally{setBusy(false)}};
-  const intro=html`<div><h1 style=${{fontSize:'clamp(44px,5.6vw,76px)'}}>Trade pricing for <em style=${{fontStyle:'italic',color:'var(--cognac)'}}>businesses that build rooms.</em></h1>
-      <p className="mute" style=${{marginTop:18,maxWidth:'46ch',fontSize:16}}>One short check for everyone, plus one credential for your industry. Most applications are reviewed within a business day.</p>
-      <div className="steps">${steps.map((s,i)=>html`<div key=${s} className=${'stepi'+(i===step&&!done?' on':'')+(i<step||done?' done':'')}><i>${i<step||done?I('check',{width:14}):i+1}</i>${s}</div>`)}</div>
-      <div className="note" style=${{marginTop:20}}>${I('pin',{width:18})}<span>Trade approval and tax exemption are separate. Approval gets you trade pricing. Tax exemption needs a valid resale or exemption certificate; without one, trade pricing still applies and sales tax is charged.</span></div>
-    </div>`;
-  if(!me.signedIn)return html`<main className="wrap"><div className="apply">${intro}<div className="formcard" style=${{textAlign:'center',justifyItems:'center',padding:'48px 28px'}}><h2 style=${{fontSize:38}}>Start with an account</h2><p className="mute" style=${{maxWidth:'38ch'}}>Create an account or sign in, then apply. Your projects and quotes stay with your account.</p><button className="btn btn-ink btn-lg" onClick=${()=>ctx.signInThen('trade')}>Sign in or create an account</button></div></div></main>`;
-  if(me.verified||app?.status==='pending'||done){const ok=me.verified;return html`<main className="wrap"><div className="apply">${intro}<div className="formcard" style=${{textAlign:'center',justifyItems:'center',padding:'48px 28px'}}><span className="pulse" style=${{background:'var(--ok)'}}>${I('check')}</span><h2 style=${{fontSize:44}}>${ok?'You are verified':'Application received'}</h2><p className="mute" style=${{maxWidth:'40ch'}}>${ok?'Trade pricing is on for every piece.':`We're checking ${app?.businessName||f.name}. You'll hear from us by email, usually within one business day.`}</p><p className="mono mute">Status: ${ok?'Verified':'In review'}</p><div className="row"><button className="btn btn-ink" onClick=${()=>ctx.go('home')}>${ok?'Shop at trade':'Browse while you wait'}</button></div></div></div></main>`}
-  return html`<main className="wrap"><div className="apply">
-    ${intro}
-    <form className="formcard" onSubmit=${e=>{e.preventDefault();if(!can||busy)return;if(step<4)setStep(step+1);else submit()}}>
-      <span className="mono mute">Step ${step+1} of 5</span>
-      ${app?.status==='needs_info'&&step===0&&html`<div className="note">${I('pin',{width:18})}<span>${app.reviewNote||'We need a little more information. Update your details and submit again.'}</span></div>`}
-      ${step===0&&html`<h2 style=${{fontSize:36}}>What kind of business are you?</h2><div className="types">${Object.entries(BTYPES).map(([k,t])=>html`<button type="button" key=${k} className=${'typec'+(f.type===k?' on':'')} onClick=${()=>set('type',k)} aria-pressed=${f.type===k}><b>${t.l}</b><small>${t.s}</small></button>`)}</div>`}
-      ${step===1&&html`<h2 style=${{fontSize:36}}>Tell us about the business</h2>
-        <div><label className="lbl" htmlFor="ln">Legal business name</label><input id="ln" className="field" value=${f.name} onInput=${e=>set('name',e.target.value)} placeholder="As registered with your state"/></div>
-        <div className="g2f"><div><label className="lbl" htmlFor="st">State of registration</label><select id="st" className="field" value=${f.state} onChange=${e=>set('state',e.target.value)}>${STATES.map(s=>html`<option key=${s}>${s}</option>`)}</select></div>
-          <div><label className="lbl" htmlFor="ein">EIN</label><input id="ein" className="field num" inputMode="numeric" value=${f.ein} onInput=${e=>set('ein',fmtEin(e.target.value))} placeholder="12-3456789" aria-invalid=${f.ein&&!einOk}/>${f.ein&&!einOk&&html`<p className="help" style=${{color:'var(--bad)'}}>An EIN has 9 digits, written 12-3456789.</p>`}<p className="help">We keep only the last four digits.</p></div></div>
-        <div><label className="lbl" htmlFor="web">Website or business Instagram</label><input id="web" className="field" value=${f.web} onInput=${e=>set('web',e.target.value)} placeholder="yourbusiness.com or @yourbusiness"/><p className="help">We confirm the business is active with the Secretary of State and that it's operating.</p></div>`}
-      ${step===2&&T&&html`<h2 style=${{fontSize:36}}>One credential for ${T.l.toLowerCase()}</h2>
-        ${f.type==='pm'?html`<div><label className="lbl" htmlFor="co">Company you're buying for</label><input id="co" className="field" value=${f.company} onInput=${e=>set('company',e.target.value)} placeholder="Company legal name"/></div><div><label className="lbl" htmlFor="we">Work email at that company</label><input id="we" type="email" className="field" value=${f.email} onInput=${e=>set('email',e.target.value)} placeholder="you@company.com"/></div>`:
-        html`<div><label className="lbl" htmlFor="cred">${T.cred}</label><input id="cred" className="field" value=${f.cred} onInput=${e=>set('cred',e.target.value)} placeholder="Number or link"/></div>`}
-        <div className="note">${I('check',{width:18})}<span>${T.how}</span></div>`}
-      ${step===3&&html`<h2 style=${{fontSize:36}}>Tax exemption <span className="mute" style=${{fontSize:22}}>(optional)</span></h2>
-        <p className="mute">Only for businesses reselling the furniture, like designers billing clients or retailers. A restaurant furnishing its own dining room usually pays sales tax.</p>
-        <button type="button" className="toggle" onClick=${()=>set('tax',!f.tax)} aria-pressed=${f.tax}><span>I have a resale or exemption certificate</span><span className=${'sw'+(f.tax?' on':'')}></span></button>
-        ${f.tax&&html`<div className="drop" role="button" tabIndex="0" onClick=${()=>certRef.current.click()} onKeyDown=${e=>e.key==='Enter'&&certRef.current.click()}>${I('upload',{width:22})}${f.cert?html`<b style=${{color:'var(--ink)',fontWeight:500}}>${f.cert.name}</b><span>Tap to replace</span>`:html`<span>Upload your certificate (PDF or photo)</span>`}</div><input ref=${certRef} type="file" accept="image/*,.pdf" hidden onChange=${e=>{const x=e.target.files[0];if(x){if(x.size>10*1024*1024){setErr('Use a file under 10 MB.');return}set('cert',x)}}}/>`}`}
-      ${step===4&&html`<h2 style=${{fontSize:36}}>Review and submit</h2>
-        <dl className="specs" style=${{gridTemplateColumns:'1fr 1fr'}}>
-          <div><dt>Business type</dt><dd>${T?.l}</dd></div><div><dt>Legal name</dt><dd>${f.name}</dd></div>
-          <div><dt>State</dt><dd>${f.state}</dd></div><div><dt>EIN</dt><dd className="num">••-•••${f.ein.slice(-4)}</dd></div>
-          <div><dt>Online</dt><dd>${f.web}</dd></div><div><dt>Credential</dt><dd>${f.type==='pm'?f.company+' · '+f.email:f.cred}</dd></div>
-          <div><dt>Tax exemption</dt><dd>${f.tax?(f.cert?'Certificate attached':'Certificate needed'):'Not requested'}</dd></div><div><dt>Pricing</dt><dd>Trade, once approved</dd></div>
-        </dl>
-        <p className="help">By submitting you agree to the trade terms. Orders ship and bill to the verified business.</p>`}
-      ${err&&html`<p className="help" style=${{color:'var(--bad)'}}>${err}</p>`}
-      <div className="row" style=${{justifyContent:'space-between',marginTop:6}}>
-        ${step>0?html`<button type="button" className="btn btn-line" onClick=${()=>setStep(step-1)}>${I('back',{width:16})} Back</button>`:html`<span></span>`}
-        <button className="btn btn-ink btn-lg" disabled=${!can||busy}>${busy?'Submitting…':step===4?'Submit application':'Continue'} ${I('arrow',{width:16})}</button>
-      </div>
-    </form>
-  </div></main>`;
-}
+/** Adapt legacy navigation to the typed, validated application flow. */
+function Trade({ctx}) { return html`<${TradeApplication} me=${ctx.me} onNavigate=${ctx.go} onSignIn=${ctx.signInThen}/>`; }
 // Team review queue for trade applications (admin accounts only).
 /* ================= 3D MODELS ================= */
 // Path tracing needs a real GPU: phones and software WebGL (SwiftShader, llvmpipe) get the raster still instead.

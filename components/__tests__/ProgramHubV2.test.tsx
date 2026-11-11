@@ -1,12 +1,13 @@
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { answers } = vi.hoisted(() => ({ answers: new Map<string, unknown>() }));
+const { answers, commands } = vi.hoisted(() => ({ answers: new Map<string, unknown>(), commands: vi.fn() }));
 vi.mock('convex/react', () => ({
   useQuery: (ref: unknown, args: unknown) => (args === 'skip' ? undefined : answers.get(String((ref as { _name?: string })?._name ?? ref))),
   useAction: () => vi.fn(() => Promise.resolve('')),
-  useMutation: () => vi.fn(() => Promise.resolve()),
+  useMutation: (ref: unknown) => (args: unknown) => commands(String(ref), args),
 }));
 vi.mock('../../convex/_generated/api', () => {
   const ref = (name: string) => ({ _name: name, toString: () => name });
@@ -30,6 +31,7 @@ const flags = { creatorEnrollment: true, retailLinks: true, ledger: true, credit
 const terms = { _id: 't1', version: 3 };
 beforeEach(() => {
   answers.clear();
+  commands.mockReset().mockResolvedValue(null);
   answers.set('v2Admin.publicFlags', flags);
 });
 afterEach(cleanup);
@@ -87,4 +89,33 @@ describe('v2 program hub (S33, S34, UX01)', () => {
     expect(screen.getByText(/your role: Owner/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Invite' })).toBeTruthy();
   });
+});
+
+
+it('validates profile fields locally and preserves a rejected draft without duplicate dispatch', async () => {
+  const user = userEvent.setup();
+  answers.set('prgMemberships.myPrograms', { creator: { state: 'profile' }, trade: null, beneficiary: null, creatorTerms: terms, referralTerms: terms });
+  let reject!: (reason: Error) => void;
+  commands.mockImplementation(() => new Promise((_, no) => { reject = no; }));
+  render(<ProgramHubV2 site="creators" />);
+  await user.click(screen.getByRole('button', { name: 'Continue' }));
+  expect(screen.getByRole('alert')).toHaveFocus();
+  await user.click(screen.getByRole('link', { name: /^Name or handle:/ }));
+  expect(screen.getByLabelText('Name or handle')).toHaveFocus();
+  await user.type(screen.getByLabelText('Name or handle'), 'Fixture Creator');
+  await user.type(screen.getByLabelText('Your profiles or site (one per line)'), 'javascript:alert(1)');
+  await user.click(screen.getByRole('button', { name: 'Continue' }));
+  expect(screen.getByRole('link', { name: /^Profiles or website:/ })).toBeInTheDocument();
+  expect(commands).not.toHaveBeenCalled();
+  await user.clear(screen.getByLabelText('Your profiles or site (one per line)'));
+  await user.type(screen.getByLabelText('Your profiles or site (one per line)'), 'https://instagram.com/fixture');
+  const form = screen.getByRole('form', { name: 'About you' });
+  fireEvent.submit(form); fireEvent.submit(form);
+  expect(commands).toHaveBeenCalledTimes(1);
+  expect(commands).toHaveBeenCalledWith('prgMemberships.creatorProfile', { displayName: 'Fixture Creator', urls: ['https://instagram.com/fixture'] });
+  expect(screen.getByLabelText('Name or handle')).toBeDisabled();
+  await act(async () => reject(new Error('Private fixture detail')));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveFocus());
+  expect(screen.getByLabelText('Name or handle')).toHaveValue('Fixture Creator');
+  expect(screen.queryByText('Private fixture detail')).not.toBeInTheDocument();
 });
