@@ -3,10 +3,10 @@ import { act, waitFor, cleanup, fireEvent, render, screen } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Answers for each backend query, keyed by its name.
-const { answers, join } = vi.hoisted(() => ({ answers: new Map<string, unknown>(), join: vi.fn() }));
+const { answers, join, start } = vi.hoisted(() => ({ answers: new Map<string, unknown>(), join: vi.fn(), start: vi.fn() }));
 vi.mock('convex/react', () => ({
   useQuery: (ref: unknown, args: unknown) => (args === 'skip' ? undefined : answers.get(String((ref as { _name?: string })?._name ?? ref))),
-  useAction: () => vi.fn(() => Promise.resolve(null)),
+  useAction: (ref: unknown) => String(ref).endsWith('startPayoutSetup') ? start : vi.fn(() => Promise.resolve(null)),
   useMutation: (ref: unknown) => (String((ref as { _name?: string })?._name ?? ref).endsWith('join') ? join : vi.fn(() => Promise.resolve())),
 }));
 vi.mock('@convex-dev/auth/react', () => ({ useAuthActions: () => ({ signIn: vi.fn(), signOut: vi.fn() }) }));
@@ -37,8 +37,30 @@ const hub = {
   commissions: [{ source: 'storefront_order', baseCents: 200_000, amountCents: 20_000, status: 'pending', clearsAt: Date.now(), createdAt: Date.now(), channel: 'pin', board: null, note: null, lines: [{ type: 'furniture', baseCents: 200_000, rateBps: 1200, amountCents: 20_000, capped: false }] }],
 };
 
-beforeEach(() => { answers.clear(); join.mockReset(); });
+beforeEach(() => { answers.clear(); join.mockReset(); start.mockReset(); });
 afterEach(cleanup);
+
+it('re-enables payout setup only when returning from the back-forward cache', async () => {
+  answers.set('holm.me', { signedIn: true });
+  answers.set('holmPartners.hub', { ...hub, payoutSetup: { enabled: true, connected: false, ready: false, due: 0 } });
+  // Same-document fixture destination; no Stripe account or external navigation.
+  start.mockResolvedValue('#payout-fixture');
+  render(<CreatorHub />);
+  const button = screen.getByRole('button', { name: 'Set up payouts' });
+  await act(async () => fireEvent.click(button));
+  expect(button).toBeDisabled();
+  fireEvent(window, new window.PageTransitionEvent('pageshow', { persisted: false }));
+  expect(button).toBeDisabled();
+  fireEvent(window, new window.PageTransitionEvent('pageshow', { persisted: true }));
+  expect(button).toBeEnabled();
+  start.mockRejectedValue(new Error('Private setup diagnostic'));
+  await act(async () => fireEvent.click(button));
+  expect(start).toHaveBeenCalledTimes(2);
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveFocus());
+  expect(button).toBeEnabled();
+  expect(screen.queryByText('Private setup diagnostic')).not.toBeInTheDocument();
+  window.history.replaceState(null, '', '/');
+});
 
 describe('Creator Hub', () => {
   it('shows the real rates by product type and a sign-in form to visitors', () => {

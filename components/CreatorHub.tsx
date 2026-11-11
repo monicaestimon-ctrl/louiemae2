@@ -97,6 +97,7 @@ function SignIn() {
   return <CredentialsForm site="creator" googleEnabled={opts?.google} />;
 }
 
+/** Enroll after terms acceptance, retaining agreement when a request fails. */
 function Join() {
   const join = useMutation(api.holmPartners.join);
   const [agree, setAgree] = useState(false);
@@ -118,6 +119,7 @@ function Join() {
 }
 
 /** Store credit: apply it to the next order automatically, or save it up. */
+/** Show credit separately from cash earnings and serialize preference updates. */
 function CreditSetting({ balanceCents }: { balanceCents: number }) {
   const c = useQuery(api.holmCredit.myCredit);
   const set = useMutation(api.holmCredit.setCreditAutoApply);
@@ -153,6 +155,15 @@ function PayoutSetup({ hub }: { hub: Hub }) {
   useEffect(() => {
     if (s.enabled && s.connected && !s.ready) refresh().catch(() => {});
   }, [s.enabled, s.connected, s.ready, refresh]);
+  useEffect(() => {
+    const restore = (event: { readonly persisted: boolean }) => {
+      if (!event.persisted) return;
+      pending.current = false;
+      setBusy(false);
+    };
+    window.addEventListener('pageshow', restore);
+    return () => window.removeEventListener('pageshow', restore);
+  }, []);
   const go = async () => {
     if(pending.current)return;
     pending.current=true;
@@ -195,6 +206,7 @@ function useHub(signedIn: boolean) {
   return useQuery(api.holmPartners.hub, signedIn ? {} : 'skip');
 }
 
+/** Render the legacy creator account with safe sharing feedback and scrollable earnings. */
 function Dashboard({ hub }: { hub: Hub }) {
   const [page, setPage] = useState('');
   const [custom, setCustom] = useState('');

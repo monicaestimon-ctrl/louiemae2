@@ -602,9 +602,9 @@ export const requestQuote = mutation({
       a.date.length > 40 ||
       JSON.stringify(a.address).length > 2000
     )
-      throw new Error('Check your contact and delivery details.');
+      throw new CommerceError('INVALID_INPUT', undefined, 'Check your contact and delivery details.');
     if (!a.address.line1.trim() || !a.address.city.trim() || !a.address.postalCode.trim())
-      throw new Error('Add the delivery address.');
+      throw new CommerceError('INVALID_INPUT', undefined, 'Add the delivery address.');
     const old = await ctx.db
       .query('commerceProjects')
       .withIndex('by_token', (q) => q.eq('token', a.token))
@@ -619,7 +619,7 @@ export const requestQuote = mutation({
       .order('desc')
       .take(3);
     if (recent.length === 3 && recent[2].createdAt > Date.now() - 3600000)
-      throw new Error('You have sent several requests. Please wait an hour before sending another.');
+      throw new CommerceError('RATE_LIMITED', undefined, 'You have sent several requests. Please wait an hour before sending another.');
     const trade = !!me && (isVerified(me.profile) || (await isAdmin(ctx)));
     // v2 (S25): HOLM is the approved-trade purchasing channel; retail buyers shop on Louie Mae.
     if (flag('HOLM_TRADE_ONLY_ENABLED') && !trade) throw new CommerceError('TRADE_APPROVAL_REQUIRED', 'Retail requests are no longer taken on HOLM', 'Trade pricing and quotes are for approved trade members. Shop retail on louiemae.com.');

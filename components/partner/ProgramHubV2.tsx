@@ -187,6 +187,7 @@ function Enrollment({ site }: { site: 'creators' | 'trade' }) {
   return null;
 }
 
+/** Create retail referral links and report clipboard failures without losing the generated URL. */
 function LinkBuilder() {
   const create = useMutation(api.prgLinks.create);
   const catalog = useQuery(api.retailLaunch.storefrontPage, {
@@ -350,6 +351,7 @@ function LinkBuilder() {
   );
 }
 
+/** Present separate commission and credit ledgers in keyboard-scrollable tables. */
 function Earnings() {
   const tier = useQuery(api.prgTiers.myTier);
   const earnings = useQuery(api.ldgCommissions.myEarnings);
@@ -464,6 +466,7 @@ function Earnings() {
   );
 }
 
+/** Open payout onboarding once per request and retain safe failure feedback. */
 function Payouts({ site }: { site: 'creators' | 'trade' }) {
   const programs = useQuery(api.prgMemberships.myPrograms);
   const start = useAction(api.holmConnect.startPayoutSetup);
@@ -545,6 +548,7 @@ export default function ProgramHubV2({ site }: { site: 'creators' | 'trade' }) {
 type Organization = FunctionReturnType<typeof api.prgMemberships.myOrganizations>[number];
 
 /** Keep each business draft and command state isolated across team memberships. */
+/** Keep owner-only team commands and invitation drafts isolated to their organization. */
 function OrganizationTeam({ organization: o }: { organization: Organization }) {
   const invite = useMutation(api.prgMemberships.inviteMember);
   const setRole = useMutation(api.prgMemberships.setMemberRole);
