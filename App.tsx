@@ -399,21 +399,21 @@ const AppContent = () => {
               </div>
 
               {/* Mobile Logo */}
-              <a
-                href="#"
-                aria-label="Louie Mae home"
-                className="min-[1600px]:hidden absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center z-40 pointer-events-auto cursor-pointer"
-                onClick={(event) => navigatePlainLink(event, '#', handleNavigation)}
-              >
+              <div className="min-[1600px]:hidden absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-center z-40 pointer-events-auto">
                 <p
-                  className={`text-[0.45rem] uppercase tracking-[0.25em] text-bronze mb-0.5 transition-all ${scrolled ? 'hidden' : 'block'}`}
+                  className={`text-[0.45rem] uppercase tracking-[0.25em] text-muted-earth mb-0.5 transition-all ${scrolled ? 'hidden' : 'block'}`}
                 >
                   Est. 2021
                 </p>
-                <span className="font-serif text-2xl text-earth tracking-tight whitespace-nowrap">
+                <a
+                  href="#"
+                  aria-label="Louie Mae home"
+                  onClick={(event) => navigatePlainLink(event, '#', handleNavigation)}
+                  className="block font-serif text-2xl text-earth tracking-tight whitespace-nowrap"
+                >
                   Louie Mae
-                </span>
-              </a>
+                </a>
+              </div>
 
               {/* Actions */}
               <div className="flex items-center gap-4 md:gap-6 ml-auto shrink-0 z-50 pl-6">
