@@ -126,7 +126,7 @@ try {
     JSON.stringify(
       {
         scope:
-          'Actual credentials component with local rejected auth fixture; network blocked; no real login, email or account creation',
+          'Actual ProgramHubV2 enrollment with rejected local membership commands; network blocked; no real enrollment, email or account changes',
         results,
       },
       null,
