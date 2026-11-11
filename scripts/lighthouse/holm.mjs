@@ -3,6 +3,11 @@ import { build } from 'esbuild';
 import puppeteer from 'puppeteer-core';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+const assets = await readdir('dist/assets').catch((cause) => {
+  throw new Error('Missing production assets. Run "npm run build" first.', { cause });
+});
+const css = assets.find((file) => /^trade-.*\.css$/.test(file));
+assert.ok(css, 'Missing dist/assets/trade-*.css. Run "npm run build" first.');
 const stubs = {
   auth: `export const useAuthActions=()=>({signIn:async()=>{throw Error('No auth permitted')},signOut:async()=>{throw Error('No auth permitted')}});export const useAuthToken=()=>null;`,
   convex: `import{getFunctionName}from'convex/server';export const useQuery=(ref)=>getFunctionName(ref)==='holm:me'?{signedIn:false,verified:false,admin:false,tradeStatus:'none'}:undefined;export const useQueries=q=>Object.fromEntries(Object.keys(q).map(k=>[k,undefined]));export const useMutation=()=>async()=>{window.fixtureCommands=(window.fixtureCommands||0)+1;throw Error('No mutation permitted')};export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});export const useAction=useMutation;export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});`,
@@ -57,7 +62,6 @@ try {
   await page.evaluate(() => {
     location.hash = 'discover';
   });
-  const css = (await readdir('dist/assets')).find((f) => /^trade-.*\.css$/.test(f));
   await page.addStyleTag({ content: await readFile('dist/assets/' + css, 'utf8') });
   for (const f of bundle.outputFiles.filter((f) => f.path.endsWith('.css')))
     await page.addStyleTag({ content: f.text });

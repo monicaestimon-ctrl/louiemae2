@@ -3,6 +3,16 @@ import { build } from 'esbuild';
 import puppeteer from 'puppeteer-core';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+const assets = await readdir('dist/assets').catch((cause) => {
+  throw new Error('Missing production assets. Run "npm run build" first.', { cause });
+});
+const styles = Object.fromEntries(
+  ['main', 'trade'].map((prefix) => {
+    const css = assets.find((file) => file.startsWith(prefix + '-') && file.endsWith('.css'));
+    assert.ok(css, `Missing dist/assets/${prefix}-*.css. Run "npm run build" first.`);
+    return [prefix, css];
+  })
+);
 const bundle = await build({
   stdin: {
     contents: `import React from'react';import{createRoot}from'react-dom/client';import{CredentialsForm}from'./components/account/CredentialsForm';createRoot(document.getElementById('root')).render(<main><h1>Account fixture</h1><CredentialsForm site={window.fixtureSite} googleEnabled afterSignIn="projects"/></main>);`,
@@ -31,7 +41,6 @@ const bundle = await build({
   ],
 });
 await mkdir('artifacts/lighthouse', { recursive: true });
-const assets = await readdir('dist/assets');
 const browser = await puppeteer.launch({
   ...(process.env.CHROME_PATH
     ? { executablePath: process.env.CHROME_PATH }
@@ -58,10 +67,7 @@ try {
         window.fixtureSite = value;
       }, site);
       await page.addStyleTag({
-        content: await readFile(
-          'dist/assets/' + assets.find((f) => f.startsWith(cssPrefix + '-') && f.endsWith('.css')),
-          'utf8'
-        ),
+        content: await readFile('dist/assets/' + styles[cssPrefix], 'utf8'),
       });
       for (const file of bundle.outputFiles.filter((f) => f.path.endsWith('.css')))
         await page.addStyleTag({ content: file.text });
