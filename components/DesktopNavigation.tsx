@@ -124,26 +124,21 @@ export function DesktopNavigation({ links, scrolled, onNavigate }: Props) {
       }}
     >
       {items(links.slice(0, 3), 0)}
-      <a
-        href="#"
-        aria-label="Louie Mae home"
-        onClick={(event) => navigatePlainLink(event, '#', navigate)}
-        className="block px-4 text-center text-earth"
-      >
+      <div className="px-4 text-center text-earth">
         {!scrolled && (
-          <span
-            aria-hidden="true"
-            className="mb-1 block text-[0.55rem] uppercase tracking-[0.3em] text-muted-earth"
-          >
+          <span className="mb-1 block text-[0.55rem] uppercase tracking-[0.3em] text-muted-earth">
             Est. 2021
           </span>
         )}
-        <span
-          className={`whitespace-nowrap font-serif tracking-tight ${scrolled ? 'text-2xl' : 'text-3xl xl:text-4xl'}`}
+        <a
+          href="#"
+          aria-label="Louie Mae home"
+          onClick={(event) => navigatePlainLink(event, '#', navigate)}
+          className={`block whitespace-nowrap font-serif tracking-tight ${scrolled ? 'text-2xl' : 'text-3xl xl:text-4xl'}`}
         >
           Louie Mae
-        </span>
-      </a>
+        </a>
+      </div>
       {items(links.slice(3), 3)}
     </nav>
   );

@@ -141,7 +141,7 @@ export function DeliveryCheckout({
       if (!address[key].trim()) errors[key] = 'This field is required.';
     }
     if (!STATES.includes(address.state)) errors.state = 'Choose a U.S. state.';
-    if (!/^\d{5}(-\d{4})?$/.test(address.postalCode.trim()))
+    if (!/^\d{5}(-\d{4})?$/.test(address.postalCode))
       errors.postalCode = 'Enter a five-digit ZIP or ZIP+4.';
     if (!/^\S+@\S+\.\S+$/.test(email.trim())) errors.email = 'Enter a valid email address.';
     if (Object.keys(errors).length) {
@@ -441,12 +441,14 @@ export function DeliveryCheckout({
 
       {est && !stale && est.status === 'ok' && est.totalMinor !== null && (
         <button
+          aria-label={busy ? 'Starting checkout…' : undefined}
+          aria-busy={busy}
           onClick={accepted === null ? () => setAccepted(est.totalMinor) : pay}
           disabled={busy}
           className="delivery-action"
         >
           {busy ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Loader2 aria-hidden="true" className="w-4 h-4 animate-spin" />
           ) : accepted === null ? (
             `Accept new total ${money(est.totalMinor)}`
           ) : (

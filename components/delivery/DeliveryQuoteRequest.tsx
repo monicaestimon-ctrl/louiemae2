@@ -41,7 +41,7 @@ export default function DeliveryQuoteRequest({
   useEffect(() => {
     if (saved) savedRef.current?.focus();
   }, [saved]);
-  const validZip = /^\d{5}(-\d{4})?$/.test(postalCode.trim());
+  const validZip = /^\d{5}(-\d{4})?$/.test(postalCode);
   const disabledReason = !validZip
     ? 'Enter a destination ZIP above before sending.'
     : !name.trim() || !email.trim() || !consent
