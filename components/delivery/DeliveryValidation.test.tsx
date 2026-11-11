@@ -20,6 +20,7 @@ it('links all invalid address fields and preserves focus while correcting them',
   expect(summary).toHaveFocus();
   expect(within(summary).getAllByRole('link')).toHaveLength(6);
   expect(mocks.estimate).not.toHaveBeenCalled();
+  expect(screen.getByRole('textbox', { name: 'Email' })).toHaveAttribute('aria-invalid', 'true');
   fireEvent.click(within(summary).getByRole('link', { name: /Recipient name/ }));
   const name = screen.getByLabelText('Recipient name');
   expect(name).toHaveFocus();
@@ -68,12 +69,27 @@ it('rejects a malformed quote email locally and explains missing consent', () =>
   fireEvent.click(screen.getByRole('button', { name: 'Request a delivery quote' }));
   fireEvent.change(screen.getByLabelText('Quote contact name'), { target: { value: 'Test' } });
   fireEvent.change(screen.getByLabelText('Quote contact email'), { target: { value: 'invalid' } });
-  expect(screen.getByRole('button', { name: 'Send delivery request' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Send delivery request' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Send delivery request' }));
+  expect(screen.getByRole('alert')).toHaveFocus();
+  expect(screen.getByRole('checkbox')).toHaveAttribute('aria-invalid', 'true');
+  expect(mocks.quote).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('checkbox'));
   fireEvent.click(screen.getByRole('button', { name: 'Send delivery request' }));
   const summary = screen.getByRole('alert');
   expect(summary).toHaveFocus();
   fireEvent.click(within(summary).getByRole('link', { name: /Email/ }));
   expect(screen.getByLabelText('Quote contact email')).toHaveFocus();
+  expect(mocks.quote).not.toHaveBeenCalled();
+});
+
+it('reports all missing quote details without sending a request', () => {
+  render(<DeliveryQuoteRequest lines={[]} postalCode="" />);
+  fireEvent.click(screen.getByRole('button', { name: 'Request a delivery quote' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Send delivery request' }));
+  const summary = screen.getByRole('alert');
+  expect(summary).toHaveFocus();
+  expect(within(summary).getAllByRole('link')).toHaveLength(3);
+  expect(within(summary).getByText('Enter a valid destination ZIP above.')).toBeInTheDocument();
   expect(mocks.quote).not.toHaveBeenCalled();
 });

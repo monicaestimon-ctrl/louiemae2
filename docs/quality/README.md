@@ -93,3 +93,6 @@ Validation: targeted navigation/delivery tests pass. The full run passed 1,258 t
 
 
 The diagnostic run also exposed a runner configuration error: the Node API does not apply the CLI-only `preset` option. Desktop runs now pass Lighthouse's exported desktop configuration as the third API argument. The existing integrity policy rejected incorrectly mobile-shaped desktop reports; those reports were never valid acceptance evidence. Verify the emitted `configSettings.formFactor` and screen-emulation dimensions, not just a report filename.
+
+
+Review corrections preserve an open desktop disclosure during pointer blur inside its panel; release/cancel/keyboard activity clears the pointer guard, and later outside focus still closes it. Chrome confirms panel-padding clicks keep it open and outside focus dismisses it. Checkout email/state errors are siblings of labels to avoid duplicate accessible names. Quote submit remains reachable while fields are incomplete, so local validation can show all missing details; only an in-flight request disables it. Focused regressions and the six storefront/viewport form fixtures pass after these corrections.

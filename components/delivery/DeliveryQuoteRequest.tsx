@@ -42,7 +42,7 @@ export default function DeliveryQuoteRequest({
     if (saved) savedRef.current?.focus();
   }, [saved]);
   const validZip = /^\d{5}(-\d{4})?$/.test(postalCode);
-  const disabledReason = !validZip
+  const submitHelp = !validZip
     ? 'Enter a destination ZIP above before sending.'
     : !name.trim() || !email.trim() || !consent
       ? 'Enter your name and email, then allow us to contact you about this request.'
@@ -242,15 +242,15 @@ export default function DeliveryQuoteRequest({
               {feedback.errors.consent}
             </p>
           )}
-          {disabledReason && (
+          {submitHelp && (
             <p id={`${id}-submit-help`} className="delivery-note">
-              {disabledReason}
+              {submitHelp}
             </p>
           )}
           <button
             type="submit"
-            disabled={busy || Boolean(disabledReason)}
-            aria-describedby={disabledReason ? `${id}-submit-help` : undefined}
+            disabled={busy}
+            aria-describedby={submitHelp ? `${id}-submit-help` : undefined}
             className="delivery-action"
           >
             {busy ? 'Sending…' : 'Send delivery request'}

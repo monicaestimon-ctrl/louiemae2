@@ -159,7 +159,7 @@ describe('shared delivery product UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Estimate delivery' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Request a delivery quote' }));
     expect(screen.getByLabelText('Quote contact email')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Send delivery request' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Send delivery request' })).toBeEnabled();
     expect(document.querySelector('form form')).toBeNull();
   });
   it('uses the selected trade quantity and discards results after the selection changes', async () => {

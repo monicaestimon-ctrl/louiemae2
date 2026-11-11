@@ -38,14 +38,39 @@ function DestinationList({
 export function DesktopNavigation({ links, scrolled, onNavigate }: Props) {
   const id = useId();
   const nav = useRef<HTMLElement>(null);
+  const pointerWithin = useRef(false);
   const [open, setOpen] = useState<string | null>(null);
   useEffect(() => {
     if (!open) return;
     const outside = (event: globalThis.PointerEvent) => {
-      if (event.target instanceof Node && !nav.current?.contains(event.target)) setOpen(null);
+      pointerWithin.current =
+        event.target instanceof Node && Boolean(nav.current?.contains(event.target));
+      if (!pointerWithin.current) setOpen(null);
     };
-    document.addEventListener('pointerdown', outside);
-    return () => document.removeEventListener('pointerdown', outside);
+    const resetPointer = () => {
+      pointerWithin.current = false;
+    };
+    const outsideFocus = (event: globalThis.FocusEvent) => {
+      if (
+        event.target instanceof Node &&
+        !nav.current?.contains(event.target) &&
+        !(event.target === document.body && pointerWithin.current)
+      )
+        setOpen(null);
+    };
+    document.addEventListener('pointerdown', outside, true);
+    document.addEventListener('pointerup', resetPointer, true);
+    document.addEventListener('pointercancel', resetPointer, true);
+    document.addEventListener('focusin', outsideFocus);
+    window.addEventListener('blur', resetPointer);
+    return () => {
+      resetPointer();
+      document.removeEventListener('pointerdown', outside, true);
+      document.removeEventListener('pointerup', resetPointer, true);
+      document.removeEventListener('pointercancel', resetPointer, true);
+      document.removeEventListener('focusin', outsideFocus);
+      window.removeEventListener('blur', resetPointer);
+    };
   }, [open]);
   const navigate = (href: string) => {
     setOpen(null);
@@ -108,6 +133,7 @@ export function DesktopNavigation({ links, scrolled, onNavigate }: Props) {
       aria-label="Main"
       className="flex items-center gap-6"
       onBlur={(event) => {
+        if (!event.relatedTarget && pointerWithin.current) return;
         if (
           !(event.relatedTarget instanceof Node) ||
           !event.currentTarget.contains(event.relatedTarget)
@@ -115,6 +141,7 @@ export function DesktopNavigation({ links, scrolled, onNavigate }: Props) {
           setOpen(null);
       }}
       onKeyDown={(event) => {
+        pointerWithin.current = false;
         if (event.key === 'Escape' && open) {
           event.preventDefault();
           event.stopPropagation();

@@ -299,8 +299,8 @@ export function DeliveryCheckout({
           {field('line2', 'Apartment, suite (optional)', { autoComplete: 'address-line2' })}
         </div>
         {field('city', 'City', { autoComplete: 'address-level2' })}
-        <label className="delivery-field" htmlFor={`${formId}-state`}>
-          State
+        <div className="delivery-field">
+          <label htmlFor={`${formId}-state`}>State</label>
           <select
             id={`${formId}-state`}
             required
@@ -323,7 +323,7 @@ export function DeliveryCheckout({
               {feedback.errors.state}
             </span>
           )}
-        </label>
+        </div>
         {field('phone', 'Delivery contact phone', {
           type: 'tel',
           autoComplete: 'tel',
@@ -335,8 +335,8 @@ export function DeliveryCheckout({
           pattern: '\\d{5}(-\\d{4})?',
           maxLength: 10,
         })}
-        <label className="delivery-field" htmlFor={`${formId}-email`}>
-          Email
+        <div className="delivery-field">
+          <label htmlFor={`${formId}-email`}>Email</label>
           <input
             id={`${formId}-email`}
             aria-invalid={Boolean(feedback.errors.email)}
@@ -357,7 +357,7 @@ export function DeliveryCheckout({
               {feedback.errors.email}
             </span>
           )}
-        </label>
+        </div>
         {credit && credit.availableMinor > 0 && (
           <label className="delivery-span delivery-check">
             <input

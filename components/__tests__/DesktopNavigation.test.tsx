@@ -58,3 +58,26 @@ it('closes on outside focus and pointer interaction, preserves modified links an
   fireEvent.pointerDown(document.body);
   expect(toggle).toHaveAttribute('aria-expanded', 'false');
 });
+
+it('keeps a pointer-blurred panel open and resets the guard before later focus departure', () => {
+  render(
+    <>
+      <DesktopNavigation links={links} scrolled onNavigate={vi.fn()} />
+      <button>Outside</button>
+    </>
+  );
+  const toggle = screen.getByRole('button', { name: 'Home sections' });
+  fireEvent.click(toggle);
+  const panel = document.getElementById(toggle.getAttribute('aria-controls')!)!;
+  fireEvent.pointerDown(panel);
+  fireEvent.blur(toggle, { relatedTarget: null });
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  fireEvent.pointerUp(document.body);
+  fireEvent.focusIn(screen.getByRole('button', { name: 'Outside' }));
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  fireEvent.click(toggle);
+  fireEvent.pointerDown(panel);
+  fireEvent.pointerCancel(document.body);
+  fireEvent.blur(toggle, { relatedTarget: null });
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+});
