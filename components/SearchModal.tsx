@@ -62,7 +62,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
             <div className="flex justify-between items-center px-6 py-6 md:px-12 border-b border-white/10 relative z-10">
                 <div className="flex flex-col drop-shadow-md">
                     <span id="search-modal-title" className="font-serif text-3xl text-cream italic tracking-tight">Search</span>
-                    <span className="text-[0.55rem] uppercase tracking-[0.3em] text-bronze">Find Products</span>
+                    <span className="text-[0.55rem] uppercase tracking-[0.3em] text-[#D6B99C]">Find Products</span>
                 </div>
                 <button
                     type="button"
@@ -139,15 +139,15 @@ export const SearchModal: React.FC<SearchModalProps> = ({ isOpen, onClose, onPro
                                             )}
                                         </div>
                                         <div className="p-4 flex flex-col bg-gradient-to-t from-black/20 to-transparent">
-                                            <h3 className="font-serif text-sm text-cream group-hover:text-bronze transition-colors line-clamp-2 drop-shadow-sm">
+                                            <h3 className="font-serif text-sm text-cream group-hover:text-[#D6B99C] transition-colors line-clamp-2 drop-shadow-sm">
                                                 {product.name}
                                             </h3>
                                             <p className="text-[0.55rem] uppercase tracking-[0.2em] text-muted-cream mt-1.5">
                                                 {product.category}
                                             </p>
                                             <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/10">
-                                                <span className="text-bronze font-serif italic text-base">${product.price}</span>
-                                                <ArrowRight className="w-4 h-4 text-muted-cream group-hover:text-bronze group-hover:translate-x-1 transition-all duration-300" />
+                                                <span className="text-[#D6B99C] font-serif italic text-base">${product.price}</span>
+                                                <ArrowRight className="w-4 h-4 text-muted-cream group-hover:text-[#D6B99C] group-hover:translate-x-1 transition-all duration-300" />
                                             </div>
                                         </div>
                                     </button>

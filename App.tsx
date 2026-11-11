@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useCallback, lazy, Suspense, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import { Menu, Search, Instagram, ChevronDown } from 'lucide-react';
 import { AiConcierge } from './components/AiConcierge';
 import { SiteMenu } from './components/SiteMenu';
@@ -344,7 +345,7 @@ const AppContent = () => {
 
   return (
     <div className="min-h-screen bg-cream font-sans selection:bg-bronze selection:text-white overflow-x-hidden">
-      <a className="skip-link" href="#main-content" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); document.getElementById('main-content')?.scrollIntoView(); }}>Skip to main content</a>
+      {createPortal(<a className="skip-link" href="#main-content" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); document.getElementById('main-content')?.scrollIntoView(); }}>Skip to main content</a>, document.getElementById('skip-navigation') ?? document.body)}
 
 
       {/* Only show Header/Footer if NOT in admin mode */}
