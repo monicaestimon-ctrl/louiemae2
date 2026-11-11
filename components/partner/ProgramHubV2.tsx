@@ -1,4 +1,8 @@
-import React, { useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
+import { profileFieldProblems } from '../../lib/enrollment';
+import { useFormValidation } from '../forms/useFormValidation';
+import { ValidationSummary } from '../forms/ValidationSummary';
+import '../delivery/forms.css';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { customerMessage } from '../../lib/errors';
@@ -38,6 +42,7 @@ function Status({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** Collect validated profile details and explicit terms acceptance without duplicate membership commands. */
 function Enrollment({ site }: { site: 'creators' | 'trade' }) {
   const programs = useQuery(api.prgMemberships.myPrograms);
   const start = useMutation(api.prgMemberships.creatorStart);
@@ -47,18 +52,24 @@ function Enrollment({ site }: { site: 'creators' | 'trade' }) {
   const [name, setName] = useState('');
   const [urls, setUrls] = useState('');
   const [agree, setAgree] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
+  const id = useId();
+  const pending = useRef(false);
+  const feedback = useFormValidation<'name' | 'urls' | '_form'>();
+  const summary = <ValidationSummary summaryRef={feedback.summaryRef} entries={[{label:'Name or handle',fieldId:`${id}-name`,message:feedback.errors.name},{label:'Profiles or website',fieldId:`${id}-urls`,message:feedback.errors.urls},{message:feedback.errors._form}]} />;
   const [busy, setBusy] = useState(false);
   if (programs === undefined) return <Status>Loading your programs…</Status>;
   if (programs === null) return <Status>Sign in to join the Creator Program or turn on referrals for your trade account.</Status>;
   const run = async (fn: () => Promise<unknown>) => {
+    if (pending.current) return;
+    pending.current = true;
     setBusy(true);
-    setMsg(null);
+    feedback.reset();
     try {
       await fn();
     } catch (e) {
-      setMsg(customerMessage(e));
+      feedback.report({_form:customerMessage(e)});
     } finally {
+      pending.current = false;
       setBusy(false);
     }
   };
@@ -68,11 +79,11 @@ function Enrollment({ site }: { site: 'creators' | 'trade' }) {
   // Approved trade members turn on referrals in the same account (no creator account needed).
   if (site === 'trade' && trade?.state === 'approved' && !trade.referralActivated && !creator) {
     return (
-      <section style={box} aria-labelledby="ref-on">
+      <section className="delivery-ui" style={box} aria-labelledby="ref-on">
         <h3 id="ref-on" style={{ margin: 0 }}>Earn on retail referrals</h3>
         <p style={{ margin: 0 }}>Share Louie Mae retail links with your clients and followers. Your trade purchases keep their trade pricing; referral commission is earned only on retail orders placed through your links.</p>
         <label style={{ display: 'flex', gap: 8, alignItems: 'start' }}>
-          <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+          <input type="checkbox" disabled={busy} checked={agree} onChange={(e) => setAgree(e.target.checked)} />
           <span>
             I accept the <a href="/trade#partner-terms">retail referral terms</a> (version {programs.referralTerms?.version ?? '—'}) and will label posts with my link, for example "#ad".
           </span>
@@ -80,19 +91,19 @@ function Enrollment({ site }: { site: 'creators' | 'trade' }) {
         <button style={btn} disabled={!agree || busy || !programs.referralTerms} onClick={() => run(() => activateTrade({ referralTermsId: programs.referralTerms!._id }))}>
           Turn on referrals
         </button>
-        {msg && <Status>{msg}</Status>}
+        {summary}
       </section>
     );
   }
   if (!creator && site === 'creators')
     return (
-      <section style={box} aria-labelledby="join">
+      <section className="delivery-ui" style={box} aria-labelledby="join">
         <h3 id="join" style={{ margin: 0 }}>Join the Creator Program</h3>
         <p style={{ margin: 0 }}>Free to join. No follower minimum. You earn commission on eligible retail orders placed through your links. Trade pricing is separate and needs a verified business.</p>
         <button style={btn} disabled={busy} onClick={() => run(() => start({}))}>
           Start
         </button>
-        {msg && <Status>{msg}</Status>}
+        {summary}
       </section>
     );
   if (!creator) return null;
@@ -101,34 +112,41 @@ function Enrollment({ site }: { site: 'creators' | 'trade' }) {
     return (
       <form
         style={box}
-        aria-labelledby="profile"
+        className="delivery-ui"
+        noValidate
+        aria-busy={busy}
+        aria-labelledby={`${id}-profile`}
         onSubmit={(e) => {
           e.preventDefault();
-          void run(() => saveProfile({ displayName: name, urls: urls.split(/\s+/).filter(Boolean) }));
+          const profile={displayName:name,urls:urls.split(/\s+/).filter(Boolean)};
+          const problems=profileFieldProblems(profile);
+          if(problems.name.length||problems.urls.length){feedback.report({...(problems.name.length?{name:problems.name.join(' ')}:{}),...(problems.urls.length?{urls:problems.urls.join(' ')}:{})});return;}
+          void run(() => saveProfile(profile));
         }}
       >
-        <h3 id="profile" style={{ margin: 0 }}>About you</h3>
-        <label>
-          Name or handle
-          <input style={input} required value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
-        </label>
-        <label>
-          Your profiles or site (one per line)
-          <textarea style={{ ...input, minHeight: 70 }} required value={urls} onChange={(e) => setUrls(e.target.value)} />
-        </label>
+        <h3 id={`${id}-profile`} style={{ margin: 0 }}>About you</h3>
+        {summary}
+        <div><label htmlFor={`${id}-name`}>Name or handle</label>
+          <input id={`${id}-name`} style={input} required maxLength={80} disabled={busy} value={name} onChange={(e) => {setName(e.target.value);feedback.clear('name');feedback.clear('_form');}} autoComplete="name" aria-invalid={!!feedback.errors.name} aria-describedby={feedback.errors.name?`${id}-name-error`:undefined}/>
+          {feedback.errors.name&&<p id={`${id}-name-error`} className="delivery-error">{feedback.errors.name}</p>}
+        </div>
+        <div><label htmlFor={`${id}-urls`}>Your profiles or site (one per line)</label>
+          <textarea id={`${id}-urls`} style={{ ...input, minHeight: 70 }} required disabled={busy} value={urls} onChange={(e) => {setUrls(e.target.value);feedback.clear('urls');feedback.clear('_form');}} aria-invalid={!!feedback.errors.urls} aria-describedby={`${id}-urls-help${feedback.errors.urls?` ${id}-urls-error`:''}`} />
+          <p id={`${id}-urls-help`} className="delivery-note">Add up to five full web links, including https://.</p>
+          {feedback.errors.urls&&<p id={`${id}-urls-error`} className="delivery-error">{feedback.errors.urls}</p>}
+        </div>
         <button style={btn} type="submit" disabled={busy}>
           Continue
         </button>
-        {msg && <Status>{msg}</Status>}
       </form>
     );
   if (creator.state === 'terms')
     return (
-      <section style={box} aria-labelledby="terms">
+      <section className="delivery-ui" style={box} aria-labelledby="terms">
         <h3 id="terms" style={{ margin: 0 }}>Program terms</h3>
         {!termsReady && <Status>The program terms are being finalized. Enrollment opens when they are published.</Status>}
         <label style={{ display: 'flex', gap: 8, alignItems: 'start' }}>
-          <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+          <input type="checkbox" disabled={busy} checked={agree} onChange={(e) => setAgree(e.target.checked)} />
           <span>
             I accept the <a href="/trade#partner-terms">Creator Program and retail referral terms</a> and will disclose my links, for example "#ad — I earn a commission".
           </span>
@@ -136,7 +154,7 @@ function Enrollment({ site }: { site: 'creators' | 'trade' }) {
         <button style={btn} disabled={!agree || busy || !termsReady} onClick={() => run(() => accept({ creatorTermsId: programs.creatorTerms!._id, referralTermsId: programs.referralTerms!._id }))}>
           Join
         </button>
-        {msg && <Status>{msg}</Status>}
+        {summary}
       </section>
     );
   if (creator.state === 'review') return <Status>Thanks — we review some new accounts by hand and will email you shortly.</Status>;

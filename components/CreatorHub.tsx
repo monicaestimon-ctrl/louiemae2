@@ -290,6 +290,7 @@ export default function CreatorHub() {
       <main className="min-h-screen bg-cream pt-32 pb-24">
         <div className="container mx-auto px-4 sm:px-6 max-w-3xl grid gap-8">
           <h1 className="font-serif text-4xl text-earth">Creator Hub</h1>
+          <h2 className="font-serif text-2xl text-earth">Your membership &amp; earnings</h2>
           <ProgramHubV2 site="creators" />
         </div>
       </main>
