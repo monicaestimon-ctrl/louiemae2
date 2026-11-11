@@ -1,5 +1,8 @@
+import './forms.css';
+import { useFormValidation } from '../forms/useFormValidation';
+import { ValidationSummary } from '../forms/ValidationSummary';
 import { useDeliveryRequest } from './useDeliveryRequest';
-import React, { useMemo, useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useRef, useEffect, useId } from 'react';
 import { useAuthToken } from '@convex-dev/auth/react';
 import { useQuery } from 'convex/react';
 import { Loader2 } from 'lucide-react';
@@ -62,6 +65,20 @@ export function DeliveryCheckout({
   channel?: 'retail' | 'trade';
 }) {
   const authToken = useAuthToken();
+  const formId = useId();
+  const feedback = useFormValidation<
+    | 'recipientName'
+    | 'phone'
+    | 'line1'
+    | 'line2'
+    | 'city'
+    | 'state'
+    | 'postalCode'
+    | 'country'
+    | 'email'
+    | '_form'
+  >();
+  const paymentMessageRef = useRef<globalThis.HTMLParagraphElement>(null);
   const requestSequence = useRef(0);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -88,6 +105,9 @@ export function DeliveryCheckout({
   const [accepted, setAccepted] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  useEffect(() => {
+    if (msg) paymentMessageRef.current?.focus();
+  }, [msg]);
 
   const key = useMemo(
     () =>
@@ -111,6 +131,24 @@ export function DeliveryCheckout({
 
   const review = async (e: React.FormEvent) => {
     e.preventDefault();
+    const errors: Partial<
+      Record<
+        'recipientName' | 'phone' | 'line1' | 'city' | 'state' | 'postalCode' | 'email',
+        string
+      >
+    > = {};
+    for (const key of ['recipientName', 'phone', 'line1', 'city'] as const) {
+      if (!address[key].trim()) errors[key] = 'This field is required.';
+    }
+    if (!STATES.includes(address.state)) errors.state = 'Choose a U.S. state.';
+    if (!/^\d{5}(-\d{4})?$/.test(address.postalCode.trim()))
+      errors.postalCode = 'Enter a five-digit ZIP or ZIP+4.';
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) errors.email = 'Enter a valid email address.';
+    if (Object.keys(errors).length) {
+      feedback.report(errors);
+      return;
+    }
+    feedback.reset();
     setBusy(true);
     setMsg(null);
     const seq = ++requestSequence.current;
@@ -129,7 +167,7 @@ export function DeliveryCheckout({
       setEstKey(key);
       setAccepted(r.totalMinor);
     } catch (err) {
-      if (seq === requestSequence.current) setMsg(customerMessage(err));
+      if (seq === requestSequence.current) feedback.report({ _form: customerMessage(err) });
     } finally {
       if (seq === requestSequence.current) setBusy(false);
     }
@@ -188,48 +226,103 @@ export function DeliveryCheckout({
     }
   };
 
+  const fieldLabels = {
+    recipientName: 'Recipient name',
+    phone: 'Delivery contact phone',
+    line1: 'Street address',
+    line2: 'Apartment, suite',
+    city: 'City',
+    state: 'State',
+    postalCode: 'ZIP code',
+    country: 'Country',
+    email: 'Email',
+  };
   const field = (
     k: keyof typeof address,
     label: string,
     props: React.InputHTMLAttributes<HTMLInputElement> = {}
   ) => (
-    <label className="flex flex-col text-[10px] uppercase tracking-widest text-earth/60">
-      {label}
+    <div className="delivery-field">
+      <label htmlFor={`${formId}-${k}`}>{label}</label>
       <input
+        id={`${formId}-${k}`}
         required={k !== 'line2'}
         value={address[k]}
-        onChange={(e) => setAddress({ ...address, [k]: e.target.value })}
-        className="mt-1 border border-earth/20 px-2 py-1 text-sm normal-case tracking-normal text-earth"
+        aria-invalid={Boolean(feedback.errors[k])}
+        aria-describedby={feedback.errors[k] ? `${formId}-${k}-error` : undefined}
+        onChange={(e) => {
+          setAddress({ ...address, [k]: e.target.value });
+          feedback.clear(k);
+          feedback.clear('_form');
+        }}
         {...props}
       />
-    </label>
+      {feedback.errors[k] && (
+        <p id={`${formId}-${k}-error`} className="delivery-error">
+          {feedback.errors[k]}
+        </p>
+      )}
+    </div>
   );
 
   return (
-    <div className="space-y-3">
-      <form onSubmit={review} className="grid grid-cols-2 gap-2" aria-label="Delivery address">
-        <div className="col-span-2">
+    <div className="delivery-ui delivery-stack">
+      <form
+        onSubmit={review}
+        noValidate
+        className="delivery-address-grid"
+        aria-label="Delivery address"
+        aria-busy={busy}
+      >
+        <div className="delivery-span">
+          <ValidationSummary
+            summaryRef={feedback.summaryRef}
+            entries={Object.entries(feedback.errors).map(([key, message]) =>
+              key === '_form'
+                ? { message }
+                : {
+                    fieldId: `${formId}-${key}`,
+                    label: fieldLabels[key as keyof typeof fieldLabels],
+                    message,
+                  }
+            )}
+          />
+        </div>
+        <div className="delivery-span">
           {field('recipientName', 'Recipient name', { autoComplete: 'name', maxLength: 150 })}
         </div>
         <DeliveryAccessFields value={access} onChange={setAccess} />
-        <div className="col-span-2">
+        <div className="delivery-span">
           {field('line1', 'Street address', { autoComplete: 'address-line1' })}
         </div>
-        <div className="col-span-2">
+        <div className="delivery-span">
           {field('line2', 'Apartment, suite (optional)', { autoComplete: 'address-line2' })}
         </div>
         {field('city', 'City', { autoComplete: 'address-level2' })}
-        <label className="flex flex-col text-[10px] uppercase tracking-widest text-earth/60">
+        <label className="delivery-field" htmlFor={`${formId}-state`}>
           State
           <select
+            id={`${formId}-state`}
+            required
+            aria-invalid={Boolean(feedback.errors.state)}
+            aria-describedby={feedback.errors.state ? `${formId}-state-error` : undefined}
             value={address.state}
-            onChange={(e) => setAddress({ ...address, state: e.target.value })}
+            onChange={(e) => {
+              setAddress({ ...address, state: e.target.value });
+              feedback.clear('state');
+              feedback.clear('_form');
+            }}
             className="mt-1 border border-earth/20 px-2 py-1 text-sm"
           >
             {STATES.map((s) => (
               <option key={s}>{s}</option>
             ))}
           </select>
+          {feedback.errors.state && (
+            <span id={`${formId}-state-error`} className="delivery-error">
+              {feedback.errors.state}
+            </span>
+          )}
         </label>
         {field('phone', 'Delivery contact phone', {
           type: 'tel',
@@ -239,21 +332,34 @@ export function DeliveryCheckout({
         {field('postalCode', 'ZIP code', {
           inputMode: 'numeric',
           autoComplete: 'postal-code',
-          pattern: '\\d{5}',
+          pattern: '\\d{5}(-\\d{4})?',
+          maxLength: 10,
         })}
-        <label className="flex flex-col text-[10px] uppercase tracking-widest text-earth/60">
+        <label className="delivery-field" htmlFor={`${formId}-email`}>
           Email
           <input
+            id={`${formId}-email`}
+            aria-invalid={Boolean(feedback.errors.email)}
+            aria-describedby={feedback.errors.email ? `${formId}-email-error` : undefined}
             type="email"
             required
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              feedback.clear('email');
+              feedback.clear('_form');
+            }}
             autoComplete="email"
             className="mt-1 border border-earth/20 px-2 py-1 text-sm normal-case tracking-normal"
           />
+          {feedback.errors.email && (
+            <span id={`${formId}-email-error`} className="delivery-error">
+              {feedback.errors.email}
+            </span>
+          )}
         </label>
         {credit && credit.availableMinor > 0 && (
-          <label className="col-span-2 flex items-center gap-2 text-xs text-earth">
+          <label className="delivery-span delivery-check">
             <input
               type="checkbox"
               checked={useCredit}
@@ -263,11 +369,7 @@ export function DeliveryCheckout({
             tax)
           </label>
         )}
-        <button
-          type="submit"
-          disabled={busy}
-          className="col-span-2 border border-earth/30 py-2 text-[10px] uppercase tracking-widest hover:bg-earth hover:text-cream"
-        >
+        <button type="submit" disabled={busy} className="delivery-span delivery-action">
           {busy && !est ? 'Checking delivery…' : 'Review delivery and total'}
         </button>
       </form>
@@ -275,37 +377,35 @@ export function DeliveryCheckout({
       <div aria-live="polite">
         {est && !stale && est.status === 'ok' && est.totalMinor !== null && (
           <div className="text-xs text-earth space-y-1 border-t border-earth/10 pt-3">
-            <div className="flex justify-between">
+            <div className="delivery-total-row">
               <span>Merchandise</span>
               <span>{money(est.merchandiseMinor)}</span>
             </div>
             {!!est.creditMinor && (
-              <div className="flex justify-between">
+              <div className="delivery-total-row">
                 <span>Store credit</span>
                 <span>−{money(est.creditMinor)}</span>
               </div>
             )}
-            <div className="flex justify-between">
+            <div className="delivery-total-row">
               <span>{est.serviceName}</span>
               <span>{money(est.deliveryChargeMinor ?? 0)}</span>
             </div>
-            <div className="flex justify-between">
+            <div className="delivery-total-row">
               <span>Estimated tax</span>
               <span>{money(est.taxMinor ?? 0)}</span>
             </div>
-            <div className="flex justify-between font-serif text-base">
+            <div className="delivery-total-row font-serif text-base">
               <span>Total</span>
               <span>{money(est.totalMinor)}</span>
             </div>
-            <p className="text-[11px] text-earth/60 pt-2">
-              {est.splitKnown ? SPLIT_WILL : SPLIT_MAY}
-            </p>
+            <p className="delivery-note">{est.splitKnown ? SPLIT_WILL : SPLIT_MAY}</p>
             <ul>
               {est.serviceDetails.map((detail) => (
                 <li key={detail}>{detail}</li>
               ))}
             </ul>
-            <p className="text-[11px] text-earth/50">{est.timingCaveat}</p>
+            <p className="delivery-note">{est.timingCaveat}</p>
           </div>
         )}
         {est && !stale && est.status !== 'ok' && (
@@ -328,18 +428,22 @@ export function DeliveryCheckout({
           </>
         )}
         {stale && (
-          <p className="text-xs text-earth/60">
+          <p className="delivery-note">
             Your cart or address changed. Review delivery and total again.
           </p>
         )}
-        {msg && <p className="text-xs text-red-700">{msg}</p>}
+        {msg && (
+          <p ref={paymentMessageRef} tabIndex={-1} role="alert" className="delivery-error-summary">
+            {msg}
+          </p>
+        )}
       </div>
 
       {est && !stale && est.status === 'ok' && est.totalMinor !== null && (
         <button
           onClick={accepted === null ? () => setAccepted(est.totalMinor) : pay}
           disabled={busy}
-          className="w-full bg-earth text-cream py-4 text-[10px] uppercase tracking-[0.2em] hover:bg-bronze transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+          className="delivery-action"
         >
           {busy ? (
             <Loader2 className="w-4 h-4 animate-spin" />

@@ -1,5 +1,8 @@
+import './forms.css';
+import { useFormValidation } from '../forms/useFormValidation';
+import { ValidationSummary } from '../forms/ValidationSummary';
 import { useDeliveryRequest } from './useDeliveryRequest';
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useId } from 'react';
 import DeliveryQuoteRequest from './DeliveryQuoteRequest';
 import { useRecoverableQuery } from '../../contexts/useRecoverableQuery';
 import { api } from '../../convex/_generated/api';
@@ -44,20 +47,49 @@ export default function ProductDeliveryEstimate({
   minimumPacks = profile?.minimumPacks ?? minimumPacks;
   incrementPacks = profile?.incrementPacks ?? incrementPacks;
   if (variantId && (availability.status === 'unavailable' || profileQuery.status === 'unavailable'))
-    return <div role="status" className="text-sm text-earth">
-      <p>Delivery availability could not be verified. Please try again.</p>
-      <button type="button" className="min-h-11 underline" onClick={() => { availability.retry(); profileQuery.retry(); }}>Retry delivery availability</button>
-    </div>;
-  if (availability.status === 'loading') return <p role="status" className="text-sm">Checking delivery availability…</p>;
+    return (
+      <div role="status" className="text-sm text-earth">
+        <p>Delivery availability could not be verified. Please try again.</p>
+        <button
+          type="button"
+          className="min-h-11 underline"
+          onClick={() => {
+            availability.retry();
+            profileQuery.retry();
+          }}
+        >
+          Retry delivery availability
+        </button>
+      </div>
+    );
+  if (availability.status === 'loading')
+    return (
+      <p role="status" className="text-sm">
+        Checking delivery availability…
+      </p>
+    );
   if (!enabled || !variantId) return disabledMessage ? <p>{disabledMessage}</p> : null;
   if (profile === undefined) return <p className="text-sm">Checking delivery availability…</p>;
-  if (profile === null) return <p className="text-sm">This item is currently unavailable for delivery estimates.</p>;
+  if (profile === null)
+    return <p className="text-sm">This item is currently unavailable for delivery estimates.</p>;
   if ('requiresProjectQuote' in profile && profile.requiresProjectQuote)
-    return <p className="text-sm">Add this item to your project to request confirmed delivery pricing.</p>;
+    return (
+      <p className="text-sm">
+        Add this item to your project to request confirmed delivery pricing.
+      </p>
+    );
   return (
     <DeliveryForm
       key={`${productId}:${variantId}:${piecesPerPack}:${minimumPacks}:${incrementPacks}:${channel}:${selectedPacks ?? 'editable'}`}
-      {...{ productId, variantId, piecesPerPack, minimumPacks, incrementPacks, channel, selectedPacks }}
+      {...{
+        productId,
+        variantId,
+        piecesPerPack,
+        minimumPacks,
+        incrementPacks,
+        channel,
+        selectedPacks,
+      }}
     />
   );
 }
@@ -79,6 +111,8 @@ function DeliveryForm({
   selectedPacks?: number;
 }) {
   const estimate = useDeliveryRequest('estimate');
+  const id = useId();
+  const feedback = useFormValidation<'zip' | 'qty' | '_form'>();
   const [zip, setZip] = useState('');
   const [qty, setQty] = useState(selectedPacks ?? minimumPacks);
   const sequence = useRef(0);
@@ -100,10 +134,19 @@ function DeliveryForm({
   }, [state.expiresAt]);
   const run = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!/^\d{5}$/.test(zip))
-      return setState({ status: 'error', text: 'Enter a 5-digit ZIP code.' });
-    if (!Number.isSafeInteger(qty) || qty < minimumPacks || (qty - minimumPacks) % incrementPacks !== 0)
-      return setState({ status: 'error', text: `Choose at least ${minimumPacks} packs, in increments of ${incrementPacks}.` });
+    const errors: { zip?: string; qty?: string } = {};
+    if (!/^\d{5}$/.test(zip)) errors.zip = 'Enter a 5-digit ZIP code.';
+    if (
+      !Number.isSafeInteger(qty) ||
+      qty < minimumPacks ||
+      (qty - minimumPacks) % incrementPacks !== 0
+    )
+      errors.qty = `Choose at least ${minimumPacks} packs, in increments of ${incrementPacks}.`;
+    if (Object.keys(errors).length) {
+      feedback.report(errors);
+      return;
+    }
+    feedback.reset();
     setState({ status: 'loading' });
     const requestId = ++sequence.current;
     try {
@@ -127,75 +170,108 @@ function DeliveryForm({
       );
     } catch (err) {
       if (requestId !== sequence.current) return;
-      setState({ status: 'error', text: customerMessage(err) });
+      setState({ status: 'idle' });
+      feedback.report({ _form: customerMessage(err) });
     }
   };
   return (
-    <div className="mt-3 text-sm text-earth/70">
-    <form onSubmit={run} aria-label="Estimate delivery">
-      <div className="flex flex-wrap gap-2 items-end">
-        <label className="flex flex-col text-[10px] uppercase tracking-widest">
-          ZIP code
-          <input
-            inputMode="numeric"
-            autoComplete="postal-code"
-            maxLength={5}
-            value={zip}
-            onChange={(e) => {
-              sequence.current++;
-              setState({ status: 'idle' });
-              setZip(e.target.value.replace(/\D/g, ''));
-            }}
-            className="mt-1 border border-earth/20 px-2 py-1 w-24 text-sm normal-case tracking-normal"
-          />
-        </label>
-        <label className="flex flex-col text-[10px] uppercase tracking-widest">
-          Packs{piecesPerPack > 1 ? ` (${piecesPerPack} pieces each)` : ''}
-          <input
-            type="number"
-            min={minimumPacks}
-            step={incrementPacks}
-            value={qty}
-            readOnly={selectedPacks !== undefined}
-            onChange={(e) => {
-              sequence.current++;
-              setState({ status: 'idle' });
-              setQty(Number(e.target.value));
-            }}
-            className="mt-1 border border-earth/20 px-2 py-1 w-16 text-sm"
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={state.status === 'loading'}
-          className="border border-earth/30 px-3 py-1 text-[10px] uppercase tracking-widest hover:bg-earth hover:text-cream focus-visible:outline focus-visible:outline-2"
-        >
-          {state.status === 'loading' ? 'Estimating…' : 'Estimate delivery'}
-        </button>
-      </div>
-      <p aria-live="polite" className="mt-2">
-        {state.status === 'done' && (
-          <>
-            <span className="text-earth">{state.text}</span>
-            {state.details?.map((detail) => (
-              <span className="block text-xs" key={detail}>
-                {detail}
-              </span>
-            ))}
-            {state.caveat && (
-              <span className="block text-xs text-earth/50">
-                {state.caveat} {ZIP_ESTIMATE_NOTE}
-              </span>
+    <div className="delivery-ui">
+      <form onSubmit={run} noValidate aria-label="Estimate delivery" className="delivery-stack">
+        <ValidationSummary
+          summaryRef={feedback.summaryRef}
+          entries={[
+            { fieldId: `${id}-zip`, label: 'ZIP code', message: feedback.errors.zip },
+            { fieldId: `${id}-qty`, label: 'Packs', message: feedback.errors.qty },
+            { message: feedback.errors._form },
+          ]}
+        />
+        <div className="delivery-row">
+          <div className="delivery-field">
+            <label htmlFor={`${id}-zip`}>ZIP code</label>
+            <input
+              id={`${id}-zip`}
+              inputMode="numeric"
+              autoComplete="postal-code"
+              maxLength={5}
+              required
+              value={zip}
+              aria-invalid={Boolean(feedback.errors.zip)}
+              aria-describedby={`${id}-zip-help${feedback.errors.zip ? ` ${id}-zip-error` : ''}`}
+              onChange={(e) => {
+                sequence.current++;
+                setState({ status: 'idle' });
+                feedback.clear('zip');
+                feedback.clear('_form');
+                setZip(e.target.value.replace(/\D/g, ''));
+              }}
+            />
+            <p id={`${id}-zip-help`} className="delivery-note">
+              Five-digit U.S. ZIP code.
+            </p>
+            {feedback.errors.zip && (
+              <p id={`${id}-zip-error`} className="delivery-error">
+                {feedback.errors.zip}
+              </p>
             )}
-            {state.quote && (
-              <span className="block text-xs text-earth/50">
-                We'll confirm delivery for this address before you pay.
-              </span>
+          </div>
+          <div className="delivery-field">
+            <label htmlFor={`${id}-qty`}>
+              Packs{piecesPerPack > 1 ? ` (${piecesPerPack} pieces each)` : ''}
+            </label>
+            <input
+              id={`${id}-qty`}
+              type="number"
+              min={minimumPacks}
+              step={incrementPacks}
+              required
+              value={qty}
+              readOnly={selectedPacks !== undefined}
+              aria-invalid={Boolean(feedback.errors.qty)}
+              aria-describedby={`${id}-qty-help${feedback.errors.qty ? ` ${id}-qty-error` : ''}`}
+              onChange={(e) => {
+                sequence.current++;
+                setState({ status: 'idle' });
+                feedback.clear('qty');
+                feedback.clear('_form');
+                setQty(Number(e.target.value));
+              }}
+            />
+            <p id={`${id}-qty-help`} className="delivery-note">
+              Minimum {minimumPacks}; increments of {incrementPacks}.
+            </p>
+            {feedback.errors.qty && (
+              <p id={`${id}-qty-error`} className="delivery-error">
+                {feedback.errors.qty}
+              </p>
             )}
-          </>
-        )}
-        {state.status === 'error' && <span className="text-red-700">{state.text}</span>}
-      </p>
+          </div>
+          <button type="submit" disabled={state.status === 'loading'} className="delivery-action">
+            {state.status === 'loading' ? 'Estimating…' : 'Estimate delivery'}
+          </button>
+        </div>
+        <div aria-live="polite" aria-atomic="true">
+          {state.status === 'done' && (
+            <>
+              <p>{state.text}</p>
+              {state.details?.map((detail) => (
+                <p className="delivery-note" key={detail}>
+                  {detail}
+                </p>
+              ))}
+              {state.caveat && (
+                <p className="delivery-note">
+                  {state.caveat} {ZIP_ESTIMATE_NOTE}
+                </p>
+              )}
+              {state.quote && (
+                <p className="delivery-note">
+                  We'll confirm delivery for this address before you pay.
+                </p>
+              )}
+            </>
+          )}
+          {state.status === 'error' && <p className="delivery-error">{state.text}</p>}
+        </div>
       </form>
       {state.quote && (
         <DeliveryQuoteRequest

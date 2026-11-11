@@ -23,7 +23,8 @@
     "verify:append-only": "node scripts/verify-append-only.mjs",
     "verify:repo-secrets": "node scripts/verify-repo-secrets.mjs",
     "verify:environment": "node scripts/verify-environment.mjs",
-    "test:dialogs:browser": "node scripts/lighthouse/dialogs.mjs"
+    "test:dialogs:browser": "node scripts/lighthouse/dialogs.mjs",
+    "test:forms:browser": "node scripts/lighthouse/forms.mjs"
   },
   "dependencies": {
     "@auth/core": "^0.37.0",

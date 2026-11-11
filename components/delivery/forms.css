@@ -1,0 +1,132 @@
+/* Shared by retail and HOLM; do not import either storefront's global reset. */
+.delivery-ui {
+  color: #4a3b32;
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.delivery-ui.delivery-stack,
+.delivery-ui .delivery-stack {
+  display: grid;
+  gap: 1rem;
+}
+.delivery-ui .delivery-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+}
+.delivery-ui .delivery-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  color: #4a3b32;
+  font-size: 0.875rem;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.delivery-ui .delivery-row > .delivery-field {
+  flex: 1 1 100px;
+  max-width: 180px;
+}
+.delivery-ui :is(input:not([type='checkbox']):not([type='radio']), select, textarea) {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #9a8d83;
+  border-radius: 4px;
+  background: #fff;
+  color: #4a3b32;
+  padding: 10px;
+  font: inherit;
+}
+.delivery-ui input::placeholder,
+.delivery-ui textarea::placeholder {
+  color: #6b5f55;
+  opacity: 1;
+}
+.delivery-ui textarea {
+  min-height: 88px;
+}
+.delivery-ui button {
+  min-height: 44px;
+}
+.delivery-ui .delivery-action {
+  border: 1px solid #4a3b32;
+  border-radius: 4px;
+  background: #4a3b32;
+  color: white;
+  padding: 10px 16px;
+  font: inherit;
+}
+.delivery-ui button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.delivery-ui :is(button, a, input, select, textarea):focus-visible,
+.delivery-ui .delivery-error-summary:focus {
+  outline: 2px solid #4a3b32;
+  outline-offset: 3px;
+}
+.delivery-ui .delivery-note {
+  color: #6b5f55;
+  font-size: 0.8125rem;
+}
+.delivery-ui .delivery-error {
+  color: #991b1b;
+  font-size: 0.875rem;
+}
+.delivery-ui [aria-invalid='true'] {
+  border-color: #991b1b;
+}
+.delivery-ui .delivery-error-summary {
+  border-left: 4px solid #991b1b;
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+  background: #fff7f5;
+  color: #7f1d1d;
+}
+.delivery-ui .delivery-error-summary ul {
+  list-style: disc;
+  margin: 0.5rem 0 0 1.25rem;
+}
+.delivery-ui .delivery-error-summary a {
+  color: inherit;
+  text-decoration: underline;
+}
+.delivery-ui .delivery-address-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+.delivery-ui .delivery-span {
+  grid-column: 1 / -1;
+}
+.delivery-ui fieldset {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  border: 1px solid #b7aba1;
+  padding: 0.75rem;
+}
+.delivery-ui legend {
+  padding: 0 0.25rem;
+  font-weight: 600;
+}
+.delivery-ui .delivery-check {
+  display: flex;
+  align-items: start;
+  gap: 0.5rem;
+}
+.delivery-ui input:is([type='checkbox'], [type='radio']) {
+  flex-shrink: 0;
+  margin-top: 0.3rem;
+}
+.delivery-ui .delivery-total-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
