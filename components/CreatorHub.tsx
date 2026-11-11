@@ -88,6 +88,7 @@ function RateTable({ tier }: { tier?: HolmTier | null }) {
   );
 }
 
+/** Use shared credential validation while respecting the server-enabled sign-in providers. */
 function SignIn() {
   const opts = useQuery(api.holm.signInOptions);
   return <CredentialsForm site="creator" googleEnabled={opts?.google} />;

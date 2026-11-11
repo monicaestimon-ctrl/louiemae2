@@ -15,6 +15,7 @@ export function CredentialsForm({ site, googleEnabled = false, afterSignIn = 'ho
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
   const feedback = useFormValidation<'email' | 'password' | '_form'>();
+  /** Lock synchronously so rapid clicks cannot dispatch a second provider request. */
   const begin = () => {
     if (pending.current) return false;
     pending.current = true;
@@ -26,6 +27,7 @@ export function CredentialsForm({ site, googleEnabled = false, afterSignIn = 'ho
     pending.current = false;
     setBusy(false);
   };
+  /** Validate locally before dispatch; rejected credentials remain available for correction. */
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (pending.current) return;
@@ -54,6 +56,7 @@ export function CredentialsForm({ site, googleEnabled = false, afterSignIn = 'ho
       finish();
     }
   };
+  /** Preserve return intent when storage is available, without making it a prerequisite for OAuth. */
   const google = async () => {
     if (!begin()) return;
     try {

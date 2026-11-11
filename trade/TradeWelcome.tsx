@@ -9,6 +9,7 @@ type Props = {
   onNavigate: (route: string) => void;
   artwork: string[][];
 };
+/** Resume the requested trade route after sign-in; profile assurance is idempotent and server-owned. */
 export function TradeWelcome({ signedIn, afterSignIn = 'home', onNavigate, artwork }: Props) {
   const ensure = useMutation(api.holm.ensureProfile);
   const options = useQuery(api.holm.signInOptions);

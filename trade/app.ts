@@ -192,6 +192,7 @@ function SaveMenu({ctx,pid,onDone,align='right'}){
   </div>`;
 }
 
+/** Expose product opening as a native button while keeping save/project actions independent. */
 function PinCard({p,ctx}){
   const [menu,setMenu]=useState(false);
   const saved=ctx.boards.some(b=>b.pins.some(x=>x.pid===p.id));
@@ -1218,6 +1219,7 @@ const IX_MORE=[['boards','Boards'],['inspo','My Inspo'],['hub','Your quotes'],['
 // The piece that floats beside the panel on wide screens: [room photo behind it, cut-out piece].
 const IX_PIECE={home:[2,2],discover:[7,7],studio:[13,13],room:[5,5],boards:[12,12],inspo:[4,4],hub:[17,17],sourcing:[9,9],quiz:[21,21]};
 const IX_LABEL=Object.fromEntries([...IX_MAIN,...IX_MORE]);
+/** Present destination links in a modal menu with local arrow navigation and shared focus restoration. */
 function IndexMenu({ctx}){
   const [q,setQ]=useState('');const [spaces,setSpaces]=useState(false);const panel=useRef();
   // Which link the floating piece is showing: the hovered or focused one, else the current page.
@@ -1275,6 +1277,7 @@ function IndexMenu({ctx}){
 }
 
 /* ================= PRODUCT PAGE v3 ================= */
+/** Keep product actions and image navigation inside the active modal; hidden sticky actions remain inert. */
 function PinDetail({ctx}){
   const p=byId(ctx.pin);const idx=PRODUCTS.findIndex(x=>x.id===p.id);
   const [view,setView]=useState('studio');const [bd,setBd]=useState('#ECE3D5');const [scale,setScale]=useState(false);
@@ -1441,6 +1444,7 @@ function fromServer(q){
   return {x:false,ref:q.number,by:q.studioName||'House of Louie Mae',studio:!!q.studioName,c:q.clientName,t:q.title,n:q.note,sp:q.space,d:q.createdAt,until:q.validUntil,dl:q.deliveryCents==null?-1:q.deliveryCents/100,dep:q.depositBps/100,lt:q.leadTime,lines,approved:q.approval,changed:!!q.changeRequest};
 }
 
+/** Render the approval gate or quote editor as the topmost dialog without dismissing its parent tray. */
 function QuoteComposer({ctx,onClose}){
   const proj=ctx.activeProject;const me=ctx.me;
   const create=useMutation(api.holm.createClientQuote);
@@ -1593,6 +1597,7 @@ function ClientQuote({ctx,code}){
     </div>
   </main>`;
 }
+/** Present project drafts and delivery steps in a modal; authoritative quote/checkout requests remain server-owned. */
 function Tray({ctx}){
   const {tray,setTrayState}=ctx;const proj=tray.projects.find(p=>p.id===tray.active);
   const [step,setStep]=useState(0);const [view,setView]=useState('staged');const [tab,setTab]=useState('tray');
@@ -3776,6 +3781,7 @@ function Account({ctx}){
   </div></main>`;
 }
 /* ================= WELCOME / LOGIN ================= */
+/** Adapt the legacy catalog artwork and route context to the typed trade sign-in screen. */
 function Welcome({ctx}) {
   const artwork = [[1,7,12,17,4,20],[2,8,13,19,9,22],[3,10,14,21,5,11]].map(column => column.map(id => byId(id)?.img).filter(Boolean));
   return html`<${TradeWelcome} signedIn=${ctx.me.signedIn} afterSignIn=${ctx.afterSignIn || 'home'} onNavigate=${ctx.go} artwork=${artwork}/>`;
