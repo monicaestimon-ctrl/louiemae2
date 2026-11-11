@@ -1,3 +1,4 @@
+import { legacySearchProjection, listingSearchProjection, sameSearchProjection, syncPublicSearch } from './publicSearchMaintenance';
 import { syncExpiry } from './webhookExpiryMaintenance';
 import { syncRecoveryQueue } from './webhookRecoveryMaintenance';
 import { inventoryTargets, syncInventoryTargets } from './cjInventoryTargetMaintenance';
@@ -28,7 +29,15 @@ triggers.register('cjSourcingJobs', async (ctx, change) => {
   if (change.oldDoc && change.newDoc && change.oldDoc.state === change.newDoc.state) return;
   await syncSourcingCount(ctx, change.id, change.newDoc);
 });
+triggers.register('commerceListings', async (ctx, change) => {
+  const before = listingSearchProjection(change.oldDoc);
+  const after = listingSearchProjection(change.newDoc);
+  if (!sameSearchProjection(before, after)) await syncPublicSearch(ctx, `listing:${change.id}`, after);
+});
 triggers.register('products', async (ctx, change) => {
+  const before = legacySearchProjection(change.oldDoc);
+  const after = legacySearchProjection(change.newDoc);
+  if (!sameSearchProjection(before, after)) await syncPublicSearch(ctx, `legacy:${change.id}`, after);
   if (!change.oldDoc || !change.newDoc || !sameCatalogValue(inventoryTargets(change.oldDoc), inventoryTargets(change.newDoc))) {
     await syncInventoryTargets(ctx, change.id, change.newDoc);
   }

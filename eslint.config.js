@@ -102,6 +102,7 @@ export default [
         },
     },
     {
-        ignores: ['dist/**', 'node_modules/**', '*.config.*', 'public/trade/decoders/**'],
+        ignores: ['dist/**', 'node_modules/**', '*.config.*', 'public/trade/decoders/**',
+            'artifacts/**', 'outputs/**', 'tmp/**', 'coverage/**', '.vercel/**'],
     },
 ];

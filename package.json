@@ -34,7 +34,8 @@
     "test:quote-dialog:browser": "node scripts/lighthouse/quote-dialog.mjs",
     "test:portal:browser": "node scripts/lighthouse/portal.mjs",
     "test:tray-request:browser": "node scripts/lighthouse/tray-request.mjs",
-    "test:legacy-creator:browser": "node scripts/lighthouse/legacy-creator.mjs"
+    "test:legacy-creator:browser": "node scripts/lighthouse/legacy-creator.mjs",
+    "test:product-navigation:browser": "node scripts/lighthouse/product-navigation.mjs"
   },
   "dependencies": {
     "@auth/core": "^0.37.0",

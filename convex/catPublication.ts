@@ -3,7 +3,7 @@
 // (never "all drafts"), publishes only variants that pass every gate, commits both channels
 // atomically, and unpublish/rollback never touch paid orders or financial obligations.
 import { v } from 'convex/values';
-import { mutation, query } from './_generated/server';
+import { mutation, query } from './functions';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { requireCjAdminIdentity } from './cjAdminAccess';

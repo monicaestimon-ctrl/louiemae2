@@ -7,6 +7,7 @@ import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { assertSellable } from './catCore';
 import { currentZuoStorefrontListing, retailDetail } from './retailStorefront';
+import { publicSearchCard } from './publicSearch';
 import { computeScenarios, recordScenarios } from './catPricing';
 import { assertLineMechanism } from './catPolicies';
 import { normalizePackage, parseJsonPackage } from '../lib/zuoImport';
@@ -989,7 +990,20 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     ]);
     process.env.RETAIL_ZUO_CHECKOUT_ENABLED = 'true';
     const retail = listings.find(l => l.channel === 'retail')!;
-    const read = () => t.run(ctx => retailDetail(ctx, productId));
+    const read = () => t.run(async ctx => {
+      const detail = await retailDetail(ctx, productId);
+      const row = await ctx.db.query('publicSearch').withIndex('by_source', q => q.eq('sourceKey', `listing:${retail._id}`)).unique();
+      const card = row ? await publicSearchCard(ctx, row) : null;
+      expect(Boolean(card)).toBe(Boolean(detail));
+      if (card) {
+        expect(card.price).toBe(detail!.price);
+        expect(card.image).toBe(publicUrl);
+        expect(card.alt).toBe('Oak dining chair, pair');
+        expect(card).not.toHaveProperty('fulfillment');
+        expect(card).not.toHaveProperty('cost');
+      }
+      return detail;
+    });
     const page = () => t.query(api.retailLaunch.storefrontPage, { paginationOpts: { cursor: null, numItems: 20 } });
     expect(await read()).toMatchObject({ inStock: true, price: 458.06 });
     expect(await read()).toMatchObject({ imageMedia: retail.snapshot.imageMedia });

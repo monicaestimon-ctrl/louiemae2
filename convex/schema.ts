@@ -1,3 +1,4 @@
+import { publicSearchTables } from './publicSearchTables';
 import { sourcePropertiesValidator } from './sourcePropertiesValidator';
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
@@ -54,6 +55,7 @@ const cjFulfillmentReadinessValidator = v.union(
 );
 
 export default defineSchema({
+    ...publicSearchTables,
     // Only processing leases are represented here; permanent identities remain in cjWebhookLog.
     webhookRecoveryQueue: defineTable({ webhookId: v.id('cjWebhookLog'), claimedAt: v.optional(v.string()), sourceCreatedAt: v.number() })
         .index('by_webhook', ['webhookId']).index('by_claimed_at', ['claimedAt', 'sourceCreatedAt', 'webhookId']),
