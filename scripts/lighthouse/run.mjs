@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { URL } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import lighthouse from 'lighthouse';
+import lighthouse, { desktopConfig } from 'lighthouse';
 import { launch } from 'chrome-launcher';
 import puppeteer from 'puppeteer-core';
 import { assessRun, assessBatch } from './policy.mjs';
@@ -46,7 +46,7 @@ for (const route of registry.routes) {
         const page = await browser.newPage();
         const result = await lighthouse(url, { port: chrome.port, output: ['json', 'html'],
           logLevel: 'error', onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
-          ...(device === 'desktop' ? { preset: 'desktop' } : {}) }, undefined, page);
+          }, device === 'desktop' ? desktopConfig : undefined, page);
         if (!result) throw new Error('Lighthouse returned no report');
         await writeFile(resolve(directory, `${name}.json`), result.report[0]);
         await writeFile(resolve(directory, `${name}.html`), result.report[1]);

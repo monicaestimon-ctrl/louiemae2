@@ -9,9 +9,9 @@ export default function DeliveryAccessFields({
   onChange: (value: DeliveryAccess) => void;
 }) {
   return (
-    <fieldset className="col-span-2 grid gap-2 text-sm">
+    <fieldset className="delivery-span">
       <legend>Delivery location and service</legend>
-      <label>
+      <label className="delivery-field">
         Location
         <select
           className="block w-full border p-2"
@@ -28,7 +28,7 @@ export default function DeliveryAccessFields({
           <option value="commercial">Commercial</option>
         </select>
       </label>
-      <label>
+      <label className="delivery-field">
         Requested service
         <select
           className="block w-full border p-2"
@@ -53,7 +53,7 @@ export default function DeliveryAccessFields({
           ...(value.destinationType === 'commercial' ? ['loadingDock'] : []),
         ] as const
       ).map((key) => (
-        <label key={key}>
+        <label key={key} className="delivery-check">
           <input
             type="checkbox"
             checked={value[key as keyof DeliveryAccess] === true}
@@ -66,7 +66,7 @@ export default function DeliveryAccessFields({
               : 'A loading dock is available'}
         </label>
       ))}
-      <p className="text-xs">
+      <p className="delivery-note">
         Special services and restricted access require confirmation before payment. A commercial
         address does not automatically reduce delivery charges.
       </p>
