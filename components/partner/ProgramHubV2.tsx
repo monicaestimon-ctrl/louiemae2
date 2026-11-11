@@ -5,6 +5,7 @@ import { ValidationSummary } from '../forms/ValidationSummary';
 import '../delivery/forms.css';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
+import type { FunctionReturnType } from 'convex/server';
 import { customerMessage } from '../../lib/errors';
 import { LEDGER_STATE_LABEL, TIER_LABEL } from '../../lib/vocabulary';
 
@@ -12,11 +13,35 @@ import { LEDGER_STATE_LABEL, TIER_LABEL } from '../../lib/vocabulary';
 // and the Referrals & Earnings section of the House of Louie Mae Trade Hub: one login, one
 // beneficiary, one ledger. Plain markup with inline layout so it renders on both sites.
 
-const money = (minor: number) => `${minor < 0 ? '−' : ''}$${(Math.abs(minor) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const money = (minor: number) =>
+  `${minor < 0 ? '−' : ''}$${(Math.abs(minor) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const pct = (bps: number) => `${(bps / 100).toFixed(bps % 100 ? 2 : 0)}%`;
-const box: React.CSSProperties = { border: '1px solid rgba(0,0,0,0.12)', borderRadius: 8, padding: 16, display: 'grid', gap: 10 };
-const btn: React.CSSProperties = { padding: '10px 16px', border: '1px solid currentColor', background: 'transparent', cursor: 'pointer', fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', justifySelf: 'start' };
-const input: React.CSSProperties = { padding: '8px 10px', border: '1px solid rgba(0,0,0,0.2)', fontSize: 14, width: '100%' };
+const box: React.CSSProperties = {
+  border: '1px solid rgba(0,0,0,0.12)',
+  borderRadius: 8,
+  padding: 16,
+  display: 'grid',
+  gap: 10,
+  minWidth: 0,
+};
+const btn: React.CSSProperties = {
+  padding: '10px 16px',
+  border: '1px solid currentColor',
+  background: 'transparent',
+  cursor: 'pointer',
+  fontSize: 12,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+  justifySelf: 'start',
+};
+const input: React.CSSProperties = {
+  padding: '8px 10px',
+  border: '1px solid rgba(0,0,0,0.2)',
+  fontSize: 14,
+  width: '100%',
+  minWidth: 0,
+  boxSizing: 'border-box',
+};
 
 const PAGES: [string, string][] = [
   ['/', 'Louie Mae home'],
@@ -162,38 +187,80 @@ function Enrollment({ site }: { site: 'creators' | 'trade' }) {
   return null;
 }
 
+/** Create retail referral links and report clipboard failures without losing the generated URL. */
 function LinkBuilder() {
   const create = useMutation(api.prgLinks.create);
-  const catalog = useQuery(api.retailLaunch.storefrontPage, { paginationOpts: { numItems: 100, cursor: null } });
+  const catalog = useQuery(api.retailLaunch.storefrontPage, {
+    paginationOpts: { numItems: 100, cursor: null },
+  });
   const [target, setTarget] = useState<string>('/');
   const [channel, setChannel] = useState('link');
-  const [out, setOut] = useState<{ url: string; label: string; rate?: number; note?: string | null; disclosure: string } | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [out, setOut] = useState<{
+    url: string;
+    label: string;
+    rate?: number;
+    note?: string | null;
+    disclosure: string;
+  } | null>(null);
+  const feedback = useFormValidation<'_form'>();
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const headingId = useId();
   const [copied, setCopied] = useState(false);
-  const products = (catalog?.page ?? []).flatMap((p) => (p.variants ?? []).map((v) => ({ key: `p:${p._id}:${v.id}`, label: `${p.name}${v.name && v.name !== 'Default Title' ? ` — ${v.name}` : ''}` })));
+  const [copying, setCopying] = useState(false);
+  const products = (catalog?.page ?? []).flatMap((p) =>
+    (p.variants ?? []).map((v) => ({
+      key: `p:${p._id}:${v.id}`,
+      label: `${p.name}${v.name && v.name !== 'Default Title' ? ` — ${v.name}` : ''}`,
+    }))
+  );
   const build = async () => {
-    setMsg(null);
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    feedback.reset();
     setOut(null);
     setCopied(false);
     try {
       if (target.startsWith('p:')) {
         const [, productId, variantId] = target.split(':');
         const r = await create({ productId: productId as never, variantId, channelTag: channel });
-        setOut({ url: r.url, label: r.destination, rate: 'applicableRateBps' in r ? r.applicableRateBps : undefined, note: 'exceptionNote' in r ? r.exceptionNote : null, disclosure: r.disclosureExample });
+        setOut({
+          url: r.url,
+          label: r.destination,
+          rate: 'applicableRateBps' in r ? r.applicableRateBps : undefined,
+          note: 'exceptionNote' in r ? r.exceptionNote : null,
+          disclosure: r.disclosureExample,
+        });
       } else {
         const r = await create({ path: target, channelTag: channel });
         setOut({ url: r.url, label: r.destination, disclosure: r.disclosureExample });
       }
     } catch (e) {
-      setMsg(customerMessage(e));
+      feedback.report({ _form: customerMessage(e) });
+    } finally {
+      pending.current = false;
+      setBusy(false);
     }
   };
   return (
-    <section style={box} aria-labelledby="links">
-      <h3 id="links" style={{ margin: 0 }}>Copy retail referral link</h3>
+    <section style={box} className="delivery-ui" aria-labelledby={headingId}>
+      <h3 id={headingId} style={{ margin: 0 }}>
+        Copy retail referral link
+      </h3>
       <label>
         Link to
-        <select style={input} value={target} onChange={(e) => setTarget(e.target.value)}>
+        <select
+          style={input}
+          disabled={busy || copying}
+          value={target}
+          onChange={(e) => {
+            setTarget(e.target.value);
+            setOut(null);
+            setCopied(false);
+            feedback.reset();
+          }}
+        >
           <optgroup label="Pages">
             {PAGES.map(([v, l]) => (
               <option key={v} value={v}>
@@ -214,7 +281,17 @@ function LinkBuilder() {
       </label>
       <label>
         Where you'll share it
-        <select style={input} value={channel} onChange={(e) => setChannel(e.target.value)}>
+        <select
+          style={input}
+          disabled={busy || copying}
+          value={channel}
+          onChange={(e) => {
+            setChannel(e.target.value);
+            setOut(null);
+            setCopied(false);
+            feedback.reset();
+          }}
+        >
           {CHANNELS.map(([v, l]) => (
             <option key={v} value={v}>
               {l}
@@ -222,25 +299,50 @@ function LinkBuilder() {
           ))}
         </select>
       </label>
-      <button style={btn} onClick={build}>
-        Make link
+      <button style={btn} disabled={busy || copying} onClick={build}>
+        {busy ? 'Making link…' : 'Make link'}
       </button>
+      <ValidationSummary
+        summaryRef={feedback.summaryRef}
+        entries={[{ message: feedback.errors._form }]}
+      />
       <div aria-live="polite">
-        {msg && <p style={{ margin: 0 }}>{msg}</p>}
         {out && (
           <div style={{ display: 'grid', gap: 6 }}>
             <code style={{ wordBreak: 'break-all' }}>{out.url}</code>
             <span>Goes to: {out.label}</span>
-            {out.rate !== undefined && <span>Your rate on this piece: {pct(out.rate)}{out.note ? ` · ${out.note}` : ''}</span>}
-            <span>Disclosure example: “{out.disclosure}” — use it on posts, Stories and video.</span>
+            {out.rate !== undefined && (
+              <span>
+                Your rate on this piece: {pct(out.rate)}
+                {out.note ? ` · ${out.note}` : ''}
+              </span>
+            )}
+            <span>
+              Disclosure example: “{out.disclosure}” — use it on posts, Stories and video.
+            </span>
             <button
               style={btn}
+              disabled={busy || copying}
               onClick={async () => {
-                await navigator.clipboard.writeText(out.url).catch(() => undefined);
-                setCopied(true);
+                if (pending.current) return;
+                pending.current = true;
+                setCopying(true);
+                setCopied(false);
+                feedback.reset();
+                try {
+                  await navigator.clipboard.writeText(out.url);
+                  setCopied(true);
+                } catch {
+                  feedback.report({
+                    _form: 'Clipboard access is unavailable. Select and copy the link above.',
+                  });
+                } finally {
+                  pending.current = false;
+                  setCopying(false);
+                }
               }}
             >
-              {copied ? 'Copied' : 'Copy link'}
+              {copying ? 'Copying…' : copied ? 'Copied' : 'Copy link'}
             </button>
           </div>
         )}
@@ -249,6 +351,7 @@ function LinkBuilder() {
   );
 }
 
+/** Present separate commission and credit ledgers in keyboard-scrollable tables. */
 function Earnings() {
   const tier = useQuery(api.prgTiers.myTier);
   const earnings = useQuery(api.ldgCommissions.myEarnings);
@@ -258,100 +361,164 @@ function Earnings() {
   const t = earnings.totals;
   return (
     <section style={box} aria-labelledby="earnings">
-      <h3 id="earnings" style={{ margin: 0 }}>Referrals & earnings</h3>
+      <h3 id="earnings" style={{ margin: 0 }}>
+        Referrals & earnings
+      </h3>
       {tier && (
         <p style={{ margin: 0 }}>
           Tier: <b>{TIER_LABEL[tier.tier]}</b>
-          {tier.next ? ` · ${money(tier.toNextMinor)} more in eligible sales to reach ${TIER_LABEL[tier.next]}` : ' · Top of the program'}
+          {tier.next
+            ? ` · ${money(tier.toNextMinor)} more in eligible sales to reach ${TIER_LABEL[tier.next]}`
+            : ' · Top of the program'}
         </p>
       )}
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-        <caption style={{ textAlign: 'left', fontSize: 12, opacity: 0.7 }}>Your balances</caption>
-        <tbody>
-          {(
-            [
-              ['pending', t.pending],
-              ['held', t.held],
-              ['cleared', t.cleared],
-              ['reserved', t.reserved + t.submitted],
-              ['transferred', t.transferred],
-            ] as const
-          ).map(([k, v]) => (
-            <tr key={k}>
-              <th scope="row" style={{ textAlign: 'left', fontWeight: 400, padding: '4px 0' }}>
-                {LEDGER_STATE_LABEL[k]}
-              </th>
-              <td style={{ textAlign: 'right' }}>{money(v)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p style={{ margin: 0, fontSize: 12, opacity: 0.75 }}>Commission clears 30 days after payment. Cleared balances of $50 or more are sent on the 15th to your connected Stripe account; Stripe then pays your bank on its own schedule.</p>
-      {earnings.entries.length === 0 ? (
-        <p style={{ margin: 0 }}>No attributed orders yet. Share a link to get started.</p>
-      ) : (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <caption style={{ textAlign: 'left', fontSize: 12, opacity: 0.7 }}>Orders through your links (no buyer details are shown)</caption>
-          <thead>
-            <tr>
-              <th scope="col" style={{ textAlign: 'left' }}>Order</th>
-              <th scope="col" style={{ textAlign: 'left' }}>Date</th>
-              <th scope="col" style={{ textAlign: 'right' }}>Rate</th>
-              <th scope="col" style={{ textAlign: 'right' }}>Earned</th>
-              <th scope="col" style={{ textAlign: 'left' }}>Status</th>
-            </tr>
-          </thead>
+      <div
+        role="region"
+        aria-label="Your balances"
+        tabIndex={0}
+        style={{ overflowX: 'auto', minWidth: 0 }}
+      >
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+          <caption style={{ textAlign: 'left', fontSize: 12, color: 'inherit' }}>
+            Your balances
+          </caption>
           <tbody>
-            {earnings.entries.map((e, i) => (
-              <tr key={i}>
-                <td>{e.ref}</td>
-                <td>{new Date(e.paidAt).toLocaleDateString()}</td>
-                <td style={{ textAlign: 'right' }}>{e.rateBps ? pct(e.rateBps) : '—'}</td>
-                <td style={{ textAlign: 'right' }}>{money(e.amountMinor)}</td>
-                <td>{LEDGER_STATE_LABEL[e.state] ?? e.state}</td>
+            {(
+              [
+                ['pending', t.pending],
+                ['held', t.held],
+                ['cleared', t.cleared],
+                ['reserved', t.reserved + t.submitted],
+                ['transferred', t.transferred],
+              ] as const
+            ).map(([k, v]) => (
+              <tr key={k}>
+                <th scope="row" style={{ textAlign: 'left', fontWeight: 400, padding: '4px 0' }}>
+                  {LEDGER_STATE_LABEL[k]}
+                </th>
+                <td style={{ textAlign: 'right' }}>{money(v)}</td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+      <p style={{ margin: 0, fontSize: 12, color: 'inherit' }}>
+        Commission clears 30 days after payment. Cleared balances of $50 or more are sent on the
+        15th to your connected Stripe account; Stripe then pays your bank on its own schedule.
+      </p>
+      {earnings.entries.length === 0 ? (
+        <p style={{ margin: 0 }}>No attributed orders yet. Share a link to get started.</p>
+      ) : (
+        <div
+          role="region"
+          aria-label="Orders through your links"
+          tabIndex={0}
+          style={{ overflowX: 'auto', minWidth: 0 }}
+        >
+          <table style={{ width: '100%', minWidth: 480, borderCollapse: 'collapse', fontSize: 13 }}>
+            <caption style={{ textAlign: 'left', fontSize: 12, color: 'inherit' }}>
+              Orders through your links (no buyer details are shown)
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col" style={{ textAlign: 'left' }}>
+                  Order
+                </th>
+                <th scope="col" style={{ textAlign: 'left' }}>
+                  Date
+                </th>
+                <th scope="col" style={{ textAlign: 'right' }}>
+                  Rate
+                </th>
+                <th scope="col" style={{ textAlign: 'right' }}>
+                  Earned
+                </th>
+                <th scope="col" style={{ textAlign: 'left' }}>
+                  Status
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {earnings.entries.map((e, i) => (
+                <tr key={i}>
+                  <td>{e.ref}</td>
+                  <td>{new Date(e.paidAt).toLocaleDateString()}</td>
+                  <td style={{ textAlign: 'right' }}>{e.rateBps ? pct(e.rateBps) : '—'}</td>
+                  <td style={{ textAlign: 'right' }}>{money(e.amountMinor)}</td>
+                  <td>{LEDGER_STATE_LABEL[e.state] ?? e.state}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-      <p style={{ margin: 0, fontSize: 12, opacity: 0.75 }}>Click counts are informational; only paid, eligible orders earn commission.</p>
+      <p style={{ margin: 0, fontSize: 12, color: 'inherit' }}>
+        Click counts are informational; only paid, eligible orders earn commission.
+      </p>
       {credit && (credit.availableMinor > 0 || credit.pendingAwardMinor > 0) && (
         <p style={{ margin: 0 }}>
-          Store credit: {money(credit.availableMinor)} available{credit.pendingAwardMinor ? `, ${money(credit.pendingAwardMinor)} pending` : ''}. {credit.terms}
+          Store credit: {money(credit.availableMinor)} available
+          {credit.pendingAwardMinor ? `, ${money(credit.pendingAwardMinor)} pending` : ''}.{' '}
+          {credit.terms}
         </p>
       )}
     </section>
   );
 }
 
+/** Open payout onboarding once per request and retain safe failure feedback. */
 function Payouts({ site }: { site: 'creators' | 'trade' }) {
   const programs = useQuery(api.prgMemberships.myPrograms);
   const start = useAction(api.holmConnect.startPayoutSetup);
-  const [msg, setMsg] = useState<string | null>(null);
+  const feedback = useFormValidation<'_form'>();
+  const pending = useRef(false);
+  const [busy, setBusy] = useState(false);
   const b = programs?.beneficiary;
   if (!b) return null;
-  const label = { not_started: 'Not set up', pending: 'Finishing setup with Stripe', ready: 'Ready', restricted: 'Stripe needs more details' }[b.payoutReadiness];
+  const label = {
+    not_started: 'Not set up',
+    pending: 'Finishing setup with Stripe',
+    ready: 'Ready',
+    restricted: 'Stripe needs more details',
+  }[b.payoutReadiness];
   return (
-    <section style={box} aria-labelledby="payouts">
-      <h3 id="payouts" style={{ margin: 0 }}>Payouts and tax</h3>
-      <p style={{ margin: 0 }}>Payout account: {label}. Stripe collects your tax details and bank account; we never see or store bank details.</p>
+    <section style={box} className="delivery-ui" aria-labelledby="payouts">
+      <h3 id="payouts" style={{ margin: 0 }}>
+        Payouts and tax
+      </h3>
+      <p style={{ margin: 0 }}>
+        Payout account: {label}. Stripe collects your tax details and bank account; we never see or
+        store bank details.
+      </p>
       {b.payoutReadiness !== 'ready' && (
         <button
           style={btn}
+          disabled={busy}
           onClick={async () => {
+            if (pending.current) return;
+            pending.current = true;
+            setBusy(true);
+            feedback.reset();
             try {
               window.location.href = await start({ returnTo: site });
             } catch (e) {
-              setMsg(customerMessage(e));
+              feedback.report({ _form: customerMessage(e) });
+            } finally {
+              pending.current = false;
+              setBusy(false);
             }
           }}
         >
-          Set up payouts
+          {busy ? 'Opening payout setup…' : 'Set up payouts'}
         </button>
       )}
-      {msg && <Status>{msg}</Status>}
+      <ValidationSummary
+        summaryRef={feedback.summaryRef}
+        entries={[{ message: feedback.errors._form }]}
+      />
       <p style={{ margin: 0, fontSize: 12 }}>
-        Terms: <a href="/trade#partner-terms">partner terms</a> · Support: <a href="mailto:withlove@louiemae.com">withlove@louiemae.com</a>
+        Terms: <a href="/trade#partner-terms">partner terms</a> · Support:{' '}
+        <a href="mailto:withlove@louiemae.com">withlove@louiemae.com</a>
       </p>
     </section>
   );
@@ -362,79 +529,181 @@ export default function ProgramHubV2({ site }: { site: 'creators' | 'trade' }) {
   const flags = useQuery(api.v2Admin.publicFlags);
   const programs = useQuery(api.prgMemberships.myPrograms);
   if (flags === undefined || programs === undefined) return <Status>Loading…</Status>;
-  const active = programs?.creator?.state === 'active' || (programs?.trade?.state === 'approved' && programs.trade.referralActivated);
+  const active =
+    programs?.creator?.state === 'active' ||
+    (programs?.trade?.state === 'approved' && programs.trade.referralActivated);
   return (
-    <div style={{ display: 'grid', gap: 16 }}>
+    <div style={{ display: 'grid', gap: 16, minWidth: 0 }}>
       <Enrollment site={site} />
       {active && flags.retailLinks && <LinkBuilder />}
-      {active && !flags.retailLinks && <Status>Retail referral links open soon. Your account is ready.</Status>}
+      {active && !flags.retailLinks && (
+        <Status>Retail referral links open soon. Your account is ready.</Status>
+      )}
       {active && flags.ledger && <Earnings />}
       {active && <Payouts site={site} />}
     </div>
   );
 }
 
-/** Trade Hub: business team seats (owner manages purchasing members and read-only collaborators). */
-export function TeamPanel() {
-  const orgs = useQuery(api.prgMemberships.myOrganizations);
+type Organization = FunctionReturnType<typeof api.prgMemberships.myOrganizations>[number];
+
+/** Keep each business draft and command state isolated across team memberships. */
+/** Keep owner-only team commands and invitation drafts isolated to their organization. */
+function OrganizationTeam({ organization: o }: { organization: Organization }) {
   const invite = useMutation(api.prgMemberships.inviteMember);
   const setRole = useMutation(api.prgMemberships.setMemberRole);
   const [email, setEmail] = useState('');
   const [role, setRoleSel] = useState<'purchasing' | 'readonly'>('purchasing');
-  const [msg, setMsg] = useState<string | null>(null);
-  if (!orgs?.length) return null;
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const id = useId();
+  const feedback = useFormValidation<'email' | '_form'>();
+  const run = async (command: () => Promise<unknown>, success: string) => {
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setNotice('');
+    feedback.reset();
+    try {
+      await command();
+      setNotice(success);
+    } catch (error) {
+      feedback.report({ _form: customerMessage(error) });
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  };
+  return (
+    <section style={box} className="delivery-ui" aria-labelledby={`${id}-heading`}>
+      <h3 id={`${id}-heading`} style={{ margin: 0 }}>
+        {o.name} · your role:{' '}
+        {o.role === 'owner'
+          ? 'Owner'
+          : o.role === 'purchasing'
+            ? 'Purchasing member'
+            : 'Read-only collaborator'}
+      </h3>
+      <ValidationSummary
+        summaryRef={feedback.summaryRef}
+        entries={[
+          { label: 'Invite by email', fieldId: `${id}-email`, message: feedback.errors.email },
+          { message: feedback.errors._form },
+        ]}
+      />
+      {o.role === 'owner' && (
+        <>
+          <ul style={{ margin: 0, paddingLeft: 18, overflowWrap: 'anywhere' }}>
+            {o.members.map((m) => (
+              <li key={m.userId}>
+                {m.email} — {m.role}
+                {m.status === 'invited' ? ' (invited)' : ''}
+                {m.role !== 'owner' && (
+                  <button
+                    style={{ ...btn, marginLeft: 8 }}
+                    disabled={busy}
+                    aria-label={`Remove ${m.email || 'team member'}`}
+                    onClick={() =>
+                      void run(
+                        () =>
+                          setRole({
+                            organizationId: o.organizationId,
+                            userId: m.userId,
+                            role: 'removed',
+                          }),
+                        'Team member removed.'
+                      )
+                    }
+                  >
+                    Remove
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+          <form
+            noValidate
+            aria-label={`Invite to ${o.name}`}
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (pending.current) return;
+              if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+                feedback.report({ email: 'Enter a valid email address.' });
+                return;
+              }
+              void run(async () => {
+                await invite({ organizationId: o.organizationId, email: email.trim(), role });
+                setEmail('');
+              }, 'Invitation sent if that person has an account.');
+            }}
+          >
+            <fieldset
+              disabled={busy}
+              style={{
+                border: 0,
+                padding: 0,
+                minWidth: 0,
+                display: 'flex',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <legend className="sr">Invite a team member</legend>
+              <div style={{ flex: '1 1 160px', minWidth: 0 }}>
+                <label htmlFor={`${id}-email`}>Invite by email</label>
+                <input
+                  id={`${id}-email`}
+                  style={input}
+                  type="email"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  aria-invalid={!!feedback.errors.email}
+                  aria-describedby={feedback.errors.email ? `${id}-email-error` : undefined}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    feedback.clear('email');
+                    feedback.clear('_form');
+                    setNotice('');
+                  }}
+                />
+                {feedback.errors.email && (
+                  <p id={`${id}-email-error`} className="delivery-error">
+                    {feedback.errors.email}
+                  </p>
+                )}
+              </div>
+              <label>
+                Role
+                <select
+                  style={input}
+                  value={role}
+                  onChange={(e) => setRoleSel(e.target.value as 'purchasing' | 'readonly')}
+                >
+                  <option value="purchasing">Purchasing member</option>
+                  <option value="readonly">Read-only collaborator</option>
+                </select>
+              </label>
+              <button style={btn} type="submit">
+                {busy ? 'Working…' : 'Invite'}
+              </button>
+            </fieldset>
+          </form>
+        </>
+      )}
+      <div role="status">{notice}</div>
+    </section>
+  );
+}
+
+/** Trade Hub: owner-managed seats with independent drafts and accessible command feedback. */
+export function TeamPanel() {
+  const orgs = useQuery(api.prgMemberships.myOrganizations);
   return (
     <>
-      {orgs.map((o) => (
-        <section key={o.organizationId} style={box} aria-label={`${o.name} team`}>
-          <h3 style={{ margin: 0 }}>{o.name} · your role: {o.role === 'owner' ? 'Owner' : o.role === 'purchasing' ? 'Purchasing member' : 'Read-only collaborator'}</h3>
-          {o.role === 'owner' && (
-            <>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {o.members.map((m) => (
-                  <li key={m.userId}>
-                    {m.email} — {m.role}
-                    {m.status === 'invited' ? ' (invited)' : ''}
-                    {m.role !== 'owner' && (
-                      <button style={{ ...btn, marginLeft: 8, padding: '2px 8px' }} onClick={() => setRole({ organizationId: o.organizationId, userId: m.userId, role: 'removed' }).catch((e) => setMsg(customerMessage(e)))}>
-                        Remove
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              <form
-                style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  try {
-                    await invite({ organizationId: o.organizationId, email, role });
-                    setMsg('Invitation sent if that person has an account.');
-                    setEmail('');
-                  } catch (err) {
-                    setMsg(customerMessage(err));
-                  }
-                }}
-              >
-                <label style={{ flex: 1 }}>
-                  Invite by email
-                  <input style={input} type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-                </label>
-                <label>
-                  Role
-                  <select style={input} value={role} onChange={(e) => setRoleSel(e.target.value as 'purchasing' | 'readonly')}>
-                    <option value="purchasing">Purchasing member</option>
-                    <option value="readonly">Read-only collaborator</option>
-                  </select>
-                </label>
-                <button style={btn} type="submit">
-                  Invite
-                </button>
-              </form>
-            </>
-          )}
-          {msg && <Status>{msg}</Status>}
-        </section>
+      {orgs?.map((o) => (
+        <OrganizationTeam key={o.organizationId} organization={o} />
       ))}
     </>
   );
