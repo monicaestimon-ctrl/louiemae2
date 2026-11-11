@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { CredentialsForm } from './CredentialsForm';
 const mocks = vi.hoisted(() => ({ signIn: vi.fn() }));
@@ -57,7 +57,7 @@ it.each([
     mocks.signIn.mockRejectedValue(new Error('Fixture unavailable'));
     render(<CredentialsForm site={site} googleEnabled afterSignIn="projects" />);
     fireEvent.click(screen.getByRole('button', { name: 'Continue with Google' }));
-    expect(await screen.findByRole('alert')).toHaveFocus();
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveFocus());
     expect(mocks.signIn).toHaveBeenCalledWith('google', { redirectTo });
     expect(sessionStorage.getItem(key)).toBe(value);
     expect(screen.getByLabelText(site === 'trade' ? 'Work email' : 'Email')).toBeEnabled();

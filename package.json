@@ -31,7 +31,10 @@
     "test:planner-dialogs:browser": "node scripts/lighthouse/planner-dialogs.mjs",
     "test:application:browser": "node scripts/lighthouse/application.mjs",
     "test:enrollment:browser": "node scripts/lighthouse/enrollment.mjs",
-    "test:quote-dialog:browser": "node scripts/lighthouse/quote-dialog.mjs"
+    "test:quote-dialog:browser": "node scripts/lighthouse/quote-dialog.mjs",
+    "test:portal:browser": "node scripts/lighthouse/portal.mjs",
+    "test:tray-request:browser": "node scripts/lighthouse/tray-request.mjs",
+    "test:legacy-creator:browser": "node scripts/lighthouse/legacy-creator.mjs"
   },
   "dependencies": {
     "@auth/core": "^0.37.0",

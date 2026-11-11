@@ -1,5 +1,5 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, waitFor, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Answers for each backend query, keyed by its name.
@@ -49,7 +49,7 @@ describe('Creator Hub', () => {
     expect(screen.getByRole('button', { name: 'Create account' })).toBeTruthy();
   });
 
-  it('asks a signed-in member to accept the terms before joining', () => {
+  it('asks a signed-in member to accept the terms before joining', async () => {
     answers.set('holm.me', { signedIn: true });
     answers.set('holmPartners.hub', null);
     render(<CreatorHub />);
@@ -57,7 +57,7 @@ describe('Creator Hub', () => {
     expect(button.disabled).toBe(true);
     expect(screen.getByRole('link', { name: 'partner terms' }).getAttribute('href')).toBe('/trade#partner-terms');
     fireEvent.click(screen.getByRole('checkbox'));
-    fireEvent.click(button);
+    await act(async()=>fireEvent.click(button));
     expect(join).toHaveBeenCalledWith({ acceptTerms: true });
   });
 
@@ -76,4 +76,22 @@ describe('Creator Hub', () => {
     expect(screen.getByText('Furniture 12%')).toBeTruthy();
     expect(screen.getAllByText('$200.00').length).toBeGreaterThan(0);
   });
+});
+
+it('retains accepted terms and focuses a safe enrollment failure without duplicate commands',async()=>{
+  answers.set('holm.me',{signedIn:true});
+  answers.set('holmPartners.hub',null);
+  let reject!:(reason:Error)=>void;
+  join.mockImplementation(()=>new Promise((_,no)=>{reject=no;}));
+  render(<CreatorHub/>);
+  fireEvent.click(screen.getByRole('checkbox'));
+  const button=screen.getByRole('button',{name:'Join the program'});
+  await act(async()=>{fireEvent.click(button);fireEvent.click(button);});
+  expect(join).toHaveBeenCalledTimes(1);
+  expect(button).toBeDisabled();
+  expect(screen.getByRole('checkbox')).toBeDisabled();
+  await act(async()=>reject(new Error('Private supplier details')));
+  await waitFor(()=>expect(screen.getByRole('alert')).toHaveFocus());
+  expect(screen.getByRole('checkbox')).toBeChecked();
+  expect(screen.queryByText('Private supplier details')).not.toBeInTheDocument();
 });

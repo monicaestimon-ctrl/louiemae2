@@ -1609,12 +1609,12 @@ function Tray({ctx}){
   const [newP,setNewP]=useState(false);const [pn,setPn]=useState('');const [drag,setDrag]=useState(null);const [over,setOver]=useState(null);
   const [qc,setQc]=useState(false);
   const [del,setDel]=useState(()=>{const d=load('del',{});return {when:'asap',date:'',recv:['white','threshold','dock'].includes(d.recv)?d.recv:'white',notes:'',teamNote:'',name:'',email:ctx.me.email||'',phone:'',business:ctx.me.businessName||'',line1:'',city:'',state:'',postal:''}});
-  const [ref,setRef]=useState('');const [busy,setBusy]=useState(false);const [err,setErr]=useState('');const tokRef=useRef(null);const requestQuote=useMutation(api.holm.requestQuote);
+  const [ref,setRef]=useState('');const [busy,setBusy]=useState(false);const feedback=useFormValidation();const pending=useRef(false);const stepHeading=useRef(null);const lastStep=useRef(step);useLayoutEffect(()=>{if(lastStep.current!==step){stepHeading.current?.focus();lastStep.current=step}},[step]);const tokRef=useRef(null);const requestQuote=useMutation(api.holm.requestQuote);
   // Store credit: pre-set from the Hub setting, changeable for this request.
   const credit=useQuery(api.holmCredit.myCredit,ctx.me.signedIn?{}:'skip');const [useCredit,setUseCredit]=useState(false);useEffect(()=>{if(credit)setUseCredit(credit.autoApply)},[credit?.autoApply]);
   // Replace old saved contact/address data with a non-personal service preference only.
   useEffect(()=>{store('del',{recv:del.recv})},[del.recv]);
-  useEffect(()=>{setStep(0)},[tray.active]);
+  useEffect(()=>{setStep(0);feedback.reset()},[tray.active,feedback.reset]);
   const upd=fn=>setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===t.active?fn(p):p)}));
   const missing=proj.items.filter(it=>(!BY_ID.has(it.pid)||(it.vid&&BY_ID.get(it.pid).vid!==it.vid)));
   const items=proj.items.filter(it=>BY_ID.has(it.pid)&&(!it.vid||BY_ID.get(it.pid).vid===it.vid)).map(it=>({...it,p:BY_ID.get(it.pid)}));const later=(tray.later||[]).filter(x=>BY_ID.has(x.pid)).map(x=>({...x,p:BY_ID.get(x.pid)}));
@@ -1630,30 +1630,30 @@ function Tray({ctx}){
   const suggest=z=>{const zi=items.filter(i=>i.zone===z);if(!zi.length)return null;const have=new Set(items.map(i=>i.pid));const anchor=zi[0].p;return pairsFor(anchor,4).find(x=>!have.has(x.id))};
   const csv=()=>['Zone,Item,SKU,Material,Approx width (cm),Qty,Unit trade,Line trade,Status',...items.map(i=>[i.zone,`${i.p.name} ${i.p.line}`,i.p.sku,MAT[i.p.mat],cmW(i.p.id),i.qty,tp(i.p).toFixed(2),(tp(i.p)*i.qty).toFixed(2),i.p.oos?'Restock check':'Ready to quote'].map(v=>`"${v}"`).join(','))].join('\n');
   const STEPS=['Tray','Delivery','Review','Requested'];
-  const contactErr=()=>!del.name.trim()?'Add a contact name for delivery.':!/^\S+@\S+\.\S+$/.test(del.email)?'Add an email for the quote.':!del.line1.trim()||!del.city.trim()||!del.postal.trim()?'Add the delivery address.':'';
-  const submit=async()=>{if(project.errors.length||v2){setErr('Review the project items and use the delivery checkout below.');return}const m=contactErr();if(m){setStep(1);setErr(m);return}setBusy(true);setErr('');
+  const contactErrors=()=>({...(!del.name.trim()?{name:'Add a contact name for delivery.'}:{}),...(!/^\S+@\S+\.\S+$/.test(del.email)?{email:'Add a valid email for the quote.'}:{}),...Object.fromEntries(['line1','city','postal'].filter(k=>!del[k].trim()).map(k=>[k,'Complete this delivery address field.']))});
+  const submit=async()=>{if(pending.current)return;if(project.errors.length||v2){feedback.report({_form:'Review the project items and use the delivery checkout below.'});return}const errors=contactErrors();if(Object.keys(errors).length){setStep(1);feedback.report(errors);return}pending.current=true;setBusy(true);feedback.reset();
     try{tokRef.current=tokRef.current||Array.from(crypto.getRandomValues(new Uint8Array(24)),b=>'abcdefghijklmnopqrstuvwxyz0123456789'[b%36]).join('');
       const merged=[];items.forEach(i=>{const ex=merged.find(x=>x.productId===i.p.lid&&x.variantId===i.p.vid);if(ex)ex.quantity+=i.qty;else merged.push({productId:i.p.lid,variantId:i.p.vid,quantity:i.qty,zone:i.zone})});
       const r=await requestQuote({token:tokRef.current,projectName:proj.name,name:del.name.trim(),email:del.email.trim(),phone:del.phone.trim(),business:del.business.trim(),address:{line1:del.line1.trim(),city:del.city.trim(),state:del.state.trim(),postalCode:del.postal.trim(),country:'US'},timing:del.when,date:del.date,receiving:del.recv,notes:(del.teamNote+(del.notes?'\nAccess: '+del.notes:'')).trim(),website:'',items:merged,refCode:activeRef()?.code,visitorId:visitorId(),...(!v2&&useCredit&&credit?.balanceCents>0?{useCredit:true}:{})});
       tokRef.current=null;setRef(r.reference);setStep(3)}
-    catch(e){setErr(e?.data||String(e?.message||'').replace(/^.*Uncaught Error: /,'').split('\n')[0]||'Something went wrong. Try again.')}finally{setBusy(false)}};
-  const fld=(k,label,ph,type='text',auto)=>html`<div><label className="lbl" htmlFor=${'tv-'+k}>${label}</label><input id=${'tv-'+k} className="field" type=${type} autoComplete=${auto} value=${del[k]} placeholder=${ph} onInput=${e=>{setDel({...del,[k]:e.target.value});setErr('')}}/></div>`;
+    catch(e){feedback.report({_form:customerMessage(e)})}finally{pending.current=false;setBusy(false)}};
+  const fld=(k,label,ph,type='text',auto)=>html`<div><label className="lbl" htmlFor=${'tv-'+k}>${label}</label><input id=${'tv-'+k} className="field" type=${type} autoComplete=${auto} value=${del[k]} placeholder=${ph} aria-invalid=${!!feedback.errors[k]} aria-describedby=${feedback.errors[k]?'tv-'+k+'-error':undefined} onInput=${e=>{setDel({...del,[k]:e.target.value});feedback.clear(k);feedback.clear('_form')}}/>${feedback.errors[k]&&html`<p id=${'tv-'+k+'-error'} className="delivery-error">${feedback.errors[k]}</p>`}</div>`;
   const strip=items.flatMap(i=>Array.from({length:Math.min(i.qty,3)},(_,k)=>({...i,k})));const stripCm=strip.reduce((s,i)=>s+cmW(i.pid)+30,0);
   return html`<${Modal} open=${true} label="Project tray" onClose=${()=>ctx.setTray(false)}><div className="tray-scrim" onClick=${()=>ctx.setTray(false)}></div>
   ${qc&&html`<${QuoteComposer} ctx=${ctx} onClose=${()=>setQc(false)}/>`}
   <section className="tv">
     <header className="tv-head">
       <div className="row" style=${{justifyContent:'space-between'}}>
-        <h2>Project tray</h2>
+        <h2 ref=${stepHeading} tabIndex="-1">Project tray · ${STEPS[step]}</h2>
         <button className="ib" aria-label="Close tray" onClick=${()=>ctx.setTray(false)}>${I('x')}</button>
       </div>
-      <div className="ptabs" role="group" aria-label="Projects">${tray.projects.map(p=>html`<button key=${p.id} aria-pressed=${p.id===tray.active} className=${p.id===tray.active?'on':''} onClick=${()=>setTrayState(t=>({...t,active:p.id}))}>${p.name} <span className="mono ix-dim">${p.items.reduce((s,i)=>s+i.qty,0)}</span></button>`)}
-        ${newP?html`<form className="row" onSubmit=${e=>{e.preventDefault();if(!pn.trim())return;const id=uid();setTrayState(t=>({...t,active:id,projects:[...t.projects,{id,name:pn.trim(),target:20,zones:['Main room'],items:[]}]}));setPn('');setNewP(false)}}><input className="field" style=${{height:36,width:170}} autoFocus placeholder="Project name" aria-label="New project name" value=${pn} onInput=${e=>setPn(e.target.value)}/><button className="btn btn-ink btn-sm">Add</button></form>`:html`<button onClick=${()=>setNewP(true)}>+ New project</button>`}</div>
-      <ol className="tv-steps">${STEPS.map((s,i)=>html`<li key=${s} className=${i===step?'on':i<step?'done':''}><button disabled=${i>step||step===3} onClick=${()=>setStep(i)}><i>${i<step?I('check',{width:12}):i+1}</i>${s}</button></li>`)}</ol>
+      <div className="ptabs" role="group" aria-label="Projects">${tray.projects.map(p=>html`<button key=${p.id} disabled=${busy} aria-pressed=${p.id===tray.active} className=${p.id===tray.active?'on':''} onClick=${()=>setTrayState(t=>({...t,active:p.id}))}>${p.name} <span className="mono ix-dim">${p.items.reduce((s,i)=>s+i.qty,0)}</span></button>`)}
+        ${newP?html`<form className="row" onSubmit=${e=>{e.preventDefault();if(busy||!pn.trim())return;const id=uid();setTrayState(t=>({...t,active:id,projects:[...t.projects,{id,name:pn.trim(),target:20,zones:['Main room'],items:[]}]}));setPn('');setNewP(false)}}><input disabled=${busy} className="field" style=${{height:36,width:170}} autoFocus placeholder="Project name" aria-label="New project name" value=${pn} onInput=${e=>setPn(e.target.value)}/><button disabled=${busy} className="btn btn-ink btn-sm">Add</button></form>`:html`<button disabled=${busy} onClick=${()=>setNewP(true)}>+ New project</button>`}</div>
+      <ol className="tv-steps">${STEPS.map((s,i)=>html`<li key=${s} className=${i===step?'on':i<step?'done':''}><button aria-current=${i===step?'step':undefined} disabled=${busy||i>step||step===3} onClick=${()=>setStep(i)}><i>${i<step?I('check',{width:12}):i+1}</i>${s}</button></li>`)}</ol>
     </header>
 
-    <div className="tv-body">
-      <div className="tv-main">
+    <fieldset className="tv-body" disabled=${busy} style=${{border:0,padding:0,margin:0,minWidth:0}}><legend className="sr">Project contents and delivery request</legend>
+      <div className="tv-main"><div className="delivery-ui"><${ValidationSummary} summaryRef=${feedback.summaryRef} entries=${Object.entries(feedback.errors).map(([key,message])=>({message,fieldId:key==='_form'?undefined:'tv-'+key,label:{name:'Site contact',email:'Email for the quote',line1:'Delivery address',city:'City',postal:'ZIP'}[key]}))}/></div>
       ${step===0&&html`
         <div className="tv-tools">
           <div className="seg"><button className=${tab==='tray'?'on':''} onClick=${()=>setTab('tray')}>In tray · ${items.reduce((s,i)=>s+i.qty,0)}</button><button className=${tab==='later'?'on':''} onClick=${()=>setTab('later')}>Saved for later · ${later.length}</button></div>
@@ -1682,7 +1682,7 @@ function Tray({ctx}){
             ${sg&&html`<button className="tv-suggest" onClick=${()=>ctx.addToProject(sg.id,1,proj.id,z,null,true)}><img src=${cut(sg.id)} alt=""/><span><b>Complete the ${z.toLowerCase()}</b><small>Add ${sg.name} ${sg.line.toLowerCase()} · ${fmt(pr(sg,ctx.mode))}</small></span>${I('plus',{width:18})}</button>`}
           </div>`})}
           <button className="btn btn-line btn-sm" style=${{marginTop:16}} onClick=${()=>{const n='Area '+(proj.zones.length+1);upd(p=>({...p,zones:[...p.zones,n]}));ctx.toast(n+' added. Drag pieces into it.')}}>${I('plus',{width:15})} Add an area</button>`}
-        ${tab==='tray'&&items.length>0&&view==='schedule'&&html`<div className="tv-sched"><table className="t"><thead><tr><th>Item</th><th>Area</th><th>Material</th><th className="r">≈ W</th><th className="r">Qty</th><th className="r">Unit</th><th className="r">Line</th><th>Status</th></tr></thead><tbody>
+        ${tab==='tray'&&items.length>0&&view==='schedule'&&html`<div className="tv-sched" role="region" aria-label="Project schedule" tabIndex="0"><table className="t"><thead><tr><th>Item</th><th>Area</th><th>Material</th><th className="r">≈ W</th><th className="r">Qty</th><th className="r">Unit</th><th className="r">Line</th><th>Status</th></tr></thead><tbody>
             ${items.map(i=>html`<tr key=${i.pid+i.zone}><td><span className="row" style=${{gap:10}}><span className="tv-th sm" style=${{backgroundImage:`url(${cut(i.pid)})`}}></span><span><b style=${{fontWeight:500}}>${i.p.name}</b><br/><span className="mono mute">${i.p.sku}</span></span></span></td><td>${i.zone}</td><td><span className="row" style=${{gap:6}}><span className="dot" style=${{background:i.p.tone}}></span>${MAT[i.p.mat]}</span></td><td className="r num">${cmW(i.pid)} cm</td><td className="r num">${i.qty}</td><td className="r num">${fmt(pr(i.p,ctx.mode))}</td><td className="r num">${fmt(pr(i.p,ctx.mode)*i.qty)}</td><td><span className=${'tv-status'+(i.p.oos?' warn':'')}>${i.p.oos?'Restock check':'Ready to quote'}</span></td></tr>`)}
           </tbody></table><div className="row" style=${{marginTop:12,flexWrap:'wrap'}}><button className="btn btn-line btn-sm" onClick=${()=>copyText(csv(),ctx.toast)}>${I('copy',{width:15})} Copy schedule as CSV</button><span className="help" style=${{margin:0}}>Paste into a spreadsheet or your procurement tool. Widths are planning estimates.</span></div></div>`}
       `}
@@ -1690,11 +1690,11 @@ function Tray({ctx}){
         <h3 className="tv-h">Where it's going</h3>
         <div className="tv-card" style=${{display:'grid',gap:12}}><div className="g2f">${fld('name','Site contact','Full name','text','name')}${fld('phone','Phone','For delivery scheduling','tel','tel')}</div><div className="g2f">${fld('email','Email for the quote','you@business.com','email','email')}${fld('business','Business','Business name','text','organization')}</div>${fld('line1','Delivery address','Street address','text','street-address')}<div className="g3f" style=${{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:10}}>${fld('city','City','','text','address-level2')}${fld('state','State','','text','address-level1')}${fld('postal','ZIP','','text','postal-code')}</div></div>
         <h3 className="tv-h">When</h3>
-        <div className="tv-opts">${[['asap','As soon as ready','Ships when every piece is confirmed'],['date','Schedule a date','Hold delivery until opening week'],['split','Ship as available','Pieces arrive as each is ready']].map(([k,t,d])=>html`<button key=${k} className=${'modecard'+(del.when===k?' on':'')} onClick=${()=>setDel({...del,when:k})}><b>${t}</b><p>${d}</p></button>`)}</div>
+        <div className="tv-opts">${[['asap','As soon as ready','Ships when every piece is confirmed'],['date','Schedule a date','Hold delivery until opening week'],['split','Ship as available','Pieces arrive as each is ready']].map(([k,t,d])=>html`<button key=${k} aria-pressed=${del.when===k} className=${'modecard'+(del.when===k?' on':'')} onClick=${()=>setDel({...del,when:k})}><b>${t}</b><p>${d}</p></button>`)}</div>
         ${del.when==='date'&&html`<div style=${{maxWidth:260}}><label className="lbl" htmlFor="tv-date">Target delivery date</label><input id="tv-date" type="date" className="field" value=${del.date} onInput=${e=>setDel({...del,date:e.target.value})}/></div>`}
         <h3 className="tv-h">Requested delivery service</h3>
         <p className="help">Service availability, access requirements, charges and dates are confirmed in your final quote. Your selection is a request, not a booking.</p>
-        <div className="tv-opts">${[['white','White glove','Placed in the room, packaging removed'],['threshold','Threshold','Delivered inside the first door'],['dock','Commercial dock','Booked to your receiving hours']].map(([k,t,d])=>html`<button key=${k} className=${'modecard'+(del.recv===k?' on':'')} onClick=${()=>setDel({...del,recv:k})}><b>${t}</b><p>${d}</p></button>`)}</div>
+        <div className="tv-opts">${[['white','White glove','Placed in the room, packaging removed'],['threshold','Threshold','Delivered inside the first door'],['dock','Commercial dock','Booked to your receiving hours']].map(([k,t,d])=>html`<button key=${k} aria-pressed=${del.recv===k} className=${'modecard'+(del.recv===k?' on':'')} onClick=${()=>setDel({...del,recv:k})}><b>${t}</b><p>${d}</p></button>`)}</div>
         <div><label className="lbl" htmlFor="tv-notes">Access notes</label><textarea id="tv-notes" className="field" rows="3" placeholder="Stairs, elevator size, loading hours, parking" value=${del.notes} onInput=${e=>setDel({...del,notes:e.target.value})}></textarea></div>
         <div className="note">${I('pin',{width:18})}<span>Sales tax is added to the final quote. Tax exemption applies once your resale certificate is approved on your trade account.</span></div>
       </div>`}
@@ -1732,16 +1732,15 @@ function Tray({ctx}){
           <div className="sumrow total"><span>Merchandise estimate</span><span>${fmt(sub-(!v2&&useCredit&&credit?Math.min(credit.balanceCents/100,sub):0),true)}</span></div>
           <p className="help" style=${{marginTop:8}}>Excludes delivery and tax. We confirm your complete total before payment. ${SPLIT_MAY}</p>
         </div>
-        ${!v2&&step<2&&html`<button className="btn btn-ink btn-lg" disabled=${!items.length||project.errors.length>0} onClick=${()=>{if(step===1){const m=contactErr();if(m){setErr(m);return}}setErr('');setStep(step+1)}}>${step===0?'Continue to delivery':'Review request'} ${I('arrow',{width:17})}</button>`}
+        ${!v2&&step<2&&html`<button className="btn btn-ink btn-lg" disabled=${!items.length||project.errors.length>0} onClick=${()=>{if(step===1){const errors=contactErrors();if(Object.keys(errors).length){feedback.report(errors);return}}feedback.reset();setStep(step+1)}}>${step===0?'Continue to delivery':'Review request'} ${I('arrow',{width:17})}</button>`}
         ${!v2&&step===2&&html`<button className="btn btn-cog btn-lg" disabled=${busy||project.errors.length>0} onClick=${submit}>${busy?'Sending…':'Request final quote'} ${I('arrow',{width:17})}</button>`}
         ${project.errors.map(message=>html`<p key=${message} role="alert" className="help">${message}</p>`)}
         ${v2&&project.errors.length===0&&html`<${DeliveryBoundary}><${ProjectDeliveryPanel} key=${JSON.stringify(project.lines)} lines=${project.lines} automatic=${items.every(i=>i.p.checkoutMode==='v2')} approved=${ctx.me.verified}/></>`}
-        ${err&&html`<p className="help" style=${{color:'var(--bad)'}}>${err}</p>`}
         ${step>0&&step<3&&html`<button className="lnk" onClick=${()=>setStep(step-1)}>Back</button>`}
         ${!v2&&project.errors.length===0&&items.length>0&&html`<button className="tv-quote" onClick=${()=>setQc(true)}>${I('link',{width:17})}<span><b>Create a client quote</b><small>One link, your branding, your pricing</small></span>${I('arrow',{width:16})}</button>`}
         <div className="note">${I('pin',{width:18})}<span>We confirm availability, lead time and your final price before any payment.</span></div>
       </aside>
-    </div>
+    </fieldset>
   </section><//>`;
 }
 
