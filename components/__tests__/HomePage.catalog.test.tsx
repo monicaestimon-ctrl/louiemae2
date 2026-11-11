@@ -23,7 +23,7 @@ vi.mock('../useStorefrontProductDetail', () => ({ useStorefrontProductDetail: (i
 } }));
 const CartProof = () => { const cart = useCart(); return <output aria-label="Cart proof">{JSON.stringify({ count: cart.itemCount, subtotal: cart.subtotal, variant: cart.items[0]?.selectedVariant?.id, product: cart.items[0]?.product.id })}</output>; };
 const App = () => <CartProvider><HomePage /><CartProof /></CartProvider>;
-const open = () => fireEvent.click(screen.getByRole('button', { name: 'Quick View' }));
+const open = () => fireEvent.click(screen.getByRole('button', { name: 'Quick view Catalog chair' }));
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); mocks.ready = true; mocks.failed = false; mocks.loading = false; mocks.unavailable = false; mocks.detailFailed = false;
   mocks.product = { id: 'real-product', name: 'Authoritative chair', fulfillmentProvider: 'ashcroft', description: 'Real details', category: 'Chairs', price: 420, images: ['chair.jpg'], inStock: true,
@@ -109,7 +109,7 @@ describe('homepage real catalog purchase flow', () => {
   it('does not show sample products when the catalog is unavailable', () => {
     mocks.ready = false; render(<App />);
     expect(screen.getByText(/Products are temporarily unavailable/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Quick View' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Quick view Catalog chair' })).toBeNull();
     expect(mocks.catalog).toHaveBeenLastCalledWith(expect.anything(), 'All', false, 'featured', 6);
   });
 });

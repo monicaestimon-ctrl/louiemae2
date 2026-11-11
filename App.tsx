@@ -18,6 +18,7 @@ import { safeRedirect } from './lib/enrollment';
 import {DeliveryQuoteAccess} from './components/delivery/DeliveryQuoteStatus';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ContentStatusPage } from './components/ContentStatusPage';
+import { Modal } from './components/Modal';
 import { SearchLoadState } from './components/SearchLoadState';
 import { loadModule } from './lib/moduleRecovery';
 
@@ -174,13 +175,6 @@ const AppContent = () => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener('scroll', handleScroll);
 
-    // Lock body scroll when menu is open
-    if (mobileMenuOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-
     // Hash handler
     const handleHash = () => {
       // Let /admin work as a real entry path so it survives domain redirects.
@@ -212,9 +206,8 @@ const AppContent = () => {
     return () => {
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('hashchange', handleHash);
-      document.body.style.overflow = 'unset';
     };
-  }, [mobileMenuOpen]);
+  }, []);
 
   const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
 
@@ -351,6 +344,8 @@ const AppContent = () => {
 
   return (
     <div className="min-h-screen bg-cream font-sans selection:bg-bronze selection:text-white overflow-x-hidden">
+      <a className="skip-link" href="#main-content" onClick={event => { event.preventDefault(); document.getElementById('main-content')?.focus(); document.getElementById('main-content')?.scrollIntoView(); }}>Skip to main content</a>
+
 
       {/* Only show Header/Footer if NOT in admin mode */}
       {activePage !== 'admin' && (
@@ -374,7 +369,7 @@ const AppContent = () => {
               {/* Mobile Menu Icon */}
               <button
                 className="min-[1600px]:hidden text-earth z-50 p-2 -ml-2 hover:opacity-70 transition-opacity"
-                aria-label="Open menu"
+                data-modal-return-focus aria-label="Open menu"
                 aria-expanded={mobileMenuOpen}
                 onClick={() => { setMobileMenuBuilt(true); setMobileMenuOpen(true); }}
               >
@@ -405,9 +400,9 @@ const AppContent = () => {
                     <p className={`text-[0.55rem] uppercase tracking-[0.3em] text-bronze mb-1 transition-all duration-500 ${scrolled ? 'opacity-0 h-0 overflow-hidden' : 'opacity-100'}`}>
                       Est. 2021
                     </p>
-                    <h1 className={`font-serif text-earth tracking-tight whitespace-nowrap transition-all duration-500 ${scrolled ? 'text-2xl' : 'text-3xl xl:text-4xl'}`}>
+                    <span className={`font-serif text-earth tracking-tight whitespace-nowrap transition-all duration-500 ${scrolled ? 'text-2xl' : 'text-3xl xl:text-4xl'}`}>
                       Louie Mae
-                    </h1>
+                    </span>
                   </div>
 
                   <nav className="flex gap-5">
@@ -437,9 +432,9 @@ const AppContent = () => {
                 <p className={`text-[0.45rem] uppercase tracking-[0.25em] text-bronze mb-0.5 transition-all ${scrolled ? 'hidden' : 'block'}`}>
                   Est. 2021
                 </p>
-                <h1 className="font-serif text-2xl text-earth tracking-tight whitespace-nowrap">
+                <span className="font-serif text-2xl text-earth tracking-tight whitespace-nowrap">
                   Louie Mae
-                </h1>
+                </span>
               </div>
 
               {/* Actions */}
@@ -447,8 +442,8 @@ const AppContent = () => {
                 {/* Retail is this storefront; Trade opens House of Louie Mae */}
                 <div className="hidden md:flex items-center gap-2 text-[0.6rem] uppercase tracking-[0.15em] font-medium" aria-label="Shop as">
                   <span className="text-earth" aria-current="page">Retail</span>
-                  <span className="text-earth/30">·</span>
-                  <a href="/trade/" className="text-earth/60 hover:text-bronze transition-colors">Trade</a>
+                  <span className="text-muted-earth">·</span>
+                  <a href="/trade/" className="text-muted-earth hover:text-bronze transition-colors">Trade</a>
                 </div>
                 <button
                   onClick={() => setSearchOpen(true)}
@@ -469,16 +464,17 @@ const AppContent = () => {
       <DeliveryQuoteAccess />
 
       {/* Search Modal */}
-      {searchOpen && <ErrorBoundary fallback={<SearchLoadState failed onClose={() => setSearchOpen(false)} />}><Suspense fallback={<SearchLoadState onClose={() => setSearchOpen(false)} />}><SearchModal
+      {searchOpen && <Modal open label="Search" onClose={() => setSearchOpen(false)} className="bg-earth text-cream"><ErrorBoundary fallback={<SearchLoadState failed onClose={() => setSearchOpen(false)} />}><Suspense fallback={<SearchLoadState onClose={() => setSearchOpen(false)} />}><SearchModal
         isOpen={searchOpen}
         onClose={() => setSearchOpen(false)}
         onProductClick={(productId) => {
           setSelectedProductId(productId);
           setSearchOpen(false);
         }}
-      /></Suspense></ErrorBoundary>}
+      /></Suspense></ErrorBoundary></Modal>}
 
       {/* Main Content Area */}
+      <div id="main-content" tabIndex={-1}>
       <ErrorBoundary key={activePage} retryLocally>
       <Suspense fallback={<PageFallback />}>
         {activePage.startsWith('#support') ? (
@@ -488,6 +484,8 @@ const AppContent = () => {
         )}
       </Suspense>
       </ErrorBoundary>
+
+      </div>
 
       {/* Hyper-Glassmorphic Footer */}
       {activePage !== 'admin' && (

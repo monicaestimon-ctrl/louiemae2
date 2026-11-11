@@ -100,14 +100,14 @@ export const SupportPage: React.FC<SupportPageProps> = ({ section }) => {
     };
 
     return (
-        <div className="bg-cream min-h-screen pt-32 md:pt-40 pb-20">
+        <main className="bg-cream min-h-screen pt-32 md:pt-40 pb-20">
 
             {/* Hero */}
             <div className="text-center px-6 mb-16">
                 <FadeIn>
                     <p className="text-[10px] uppercase tracking-[0.3em] text-bronze mb-5 mx-auto">We're Here For You</p>
                     <h1 className="font-serif text-5xl md:text-7xl text-earth mb-6">Support</h1>
-                    <p className="font-sans text-earth/60 text-sm max-w-lg mx-auto leading-relaxed">
+                    <p className="font-sans text-muted-earth text-sm max-w-lg mx-auto leading-relaxed">
                         Everything you need to know about shopping with Louie Mae — from shipping and returns to getting in touch.
                     </p>
                 </FadeIn>
@@ -120,7 +120,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ section }) => {
                         <button
                             key={s.id}
                             onClick={() => scrollToSection(s.id)}
-                            className="flex items-center gap-2 px-5 py-2.5 border border-earth/10 rounded-full text-[10px] uppercase tracking-widest text-earth/60 hover:text-earth hover:border-earth/30 hover:bg-white/50 transition-all"
+                            className="flex items-center gap-2 px-5 py-2.5 border border-earth/10 rounded-full text-[10px] uppercase tracking-widest text-muted-earth hover:text-earth hover:border-earth/30 hover:bg-white/50 transition-all"
                         >
                             <s.icon className="w-3.5 h-3.5" />
                             {s.label}
@@ -159,10 +159,10 @@ export const SupportPage: React.FC<SupportPageProps> = ({ section }) => {
                                     <Clock className="w-4 h-4 text-bronze mt-0.5 flex-shrink-0" />
                                     <div>
                                         <p className="font-sans text-earth text-xs font-medium uppercase tracking-wider mb-1">Estimated Delivery</p>
-                                        <p className="font-sans text-earth/70 text-sm">Tracking and delivery updates provided after dispatch</p>
+                                        <p className="font-sans text-muted-earth text-sm">Tracking and delivery updates provided after dispatch</p>
                                     </div>
                                 </div>
-                                <p className="font-sans text-earth/60 text-xs italic">
+                                <p className="font-sans text-muted-earth text-xs italic">
                                     Once your order ships, you'll receive a tracking number via email so you can follow it every step of the way.
                                 </p>
                             </div>
@@ -186,7 +186,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ section }) => {
                                             'Items must be returned in their original packaging',
                                             'Return must be initiated within 15 days of delivery date',
                                         ].map((item, i) => (
-                                            <li key={i} className="flex items-start gap-2 text-sm text-earth/70">
+                                            <li key={i} className="flex items-start gap-2 text-sm text-muted-earth">
                                                 <span className="w-1.5 h-1.5 rounded-full bg-bronze/40 mt-1.5 flex-shrink-0" />
                                                 {item}
                                             </li>
@@ -194,9 +194,9 @@ export const SupportPage: React.FC<SupportPageProps> = ({ section }) => {
                                     </ul>
                                 </div>
                                 <div className="flex items-start gap-3 bg-cream/80 rounded-xl p-4 mt-4">
-                                    <AlertCircle className="w-4 h-4 text-earth/50 mt-0.5 flex-shrink-0" />
-                                    <p className="font-sans text-earth/60 text-sm">
-                                        To start a return, please email us at <a href="mailto:withlove@louiemae.com" className="text-bronze hover:underline">withlove@louiemae.com</a> with your order number and reason for return. We'll guide you through the process.
+                                    <AlertCircle className="w-4 h-4 text-muted-earth mt-0.5 flex-shrink-0" />
+                                    <p className="font-sans text-muted-earth text-sm">
+                                        To start a return, please email us at <a href="mailto:withlove@louiemae.com" className="text-bronze underline">withlove@louiemae.com</a> with your order number and reason for return. We'll guide you through the process.
                                     </p>
                                 </div>
                             </div>
@@ -232,14 +232,14 @@ export const SupportPage: React.FC<SupportPageProps> = ({ section }) => {
                                     >
                                         <span className="font-serif text-base text-earth group-hover:text-bronze transition-colors pr-4">{faq.q}</span>
                                         <ChevronDown
-                                            className={`w-4 h-4 text-earth/30 flex-shrink-0 transition-transform duration-300 ${openFaq === idx ? 'rotate-180 text-bronze' : ''}`}
+                                            className={`w-4 h-4 text-muted-earth flex-shrink-0 transition-transform duration-300 ${openFaq === idx ? 'rotate-180 text-bronze' : ''}`}
                                         />
                                     </button>
                                     <div
                                         className={`overflow-hidden transition-all duration-300 ${openFaq === idx ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}
                                     >
                                         <div className="px-5 pb-5 border-t border-earth/5 pt-4">
-                                            <p className="font-sans text-earth/70 text-sm leading-relaxed">{faq.a}</p>
+                                            <p className="font-sans text-muted-earth text-sm leading-relaxed">{faq.a}</p>
                                         </div>
                                     </div>
                                 </div>
@@ -285,7 +285,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ section }) => {
                                 <div className="text-center py-12">
                                     <CheckCircle className="w-12 h-12 text-green-600/70 mx-auto mb-4" />
                                     <h3 className="font-serif text-2xl text-earth mb-2">Message Sent!</h3>
-                                    <p className="font-sans text-earth/60 text-sm mb-6">Thank you for reaching out. We'll get back to you as soon as possible.</p>
+                                    <p className="font-sans text-muted-earth text-sm mb-6">Thank you for reaching out. We'll get back to you as soon as possible.</p>
                                     <button
                                         onClick={() => setContactStatus('idle')}
                                         className="text-[10px] uppercase tracking-widest text-bronze hover:text-earth transition-colors border-b border-bronze/30 pb-1"
@@ -297,45 +297,45 @@ export const SupportPage: React.FC<SupportPageProps> = ({ section }) => {
                                 <form onSubmit={handleContactSubmit} className="space-y-5">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                         <div>
-                                            <label className="block text-[10px] uppercase tracking-widest text-earth/40 mb-2">Your Name</label>
-                                            <input
+                                            <label htmlFor="support-name" className="block text-[10px] uppercase tracking-widest text-muted-earth mb-2">Your Name</label>
+                                            <input id="support-name" autoComplete="name"
                                                 type="text"
                                                 value={contactForm.name}
                                                 onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
-                                                className="w-full bg-cream/50 p-3 border border-earth/10 rounded-lg font-sans text-sm text-earth focus:outline-none focus:border-bronze/40 transition-colors"
+                                                className="placeholder-readable w-full bg-cream/50 p-3 border border-earth/10 rounded-lg font-sans text-sm text-earth focus:outline-none focus:border-bronze/40 transition-colors"
                                                 placeholder="First & last name"
                                             />
                                         </div>
                                         <div>
-                                            <label className="block text-[10px] uppercase tracking-widest text-earth/40 mb-2">Email *</label>
-                                            <input
+                                            <label htmlFor="support-email" className="block text-[10px] uppercase tracking-widest text-muted-earth mb-2">Email *</label>
+                                            <input id="support-email" autoComplete="email"
                                                 type="email"
                                                 required
                                                 value={contactForm.email}
                                                 onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
-                                                className="w-full bg-cream/50 p-3 border border-earth/10 rounded-lg font-sans text-sm text-earth focus:outline-none focus:border-bronze/40 transition-colors"
+                                                className="placeholder-readable w-full bg-cream/50 p-3 border border-earth/10 rounded-lg font-sans text-sm text-earth focus:outline-none focus:border-bronze/40 transition-colors"
                                                 placeholder="your@email.com"
                                             />
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="block text-[10px] uppercase tracking-widest text-earth/40 mb-2">Subject</label>
-                                        <input
+                                        <label htmlFor="support-subject" className="block text-[10px] uppercase tracking-widest text-muted-earth mb-2">Subject</label>
+                                            <input id="support-subject"
                                             type="text"
                                             value={contactForm.subject}
                                             onChange={(e) => setContactForm({ ...contactForm, subject: e.target.value })}
-                                            className="w-full bg-cream/50 p-3 border border-earth/10 rounded-lg font-sans text-sm text-earth focus:outline-none focus:border-bronze/40 transition-colors"
+                                            className="placeholder-readable w-full bg-cream/50 p-3 border border-earth/10 rounded-lg font-sans text-sm text-earth focus:outline-none focus:border-bronze/40 transition-colors"
                                             placeholder="How can we help?"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-[10px] uppercase tracking-widest text-earth/40 mb-2">Message *</label>
-                                        <textarea
+                                        <label htmlFor="support-message" className="block text-[10px] uppercase tracking-widest text-muted-earth mb-2">Message *</label>
+                                            <textarea id="support-message"
                                             required
                                             rows={5}
                                             value={contactForm.message}
                                             onChange={(e) => setContactForm({ ...contactForm, message: e.target.value })}
-                                            className="w-full bg-cream/50 p-3 border border-earth/10 rounded-lg font-sans text-sm text-earth focus:outline-none focus:border-bronze/40 transition-colors resize-none"
+                                            className="placeholder-readable w-full bg-cream/50 p-3 border border-earth/10 rounded-lg font-sans text-sm text-earth focus:outline-none focus:border-bronze/40 transition-colors resize-none"
                                             placeholder="Tell us what's on your mind..."
                                         />
                                     </div>
@@ -376,7 +376,7 @@ export const SupportPage: React.FC<SupportPageProps> = ({ section }) => {
                         </div>
 
                         <div className="bg-white/60 rounded-2xl border border-earth/5 p-6 md:p-8 space-y-8">
-                            <p className="font-sans text-earth/60 text-xs italic">Last updated: February 2026</p>
+                            <p className="font-sans text-muted-earth text-xs italic">Last updated: February 2026</p>
 
                             {/* Policy Sections */}
                             {[
@@ -419,15 +419,15 @@ export const SupportPage: React.FC<SupportPageProps> = ({ section }) => {
                             ].map((s, idx) => (
                                 <div key={idx}>
                                     <h3 className="font-serif text-lg text-earth mb-2">{s.title}</h3>
-                                    <p className="font-sans text-earth/70 text-sm leading-relaxed">{s.content}</p>
+                                    <p className="font-sans text-muted-earth text-sm leading-relaxed">{s.content}</p>
                                 </div>
                             ))}
 
                             <div className="border-t border-earth/10 pt-6">
                                 <h3 className="font-serif text-lg text-earth mb-2">Questions?</h3>
-                                <p className="font-sans text-earth/70 text-sm leading-relaxed">
+                                <p className="font-sans text-muted-earth text-sm leading-relaxed">
                                     If you have any questions about this Privacy Policy or how we handle your data, please reach out to us at{' '}
-                                    <a href="mailto:withlove@louiemae.com" className="text-bronze hover:underline">withlove@louiemae.com</a>.
+                                    <a href="mailto:withlove@louiemae.com" className="text-bronze underline">withlove@louiemae.com</a>.
                                 </p>
                             </div>
                         </div>
@@ -441,16 +441,16 @@ export const SupportPage: React.FC<SupportPageProps> = ({ section }) => {
                     <div className="text-center py-12 border-t border-earth/10">
                         <Heart className="w-6 h-6 text-bronze/40 mx-auto mb-4" />
                         <h3 className="font-serif text-2xl md:text-3xl text-earth mb-3">Thank You</h3>
-                        <p className="font-sans text-earth/60 text-sm max-w-md mx-auto leading-relaxed mb-2">
+                        <p className="font-sans text-muted-earth text-sm max-w-md mx-auto leading-relaxed mb-2">
                             Thank you for being part of the Louie Mae family. We are truly grateful for your support and trust. Every order, every message, and every visit means the world to us.
                         </p>
-                        <p className="font-serif text-earth/40 text-base italic mt-4">
+                        <p className="font-serif text-muted-earth text-base italic mt-4">
                             simply, mae
                         </p>
                     </div>
                 </FadeIn>
 
             </div>
-        </div>
+        </main>
     );
 };

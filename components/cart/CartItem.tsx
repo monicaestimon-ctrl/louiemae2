@@ -33,9 +33,9 @@ export const CartItem: React.FC<CartItemProps> = ({ item }) => {
             <div className="flex-1 min-w-0">
                 <h4 className="font-serif text-sm text-earth truncate">{product.name}</h4>
                 {selectedVariant && (
-                    <p className="text-xs text-earth/60 mt-0.5">{selectedVariant.name}</p>
+                    <p className="text-xs text-muted-earth mt-0.5">{selectedVariant.name}</p>
                 )}
-                <p className="text-[10px] uppercase tracking-widest text-earth/50 mt-1">
+                <p className="text-[10px] uppercase tracking-widest text-muted-earth mt-1">
                     {product.category}
                 </p>
                 <p className="text-sm text-earth mt-1">${displayPrice.toFixed(2)}</p>
@@ -45,8 +45,8 @@ export const CartItem: React.FC<CartItemProps> = ({ item }) => {
             <div className="flex flex-col items-end justify-between">
                 <button
                     onClick={() => removeFromCart(product.id, selectedVariant?.id)}
-                    className="p-1 text-earth/30 hover:text-red-600 transition-colors"
-                    aria-label="Remove item"
+                    className="min-w-11 min-h-11 p-2 text-muted-earth hover:text-red-600 transition-colors"
+                    aria-label={`Remove ${product.name}`}
                 >
                     <Trash2 className="w-4 h-4" />
                 </button>
@@ -54,16 +54,16 @@ export const CartItem: React.FC<CartItemProps> = ({ item }) => {
                 <div className="flex items-center gap-2 border border-earth/10">
                     <button
                         onClick={() => updateQuantity(product.id, quantity - 1, selectedVariant?.id)}
-                        className="p-1 hover:bg-earth/5 transition-colors"
-                        aria-label="Decrease quantity"
+                        className="min-w-11 min-h-11 p-2 hover:bg-earth/5 transition-colors"
+                        aria-label={`Decrease quantity of ${product.name}`}
                     >
                         <Minus className="w-3 h-3 text-earth" />
                     </button>
                     <span className="text-sm text-earth w-6 text-center">{quantity}</span>
                     <button
                         onClick={() => updateQuantity(product.id, quantity + 1, selectedVariant?.id)}
-                        className="p-1 hover:bg-earth/5 transition-colors"
-                        aria-label="Increase quantity"
+                        className="min-w-11 min-h-11 p-2 hover:bg-earth/5 transition-colors"
+                        aria-label={`Increase quantity of ${product.name}`}
                     >
                         <Plus className="w-3 h-3 text-earth" />
                     </button>

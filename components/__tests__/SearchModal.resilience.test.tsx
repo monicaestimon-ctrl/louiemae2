@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { Modal } from '../Modal';
 import { SearchModal } from '../SearchModal';
 const state = vi.hoisted(() => ({ result: undefined as unknown }));
 vi.mock('convex/react', () => ({ useQueries: () => ({ result: state.result }) }));
@@ -9,7 +10,7 @@ afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 it('keeps the shell and search text through failure and recovers without showing false empty results', () => {
   const close = vi.fn();
-  const tree = () => <><header>Shopping navigation</header><SearchModal isOpen onClose={close} onProductClick={vi.fn()} /></>;
+  const tree = () => <><header>Shopping navigation</header><Modal open label="Search" onClose={close}><SearchModal isOpen onClose={close} onProductClick={vi.fn()} /></Modal></>;
   const view = render(tree());
   const input = screen.getByRole('textbox', { name: 'Search products' });
   fireEvent.change(input, { target: { value: 'chair' } });
@@ -22,7 +23,7 @@ it('keeps the shell and search text through failure and recovers without showing
   expect(screen.queryByText('private backend error')).toBeNull();
   state.result = []; view.rerender(tree());
   expect(screen.getByText(/No products found/)).toBeTruthy();
-  fireEvent.keyDown(document, { key: 'Escape' });
+  fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }));
   expect(close).toHaveBeenCalledOnce();
 });
 

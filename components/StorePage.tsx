@@ -1,3 +1,4 @@
+import { Modal } from './Modal';
 
 import React, { useState, useMemo } from 'react';
 import ProductDeliveryEstimate from './delivery/ProductDeliveryEstimate';
@@ -8,7 +9,6 @@ import { useSite } from '../contexts/BlogContext';
 import { Product, CollectionType, ProductVariant, Category, CollectionConfig } from '../types';
 import { ArrowLeft, X, ArrowUpRight, Check } from 'lucide-react';
 import { AddToCartButton } from './cart';
-import { GlassButton } from './ui/GlassButton';
 import { useNewsletter } from '../contexts/NewsletterContext';
 import { SafeImage } from './SafeImage';
 import { getCategoryParentId } from '../lib/productCategories';
@@ -41,8 +41,8 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
   // Render a product card (reusable for both preview and full grid)
   const ProductCard: React.FC<{ product: StoreCardProduct; index: number; compact?: boolean; onSelect: (product: StoreCardProduct) => void }> = ({ product, index, compact, onSelect }) => (
     <FadeIn delay={Math.min(index, 5) * 50} className="group cursor-pointer">
-      <div
-        className={`relative aspect-square overflow-hidden bg-white mb-3 rounded-2xl shadow-sm hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-500 border border-white/40 group`}
+      <button type="button" aria-label={`Quick view ${product.name}`}
+        className={`block w-full relative aspect-square overflow-hidden bg-white mb-3 rounded-2xl shadow-sm hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-500 border border-white/40 group`}
         onClick={() => onSelect(product)}
       >
         {product.isNew && !compact && (
@@ -57,20 +57,17 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
           className="w-full h-full object-contain"
         />
         {/* Subtle Inner Glow Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+        <span className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></span>
         {!compact && (
-          <div className="absolute bottom-0 left-0 right-0 p-3 translate-y-full group-hover:translate-y-0 transition-transform duration-500">
-            <GlassButton
-              variant="primary"
-              size="sm"
-              fullWidth
-              className="py-3 text-[10px] bg-white/80 backdrop-blur-md shadow-lg border border-white/50 hover:bg-earth hover:text-white transition-colors duration-300"
+          <span className="absolute bottom-0 left-0 right-0 p-3 translate-y-0 md:translate-y-full md:group-hover:translate-y-0 group-focus-within:translate-y-0 transition-transform duration-500">
+            <span
+              className="block w-full py-3 text-[10px] bg-white/80 backdrop-blur-md shadow-lg border border-white/50 hover:bg-earth hover:text-white transition-colors duration-300"
             >
               Quick View
-            </GlassButton>
-          </div>
+            </span>
+          </span>
         )}
-      </div>
+      </button>
 
       <div className={compact ? 'px-2' : 'px-1'}>
         <h3 className={`font-serif ${compact ? 'text-sm' : 'text-base'} text-earth leading-tight mb-1 group-hover:text-bronze transition-colors truncate`}>
@@ -170,12 +167,12 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
             <h3 className="font-serif text-2xl md:text-3xl text-earth transition-colors group-hover:text-bronze">
               {category.title}
             </h3>
-            <ArrowUpRight className="w-5 h-5 text-earth/30 transition-all group-hover:text-bronze group-hover:translate-x-1 group-hover:-translate-y-1" />
+            <ArrowUpRight className="w-5 h-5 text-muted-earth transition-all group-hover:text-bronze group-hover:translate-x-1 group-hover:-translate-y-1" />
           </div>
 
           <button
             onClick={() => handleCategoryChange(category.title)}
-            className="hidden md:flex items-center gap-2 text-xs uppercase tracking-widest text-earth/50 hover:text-earth transition-colors"
+            className="hidden md:flex items-center gap-2 text-xs uppercase tracking-widest text-muted-earth hover:text-earth transition-colors"
           >
             View All
           </button>
@@ -209,7 +206,7 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
               <div className="absolute bottom-0 left-0 w-64 h-64 bg-white/10 rounded-full blur-3xl opacity-50 -z-10 -translate-x-1/4 translate-y-1/4" />
 
               <h4 className="font-serif text-4xl md:text-5xl text-cream mb-4 tracking-tight drop-shadow-md">Coming Soon</h4>
-              <p className="text-sm md:text-xs text-cream/70 uppercase tracking-[0.2em] mb-12 max-w-md mx-auto leading-relaxed font-light">
+              <p className="text-sm md:text-xs text-muted-cream uppercase tracking-[0.2em] mb-12 max-w-md mx-auto leading-relaxed font-light">
                 Join the inner circle. Receive 24-hour early access to {category.title} drops before they open to the public.
               </p>
 
@@ -256,7 +253,7 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
             <h2 className="font-serif text-3xl md:text-5xl text-earth mb-3">
               {categoryTitle}
             </h2>
-            <p className="text-xs uppercase tracking-widest text-earth/60">
+            <p className="text-xs uppercase tracking-widest text-muted-earth">
               Latest Arrivals & Curated Picks
             </p>
           </div>
@@ -274,10 +271,10 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
               // #collection/kids?cat=Girls%20All -> Level 3? No, that's messy.
 
               // Let's us just scroll to the first subcategory for now, or just let the user browse.
-              // Actually, the user asked for "All Girls section... slide through products". 
+              // Actually, the user asked for "All Girls section... slide through products".
               // This slider IS that section. The "View All" button is less critical if the slider shows the best stuff.
 
-              // BETTER: Add a specific "Shop All" swimming lane at the bottom? 
+              // BETTER: Add a specific "Shop All" swimming lane at the bottom?
               // OR: Just let them click subcategories.
 
               // Let's scroll to the first subcategory for now.
@@ -304,7 +301,7 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
               onClick={() => {
                 window.location.hash = `#collection/${collection}?cat=${encodeURIComponent(categoryTitle)}&view=products`;
               }}
-              className="group flex flex-col items-center gap-4 text-earth/50 hover:text-earth transition-colors"
+              className="group flex flex-col items-center gap-4 text-muted-earth hover:text-earth transition-colors"
             >
               <div className="w-16 h-16 rounded-full border border-earth/20 flex items-center justify-center group-hover:border-earth transition-colors">
                 <ArrowUpRight className="w-6 h-6" />
@@ -467,7 +464,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
   };
 
   return (
-    <div className="bg-cream min-h-screen pt-20">
+    <main className="bg-cream min-h-screen pt-20">
 
       {/* Unified Header Section - Clean cream background with centered title for all collections */}
       <section className={`relative transition-all duration-700 w-full ${viewLevel === 'ROOT' ? 'min-h-screen' : ''} flex flex-col`}>
@@ -526,7 +523,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                               className="
                                 group relative flex-shrink-0 overflow-hidden rounded-2xl
                                 w-[200px] aspect-[3/4]
-                                bg-stone-100 
+                                bg-stone-100
                                 shadow-lg hover:shadow-2xl
                                 transition-all duration-500 ease-out
                                 hover:scale-[1.02]
@@ -591,7 +588,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                               className="
                                 group relative overflow-hidden rounded-2xl
                                 aspect-[2/3]
-                                bg-stone-100 
+                                bg-stone-100
                                 shadow-lg hover:shadow-2xl
                                 transition-all duration-500 ease-out
                                 hover:scale-[1.02]
@@ -669,7 +666,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                             group relative flex-shrink-0 overflow-hidden rounded-2xl
                             w-[200px] md:w-[calc((100vw-10rem)/5)] lg:w-[calc((1024px-10rem)/5)] xl:w-[calc((1280px-10rem)/5)]
                             aspect-[3/4] md:aspect-[2/3]
-                            bg-stone-100 
+                            bg-stone-100
                             shadow-lg hover:shadow-2xl
                             transition-all duration-500 ease-out
                             hover:scale-[1.02]
@@ -730,7 +727,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
               <>
                 <FadeIn className="mb-8 text-center md:text-left">
                   <h2 className="font-serif text-3xl md:text-4xl text-earth mb-3 ml-2">New Arrivals</h2>
-                  <p className="text-xs uppercase tracking-widest text-earth/50 ml-2">
+                  <p className="text-xs uppercase tracking-widest text-muted-earth ml-2">
                     Latest collections for the little ones
                   </p>
                 </FadeIn>
@@ -745,7 +742,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                   <div className="min-w-[200px] md:min-w-[240px] snap-center flex items-center justify-center">
                     <button
                       onClick={() => { window.location.hash = `#collection/${collection}?cat=All&view=products`; }}
-                      className="group flex flex-col items-center gap-4 text-earth/50 hover:text-earth transition-colors"
+                      className="group flex flex-col items-center gap-4 text-muted-earth hover:text-earth transition-colors"
                     >
                       <div className="w-16 h-16 rounded-full border border-earth/20 flex items-center justify-center group-hover:border-earth transition-colors">
                         <ArrowUpRight className="w-6 h-6" />
@@ -768,7 +765,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
             <div className="container mx-auto flex items-center justify-between">
               <button
                 onClick={() => handleCategoryChange(getBackDestination())}
-                className="text-[10px] uppercase tracking-widest text-earth/50 hover:text-earth flex items-center gap-1"
+                className="text-[10px] uppercase tracking-widest text-muted-earth hover:text-earth flex items-center gap-1"
               >
                 <ArrowLeft className="w-3 h-3" /> Back to {config.title}
               </button>
@@ -802,7 +799,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
               <div className="flex min-w-0 md:flex-1 items-center gap-3 overflow-x-auto no-scrollbar w-full md:w-auto pb-2 md:pb-0">
                 <button
                   onClick={() => handleCategoryChange(getBackDestination())}
-                  className="whitespace-nowrap text-[10px] uppercase tracking-widest text-cream/50 hover:text-cream flex items-center gap-1 group transition-colors"
+                  className="whitespace-nowrap text-[10px] uppercase tracking-widest text-muted-cream hover:text-cream flex items-center gap-1 group transition-colors"
                 >
                   <div className="bg-white/5 border border-white/10 p-1.5 rounded-full group-hover:bg-white/10 transition-colors">
                     <ArrowLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
@@ -814,16 +811,16 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                   <button
                     key={cat}
                     onClick={() => handleCategoryChange(cat)}
-                    className={`whitespace-nowrap text-[10px] uppercase tracking-widest transition-all duration-300 px-3 py-1.5 rounded-full ${selectedCategory === cat ? 'bg-white/10 text-cream border border-white/20 shadow-inner' : 'text-cream/50 hover:text-cream hover:bg-white/5 border border-transparent'}`}
+                    className={`whitespace-nowrap text-[10px] uppercase tracking-widest transition-all duration-300 px-3 py-1.5 rounded-full ${selectedCategory === cat ? 'bg-white/10 text-cream border border-white/20 shadow-inner' : 'text-muted-cream hover:text-cream hover:bg-white/5 border border-transparent'}`}
                   >
                     {cat}
                   </button>
                 ))}
               </div>
 
-              {(categoryOptions.canLoadMore || categoryOptions.loading) && <button type="button" disabled={categoryOptions.loading} onClick={categoryOptions.loadMore} className="text-xs text-cream/70 whitespace-nowrap">{categoryOptions.loading ? 'Loading categories…' : 'Load more category options'}</button>}
+              {(categoryOptions.canLoadMore || categoryOptions.loading) && <button type="button" disabled={categoryOptions.loading} onClick={categoryOptions.loadMore} className="text-xs text-muted-cream whitespace-nowrap">{categoryOptions.loading ? 'Loading categories…' : 'Load more category options'}</button>}
               <div className="flex items-center gap-2 ml-auto md:ml-0 bg-white/5 border border-white/10 px-3 py-1.5 rounded-full backdrop-blur-md">
-                <span className="text-[10px] uppercase tracking-widest text-cream/50">Sort By:</span>
+                <span className="text-[10px] uppercase tracking-widest text-muted-cream">Sort By:</span>
                 <select
                   aria-label="Sort products" value={sortOption}
                   onChange={(e) => setSortOption(e.target.value as 'newest' | 'price-asc' | 'price-desc')}
@@ -879,12 +876,10 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-10">
                   {filteredProducts.map((product, idx) => (
                     <FadeIn key={product.id} delay={Math.min(idx, 5) * 50} className="group min-w-0">
-                      <div
-                        className={`relative ${collection === 'furniture' || collection === 'decor' ? 'aspect-square' : 'aspect-[3/4]'} overflow-hidden bg-[#f3efe8] mb-4 rounded-sm`}
-                        role="button"
-                        tabIndex={0}
+                      <button
+                        className={`block w-full relative ${collection === 'furniture' || collection === 'decor' ? 'aspect-square' : 'aspect-[3/4]'} overflow-hidden bg-[#f3efe8] mb-4 rounded-sm`}
+                        type="button"
                         aria-label={`View ${product.name}`}
-                        onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); handleSelectProduct(product); } }}
                         onClick={() => handleSelectProduct(product)}
                       >
                         {product.isNew && (
@@ -903,20 +898,20 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                           alt={product.name}
                           className="w-full h-full object-contain"
                         />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors"></div>
-                        <div className="absolute bottom-0 left-0 right-0 p-3 opacity-100 md:opacity-0 md:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200">
+                        <span className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors"></span>
+                        <span className="absolute bottom-0 left-0 right-0 p-3 opacity-100 md:opacity-0 md:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200">
                           <span className="block text-center w-full bg-white/90 backdrop-blur-sm text-earth py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-earth hover:text-white transition-colors shadow-lg">
                             Quick View
                           </span>
-                        </div>
-                      </div>
+                        </span>
+                      </button>
 
                       <div className="flex flex-col gap-2">
                         <div className="min-w-0">
                           <h3 className="font-serif text-lg text-earth leading-tight mb-1 group-hover:text-bronze transition-colors">
                             {product.name}
                           </h3>
-                          <p className="text-[10px] uppercase tracking-widest text-earth/50">{product.category}</p>
+                          <p className="text-[10px] uppercase tracking-widest text-muted-earth">{product.category}</p>
                         </div>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="text-sm text-earth whitespace-nowrap">${product.price.toLocaleString('en-US')}</span>{!product.inStock && <span className="text-xs text-bronze">Coming Soon</span>}</div>
                       </div>
@@ -925,7 +920,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                 </div>
               )}
               {catalogReady && <div className="mt-8 text-center">
-                <p role="status" className="text-sm text-earth/60">{filteredProducts.length} products loaded{grid.complete ? ' · All matching products shown' : ''}</p>
+                <p role="status" className="text-sm text-muted-earth">{filteredProducts.length} products loaded{grid.complete ? ' · All matching products shown' : ''}</p>
                 {grid.additionalLoadingFailed && <div role="status" className="mt-4 text-earth"><p>More products could not be loaded. You can keep browsing the products above.</p><button type="button" className="min-h-11 underline" onClick={() => window.location.reload()}>Reload products</button></div>}
                 {(grid.canLoadMore || grid.loadingMore) && <button type="button" disabled={grid.loadingMore} onClick={grid.loadMore} className="mt-4 border border-earth/20 rounded-full px-6 py-3">{grid.loadingMore ? 'Loading products…' : 'Load more products'}</button>}
               </div>}
@@ -935,7 +930,8 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
       )}
 
       {/* Product Modal */}
-      {selectedProductId && (detailLoading || detailUnavailable || detailFailed) && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6" role="dialog" aria-modal="true" aria-label="Product details">
+      {selectedProductId && <Modal open label="Product details" onClose={() => handleSelectProduct(null)}>
+      {(detailLoading || detailUnavailable || detailFailed) && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6">
         <div className="rounded-lg bg-cream p-8 text-earth">
           <p role="status">{detailLoading ? 'Loading product details…' : detailFailed ? 'Product details could not be loaded. Please try again.' : 'This product is no longer available.'}</p>
           {detailFailed && <button onClick={retryDetail} className="min-h-11 underline">Try again</button>}
@@ -943,7 +939,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
         </div>
       </div>}
       {selectedProduct && (
-        <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:p-8" role="dialog" aria-modal="true" aria-label="Product details">
+        <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:p-8">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => handleSelectProduct(null)}></div>
 
           <div className="bg-cream w-full max-w-5xl h-[92vh] supports-[height:100svh]:h-[92svh] md:h-auto md:max-h-[85vh] rounded-t-3xl md:rounded-sm shadow-2xl relative flex flex-col md:flex-row overflow-hidden animate-fade-in-up">
@@ -964,7 +960,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
             </div>
             <div className="w-full md:w-1/2 flex-1 min-h-0 p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:p-10 overflow-y-auto overscroll-contain bg-cream flex flex-col">
               <div className="mb-auto">
-                <div className="flex items-center gap-3 mb-4 text-[10px] uppercase tracking-widest text-earth/50">
+                <div className="flex items-center gap-3 mb-4 text-[10px] uppercase tracking-widest text-muted-earth">
                   <span>{config.title}</span>
                   <span className="w-1 h-1 bg-bronze rounded-full"></span>
                   <span>{selectedProduct.category}</span>
@@ -988,7 +984,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                   </div>
                 )}
 
-                <p className="font-sans text-earth/70 leading-relaxed mb-6 text-sm">{selectedProduct.description}</p>
+                <p className="font-sans text-muted-earth leading-relaxed mb-6 text-sm">{selectedProduct.description}</p>
                 <div className="space-y-3 mb-6">
                   <div className="flex items-center gap-2 text-xs text-green-700">
                     <span className="w-2 h-2 rounded-full bg-green-600"></span>
@@ -996,7 +992,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                   </div>
                 </div>
               </div>
-              {selectedProduct.fulfillmentProvider === 'ashcroft' && selectedProduct.inStock && <p className="text-sm text-earth/60">${selectedProduct.deliveryFee} Economy delivery per item</p>}
+              {selectedProduct.fulfillmentProvider === 'ashcroft' && selectedProduct.inStock && <p className="text-sm text-muted-earth">${selectedProduct.deliveryFee} Economy delivery per item</p>}
               {selectedProduct.fulfillmentProvider === 'zuo' && <ProductDeliveryEstimate productId={selectedProduct.id} variantId={selectedVariant?.id ?? selectedProduct.variants?.[0]?.id} />}
               <AddToCartButton
                 product={selectedProduct}
@@ -1008,6 +1004,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
           </div>
         </div>
       )}
-    </div>
+      </Modal>}
+    </main>
   );
 };

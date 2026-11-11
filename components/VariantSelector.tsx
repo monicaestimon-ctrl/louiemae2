@@ -47,18 +47,19 @@ export const VariantSelector: React.FC<VariantSelectorProps> = React.memo(({
         ? 'border-earth bg-earth text-cream'
         : v.inStock
           ? 'border-earth/20 text-earth hover:border-earth'
-          : 'border-earth/10 text-earth/30 cursor-not-allowed line-through'
+          : 'border-earth/10 text-muted-earth cursor-not-allowed line-through'
     }`;
 
   if (!hasMultipleGroups) {
     // Single group — flat buttons
     return (
       <>
-        <span className="text-[10px] uppercase tracking-widest text-earth/50 block mb-3">Select Option</span>
+        <span className="text-[10px] uppercase tracking-widest text-muted-earth block mb-3">Select Option</span>
         <div className="flex flex-wrap gap-2">
           {variants.map(v => (
             <button
               key={v.id}
+              aria-pressed={selectedVariant?.id === v.id}
               onClick={() => onSelectVariant(v.id === selectedVariant?.id ? undefined : v)}
               disabled={!v.inStock}
               className={variantBtnClass(v)}
@@ -75,7 +76,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = React.memo(({
   return (
     <>
       {/* Tier 1: Color/Style */}
-      <span className="text-[10px] uppercase tracking-widest text-earth/50 block mb-3">Select Style</span>
+      <span className="text-[10px] uppercase tracking-widest text-muted-earth block mb-3">Select Style</span>
       <div className="flex gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide">
         {groupEntries.map(([imageKey, groupVariants]) => {
           const isActive = currentGroupKey === imageKey;
@@ -86,6 +87,8 @@ export const VariantSelector: React.FC<VariantSelectorProps> = React.memo(({
           return (
             <button
               key={imageKey}
+              aria-pressed={isActive}
+              aria-label={`Style: ${firstVariant.name}`}
               onClick={() => {
                 onSetGroupKey(imageKey);
                 if (selectedVariant && (selectedVariant.image || NO_IMAGE_KEY) !== imageKey) {
@@ -106,7 +109,7 @@ export const VariantSelector: React.FC<VariantSelectorProps> = React.memo(({
               {hasImage ? (
                 <SafeImage src={imageKey} alt={firstVariant.name} className="w-14 h-14 md:w-16 md:h-16 object-cover" />
               ) : (
-                <div className="w-14 h-14 md:w-16 md:h-16 bg-earth/5 flex items-center justify-center text-[9px] text-earth/40 uppercase tracking-wider px-1 text-center">
+                <div className="w-14 h-14 md:w-16 md:h-16 bg-earth/5 flex items-center justify-center text-[9px] text-muted-earth uppercase tracking-wider px-1 text-center">
                   {firstVariant.name.split(/[\s-]/)[0]}
                 </div>
               )}
@@ -118,13 +121,14 @@ export const VariantSelector: React.FC<VariantSelectorProps> = React.memo(({
       {/* Tier 2: Size/Option within selected group */}
       {activeGroup.length > 0 && (
         <>
-          <span className="text-[10px] uppercase tracking-widest text-earth/50 block mb-3">
+          <span className="text-[10px] uppercase tracking-widest text-muted-earth block mb-3">
             {activeGroup.length === 1 ? 'Selected' : 'Select Size'}
           </span>
           <div className="flex flex-wrap gap-2">
             {activeGroup.map(v => (
               <button
                 key={v.id}
+              aria-pressed={selectedVariant?.id === v.id}
                 onClick={() => onSelectVariant(v.id === selectedVariant?.id ? undefined : v)}
                 disabled={!v.inStock}
                 className={variantBtnClass(v)}

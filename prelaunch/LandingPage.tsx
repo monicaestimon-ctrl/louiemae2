@@ -1,4 +1,3 @@
-/* global HTMLDialogElement */
 import { useRef, useState, type FormEvent } from 'react';
 import { HouseIcon, Wordmark } from './Brand';
 import { CollectionEditorial, EditorialPhoto } from './CollectionEditorial';

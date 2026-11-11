@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+import { Modal } from './Modal';
 import { X, Mail, Check } from 'lucide-react';
 import { useNewsletter } from '../contexts/NewsletterContext';
 import { responsiveImage } from '../lib/responsiveImage';
@@ -8,7 +9,6 @@ export const NewsletterPopup: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle');
-  const dialogRef = useRef<React.ComponentRef<'dialog'>>(null);
   const [error, setError] = useState('');
   const { addSubscriber } = useNewsletter();
 
@@ -17,25 +17,19 @@ export const NewsletterPopup: React.FC = () => {
     const dismissed = localStorage.getItem('lm_newsletter_dismissed');
     if (dismissed) return;
 
-    // Show after 10 seconds
-    const timer = setTimeout(() => {
+    // Do not interrupt another dialog after the initial delay.
+    const observer = new MutationObserver(() => showWhenFree());
+    const showWhenFree = () => {
+      if (localStorage.getItem('lm_newsletter_dismissed') || document.querySelector('dialog[open]')) return;
+      observer.disconnect();
       setIsVisible(true);
-    }, 10000);
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  useEffect(() => {
-    if (!isVisible) return;
-    const dialog = dialogRef.current;
-    const previousOverflow = document.body.style.overflow;
-    dialog?.showModal();
-    document.body.style.overflow = 'hidden';
-    return () => {
-      dialog?.close();
-      document.body.style.overflow = previousOverflow;
     };
-  }, [isVisible]);
+    const timer = setTimeout(() => {
+      observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['open'] });
+      showWhenFree();
+    }, 10000);
+    return () => { clearTimeout(timer); observer.disconnect(); };
+  }, []);
 
   const handleDismiss = () => {
     setIsVisible(false);
@@ -67,7 +61,10 @@ export const NewsletterPopup: React.FC = () => {
   if (!isVisible) return null;
 
   return (
-    <dialog ref={dialogRef} aria-label="The Mae Letter newsletter" onCancel={handleDismiss} className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-3xl overflow-y-auto overscroll-contain rounded-3xl bg-transparent p-0 text-cream backdrop:bg-black/60 backdrop:backdrop-blur-md">
+    <Modal open={isVisible} label="The Mae Letter newsletter" onClose={handleDismiss} className="flex items-center justify-center text-cream">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={handleDismiss} />
+      <div className="relative m-4 max-h-[calc(100dvh_-_2rem)] w-full max-w-3xl overflow-y-auto rounded-3xl">
+
       <div className="relative w-full max-w-3xl h-auto md:min-h-[520px] rounded-3xl shadow-[0_40px_100px_rgba(139,90,43,0.35),inset_0_1px_0_rgba(255,255,255,0.15)] flex flex-col md:flex-row overflow-hidden border border-bronze/30 bg-gradient-to-br from-[#3a2a1a]/95 via-[#2d1f12]/90 to-[#1a130a]/95 backdrop-blur-3xl">
         <button
           onClick={handleDismiss}
@@ -119,7 +116,7 @@ export const NewsletterPopup: React.FC = () => {
                      value={email}
                      onChange={(e) => setEmail(e.target.value)}
                      placeholder="Your email address" aria-label="Email address" autoComplete="email"
-                     className="w-full bg-black/40 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-cream placeholder:text-cream/60 focus:outline-none focus:border-bronze/50 focus:ring-1 focus:ring-bronze/20 transition-all font-sans"
+                     className="w-full bg-black/40 border border-white/10 rounded-xl py-3 pl-10 pr-4 text-cream placeholder-readable-light focus:outline-none focus:border-bronze/50 focus:ring-1 focus:ring-bronze/20 transition-all font-sans"
                      required
                    />
                  </div>
@@ -140,6 +137,7 @@ export const NewsletterPopup: React.FC = () => {
            )}
         </div>
       </div>
-    </dialog>
+      </div>
+    </Modal>
   );
 };
