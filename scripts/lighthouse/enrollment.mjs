@@ -94,7 +94,7 @@ try {
       await page.keyboard.type('https://instagram.com/fixture');
       await page.click('form button[type=submit]');
       await page.waitForFunction(() => window.fixtureCommands === 1);
-      assert.equal(await page.evaluate(() => document.activeElement.getAttribute('role')), 'alert');
+      await page.waitForFunction(() => document.activeElement?.getAttribute('role') === 'alert');
       const violations = await page.evaluate(async () =>
         (await axe.run(document.querySelector('main'))).violations.map((v) => ({
           id: v.id,

@@ -11,7 +11,7 @@ const css = assets.find((file) => /^trade-.*\.css$/.test(file));
 assert.ok(css, 'Missing trade stylesheet. Run npm run build first.');
 const stubs = {
   auth: `export const useAuthActions=()=>({signIn:async()=>{throw Error('No auth permitted')},signOut:async()=>{throw Error('No auth permitted')}});export const useAuthToken=()=>null;`,
-  convex: `import{getFunctionName}from'convex/server';export const useQuery=(ref)=>getFunctionName(ref)==='holm:me'?{signedIn:true,verified:true,admin:false,tradeStatus:'approved',businessName:'',email:''}:undefined;export const useQueries=q=>Object.fromEntries(Object.keys(q).map(k=>[k,undefined]));export const useMutation=ref=>async()=>{if(getFunctionName(ref)==='holm:ensureProfile')return null;window.fixtureCommands=(window.fixtureCommands||0)+1;throw Error('Local quote fixture rejection')};export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});export const useAction=useMutation;export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});`,
+  convex: `import{getFunctionName}from'convex/server';export const useQuery=(ref)=>getFunctionName(ref)==='holm:me'?{signedIn:true,verified:true,admin:false,tradeStatus:'approved',businessName:'',email:''}:undefined;export const useQueries=q=>Object.fromEntries(Object.keys(q).map(k=>[k,undefined]));export const useMutation=ref=>async()=>{if(getFunctionName(ref)==='holm:ensureProfile')return null;window.fixtureCommands=(window.fixtureCommands||0)+1;return new Promise((_,reject)=>{window.rejectFixtureQuote=()=>reject(Error('Local quote fixture rejection'))})};export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});export const useAction=useMutation;export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});`,
 };
 const entry = `import React from'react';import{createRoot}from'react-dom/client';import{App,setProducts}from'./trade/app';const image='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';const products=Array.from({length:24},(_,i)=>({id:i+1,lid:'fixture'+i,vid:'fixture'+i,variants:[],name:'Fixture '+(i+1),full:'Fixture '+(i+1),line:'Chair',type:'sofa',mat:'leather',tone:'#6B4A33',price:100,trade:80,seats:1,oos:false,note:'Fixture only',facts:'',img:image,imgs:[image],ar:1,sku:'FIXTURE',likes:0,widthCm:50,dimsCm:{w:50,d:50,h:50},dimsSource:'fixture',cutout:null,cutAR:null,model:null,modelLow:null,hangs:false,mountCm:null,minimum:1,increment:1,checkoutMode:'quote'}));setProducts(products);createRoot(document.getElementById('root')).render(<App/>);`;
 const bundle = await build({
@@ -145,7 +145,22 @@ try {
     }
     await page.click('.qc-cta');
     await page.waitForFunction((before) => window.fixtureCommands === before + 1, {}, before);
-    assert.equal(await page.evaluate(() => document.activeElement.getAttribute('role')), 'alert');
+    await page.waitForFunction(() => document.querySelector('.qc-set').disabled);
+    const draft = await page.$$eval('.qc-set input', (nodes) => nodes.map((node) => node.value));
+    assert.equal(await page.$eval('.qc-cta', (node) => node.disabled), true);
+    assert.equal(await page.$eval('.qc-set input', (node) => node.matches(':disabled')), true);
+    await page.evaluate(() => {
+      document.querySelector('.qc-cta').click();
+      document.querySelector('.qc-side .btn-line').click();
+    });
+    assert.equal(await page.evaluate(() => window.fixtureCommands || 0), before + 1);
+    await page.evaluate(() => window.rejectFixtureQuote());
+    await page.waitForFunction(() => document.activeElement?.getAttribute('role') === 'alert');
+    assert.deepEqual(
+      await page.$$eval('.qc-set input', (nodes) => nodes.map((node) => node.value)),
+      draft
+    );
+    assert.equal(await page.$eval('.qc-set', (node) => node.disabled), false);
     for (let i = 0; i < 30; i++) {
       await page.keyboard.press('Tab');
       assert.equal(
@@ -177,6 +192,9 @@ try {
       violations,
       localValidation: true,
       mockQuoteRejection: true,
+      pendingControlsDisabled: true,
+      duplicateCommandBlocked: true,
+      rejectedDraftRetained: true,
       nestedFocusRestored: true,
     });
   }
