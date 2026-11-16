@@ -3,6 +3,9 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useId, useMemo, startTransition } from 'react';
 import htm from 'htm';
 import type { HolmProduct } from './catalog';
+import { displayProduct } from './catalogLookup';
+import { unresolvedPlannerItems } from './plannerDraft';
+import { PlannerReview } from './PlannerReview';
 import { TradeWelcome } from './TradeWelcome';
 import { TradeApplication } from './TradeApplication';
 import { BUSINESS_TYPES as BTYPES } from './application';
@@ -38,7 +41,7 @@ const TYPE = {sofa:'Sofas',sectional:'Sectionals',ottoman:'Ottomans',bench:'Benc
 let PRODUCTS: HolmProduct[] = [];
 const BY_ID = new Map<number, HolmProduct>();
 export function setProducts(list: HolmProduct[]) { PRODUCTS = list; BY_ID.clear(); list.forEach(p => BY_ID.set(p.id, p)); }
-const byId = (id: number): HolmProduct => BY_ID.get(id) || PRODUCTS[0];
+const byId = (id: number): HolmProduct => displayProduct(BY_ID, id);
 const has = (id: number) => BY_ID.has(id);
 const tp = (p: HolmProduct) => p.trade ?? p.price;
 const pr = (p: HolmProduct, mode: string) => (mode === 'trade' ? tp(p) : p.price);
@@ -203,6 +206,7 @@ function PinCard({p,ctx}){
   const [menu,setMenu]=useState(false);
   const saved=ctx.boards.some(b=>b.pins.some(x=>x.pid===p.id));
   const lastBoard=ctx.boards[0];
+  if(!has(p.id))return html`<div className="pin"><div className="pin-img"><img src=${p.img} alt="Unavailable saved product" style=${{aspectRatio:1}}/></div><div className="pin-meta"><b>${p.name}</b><p>${p.line}. Use Organize to remove this saved item.</p></div></div>`;
   return html`<div className="pin">
     <div className="pin-img">
       <button type="button" className="pin-open" aria-label=${'View '+p.name+' '+p.line} onClick=${()=>ctx.openPin(p.id)}>
@@ -2602,6 +2606,12 @@ const plWord=(it,doc)=>`${it.x<-doc.W/6?'left':it.x>doc.W/6?'right':'centre'}${i
 
 /** Keep the planner canvas mounted behind independently dismissible snapshot and render dialogs. */
 function Room({ctx}){
+  const [saved,setSaved]=useState(()=>load('room',null));
+  const missing=unresolvedPlannerItems(saved?.items||[],BY_ID);
+  if(missing.length)return html`<${PlannerReview} missing=${missing} remove=${index=>{const next={...saved,items:saved.items.filter((_,i)=>i!==index)};store('room',next);setSaved(next)}} back=${()=>ctx.go('discover')}/>`;
+  return html`<${ReadyRoom} ctx=${ctx} onDraftChange=${setSaved}/>`;
+}
+function ReadyRoom({ctx,onDraftChange}){
   // Pieces sent here join the saved room. From the Studio's 3D switch (sync) the room follows the board
   // instead: its new pieces arrive and the ones it dropped leave.
   const init=()=>{const saved=load('room',null);const raw=ctx.roomSeed;const sync=!!raw?.sync;const seed=(Array.isArray(raw)?raw:raw?.ids)||[];
@@ -2614,6 +2624,7 @@ function Room({ctx}){
     if(seed.length){items=seed.filter(plReady).map((pid,i,a)=>({pid,x:(i-(a.length-1)/2)*1.7,z:-t.D/2+1.3,rot:0,hang:byId(pid).hangs}))}
     return plReflow({...t,tpl:key,items:items.map(it=>({...it,uid:uid()})),rugs:[],wallImg:ctx.roomWall||null})};
   const [doc,setDoc]=useState(init);const [view,setView]=useState('orbit');const [style,setStyle]=useState('material');const [tod,setTod]=useState(.12);
+  useEffect(()=>onDraftChange(doc),[doc,onDraftChange]);
   const [sel,setSel]=useState(null);const [tab,setTab]=useState('pieces');const [snap,setSnap]=useState(true);const [q,setQ]=useState('');const [cat,setCat]=useState('all');
   const [shot,setShot]=useState(null);const [showPrompt,setShowPrompt]=useState(false);
   const [drawer,setDrawer]=useState(null);const [pop,setPop]=useState(null);const [traySheet,setTraySheet]=useState(false);const [tplAsk,setTplAsk]=useState(null);const [lookOpen,setLookOpen]=useState(false);
@@ -3202,8 +3213,8 @@ function BoardDetail({ctx}){
       ${b.sections.map(s=>html`<button key=${s} className="btn btn-line btn-sm" disabled=${!picked.length} onClick=${()=>{ctx.updateBoard(b.id,x=>({...x,pins:x.pins.map(p=>picked.includes(p.pid)?{...p,sec:s}:p)}));ctx.toast(`Moved ${picked.length} to ${s}`);setPicked([])}}>Move to ${s}</button>`)}
       <button className="btn btn-line btn-sm" style=${{color:'var(--bad)'}} disabled=${!picked.length} onClick=${()=>{ctx.updateBoard(b.id,x=>({...x,pins:x.pins.filter(p=>!picked.includes(p.pid))}));setPicked([])}}>Remove</button></div>`}
     ${tab==='shop'?html`<div className="g2" style=${{marginTop:22}}>
-      <div>${b.pins.map(x=>{const p=byId(x.pid);return html`<div key=${p.id} className="line" style=${{gridTemplateColumns:'88px minmax(0,1fr) auto'}}><button className="th" style=${{backgroundImage:`url(${p.img})`}} onClick=${()=>ctx.openPin(p.id)} aria-label=${'View '+p.name}></button><div><b>${p.name} <span className="mute" style=${{fontWeight:400}}>${p.line}</span></b><div className="meta">${x.sec||'No section'} · <span className="mono">${p.sku}</span></div></div><div className="row"><span className="mono">${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span><button className="ib" aria-label=${'Add '+p.name+' to tray'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.line').querySelector('.th'))}>${I('plus')}</button></div></div>`})}</div>
-      <div className="panel" style=${{alignSelf:'start',display:'grid',gap:12}}><h3>Shop the board</h3><div className="sumrow"><span>${b.pins.length} pieces</span><span>${fmt(b.pins.reduce((s,x)=>s+pr(byId(x.pid),ctx.mode),0))}</span></div><button className="btn btn-ink" onClick=${()=>{b.pins.forEach(x=>ctx.addToTray(x.pid,1,null,true));ctx.toast(`${b.pins.length} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Add all to tray</button><p className="help">Shared in shoppable mode, this tab is what your client sees, with your partner link attached.</p></div>
+      <div>${b.pins.map(x=>{const p=byId(x.pid);return html`<div key=${p.id} className="line" style=${{gridTemplateColumns:'88px minmax(0,1fr) auto'}}><button className="th" style=${{backgroundImage:`url(${p.img})`}} onClick=${()=>ctx.openPin(p.id)} aria-label=${'View '+p.name}></button><div><b>${p.name} <span className="mute" style=${{fontWeight:400}}>${p.line}</span></b><div className="meta">${x.sec||'No section'} · <span className="mono">${p.sku}</span></div></div><div className="row"><span className="mono">${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span><button className="ib" disabled=${!has(p.id)} aria-label=${'Add '+p.name+' to tray'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.line').querySelector('.th'))}>${I('plus')}</button></div></div>`})}</div>
+      <div className="panel" style=${{alignSelf:'start',display:'grid',gap:12}}><h3>Shop the board</h3><div className="sumrow"><span>${b.pins.length} pieces</span><span>${fmt(b.pins.reduce((s,x)=>s+pr(byId(x.pid),ctx.mode),0))}</span></div><button className="btn btn-ink" disabled=${b.pins.some(x=>!has(x.pid))} onClick=${()=>{if(b.pins.some(x=>!has(x.pid)))return;b.pins.forEach(x=>ctx.addToTray(x.pid,1,null,true));ctx.toast(`${b.pins.length} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Add all to tray</button><p className="help">Shared in shoppable mode, this tab is what your client sees, with your partner link attached.</p></div>
     </div>`:html`<div className=${org?'wall organize':'wall'}>${pins.map(p=>org?html`<button key=${p.id} className="pin" onClick=${()=>setPicked(picked.includes(p.id)?picked.filter(x=>x!==p.id):[...picked,p.id])} aria-pressed=${picked.includes(p.id)}><div className="pin-img" style=${{outline:picked.includes(p.id)?'3px solid var(--cognac)':'none',outlineOffset:2}}><img src=${p.img} alt=${p.name} style=${{aspectRatio:p.ar,opacity:picked.includes(p.id)?.75:1}}/>${picked.includes(p.id)&&html`<span className="oos" style=${{left:'auto',right:10,top:10,bottom:'auto',background:'var(--cognac)',color:'#fff'}}>Selected</span>`}</div><div className="pin-meta"><b>${p.name}</b></div></button>`:html`<${PinCard} key=${p.id} p=${p} ctx=${ctx}/>`)}</div>`}
     ${share&&html`<${ShareSheet} ctx=${ctx} title=${b.title} doc=${pinsDoc(b.title,b.pins.map(x=>x.pid))} ids=${b.pins.map(x=>x.pid)} boardKey=${'pins-'+b.id} onClose=${()=>setShare(false)}/>`}
   </main>`;
@@ -3755,11 +3766,11 @@ export function App(){
   const [route,setRoute]=useState(getRoute());
   const [space,setSpace]=useState(()=>load('space','bar'));
   const [modePref,setModePref]=useState(()=>load('mode','trade'));const mode=me.verified?modePref:'retail';const setMode=m=>{if(me.verified)setModePref(m)};
-  const [boards,setBoards]=useState(()=>load('boards',BOARD_SEED).map(b=>({...b,pins:b.pins.filter(x=>has(x.pid))})));
+  const [boards,setBoards]=useState(()=>load('boards',BOARD_SEED));
   const [tray,setTrayState]=useState(()=>{const t=load('tray',TRAY_SEED);const projects=(t.projects||[]).map(p=>({...p,items:(p.items||[])}));return projects.length?{...t,taxExempt:false,later:(t.later||[]),projects,active:projects.some(p=>p.id===t.active)?t.active:projects[0].id}:TRAY_SEED});
   // Collages saved before they carried ids get one as they load, so autosave updates them in place.
   const withIds=cs=>cs.map(c=>c.id?c:{...c,id:uid()});
-  const [collages,setCollages]=useState(()=>withIds(load('collages',[]).filter(c=>c.els.every(e=>e.kind!=='img'||has(e.pid)))));
+  const [collages,setCollages]=useState(()=>withIds(load('collages',[])));
   const [likes,setLikes]=useState([]);const [recent,setRecent]=useState([]);
   const [inspo,setInspo]=useState(()=>load('inspo',INSPO_SEED));const [roomWall,setRoomWall]=useState(null);
   useEffect(()=>store('inspo',inspo),[inspo]);
@@ -3781,9 +3792,9 @@ export function App(){
     else if(tray.projects.some(p=>p.items.length))push('tray',tray);
     const remoteBoards=Array.isArray(remote.boards)?remote.boards:[];
     const localBoards=boards.filter(b=>b.pins.length&&!remoteBoards.some(r=>r.id===b.id));
-    if(remoteBoards.length){const merged=[...remoteBoards.map(b=>({...b,pins:b.pins.filter(x=>has(x.pid))})),...localBoards];setBoards(merged);if(localBoards.length)push('boards',merged)}
+    if(remoteBoards.length){const merged=[...remoteBoards,...localBoards];setBoards(merged);if(localBoards.length)push('boards',merged)}
     else if(localBoards.length)push('boards',boards);
-    if(Array.isArray(remote.collages))setCollages(withIds(remote.collages.filter(c=>c.els.every(e=>e.kind!=='img'||has(e.pid)))));
+    if(Array.isArray(remote.collages))setCollages(withIds(remote.collages));
     if(Array.isArray(remote.inspo))setInspo(l=>[...remote.inspo,...l.filter(x=>!/^https?:/.test(x.src)&&!remote.inspo.some(y=>y.id===x.id))]);
     if(!Array.isArray(remote.collages)&&collages.length)push('collages',collages.map(c=>({...c,bg:c.bg?.img?.startsWith('data:')?{color:'#EFE6D8'}:c.bg,els:c.els.filter(e=>!String(e.src||'').startsWith('data:'))})));
   },[me.signedIn,remote]);
@@ -3803,7 +3814,7 @@ export function App(){
   const imageSearch=f=>{const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{const c=document.createElement('canvas');c.width=c.height=48;const g=c.getContext('2d');g.drawImage(img,0,0,48,48);const d=g.getImageData(0,0,48,48).data;const buckets={};for(let i=0;i<d.length;i+=4){const k=[d[i]>>5,d[i+1]>>5,d[i+2]>>5].join();(buckets[k]=buckets[k]||{n:0,r:0,g:0,b:0});const B=buckets[k];B.n++;B.r+=d[i];B.g+=d[i+1];B.b+=d[i+2]}
     const pal=Object.values(buckets).sort((a,b)=>b.n-a.n).slice(0,5).map(B=>rgb2hex(B.r/B.n,B.g/B.n,B.b/B.n));setImgQ({src:r.result,pal});setQuery('');go('discover')};img.src=r.result};r.readAsDataURL(f)};
   const toStudio=(ids,title)=>{setStudioSeed({ids,title:title||'New collage'});setNonce(n=>n+1);setPin(null);go('studio')};
-  const openPin=id=>{setPin(id);if(id)setRecent(r=>[id,...r.filter(x=>x!==id)].slice(0,8))};
+  const openPin=id=>{if(id&&!has(id)){toast('This product is unavailable.');return}setPin(id);if(id)setRecent(r=>[id,...r.filter(x=>x!==id)].slice(0,8))};
   const addToProject=(pid,qty,projId,zone,fromEl,quiet)=>{const selected=BY_ID.get(pid);if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==projId)return p;const z=zone||p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));fly(fromEl);if(!quiet){const pn=(tray.projects.find(p=>p.id===projId)||{}).name||'project';toast(byId(pid).name+' added to '+pn+(zone?' · '+zone:''),{label:'Open tray',fn:()=>{setPin(null);setTray(true)}})}};
   const createProject=name=>{const id=uid();setTrayState(t=>({...t,projects:[...t.projects,{id,name,target:20,zones:['Main room'],items:[]}]}));toast(`Project "${name}" created`);return id};
   const addZone=(pid,z)=>setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===pid&&!p.zones.includes(z)?{...p,zones:[...p.zones,z]}:p)}));
@@ -3818,7 +3829,7 @@ export function App(){
     <${DeliveryQuoteAccess}/>
     ${route.startsWith('b/')?html`<${SharedBoard} key=${route} ctx=${ctx} slug=${route.slice(2)}/>`:html`<${Page} key=${route+(route==='studio'?nonce:'')} ctx=${ctx}/>`}
     ${route!=='studio'&&route!=='room'&&html`<${TabBar} ctx=${ctx}/>`}
-    ${pin&&html`<${PinDetail} ctx=${ctx}/>`}
+    ${pin&&(has(pin)?html`<${PinDetail} ctx=${ctx}/>`:html`<${Modal} open=${true} label="Product unavailable" onClose=${()=>setPin(null)}><p>This product is no longer available. Your saved items are preserved.</p><button className="btn btn-line" onClick=${()=>setPin(null)}>Close</button><//>`)}
     ${trayOpen&&html`<${Tray} ctx=${ctx}/>`}
     ${menu&&html`<${IndexMenu} ctx=${ctx}/>`}
     <${Toast} t=${toastS} onClose=${()=>setToastS(null)}/>

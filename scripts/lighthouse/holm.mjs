@@ -12,7 +12,7 @@ const stubs = {
   auth: `export const useAuthActions=()=>({signIn:async()=>{throw Error('No auth permitted')},signOut:async()=>{throw Error('No auth permitted')}});export const useAuthToken=()=>null;`,
   convex: `import{getFunctionName}from'convex/server';export const useQuery=(ref)=>getFunctionName(ref)==='holm:me'?{signedIn:false,verified:false,admin:false,tradeStatus:'none'}:undefined;export const useQueries=q=>Object.fromEntries(Object.keys(q).map(k=>[k,undefined]));export const useMutation=()=>async()=>{window.fixtureCommands=(window.fixtureCommands||0)+1;throw Error('No mutation permitted')};export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});export const useAction=useMutation;export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});`,
 };
-const entry = `import React from'react';import{createRoot}from'react-dom/client';import{App,setProducts}from'./trade/app';const image='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';const products=Array.from({length:24},(_,i)=>({id:i+1,lid:'fixture'+i,vid:'fixture'+i,variants:[],name:'Fixture '+(i+1),full:'Fixture '+(i+1),line:'Chair',type:'sofa',mat:'leather',tone:'#6B4A33',price:100,trade:null,seats:1,oos:false,note:'Fixture only',facts:'',img:image,imgs:[image],ar:1,sku:'FIXTURE',likes:0,widthCm:50,dimsCm:{w:50,d:50,h:50},dimsSource:'fixture',cutout:null,cutAR:null,model:null,modelLow:null,hangs:false,mountCm:null,minimum:1,increment:1,checkoutMode:'quote'}));setProducts(products);createRoot(document.getElementById('root')).render(<App/>);`;
+const entry = `import React from'react';import{createRoot}from'react-dom/client';import{App,setProducts}from'./trade/app';const image='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';const products=Array.from({length:24},(_,i)=>({id:i+1,lid:'fixture'+i,vid:'fixture'+i,variants:[],name:'Fixture '+(i+1),full:'Fixture '+(i+1),line:'Chair',type:'sofa',mat:'leather',tone:'#6B4A33',price:100,trade:null,seats:1,oos:false,note:'Fixture only',facts:'',img:image,imgs:[image],ar:1,sku:'FIXTURE',likes:0,widthCm:50,dimsCm:{w:50,d:50,h:50},dimsSource:'fixture',cutout:null,cutAR:null,model:null,modelLow:null,hangs:false,mountCm:null,minimum:1,increment:1,checkoutMode:'quote'}));setProducts(products);const root=createRoot(document.getElementById('root'));root.render(<App/>);window.fixtureRemoveProduct=id=>{setProducts(products.filter(p=>p.id!==id));root.render(<App fixtureRevision={Date.now()}/>)};`;
 const bundle = await build({
   stdin: { contents: entry, resolveDir: process.cwd(), loader: 'tsx' },
   bundle: true,
@@ -85,6 +85,13 @@ try {
   assert.equal(await page.evaluate(() => document.activeElement.className), 'pin-open');
   await page.click('[aria-label="Open project tray"]');
   await page.waitForSelector('dialog[aria-label="Project tray"]');
+  await page.$eval('.tv-quote', button => button.scrollIntoView({ block: 'center' }));
+  await page.waitForFunction(() => {
+    const button = document.querySelector('.tv-quote');
+    if (!button) return false;
+    const rect = button.getBoundingClientRect();
+    return button.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+  });
   await page.click('.tv-quote');
   await page.waitForSelector('dialog[aria-label="Client quotes"]');
   for (let i = 0; i < 8; i++) {
@@ -126,10 +133,19 @@ try {
   );
   assert.equal(await page.evaluate(() => document.body.style.overflow), '');
   assert.equal(await page.evaluate(() => window.fixtureCommands || 0), 0);
+  await page.click('[aria-label="View Fixture 1 Chair"]');
+  await page.waitForSelector('dialog');
+  await page.evaluate(() => window.fixtureRemoveProduct(1));
+  await page.waitForSelector('dialog[aria-label="Product unavailable"]');
+  assert.equal(await page.$eval('dialog', node => [...node.querySelectorAll('button')].some(b => /Add.*project|Add.*tray/i.test(b.textContent))), false);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('dialog'));
+  assert.equal(await page.evaluate(() => document.body.style.overflow), '');
   const result = {
     scope:
       'Actual HOLM App with 24 explicit fixture products; queries mocked, commands prohibited, network blocked',
     keyboardOpensProduct: true,
+    removedOpenProductBlocked: true,
     focusContained: true,
     escapeRestoresCard: true,
     nestedTrayQuote: true,
