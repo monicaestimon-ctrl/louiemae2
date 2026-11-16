@@ -227,6 +227,11 @@ try {
     await page.evaluate(() => [...document.querySelectorAll('main button')].find(b => b.textContent === 'Shop').click());
     assert.equal(await page.evaluate(() => [...document.querySelectorAll('main button')].find(b => b.textContent === 'Add all to tray').disabled), true);
     assert.equal(await page.evaluate(() => window.fixtureCommands || 0), 0);
+    await page.evaluate(() => [...document.querySelectorAll('main button')].find(b => b.textContent.trim() === 'Share').click());
+    await page.waitForSelector('dialog[aria-label="Review unavailable items"]');
+    assert.equal(await page.evaluate(() => window.fixtureCommands || 0), 0);
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('dialog'));
     await page.evaluate(() => {
       localStorage.setItem('hol:room', JSON.stringify({ W: 8, D: 6, H: 3, items: [{ uid: 'first', pid: 99999, x: -2, z: 3, rot: 45 }, { uid: 'second', pid: 99998, x: 4, z: -1, rot: 10 }] }));
       location.hash = 'room';
@@ -239,7 +244,7 @@ try {
     const roomAfter = await page.evaluate(() => JSON.parse(localStorage.getItem('hol:room')));
     assert.deepEqual(roomAfter.items, [roomBefore.items[1]]);
     assert.equal(await page.evaluate(() => window.fixtureCommands || 0), 0);
-    results.push({ source, missingDraftRetained: true, boardsAndCollagesRetained: true, unavailableBoardPurchaseBlocked: true, plannerRetainedUntilExplicitRemoval: true, checkoutBlocked: true, businessCommands: 0 });
+    results.push({ source, missingDraftRetained: true, boardsAndCollagesRetained: true, unavailableBoardPurchaseBlocked: true, unavailableSharingBlocked: true, plannerRetainedUntilExplicitRemoval: true, checkoutBlocked: true, businessCommands: 0 });
   }
   assert.deepEqual(pageErrors, []);
   await writeFile(

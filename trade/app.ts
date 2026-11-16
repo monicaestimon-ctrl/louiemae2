@@ -2396,6 +2396,7 @@ function ShareSheet({ctx,title,doc,image,ids,boardKey,room,units,onClose}){
   const [m,setM]=useState('shop');const [links,setLinks]=useState({});const [busy,setBusy]=useState('');const [err,setErr]=useState('');const [view,setView]=useState('routes');
   const [qr,setQr]=useState(false);const [qrFor,setQrFor]=useState(null);
   const share=useMutation(api.holmSync.shareBoard);const uploadCover=useAction(api.holmSync.uploadCover);
+  if((ids||[]).some(id=>!has(id)))return html`<${Modal} open label="Review unavailable items" onClose=${onClose}><h2>Review unavailable items before sharing</h2><p>Your saved composition is preserved. Remove or replace unavailable pieces before creating a link or export.</p><button className="btn btn-line" onClick=${onClose}>Close</button><//>`;
   const counts={};(ids||[]).forEach(id=>{if(has(id))counts[id]=(counts[id]||0)+1});const pieces=Object.keys(counts).map(Number);
   const shop=m==='shop';const prices=shop;
   const boardCanvas=async w=>{if(doc)return renderBoard(doc,w);const im=await loadImg(image);const c=document.createElement('canvas');c.width=w;c.height=Math.round(w*im.height/im.width);c.getContext('2d').drawImage(im,0,0,c.width,c.height);return c};
