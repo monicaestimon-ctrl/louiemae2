@@ -1,12 +1,13 @@
 import type { HolmProduct } from './catalog';
+import { resolveProjectProduct, type SavedProductIdentity } from './projectIdentity';
 
 /** Saved numeric IDs must resolve exactly; a missing piece can never become another product. */
-export function projectLines(items: { pid: number; vid?: string; qty: number }[], products: Map<number, HolmProduct>) {
+export function projectLines(items: (SavedProductIdentity & { qty: number })[], products: ReadonlyMap<number, HolmProduct>) {
   const lines: { productId: string; variantId: string; packs: number }[] = [];
   const errors: string[] = [];
   for (const item of items) {
-    const p = products.get(item.pid);
-    if (!p || (item.vid && item.vid !== p.vid)) { errors.push(`Saved item ${item.pid} is no longer available. Remove it or choose a replacement.`); continue; }
+    const p = resolveProjectProduct(item, products);
+    if (!p) { errors.push(`Saved item ${item.pid} is no longer available. Remove it or choose a replacement.`); continue; }
     if (!p.lid || !p.vid || p.oos || !Number.isSafeInteger(item.qty) || item.qty < p.minimum ||
       !Number.isSafeInteger(p.increment) || p.increment < 1 || (item.qty - p.minimum) % p.increment !== 0) {
       errors.push(`${p.name}: confirm availability and the required pack quantity.`); continue;

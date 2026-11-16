@@ -11,7 +11,7 @@ const css = assets.find((file) => /^trade-.*\.css$/.test(file));
 assert.ok(css, 'Missing trade stylesheet. Run npm run build first.');
 const stubs = {
   auth: `export const useAuthActions=()=>({signIn:async()=>{throw Error('No auth permitted')},signOut:async()=>{throw Error('No auth permitted')}});export const useAuthToken=()=>null;`,
-  convex: `import{getFunctionName}from'convex/server';export const useQuery=(ref)=>getFunctionName(ref)==='holm:me'?{signedIn:true,verified:true,admin:false,tradeStatus:'approved',businessName:'',email:''}:undefined;export const useQueries=q=>Object.fromEntries(Object.keys(q).map(k=>[k,undefined]));export const useMutation=ref=>async()=>{if(getFunctionName(ref)==='holm:ensureProfile')return null;window.fixtureCommands=(window.fixtureCommands||0)+1;return new Promise((_,reject)=>{window.rejectFixtureQuote=()=>reject({data:{code:'RATE_LIMITED',message:'You have sent several requests. Please wait an hour before sending another.'}})})};export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});export const useAction=useMutation;export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});`,
+  convex: `import{getFunctionName}from'convex/server';export const useQuery=(ref)=>getFunctionName(ref)==='holm:me'?{signedIn:true,verified:true,admin:false,tradeStatus:'approved',businessName:'',email:''}:getFunctionName(ref)==='holmSync:load'?window.fixtureRemote:undefined;export const useQueries=q=>Object.fromEntries(Object.keys(q).map(k=>[k,undefined]));export const useMutation=ref=>async()=>{if(getFunctionName(ref)==='holm:ensureProfile'||getFunctionName(ref)==='holmSync:save')return null;window.fixtureCommands=(window.fixtureCommands||0)+1;return new Promise((_,reject)=>{window.rejectFixtureQuote=()=>reject({data:{code:'RATE_LIMITED',message:'You have sent several requests. Please wait an hour before sending another.'}})})};export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});export const useAction=useMutation;export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});`,
 };
 const entry = `import React from'react';import{createRoot}from'react-dom/client';import{App,setProducts}from'./trade/app';const image='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';const products=Array.from({length:24},(_,i)=>({id:i+1,lid:'fixture'+i,vid:'fixture'+i,variants:[],name:'Fixture '+(i+1),full:'Fixture '+(i+1),line:'Chair',type:'sofa',mat:'leather',tone:'#6B4A33',price:100,trade:80,seats:1,oos:false,note:'Fixture only',facts:'',img:image,imgs:[image],ar:1,sku:'FIXTURE',likes:0,widthCm:50,dimsCm:{w:50,d:50,h:50},dimsSource:'fixture',cutout:null,cutAR:null,model:null,modelLow:null,hangs:false,mountCm:null,minimum:1,increment:1,checkoutMode:'quote'}));setProducts(products);createRoot(document.getElementById('root')).render(<App/>);`;
 const bundle = await build({
@@ -184,6 +184,35 @@ try {
       pendingGuard: true,
       rejectedDraftRetained: true,
     });
+  }
+  for (const source of ['local', 'account']) {
+    await page.goto('http://fixture.invalid');
+    await page.evaluate((source) => {
+      location.hash = 'discover';
+      localStorage.clear();
+      const tray = { active: 'saved', projects: [{ id: 'saved', name: 'Saved project', target: 2, zones: ['Main room'], items: [{ pid: 99999, lid: 'missing-source', vid: 'missing-option', qty: 2, zone: 'Main room' }] }], later: [{ pid: 99998, lid: 'later-source', vid: 'later-option', qty: 1 }] };
+      if (source === 'local') localStorage.setItem('hol:tray', JSON.stringify(tray));
+      else window.fixtureRemote = { tray };
+    }, source);
+    await page.addStyleTag({ content: await readFile('dist/assets/' + css, 'utf8') });
+    for (const f of bundle.outputFiles.filter((f) => f.path.endsWith('.css'))) await page.addStyleTag({ content: f.text });
+    await page.addStyleTag({ content: await readFile('trade/style.css', 'utf8') });
+    await page.addScriptTag({ content: bundle.outputFiles.find((f) => f.path.endsWith('.js')).text });
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem('hol:tray') || '{}').projects?.some(p => p.id === 'saved'));
+    await page.click('#trayBtn');
+    await page.waitForSelector('.tv');
+    assert.match(await page.$eval('.tv-main', node => node.textContent), /Saved item 99999 is no longer available/);
+    assert.doesNotMatch(await page.$eval('.tv-main', node => node.textContent), /This project is empty/);
+    assert.equal(await page.$eval('.tv-sum .btn-ink', node => node.disabled), true);
+    assert.match(await page.$eval('.tv-sum .total', node => node.textContent), /Review unavailable items/);
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('hol:tray')));
+    assert.equal(saved.projects[0].items[0].lid, 'missing-source');
+    assert.equal(saved.later[0].vid, 'later-option');
+    await page.evaluate(() => [...document.querySelectorAll('button')].find(b => b.textContent.startsWith('Saved for later')).click());
+    assert.match(await page.$eval('.tv-main', node => node.textContent), /Saved item 99998 is unavailable/);
+    assert.doesNotMatch(await page.$eval('.tv-main', node => node.textContent), /Nothing saved for later/);
+    assert.equal(await page.evaluate(() => window.fixtureCommands || 0), 0);
+    results.push({ source, missingDraftRetained: true, checkoutBlocked: true, businessCommands: 0 });
   }
   assert.deepEqual(pageErrors, []);
   await writeFile(

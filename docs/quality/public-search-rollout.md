@@ -14,7 +14,7 @@ Transactional product and commerce-listing triggers synchronize relevant text/pu
 
 ## Backfill and cutover
 
-Production Convex is currently disabled by the owner's billing/usage limits. No production backfill or activation was performed during implementation. Local fixtures do not establish live index completeness.
+Production Convex was restored on November 16, 2026. The bounded backfill and all verification phases completed with 2,076 checks and no mismatches, and the reader was enabled. Live smoke checks report `ready:true`, an available Bramwell sofa, and unavailable Montrose/Aurelia Ashcroft products. Broader held/private-product and pagination acceptance remains required; this is not complete commerce acceptance. Retained operator evidence is under `artifacts/lighthouse/search-production-*.json` in the implementation workspace.
 
 After service restoration and deployment of this schema/code:
 
@@ -28,7 +28,7 @@ After service restoration and deployment of this schema/code:
 
 These functions are internal operator operations, not anonymous endpoints. The client retains the existing legacy search until the new index is enabled and verified. That fallback is intentionally not full-catalog acceptance. Roll back the reader with `setEnabled({enabled:false})`; retain records for diagnosis. Run a new complete verification after a repair before re-enabling.
 
-The normal Convex codegen command was blocked by the disabled account. Local API declaration entries were updated for the new modules and checked by TypeScript; rerun the normal generator after account restoration before production acceptance.
+The normal Convex generator and its TypeScript check completed after restoration on November 16, 2026. The generated API declarations are now refreshed from the normal generator.
 
 ## Navigation and recovery
 
