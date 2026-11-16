@@ -227,7 +227,19 @@ try {
     await page.evaluate(() => [...document.querySelectorAll('main button')].find(b => b.textContent === 'Shop').click());
     assert.equal(await page.evaluate(() => [...document.querySelectorAll('main button')].find(b => b.textContent === 'Add all to tray').disabled), true);
     assert.equal(await page.evaluate(() => window.fixtureCommands || 0), 0);
-    results.push({ source, missingDraftRetained: true, boardsAndCollagesRetained: true, unavailableBoardPurchaseBlocked: true, checkoutBlocked: true, businessCommands: 0 });
+    await page.evaluate(() => {
+      localStorage.setItem('hol:room', JSON.stringify({ W: 8, D: 6, H: 3, items: [{ uid: 'first', pid: 99999, x: -2, z: 3, rot: 45 }, { uid: 'second', pid: 99998, x: 4, z: -1, rot: 10 }] }));
+      location.hash = 'room';
+    });
+    await page.waitForFunction(() => document.querySelector('main h1')?.textContent === 'Review saved room items');
+    const roomBefore = await page.evaluate(() => JSON.parse(localStorage.getItem('hol:room')));
+    assert.equal(roomBefore.items.length, 2);
+    assert.equal(roomBefore.items[0].x, -2);
+    await page.evaluate(() => [...document.querySelectorAll('main button')].find(b => b.textContent === 'Remove saved item 99999').click());
+    const roomAfter = await page.evaluate(() => JSON.parse(localStorage.getItem('hol:room')));
+    assert.deepEqual(roomAfter.items, [roomBefore.items[1]]);
+    assert.equal(await page.evaluate(() => window.fixtureCommands || 0), 0);
+    results.push({ source, missingDraftRetained: true, boardsAndCollagesRetained: true, unavailableBoardPurchaseBlocked: true, plannerRetainedUntilExplicitRemoval: true, checkoutBlocked: true, businessCommands: 0 });
   }
   assert.deepEqual(pageErrors, []);
   await writeFile(

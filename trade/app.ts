@@ -4,6 +4,8 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useId, useMemo, st
 import htm from 'htm';
 import type { HolmProduct } from './catalog';
 import { displayProduct } from './catalogLookup';
+import { unresolvedPlannerItems } from './plannerDraft';
+import { PlannerReview } from './PlannerReview';
 import { TradeWelcome } from './TradeWelcome';
 import { TradeApplication } from './TradeApplication';
 import { BUSINESS_TYPES as BTYPES } from './application';
@@ -2604,6 +2606,12 @@ const plWord=(it,doc)=>`${it.x<-doc.W/6?'left':it.x>doc.W/6?'right':'centre'}${i
 
 /** Keep the planner canvas mounted behind independently dismissible snapshot and render dialogs. */
 function Room({ctx}){
+  const [saved,setSaved]=useState(()=>load('room',null));
+  const missing=unresolvedPlannerItems(saved?.items||[],BY_ID);
+  if(missing.length)return html`<${PlannerReview} missing=${missing} remove=${index=>{const next={...saved,items:saved.items.filter((_,i)=>i!==index)};store('room',next);setSaved(next)}} back=${()=>ctx.go('discover')}/>`;
+  return html`<${ReadyRoom} ctx=${ctx} onDraftChange=${setSaved}/>`;
+}
+function ReadyRoom({ctx,onDraftChange}){
   // Pieces sent here join the saved room. From the Studio's 3D switch (sync) the room follows the board
   // instead: its new pieces arrive and the ones it dropped leave.
   const init=()=>{const saved=load('room',null);const raw=ctx.roomSeed;const sync=!!raw?.sync;const seed=(Array.isArray(raw)?raw:raw?.ids)||[];
@@ -2616,6 +2624,7 @@ function Room({ctx}){
     if(seed.length){items=seed.filter(plReady).map((pid,i,a)=>({pid,x:(i-(a.length-1)/2)*1.7,z:-t.D/2+1.3,rot:0,hang:byId(pid).hangs}))}
     return plReflow({...t,tpl:key,items:items.map(it=>({...it,uid:uid()})),rugs:[],wallImg:ctx.roomWall||null})};
   const [doc,setDoc]=useState(init);const [view,setView]=useState('orbit');const [style,setStyle]=useState('material');const [tod,setTod]=useState(.12);
+  useEffect(()=>onDraftChange(doc),[doc,onDraftChange]);
   const [sel,setSel]=useState(null);const [tab,setTab]=useState('pieces');const [snap,setSnap]=useState(true);const [q,setQ]=useState('');const [cat,setCat]=useState('all');
   const [shot,setShot]=useState(null);const [showPrompt,setShowPrompt]=useState(false);
   const [drawer,setDrawer]=useState(null);const [pop,setPop]=useState(null);const [traySheet,setTraySheet]=useState(false);const [tplAsk,setTplAsk]=useState(null);const [lookOpen,setLookOpen]=useState(false);
@@ -3805,7 +3814,7 @@ export function App(){
   const imageSearch=f=>{const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{const c=document.createElement('canvas');c.width=c.height=48;const g=c.getContext('2d');g.drawImage(img,0,0,48,48);const d=g.getImageData(0,0,48,48).data;const buckets={};for(let i=0;i<d.length;i+=4){const k=[d[i]>>5,d[i+1]>>5,d[i+2]>>5].join();(buckets[k]=buckets[k]||{n:0,r:0,g:0,b:0});const B=buckets[k];B.n++;B.r+=d[i];B.g+=d[i+1];B.b+=d[i+2]}
     const pal=Object.values(buckets).sort((a,b)=>b.n-a.n).slice(0,5).map(B=>rgb2hex(B.r/B.n,B.g/B.n,B.b/B.n));setImgQ({src:r.result,pal});setQuery('');go('discover')};img.src=r.result};r.readAsDataURL(f)};
   const toStudio=(ids,title)=>{setStudioSeed({ids,title:title||'New collage'});setNonce(n=>n+1);setPin(null);go('studio')};
-  const openPin=id=>{setPin(id);if(id)setRecent(r=>[id,...r.filter(x=>x!==id)].slice(0,8))};
+  const openPin=id=>{if(id&&!has(id)){toast('This product is unavailable.');return}setPin(id);if(id)setRecent(r=>[id,...r.filter(x=>x!==id)].slice(0,8))};
   const addToProject=(pid,qty,projId,zone,fromEl,quiet)=>{const selected=BY_ID.get(pid);if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==projId)return p;const z=zone||p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));fly(fromEl);if(!quiet){const pn=(tray.projects.find(p=>p.id===projId)||{}).name||'project';toast(byId(pid).name+' added to '+pn+(zone?' · '+zone:''),{label:'Open tray',fn:()=>{setPin(null);setTray(true)}})}};
   const createProject=name=>{const id=uid();setTrayState(t=>({...t,projects:[...t.projects,{id,name,target:20,zones:['Main room'],items:[]}]}));toast(`Project "${name}" created`);return id};
   const addZone=(pid,z)=>setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===pid&&!p.zones.includes(z)?{...p,zones:[...p.zones,z]}:p)}));
@@ -3820,7 +3829,7 @@ export function App(){
     <${DeliveryQuoteAccess}/>
     ${route.startsWith('b/')?html`<${SharedBoard} key=${route} ctx=${ctx} slug=${route.slice(2)}/>`:html`<${Page} key=${route+(route==='studio'?nonce:'')} ctx=${ctx}/>`}
     ${route!=='studio'&&route!=='room'&&html`<${TabBar} ctx=${ctx}/>`}
-    ${pin&&html`<${PinDetail} ctx=${ctx}/>`}
+    ${pin&&(has(pin)?html`<${PinDetail} ctx=${ctx}/>`:html`<${Modal} open=${true} label="Product unavailable" onClose=${()=>setPin(null)}><p>This product is no longer available. Your saved items are preserved.</p><button className="btn btn-line" onClick=${()=>setPin(null)}>Close</button><//>`)}
     ${trayOpen&&html`<${Tray} ctx=${ctx}/>`}
     ${menu&&html`<${IndexMenu} ctx=${ctx}/>`}
     <${Toast} t=${toastS} onClose=${()=>setToastS(null)}/>
