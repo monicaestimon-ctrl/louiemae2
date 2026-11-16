@@ -191,8 +191,13 @@ try {
       location.hash = 'discover';
       localStorage.clear();
       const tray = { active: 'saved', projects: [{ id: 'saved', name: 'Saved project', target: 2, zones: ['Main room'], items: [{ pid: 99999, lid: 'missing-source', vid: 'missing-option', qty: 2, zone: 'Main room' }] }], later: [{ pid: 99998, lid: 'later-source', vid: 'later-option', qty: 1 }] };
-      if (source === 'local') localStorage.setItem('hol:tray', JSON.stringify(tray));
-      else window.fixtureRemote = { tray };
+      const boards = [{ id: 'saved-board', title: 'Retained board', sections: ['Main'], pins: [{ pid: 99999, sec: 'Main' }] }];
+      const collages = [{ id: 'saved-collage', title: 'Retained collage', els: [{ id: 'image', kind: 'img', pid: 99999, x: 1, y: 2 }] }];
+      if (source === 'local') {
+        localStorage.setItem('hol:tray', JSON.stringify(tray));
+        localStorage.setItem('hol:boards', JSON.stringify(boards));
+        localStorage.setItem('hol:collages', JSON.stringify(collages));
+      } else window.fixtureRemote = { tray, boards, collages };
     }, source);
     await page.addStyleTag({ content: await readFile('dist/assets/' + css, 'utf8') });
     for (const f of bundle.outputFiles.filter((f) => f.path.endsWith('.css'))) await page.addStyleTag({ content: f.text });
@@ -212,7 +217,17 @@ try {
     assert.match(await page.$eval('.tv-main', node => node.textContent), /Saved item 99998 is unavailable/);
     assert.doesNotMatch(await page.$eval('.tv-main', node => node.textContent), /Nothing saved for later/);
     assert.equal(await page.evaluate(() => window.fixtureCommands || 0), 0);
-    results.push({ source, missingDraftRetained: true, checkoutBlocked: true, businessCommands: 0 });
+    await page.keyboard.press('Escape');
+    await page.evaluate(() => { location.hash = 'board'; });
+    await page.waitForFunction(() => document.querySelector('main')?.textContent.includes('Retained board'));
+    assert.match(await page.$eval('main', node => node.textContent), /Unavailable item/);
+    const retained = await page.evaluate(() => ({ boards: JSON.parse(localStorage.getItem('hol:boards')), collages: JSON.parse(localStorage.getItem('hol:collages')) }));
+    assert.equal(retained.boards[0].pins[0].pid, 99999);
+    assert.equal(retained.collages[0].els[0].pid, 99999);
+    await page.evaluate(() => [...document.querySelectorAll('main button')].find(b => b.textContent === 'Shop').click());
+    assert.equal(await page.evaluate(() => [...document.querySelectorAll('main button')].find(b => b.textContent === 'Add all to tray').disabled), true);
+    assert.equal(await page.evaluate(() => window.fixtureCommands || 0), 0);
+    results.push({ source, missingDraftRetained: true, boardsAndCollagesRetained: true, unavailableBoardPurchaseBlocked: true, checkoutBlocked: true, businessCommands: 0 });
   }
   assert.deepEqual(pageErrors, []);
   await writeFile(

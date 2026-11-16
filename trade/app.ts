@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useId, useMemo, startTransition } from 'react';
 import htm from 'htm';
 import type { HolmProduct } from './catalog';
+import { displayProduct } from './catalogLookup';
 import { TradeWelcome } from './TradeWelcome';
 import { TradeApplication } from './TradeApplication';
 import { BUSINESS_TYPES as BTYPES } from './application';
@@ -38,7 +39,7 @@ const TYPE = {sofa:'Sofas',sectional:'Sectionals',ottoman:'Ottomans',bench:'Benc
 let PRODUCTS: HolmProduct[] = [];
 const BY_ID = new Map<number, HolmProduct>();
 export function setProducts(list: HolmProduct[]) { PRODUCTS = list; BY_ID.clear(); list.forEach(p => BY_ID.set(p.id, p)); }
-const byId = (id: number): HolmProduct => BY_ID.get(id) || PRODUCTS[0];
+const byId = (id: number): HolmProduct => displayProduct(BY_ID, id);
 const has = (id: number) => BY_ID.has(id);
 const tp = (p: HolmProduct) => p.trade ?? p.price;
 const pr = (p: HolmProduct, mode: string) => (mode === 'trade' ? tp(p) : p.price);
@@ -203,6 +204,7 @@ function PinCard({p,ctx}){
   const [menu,setMenu]=useState(false);
   const saved=ctx.boards.some(b=>b.pins.some(x=>x.pid===p.id));
   const lastBoard=ctx.boards[0];
+  if(!has(p.id))return html`<div className="pin"><div className="pin-img"><img src=${p.img} alt="Unavailable saved product" style=${{aspectRatio:1}}/></div><div className="pin-meta"><b>${p.name}</b><p>${p.line}. Use Organize to remove this saved item.</p></div></div>`;
   return html`<div className="pin">
     <div className="pin-img">
       <button type="button" className="pin-open" aria-label=${'View '+p.name+' '+p.line} onClick=${()=>ctx.openPin(p.id)}>
@@ -3202,8 +3204,8 @@ function BoardDetail({ctx}){
       ${b.sections.map(s=>html`<button key=${s} className="btn btn-line btn-sm" disabled=${!picked.length} onClick=${()=>{ctx.updateBoard(b.id,x=>({...x,pins:x.pins.map(p=>picked.includes(p.pid)?{...p,sec:s}:p)}));ctx.toast(`Moved ${picked.length} to ${s}`);setPicked([])}}>Move to ${s}</button>`)}
       <button className="btn btn-line btn-sm" style=${{color:'var(--bad)'}} disabled=${!picked.length} onClick=${()=>{ctx.updateBoard(b.id,x=>({...x,pins:x.pins.filter(p=>!picked.includes(p.pid))}));setPicked([])}}>Remove</button></div>`}
     ${tab==='shop'?html`<div className="g2" style=${{marginTop:22}}>
-      <div>${b.pins.map(x=>{const p=byId(x.pid);return html`<div key=${p.id} className="line" style=${{gridTemplateColumns:'88px minmax(0,1fr) auto'}}><button className="th" style=${{backgroundImage:`url(${p.img})`}} onClick=${()=>ctx.openPin(p.id)} aria-label=${'View '+p.name}></button><div><b>${p.name} <span className="mute" style=${{fontWeight:400}}>${p.line}</span></b><div className="meta">${x.sec||'No section'} · <span className="mono">${p.sku}</span></div></div><div className="row"><span className="mono">${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span><button className="ib" aria-label=${'Add '+p.name+' to tray'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.line').querySelector('.th'))}>${I('plus')}</button></div></div>`})}</div>
-      <div className="panel" style=${{alignSelf:'start',display:'grid',gap:12}}><h3>Shop the board</h3><div className="sumrow"><span>${b.pins.length} pieces</span><span>${fmt(b.pins.reduce((s,x)=>s+pr(byId(x.pid),ctx.mode),0))}</span></div><button className="btn btn-ink" onClick=${()=>{b.pins.forEach(x=>ctx.addToTray(x.pid,1,null,true));ctx.toast(`${b.pins.length} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Add all to tray</button><p className="help">Shared in shoppable mode, this tab is what your client sees, with your partner link attached.</p></div>
+      <div>${b.pins.map(x=>{const p=byId(x.pid);return html`<div key=${p.id} className="line" style=${{gridTemplateColumns:'88px minmax(0,1fr) auto'}}><button className="th" style=${{backgroundImage:`url(${p.img})`}} onClick=${()=>ctx.openPin(p.id)} aria-label=${'View '+p.name}></button><div><b>${p.name} <span className="mute" style=${{fontWeight:400}}>${p.line}</span></b><div className="meta">${x.sec||'No section'} · <span className="mono">${p.sku}</span></div></div><div className="row"><span className="mono">${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span><button className="ib" disabled=${!has(p.id)} aria-label=${'Add '+p.name+' to tray'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.line').querySelector('.th'))}>${I('plus')}</button></div></div>`})}</div>
+      <div className="panel" style=${{alignSelf:'start',display:'grid',gap:12}}><h3>Shop the board</h3><div className="sumrow"><span>${b.pins.length} pieces</span><span>${fmt(b.pins.reduce((s,x)=>s+pr(byId(x.pid),ctx.mode),0))}</span></div><button className="btn btn-ink" disabled=${b.pins.some(x=>!has(x.pid))} onClick=${()=>{if(b.pins.some(x=>!has(x.pid)))return;b.pins.forEach(x=>ctx.addToTray(x.pid,1,null,true));ctx.toast(`${b.pins.length} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Add all to tray</button><p className="help">Shared in shoppable mode, this tab is what your client sees, with your partner link attached.</p></div>
     </div>`:html`<div className=${org?'wall organize':'wall'}>${pins.map(p=>org?html`<button key=${p.id} className="pin" onClick=${()=>setPicked(picked.includes(p.id)?picked.filter(x=>x!==p.id):[...picked,p.id])} aria-pressed=${picked.includes(p.id)}><div className="pin-img" style=${{outline:picked.includes(p.id)?'3px solid var(--cognac)':'none',outlineOffset:2}}><img src=${p.img} alt=${p.name} style=${{aspectRatio:p.ar,opacity:picked.includes(p.id)?.75:1}}/>${picked.includes(p.id)&&html`<span className="oos" style=${{left:'auto',right:10,top:10,bottom:'auto',background:'var(--cognac)',color:'#fff'}}>Selected</span>`}</div><div className="pin-meta"><b>${p.name}</b></div></button>`:html`<${PinCard} key=${p.id} p=${p} ctx=${ctx}/>`)}</div>`}
     ${share&&html`<${ShareSheet} ctx=${ctx} title=${b.title} doc=${pinsDoc(b.title,b.pins.map(x=>x.pid))} ids=${b.pins.map(x=>x.pid)} boardKey=${'pins-'+b.id} onClose=${()=>setShare(false)}/>`}
   </main>`;
@@ -3755,11 +3757,11 @@ export function App(){
   const [route,setRoute]=useState(getRoute());
   const [space,setSpace]=useState(()=>load('space','bar'));
   const [modePref,setModePref]=useState(()=>load('mode','trade'));const mode=me.verified?modePref:'retail';const setMode=m=>{if(me.verified)setModePref(m)};
-  const [boards,setBoards]=useState(()=>load('boards',BOARD_SEED).map(b=>({...b,pins:b.pins.filter(x=>has(x.pid))})));
+  const [boards,setBoards]=useState(()=>load('boards',BOARD_SEED));
   const [tray,setTrayState]=useState(()=>{const t=load('tray',TRAY_SEED);const projects=(t.projects||[]).map(p=>({...p,items:(p.items||[])}));return projects.length?{...t,taxExempt:false,later:(t.later||[]),projects,active:projects.some(p=>p.id===t.active)?t.active:projects[0].id}:TRAY_SEED});
   // Collages saved before they carried ids get one as they load, so autosave updates them in place.
   const withIds=cs=>cs.map(c=>c.id?c:{...c,id:uid()});
-  const [collages,setCollages]=useState(()=>withIds(load('collages',[]).filter(c=>c.els.every(e=>e.kind!=='img'||has(e.pid)))));
+  const [collages,setCollages]=useState(()=>withIds(load('collages',[])));
   const [likes,setLikes]=useState([]);const [recent,setRecent]=useState([]);
   const [inspo,setInspo]=useState(()=>load('inspo',INSPO_SEED));const [roomWall,setRoomWall]=useState(null);
   useEffect(()=>store('inspo',inspo),[inspo]);
@@ -3781,9 +3783,9 @@ export function App(){
     else if(tray.projects.some(p=>p.items.length))push('tray',tray);
     const remoteBoards=Array.isArray(remote.boards)?remote.boards:[];
     const localBoards=boards.filter(b=>b.pins.length&&!remoteBoards.some(r=>r.id===b.id));
-    if(remoteBoards.length){const merged=[...remoteBoards.map(b=>({...b,pins:b.pins.filter(x=>has(x.pid))})),...localBoards];setBoards(merged);if(localBoards.length)push('boards',merged)}
+    if(remoteBoards.length){const merged=[...remoteBoards,...localBoards];setBoards(merged);if(localBoards.length)push('boards',merged)}
     else if(localBoards.length)push('boards',boards);
-    if(Array.isArray(remote.collages))setCollages(withIds(remote.collages.filter(c=>c.els.every(e=>e.kind!=='img'||has(e.pid)))));
+    if(Array.isArray(remote.collages))setCollages(withIds(remote.collages));
     if(Array.isArray(remote.inspo))setInspo(l=>[...remote.inspo,...l.filter(x=>!/^https?:/.test(x.src)&&!remote.inspo.some(y=>y.id===x.id))]);
     if(!Array.isArray(remote.collages)&&collages.length)push('collages',collages.map(c=>({...c,bg:c.bg?.img?.startsWith('data:')?{color:'#EFE6D8'}:c.bg,els:c.els.filter(e=>!String(e.src||'').startsWith('data:'))})));
   },[me.signedIn,remote]);
