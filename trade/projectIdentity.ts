@@ -2,6 +2,19 @@ import type { HolmProduct } from './catalog';
 
 export type SavedProductIdentity = { pid: number; lid?: string; vid?: string };
 
+/** Target persisted rows exactly; absent source IDs are not wildcards for destructive edits. */
+export function sameSavedRow(a: SavedProductIdentity & { zone?: string }, b: SavedProductIdentity & { zone?: string }) {
+  return a.pid === b.pid && a.lid === b.lid && a.vid === b.vid && a.zone === b.zone;
+}
+
+/** Undo follows the original project, even if the active project has changed. */
+export function restoreProjectItem<T extends SavedProductIdentity & { qty: number; zone?: string }, P extends { id: string; items: T[] }>(
+  projects: readonly P[], projectId: string, item: T
+): P[] {
+  return projects.map(project => project.id === projectId
+    ? { ...project, items: mergeProjectItem(project.items, item) } : project);
+}
+
 /** Distinct saved variants remain distinct lines even when they share a product and room. */
 export function sameProjectSelection(a: SavedProductIdentity, b: SavedProductIdentity) {
   return a.pid === b.pid && (!a.lid || !b.lid || a.lid === b.lid) && a.vid === b.vid;

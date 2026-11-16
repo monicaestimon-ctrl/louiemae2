@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { HolmProduct } from './catalog';
-import { mergeProjectItem, projectItemKey, resolveProjectItems, resolveProjectProduct, sameProjectSelection } from './projectIdentity';
+import { mergeProjectItem, projectItemKey, resolveProjectItems, resolveProjectProduct, sameProjectSelection, sameSavedRow, restoreProjectItem } from './projectIdentity';
 import { projectLines } from './projectLines';
 
 const product = {
@@ -9,6 +9,22 @@ const product = {
   variants: [{ id: 'saved-option', name: 'Walnut', retail: 14000, trade: 11000, minimum: 2, increment: 2 }],
 } as HolmProduct;
 const products = new Map([[1, product]]);
+
+it('targets an unavailable source row without removing the compatible legacy row or another room', () => {
+  const removed = { pid: 1, lid: 'old-source', vid: 'v', zone: 'Room', qty: 2 };
+  const legacy = { pid: 1, vid: 'v', zone: 'Room', qty: 3 };
+  const otherRoom = { ...removed, zone: 'Office' };
+  expect([removed, legacy, otherRoom].filter(row => !sameSavedRow(row, removed))).toEqual([legacy, otherRoom]);
+  expect(sameProjectSelection(removed, legacy)).toBe(true);
+});
+
+it('undo restores quantity to the original project after switching and never recreates deleted projects', () => {
+  const item = { pid: 1, lid: 'a', vid: 'v', zone: 'Room', qty: 2 };
+  const projects = [{ id: 'A', items: [{ ...item, qty: 1 }] }, { id: 'B', items: [{ ...item, qty: 4 }] }];
+  expect(restoreProjectItem(projects, 'A', item).map(p => p.items[0].qty)).toEqual([3, 4]);
+  expect(restoreProjectItem(projects.slice(1), 'A', item)).toEqual(projects.slice(1));
+  expect(projects.map(p => p.items[0].qty)).toEqual([1, 4]);
+});
 
 it('preserves a saved non-default option with its current price and pack rules', () => {
   const item = { pid: 1, lid: 'product-a', vid: 'saved-option', qty: 2 };
