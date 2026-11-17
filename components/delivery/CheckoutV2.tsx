@@ -45,7 +45,7 @@ type Est = {
  * estimate; a changed total must be accepted before paying.
  */
 type CheckoutLine = { productId: string; variantId: string; packs: number };
-export default function CheckoutV2({ draftState }: { draftState?: CheckoutDraftRef } = {}) {
+export default function CheckoutV2({ draftRef }: { draftRef?: CheckoutDraftRef } = {}) {
   const { items } = useCart();
   const lines = useMemo(
     () =>
@@ -56,16 +56,16 @@ export default function CheckoutV2({ draftState }: { draftState?: CheckoutDraftR
       })),
     [items]
   );
-  return <DeliveryCheckout lines={lines} draftState={draftState} />;
+  return <DeliveryCheckout lines={lines} draftRef={draftRef} />;
 }
 export function DeliveryCheckout({
   lines,
   channel = 'retail',
-  draftState,
+  draftRef,
 }: {
   lines: CheckoutLine[];
   channel?: 'retail' | 'trade';
-  draftState?: CheckoutDraftRef;
+  draftRef?: CheckoutDraftRef;
 }) {
   const authToken = useAuthToken();
   const formId = useId();
@@ -89,7 +89,7 @@ export function DeliveryCheckout({
     return () => clearInterval(timer);
   }, []);
   const estimate = useDeliveryRequest('estimate');
-  const [address, setAddress] = useState(() => draftState?.current?.address ?? ({
+  const [address, setAddress] = useState(() => draftRef?.current?.address ?? ({
     recipientName: '',
     phone: '',
     line1: '',
@@ -99,14 +99,14 @@ export function DeliveryCheckout({
     postalCode: '',
     country: 'US',
   }));
-  const [access, setAccess] = useState(() => draftState?.current?.access ?? STANDARD_ACCESS);
-  const [email, setEmail] = useState(() => draftState?.current?.email ?? '');
+  const [access, setAccess] = useState(() => draftRef?.current?.access ?? STANDARD_ACCESS);
+  const [email, setEmail] = useState(() => draftRef?.current?.email ?? '');
   // Store credit (v2): comes off merchandise only, never delivery or tax.
   const credit = useQuery(api.ldgCredits.myCreditV2);
-  const [useCredit, setUseCredit] = useState(() => draftState?.current?.useCredit ?? false);
+  const [useCredit, setUseCredit] = useState(() => draftRef?.current?.useCredit ?? false);
   useEffect(() => {
-    if (draftState) draftState.current = { address, access, email, useCredit };
-  }, [draftState, address, access, email, useCredit]);
+    if (draftRef) draftRef.current = { address, access, email, useCredit };
+  }, [draftRef, address, access, email, useCredit]);
   const [est, setEst] = useState<Est | null>(null);
   const [accepted, setAccepted] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);

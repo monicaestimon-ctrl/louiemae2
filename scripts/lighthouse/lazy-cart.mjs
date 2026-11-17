@@ -1,6 +1,7 @@
 /* global document, window, localStorage, innerHeight */
 import { build } from 'esbuild';
 import puppeteer from 'puppeteer-core';
+import axe from 'axe-core';
 import { createServer } from 'node:http';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { basename } from 'node:path';
@@ -118,87 +119,112 @@ const browser = await puppeteer.launch({
 const results = [];
 await mkdir('artifacts/lighthouse', { recursive: true });
 try {
-  for (const scenario of ['held', 'failed']) {
-    mode = scenario;
-    drawerRequests = 0;
-    const page = await browser.newPage();
-    await page.setViewport({ width: 390, height: 844 });
-    await page.evaluateOnNewDocument(() => {
-      localStorage.setItem(
-        'louiemae_ashcroft_cart_v1',
-        JSON.stringify([
-          {
-            product: {
-              id: 'fixture',
-              name: 'Fixture chair',
-              price: 100,
-              category: 'Furniture',
-              images: [],
-              fulfillmentProvider: 'zuo',
-              variants: [{ id: 'fixture-variant', name: 'Standard' }],
+  for (const [width, height] of [
+    [320, 900],
+    [844, 390],
+    [1440, 900],
+  ])
+    for (const scenario of ['held', 'failed']) {
+      mode = scenario;
+      drawerRequests = 0;
+      const page = await browser.newPage();
+      await page.setViewport({ width, height });
+      await page.evaluateOnNewDocument(() => {
+        localStorage.setItem(
+          'louiemae_ashcroft_cart_v1',
+          JSON.stringify([
+            {
+              product: {
+                id: 'fixture',
+                name: 'Fixture chair',
+                price: 100,
+                category: 'Furniture',
+                images: [
+                  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+                ],
+                fulfillmentProvider: 'zuo',
+                variants: [{ id: 'fixture-variant', name: 'Standard' }],
+              },
+              quantity: 2,
             },
-            quantity: 2,
-          },
-        ])
-      );
-    });
-    await page.goto(origin, { waitUntil: 'networkidle0' });
-    await page.waitForSelector('#open');
-    assert.equal(drawerRequests, 0);
-    assert.equal(await page.evaluate(() => window.fixtureDrawerEvaluations || 0), 0);
-    await page.click('#open');
-    await page.waitForSelector('dialog[open]', { visible: true });
-    if (scenario === 'held') {
-      await page.waitForFunction(() =>
-        document.querySelector('[role=status]')?.textContent.includes('Opening your cart')
-      );
-      await page.keyboard.press('Escape');
-      await page.waitForFunction(() => !document.querySelector('dialog[open]'));
-      assert.equal(await page.evaluate(() => document.activeElement.id), 'open');
-      mode = 'ready';
-      held.splice(0).forEach((send) => send());
-      await page.waitForFunction(() => window.fixtureDrawerEvaluations === 1);
-      assert.equal(await page.$('dialog[open]'), null);
+          ])
+        );
+      });
+      await page.goto(origin, { waitUntil: 'networkidle0' });
+      await page.waitForSelector('#open');
+      await page.addScriptTag({ content: axe.source });
+      const checkAxe = async () =>
+        assert.deepEqual(await page.evaluate(async () => (await window.axe.run()).violations), []);
+      assert.equal(drawerRequests, 0);
+      assert.equal(await page.evaluate(() => window.fixtureDrawerEvaluations || 0), 0);
       await page.click('#open');
-      await page.waitForSelector('input[autocomplete=name]');
-      await page.type('input[autocomplete=name]', 'Retained customer');
-      await page.keyboard.press('Escape');
-      await page.waitForFunction(() => !document.querySelector('dialog[open]'));
-      await page.click('#open');
-      await page.waitForSelector('input[autocomplete=name]');
-      assert.equal(
-        await page.$eval('input[autocomplete=name]', (n) => n.value),
-        'Retained customer'
-      );
-      const review = await page.$('form[aria-label="Delivery address"] button[type=submit]');
-      assert.ok(review);
-      await review.scrollIntoView();
-      await review.focus();
-      const reachable = await review.evaluate(node => { const rect = node.getBoundingClientRect(); return document.activeElement === node && rect.top >= 0 && rect.bottom <= innerHeight; });
-      assert.equal(reachable, true, 'Delivery review must remain reachable in the scrolling drawer');
-      await page.screenshot({ path: 'artifacts/lighthouse/lazy-cart-review-mobile.png' });
-      await page.$eval('[data-cart-panel]', node => { node.scrollTop = 0; });
-      assert.equal(drawerRequests, 1);
-      assert.equal(await page.evaluate(() => document.body.textContent.includes('Pay $')), false);
-    } else {
-      await page.waitForSelector('[role=alert]', { visible: true });
-      assert.match(await page.$eval('[role=alert]', (n) => n.textContent), /could not be opened/);
-      await page.keyboard.press('Escape');
-      await page.waitForFunction(() => !document.querySelector('dialog[open]'));
-      assert.equal(await page.evaluate(() => document.activeElement.id), 'open');
+      await page.waitForSelector('dialog[open]', { visible: true });
+      if (scenario === 'held') {
+        await page.waitForFunction(() =>
+          document.querySelector('[role=status]')?.textContent.includes('Opening your cart')
+        );
+        await checkAxe();
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'open');
+        mode = 'ready';
+        held.splice(0).forEach((send) => send());
+        await page.waitForFunction(() => window.fixtureDrawerEvaluations === 1);
+        assert.equal(await page.$('dialog[open]'), null);
+        await page.click('#open');
+        await page.waitForSelector('input[autocomplete=name]');
+        await page.type('input[autocomplete=name]', 'Retained customer');
+        await checkAxe();
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+        await page.click('#open');
+        await page.waitForSelector('input[autocomplete=name]');
+        assert.equal(
+          await page.$eval('input[autocomplete=name]', (n) => n.value),
+          'Retained customer'
+        );
+        const review = await page.$('form[aria-label="Delivery address"] button[type=submit]');
+        assert.ok(review);
+        await review.scrollIntoView();
+        await review.focus();
+        const reachable = await review.evaluate((node) => {
+          const rect = node.getBoundingClientRect();
+          return document.activeElement === node && rect.top >= 0 && rect.bottom <= innerHeight;
+        });
+        assert.equal(
+          reachable,
+          true,
+          'Delivery review must remain reachable in the scrolling drawer'
+        );
+        await page.screenshot({ path: `artifacts/lighthouse/lazy-cart-review-${width}.png` });
+        await page.$eval('[data-cart-panel]', (node) => {
+          node.scrollTop = 0;
+        });
+        await checkAxe();
+        assert.equal(drawerRequests, 1);
+        assert.equal(await page.evaluate(() => document.body.textContent.includes('Pay $')), false);
+      } else {
+        await page.waitForSelector('[role=alert]', { visible: true });
+        assert.match(await page.$eval('[role=alert]', (n) => n.textContent), /could not be opened/);
+        await checkAxe();
+        await page.keyboard.press('Escape');
+        await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+        assert.equal(await page.evaluate(() => document.activeElement.id), 'open');
+      }
+      assert.equal(await page.$eval('#count', (n) => n.textContent), '2');
+      assert.equal(commands, 0);
+      results.push({
+        scenario,
+        width,
+        height,
+        deferredUntilIntent: true,
+        requests: drawerRequests,
+        cartRetained: true,
+        commands,
+      });
+      await page.screenshot({ path: `artifacts/lighthouse/lazy-cart-${scenario}-${width}.png` });
+      await page.close();
     }
-    assert.equal(await page.$eval('#count', (n) => n.textContent), '2');
-    assert.equal(commands, 0);
-    results.push({
-      scenario,
-      deferredUntilIntent: true,
-      requests: drawerRequests,
-      cartRetained: true,
-      commands,
-    });
-    await page.screenshot({ path: `artifacts/lighthouse/lazy-cart-${scenario}.png` });
-    await page.close();
-  }
   await writeFile(
     'artifacts/lighthouse/lazy-cart-browser.json',
     JSON.stringify(

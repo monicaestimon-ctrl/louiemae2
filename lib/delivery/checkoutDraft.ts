@@ -1,3 +1,4 @@
+import type { RefObject } from 'react';
 import type { DeliveryAccess } from './destination';
 
 /** Contact inputs only, held in page memory. Never retain accepted totals or capabilities. */
@@ -16,7 +17,7 @@ export type CheckoutDraft = {
   email: string;
   useCredit: boolean;
 };
-export type CheckoutDraftRef = { owner: string; current: CheckoutDraft | undefined };
+export type CheckoutDraftRef = RefObject<CheckoutDraft | null>;
 
 /** A memory reset key, not an authorization decision. Token refresh keeps the same subject. */
 export function checkoutDraftOwner(token?: string | null) {
