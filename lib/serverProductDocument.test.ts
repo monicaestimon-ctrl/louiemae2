@@ -32,6 +32,7 @@ describe('initial public product document', () => {
       product.name
     );
     expect(doc.querySelector('img')?.getAttribute('fetchpriority')).toBe('high');
+    expect(doc.querySelector('link[as="image"]')?.getAttribute('href')).toBe(doc.querySelector('img')?.getAttribute('src'));
     const schema = JSON.parse(
       doc.querySelector('script[type="application/ld+json"]')!.textContent!
     );

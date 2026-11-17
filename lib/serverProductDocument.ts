@@ -60,6 +60,9 @@ export function productDocument(
     () => `<title>${escapeHtml(title)}</title>`
   );
   html = html.replace(/<!--home-document-start-->[\s\S]*?<!--home-document-end-->/, '');
+  if (source) {
+    html = html.replace('<head>', () => `<head><link rel="preload" as="image" href="${escapeHtml(image.src)}" ${image.srcSet ? `imagesrcset="${escapeHtml(image.srcSet)}" imagesizes="${PRODUCT_IMAGE_SIZES}"` : ''} fetchpriority="high"/>`);
+  }
   const tags: Record<string, string> = {
     description,
     'og:title': title,
