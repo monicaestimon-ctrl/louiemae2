@@ -47,9 +47,11 @@
       "source": "/collection/:type",
       "destination": "/api/collection?id=:type"
     },
+    { "source": "/admin", "destination": "/index.html" },
+    { "source": "/r/:linkId([a-z0-9]{8,24})", "destination": "/index.html" },
     {
       "source": "/((?!api).*)",
-      "destination": "/index.html"
+      "destination": "/api/not-found"
     }
   ]
 }
