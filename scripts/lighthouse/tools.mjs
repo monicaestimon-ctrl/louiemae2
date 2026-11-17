@@ -92,12 +92,25 @@ try {
   await page.addScriptTag({ content: axe.source });
   const results = [];
   async function check(label, trigger) {
+    let canvasBefore;
+    if (label === 'Share') {
+      await page.click('.sx-board .el');
+      await page.waitForSelector('.sx-board .el.sel');
+      canvasBefore = await page.$$eval('.sx-board .el', nodes => nodes.map(node => ({ id: node.dataset.id, style: node.getAttribute('style') })));
+    }
     await page.click(trigger);
     await page.waitForSelector('dialog[open]');
     assert.equal(
       await page.evaluate(() => document.querySelector('dialog[open]').getAttribute('aria-label')),
       label
     );
+    if (canvasBefore) {
+      await page.keyboard.press('Delete');
+      await page.keyboard.press('ArrowRight');
+      await page.keyboard.down('Control'); await page.keyboard.press('d'); await page.keyboard.up('Control');
+      const canvasAfter = await page.$$eval('.sx-board .el', nodes => nodes.map(node => ({ id: node.dataset.id, style: node.getAttribute('style') })));
+      assert.deepEqual(canvasAfter, canvasBefore, 'Dialog shortcuts must not edit the background Studio canvas.');
+    }
     for (let i = 0; i < 25; i++) {
       await page.keyboard.press('Tab');
       assert.equal(
