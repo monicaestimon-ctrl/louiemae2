@@ -15,7 +15,7 @@ export function deferredFeature<P extends object>(load: () => Promise<{ default:
       if (this.state.failed) return <section role="alert" aria-label={label}>
         <p>{label} could not load. Please try again.</p>
         <button type="button" onClick={this.retry}>Try loading again</button>
-        <p>If this continues, reload the page to get the latest version.</p>
+        <button type="button" onClick={() => window.location.reload()}>Reload page</button>
       </section>;
       const Feature = this.Feature;
       return <Suspense fallback={<LoadingFeature key={this.state.attempt} label={label} retry={this.retry} />}>
