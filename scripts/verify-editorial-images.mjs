@@ -1,3 +1,4 @@
+import { EDITORIAL_WINDOWS, EDITORIAL_WINDOW_RECIPE } from './editorial-image-windows.mjs';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
@@ -24,6 +25,35 @@ for (const record of evidence.records) {
     entry.widths,
     [...new Set(entry.widths)].sort((a, b) => a - b)
   );
+  assert.deepEqual(Object.keys(entry.windows).sort(), Object.keys(EDITORIAL_WINDOWS).sort());
+  for (const [name, ratio] of Object.entries(EDITORIAL_WINDOWS)) {
+    const window = entry.windows[name];
+    const source = record.windows[name];
+    assert.equal(source.recipe, EDITORIAL_WINDOW_RECIPE);
+    assert.equal(window.ratio, ratio);
+    assert.equal(
+      window.base,
+      '/images/opt/editorial/' +
+        hash(record.sha256 + ':' + EDITORIAL_WINDOW_RECIPE + ':' + name).slice(0, 24)
+    );
+    assert.deepEqual(
+      window.widths,
+      source.renditions.map((r) => r.width)
+    );
+    for (const r of source.renditions) {
+      assert.ok(r.width > 0 && r.width <= record.width);
+      assert.equal(r.height, Math.round(r.width * ratio));
+      assert.ok(r.height <= record.height);
+      const bytes = await readFile('public' + window.base + '-' + r.width + '.webp');
+      assert.equal(hash(bytes), r.sha256);
+      assert.equal(bytes.length, r.bytes);
+      assert.ok(bytes.length < 160000);
+      const meta = await sharp(bytes).metadata();
+      assert.equal(meta.format, 'webp');
+      assert.equal(meta.width, r.width);
+      assert.equal(meta.height, r.height);
+    }
+  }
   for (const rendition of record.renditions) {
     assert.ok(rendition.width > 0 && rendition.width <= record.width);
     const bytes = await readFile('public' + entry.base + '-' + rendition.width + '.webp');

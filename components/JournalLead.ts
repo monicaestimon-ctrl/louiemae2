@@ -1,3 +1,4 @@
+import editorialManifest from '../lib/editorialImageManifest.json' with { type: 'json' };
 import React from 'react';
 import { ArrowRight, Calendar, Clock } from 'lucide-react';
 import { responsiveImage } from '../lib/responsiveImage.js';
@@ -59,7 +60,7 @@ export function JournalIndexLead({
           'p',
           {
             className:
-              'font-sans text-muted-earth max-w-lg mx-auto leading-relaxed text-sm tracking-wide',
+              'font-sans text-muted-earth max-w-lg mx-auto leading-relaxed text-sm tracking-wide min-h-[3.25em]',
           },
           'On faith, family, design, and finding beauty in the everyday rhythms of life.'
         )
@@ -87,13 +88,10 @@ export function JournalIndexLead({
                 className:
                   'absolute inset-0 bg-black/10 group-hover:bg-black/5 transition-colors z-10',
               }),
-              React.createElement('img', {
-                loading: 'eager',
-                fetchPriority: 'high',
-                decoding: 'async',
-                ...responsiveImage(featuredPost.image, '100vw'),
-                src: responsiveImage(featuredPost.image).src || undefined,
+              React.createElement(JournalImage, {
+                src: featuredPost.image,
                 alt: '',
+                kind: 'index',
                 className:
                   'w-full h-full object-cover transition-transform duration-[1.5s] ease-out group-hover:scale-105',
               }),
@@ -165,7 +163,6 @@ export function JournalArticleHero({ post }: { post: JournalLeadPost }) {
   return React.createElement(
     React.Fragment,
     null,
-    '            ',
     post.image &&
       React.createElement(
         'div',
@@ -174,12 +171,10 @@ export function JournalArticleHero({ post }: { post: JournalLeadPost }) {
           className:
             'absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-cream z-10',
         }),
-        React.createElement('img', {
-          loading: 'eager',
-          fetchPriority: 'high',
-          decoding: 'async',
-          ...responsiveImage(post.image, '100vw'),
+        React.createElement(JournalImage, {
+          src: post.image,
           alt: post.title,
+          kind: 'article',
           className: 'w-full h-full object-cover',
         })
       )
@@ -257,5 +252,56 @@ export function JournalArticleHeading({
         React.createElement('div', { className: 'h-px w-16 bg-earth/10' })
       )
     )
+  );
+}
+
+type WindowImage = { base: string; widths: number[]; ratio: number };
+type EditorialImage = {
+  windows: Record<'indexMobile' | 'indexDesktop' | 'articleMobile' | 'articleDesktop', WindowImage>;
+};
+function JournalImage({
+  src,
+  alt,
+  kind,
+  className,
+}: {
+  src: string;
+  alt: string;
+  kind: 'index' | 'article';
+  className: string;
+}) {
+  const entries = editorialManifest as Record<string, EditorialImage>;
+  const entry = Object.hasOwn(entries, src) ? entries[src] : undefined;
+  const attrs = {
+    loading: 'eager' as const,
+    fetchPriority: 'high' as const,
+    decoding: 'async' as const,
+    alt,
+    className,
+  };
+  if (!entry)
+    return React.createElement('img', {
+      ...attrs,
+      ...responsiveImage(src, '100vw'),
+      src: responsiveImage(src).src || undefined,
+    });
+  const mobile = entry.windows[`${kind}Mobile`];
+  const desktop = entry.windows[`${kind}Desktop`];
+  const set = (image: WindowImage) =>
+    image.widths.map((width) => `${image.base}-${width}.webp ${width}w`).join(', ');
+  return React.createElement(
+    'picture',
+    { className: 'block w-full h-full' },
+    React.createElement('source', {
+      media: '(min-width: 768px)',
+      srcSet: set(desktop),
+      sizes: '100vw',
+    }),
+    React.createElement('img', {
+      ...attrs,
+      src: `${mobile.base}-${mobile.widths.at(-1)}.webp`,
+      srcSet: set(mobile),
+      sizes: '100vw',
+    })
   );
 }

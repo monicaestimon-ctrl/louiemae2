@@ -1,3 +1,4 @@
+import { EDITORIAL_WINDOWS, EDITORIAL_WINDOW_RECIPE } from './editorial-image-windows.mjs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
@@ -51,16 +52,39 @@ for (const width of widths) {
   await writeFile('public' + base + '-' + width + '.webp', bytes);
   renditions.push({ width, bytes: bytes.length, sha256: hash(bytes) });
 }
+const windows = {};
+const windowEvidence = {};
+for (const [name, ratio] of Object.entries(EDITORIAL_WINDOWS)) {
+  const windowBase =
+    '/images/opt/editorial/' +
+    hash(evidence.sha256 + ':' + EDITORIAL_WINDOW_RECIPE + ':' + name).slice(0, 24);
+  const windowWidths = widths.filter(
+    (width) => width <= evidence.width && Math.round(width * ratio) <= evidence.height
+  );
+  const outputs = [];
+  for (const width of windowWidths) {
+    const height = Math.round(width * ratio);
+    const bytes = await sharp(original)
+      .resize({ width, height, fit: 'cover', position: 'centre', withoutEnlargement: true })
+      .webp({ quality: 85, effort: 6 })
+      .toBuffer();
+    await writeFile('public' + windowBase + '-' + width + '.webp', bytes);
+    outputs.push({ width, height, bytes: bytes.length, sha256: hash(bytes) });
+  }
+  if (!outputs.length) throw Error('Source is too small for reviewed editorial windows');
+  windows[name] = { base: windowBase, widths: windowWidths, ratio };
+  windowEvidence[name] = { recipe: EDITORIAL_WINDOW_RECIPE, ratio, renditions: outputs };
+}
 const manifest = JSON.parse(await readFile('lib/editorialImageManifest.json', 'utf8'));
 const provenance = JSON.parse(
   await readFile('docs/quality/editorial-image-provenance.json', 'utf8')
 );
 if (provenance.recipe !== recipe)
   throw Error('Encoding recipe migration requires a separate review');
-manifest[evidence.source] = { base, widths, ratio: evidence.height / evidence.width };
+manifest[evidence.source] = { base, widths, ratio: evidence.height / evidence.width, windows };
 const records = provenance.records
   .filter((record) => record.source !== evidence.source)
-  .concat({ ...evidence, renditions })
+  .concat({ ...evidence, renditions, windows: windowEvidence })
   .sort((a, b) => a.source.localeCompare(b.source));
 await writeFile('lib/editorialImageManifest.json', JSON.stringify(manifest, null, 2) + '\n');
 await writeFile(

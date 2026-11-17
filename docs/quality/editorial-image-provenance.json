@@ -36,7 +36,153 @@
           "bytes": 135162,
           "sha256": "1b726d8c340e955229d6cd708c254372fbd0387f77ff0f190369c3dbd798ec68"
         }
-      ]
+      ],
+      "windows": {
+        "indexMobile": {
+          "recipe": "editorial-webp-q85-effort6-cover-centre-v1",
+          "ratio": 1.25,
+          "renditions": [
+            {
+              "width": 320,
+              "height": 400,
+              "bytes": 26316,
+              "sha256": "dfe878d64d8ac658d065ef60c9a5af44f8783f85d69cd0bcf75a23080baab8cd"
+            },
+            {
+              "width": 480,
+              "height": 600,
+              "bytes": 46692,
+              "sha256": "5f92220e722965f35eca2df1bd839ef678930f9944a055017766bf28dd6f59da"
+            },
+            {
+              "width": 640,
+              "height": 800,
+              "bytes": 68858,
+              "sha256": "ce7711a91c144b2ec342552e6aa9cc2fee0872370201ed2ee06d519ed56811dc"
+            },
+            {
+              "width": 960,
+              "height": 1200,
+              "bytes": 113108,
+              "sha256": "c007f704c4db00813e257b35028eff0bc5662ff0cf9fcb2b9fac17f972357b52"
+            },
+            {
+              "width": 1024,
+              "height": 1280,
+              "bytes": 120438,
+              "sha256": "687ad6754ea68e40b625b63ec967363b92130047fbd8066b72f6fd4a0a317bfb"
+            }
+          ]
+        },
+        "indexDesktop": {
+          "recipe": "editorial-webp-q85-effort6-cover-centre-v1",
+          "ratio": 0.42857142857142855,
+          "renditions": [
+            {
+              "width": 320,
+              "height": 137,
+              "bytes": 9836,
+              "sha256": "8a8bcdbb5aa5a51521c835a95eccc836fd348a7778b221709a11db8eebdfc274"
+            },
+            {
+              "width": 480,
+              "height": 206,
+              "bytes": 17376,
+              "sha256": "f4d06efafac9877d841c257c100c264c4e7b6a9258a1d2c234ce2ed233e389db"
+            },
+            {
+              "width": 640,
+              "height": 274,
+              "bytes": 25886,
+              "sha256": "18123ea6a6f4be3f6645ad5a78f6e09352a02568ac0970221b531c934051fa17"
+            },
+            {
+              "width": 960,
+              "height": 411,
+              "bytes": 41968,
+              "sha256": "3b6b128b8789e5539da260f348e656560729470b9f6d67052bd86a51f506750d"
+            },
+            {
+              "width": 1024,
+              "height": 439,
+              "bytes": 45956,
+              "sha256": "9b59267e27ac8c56723322db8fbca80fcd8be106c5169c2bb065f60ecbfd20eb"
+            }
+          ]
+        },
+        "articleMobile": {
+          "recipe": "editorial-webp-q85-effort6-cover-centre-v1",
+          "ratio": 0.5625,
+          "renditions": [
+            {
+              "width": 320,
+              "height": 180,
+              "bytes": 13244,
+              "sha256": "9c668ad2605db23ad34404903aece96b8ec6d8a9861a2b5bff45772fd23f2937"
+            },
+            {
+              "width": 480,
+              "height": 270,
+              "bytes": 22910,
+              "sha256": "523e24f118c8bc9f20f356423134b2f44ce0da866f15c2bacb6538f21c3baf28"
+            },
+            {
+              "width": 640,
+              "height": 360,
+              "bytes": 34014,
+              "sha256": "25e006b5be6890bbb772e7491ad4d55e641664f586cd70dc38c72ea68c3d66ba"
+            },
+            {
+              "width": 960,
+              "height": 540,
+              "bytes": 54292,
+              "sha256": "bbebc0aac07bb68189bfe0deebbec0a2dba9b57d5917591546375155e1bc6b12"
+            },
+            {
+              "width": 1024,
+              "height": 576,
+              "bytes": 60068,
+              "sha256": "e71c78709b70380ade6c8a4b42f0216360326946c7d5c669cf3528a2e0560df5"
+            }
+          ]
+        },
+        "articleDesktop": {
+          "recipe": "editorial-webp-q85-effort6-cover-centre-v1",
+          "ratio": 0.3333333333333333,
+          "renditions": [
+            {
+              "width": 320,
+              "height": 107,
+              "bytes": 7574,
+              "sha256": "e33d4b0f6a4959a3399a4de8820a04a6971004018632be5e5c0618da4fd6e5d6"
+            },
+            {
+              "width": 480,
+              "height": 160,
+              "bytes": 13078,
+              "sha256": "27a485794a218901c3405b299fce21fca21345d9cbda66f0d30170dd91c0bbe9"
+            },
+            {
+              "width": 640,
+              "height": 213,
+              "bytes": 19642,
+              "sha256": "85cddb2d1dff78ae915430db19bcf3eda91117e29030c81e3d0de9fcb0c0a5df"
+            },
+            {
+              "width": 960,
+              "height": 320,
+              "bytes": 31538,
+              "sha256": "7a3a82912808af245f10e926703479eac453d11a621293fad841115792dfe812"
+            },
+            {
+              "width": 1024,
+              "height": 341,
+              "bytes": 35422,
+              "sha256": "53a2ef4eaf60c9d584acc1e5a88f8fd638a31c18f4b11d8ecb1c431da042598d"
+            }
+          ]
+        }
+      }
     }
   ]
 }

@@ -16,11 +16,14 @@ const fetchMock = vi.fn();
 it('serves source-bound editorial renditions and leaves replacement uploads untouched', async () => {
   const [source, rendition] = Object.entries(editorialManifest)[0];
   for (const image of [source, `${source}-replacement`]) {
-    fetchMock.mockResolvedValue({ok:true,json:async()=>({status:'success',value:{...article,image}})});
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'success', value: { ...article, image } }),
+    });
     const result = await request('story1');
     expect(result.status).toBe(200);
     if (image === source) {
-      expect(result.body).toContain(`${rendition.base}-640.webp 640w`);
+      expect(result.body).toContain(`${rendition.windows.articleMobile.base}-640.webp 640w`);
       expect(result.body).toContain('aspect-[16/9]');
       expect(result.body.indexOf('aspect-[16/9]')).toBeLessThan(result.body.indexOf('<h1'));
     } else {

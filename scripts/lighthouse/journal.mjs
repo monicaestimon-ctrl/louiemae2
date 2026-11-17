@@ -9,7 +9,12 @@ const css = (await readdir('dist/assets')).find((file) => /^main-.*\.css$/.test(
 assert.ok(css, 'Build before the journal fixture.');
 const editorialManifest = JSON.parse(await readFile('lib/editorialImageManifest.json', 'utf8'));
 const heroEntry = Object.values(editorialManifest)[0];
-const heroBytes = await readFile(`public${heroEntry.base}-${heroEntry.widths[0]}.webp`);
+const heroSource = Object.keys(editorialManifest)[0];
+const allowedImages = new Set(
+  Object.values(heroEntry.windows).flatMap((entry) =>
+    entry.widths.map((width) => `${entry.base}-${width}.webp`)
+  )
+);
 const post = {
   _id: 'journal-fixture',
   id: 'journal-fixture',
@@ -17,7 +22,7 @@ const post = {
   excerpt: 'A public journal story.',
   category: 'Home',
   date: 'November 17, 2026',
-  image: '/fixture-hero.webp',
+  image: heroSource,
   status: 'published',
   content:
     '<h2>Make room for everyday life</h2><p>A readable story with <strong>meaningful details</strong> and a <a href="/shop">shop link</a>.</p><script>window.fixtureAttack=true</script><img src="javascript:bad" onerror="window.fixtureAttack=true">',
@@ -114,8 +119,10 @@ try {
           contentType: 'text/html',
           body: new URL(request.url()).pathname === '/blog' ? initialIndex : initialArticle,
         });
-      else if (new URL(request.url()).pathname === '/fixture-hero.webp') {
-        void request.respond({ status: 200, contentType: 'image/webp', body: heroBytes });
+      else if (allowedImages.has(new URL(request.url()).pathname)) {
+        void readFile('public' + new URL(request.url()).pathname).then(body =>
+          request.respond({ status: 200, contentType: 'image/webp', body })
+        );
       } else void request.abort();
     });
     const geometry = () =>
