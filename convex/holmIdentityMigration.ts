@@ -1,7 +1,14 @@
 import { v } from 'convex/values';
-import { internalMutation } from './_generated/server';
+import { internalMutation, internalQuery } from './_generated/server';
 import { catalogPageOptions } from '../lib/catalogPagination';
 import { HOLM_IDENTITY_VERSION, holmIdentityState, holmIdentityProjection, sameHolmIdentity, syncHolmIdentity, type HolmIdentity } from './holmIdentityMaintenance';
+
+/** Resume preparation after an interrupted operator session without restarting or advancing it. */
+export const status = internalQuery({ args: {}, handler: async ctx => {
+  const current = await holmIdentityState(ctx);
+  return current ? { version: current.version, enabled: current.enabled, phase: current.phase,
+    cursor: current.cursor, checked: current.checked, mismatchIds: current.mismatchIds, updatedAt: current.updatedAt } : null;
+} });
 
 /** Prepare both source and index verification before enabling old saved-ID resolution. */
 export const begin = internalMutation({ args: {}, handler: async ctx => {

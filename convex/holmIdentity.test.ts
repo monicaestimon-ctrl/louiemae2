@@ -51,10 +51,14 @@ it('rejects ambiguous numeric identities instead of selecting the first source',
 });
 it('requires verified migration, handles replayed batches and detects stale index fields', async () => {
   const t = convexTest(schema, modules); const source = await seed(t);
+  expect(await t.query(internal.holmIdentityMigration.status, {})).toBeNull();
   let current: Pick<Doc<'holmIdentityState'>, 'phase' | 'cursor'> = await t.mutation(internal.holmIdentityMigration.begin, {});
   await expect(t.mutation(internal.holmIdentityMigration.setEnabled, { enabled: true })).rejects.toThrow(/Verify/);
   const first = { expectedPhase: current.phase, expectedCursor: current.cursor };
   current = await t.mutation(internal.holmIdentityMigration.step, first);
+  const resumed = await t.query(internal.holmIdentityMigration.status, {});
+  expect(resumed).toMatchObject({ phase: current.phase, cursor: current.cursor, enabled: false });
+  expect(await t.query(internal.holmIdentityMigration.status, {})).toEqual(resumed);
   expect((await t.mutation(internal.holmIdentityMigration.step, first)).advanced).toBe(false);
   while (current.phase !== 'verifyListings') current = await t.mutation(internal.holmIdentityMigration.step, { expectedPhase: current.phase, expectedCursor: current.cursor });
   await t.run(async ctx => { const row = await ctx.db.query('holmCatalogIdentities').first(); await ctx.db.patch(row!._id, { legacyId: source.legacyId + 1 }); });

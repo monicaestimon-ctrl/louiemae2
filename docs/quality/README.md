@@ -201,3 +201,12 @@ The legacy numeric ID calculation is shared by the renderer and a new source-bou
 The bounded legacy resolver returns no results until that verified index is enabled. It rejects ambiguous numeric matches and then passes each candidate through the existing current catalog eligibility and viewer-pricing checks. Explicit source-ID resolution treats a malformed saved ID as an unresolved row without blocking valid rows in the same request. Neither path substitutes an unrelated default product or exposes authenticated trade prices to anonymous visitors.
 
 This is a prerequisite, not progressive loading completion. Frontend independent saved-item hydration, server filtering/sorting, first-page cutover and migration execution remain outstanding. The index is disabled by default, and no production backfill or cutover was run during implementation. In-memory tests cover preparation, replay, corruption, collisions, malformed saved IDs, transactional maintenance, anonymous pricing and withdrawal of a previously eligible listing.
+
+Deploy and verify this backend prerequisite before releasing the independent saved-project frontend:
+
+1. Read internal `holmIdentityMigration:status`. A null result means no preparation has started. This read never changes the migration.
+2. Start a new pass with internal `holmIdentityMigration:begin` only when preparation is absent or a failed pass has been repaired. Beginning disables the reader and resets preparation; do not restart a healthy interrupted pass.
+3. Call `step` sequentially with the returned `phase` and `cursor` as `expectedPhase` and `expectedCursor`, retaining each response. The phases are `listings`, `orphans`, `verifyListings`, `verifyIndex`, then `verified`. Each source/index batch contains at most 20 rows and has a source pagination byte budget; linked reads are additional.
+4. Resume an interruption from `status`. A stale batch replay returns `advanced:false`; a mismatch changes the phase to `failed`. Do not enable a partial or failed migration.
+5. After `verified`, call `setEnabled` with `enabled:true` and read back `status`. Verify an eligible source, its legacy ID, a withdrawn source and anonymous pricing before frontend cutover. Do not submit a purchase to test lookup.
+6. Retain deployment and migration receipts. Roll back the reader with `setEnabled` using `enabled:false`; preserve the index, saved records and order history. This changes identity lookup only, not product publication, prices, inventory or checkout gates.
