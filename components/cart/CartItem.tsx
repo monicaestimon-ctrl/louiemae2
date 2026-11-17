@@ -32,7 +32,7 @@ export const CartItem: React.FC<CartItemProps> = ({ item }) => {
 
             {/* Product Details */}
             <div className="flex-1 min-w-0">
-                <h4 className="font-serif text-sm text-earth truncate">{product.name}</h4>
+                <h3 className="font-serif text-sm text-earth truncate">{product.name}</h3>
                 {selectedVariant && (
                     <p className="text-xs text-muted-earth mt-0.5">{selectedVariant.name}</p>
                 )}

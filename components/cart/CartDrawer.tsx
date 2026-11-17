@@ -1,6 +1,6 @@
 import { Modal } from '../Modal';
 import { rememberCheckout, cartLines } from '../../lib/delivery/checkoutReturn';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { X, ShoppingBag, Loader2 } from 'lucide-react';
 import { useQueries } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
@@ -12,6 +12,7 @@ import { activeRef, visitorId } from '../../lib/partnerLink';
 import CheckoutV2 from '../delivery/CheckoutV2';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { usePendingTimeout } from '../../contexts/usePendingTimeout';
+import { checkoutDraftOwner, type CheckoutDraft } from '../../lib/delivery/checkoutDraft';
 const CREDIT_QUERY = { credit: { query: api.holmCredit.myCredit, args: {} } };
 const NO_QUERIES = {};
 
@@ -24,6 +25,9 @@ export const CartDrawer: React.FC = () => {
     const [isCheckingOut, setIsCheckingOut] = useState(false);
     // Store credit (signed-in members): pre-set from their Hub setting, changeable per order.
     const authToken = useAuthToken();
+    const draftOwner = checkoutDraftOwner(authToken);
+    const { owner: checkoutOwner, ref: checkoutDraftRef } = useMemo(() => ({ owner: draftOwner, ref: React.createRef<CheckoutDraft>() }), [draftOwner]);
+    useEffect(() => { if (!items.length) checkoutDraftRef.current = null; }, [items.length, checkoutDraftRef]);
     const needsCredit = isOpen && !hasV2 && Boolean(authToken);
     const creditResults = useQueries(needsCredit ? CREDIT_QUERY : NO_QUERIES);
     const creditResult = creditResults.credit as FunctionReturnType<typeof api.holmCredit.myCredit> | Error | undefined;
@@ -153,9 +157,9 @@ export const CartDrawer: React.FC = () => {
             />
 
             {/* Drawer */}
-            <div className="fixed top-0 right-0 h-full w-full max-w-md bg-white z-[201] shadow-2xl flex flex-col">
+            <div data-cart-panel className="fixed top-0 right-0 h-full w-full max-w-md bg-white z-[201] shadow-2xl overflow-y-auto">
                 {/* Header */}
-                <div className="flex items-center justify-between p-6 border-b border-earth/10">
+                <div className="sticky top-0 z-10 bg-white flex items-center justify-between p-6 border-b border-earth/10">
                     <div className="flex items-center gap-3">
                         <ShoppingBag className="w-5 h-5 text-earth" />
                         <h2 className="font-serif text-xl text-earth">Your Cart</h2>
@@ -173,7 +177,7 @@ export const CartDrawer: React.FC = () => {
                 </div>
 
                 {/* Cart Items */}
-                <div className="flex-1 overflow-y-auto p-6">
+                <div className="p-6">
                     {items.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full text-center">
                             <ShoppingBag className="w-16 h-16 text-earth/20 mb-4" />
@@ -219,7 +223,7 @@ export const CartDrawer: React.FC = () => {
                             </label>
                         )}
 
-                        {hasV2 ? <ErrorBoundary fallback={<p role="alert" className="text-earth">Checkout is temporarily unavailable. Close and reopen your cart to try again. Your items are saved.</p>}><CheckoutV2 /></ErrorBoundary> : (<>
+                        {hasV2 ? <ErrorBoundary fallback={<p role="alert" className="text-earth">Checkout is temporarily unavailable. Close and reopen your cart to try again. Your items are saved.</p>}><CheckoutV2 key={checkoutOwner} draftRef={checkoutDraftRef} /></ErrorBoundary> : (<>
                         {creditBlocked && <p role="status" className="text-earth mb-4">
                             {creditPending && !creditTimedOut ? 'Checking your store credit…' : 'Store credit could not be verified. Close and reopen your cart to try again. Your items are saved.'}
                         </p>}

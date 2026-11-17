@@ -23,3 +23,11 @@ const report = { scope: 'HOLM boot static JS closure; excludes dynamic tools, CS
 await mkdir('artifacts/lighthouse', { recursive: true });
 await writeFile('artifacts/lighthouse/deferred-bundles.json', JSON.stringify(report, null, 2));
 console.log(JSON.stringify(report));
+
+// Opening the cart is an explicit interaction, never part of a public page's startup graph.
+initial.clear();
+visit('index.html');
+for (const key of manifest['index.html'].dynamicImports || []) visit(key);
+const cart = 'components/cart/CartDrawer.tsx';
+assert.ok(manifest[cart]?.isDynamicEntry, 'Retail cart must remain an interaction-loaded entry');
+assert.ok(!initial.has(cart), 'Retail cart leaked into public startup');
