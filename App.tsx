@@ -2,6 +2,7 @@ import { STOREFRONT_ORIGIN } from './lib/productMetadata';
 import React, {
   useState,
   useEffect,
+  useLayoutEffect,
   useCallback,
   lazy,
   Suspense,
@@ -182,6 +183,10 @@ const AppContent = () => {
   const [mobileMenuBuilt, setMobileMenuBuilt] = useState(false);
   const wideNav = useSyncExternalStore(subscribeWideNav, isWideNav);
   const [activePage, setActivePage] = useState(() => storefrontRoute(window.location));
+  useLayoutEffect(() => {
+    const shell = document.getElementById('lm-shell');
+    if (shell) shell.hidden = activePage !== 'home';
+  }, [activePage]);
   const initialDocumentPresent = useInitialProductDocument(activePage);
   const initialPagePresent = useInitialPageDocument(activePage, siteContentStatus);
   const initialJournalPresent = useInitialJournalDocument(activePage);

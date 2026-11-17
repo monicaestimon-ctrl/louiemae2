@@ -7,7 +7,7 @@ const Quote = lazy(() =>
     default: module.DeliveryQuoteAccess,
   }))
 );
-function LoadState({ failed = false }: { failed?: boolean }) {
+function LoadState({ failed = false, recover }: { failed?: boolean; recover?: () => void }) {
   return (
     <aside className="p-6 bg-white text-earth border" aria-label="Requested delivery quote">
       <p role={failed ? 'alert' : 'status'}>
@@ -16,7 +16,7 @@ function LoadState({ failed = false }: { failed?: boolean }) {
           : 'Opening your private delivery quote…'}
       </p>
       {failed && (
-        <button className="min-h-11 px-4 underline" onClick={() => window.location.reload()}>
+        <button className="min-h-11 px-4 underline" onClick={recover}>
           Reload page
         </button>
       )}
@@ -25,10 +25,16 @@ function LoadState({ failed = false }: { failed?: boolean }) {
 }
 /** Ordinary visits never load private quote controls; preserve the original fragment during loading. */
 export function LazyDeliveryQuoteAccess() {
-  const [request] = useState(() => quoteAccessFromUrl(new URL(window.location.href)));
+  const [originalUrl] = useState(() => new URL(window.location.href));
+  const [request] = useState(() => quoteAccessFromUrl(originalUrl));
+  const recover = () => {
+    if (window.location.href !== originalUrl.href)
+      window.history.replaceState(window.history.state, '', originalUrl.href);
+    window.location.reload();
+  };
   if (!request) return null;
   return (
-    <ErrorBoundary fallback={<LoadState failed />}>
+    <ErrorBoundary fallback={<LoadState failed recover={recover} />}>
       <Suspense fallback={<LoadState />}>
         <Quote initialRequest={request} />
       </Suspense>

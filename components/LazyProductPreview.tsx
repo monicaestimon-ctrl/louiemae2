@@ -1,9 +1,29 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useLayoutEffect, useRef } from 'react';
 import { Modal } from './Modal';
 import { ErrorBoundary } from './ErrorBoundary';
 import { loadModule } from '../lib/moduleRecovery';
 const HomePreview = lazy(() => loadModule(() => import('./HomeProductPreview')));
 const CollectionPreview = lazy(() => loadModule(() => import('./CollectionProductPreview')));
+/** Suspense can remove the focused fallback without rerendering its parent modal. */
+function RestoreDialogFocus({ children }: { children: React.ReactNode }) {
+  const anchor = useRef<globalThis.HTMLSpanElement>(null);
+  useLayoutEffect(() => {
+    const node = anchor.current;
+    const dialog = node?.closest('dialog');
+    if (!node || !dialog?.open || node.ownerDocument.activeElement !== node.ownerDocument.body)
+      return;
+    const target = [
+      ...dialog.querySelectorAll<HTMLElement>('[data-modal-initial-focus],button:not(:disabled)'),
+    ].find((element) => element.getClientRects().length && !element.closest('[inert]'));
+    target?.focus({ preventScroll: true });
+  }, []);
+  return (
+    <>
+      <span ref={anchor} hidden />
+      {children}
+    </>
+  );
+}
 function LoadState({ failed = false, onClose }: { failed?: boolean; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6">
@@ -55,7 +75,9 @@ export function LazyProductPreview({
   return (
     <Modal open label="Product details" onClose={onClose}>
       <ErrorBoundary key={productId} fallback={<LoadState failed onClose={onClose} />}>
-        <Suspense fallback={<LoadState onClose={onClose} />}>{content}</Suspense>
+        <Suspense fallback={<LoadState onClose={onClose} />}>
+          <RestoreDialogFocus>{content}</RestoreDialogFocus>
+        </Suspense>
       </ErrorBoundary>
     </Modal>
   );

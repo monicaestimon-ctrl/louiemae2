@@ -146,12 +146,22 @@ try {
         await page.keyboard.press('Escape');
         await page.waitForFunction(() => !document.querySelector('dialog[open]'));
         assert.equal(await page.evaluate(() => document.activeElement.id), 'home');
-        mode = 'ready';
-        held.splice(0).forEach((send) => send());
         await page.focus('#home');
         await page.keyboard.press('Enter');
+        await page.waitForSelector('dialog[open]');
+        await page.waitForFunction(() =>
+          document.querySelector('dialog').contains(document.activeElement)
+        );
+        mode = 'ready';
+        held.splice(0).forEach((send) => send());
         await page.waitForFunction(
           () => document.querySelector('dialog h2')?.textContent === 'Home fixture chair'
+        );
+        assert.equal(
+          await page.evaluate(() =>
+            document.querySelector('dialog').contains(document.activeElement)
+          ),
+          true
         );
         await page.evaluate(() =>
           [...document.querySelectorAll('dialog button')]

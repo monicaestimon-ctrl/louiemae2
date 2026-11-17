@@ -31,6 +31,10 @@ const bundle = await build({
     {
       name: 'local-boundaries',
       setup(b) {
+        b.onLoad({ filter: /components[\\/]HomePage\.tsx$/ }, () => ({
+          contents: 'const pending=new Promise(()=>{});export function HomePage(){throw pending;}',
+          loader: 'js',
+        }));
         b.onResolve({ filter: /^@convex-dev\/auth\/react$/ }, () => ({
           path: 'auth',
           namespace: 'fixture',
@@ -59,7 +63,7 @@ const styles = [
   ...bundle.outputFiles.filter((f) => f.path.endsWith('.css')).map((f) => f.text),
 ].join('\n');
 const script = bundle.outputFiles.find((f) => f.path.endsWith('.js')).text;
-const html = `<!doctype html><html lang="en"><head><title>Product navigation fixture</title><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="connect-src 'none';img-src data:"><link rel="canonical" href="http://fixture.invalid/"><meta name="description" content="Fixture"><style>${styles}</style></head><body><div id="skip-navigation"></div><div id="root"></div><script>${script.replaceAll('</script', '<\\/script')}</script></body></html>`;
+const html = `<!doctype html><html lang="en"><head><title>Product navigation fixture</title><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="connect-src 'none';img-src data:"><link rel="canonical" href="http://fixture.invalid/"><meta name="description" content="Fixture"><style>${styles}</style></head><body><section id="lm-shell"><h1>Home shell fixture</h1></section><div id="skip-navigation"></div><div id="root"></div><script>${script.replaceAll('</script', '<\\/script')}</script></body></html>`;
 const browser = await puppeteer.launch({
   ...(process.env.CHROME_PATH
     ? { executablePath: process.env.CHROME_PATH }
@@ -87,7 +91,13 @@ try {
       else void request.abort();
     });
     await page.setViewport({ width, height });
-    await page.goto('http://fixture.invalid/#shop');
+    await page.goto('http://fixture.invalid/');
+    await page.waitForSelector('[aria-label="Search"]');
+    assert.equal(await page.$eval('#lm-shell', (node) => node.hidden), false);
+    await page.evaluate(() => {
+      location.hash = '#shop';
+    });
+    await page.waitForFunction(() => document.getElementById('lm-shell')?.hidden === true);
     await page.waitForSelector('[aria-label="Search"]');
     await page.click('[aria-label="Search"]');
     await page.waitForSelector('[aria-label="Search products"]');
@@ -123,7 +133,9 @@ try {
       'https://www.louiemae.com/products/zuo-fixture'
     );
     await page.waitForSelector('#lm-live-product-structured-data');
-    const structured = await page.$eval('#lm-live-product-structured-data', node => JSON.parse(node.textContent));
+    const structured = await page.$eval('#lm-live-product-structured-data', (node) =>
+      JSON.parse(node.textContent)
+    );
     assert.equal(structured.url, 'https://www.louiemae.com/products/zuo-fixture');
     assert.equal(structured.offers.price, 120);
     assert.equal(structured.offers.availability, 'https://schema.org/InStock');

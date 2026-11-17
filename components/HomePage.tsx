@@ -28,12 +28,6 @@ export const HomePage: React.FC = () => {
   const savedHero = isLoading ? undefined : home.hero.image;
   useEffect(() => {
     const shell = heroShell();
-    if (!shell) return;
-    shell.hidden = false;
-    return () => { shell.hidden = true; };
-  }, []);
-  useEffect(() => {
-    const shell = heroShell();
     const p = shell?.querySelector('p');
     const h2 = shell?.querySelector('h1');
     const line2 = h2?.querySelector('span');
