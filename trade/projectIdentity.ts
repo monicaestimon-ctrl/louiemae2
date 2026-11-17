@@ -1,6 +1,7 @@
 import type { HolmProduct } from './catalog';
 
 export type SavedProductIdentity = { pid: number; lid?: string; vid?: string };
+export type SavedProductMap = ReadonlyMap<number, HolmProduct> & { blockedSavedIdentities?: ReadonlySet<string> };
 
 /** Target persisted rows exactly; absent source IDs are not wildcards for destructive edits. */
 export function sameSavedRow(a: SavedProductIdentity & { zone?: string }, b: SavedProductIdentity & { zone?: string }) {
@@ -38,8 +39,9 @@ export function mergeProjectItem<T extends SavedProductIdentity & { qty: number;
 /** Saved source and variant identities must agree; never substitute a new default variant. */
 export function resolveProjectProduct(
   item: SavedProductIdentity,
-  products: ReadonlyMap<number, HolmProduct>
+  products: SavedProductMap
 ): HolmProduct | null {
+  if (products.blockedSavedIdentities?.has(projectItemKey({ pid: item.pid, lid: item.lid, vid: item.vid }))) return null;
   const product = products.get(item.pid);
   if (!product || (item.lid && item.lid !== product.lid)) return null;
   if (!item.vid || item.vid === product.vid) return product;

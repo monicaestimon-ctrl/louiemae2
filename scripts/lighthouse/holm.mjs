@@ -1,6 +1,7 @@
 /* global document, window, location */
 import { build } from 'esbuild';
 import puppeteer from 'puppeteer-core';
+import axe from 'axe-core';
 import assert from 'node:assert/strict';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 const assets = await readdir('dist/assets').catch((cause) => {
@@ -10,9 +11,9 @@ const css = assets.find((file) => /^trade-.*\.css$/.test(file));
 assert.ok(css, 'Missing dist/assets/trade-*.css. Run "npm run build" first.');
 const stubs = {
   auth: `export const useAuthActions=()=>({signIn:async()=>{throw Error('No auth permitted')},signOut:async()=>{throw Error('No auth permitted')}});export const useAuthToken=()=>null;`,
-  convex: `import{getFunctionName}from'convex/server';export const useQuery=(ref)=>getFunctionName(ref)==='holm:me'?{signedIn:false,verified:false,admin:false,tradeStatus:'none'}:undefined;export const useQueries=q=>Object.fromEntries(Object.keys(q).map(k=>[k,undefined]));export const useMutation=()=>async()=>{window.fixtureCommands=(window.fixtureCommands||0)+1;throw Error('No mutation permitted')};export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});export const useAction=useMutation;export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});`,
+  convex: `import{getFunctionName}from'convex/server';export const useQuery=(ref)=>getFunctionName(ref)==='holm:me'?{signedIn:false,verified:false,admin:false,tradeStatus:'none'}:undefined;export const useQueries=q=>Object.fromEntries(Object.entries(q).map(([k,v])=>[k,v.args.productIds?v.args.productIds.map(productId=>({productId,item:null})):{ready:true,items:v.args.legacyIds.map(legacyId=>({legacyId,status:'unavailable',item:null}))}]));export const useMutation=()=>async()=>{window.fixtureCommands=(window.fixtureCommands||0)+1;throw Error('No mutation permitted')};export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});export const useAction=useMutation;export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});`,
 };
-const entry = `import React from'react';import{createRoot}from'react-dom/client';import{App,setProducts}from'./trade/app';const image='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';const products=Array.from({length:24},(_,i)=>({id:i+1,lid:'fixture'+i,vid:'fixture'+i,variants:[],name:'Fixture '+(i+1),full:'Fixture '+(i+1),line:'Chair',type:'sofa',mat:'leather',tone:'#6B4A33',price:100,trade:null,seats:1,oos:false,note:'Fixture only',facts:'',img:image,imgs:[image],ar:1,sku:'FIXTURE',likes:0,widthCm:50,dimsCm:{w:50,d:50,h:50},dimsSource:'fixture',cutout:null,cutAR:null,model:null,modelLow:null,hangs:false,mountCm:null,minimum:1,increment:1,checkoutMode:'quote'}));setProducts(products);const root=createRoot(document.getElementById('root'));root.render(<App/>);window.fixtureRemoveProduct=id=>{setProducts(products.filter(p=>p.id!==id));root.render(<App fixtureRevision={Date.now()}/>)};`;
+const entry = `import React from'react';import{createRoot}from'react-dom/client';import{App,setProducts}from'./trade/app';const image='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';const products=Array.from({length:24},(_,i)=>({id:i+1,lid:'fixture'+i,vid:'fixture'+i,variants:[],name:'Fixture '+(i+1),full:'Fixture '+(i+1),line:'Chair',type:'sofa',mat:'leather',tone:'#6B4A33',price:100,trade:null,seats:1,oos:false,note:'Fixture only',facts:'',img:image,imgs:[image],ar:1,sku:'FIXTURE',likes:0,widthCm:50,dimsCm:{w:50,d:50,h:50},dimsSource:'fixture',cutout:null,cutAR:null,model:null,modelLow:null,hangs:false,mountCm:null,minimum:1,increment:1,checkoutMode:'quote'}));setProducts(products);const root=createRoot(document.getElementById('root'));root.render(<App/>);window.fixtureRemoveProduct=id=>{setProducts(products.filter(p=>p.id!==id))};window.fixtureSingleProduct=()=>setProducts(products.slice(0,1));`;
 const bundle = await build({
   stdin: { contents: entry, resolveDir: process.cwd(), loader: 'tsx' },
   bundle: true,
@@ -54,7 +55,8 @@ const browser = await puppeteer.launch({
 });
 try {
   const page = await browser.newPage();
-  page.on('pageerror', (e) => console.log('Fixture error:', e.message));
+  const pageErrors = [];
+  page.on('pageerror', (e) => pageErrors.push(e.message));
   await page.setViewport({ width: 390, height: 844 });
   await page.setContent(
     '<!doctype html><html lang="en"><head><title>HOLM integration fixture</title><meta http-equiv="Content-Security-Policy" content="connect-src \'none\';img-src data:"></head><body><div id="root"></div></body></html>'
@@ -68,6 +70,18 @@ try {
   await page.addStyleTag({ content: await readFile('trade/style.css', 'utf8') });
   await page.addScriptTag({ content: bundle.outputFiles.find((f) => f.path.endsWith('.js')).text });
   await page.waitForSelector('.pin-open');
+  await page.addScriptTag({ content: axe.source });
+  const discoveryViolations = await page.evaluate(async () => (await window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] } })).violations.map(violation => ({ id: violation.id, nodes: violation.nodes.map(node => node.target) })));
+  await writeFile('artifacts/lighthouse/holm-discovery-accessibility.json', JSON.stringify(discoveryViolations, null, 2));
+  assert.deepEqual(discoveryViolations, []);
+  await page.click('main.wrap .filters button[aria-expanded]');
+  await page.setViewport({ width: 320, height: 900 });
+  const expandedViolations = await page.evaluate(async () => (await window.axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] } })).violations.map(violation => ({ id: violation.id, nodes: violation.nodes.map(node => node.target) })));
+  assert.deepEqual(expandedViolations, []);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+  await page.screenshot({ path: 'artifacts/lighthouse/holm-discovery-filters-320.png' });
+  await page.click('main.wrap .filters button[aria-expanded]');
+  await page.setViewport({ width: 390, height: 844 });
   await page.focus('.pin-open');
   await page.keyboard.press('Enter');
   await page.waitForSelector('dialog');
@@ -133,7 +147,8 @@ try {
   );
   assert.equal(await page.evaluate(() => document.body.style.overflow), '');
   assert.equal(await page.evaluate(() => window.fixtureCommands || 0), 0);
-  await page.click('[aria-label="View Fixture 1 Chair"]');
+  await page.focus('[aria-label="View Fixture 1 Chair"]');
+  await page.keyboard.press('Enter');
   await page.waitForSelector('dialog');
   await page.evaluate(() => window.fixtureRemoveProduct(1));
   await page.waitForSelector('dialog[aria-label="Product unavailable"]');
@@ -141,9 +156,14 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !document.querySelector('dialog'));
   assert.equal(await page.evaluate(() => document.body.style.overflow), '');
+  await page.evaluate(() => { window.fixtureSingleProduct(); location.hash = 'home'; });
+  await page.waitForSelector('main.home');
+  await page.waitForSelector('.qs-lines .qs-line');
+  assert.deepEqual(pageErrors, []);
   const result = {
     scope:
       'Actual HOLM App with 24 explicit fixture products; queries mocked, commands prohibited, network blocked',
+    singleProductHome: true,
     keyboardOpensProduct: true,
     removedOpenProductBlocked: true,
     focusContained: true,

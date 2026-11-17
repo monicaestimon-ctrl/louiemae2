@@ -21,3 +21,11 @@ The local npm audit falls from 43 findings (8 critical) to 14 (0 critical, 10 hi
 The dark HOLM delivery-calculator disclosure also uses the existing dark-section button style. The previous outlined style produced nearly identical hover foreground/background colors in a production computed-style check despite an automated axe scan reporting no violation.
 
 Release requires successful CI, current review resolution, deployment verification and a read-only production smoke check. Authentication fixtures do not authorize real payment or payout tests.
+
+## Response-header baseline
+
+The production header audit found HSTS already supplied by Vercel. Add global MIME-sniffing protection, strict-origin referrer handling, same-origin framing restrictions and denial of unused camera/microphone/geolocation APIs. The initial CSP limits objects, base URLs and embedding parents; it does not constrain scripts, styles, images, connections, child frames or payment redirects. Photo file uploads remain separate from camera-stream API access. Existing hashed-asset cache rules remain unchanged.
+
+The local HTTP/browser fixture applies the exact configured headers. It verifies inline script execution, denial of the three unused permissions, rejection of an external base URL, successful same-origin framing and Chrome's blocked-document result for a cross-origin parent. It sends no business commands. Actual deployment headers and the complete auth/Stripe compatibility journeys still require release verification. This baseline is not a complete restrictive script/network CSP; that needs an explicit source inventory and report-only rollout before enforcement.
+
+Reference semantics: [CSP frame-ancestors](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/frame-ancestors), [base-uri](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/base-uri), and [Permissions Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Permissions_Policy).

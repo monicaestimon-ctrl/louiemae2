@@ -1,5 +1,5 @@
 import './modal.css';
-import React, { useLayoutEffect, useRef } from 'react';
+import React, { createContext, useContext, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 
 type ModalProps = {
@@ -10,6 +10,8 @@ type ModalProps = {
   className?: string;
   initialFocus?: string;
 };
+/** Recovery gates suspend portals too, while their owning draft components remain mounted. */
+export const ModalSuspensionContext = createContext(false);
 const stacks = new WeakMap<
   Document,
   { dialogs: HTMLDialogElement[]; overflow: string; overflowPriority: string }
@@ -28,13 +30,15 @@ function focusable(dialog: HTMLDialogElement) {
 }
 /** Native modal with controlled dismissal, nested focus restoration and shared scroll ownership. */
 export function Modal({
-  open,
+  open: requestedOpen,
   label,
   onClose,
   children,
   className = '',
   initialFocus,
 }: ModalProps) {
+  const suspended = useContext(ModalSuspensionContext);
+  const open = requestedOpen && !suspended;
   const ref = useRef<HTMLDialogElement>(null);
   const close = useRef(onClose);
   useLayoutEffect(() => {
@@ -108,13 +112,15 @@ export function Modal({
       focusable(dialog)[0]
     )?.focus({ preventScroll: true });
   });
-  if (!open) return null;
+  // A suspended recovery gate closes the native dialog but retains its draft children.
+  if (!requestedOpen) return null;
   return createPortal(
     <dialog
       ref={ref}
       role="dialog"
       aria-modal="true"
       aria-label={label}
+      inert={suspended}
       className={`lm-modal ${className}`}
       onCancel={(event) => {
         event.preventDefault();

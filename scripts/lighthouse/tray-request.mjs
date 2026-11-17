@@ -11,9 +11,9 @@ const css = assets.find((file) => /^trade-.*\.css$/.test(file));
 assert.ok(css, 'Missing trade stylesheet. Run npm run build first.');
 const stubs = {
   auth: `export const useAuthActions=()=>({signIn:async()=>{throw Error('No auth permitted')},signOut:async()=>{throw Error('No auth permitted')}});export const useAuthToken=()=>null;`,
-  convex: `import{getFunctionName}from'convex/server';export const useQuery=(ref)=>getFunctionName(ref)==='holm:me'?{signedIn:true,verified:true,admin:false,tradeStatus:'approved',businessName:'',email:''}:getFunctionName(ref)==='holmSync:load'?window.fixtureRemote:undefined;export const useQueries=q=>Object.fromEntries(Object.keys(q).map(k=>[k,undefined]));export const useMutation=ref=>async()=>{if(getFunctionName(ref)==='holm:ensureProfile'||getFunctionName(ref)==='holmSync:save')return null;window.fixtureCommands=(window.fixtureCommands||0)+1;return new Promise((_,reject)=>{window.rejectFixtureQuote=()=>reject({data:{code:'RATE_LIMITED',message:'You have sent several requests. Please wait an hour before sending another.'}})})};export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});export const useAction=useMutation;export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});`,
+  convex: `import{getFunctionName}from'convex/server';export const useQuery=(ref)=>getFunctionName(ref)==='holm:me'?{signedIn:true,verified:true,admin:false,tradeStatus:'approved',businessName:'',email:''}:getFunctionName(ref)==='holmSync:load'?window.fixtureRemote:undefined;export const useQueries=q=>Object.fromEntries(Object.entries(q).map(([k,v])=>[k,window.fixtureLookupPending?undefined:v.args.productIds?v.args.productIds.map(productId=>({productId,item:window.fixtureLookup?.id===productId?window.fixtureLookup:null})):{ready:true,items:v.args.legacyIds.map(legacyId=>({legacyId,status:'unavailable',item:null}))}]));export const useMutation=ref=>async()=>{if(getFunctionName(ref)==='holm:ensureProfile'||getFunctionName(ref)==='holmSync:save')return null;window.fixtureCommands=(window.fixtureCommands||0)+1;return new Promise((_,reject)=>{window.rejectFixtureQuote=()=>reject({data:{code:'RATE_LIMITED',message:'You have sent several requests. Please wait an hour before sending another.'}})})};export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});export const useAction=useMutation;export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});`,
 };
-const entry = `import React from'react';import{createRoot}from'react-dom/client';import{App,setProducts}from'./trade/app';const image='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';const products=Array.from({length:24},(_,i)=>({id:i+1,lid:'fixture'+i,vid:'fixture'+i,variants:[],name:'Fixture '+(i+1),full:'Fixture '+(i+1),line:'Chair',type:'sofa',mat:'leather',tone:'#6B4A33',price:100,trade:80,seats:1,oos:false,note:'Fixture only',facts:'',img:image,imgs:[image],ar:1,sku:'FIXTURE',likes:0,widthCm:50,dimsCm:{w:50,d:50,h:50},dimsSource:'fixture',cutout:null,cutAR:null,model:null,modelLow:null,hangs:false,mountCm:null,minimum:1,increment:1,checkoutMode:'quote'}));setProducts(products);createRoot(document.getElementById('root')).render(<App/>);`;
+const entry = `import React from'react';import{createRoot}from'react-dom/client';import{App,setProducts}from'./trade/app';import{holmLegacyId}from'./lib/holmProductIdentity';const image='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';const products=Array.from({length:24},(_,i)=>({id:i+1,lid:'fixture'+i,vid:'fixture'+i,variants:[],name:'Fixture '+(i+1),full:'Fixture '+(i+1),line:'Chair',type:'sofa',mat:'leather',tone:'#6B4A33',price:100,trade:80,seats:1,oos:false,note:'Fixture only',facts:'',img:image,imgs:[image],ar:1,sku:'FIXTURE',likes:0,widthCm:50,dimsCm:{w:50,d:50,h:50},dimsSource:'fixture',cutout:null,cutAR:null,model:null,modelLow:null,hangs:false,mountCm:null,minimum:1,increment:1,checkoutMode:'quote'}));if(window.fixtureHydrated){const source='saved-source';window.fixtureSavedPid=holmLegacyId(source);window.fixtureLookup={id:source,name:'Offpage Chair',description:'Verified fixture',category:'Chairs',images:[image],facts:'',inStock:true,variants:[{id:'oak',name:'Oak',minimum:2,increment:2,retail:10000,trade:8000}]};localStorage.setItem('hol:tray',JSON.stringify({active:'offpage',projects:[{id:'offpage',name:'Offpage project',target:2,zones:['Main room'],items:[{pid:window.fixtureSavedPid,lid:source,vid:'oak',qty:2,zone:'Main room'}]}],later:[]}));}if(window.fixtureBoardHydrated){window.fixtureLookup.variants.unshift({id:'walnut',name:'Walnut',minimum:1,increment:1,retail:20000,trade:16000});localStorage.setItem('hol:boards',JSON.stringify([{id:'b1',title:'Verified saved board',sections:['Main'],pins:[{pid:window.fixtureSavedPid,lid:'saved-source',vid:'oak',sec:'Main'}]}]));location.hash='board';}window.fixtureRefresh=()=>setProducts(products);setProducts(products);createRoot(document.getElementById('root')).render(<App/>);`;
 const bundle = await build({
   stdin: { contents: entry, resolveDir: process.cwd(), loader: 'tsx' },
   bundle: true,
@@ -53,9 +53,9 @@ const browser = await puppeteer.launch({
     : { channel: 'chrome' }),
   headless: true,
 });
+const page = await browser.newPage();
+const pageErrors = [];
 try {
-  const page = await browser.newPage();
-  const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.setViewport({ width: 390, height: 844 });
   const markup =
@@ -144,6 +144,20 @@ try {
       postal: '95206',
     }))
       await page.type('#tv-' + key, value);
+    await clickText('Back');
+    await page.click('.tv-line .tv-th');
+    await page.waitForSelector('.pp');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.tv-line');
+    await page.waitForSelector('dialog[open][aria-label="Project tray"]');
+    await page.evaluate(async () => {
+      await Promise.all(document.querySelector('dialog[open]').getAnimations({ subtree: true })
+        .filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity)
+        .map(animation => animation.finished.catch(() => {})));
+    });
+    await clickText('Continue to delivery');
+    assert.equal(await page.$eval('#tv-name', node => node.value), 'Fixture contact');
+    assert.equal(await page.$eval('#tv-line1', node => node.value), '123 Fixture St');
     await clickText('Review request');
     await page.waitForFunction(
       () => document.activeElement?.textContent === 'Project tray · Review'
@@ -214,7 +228,7 @@ try {
     assert.equal(saved.projects[0].items[0].lid, 'missing-source');
     assert.equal(saved.later[0].vid, 'later-option');
     await page.evaluate(() => [...document.querySelectorAll('button')].find(b => b.textContent.startsWith('Saved for later')).click());
-    assert.match(await page.$eval('.tv-main', node => node.textContent), /Saved item 99998 is unavailable/);
+    assert.match(await page.$eval('.tv-main', node => node.textContent), /Saved item 99998 is no longer available/);
     assert.doesNotMatch(await page.$eval('.tv-main', node => node.textContent), /Nothing saved for later/);
     assert.equal(await page.evaluate(() => window.fixtureCommands || 0), 0);
     await page.keyboard.press('Escape');
@@ -253,6 +267,117 @@ try {
     assert.equal(await page.evaluate(() => window.fixtureCommands || 0), 0);
     results.push({ source, missingDraftRetained: true, boardsAndCollagesRetained: true, unavailableBoardPurchaseBlocked: true, unavailableSharingBlocked: true, plannerRetainedUntilExplicitRemoval: true, checkoutBlocked: true, businessCommands: 0 });
   }
+  await page.goto('http://fixture.invalid');
+  await page.evaluate(() => { localStorage.clear(); location.hash='discover'; window.fixtureHydrated=true; });
+  await page.addStyleTag({content:await readFile('dist/assets/'+css,'utf8')});
+  for (const file of bundle.outputFiles.filter(file=>file.path.endsWith('.css'))) await page.addStyleTag({content:file.text});
+  await page.addStyleTag({content:await readFile('trade/style.css','utf8')});
+  await page.addScriptTag({content:bundle.outputFiles.find(file=>file.path.endsWith('.js')).text});
+  await page.waitForSelector('#trayBtn');
+  await page.click('#trayBtn');
+  await page.waitForFunction(()=>document.querySelector('.tv-main')?.textContent.includes('Offpage'));
+  assert.equal(await page.$eval('.tv-sum .btn-ink',node=>node.disabled),false);
+  assert.equal(await page.$eval('.tv-line .tv-th',node=>node.disabled),false);
+  await page.click('.tv-line .tv-th');
+  await page.waitForFunction(()=>document.querySelector('.pp h1')?.textContent==='Offpage');
+  assert.equal(await page.$eval('button[aria-label="Next piece"]',node=>node.disabled),true);
+  assert.equal(await page.$eval('button[aria-label="Previous piece"]',node=>node.disabled),true);
+  assert.match(await page.$eval('.pp-price',node=>node.textContent),/80/);
+  await page.addScriptTag({content:axe.source});
+  const detailChecks=[];
+  for (const width of [320,844,1440]) {
+    await page.setViewport({width,height:width===844?390:900});
+    await page.evaluate(async()=>{
+      await document.fonts.ready;
+      await Promise.all(document.querySelector('dialog').getAnimations({subtree:true})
+        .filter(animation=>animation.effect?.getComputedTiming().iterations!==Infinity)
+        .map(animation=>animation.finished.catch(()=>{})));
+    });
+    const violations=await page.evaluate(async()=>(await axe.run(document.querySelector('dialog'))).violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})));
+    assert.deepEqual(violations,[]);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false);
+    const screenshot=`offpage-detail-${width}.png`;
+    await page.screenshot({path:`artifacts/lighthouse/${screenshot}`});
+    detailChecks.push({width,violations,overflow:false,screenshot});
+  }
+  await page.click('.pp-add');
+  const afterDetailAdd=await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:tray')).projects[0].items);
+  assert.equal(afterDetailAdd.length,1);
+  assert.equal(afterDetailAdd[0].qty,4);
+  assert.equal(afterDetailAdd[0].vid,'oak');
+  assert.equal(afterDetailAdd[0].lid,'saved-source');
+  await page.evaluate(()=>[...document.querySelectorAll('dialog button')].find(button=>button.textContent.trim()==='Save').click());
+  await page.waitForSelector('.boardpick');
+  await page.evaluate(()=>[...document.querySelectorAll('.boardpick button')].find(button=>button.textContent.includes('Create board')).click());
+  await page.type('#nb-name','Saved Oak selection');
+  await page.evaluate(()=>[...document.querySelectorAll('.boardpick button')].find(button=>button.textContent==='Create and save').click());
+  await page.waitForFunction(()=>JSON.parse(localStorage.getItem('hol:boards')).some(board=>board.title==='Saved Oak selection'));
+  const savedSelection=await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:boards')).find(board=>board.title==='Saved Oak selection').pins[0]);
+  assert.equal(savedSelection.lid,'saved-source');assert.equal(savedSelection.vid,'oak');
+  await page.evaluate(()=>{window.fixtureLookupPending=true;window.fixtureRefresh();});
+  await page.waitForFunction(()=>document.querySelector('dialog[aria-label="Product availability"]')?.textContent.includes('being checked'));
+  assert.equal(await page.$('.pp-add'),null);
+  await page.keyboard.press('Escape');
+  await page.evaluate(()=>{window.fixtureLookupPending=false;window.fixtureRefresh();});
+  await page.waitForFunction(()=>document.querySelector('.tv-main')?.textContent.includes('Offpage'));
+  await page.evaluate(()=>{window.fixtureLookupPending=true;window.fixtureRefresh();});
+  await page.waitForFunction(()=>document.querySelector('.tv-main')?.textContent.includes('being checked'));
+  assert.match(await page.$eval('.tv-sum .total',node=>node.textContent),/Checking saved items/);
+  assert.equal(await page.$eval('.tv-sum .btn-ink',node=>node.disabled),true);
+  await page.evaluate(()=>{window.fixtureLookupPending=false;window.fixtureLookup=null;window.fixtureRefresh();});
+  await page.waitForFunction(()=>document.querySelector('.tv-main')?.textContent.includes('no longer available'));
+  assert.equal(await page.$eval('.tv-sum .btn-ink',node=>node.disabled),true);
+  const retainedOffpage=await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:tray')));
+  assert.equal(retainedOffpage.projects[0].items[0].qty,4);
+  assert.equal(retainedOffpage.projects[0].items[0].vid,'oak');
+  assert.equal(await page.evaluate(()=>window.fixtureCommands||0),0);
+  results.push({offpageProjectHydrated:true,offpageDetailsVerified:true,detailChecks,pendingDetailsBlockActions:true,withdrawalBlocksCheckout:true,savedVariantAndQuantityRetained:true,afterDetailAdd,businessCommands:0});
+  await page.goto('http://fixture.invalid');
+  await page.evaluate(()=>{localStorage.clear();window.fixtureHydrated=true;window.fixtureBoardHydrated=true;});
+  await page.addStyleTag({content:await readFile('dist/assets/'+css,'utf8')});
+  for (const file of bundle.outputFiles.filter(file=>file.path.endsWith('.css'))) await page.addStyleTag({content:file.text});
+  await page.addStyleTag({content:await readFile('trade/style.css','utf8')});
+  await page.addScriptTag({content:bundle.outputFiles.find(file=>file.path.endsWith('.js')).text});
+  await page.waitForFunction(()=>document.querySelector('main h1')?.textContent==='Verified saved board');
+  await page.evaluate(()=>[...document.querySelectorAll('main button')].find(button=>button.textContent==='Shop').click());
+  await page.click('main button.th');
+  await page.waitForSelector('.pp-price');
+  assert.match(await page.$eval('.pp-price', node => node.textContent), /80/);
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(()=>[...document.querySelectorAll('main button')].some(button=>button.textContent==='Add all to tray'&&!button.disabled));
+  assert.match(await page.$eval('main',node=>node.textContent),/Offpage/);
+  await page.evaluate(()=>[...document.querySelectorAll('main button')].find(button=>button.textContent==='Add all to tray').click());
+  const boardAdd=await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:tray')).projects[0].items);
+  assert.equal(boardAdd.length,1);assert.equal(boardAdd[0].qty,4);assert.equal(boardAdd[0].vid,'oak');assert.equal(boardAdd[0].lid,'saved-source');
+  await page.evaluate(()=>{location.hash='boards';});
+  await page.waitForFunction(()=>document.querySelector('main h1')?.textContent.includes('Boards &'));
+  await page.waitForFunction(()=>document.querySelector('.bcard .cov > div')?.style.backgroundImage.includes('data:image'));
+  await page.evaluate(()=>[...document.querySelectorAll('main button')].find(button=>button.textContent==='Pins').click());
+  await page.waitForSelector('main button[aria-label="Add Offpage to project tray"]');
+  await page.click('main button[aria-label="Add Offpage to project tray"]');
+  const shelfAdd=await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:tray')).projects[0].items);
+  assert.equal(shelfAdd.length,1);assert.equal(shelfAdd[0].qty,6);assert.equal(shelfAdd[0].vid,'oak');
+  await page.evaluate(()=>{location.hash='profile';});
+  await page.waitForFunction(()=>document.querySelector('.bcard .cov > div')?.style.backgroundImage.includes('data:image'));
+  await page.evaluate(()=>{location.hash='board';});
+  await page.waitForFunction(()=>document.querySelector('main h1')?.textContent==='Verified saved board');
+  await page.evaluate(()=>[...document.querySelectorAll('main button')].find(button=>button.textContent==='Shop').click());
+  await page.evaluate(()=>{window.fixtureLookupPending=true;window.fixtureRefresh();});
+  await page.waitForFunction(()=>document.querySelector('main [role="status"]')?.textContent.includes('Checking saved products'));
+  assert.equal(await page.evaluate(()=>[...document.querySelectorAll('main button')].find(button=>button.textContent==='Add all to tray').disabled),true);
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:boards'))[0].pins.length),1);
+  await page.evaluate(()=>{window.fixtureLookupPending=false;window.fixtureLookup.variants=window.fixtureLookup.variants.filter(option=>option.id!=='oak');window.fixtureRefresh();});
+  await page.waitForFunction(()=>document.querySelector('main')?.textContent.includes('Unavailable item'));
+  assert.equal(await page.evaluate(()=>[...document.querySelectorAll('main button')].find(button=>button.textContent==='Add all to tray').disabled),true);
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:boards'))[0].pins[0].vid),'oak');
+  assert.equal(await page.evaluate(()=>window.fixtureCommands||0),0);
+  results.push({offpageBoardHydrated:true,independentBoardAndProfileCovers:true,shelfAddPreservesVariantAndPack:true,nondefaultBoardVariantAndQuantityPreserved:true,pendingBoardPurchaseBlocked:true,removedVariantNotSubstituted:true,businessCommands:0});
+  await page.goto('http://fixture.invalid');
+  await page.evaluate(()=>{localStorage.clear();localStorage.setItem('hol:boards','[]');location.hash='board';});
+  await page.addStyleTag({content:await readFile('trade/style.css','utf8')});
+  await page.addScriptTag({content:bundle.outputFiles.find(file=>file.path.endsWith('.js')).text});
+  await page.waitForFunction(()=>document.querySelector('main h1')?.textContent==='Board unavailable');
+  results.push({deletedBoardRecovery:true,businessCommands:0});
   assert.deepEqual(pageErrors, []);
   await writeFile(
     'artifacts/lighthouse/tray-request-browser.json',
@@ -260,6 +385,7 @@ try {
   );
   console.log(JSON.stringify(results));
 } finally {
+  await writeFile('artifacts/lighthouse/tray-request-last-state.json', JSON.stringify({ errors: pageErrors, body: await page.evaluate(()=>document.body.innerText).catch(()=>null) }, null, 2));
   await browser.close();
 }
 

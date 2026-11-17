@@ -1,9 +1,11 @@
 {
   "schemaVersion": 1,
-  "scope": "Initial public landing-page baseline only; not full-spec acceptance",
+  "scope": "Public landing pages and two verified Ashcroft product examples; not full-spec acceptance",
   "routes": [
     { "id": "retail-home", "path": "/", "readySelector": "[data-catalog-ready='true']", "requiredText": "Recommended Products" },
-    { "id": "holm-home", "path": "/trade/", "readySelector": "#root main.home", "requiredText": "House" }
+    { "id": "holm-home", "path": "/trade/", "readySelector": "#root main.home", "requiredText": "House" },
+    { "id": "ashcroft-sofa", "path": "/products/qn73a88mnk5czwe2xvrzxf4ta58f0cdp", "readySelector": "main[aria-busy='false']", "requiredText": "Bramwell" },
+    { "id": "unavailable-lighting", "path": "/products/qn7801qggjxaygjjzx7dggcpfh8g3k1q", "readySelector": "main[aria-busy='false']", "requiredText": "unavailable" }
   ],
-  "pendingCoverage": ["collections", "product-variants", "search", "cart", "delivery", "authenticated-trade", "projects", "referrals", "outages", "metadata"]
+  "pendingCoverage": ["collections", "eligible-zuo-ground-and-ltl", "product-variants", "search", "cart", "delivery", "authenticated-trade", "projects", "referrals", "outages", "metadata"]
 }

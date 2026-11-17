@@ -2,7 +2,7 @@
 
 Prepared November 10, 2026 for Louie Mae and House of Louie Mae. This specification targets 100 Performance, 100 Accessibility, 100 Best Practices and 100 SEO on public, indexable storefront routes, on mobile and desktop. It also requires accessible, fast, secure private trade and checkout journeys without exposing them to search engines.
 
-Status updated November 16, 2026: production service is restored, and PR #295 is merged and deployed. Implementation and acceptance remain incomplete. See README.md for verified increments and remaining work; restored service and passing fixture tests do not establish full commerce or repeated Lighthouse acceptance.
+Status updated November 17, 2026: production service is restored, and PRs through #302 are merged and deployed. The product HTML/client metadata handoff is verified in production. PR #303 prepares independent saved-product identities; subsequent frontend and controlled-audit increments are prepared separately. Implementation and acceptance remain incomplete. See README.md for verified increments and remaining work; restored service and passing fixture tests do not establish full commerce or repeated Lighthouse acceptance.
 
 # 1 Success criteria and scope
 
@@ -418,5 +418,5 @@ Implementation is complete only when:
 
 The final evidence packet must list every route, device and persona; all repeated scores and metric values; failing and resolved audit IDs; browser and Lighthouse versions; commit/deployment IDs; fixture versus live-data designation; accessibility review results; visual-review screenshots; functional test results; and any remaining operational blocker.
 
-This work can begin immediately with the measurement harness, resilience, accessibility, search, pagination and asset work. Production acceptance and eligible checkout activation remain dependent on backend restoration and current commercial qualification. This specification does not itself authorize billing changes, live payments or supplier dispatch.
+Backend service is restored. Production acceptance still requires the remaining implementation, complete route/state verification and current commercial qualification. This specification does not itself authorize billing changes, live payments or supplier dispatch.
 

@@ -1,6 +1,7 @@
+/* global structuredClone */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assessRun, assessBatch, categories } from './policy.mjs';
+import { assessRun, assessBatch, assessRelease, categories } from './policy.mjs';
 
 const expected = { url: 'https://example.com/', device: 'mobile' };
 const report = () => ({ lighthouseVersion: '13.6.0', finalDisplayedUrl: expected.url,
@@ -10,6 +11,20 @@ const run = (score = 1) => {
   const lhr = report(); lhr.categories.performance.score = score;
   return assessRun(lhr, { ok: true, url: expected.url }, expected);
 };
+
+test('release requires every registered device batch and recomputes retained run gates', () => {
+  const manifest = { selectedRoutes: ['home', 'product'], fullRegistryRun: true, omittedRoutes: [], pendingCoverage: [],
+    batches: ['home', 'product'].flatMap(route => ['mobile', 'desktop'].map(device => ({ route, device, ...assessBatch(Array.from({ length: 5 }, () => run())) }))) };
+  assert.equal(assessRelease(manifest).passed, true);
+  assert.equal(assessRelease({ ...manifest, batches: manifest.batches.slice(0, 1) }).passed, false);
+  assert.equal(assessRelease({ ...manifest, batches: [...manifest.batches, manifest.batches[0]] }).passed, false);
+  assert.equal(assessRelease({ ...manifest, pendingCoverage: ['collections'] }).passed, false);
+  assert.equal(assessRelease({ ...manifest, omittedRoutes: ['trade'] }).passed, false);
+  assert.equal(assessRelease({ ...manifest, selectedRoutes: [] }).passed, false);
+  const corrupt = structuredClone(manifest);
+  corrupt.batches[0].runs = [run()]; // stale passed:true cannot override missing measurements
+  assert.equal(assessRelease(corrupt).passed, false);
+});
 test('high-scoring error page is never valid', () => {
   assert.equal(assessRun(report(), { ok: false, url: expected.url }, expected).valid, false);
 });

@@ -10,13 +10,28 @@ vi.mock('convex/react', () => ({
   usePaginatedQuery: () => ({ results: mocks.rows, status: mocks.status, loadMore: mocks.loadMore }),
 }));
 vi.mock('./catalog', () => ({ liveProducts: (rows: unknown[]) => rows }));
-vi.mock('./app', () => ({ App: () => <main className="home">Verified catalog</main>, setProducts: (rows: unknown[]) => mocks.install(rows) }));
+vi.mock('./app', () => ({ App: () => <main className="home">Verified catalog<input aria-label="Unsaved project name" /></main>, setProducts: (rows: unknown[]) => mocks.install(rows) }));
 beforeEach(() => {
   mocks.me = undefined; mocks.authLoading = false; mocks.authenticated = undefined; mocks.failed = false; mocks.rows = []; mocks.status = 'LoadingFirstPage'; mocks.loadMore.mockReset(); mocks.install.mockReset();
   vi.useFakeTimers(); vi.spyOn(console, 'error').mockImplementation(() => undefined);
   const shell = document.createElement('div'); shell.id = 'holm-shell'; shell.textContent = 'Startup hero'; document.body.append(shell);
 });
 afterEach(() => { cleanup(); document.getElementById('holm-shell')?.remove(); vi.useRealTimers(); vi.restoreAllMocks(); });
+it('keeps an existing draft mounted but inaccessible during an empty same-viewer refresh', () => {
+  mocks.me = { signedIn: false }; mocks.status = 'Exhausted'; mocks.rows = [{ id: 'one' }];
+  const view = render(<LiveShell />);
+  const input = screen.getByLabelText('Unsaved project name');
+  fireEvent.change(input, { target: { value: 'Unfinished project' } });
+  mocks.rows = []; view.rerender(<LiveShell />);
+  expect(input.closest('[hidden]')).not.toBeNull();
+  expect(input.closest('[inert]')).not.toBeNull();
+  expect(screen.getByRole('status')).toHaveTextContent('No products are available');
+  mocks.status = 'LoadingMore'; view.rerender(<LiveShell />);
+  expect(input.closest('[hidden]')).not.toBeNull();
+  mocks.status = 'Exhausted'; mocks.rows = [{ id: 'two' }]; view.rerender(<LiveShell />);
+  expect(screen.getByLabelText('Unsaved project name')).toBe(input);
+  expect(input).toHaveValue('Unfinished project');
+});
 
 it('replaces an indefinite startup hero with recovery links after ten seconds and recovers on data arrival', () => {
   const view = render(<LiveShell />);
@@ -38,7 +53,7 @@ it('does not display partial or unresolved account pricing', () => {
   expect(mocks.install).not.toHaveBeenCalled();
   mocks.status = 'Exhausted'; mocks.me = undefined; view.rerender(<LiveShell />);
   expect(screen.queryByText('Verified catalog')).toBeNull();
-  expect(mocks.install).not.toHaveBeenCalled();
+  expect(mocks.install).toHaveBeenLastCalledWith([]);
 });
 it('removes the startup hero on query errors and retries without presenting stale products', () => {
   mocks.failed = true;
@@ -67,4 +82,30 @@ it('hides cached account-priced rows while authentication is loading or disagree
   view.rerender(<LiveShell />);
   expect(screen.queryByText('Verified catalog')).toBeNull();
   expect(mocks.install).not.toHaveBeenCalled();
+});
+
+it('preserves the mounted project UI across same-viewer catalog refreshes', () => {
+  mocks.me = { signedIn: false }; mocks.rows = [{ id: 'first' }]; mocks.status = 'Exhausted';
+  const view = render(<LiveShell />);
+  const input = screen.getByLabelText('Unsaved project name');
+  fireEvent.change(input, { target: { value: 'Client lounge' } });
+  mocks.rows = [{ id: 'replacement' }];
+  view.rerender(<LiveShell />);
+  expect(screen.getByLabelText('Unsaved project name')).toBe(input);
+  expect(input).toHaveValue('Client lounge');
+  expect(mocks.install).toHaveBeenLastCalledWith(mocks.rows);
+  expect(mocks.install.mock.calls.some(([rows]) => rows.length === 0)).toBe(false);
+  view.unmount();
+  expect(mocks.install).toHaveBeenLastCalledWith([]);
+});
+
+it('clears the previous viewer catalog and remounts UI when the pricing role changes', () => {
+  mocks.me = { signedIn: true, verified: true }; mocks.rows = [{ id: 'trade' }]; mocks.status = 'Exhausted';
+  const view = render(<LiveShell />);
+  const input = screen.getByLabelText('Unsaved project name');
+  mocks.me = { signedIn: true, verified: false }; mocks.rows = [{ id: 'retail' }];
+  view.rerender(<LiveShell />);
+  expect(screen.getByLabelText('Unsaved project name')).not.toBe(input);
+  expect(mocks.install.mock.calls.some(([rows]) => rows.length === 0)).toBe(true);
+  expect(mocks.install).toHaveBeenLastCalledWith(mocks.rows);
 });
