@@ -463,6 +463,21 @@ try {
   assert.equal(remaining.length,1);assert.equal(remaining[0].vid,'walnut');
   assert.equal(await page.evaluate(()=>window.fixtureCommands||0),0);
   results.push({twoBoardVariantsKeepIndependentPricesAndPackMinimums:true,organizeRemovesOnlySelectedVariant:true,businessCommands:0});
+  await page.click('[aria-label="Open project tray"]');
+  await page.waitForSelector('.tv-line .tv-th');
+  await page.click('.tv-line .tv-th');
+  await page.waitForSelector('.pp-price');
+  assert.match(await page.$eval('.pp-price',node=>node.textContent),/80/);
+  await page.evaluate(()=>[...document.querySelectorAll('dialog button')].find(button=>button.textContent.trim()==='Save').click());
+  await page.waitForSelector('.boardpick .bp');
+  await page.click('.boardpick .bp');
+  await page.waitForFunction(()=>JSON.parse(localStorage.getItem('hol:boards'))[0].pins.length===2);
+  assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:boards'))[0].pins.map(pin=>pin.vid)),['oak','walnut']);
+  await page.evaluate(()=>[...document.querySelectorAll('dialog button')].find(button=>button.textContent.trim()==='Save').click());
+  await page.waitForSelector('.boardpick .bp');await page.click('.boardpick .bp');
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:boards'))[0].pins.length),2);
+  results.push({savingSecondOptionPreservesFirst:true,repeatedSaveIsIdempotent:true,businessCommands:0});
+
   await page.goto('http://fixture.invalid');
   await page.evaluate(()=>{localStorage.clear();localStorage.setItem('hol:boards','[]');location.hash='board';});
   await page.addStyleTag({content:await readFile('trade/style.css','utf8')});
