@@ -82,6 +82,7 @@ jobs:
           CHROME_PATH: /usr/bin/google-chrome
         run: |
           npm run test:holm:browser
+          node scripts/lighthouse/holm-catalog-intent.mjs
           npm run test:tray-request:browser
           npm run test:application:browser
           node scripts/lighthouse/newsletter.mjs

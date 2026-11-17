@@ -11,8 +11,9 @@ vi.mock('convex/react', () => ({
   usePaginatedQuery: () => ({ results: mocks.rows, status: mocks.status, loadMore: mocks.loadMore }),
 }));
 vi.mock('./catalog', () => ({ liveProducts: (rows: unknown[]) => rows }));
-vi.mock('./app', () => ({ App: () => <main className="home">Verified catalog<input aria-label="Unsaved project name" /></main>, setProducts: (rows: unknown[], refs: unknown[]) => { mocks.install(rows); mocks.references(refs); } }));
+vi.mock('./app', () => ({ App: ({onCatalogIntent}: {onCatalogIntent: () => void}) => <main className="home">Verified catalog<input aria-label="Unsaved project name" /><button onClick={onCatalogIntent}>Discover catalog</button></main>, setProducts: (rows: unknown[], refs: unknown[]) => { mocks.install(rows); mocks.references(refs); } }));
 beforeEach(() => {
+  window.history.replaceState(null, '', '/trade/');
   mocks.curated=[]; mocks.me = undefined; mocks.authLoading = false; mocks.authenticated = undefined; mocks.failed = false; mocks.rows = []; mocks.status = 'LoadingFirstPage'; mocks.loadMore.mockReset(); mocks.install.mockReset(); mocks.references.mockReset();
   vi.useFakeTimers(); vi.spyOn(console, 'error').mockImplementation(() => undefined);
   const shell = document.createElement('div'); shell.id = 'holm-shell'; shell.textContent = 'Startup hero'; document.body.append(shell);
@@ -50,6 +51,8 @@ it('shows a verified first page but clears it when account identity becomes unre
   mocks.me = { signedIn: false };
   mocks.rows = [{ id: 'partial' }]; mocks.status = 'CanLoadMore';
   const view = render(<LiveShell />);
+  expect(mocks.loadMore).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Discover catalog' }));
   expect(mocks.loadMore).toHaveBeenCalledWith(24);
   expect(mocks.install).toHaveBeenLastCalledWith(mocks.rows);
   expect(screen.getByText('Verified catalog')).toBeTruthy();
@@ -116,6 +119,7 @@ it('waits for verified curated references and passes completion separately from 
   mocks.me={signedIn:false};mocks.status='CanLoadMore';mocks.rows=[{id:'first'}];mocks.curated=undefined;
   const view=render(<LiveShell/>);
   expect(screen.queryByText('Verified catalog')).toBeNull();
+  window.history.replaceState(null, '', '/trade/');
   mocks.curated=[];view.rerender(<LiveShell/>);
   expect(screen.getByText('Verified catalog')).toBeTruthy();
   const input=screen.getByLabelText('Unsaved project name');fireEvent.change(input,{target:{value:'Keep during pagination'}});
@@ -130,6 +134,30 @@ it('continues past empty candidate pages without claiming an empty catalog', () 
   expect(mocks.loadMore).toHaveBeenCalledWith(24);
   expect(mocks.install).not.toHaveBeenCalled();
   expect(screen.queryByText(/No products are available/)).toBeNull();
+});
+
+it('recovers a withdrawn home selection from a settled replacement page and stops idle pagination', () => {
+  mocks.me={signedIn:false};mocks.status='CanLoadMore';mocks.rows=[{id:'first'}];
+  const view=render(<LiveShell/>);
+  const input=screen.getByLabelText('Unsaved project name');fireEvent.change(input,{target:{value:'Keep recovery draft'}});
+  expect(mocks.loadMore).not.toHaveBeenCalled();
+  mocks.rows=[];view.rerender(<LiveShell/>);
+  expect(mocks.install).toHaveBeenLastCalledWith([]);
+  expect(mocks.loadMore).toHaveBeenCalledTimes(1);
+  mocks.status='LoadingMore';view.rerender(<LiveShell/>);
+  const replacement=Array.from({length:30},(_,i)=>({id:`replacement-${i}`}));
+  mocks.rows=replacement;mocks.status='CanLoadMore';view.rerender(<LiveShell/>);
+  expect(mocks.install).toHaveBeenLastCalledWith(replacement.slice(0,24));
+  expect(mocks.loadMore).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText('Unsaved project name')).toBe(input);
+  expect(input).toHaveValue('Keep recovery draft');
+  const installed=mocks.install.mock.calls.length;
+  mocks.rows=[...replacement,{id:'later'}];view.rerender(<LiveShell/>);
+  expect(mocks.install).toHaveBeenCalledTimes(installed);
+  expect(mocks.loadMore).toHaveBeenCalledTimes(1);
+  mocks.rows=[{id:'later'}];view.rerender(<LiveShell/>);
+  expect(mocks.install).toHaveBeenLastCalledWith([{id:'later'}]);
+  expect(mocks.loadMore).toHaveBeenCalledTimes(1);
 });
 
 it('installs first and complete datasets without reinstalling every intermediate page', () => {
@@ -153,4 +181,36 @@ it('applies price corrections and withdrawals to installed rows and references b
   expect(screen.queryByText(/No products are available/)).toBeNull();
   mocks.status='Exhausted';mocks.rows=[];view.rerender(<LiveShell/>);
   expect(screen.getByText(/No products are available/)).toBeTruthy();
+});
+
+it('starts full loading for a direct discovery route and retains demand after returning home', () => {
+  window.history.replaceState(null, '', '/trade/#discover');
+  mocks.me={signedIn:false};mocks.rows=[{id:'first'}];mocks.status='CanLoadMore';
+  const view=render(<LiveShell/>);
+  expect(mocks.loadMore).toHaveBeenCalledWith(24);
+  act(()=>{window.history.replaceState(null,'','/trade/#home');window.dispatchEvent(new Event('hashchange'));});
+  mocks.status='LoadingMore';view.rerender(<LiveShell/>);
+  mocks.loadMore.mockClear();mocks.status='CanLoadMore';view.rerender(<LiveShell/>);
+  expect(mocks.loadMore).toHaveBeenCalledWith(24);
+});
+it('requests full discovery on hash navigation without replacing an unsaved project', () => {
+  mocks.me={signedIn:false};mocks.rows=[{id:'first'}];mocks.status='CanLoadMore';
+  render(<LiveShell/>);
+  const input=screen.getByLabelText('Unsaved project name');fireEvent.change(input,{target:{value:'Keep this draft'}});
+  expect(mocks.loadMore).not.toHaveBeenCalled();
+  act(()=>{window.history.replaceState(null,'','/trade/#studio');window.dispatchEvent(new Event('hashchange'));});
+  expect(mocks.loadMore).toHaveBeenCalledWith(24);
+  expect(screen.getByLabelText('Unsaved project name')).toBe(input);
+  expect(input).toHaveValue('Keep this draft');
+});
+
+it('does not carry home-page discovery demand into another viewer session', () => {
+  mocks.me={signedIn:true,verified:true};mocks.rows=[{id:'trade'}];mocks.status='CanLoadMore';
+  const view=render(<LiveShell/>);
+  fireEvent.click(screen.getByRole('button',{name:'Discover catalog'}));
+  expect(mocks.loadMore).toHaveBeenCalledWith(24);
+  mocks.loadMore.mockClear();mocks.me={signedIn:false};mocks.rows=[{id:'public'}];
+  view.rerender(<LiveShell/>);
+  expect(mocks.loadMore).not.toHaveBeenCalled();
+  expect(mocks.install).toHaveBeenLastCalledWith([{id:'public'}]);
 });
