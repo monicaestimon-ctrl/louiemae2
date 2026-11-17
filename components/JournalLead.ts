@@ -255,7 +255,7 @@ export function JournalArticleHeading({
   );
 }
 
-type WindowImage = { base: string; widths: number[]; ratio: number };
+type WindowImage = { base: string; widths: number[]; ratio: number; avifBase?: string };
 type EditorialImage = {
   windows: Record<'indexMobile' | 'indexDesktop' | 'articleMobile' | 'articleDesktop', WindowImage>;
 };
@@ -287,21 +287,43 @@ function JournalImage({
     });
   const mobile = entry.windows[`${kind}Mobile`];
   const desktop = entry.windows[`${kind}Desktop`];
-  const set = (image: WindowImage) =>
-    image.widths.map((width) => `${image.base}-${width}.webp ${width}w`).join(', ');
+  const sizes =
+    kind === 'index'
+      ? '(min-width: 1376px) 1280px, (min-width: 768px) calc(100vw - 96px), calc(100vw - 48px)'
+      : '100vw';
+  const set = (image: WindowImage, format: 'webp' | 'avif' = 'webp') =>
+    image.widths
+      .map(
+        (width) => `${format === 'avif' ? image.avifBase : image.base}-${width}.${format} ${width}w`
+      )
+      .join(', ');
   return React.createElement(
     'picture',
     { className: 'block w-full h-full' },
+    desktop.avifBase &&
+      React.createElement('source', {
+        type: 'image/avif',
+        media: '(min-width: 768px)',
+        srcSet: set(desktop, 'avif'),
+        sizes,
+      }),
     React.createElement('source', {
+      type: 'image/webp',
       media: '(min-width: 768px)',
       srcSet: set(desktop),
-      sizes: '100vw',
+      sizes,
     }),
+    mobile.avifBase &&
+      React.createElement('source', {
+        type: 'image/avif',
+        srcSet: set(mobile, 'avif'),
+        sizes,
+      }),
     React.createElement('img', {
       ...attrs,
       src: `${mobile.base}-${mobile.widths.at(-1)}.webp`,
       srcSet: set(mobile),
-      sizes: '100vw',
+      sizes,
     })
   );
 }
