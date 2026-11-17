@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-vi.mock('node:fs/promises', async original => ({ ...await original<typeof import('node:fs/promises')>(),
-  readFile: vi.fn().mockResolvedValue('<html><head><title>Home</title><meta name="description" content="Home"><meta property="og:image" content="home"><link rel="canonical" href="https://louiemae.com"></head><body><!--home-document-start-->Home hero<!--home-document-end--><!--product-document--><div id="root"></div></body></html>'),
-}));
+vi.mock('node:fs/promises', async original => {
+  const actual = await original<typeof import('node:fs/promises')>();
+  const readFile = vi.fn().mockResolvedValue('<html><head><title>Home</title><meta name="description" content="Home"><meta property="og:image" content="home"><link rel="canonical" href="https://louiemae.com"></head><body><!--home-document-start-->Home hero<!--home-document-end--><!--product-document--><div id="root"></div></body></html>');
+  return { ...actual, readFile, default: { ...actual, readFile } };
+});
+import { readFile } from 'node:fs/promises';
 import handler from '../../api/collection';
 const fetchMock = vi.fn();
 const site = { collections: [{ id: 'furniture', title: 'Furniture & objects', subtitle: 'Thoughtful <pieces>', heroImage: '/images/brand/DINNERTABLE.png', subcategories: [{ id: 'chairs', title: 'Chairs', image: '/images/brand/furniture-chair.png' }] }] };
@@ -38,6 +41,7 @@ it('renders escaped public collection content and bounded matching product previ
   expect(result.body).toContain('href="https://louiemae.com/collection/furniture"');
   expect(result.body).toContain('data-collection-id="furniture"'); expect(fetchMock).toHaveBeenCalledTimes(3);
   expect(result.body).toContain('rel="preload" as="image"');
+  expect(vi.mocked(readFile)).toHaveBeenCalled();
 });
 it.each([{ id: ['furniture'] }, { id: '<script>' }, { id: '' }])('rejects malformed identities before querying: %j', async query => {
   expect((await request(query)).code).toBe(404); expect(fetchMock).not.toHaveBeenCalled();
