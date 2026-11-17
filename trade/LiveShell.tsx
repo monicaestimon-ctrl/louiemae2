@@ -46,12 +46,17 @@ function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
   }, [status, loadMore, catalogDemand.requested, results.length]);
   const [installed, setInstalled] = useState(false);
   const [visibleIds, setVisibleIds] = useState<readonly string[] | null>(null);
+  // A settled page may replace every previously displayed row after a live withdrawal.
+  // Admit a bounded replacement selection instead of filtering it out forever.
+  const replaceSelection = status === 'CanLoadMore' && visibleIds !== null && results.length > 0
+    && !results.some(row => visibleIds.includes(row.id));
   const previousInstallation = useRef('');
   const mapped = useMemo(() => {
     if (status === 'LoadingFirstPage' || (!installed && !results.length && status !== 'Exhausted')) return null;
-    const visible = visibleIds && status !== 'Exhausted' ? results.filter(row => visibleIds.includes(row.id)) : results;
+    const visible = replaceSelection ? results.slice(0, 24)
+      : visibleIds && status !== 'Exhausted' ? results.filter(row => visibleIds.includes(row.id)) : results;
     return liveProducts(visible as LiveItem[]);
-  }, [results, status, installed, visibleIds]);
+  }, [results, status, installed, visibleIds, replaceSelection]);
   const [hasContent, setHasContent] = useState(false);
   const [empty, setEmpty] = useState(false);
   // The legacy app reads a module-level catalog. Install only committed data,
@@ -64,10 +69,11 @@ function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
     previousInstallation.current = signature;
     setProducts(mapped, references);
     if (visibleIds === null || status === 'Exhausted') setVisibleIds(results.map(row => row.id));
+    else if (replaceSelection) setVisibleIds(results.slice(0, 24).map(row => row.id));
     setInstalled(true);
     setEmpty(previous => mapped.length === 0 ? status === 'Exhausted' || previous : false);
     if (mapped.length) setHasContent(true);
-  }, [mapped, references, visibleIds, status, results]);
+  }, [mapped, references, visibleIds, status, results, replaceSelection]);
   const ready = installed;
   const timedOut = usePendingTimeout(!ready);
   const shell = document.getElementById('holm-shell');

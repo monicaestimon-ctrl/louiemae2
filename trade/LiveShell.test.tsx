@@ -136,6 +136,30 @@ it('continues past empty candidate pages without claiming an empty catalog', () 
   expect(screen.queryByText(/No products are available/)).toBeNull();
 });
 
+it('recovers a withdrawn home selection from a settled replacement page and stops idle pagination', () => {
+  mocks.me={signedIn:false};mocks.status='CanLoadMore';mocks.rows=[{id:'first'}];
+  const view=render(<LiveShell/>);
+  const input=screen.getByLabelText('Unsaved project name');fireEvent.change(input,{target:{value:'Keep recovery draft'}});
+  expect(mocks.loadMore).not.toHaveBeenCalled();
+  mocks.rows=[];view.rerender(<LiveShell/>);
+  expect(mocks.install).toHaveBeenLastCalledWith([]);
+  expect(mocks.loadMore).toHaveBeenCalledTimes(1);
+  mocks.status='LoadingMore';view.rerender(<LiveShell/>);
+  const replacement=Array.from({length:30},(_,i)=>({id:`replacement-${i}`}));
+  mocks.rows=replacement;mocks.status='CanLoadMore';view.rerender(<LiveShell/>);
+  expect(mocks.install).toHaveBeenLastCalledWith(replacement.slice(0,24));
+  expect(mocks.loadMore).toHaveBeenCalledTimes(1);
+  expect(screen.getByLabelText('Unsaved project name')).toBe(input);
+  expect(input).toHaveValue('Keep recovery draft');
+  const installed=mocks.install.mock.calls.length;
+  mocks.rows=[...replacement,{id:'later'}];view.rerender(<LiveShell/>);
+  expect(mocks.install).toHaveBeenCalledTimes(installed);
+  expect(mocks.loadMore).toHaveBeenCalledTimes(1);
+  mocks.rows=[{id:'later'}];view.rerender(<LiveShell/>);
+  expect(mocks.install).toHaveBeenLastCalledWith([{id:'later'}]);
+  expect(mocks.loadMore).toHaveBeenCalledTimes(1);
+});
+
 it('installs first and complete datasets without reinstalling every intermediate page', () => {
   mocks.me={signedIn:false};mocks.status='CanLoadMore';const first=[{id:'first'}];mocks.rows=first;
   const view=render(<LiveShell/>);expect(mocks.install).toHaveBeenLastCalledWith(first);

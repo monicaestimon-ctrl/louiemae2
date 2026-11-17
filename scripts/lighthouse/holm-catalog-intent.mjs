@@ -66,6 +66,8 @@ try {
     await page.addScriptTag({content:bundle.outputFiles.find(f=>f.path.endsWith('.js')).text});
     await page.waitForSelector('main.home');
     assert.equal(await page.evaluate(()=>window.fixtureLoads||0),0);
+    await page.waitForSelector('[aria-label="Describe a feeling"]');
+    assert.equal(await page.evaluate(()=>window.fixtureLoads||0),0);
     await page.focus('[aria-label="Describe a feeling"]');
     await page.type('[aria-label="Describe a feeling"]','warm leather');
     await page.waitForFunction(()=>window.fixtureLoads>0);
