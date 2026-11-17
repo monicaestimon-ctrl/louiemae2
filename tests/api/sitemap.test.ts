@@ -46,3 +46,16 @@ it('rejects private or cross-origin paths and loops in source cursors',async()=>
 it('does not expose the full catalog during prelaunch',async()=>{
   vi.stubEnv('VITE_PRELAUNCH_MODE','true');expect((await request()).status).toBe(503);expect(fetchMock).not.toHaveBeenCalled();
 });
+
+it('fails closed on required splits even when the page claims completion',async()=>{
+  fetchMock.mockImplementation(async(_url,options)=>({ok:true,json:async()=>({status:'success',value:JSON.parse(options.body).path==='siteContent:get'?{collections:[]}:{page:['/products/partial'],isDone:true,continueCursor:'',pageStatus:'SplitRequired',splitCursor:'split'}})}));
+  const result=await request();expect(result.status).toBe(503);expect(result.body).not.toContain('/products/partial');
+});
+it('rereads a recommended split with a smaller page before accepting URLs',async()=>{
+  fetchMock.mockImplementation(async(_url,options)=>{
+    const {path,args}=JSON.parse(options.body);
+    const value=path==='siteContent:get'?{collections:[]}:path==='blogPosts:sitemapPage'?{page:[],isDone:true,continueCursor:''}:args.paginationOpts.numItems>1?{page:['/products/discard'],isDone:true,continueCursor:'',pageStatus:'SplitRecommended',splitCursor:'split'}:{page:['/products/verified'],isDone:true,continueCursor:''};
+    return {ok:true,json:async()=>({status:'success',value})};
+  });
+  const result=await request();expect(result.status).toBe(200);expect(result.body).toContain('/products/verified');expect(result.body).not.toContain('/products/discard');
+});

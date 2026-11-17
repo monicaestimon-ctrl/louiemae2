@@ -114,6 +114,6 @@ export const sitemapPage = query({
     handler: async (ctx, args) => {
         const batch = await ctx.db.query('blogPosts').withIndex('by_status', q => q.eq('status', 'published'))
             .paginate(catalogPageOptions(args.paginationOpts, 100, 500_000));
-        return { page: batch.page.map(post => `/blog/${encodeURIComponent(post._id)}`), isDone: batch.isDone, continueCursor: batch.continueCursor };
+        return { page: batch.page.map(post => `/blog/${encodeURIComponent(post._id)}`), isDone: batch.isDone, continueCursor: batch.continueCursor, pageStatus: batch.pageStatus, splitCursor: batch.splitCursor };
     },
 });

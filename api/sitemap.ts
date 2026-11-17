@@ -42,11 +42,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     for (const [source, prefix] of [['publicSearch:sitemapPage', '/products/'], ['blogPosts:sitemapPage', '/blog/']]) {
       let cursor: string | null = null;
+      let pageSize = 24;
       const cursors = new Set<string>();
       for (let batch = 0; ; batch++) {
         if (batch >= 2500 || signal.aborted) throw new Error('Sitemap source exceeds bounded request');
-        const result = record(await query(source, { paginationOpts: { cursor, numItems: 24 } }));
+        const result = record(await query(source, { paginationOpts: { cursor, numItems: pageSize } }));
         if (!result || !Array.isArray(result.page) || result.page.length > 100 || typeof result.isDone !== 'boolean' || typeof result.continueCursor !== 'string') throw new Error('Invalid page');
+        if (result.pageStatus === 'SplitRequired') throw new Error('Incomplete source page');
+        if (result.pageStatus === 'SplitRecommended') {
+          if (pageSize === 1) throw new Error('Source range needs partitioning');
+          pageSize = 1; continue; // Reread the same range before accepting any of its URLs.
+        }
         for (const path of result.page) {
           if (typeof path !== 'string' || !path.startsWith(prefix) || !/^[a-zA-Z0-9_-]{1,128}$/.test(path.slice(prefix.length))) throw new Error('Invalid public path');
           paths.add(path);

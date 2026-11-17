@@ -157,8 +157,8 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
   };
 
   // Hero Slider for the top of the Category Page
-  const HeroProductSlider: React.FC<PreviewProps & { categoryTitle: string }> = ({ categoryTitle, config, ready, checking, onSelect }) => {
-    const preview = useStoreCatalog(config, categoryTitle, ready, 'featured', 8);
+  const HeroProductSlider: React.FC<PreviewProps & { categoryTitle: string; categoryId: string }> = ({ categoryTitle, categoryId, config, ready, checking, onSelect }) => {
+    const preview = useStoreCatalog(config, categoryId, ready, 'featured', 8);
     const featuredProducts = preview.products;
     const collection = config.id;
     if (checking || preview.loading) return <ProductLoadingGrid />;
@@ -219,7 +219,7 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
           <div className="min-w-[200px] md:min-w-[240px] snap-center flex items-center justify-center">
             <button
               onClick={() => {
-                window.location.hash = `#collection/${collection}?cat=${encodeURIComponent(categoryTitle)}&view=products`;
+                window.location.hash = `#collection/${collection}?cat=${encodeURIComponent(categoryId)}&view=products`;
               }}
               className="group flex flex-col items-center gap-4 text-muted-earth hover:text-earth transition-colors"
             >
@@ -257,6 +257,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
   // The route parser already decoded URLSearchParams. Decoding again breaks
   // legitimate percent signs and can turn a filter into a page-level exception.
   const selectedCategory = initialCategory;
+  const selectedCategoryTitle = config.subcategories.find(category => category.id === selectedCategory || category.title === selectedCategory)?.title || selectedCategory;
   // A retail referral link lands on ?product=<id> (and ?variant=<id>): open that piece directly.
   const [selectedProductId, setSelectedProductId] = useState<string | null>(() => {
     const q = window.location.hash.split('?')[1];
@@ -463,7 +464,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
             <div className="container mx-auto">
 
               {/* NEW: Hero Slider at the Top */}
-              <HeroProductSlider categoryTitle={selectedCategory} config={config} ready={catalogReady} checking={!readinessUnavailable && (isLoading || readiness === undefined)} handleCategoryChange={handleCategoryChange} onSelect={handleSelectProduct} />
+              <HeroProductSlider categoryId={selectedCategory} categoryTitle={selectedCategoryTitle} config={config} ready={catalogReady} checking={!readinessUnavailable && (isLoading || readiness === undefined)} handleCategoryChange={handleCategoryChange} onSelect={handleSelectProduct} />
 
               <div id="sub-cats-start" className="h-px w-full bg-earth/10 mb-16"></div>
 
@@ -548,7 +549,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
 
                       <h2 className="font-serif text-4xl md:text-6xl text-white mb-6 tracking-tight">Coming Soon</h2>
                       <p className="text-sm md:text-xs text-white/60 uppercase tracking-[0.2em] mb-12 max-w-md mx-auto font-light leading-relaxed">
-                        Join the inner circle. Receive 24-hour early access to {selectedCategory} drops before they open to the public.
+                        Join the inner circle. Receive 24-hour early access to {selectedCategoryTitle} drops before they open to the public.
                       </p>
 
                       <CollectionSignup key={selectedCategory} category={selectedCategory} />

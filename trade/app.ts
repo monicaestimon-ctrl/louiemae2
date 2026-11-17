@@ -1364,7 +1364,7 @@ function PinDetail({ctx}){
           <div className="row pp-acts">
             <span style=${{position:'relative'}}><button className="btn btn-line btn-sm" onClick=${()=>setSave(!save)}>${I('pin',{width:15})} Save</button>${save&&html`<${SaveMenu} ctx=${ctx} pid=${p.id} product=${p} align="left" onDone=${()=>setSave(false)}/>`}</span>
             <button className="btn btn-line btn-sm" disabled=${!has(p.id)} title=${!has(p.id)?"Studio is unavailable for this saved product":undefined} onClick=${()=>ctx.toStudio([{pid:p.id,lid:p.lid,vid:p.vid}])}>${I('brush',{width:15})} Studio</button>
-            <button className="btn btn-line btn-sm" disabled=${!has(p.id)} title=${!has(p.id)?"3D planning is unavailable for this saved product":undefined} onClick=${()=>{ctx.setRoomSeed([p.id]);ctx.openPin(null);ctx.go('room')}}>${I('cube',{width:15})} 3D</button>
+            <button className="btn btn-line btn-sm" disabled=${!p.dimsCm} title=${!p.dimsCm?"Measurements are needed for 3D planning":undefined} onClick=${()=>{ctx.setRoomSeed([{pid:p.id,lid:p.lid,vid:p.vid}]);ctx.openPin(null);ctx.go('room')}}>${I('cube',{width:15})} 3D</button>
             <button className="ib" aria-pressed=${liked} aria-label="Like" onClick=${()=>ctx.toggleLike(p.id)} style=${{color:liked?'var(--cognac)':''}}>${I('heart',liked?{fill:'currentColor'}:{})}</button>
             <button className="ib" aria-label="Copy link" onClick=${()=>copyText(pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'link'),ctx.toast)}>${I('share')}</button>
             <a className="ib" aria-label="Save to Pinterest" href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'pin'))} target="_blank" rel="noopener">${I('pint')}</a>
@@ -1389,7 +1389,7 @@ function PinDetail({ctx}){
           <div className="pp-bitem main"><img src=${cut(p.id)} alt=${p.name}/><span>${p.name}</span></div>
           ${pairs.map(x=>html`<button key=${x.id} className=${'pp-bitem'+(bundle.includes(x.id)?' on':'')} onClick=${()=>setBundle(bundle.includes(x.id)?bundle.filter(y=>y!==x.id):[...bundle,x.id])} aria-pressed=${bundle.includes(x.id)}><img src=${cut(x.id)} alt=${x.name}/><span>${bundle.includes(x.id)?'✓ ':''}${x.name}</span><small className="mono">${ctx.mode==='trade'?fmt(tp(x)):fmt(x.price)}</small></button>`)}
         </div>
-        <div className="pp-bundle-sum"><span className="mono ix-dim">${bundle.length} pairing${bundle.length===1?'':'s'} selected</span><b className="num">${fmt(bundleTot)}</b><button className="btn btn-ink" disabled=${!bundle.length} onClick=${()=>{bundle.forEach(id=>ctx.addToProject(id,1,P.id,Z,null,true));ctx.toast(`${bundle.length} pairings added to ${P.name}`,{label:'Open tray',fn:()=>{ctx.openPin(null);ctx.setTray(true)}})}}>Add pairings to ${P.name}</button><button className="lnk" disabled=${!has(p.id)} onClick=${()=>ctx.toStudio([p.id,...bundle],p.name+' look')}>Arrange them in Studio</button></div>
+        <div className="pp-bundle-sum"><span className="mono ix-dim">${bundle.length} pairing${bundle.length===1?'':'s'} selected</span><b className="num">${fmt(bundleTot)}</b><button className="btn btn-ink" disabled=${!bundle.length} onClick=${()=>{bundle.forEach(id=>ctx.addToProject(id,1,P.id,Z,null,true));ctx.toast(`${bundle.length} pairings added to ${P.name}`,{label:'Open tray',fn:()=>{ctx.openPin(null);ctx.setTray(true)}})}}>Add pairings to ${P.name}</button><button className="lnk" onClick=${()=>ctx.toStudio([{pid:p.id,lid:p.lid,vid:p.vid},...bundle],p.name+' look')}>Arrange them in Studio</button></div>
       </div>
     </section>
 
@@ -1921,7 +1921,7 @@ function Studio({ctx}){
   const record=prev=>{hist.current.past.push(prev);if(hist.current.past.length>80)hist.current.past.shift();hist.current.future=[];dirty.current=true;setSteps(s=>s+1)};
   const commitDoc=next=>{record(docRef.current);setDoc(next)};
   const commit=nextEls=>commitDoc({...docRef.current,els:nextEls});
-  useEffect(()=>{const requested=syncRef.current;if(!requested)return;const currentDoc=docRef.current;const imgs=currentDoc.els.filter(e=>e.kind==='img');if([...requested,...imgs].some(item=>!productFor(item).lid))return;const verified=item=>{const p=productFor(item);return {pid:item.pid,lid:p.lid,vid:p.vid}};const {keep,add}=reconcileEditorSelections(imgs.map(verified),requested.map(verified));const drop=new Set(imgs.filter((_,i)=>!keep.has(i)).map(e=>e.id));syncRef.current=null;const st=currentDoc.mode==='room'?'room':'cutout';commitDoc({...currentDoc,els:[...currentDoc.els.filter(e=>!drop.has(e.id)),...add.map((identity,i)=>({...mkImg(identity,0,currentDoc.mode,SLOTS,st),x:6+(i%4)*23,y:60+Math.floor(i/4)*14,w:20}))]})});
+  useEffect(()=>{const requested=syncRef.current;if(!requested)return;const currentDoc=docRef.current;const imgs=currentDoc.els.filter(e=>e.kind==='img'&&productFor(e).lid);if(requested.some(item=>!productFor(item).lid))return;const verified=item=>{const p=productFor(item);return {pid:item.pid,lid:p.lid,vid:p.vid}};const {keep,add}=reconcileEditorSelections(imgs.map(verified),requested.map(verified));const drop=new Set(imgs.filter((_,i)=>!keep.has(i)).map(e=>e.id));syncRef.current=null;const st=currentDoc.mode==='room'?'room':'cutout';commitDoc({...currentDoc,els:[...currentDoc.els.filter(e=>!drop.has(e.id)),...add.map((identity,i)=>({...mkImg(identity,0,currentDoc.mode,SLOTS,st),x:6+(i%4)*23,y:60+Math.floor(i/4)*14,w:20}))]})});
   const undo=()=>{const h=hist.current;if(!h.past.length)return;h.future.push(docRef.current);dirty.current=true;setDoc(h.past.pop());setSteps(s=>s+1)};
   const redo=()=>{const h=hist.current;if(!h.future.length)return;h.past.push(docRef.current);dirty.current=true;setDoc(h.future.pop());setSteps(s=>s+1)};
   const setTitle=t=>{dirty.current=true;setDoc(d=>({...d,title:t.slice(0,TITLE_MAX)}))};
@@ -2608,11 +2608,11 @@ function ReadyRoom({ctx,onDraftChange,products}){
   const [title,setTitle]=useState(()=>load('roomTitle','Untitled room'));useEffect(()=>store('roomTitle',title),[title]);
   const [three,threeFailed]=useThree();const [eng,setEng]=useState(0);
   const hist=useRef({past:[],future:[]});const vpRef=useRef(),cvRef=useRef(),labRef=useRef(),E=useRef({}),docRef=useRef(doc);docRef.current=doc;
-  const commit=next=>{hist.current.past.push(docRef.current);if(hist.current.past.length>60)hist.current.past.shift();hist.current.future=[];setDoc(next)};
+  const commit=next=>{next={...next,placementConflicts:next.items.filter(i=>plHit(next,i,i.x,i.z)).map(i=>i.uid)};hist.current.past.push(docRef.current);if(hist.current.past.length>60)hist.current.past.shift();hist.current.future=[];setDoc(next)};
   const undo=()=>{const h=hist.current;if(!h.past.length)return;h.future.push(docRef.current);setDoc(h.past.pop())};
   const redo=()=>{const h=hist.current;if(!h.future.length)return;h.past.push(docRef.current);setDoc(h.future.pop())};
-  const patchItem=(id,o)=>{const d=docRef.current;commit({...d,items:d.items.map(i=>{if(i.uid!==id)return i;const n={...i,...o};if('x' in o||'z' in o||'rot' in o){const [x,z]=plPlace(d,n,n.x,n.z);n.x=r2(x);n.z=r2(z)}return n})})};
-  const addItem=(pid,x,z)=>{if(!plReady(pid)){ctx.toast(`Measurements needed: ${byId(pid).name} has no width, depth and height yet`);return}const d=docRef.current;const it={uid:uid(),...currentIdentity(pid),x:0,z:0,rot:0,hang:byId(pid).hangs};const [px,pz]=plPlace(d,it,x??0,z??0);it.x=r2(px);it.z=r2(pz);commit({...d,items:[...d.items,it]});setSel(it.uid)};
+  const patchItem=(id,o)=>{const d=docRef.current;commit({...d,items:d.items.map(i=>{if(i.uid!==id)return i;const n={...i,...o};if('x' in o||'z' in o||'rot' in o){const position=plPlace(d,n,n.x,n.z);if(!position){ctx.toast('No clear space for this move. Your previous position is preserved.');return i}const [x,z]=position;n.x=r2(x);n.z=r2(z)}return n})})};
+  const addItem=(pid,x,z)=>{if(!plReady(pid)){ctx.toast(`Measurements needed: ${byId(pid).name} has no width, depth and height yet`);return}const d=docRef.current;const it={uid:uid(),...currentIdentity(pid),x:0,z:0,rot:0,hang:byId(pid).hangs};const position=plPlace(d,it,x??0,z??0);if(!position){ctx.toast('There is no clear space for this piece. Enlarge the room or remove another piece.');return}const [px,pz]=position;it.x=r2(px);it.z=r2(pz);commit({...d,items:[...d.items,it]});setSel(it.uid)};
   const removeItem=id=>{const d=docRef.current;commit({...d,items:d.items.filter(i=>i.uid!==id),rugs:(d.rugs||[]).filter(r=>r.uid!==id)});setSel(null)};
   const rugOf=id=>(docRef.current.rugs||[]).find(r=>r.uid===id);
   const patchRug=(id,o)=>{const d=docRef.current;commit({...d,rugs:(d.rugs||[]).map(r=>{if(r.uid!==id)return r;const n={...r,...o};[n.x,n.z]=rugClamp(d,n,n.x,n.z);return n})})};
@@ -2620,7 +2620,7 @@ function ReadyRoom({ctx,onDraftChange,products}){
   const addRug=([size,w,dp,round])=>{const d=docRef.current;const at=d.items.find(i=>i.uid===sel);const r={uid:uid(),x:0,z:0,rot:0,w,d:dp,round:!!round,size,mat:'jute',color:''};[r.x,r.z]=rugClamp(d,r,at?at.x:0,at?at.z:0);commit({...d,rugs:[...(d.rugs||[]),r]});setSel(r.uid)};
   const patchSel=(id,o)=>rugOf(id)?patchRug(id,o):patchItem(id,o);
   const dupItem=id=>{const rg=rugOf(id);if(rg){const d=docRef.current;const n={...rg,uid:uid()};[n.x,n.z]=rugClamp(d,n,rg.x+.6,rg.z+.3);commit({...d,rugs:[...d.rugs,n]});setSel(n.uid);return}
-    const it=docRef.current.items.find(i=>i.uid===id);if(!it)return;const d=docRef.current;const n={...it,uid:uid()};const [px,pz]=plPlace(d,n,it.x+.6,it.z+.3);n.x=r2(px);n.z=r2(pz);commit({...d,items:[...d.items,n]});setSel(n.uid)};
+    const it=docRef.current.items.find(i=>i.uid===id);if(!it)return;const d=docRef.current;const n={...it,uid:uid()};const position=plPlace(d,n,it.x+.6,it.z+.3);if(!position){ctx.toast('There is no clear space for another copy.');return}const [px,pz]=position;n.x=r2(px);n.z=r2(pz);commit({...d,items:[...d.items,n]});setSel(n.uid)};
   useEffect(()=>{if(ctx.roomSeed)ctx.setRoomSeed(null);if(ctx.roomWall)ctx.setRoomWall(null)},[]);
   // The room autosaves on this device; a photo on the wall is too large to keep, so it is left out.
   usePlannerPersistence(doc,persistPlannerRoom);
@@ -2869,7 +2869,7 @@ function ReadyRoom({ctx,onDraftChange,products}){
       const pieces=[...new Set(doc.items.map(i=>byId(i)?.lid).filter(Boolean))].slice(0,6);
       const id=await createRender({title,prompt,snapshot:await snap.arrayBuffer(),camera:S?{view:S.view,orbit:S.cam,walk:S.eye}:undefined,pieces});
       setShowPrompt(false);setAiJob(id)}catch(e){ctx.toast(errText(e))}finally{setAiBusy(false)}};
-  return html`<main className="sx planner2"><h1 className="sr">Room planner</h1>
+  return html`<main className="sx planner2"><h1 className="sr">Room planner</h1>${!!doc.placementConflicts?.length&&html`<p role="alert" className="help">Some pieces could not be placed without overlap or outside the floor plan. Your pieces are preserved. Enlarge the room, move or remove these pieces: ${doc.items.filter(i=>doc.placementConflicts.includes(i.uid)).map(i=>byId(i).name).join(", ")}</p>`}
     <${SxTop} ctx=${ctx} title=${title} setTitle=${t=>setTitle(t.slice(0,TITLE_MAX))} view="3d" onView=${k=>{ctx.setStudioSeed({view:k==='room'?'room':'collage',sync:doc.items.map(currentIdentity)});ctx.go('studio')}} saved="Saved on this device" onShare=${()=>eng&&setShareImg(E.current.snapshot())}>
       <${SxMenu} ctx=${ctx} hist=${{undo,redo,canUndo:hist.current.past.length>0,canRedo:hist.current.future.length>0,steps:hist.current.past.length}}>
         <div className="sx-pop-sec"><span className="sx-lbl">Placing</span>
