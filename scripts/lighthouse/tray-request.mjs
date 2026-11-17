@@ -61,11 +61,14 @@ try {
   const markup =
     '<!doctype html><html lang="en"><head><title>HOLM integration fixture</title><meta http-equiv="Content-Security-Policy" content="connect-src \'none\';img-src data:"></head><body><div id="root"></div></body></html>';
   await page.setRequestInterception(true);
-  page.on('request', (request) =>
-    request.isNavigationRequest()
-      ? request.respond({ status: 200, contentType: 'text/html', body: markup })
-      : request.abort()
-  );
+  page.on('request', async (request) => {
+    if (request.isNavigationRequest()) return request.respond({ status: 200, contentType: 'text/html', body: markup });
+    // Local media bytes avoid real network/error events racing deterministic
+    // playback assertions. Every other external request remains blocked.
+    const media = request.url().match(/^http:\/\/fixture\.invalid\/f\/([a-z0-9-]+)\/phone\.mp4$/);
+    if (media) return request.respond({ status: 200, contentType: 'video/mp4', body: await readFile(`dist/trade/f/${media[1]}/phone.mp4`) });
+    return request.abort();
+  });
   await page.goto('http://fixture.invalid');
   await page.evaluate(() => {
     location.hash = 'discover';
@@ -508,6 +511,59 @@ try {
   await page.waitForFunction(()=>document.querySelector('main h1')?.textContent.includes('Find the piece'));
   assert.equal(await page.evaluate(()=>window.fixtureCommands||0),0);
   results.push({partialCatalogNeverPresentedAsCompleteSearch:true,partialRecommendationsBlocked:true,savedDraftPreserved:true,businessCommands:0});
+
+  // Exercise the real hero controls with deterministic media state. Decoding/network
+  // are covered by the built-site smoke; this fixture permits no external requests.
+  await page.setViewport({width:390,height:844});
+  await page.emulateMediaFeatures([{name:'prefers-reduced-motion',value:'reduce'}]);
+  await page.evaluate(()=>{
+    window.fixturePlayCalls=0;window.fixturePauseCalls=0;
+    window.HTMLMediaElement.prototype.play=function(){window.fixturePlayCalls++;this.dispatchEvent(new window.Event('playing'));return Promise.resolve();};
+    window.HTMLMediaElement.prototype.pause=function(){window.fixturePauseCalls++;};
+    location.hash='home';window.scrollTo(0,0);
+  });
+  await page.waitForSelector('.pf-play[aria-label="Play the film"]');
+  assert.equal(await page.$('.pf video'),null,'No video mounted or fetched before explicit interaction');
+  await page.focus('.pf-play');await page.keyboard.press('Enter');
+  await page.waitForSelector('.pf video');
+  // Install deterministic metadata readiness, then verify chapter-driven resume.
+  await page.evaluate(()=>{const video=document.querySelector('.pf video');Object.defineProperty(video,'readyState',{configurable:true,value:1});window.fixtureMediaTime=0;Object.defineProperty(video,'currentTime',{configurable:true,get:()=>window.fixtureMediaTime,set:value=>{window.fixtureMediaTime=value;}});video.dispatchEvent(new window.Event('loadedmetadata'));});
+  await page.click('.pf .hf-prog button:nth-child(2)');
+  await page.waitForSelector('.pf-play[aria-label="Pause the film"]');
+  assert.ok(await page.$eval('.pf video',video=>video.currentTime)>0);
+  await page.focus('.pf-play');await page.keyboard.press('Enter');
+  await page.waitForSelector('.pf-play[aria-label="Play the film"]');
+  assert.ok(await page.evaluate(()=>window.fixturePauseCalls)>0);
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('.pf-play[aria-label="Pause the film"]');
+  await page.evaluate(()=>document.querySelector('.pf video').dispatchEvent(new window.Event('ended')));
+  await page.waitForSelector('.pf-play[aria-label="Play the film"]');
+  assert.ok(await page.evaluate(()=>window.fixturePlayCalls)>=2);
+  const completedPlayCalls=await page.evaluate(()=>window.fixturePlayCalls);
+  await page.focus('.pf-play');await page.keyboard.press('Enter');
+  await page.waitForSelector('.pf-play[aria-label="Pause the film"]');
+  await page.waitForFunction(count=>window.fixturePlayCalls>count,{},completedPlayCalls);
+  // A failed media resource must be reselected, including a chapter requested
+  // before replacement metadata arrives. Keep the media transport deterministic.
+  await page.evaluate(()=>{
+    const video=document.querySelector('.pf video');window.fixtureMediaError={code:2};window.fixtureLoads=0;
+    Object.defineProperty(video,'error',{configurable:true,get:()=>window.fixtureMediaError});
+    Object.defineProperty(video,'readyState',{configurable:true,get:()=>window.fixtureMediaReady?1:0});
+    video.load=()=>{window.fixtureLoads++;window.fixtureMediaError=null;window.fixtureMediaReady=false;};
+    video.dispatchEvent(new window.Event('error'));
+  });
+  await page.waitForSelector('.pf-play[aria-label="Play the film"]');
+  await page.click('.pf-play');
+  await page.waitForFunction(()=>window.fixtureLoads===1);
+  await page.evaluate(()=>{const video=document.querySelector('.pf video');window.fixtureMediaError={code:2};video.dispatchEvent(new window.Event('error'));});
+  await page.waitForSelector('.pf-play[aria-label="Play the film"]');
+  await page.click('.pf .hf-prog button:nth-child(3)');
+  await page.waitForFunction(()=>window.fixtureLoads===2);
+  await page.evaluate(()=>{window.fixtureMediaReady=true;document.querySelector('.pf video').dispatchEvent(new window.Event('loadedmetadata'));});
+  assert.ok(await page.$eval('.pf video',video=>video.currentTime)>2);
+  await page.waitForSelector('.pf-play[aria-label="Pause the film"]');
+  assert.equal(await page.evaluate(()=>window.fixtureCommands||0),0);
+  results.push({mobileFilmRequiresExplicitStart:true,keyboardPauseResume:true,chapterSeek:true,completionRequiresReplay:true,replayAfterCompletion:true,errorReloadsOnPlayAndChapter:true,reducedMotionStartsWithPoster:true,businessCommands:0});
 
   assert.deepEqual(pageErrors, []);
   await writeFile(

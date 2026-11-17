@@ -3,6 +3,7 @@
 import { TradeAccount, TradeWelcome, TradeApplication, ProjectDeliveryPanel, ProductDeliveryEstimate, ProgramHubV2, TeamPanel } from './deferredFeatures';
 import { DeliveryCalculatorDisclosure } from './DeliveryCalculatorDisclosure';
 import { TradeNewsletter } from './TradeNewsletter';
+import { ProgressiveSections } from './ProgressiveSections';
 import { DiscoverCatalog } from './DiscoverCatalog';
 import { products as PRODUCTS, productsById as BY_ID, catalogGeneration, useCatalogRevision } from './catalogStore';
 export { setProducts } from './catalogStore';
@@ -799,41 +800,45 @@ function FilmStudy({ctx,fk,setFk}){
   </section>`;
 }
 /* ================= PHONE FILM: the room film playing straight through ================= */
-// Phones get the same one-screen hero as desktop, but the film plays on its own as one
-// continuous video instead of following the scroll: f/<film>/phone.mp4, a shorter 3:4 cut
+// Phones get the same one-screen hero as desktop, with an explicitly started
+// video instead of following the scroll: f/<film>/phone.mp4, a shorter 3:4 cut
 // (trade/phoneCut.mjs): blueprint, clay, one shot into the room as its furniture takes
-// on colour, then night. The headline follows the film's chapters; at the end
-// the film fades to its first frame and plays again. Where it can't autoplay (Low Power
-// Mode), the opening frame stays with a play button; reduced motion starts paused.
+// on colour, then night. The headline follows the chapters. Pause remains available,
+// and completion returns to the opening frame awaiting replay. No background video download.
 function PhoneFilm({ctx,fk,setFk}){
   const F=FILMS[fk],P=phoneCut(F.TL,{clayAt:F.phoneClayAt,darkRoom:F.darkRoom});const siblings=filmsFor(ctx.space);
   const secRef=useRef(),vidRef=useRef(),last=useRef({ch:-1,dark:null});
   const [chi,setChi]=useState(0);const [dark,setDark]=useState(false);const [shown,setShown]=useState(false);
-  const [loaded,setLoaded]=useState(()=>document.readyState==='complete');const [onScreen,setOnScreen]=useState(true);
-  const [paused,setPaused]=useState(()=>matchMedia('(prefers-reduced-motion: reduce)').matches);const [fading,setFading]=useState(false);
+  const [started,setStarted]=useState(false);const [onScreen,setOnScreen]=useState(true);
+  const [paused,setPaused]=useState(true);const [fading,setFading]=useState(false);
+  const pendingSeek=useRef(null),loopTimer=useRef();
+  const [pageVisible,setPageVisible]=useState(()=>!document.hidden);
   // index.html already showed chapter one; don't replay its entrance when the app takes over.
   const [fromShell]=useState(()=>document.documentElement.dataset.shell==='trade');useEffect(()=>{delete document.documentElement.dataset.shell},[]);
-  // the film waits for the page to finish loading so it never competes with first paint
-  useEffect(()=>{if(loaded)return;const f=()=>setLoaded(true);addEventListener('load',f,{once:true});return()=>removeEventListener('load',f)},[]);
+  // A poster is usable immediately. Fetch video only after an explicit play/chapter action.
+  useEffect(()=>{const f=()=>setPageVisible(!document.hidden);document.addEventListener('visibilitychange',f);return()=>{document.removeEventListener('visibilitychange',f);clearTimeout(loopTimer.current)}},[]);
   useEffect(()=>{const io=new IntersectionObserver(([e])=>setOnScreen(e.isIntersecting),{threshold:0});io.observe(secRef.current);return()=>io.disconnect()},[]);
   useEffect(()=>{const v=vidRef.current;if(!v)return;v.muted=true;
-    if(onScreen&&!paused){const p=v.play();if(p)p.catch(e=>{if(e&&e.name==='NotAllowedError')setPaused(true)})}else v.pause()},[loaded,onScreen,paused]);
+    if(onScreen&&pageVisible&&!paused){const p=v.play();if(p)p.catch(e=>{if(e&&e.name!=='AbortError')setPaused(true)})}else v.pause()},[started,onScreen,pageVisible,paused]);
   useEffect(()=>{setHeroInk('#211912','#FBF8F2');return()=>setHeroInk('#211912','#FBF8F2')},[fk]);
   // the headline and ink follow the film as it plays
   const tick=()=>{const v=vidRef.current;if(!v)return;const t=v.currentTime;let c=0;for(let i=0;i<P.ch.length;i++)if(t>=P.ch[i])c=i;
     const dk=t>=P.dark;const L=last.current;
     if(c!==L.ch){L.ch=c;setChi(c)}
     if(dk!==L.dark){L.dark=dk;setDark(dk);setHeroInk(dk?'#F4EADC':'#211912',dk?'#1A130E':'#FBF8F2')}};
-  useEffect(()=>{if(!shown||paused||!onScreen)return;let raf=0;const loop=()=>{tick();raf=requestAnimationFrame(loop)};loop();return()=>cancelAnimationFrame(raf)},[shown,paused,onScreen]);
-  // one continuous loop: fade to the opening frame, then start again
-  const ended=()=>{setFading(true);setTimeout(()=>{const v=vidRef.current;if(!v)return;v.currentTime=0;tick();setFading(false);if(!paused&&onScreen)v.play().catch(()=>{})},700)};
-  const toChap=i=>{const v=vidRef.current;if(!v)return;v.currentTime=P.ch[i]+0.05;tick();if(paused)setPaused(false)};
+  useEffect(()=>{if(!shown||paused||!onScreen||!pageVisible)return;let raf=0;const loop=()=>{tick();raf=requestAnimationFrame(loop)};loop();return()=>cancelAnimationFrame(raf)},[shown,paused,onScreen,pageVisible]);
+  // End at the opening frame; replay stays under the visitor's control.
+  const ended=()=>{setPaused(true);setFading(true);clearTimeout(loopTimer.current);loopTimer.current=setTimeout(()=>{const v=vidRef.current;if(!v)return;v.currentTime=0;tick();setFading(false)},700)};
+  const seek=()=>{const v=vidRef.current;if(v&&v.readyState>=1&&pendingSeek.current!==null){v.currentTime=pendingSeek.current;pendingSeek.current=null;tick()}};
+  const reloadFailed=()=>{const v=vidRef.current;if(v?.error){setShown(false);v.load()}};
+  const toChap=i=>{clearTimeout(loopTimer.current);setFading(false);pendingSeek.current=P.ch[i]+0.05;setStarted(true);reloadFailed();setPaused(false);seek()};
+  const togglePlay=()=>{clearTimeout(loopTimer.current);setFading(false);setStarted(true);reloadFailed();setPaused(value=>!value)};
   const toTop=()=>{const sec=secRef.current;if(sec&&sec.getBoundingClientRect().top<0)scrollTo({top:sec.getBoundingClientRect().top+scrollY,behavior:'smooth'})};
   const ch=F.ch[chi];const ids=[...new Set(F.hot.map(h=>h.id))];
   return html`<section className="rh hf pf" ref=${secRef} aria-label=${F.name+' film'}>
     <div className=${'hf-stage'+(dark?' night':'')}>
       <img className="hf-video" src=${`f/${fk}/phone.webp`} alt="" fetchpriority="high" aria-hidden="true"/>
-      ${loaded&&html`<video ref=${vidRef} key=${fk} className=${'hf-video hf-fade'+(shown&&!fading?' on':'')} src=${`f/${fk}/phone.mp4`} muted playsInline preload="auto" aria-hidden="true" onPlaying=${()=>setShown(true)} onEnded=${ended} onError=${()=>setPaused(true)}></video>`}
+      ${started&&html`<video ref=${vidRef} key=${fk} className=${'hf-video hf-fade'+(shown&&!fading?' on':'')} src=${`f/${fk}/phone.mp4`} muted playsInline preload="metadata" aria-hidden="true" onLoadedMetadata=${seek} onPlaying=${()=>setShown(true)} onEnded=${ended} onError=${()=>setPaused(true)}></video>`}
       <div className="hf-scrim" aria-hidden="true"></div>
       <div className=${'hf-copy'+(fromShell&&chi===0?' still':'')}>
         <h1 key=${'h'+fk+chi}>${ch[0]}</h1>
@@ -841,7 +846,7 @@ function PhoneFilm({ctx,fk,setFk}){
         ${chi>=3&&html`<div className="hf-cta"><button className="hf-btn solid" onClick=${()=>{ids.forEach(id=>ctx.addToTray(id,1,null,true));ctx.toast(ids.length+' pieces added to '+ctx.activeProject.name,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Shop the room</button><button className="hf-btn" onClick=${()=>ctx.toStudio(ids,F.name)}>Open in Studio</button></div>`}
       </div>
       <div className="hf-prog" role="group" aria-label="Chapters">${F.ch.map((c,i)=>html`<button key=${i} className=${i===chi?'on':i<chi?'done':''} aria-label=${'Go to: '+c[0]} onClick=${()=>toChap(i)}><i></i></button>`)}</div>
-      ${loaded&&paused&&html`<button className="pf-play" aria-label="Play the film" onClick=${()=>setPaused(false)}>${I('play',{width:18})}</button>`}
+      <button className="pf-play" aria-label=${paused?'Play the film':'Pause the film'} onClick=${togglePlay}>${paused?I('play',{width:18}):html`<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><rect x="4" y="3" width="3" height="12"/><rect x="11" y="3" width="3" height="12"/></svg>`}</button>
       <nav className="hf-nav" aria-label="Choose a space">
         ${siblings.length>1&&html`<div className="hf-films">${siblings.map(k=>html`<button key=${k} className=${k===fk?'on':''} aria-pressed=${k===fk} onClick=${()=>{setFk(k);toTop()}}>${FILMS[k].name}</button>`)}</div>`}
         <div className="hf-spaces">${SPACE_KEYS.map(k=>html`<button key=${k} className=${k===ctx.space?'on':''} aria-pressed=${k===ctx.space} onClick=${()=>{ctx.setSpace(k);toTop()}}>${SPACES[k].label}</button>`)}</div>
@@ -1128,14 +1133,14 @@ function Home({ctx}){
 }
 
 function BelowFilm({ctx}){
-  return html`<${React.Fragment}>
-    <${StartRoom} ctx=${ctx}/>
-    <${RoomsWeLove} ctx=${ctx}/>
-    <${Collection} ctx=${ctx}/>
-    <${QuoteShow} ctx=${ctx}/>
-    <${TradeBand} ctx=${ctx}/>
-    <${Footer} ctx=${ctx}/>
-  </${React.Fragment}>`;
+  return html`<${ProgressiveSections} sections=${[
+    {id:'start',render:()=>html`<${StartRoom} ctx=${ctx}/>`},
+    {id:'rooms',render:()=>html`<${RoomsWeLove} ctx=${ctx}/>`},
+    {id:'collection',render:()=>html`<${Collection} ctx=${ctx}/>`},
+    {id:'quotes',render:()=>html`<${QuoteShow} ctx=${ctx}/>`},
+    {id:'trade',render:()=>html`<${TradeBand} ctx=${ctx}/>`},
+    {id:'footer',render:()=>html`<${Footer} ctx=${ctx}/>`}
+  ]}/>`;
 }
 
 function Footer({ctx}){
