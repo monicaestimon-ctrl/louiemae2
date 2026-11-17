@@ -2,7 +2,7 @@
 
 Prepared November 10, 2026 for Louie Mae and House of Louie Mae. This specification targets 100 Performance, 100 Accessibility, 100 Best Practices and 100 SEO on public, indexable storefront routes, on mobile and desktop. It also requires accessible, fast, secure private trade and checkout journeys without exposing them to search engines.
 
-Status updated November 17, 2026: production service is restored, and PRs through #302 are merged and deployed. The product HTML/client metadata handoff is verified in production. PR #303 prepares independent saved-product identities; subsequent frontend and controlled-audit increments are prepared separately. Implementation and acceptance remain incomplete. See README.md for verified increments and remaining work; restored service and passing fixture tests do not establish full commerce or repeated Lighthouse acceptance.
+Status updated November 17, 2026: production service is restored, and PRs through #305 are merged and deployed. The saved-identity index is verified and enabled; independent project/board lookup, public collection HTML, image renditions and controlled audit gates are live. The retained controlled baseline passed all four scores for retail home but failed overall acceptance on HOLM mobile and product readiness; collection diagnostics also remain below the performance target. Further public-page, journal and performance increments are being prepared and reviewed. Implementation and acceptance remain incomplete. See README.md for verified increments and remaining work; restored service and passing fixture tests do not establish full commerce or repeated Lighthouse acceptance.
 
 # 1 Success criteria and scope
 

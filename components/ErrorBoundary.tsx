@@ -32,6 +32,8 @@ class ErrorBoundary extends Component<Props, State> {
             document.getElementById('lm-collection-structured-data')?.remove();
             document.getElementById('lm-page-document')?.remove();
             document.getElementById('lm-page-structured-data')?.remove();
+            document.getElementById('lm-journal-document')?.remove();
+            document.getElementById('lm-journal-structured-data')?.remove();
         }
         // Log error to an error reporting service in production
         if (process.env.NODE_ENV === 'production') {

@@ -4,10 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SiteProvider } from '../BlogContext';
 import { BlogPage } from '../../components/BlogPage';
 import { BlogPostView } from '../../components/BlogPostView';
+import { getFunctionName } from 'convex/server';
 
-const mocks = vi.hoisted(() => ({ result: undefined as unknown, mutate: vi.fn() }));
+const mocks = vi.hoisted(() => ({ result: undefined as unknown, detail: undefined as unknown, mutate: vi.fn() }));
 vi.mock('convex/react', () => ({
-  useQueries: () => ({ posts: mocks.result }),
+  useQueries: (queries: Record<string, { query: Parameters<typeof getFunctionName>[0] }>) => Object.fromEntries(Object.entries(queries).map(([key, value]) => [key, key === 'posts' ? mocks.result : getFunctionName(value.query) === 'blogPosts:publicDetail' ? mocks.detail : undefined])),
   useQuery: () => null,
   useMutation: () => mocks.mutate,
   useConvexAuth: () => ({ isAuthenticated: false, isLoading: false }),
@@ -19,7 +20,7 @@ vi.mock('../../components/FadeIn', () => ({ FadeIn: ({ children }: { children: R
 function Shell() {
   return <><nav aria-label="Shopping">Shop</nav><BlogPage /></>;
 }
-beforeEach(() => { mocks.result = undefined; mocks.mutate.mockClear(); vi.useFakeTimers(); });
+beforeEach(() => { mocks.result = undefined; mocks.detail = undefined; mocks.mutate.mockClear(); vi.useFakeTimers(); });
 afterEach(() => { cleanup(); vi.useRealTimers(); });
 
 describe('optional public editorial isolation', () => {
@@ -46,10 +47,10 @@ describe('optional public editorial isolation', () => {
   it('does not call a pending or failed article missing', () => {
     const view = render(<SiteProvider><BlogPostView postId="unknown" /></SiteProvider>);
     expect(screen.getByRole('heading').textContent).toBe('Loading story…');
-    mocks.result = new Error('offline');
+    mocks.detail = new Error('offline');
     view.rerender(<SiteProvider><BlogPostView postId="unknown" /></SiteProvider>);
     expect(screen.getByRole('heading').textContent).toBe('Story temporarily unavailable');
-    mocks.result = [];
+    mocks.detail = null;
     view.rerender(<SiteProvider><BlogPostView postId="unknown" /></SiteProvider>);
     expect(screen.getByRole('heading').textContent).toBe('Post not found');
   });

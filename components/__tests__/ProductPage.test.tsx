@@ -44,7 +44,7 @@ it('keeps canonical metadata stable across origins and replaces schema when opti
   const social = document.createElement('meta'); social.setAttribute('property', 'og:url'); social.dataset.testProductMeta = '';
   document.head.append(canonical, social);
   const view = render(<ProductPage id="stable-id" variantId="two" />);
-  const url = 'https://louiemae.com/products/stable-id';
+  const url = 'https://www.louiemae.com/products/stable-id';
   expect(canonical.href).toBe(url);
   expect(social.content).toBe(url);
   const read = () => JSON.parse(document.getElementById('lm-live-product-structured-data')!.textContent!);

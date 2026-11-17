@@ -25,8 +25,8 @@ describe('metadata route boundary', () => {
     const result = request(path, { ref: 'mae1234', ch: 'pin' });
     expect(result.status).toHaveBeenCalledWith(200);
     const html = result.send.mock.calls[0][0] as string;
-    expect(html).toContain(`https://louiemae.com/?ref=MAE1234&ch=pin#${path}`);
-    expect(html).toContain(`rel="canonical" href="https://louiemae.com/${path}"`);
+    expect(html).toContain(`https://www.louiemae.com/?ref=MAE1234&ch=pin#${path}`);
+    expect(html).toContain(`rel="canonical" href="https://www.louiemae.com/${path}"`);
   });
   it('keeps prelaunch referral redirects independent of untrusted paths', () => {
     vi.stubEnv('VITE_PRELAUNCH_MODE', 'true');

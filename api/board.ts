@@ -1,3 +1,4 @@
+import { STOREFRONT_ORIGIN } from '../lib/productMetadata.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 // A shared board's link, louiemae.com/b/<slug>?c=<channel>. Link previews (Messages, Slack,
@@ -30,7 +31,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const slug = String(req.query.slug || '').toLowerCase();
   const raw = String(req.query.c || 'link').toLowerCase();
   const channel = CHANNELS.includes(raw) ? raw : 'link';
-  const BASE_URL = 'https://louiemae.com';
+  const BASE_URL = STOREFRONT_ORIGIN;
   if (!/^[a-z0-9]{12}$/.test(slug)) {
     res.setHeader('Cache-Control', 'no-store');
     return res.redirect(307, '/trade');
