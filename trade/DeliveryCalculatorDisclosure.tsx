@@ -7,10 +7,11 @@ export function DeliveryCalculatorDisclosure() {
   const [open, setOpen] = useState(false);
   const [opened, setOpened] = useState(false);
   return <div>
-    <button type="button" className="btn btn-line" aria-expanded={open} aria-controls={id}
+    <button type="button" className="btn lx-ghost" aria-expanded={open} aria-controls={id}
       onClick={() => { setOpened(true); setOpen(value => !value); }}>
       {open ? 'Hide delivery calculator' : 'Open delivery calculator'}
     </button>
     <div id={id} hidden={!open}>{opened && <TradeDeliveryCalculator />}</div>
   </div>;
 }
+
