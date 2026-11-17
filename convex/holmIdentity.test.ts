@@ -11,6 +11,14 @@ import type { MutationCtx } from './_generated/server';
 import { internalMutation } from './functions';
 const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 type Test = ReturnType<typeof convexTest>;
+it('preserves literal numeric IDs from the pre-index catalog implementation', () => {
+  // Values captured from the prior stableId algorithm and immutable curated map,
+  // not derived through the helper under test. The last source has signed hash
+  // -897106122 and must use the historical unsigned conversion before modulo.
+  expect(holmLegacyId('qn73a88mnk5czwe2xvrzxf4ta58f0cdp')).toBe(1);
+  expect(holmLegacyId('saved-source')).toBe(2755094);
+  expect(holmLegacyId('unsigned-fixture')).toBe(4862174);
+});
 async function seed(t: Test) {
   return t.run(async ctx => {
     const draft = { ...blankCommerceDraft(), name: 'Marlowe Sofa', description: 'A sofa.', category: 'Sofas', images: ['https://example.com/sofa.jpg'], factsApproved: true, imagesApproved: true,
