@@ -93,3 +93,29 @@ it('shows a placeholder when a browser-selected WebP fails without trying ignore
   expect(view.container.querySelector('picture')).toBeNull();
   expect(screen.getByRole('img', { name: `${post.title}: image unavailable` })).toBeVisible();
 });
+
+for (const kind of ['index', 'article'] as const) {
+  it(`${kind} retries A after A fails, B succeeds, and navigation returns to A`, () => {
+    const lead = (image: string) => kind === 'index'
+      ? <JournalIndexLead featuredPost={{ ...post, image }} />
+      : <JournalArticleHero post={{ ...post, image }} />;
+    const view = render(lead(source));
+    fireEvent.error(view.container.querySelector('img')!);
+    fireEvent.error(view.container.querySelector('img')!);
+    expect(view.container.querySelector('img')).toBeNull();
+    view.rerender(lead(source));
+    expect(view.container.querySelector('img')).toBeNull();
+    view.rerender(lead(`${source}-B`));
+    const b = view.container.querySelector('img')!;
+    fireEvent.load(b);
+    view.rerender(lead(source));
+    const retry = view.container.querySelector('picture img')!;
+    expect(retry).not.toBe(b);
+    expect(view.container.querySelector('source[type="image/avif"]')).not.toBeNull();
+    expect(retry.getAttribute('src')).toContain(entry.windows[`${kind}Mobile`].base);
+    fireEvent.error(retry);
+    expect(view.container.querySelector('source[type="image/avif"]')).toBeNull();
+    fireEvent.error(view.container.querySelector('img')!);
+    expect(view.container.querySelector('img')).toBeNull();
+  });
+}

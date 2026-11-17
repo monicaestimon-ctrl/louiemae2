@@ -259,22 +259,20 @@ type WindowImage = { base: string; widths: number[]; ratio: number; avifBase?: s
 type EditorialImage = {
   windows: Record<'indexMobile' | 'indexDesktop' | 'articleMobile' | 'articleDesktop', WindowImage>;
 };
-function JournalImage({
-  src,
-  alt,
-  kind,
-  className,
-}: {
+type JournalImageProps = {
   src: string;
   alt: string;
   kind: 'index' | 'article';
   className: string;
-}) {
+};
+function JournalImage(props: JournalImageProps) {
+  // Each source visit owns its recovery state, including A → B → A navigation.
+  return React.createElement(JournalImageAttempt, { ...props, key: `${props.kind}:${props.src}` });
+}
+function JournalImageAttempt({ src, alt, kind, className }: JournalImageProps) {
   const entries = editorialManifest as Record<string, EditorialImage>;
   const entry = Object.hasOwn(entries, src) ? entries[src] : undefined;
-  const sourceKey = `${kind}:${src}`;
-  const [failure, setFailure] = React.useState({ sourceKey, attempt: 0 });
-  const attempt = failure.sourceKey === sourceKey ? failure.attempt : 0;
+  const [attempt, setAttempt] = React.useState(0);
   const hasAvif = Boolean(
     entry?.windows[`${kind}Mobile`].avifBase || entry?.windows[`${kind}Desktop`].avifBase
   );
@@ -299,13 +297,9 @@ function JournalImage({
       const selected = event.currentTarget.currentSrc;
       // A browser without AVIF support can fail directly on the final WebP source.
       // Removing ignored AVIF sources would not cause another image error/retry.
-      setFailure((previous) => ({
-        sourceKey,
-        attempt:
-          selected && !selected.endsWith('.avif')
-            ? 2
-            : Math.min(previous.sourceKey === sourceKey ? previous.attempt + 1 : 1, 2),
-      }));
+      setAttempt((previous) =>
+        selected && !selected.endsWith('.avif') ? 2 : Math.min(previous + 1, 2)
+      );
     },
   };
   if (!entry)
