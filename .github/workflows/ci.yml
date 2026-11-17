@@ -56,6 +56,9 @@ jobs:
       - name: Verify Lighthouse acceptance policy
         run: npm run test:lighthouse-policy
 
+      - name: Verify API route source boundary
+        run: node scripts/verify-api-routes.mjs
+
       - name: Build
         run: npm run build
 
@@ -126,3 +129,4 @@ jobs:
         continue-on-error: true
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+
