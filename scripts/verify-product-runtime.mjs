@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 assert.ok(existsSync('dist/index.html'), 'Missing dist/index.html: run npm run build before the product runtime check.');
 
 const output = 'artifacts/lighthouse/product-runtime';
-await build({ entryPoints: ['api/product.ts', 'lib/serverProductDocument.ts', 'lib/responsiveImage.ts', 'lib/productMetadata.ts'],
+await build({ entryPoints: ['api/product.ts', 'api/collection.ts', 'lib/serverCollectionDocument.ts', 'lib/collectionId.ts', 'lib/productCategories.ts', 'lib/serverProductDocument.ts', 'lib/responsiveImage.ts', 'lib/productMetadata.ts'],
   outbase: '.', outdir: output, bundle: false, platform: 'node', format: 'esm', target: 'node24' });
 await mkdir(`${output}/lib`, { recursive: true });
 for (const file of ['imageManifest.json', 'productImageManifest.json']) {
@@ -16,6 +16,7 @@ for (const file of ['imageManifest.json', 'productImageManifest.json']) {
 process.env.VITE_PRELAUNCH_MODE = 'false';
 process.env.VITE_CONVEX_URL = 'https://public-fixture.invalid';
 const { default: handler } = await import('../artifacts/lighthouse/product-runtime/api/product.js');
+const { default: collectionHandler } = await import('../artifacts/lighthouse/product-runtime/api/collection.js');
 const originalFetch = globalThis.fetch;
 const results = [];
 try {
@@ -43,6 +44,25 @@ try {
     } else assert.equal(headers['X-Robots-Tag'], 'noindex');
     results.push({ name, status: response.code });
   }
+  for (const [name, configuration, expected] of [
+    ['collection', { collections: [{ id: 'furniture', title: 'Runtime furniture', subtitle: 'Public collection', subcategories: [] }] }, 200],
+    ['missing collection', { collections: [] }, 404], ['unavailable collection', null, 503],
+  ]) {
+    globalThis.fetch = async (_url, options) => {
+      const request = JSON.parse(options.body);
+      const value = request.path === 'siteContent:get' ? configuration : { page: [{ _id: 'fixture', collection: 'furniture', name: 'Runtime chair', price: 200, images: [] }] };
+      return { ok: true, json: async () => ({ status: 'success', value }) };
+    };
+    const response = { status(code) { this.code = code; return this; }, send(body) { this.body = body; }, setHeader() {} };
+    await collectionHandler({ method: 'GET', query: { id: 'furniture' } }, response);
+    assert.equal(response.code, expected);
+    if (expected === 200) {
+      assert.ok(response.body.includes('Runtime furniture'));
+      assert.ok(response.body.includes('id="lm-collection-document"'));
+      assert.ok(response.body.includes('href="/products/fixture"'));
+    }
+    results.push({ name, status: response.code });
+  }
 } finally { globalThis.fetch = originalFetch; }
 await writeFile('artifacts/lighthouse/product-runtime-check.json', JSON.stringify({ node: process.version, results }, null, 2));
-console.log('Unbundled product Node runtime and built template verified.');
+console.log('Unbundled product/collection Node runtime and built template verified.');

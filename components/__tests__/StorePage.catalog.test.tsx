@@ -21,6 +21,10 @@ vi.mock('../useStoreCatalog', () => ({
 beforeEach(() => { vi.clearAllMocks(); mocks.detailProduct = null; mocks.detailFailed = false; mocks.ready = true; mocks.complete = false; mocks.products = []; });
 afterEach(cleanup);
 describe('store catalog integration', () => {
+  it('preserves an already-decoded percent sign and supplies a filtered-page heading', () => {
+    render(<StorePage collection="kids" initialCategory="100% cotton" forceProductView />);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('100% cotton — Kids');
+  });
   it('distinguishes incomplete filtered pages from true emptiness and exposes continuation', () => {
     const view = render(<StorePage collection="kids" initialCategory="Dresses" />);
     expect(screen.queryByText('Coming Soon')).toBeNull();

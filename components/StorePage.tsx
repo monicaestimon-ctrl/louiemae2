@@ -1,6 +1,6 @@
 import { Modal } from './Modal';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useLayoutEffect } from 'react';
 import ProductDeliveryEstimate from './delivery/ProductDeliveryEstimate';
 import { useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
@@ -41,7 +41,7 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
   // Render a product card (reusable for both preview and full grid)
   const ProductCard: React.FC<{ product: StoreCardProduct; index: number; compact?: boolean; onSelect: (product: StoreCardProduct) => void }> = ({ product, index, compact, onSelect }) => (
     <FadeIn delay={Math.min(index, 5) * 50} className="group cursor-pointer">
-      <button type="button" aria-label={`Quick view ${product.name}`}
+      <button type="button"
         className={`block w-full relative aspect-square overflow-hidden bg-white mb-3 rounded-2xl shadow-sm hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-500 border border-white/40 group`}
         onClick={() => onSelect(product)}
       >
@@ -73,7 +73,7 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
         <h3 className={`font-serif ${compact ? 'text-sm' : 'text-base'} text-earth leading-tight mb-1 group-hover:text-bronze transition-colors truncate`}>
           {product.name}
         </h3>
-        {!product.inStock && <span className="block text-xs uppercase tracking-widest text-bronze">Coming Soon</span>}<span className={`font-serif italic text-earth/80 ${compact ? 'text-sm' : 'text-base'} group-hover:text-bronze/80 transition-colors`}>${product.price}</span>
+        {!product.inStock && <span className="block text-xs uppercase tracking-widest text-bronze">Coming Soon</span>}<span className={`font-serif italic text-earth ${compact ? 'text-sm' : 'text-base'} group-hover:text-bronze transition-colors`}>${product.price}</span>
       </div>
     </FadeIn>
   );
@@ -316,7 +316,7 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
 
 
 export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategory = 'All', forceProductView = false }) => {
-  const { siteContent, isLoading } = useSite();
+  const { siteContent, isLoading, siteContentStatus } = useSite();
   const readiness = useQuery(api.catalogReadiness.status, {});
   const readinessTimedOut = usePendingTimeout(readiness === undefined, collection);
   const catalogReady = readiness?.ready === true;
@@ -334,8 +334,9 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
     };
   }, [siteContent.collections, collection]);
 
-  // Decoded category from URL
-  const selectedCategory = useMemo(() => decodeURIComponent(initialCategory), [initialCategory]);
+  // The route parser already decoded URLSearchParams. Decoding again breaks
+  // legitimate percent signs and can turn a filter into a page-level exception.
+  const selectedCategory = initialCategory;
   // A retail referral link lands on ?product=<id> (and ?variant=<id>): open that piece directly.
   const [selectedProductId, setSelectedProductId] = useState<string | null>(() => {
     const q = window.location.hash.split('?')[1];
@@ -433,6 +434,9 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
   const categories = categoryOptions.categories;
   const catalogUnavailable = readinessUnavailable || grid.unavailable || rootPreview.unavailable;
   const storefrontIsLoading = !catalogUnavailable && (isLoading || readiness === undefined || (viewLevel === 'PRODUCT' ? grid.loading : rootPreview.loading));
+  useLayoutEffect(() => {
+    if (!storefrontIsLoading) document.getElementById('lm-collection-document')?.remove();
+  }, [storefrontIsLoading, collection]);
 
   const handleCategoryChange = (cat: string) => {
     if (cat === selectedCategory) return;
@@ -464,7 +468,8 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
   };
 
   return (
-    <main className="bg-cream min-h-screen pt-20">
+    <main className="bg-cream min-h-screen pt-20" data-lm-collection-ready={!storefrontIsLoading && !catalogUnavailable && siteContentStatus === 'ready' ? collection : undefined}>
+      {viewLevel !== 'ROOT' && <h1 className="sr-only">{selectedCategory === 'All' ? config.title : `${config.subcategories.find(category => category.id === selectedCategory)?.title || selectedCategory} — ${config.title}`}</h1>}
 
       {/* Unified Header Section - Clean cream background with centered title for all collections */}
       <section className={`relative transition-all duration-700 w-full ${viewLevel === 'ROOT' ? 'min-h-screen' : ''} flex flex-col`}>
@@ -545,9 +550,9 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                               />
                               <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
                               <div className="absolute inset-0 flex flex-col justify-end items-center text-center p-6">
-                                <h3 className="font-serif text-lg text-white font-light tracking-wide mb-2 whitespace-nowrap">
+                                <h2 className="font-serif text-lg text-white font-light tracking-wide mb-2 whitespace-nowrap">
                                   {cat.title}
-                                </h3>
+                                </h2>
                                 <p className="text-white/70 text-xs uppercase tracking-[0.2em]">
                                   {cat.caption || 'Shop Now'}
                                 </p>
@@ -609,9 +614,9 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                               />
                               <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
                               <div className="absolute inset-0 flex flex-col justify-end items-center text-center p-6">
-                                <h3 className="font-serif text-lg lg:text-xl text-white font-light tracking-wide mb-1 leading-tight whitespace-nowrap">
+                                <h2 className="font-serif text-lg lg:text-xl text-white font-light tracking-wide mb-1 leading-tight whitespace-nowrap">
                                   {cat.title}
-                                </h3>
+                                </h2>
                                 <p className="text-white/70 text-xs uppercase tracking-[0.2em]">
                                   {cat.caption || 'Shop Now'}
                                 </p>
@@ -688,9 +693,9 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
                           <div className="absolute inset-0 flex flex-col justify-end items-center text-center p-6 md:p-8">
-                            <h3 className="font-serif text-xl md:text-lg lg:text-xl text-white font-light tracking-wide mb-2 whitespace-nowrap">
+                            <h2 className="font-serif text-xl md:text-lg lg:text-xl text-white font-light tracking-wide mb-2 whitespace-nowrap">
                               {cat.title}
-                            </h3>
+                            </h2>
                             <p className="text-white/70 text-xs md:text-sm uppercase tracking-[0.2em]">
                               {cat.caption || 'Shop Now'}
                             </p>
@@ -859,7 +864,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                       <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
                       <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl opacity-50 -z-10 translate-x-1/3 -translate-y-1/3" />
 
-                      <h3 className="font-serif text-4xl md:text-6xl text-white mb-6 tracking-tight">Coming Soon</h3>
+                      <h2 className="font-serif text-4xl md:text-6xl text-white mb-6 tracking-tight">Coming Soon</h2>
                       <p className="text-sm md:text-xs text-white/60 uppercase tracking-[0.2em] mb-12 max-w-md mx-auto font-light leading-relaxed">
                         Join the inner circle. Receive 24-hour early access to {selectedCategory} drops before they open to the public.
                       </p>
@@ -908,9 +913,9 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
 
                       <div className="flex flex-col gap-2">
                         <div className="min-w-0">
-                          <h3 className="font-serif text-lg text-earth leading-tight mb-1 group-hover:text-bronze transition-colors">
+                          <h2 className="font-serif text-lg text-earth leading-tight mb-1 group-hover:text-bronze transition-colors">
                             {product.name}
-                          </h3>
+                          </h2>
                           <p className="text-[10px] uppercase tracking-widest text-muted-earth">{product.category}</p>
                         </div>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="text-sm text-earth whitespace-nowrap">${product.price.toLocaleString('en-US')}</span>{!product.inStock && <span className="text-xs text-bronze">Coming Soon</span>}</div>

@@ -27,6 +27,8 @@ class ErrorBoundary extends Component<Props, State> {
         if (!this.props.fallback) {
             document.getElementById('lm-product-document')?.remove();
             document.getElementById('lm-product-structured-data')?.remove();
+            document.getElementById('lm-collection-document')?.remove();
+            document.getElementById('lm-collection-structured-data')?.remove();
         }
         // Log error to an error reporting service in production
         if (process.env.NODE_ENV === 'production') {
