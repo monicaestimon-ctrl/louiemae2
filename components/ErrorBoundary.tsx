@@ -26,6 +26,7 @@ class ErrorBoundary extends Component<Props, State> {
     componentDidCatch(_error: Error, _errorInfo: ErrorInfo): void {
         if (!this.props.fallback) {
             document.getElementById('lm-product-document')?.remove();
+            document.getElementById('lm-product-bootstrap')?.remove();
             document.getElementById('lm-product-structured-data')?.remove();
             document.getElementById('lm-collection-document')?.remove();
             document.getElementById('lm-collection-structured-data')?.remove();

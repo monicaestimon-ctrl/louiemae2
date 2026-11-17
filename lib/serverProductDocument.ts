@@ -1,5 +1,6 @@
 import { responsiveImage } from './responsiveImage.js';
 import { canonicalProductUrl, publicProductImage, productStructuredData } from './productMetadata.js';
+import { serializeProductBootstrap } from './publicProductBootstrap.js';
 
 export type PublicProductDocument = {
   _id: string;
@@ -85,6 +86,8 @@ export function productDocument(
   html = html.replace(/<meta property="og:image:(?:width|height)"[^>]*>/g, '');
   html = html.replace(/<link rel="canonical"[^>]*>/, `<link rel="canonical" href="${canonical}"/>`);
   const structured = JSON.stringify(productStructuredData(product._id, product, variantId)).replace(/</g, '\\u003c');
+  const bootstrap = serializeProductBootstrap(product);
+  if (bootstrap) html = html.replace('</head>', () => `<script id="lm-product-bootstrap" data-product-id="${escapeHtml(product._id)}" type="application/json">${bootstrap}</script></head>`);
   html = html.replace(
     '</head>',
     () =>

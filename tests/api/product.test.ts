@@ -61,6 +61,9 @@ it('reads only the anonymous public query and returns real product content', asy
         price: 10,
         description: 'Oak',
         category: 'Furniture',
+        collection: 'furniture',
+        supplierCost: 2,
+        tradePrice: 8,
         images: [],
         inStock: false,
       },
@@ -69,6 +72,9 @@ it('reads only the anonymous public query and returns real product content', asy
   const response = await request({ id: 'fixture' });
   expect(response.status).toHaveBeenCalledWith(200);
   expect(response.send.mock.calls[0][0]).toContain('Currently unavailable');
+  expect(response.send.mock.calls[0][0]).toContain('id="lm-product-bootstrap"');
+  expect(response.send.mock.calls[0][0]).not.toContain('supplierCost');
+  expect(response.send.mock.calls[0][0]).not.toContain('tradePrice');
   const options = fetchMock.mock.calls[0][1];
   expect(JSON.parse(options.body)).toEqual({
     path: 'products:getStorefrontDetail',
