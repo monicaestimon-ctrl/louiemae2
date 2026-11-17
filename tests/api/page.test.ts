@@ -20,7 +20,7 @@ async function request(id: unknown, method = 'GET') {
 }
 it('serves public story text and safe metadata without redirecting or leaking unrelated fields', async () => {
   const result = await request('story');
-  expect(result.status).toBe(200); expect(result.body).toContain('Our &lt;Story&gt; &amp; Purpose');
+  expect(result.status).toBe(200); expect(new globalThis.DOMParser().parseFromString(result.body, 'text/html').querySelector('h1')?.textContent).toBe('Our <Story> & Purpose');
   expect(result.body).toContain('Public chapter text'); expect(result.body).toContain('href="https://www.louiemae.com/story"');
   for (const text of ['privateCost', '12345', 'javascript:bad', 'http-equiv="refresh"', 'Home hero']) expect(result.body).not.toContain(text);
   const options = fetchMock.mock.calls[0][1];
@@ -38,4 +38,16 @@ it('rejects invalid paths and business methods before public reads', async () =>
 it('keeps source failure distinct from a valid empty story', async () => {
   fetchMock.mockResolvedValue({ ok: true, json: async () => ({ status: 'success', value: null }) });
   const result = await request('story'); expect(result.status).toBe(503); expect(result.headers['X-Robots-Tag']).toBe('noindex'); expect(result.headers['Retry-After']).toBe('60');
+});
+
+it('reserves the known story hero dimensions and keeps its title visible in the first viewport', async () => {
+  fetchMock.mockResolvedValue({ ok: true, json: async () => ({ status: 'success', value: { ...site, story: { ...site.story, hero: { title: 'Discover', subtitle: 'Our Journey', image: '/images/brand/DINNERTABLE.png' } } } }) });
+  const result = await request('story');
+  const dom = new globalThis.DOMParser().parseFromString(result.body, 'text/html');
+  const hero = dom.querySelector('main section img');
+  expect(hero?.getAttribute('width')).toBe('1000');
+  expect(hero?.getAttribute('height')).toBe('424');
+  expect(hero?.getAttribute('fetchpriority')).toBe('high');
+  expect(dom.querySelector('main section .opacity-0')).toBeNull();
+  expect(dom.querySelector('main h1')?.textContent).toBe('Discover Our Journey');
 });

@@ -31,13 +31,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (id === 'story') {
       const story = record(site.story), hero = record(story.hero), prologue = record(story.prologue), chapters = record(story.chapters);
       if (!text(hero.title)) throw new Error('Story unavailable');
-      page = { id, title: [text(hero.title, 200), text(hero.subtitle, 200)].filter(Boolean).join(' '), description: text(prologue.subtext, 160), image: text(hero.image, 2000), links: [],
+      page = { id, heroTitle: text(hero.title, 200), heroSubtitle: text(hero.subtitle, 200), title: [text(hero.title, 200), text(hero.subtitle, 200)].filter(Boolean).join(' '), description: text(prologue.subtext, 160), image: text(hero.image, 2000), links: [],
         sections: [{ text: text(prologue.quote) }, ...['one', 'two', 'three', 'four'].map(key => ({ heading: text(chapters[key + 'Title'], 200), text: text(chapters[key + 'Text']) })),
           ...(Array.isArray(story.sections) ? story.sections.slice(0, 24).map(value => { const section = record(value); return { heading: text(section.heading, 200), text: text(section.content), image: text(section.image, 2000) }; }) : [])] };
     } else {
       const home = record(site.home), images = record(home.categoryImages);
       if (!Object.keys(images).length) throw new Error('Shop unavailable');
-      page = { id, title: 'Louie Mae', description: 'Explore our collections.', image: text(record(home.shop).headerImage, 2000), sections: [],
+      page = { id, title: 'Louie Mae', description: 'Explore our collections.', image: text(record(home.shop).headerImage, 2000) || "/images/brand/DINNERTABLE.png", sections: [],
         links: [['furniture', 'Furniture'], ['decor', 'Home Decor'], ['fashion', 'The Mae Collective'], ['kids', 'Louie Kids & Co.'], ['journal', 'Simply by Mae']].map(([key, title]) => ({ title, href: key === 'journal' ? '/blog' : `/collection/${key}`, image: text(images[key], 2000) })) };
     }
     const template = await readFile(join(process.cwd(), 'dist', 'index.html'), 'utf8');

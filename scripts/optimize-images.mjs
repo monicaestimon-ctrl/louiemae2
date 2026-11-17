@@ -16,7 +16,7 @@ const sources = [
   { dir: 'public/images/brand', url: '/images/brand' },
 ];
 const outDir = 'public/images/opt/brand';
-const WIDTHS = [480, 960, 1600];
+const WIDTHS = [480, 640, 800, 960, 1600];
 const QUALITY = 74;
 
 const slug = (name) =>

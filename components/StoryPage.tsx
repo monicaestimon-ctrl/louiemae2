@@ -3,7 +3,7 @@ import React, { useLayoutEffect } from 'react';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
 import { DynamicSectionRenderer } from './DynamicPage';
-import { responsiveImage } from '../lib/responsiveImage';
+import { imageEntry, responsiveImage } from '../lib/responsiveImage';
 
 export const StoryPage: React.FC = () => {
    const { siteContent } = useSite();
@@ -15,24 +15,26 @@ export const StoryPage: React.FC = () => {
          {/* Hero Section */}
          <section className="px-6 md:px-12 mb-20 md:mb-32">
             <div className="container mx-auto max-w-5xl">
-               <FadeIn className="text-center mb-12 md:mb-20">
+               <div className="text-center mb-12 md:mb-20">
                   <span className="text-bronze text-xs md:text-sm font-sans uppercase tracking-[0.4em] block mb-6">The Origins</span>
                   {/* Title on one line */}
                   <h1 className="font-serif text-3xl md:text-6xl lg:text-7xl text-earth leading-none tracking-tight">
                      {story.hero.title} <span className="italic font-light">{story.hero.subtitle}</span>
                   </h1>
-               </FadeIn>
+               </div>
 
-               <FadeIn delay={200} className="relative w-full overflow-hidden rounded-2xl mb-16 shadow-sm mx-auto max-w-sm">
+               <div className="relative w-full overflow-hidden rounded-2xl mb-16 shadow-sm mx-auto max-w-sm">
                   <img
                      loading="eager"
                      fetchPriority="high"
                      decoding="async"
-                     {...responsiveImage(story.hero.image, '(min-width: 1024px) 50vw, 100vw')}
+                     {...responsiveImage(story.hero.image, '(min-width: 432px) 384px, calc(100vw - 48px)')}
                      alt="Our Journey"
+                     width={imageEntry(story.hero.image) ? 1000 : undefined}
+                     height={imageEntry(story.hero.image) ? Math.round(1000 * imageEntry(story.hero.image)!.ratio) : undefined}
                      className="w-full h-auto object-contain rounded-2xl grayscale-[20%] hover:scale-[1.02] transition-transform duration-[3s] ease-out"
                   />
-               </FadeIn>
+               </div>
             </div>
          </section>
 
