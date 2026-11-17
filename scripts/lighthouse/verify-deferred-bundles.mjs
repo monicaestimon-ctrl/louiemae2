@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 const manifest = JSON.parse(await readFile('dist/.vite/manifest.json', 'utf8'));
 const tools = ['trade/TradeWelcome.tsx', 'trade/TradeApplication.tsx', 'trade/TradeAccount.tsx',
   'components/delivery/TradeDeliveryCalculator.tsx', 'components/delivery/ProjectDeliveryPanel.tsx',
-  'components/delivery/ProductDeliveryEstimate.tsx', 'components/partner/ProgramHubV2.tsx'];
+  'components/delivery/ProductDeliveryEstimate.tsx', 'components/partner/ProgramHubV2.tsx', 'components/delivery/DeliveryQuoteStatus.tsx'];
 const roots = Object.keys(manifest).filter(key => manifest[key].dynamicImports?.includes(tools[0]));
 assert.equal(roots.length, 1, 'Expected one HOLM application chunk');
 const initial = new Set();
@@ -31,3 +31,8 @@ for (const key of manifest['index.html'].dynamicImports || []) visit(key);
 const cart = 'components/cart/CartDrawer.tsx';
 assert.ok(manifest[cart]?.isDynamicEntry, 'Retail cart must remain an interaction-loaded entry');
 assert.ok(!initial.has(cart), 'Retail cart leaked into public startup');
+
+for (const key of ['components/HomeProductPreview.tsx', 'components/CollectionProductPreview.tsx', 'components/delivery/DeliveryQuoteStatus.tsx']) {
+  assert.ok(manifest[key]?.isDynamicEntry, `${key} must remain a dynamic entry`);
+  assert.ok(!initial.has(key), `${key} leaked into retail startup`);
+}

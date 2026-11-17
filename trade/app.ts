@@ -33,7 +33,7 @@ import { activeRef, captureRefFromUrl, pieceShareUrl, rememberRef, shareOrigin, 
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { phoneCut } from './phoneCut.mjs';
-import {DeliveryQuoteAccess} from '../components/delivery/DeliveryQuoteStatus';
+import {LazyDeliveryQuoteAccess as DeliveryQuoteAccess} from '../components/delivery/LazyDeliveryQuoteAccess';
 import { projectLines } from './projectLines';
 import { resolveProjectProduct, resolveProjectItems, sameProjectSelection, sameSavedRow, restoreProjectItem, projectItemKey, mergeProjectItem } from './projectIdentity';
 import { SafeImage } from '../components/SafeImage';

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "audit:lighthouse": "node scripts/lighthouse/run.mjs",
-    "verify:deferred-bundles": "vite build --manifest && node scripts/lighthouse/verify-deferred-bundles.mjs",
+    "verify:deferred-bundles": "vite build --manifest && node scripts/lighthouse/verify-deferred-bundles.mjs && node scripts/lighthouse/verify-retail-bundles.mjs",
     "test:lighthouse-policy": "node --test scripts/build-info.node.mjs scripts/lighthouse/policy.node.mjs scripts/lighthouse/health.node.mjs scripts/lighthouse/report.node.mjs scripts/lighthouse/deployment.node.mjs",
     "predev": "node scripts/verify-environment.mjs",
     "dev": "vite",

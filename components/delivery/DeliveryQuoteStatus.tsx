@@ -8,7 +8,8 @@ import { SPLIT_MAY } from '../../lib/customerCopy';
 import { useAuthToken } from '@convex-dev/auth/react';
 import { usePendingTimeout } from '../../contexts/usePendingTimeout';
 const money = (n: number) => `$${(n / 100).toFixed(2)}`;
-export type QuoteAccess = { id: Id<'dlvQuoteRequests'>; guestCapability?: string };
+import { quoteAccessFromUrl, type QuoteAccess } from '../../lib/delivery/quoteAccess';
+export type { QuoteAccess } from '../../lib/delivery/quoteAccess';
 
 export default function DeliveryQuoteStatus({ request }: { request: QuoteAccess }) {
   const status = useQuery(api.dlvOperations.requestStatus, request),
@@ -214,14 +215,8 @@ function QuoteRecovery({ id }: { id: Id<'dlvQuoteRequests'> }) {
   );
 }
 /** Tokens stay in the fragment, never query strings, server logs or referrer headers. */
-export function DeliveryQuoteAccess() {
-  const [request] = useState<QuoteAccess | null>(() => {
-    const url = new URL(window.location.href),
-      id = url.searchParams.get('deliveryQuote');
-    if (!id) return null;
-    const token = new URLSearchParams(url.hash.slice(1)).get('delivery-access');
-    return { id: id as Id<'dlvQuoteRequests'>, ...(token ? { guestCapability: token } : {}) };
-  });
+export function DeliveryQuoteAccess({ initialRequest }: { initialRequest?: QuoteAccess } = {}) {
+  const [request] = useState<QuoteAccess | null>(() => initialRequest ?? quoteAccessFromUrl(new URL(window.location.href)));
   if (!request) return null;
   return (
     <aside className="p-6 bg-white text-earth border" aria-label="Requested delivery quote">

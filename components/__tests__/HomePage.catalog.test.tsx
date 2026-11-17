@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HomePage } from '../HomePage';
 import { CartProvider, useCart } from '../../contexts/CartContext';
@@ -23,7 +23,7 @@ vi.mock('../useStorefrontProductDetail', () => ({ useStorefrontProductDetail: (i
 } }));
 const CartProof = () => { const cart = useCart(); return <output aria-label="Cart proof">{JSON.stringify({ count: cart.itemCount, subtotal: cart.subtotal, variant: cart.items[0]?.selectedVariant?.id, product: cart.items[0]?.product.id })}</output>; };
 const App = () => <CartProvider><HomePage /><CartProof /></CartProvider>;
-const open = () => fireEvent.click(screen.getByRole('button', { name: 'Quick view Catalog chair' }));
+const open = async () => { fireEvent.click(screen.getByRole('button', { name: 'Quick view Catalog chair' })); await waitFor(() => expect(screen.queryByText('Opening product details…')).toBeNull()); };
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); mocks.ready = true; mocks.failed = false; mocks.loading = false; mocks.unavailable = false; mocks.detailFailed = false;
   mocks.product = { id: 'real-product', name: 'Authoritative chair', fulfillmentProvider: 'ashcroft', description: 'Real details', category: 'Chairs', price: 420, images: ['chair.jpg'], inStock: true,
@@ -31,7 +31,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 describe('homepage real catalog purchase flow', () => {
-  it('keeps homepage content through a failed recommendation query and local retry', () => {
+  it('keeps homepage content through a failed recommendation query and local retry', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.failed = true; render(<App />);
     expect(screen.getByText('Recommendations are temporarily unavailable.')).toBeTruthy();
@@ -40,7 +40,7 @@ describe('homepage real catalog purchase flow', () => {
     mocks.failed = false; fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(screen.getByText('Catalog chair')).toBeTruthy();
   });
-  it('bounds pending recommendations without removing the homepage and recovers on data arrival', () => {
+  it('bounds pending recommendations without removing the homepage and recovers on data arrival', async () => {
     vi.useFakeTimers(); mocks.ready = undefined; const view = render(<App />);
     expect(screen.getByText('Loading recommendations…')).toBeTruthy();
     act(() => vi.advanceTimersByTime(10_000));
@@ -49,23 +49,23 @@ describe('homepage real catalog purchase flow', () => {
     mocks.ready = true; view.rerender(<App />);
     expect(screen.getByText('Catalog chair')).toBeTruthy();
   });
-  it('does not describe a failed product request as a missing product', () => {
+  it('does not describe a failed product request as a missing product', async () => {
     mocks.product = null; mocks.detailFailed = true;
-    render(<App />); open();
+    render(<App />); await open();
     expect(screen.getByText('Product details could not be loaded. Please try again.')).toBeInTheDocument();
     expect(screen.queryByText('This product is no longer available.')).toBeNull();
   });
-  it('blocks legacy non-Ashcroft products as Coming Soon', () => {
+  it('blocks legacy non-Ashcroft products as Coming Soon', async () => {
     mocks.product = { ...mocks.product!, fulfillmentProvider: undefined };
-    render(<App />); open();
+    render(<App />); await open();
     expect(screen.getByRole('button', { name: 'Coming Soon' })).toBeDisabled();
     expect(screen.getByLabelText('Cart proof').textContent).toContain('"count":0');
   });
-  it('uses a six-card featured furniture preview and opens authoritative details only on selection', () => {
+  it('uses a six-card featured furniture preview and opens authoritative details only on selection', async () => {
     render(<App />);
     expect(mocks.catalog).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'furniture' }), 'All', true, 'featured', 6);
-    expect(mocks.detail).toHaveBeenLastCalledWith(null);
-    open(); expect(mocks.detail).toHaveBeenLastCalledWith('real-product');
+    expect(mocks.detail).not.toHaveBeenCalled();
+    await open(); expect(mocks.detail).toHaveBeenLastCalledWith('real-product');
     expect(within(screen.getByRole('dialog')).getByText('$420')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Select Option First' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Velvet' })).toBeDisabled();
@@ -74,39 +74,39 @@ describe('homepage real catalog purchase flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add to Cart' }));
     expect(screen.getByLabelText('Cart proof').textContent).toBe(JSON.stringify({ count: 1, subtotal: 440, variant: 'linen', product: 'real-product' }));
   });
-  it('automatically adds the sole variant without an option selector', () => {
+  it('automatically adds the sole variant without an option selector', async () => {
     mocks.product = { ...mocks.product!, variants: [mocks.product!.variants![0]] };
-    render(<App />); open();
+    render(<App />); await open();
     expect(screen.queryByText('Select Option')).toBeNull();
     expect(within(screen.getByRole('dialog')).getByText('$440')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Add to Cart' }));
     expect(screen.getByLabelText('Cart proof').textContent).toBe(JSON.stringify({ count: 1, subtotal: 440, variant: 'linen', product: 'real-product' }));
   });
-  it('clears the variant when closing and reopening a product', () => {
-    render(<App />); open(); fireEvent.click(screen.getByRole('button', { name: 'Linen' }));
+  it('clears the variant when closing and reopening a product', async () => {
+    render(<App />); await open(); fireEvent.click(screen.getByRole('button', { name: 'Linen' }));
     fireEvent.click(screen.getByRole('button', { name: 'Close product details' }));
-    expect(mocks.detail).toHaveBeenLastCalledWith(null); open();
+    expect(screen.queryByRole('dialog')).toBeNull(); await open();
     expect(screen.getByRole('button', { name: 'Select Option First' })).toBeDisabled();
   });
-  it('invalidates selection when a subscribed variant becomes unavailable', () => {
-    const view = render(<App />); open(); fireEvent.click(screen.getByRole('button', { name: 'Linen' }));
+  it('invalidates selection when a subscribed variant becomes unavailable', async () => {
+    const view = render(<App />); await open(); fireEvent.click(screen.getByRole('button', { name: 'Linen' }));
     mocks.product = { ...mocks.product!, variants: mocks.product!.variants!.map(v => ({ ...v, inStock: false })) };
     view.rerender(<App />); expect(screen.getByRole('button', { name: 'Select Option First' })).toBeDisabled();
   });
-  it('adds a product without variants at its authoritative price', () => {
-    mocks.product = { ...mocks.product!, variants: [] }; render(<App />); open();
+  it('adds a product without variants at its authoritative price', async () => {
+    mocks.product = { ...mocks.product!, variants: [] }; render(<App />); await open();
     fireEvent.click(screen.getByRole('button', { name: 'Add to Cart' }));
     expect(screen.getByLabelText('Cart proof').textContent).toBe(JSON.stringify({ count: 1, subtotal: 420, product: 'real-product' }));
   });
-  it('shows loading and deleted-product states without a purchase button', () => {
-    mocks.product = null; mocks.loading = true; const view = render(<App />); open();
+  it('shows loading and deleted-product states without a purchase button', async () => {
+    mocks.product = null; mocks.loading = true; const view = render(<App />); await open();
     expect(screen.getByText('Loading product details…')).toBeTruthy();
     mocks.loading = false; mocks.unavailable = true; view.rerender(<App />);
     expect(screen.getByText('This product is no longer available.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Add to Cart' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Close' })); expect(mocks.detail).toHaveBeenLastCalledWith(null);
+    fireEvent.click(screen.getByRole('button', { name: 'Close' })); expect(screen.queryByRole('dialog')).toBeNull();
   });
-  it('does not show sample products when the catalog is unavailable', () => {
+  it('does not show sample products when the catalog is unavailable', async () => {
     mocks.ready = false; render(<App />);
     expect(screen.getByText(/Products are temporarily unavailable/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Quick view Catalog chair' })).toBeNull();

@@ -120,11 +120,11 @@ try {
     );
     assert.equal(
       await page.$eval('link[rel=canonical]', (n) => n.getAttribute('href')),
-      'https://louiemae.com/products/zuo-fixture'
+      'https://www.louiemae.com/products/zuo-fixture'
     );
     await page.waitForSelector('#lm-live-product-structured-data');
     const structured = await page.$eval('#lm-live-product-structured-data', node => JSON.parse(node.textContent));
-    assert.equal(structured.url, 'https://louiemae.com/products/zuo-fixture');
+    assert.equal(structured.url, 'https://www.louiemae.com/products/zuo-fixture');
     assert.equal(structured.offers.price, 120);
     assert.equal(structured.offers.availability, 'https://schema.org/InStock');
     await page.addScriptTag({ content: axe.source });
