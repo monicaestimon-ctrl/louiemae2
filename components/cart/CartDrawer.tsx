@@ -157,9 +157,9 @@ export const CartDrawer: React.FC = () => {
             />
 
             {/* Drawer */}
-            <div className="fixed top-0 right-0 h-full w-full max-w-md bg-white z-[201] shadow-2xl flex flex-col">
+            <div data-cart-panel className="fixed top-0 right-0 h-full w-full max-w-md bg-white z-[201] shadow-2xl overflow-y-auto">
                 {/* Header */}
-                <div className="flex items-center justify-between p-6 border-b border-earth/10">
+                <div className="sticky top-0 z-10 bg-white flex items-center justify-between p-6 border-b border-earth/10">
                     <div className="flex items-center gap-3">
                         <ShoppingBag className="w-5 h-5 text-earth" />
                         <h2 className="font-serif text-xl text-earth">Your Cart</h2>
@@ -177,7 +177,7 @@ export const CartDrawer: React.FC = () => {
                 </div>
 
                 {/* Cart Items */}
-                <div className="flex-1 overflow-y-auto p-6">
+                <div className="p-6">
                     {items.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full text-center">
                             <ShoppingBag className="w-16 h-16 text-earth/20 mb-4" />

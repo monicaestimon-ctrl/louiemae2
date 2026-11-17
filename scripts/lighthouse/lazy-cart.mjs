@@ -1,4 +1,4 @@
-/* global document, window, localStorage */
+/* global document, window, localStorage, innerHeight */
 import { build } from 'esbuild';
 import puppeteer from 'puppeteer-core';
 import { createServer } from 'node:http';
@@ -170,6 +170,14 @@ try {
         await page.$eval('input[autocomplete=name]', (n) => n.value),
         'Retained customer'
       );
+      const review = await page.$('form[aria-label="Delivery address"] button[type=submit]');
+      assert.ok(review);
+      await review.scrollIntoView();
+      await review.focus();
+      const reachable = await review.evaluate(node => { const rect = node.getBoundingClientRect(); return document.activeElement === node && rect.top >= 0 && rect.bottom <= innerHeight; });
+      assert.equal(reachable, true, 'Delivery review must remain reachable in the scrolling drawer');
+      await page.screenshot({ path: 'artifacts/lighthouse/lazy-cart-review-mobile.png' });
+      await page.$eval('[data-cart-panel]', node => { node.scrollTop = 0; });
       assert.equal(drawerRequests, 1);
       assert.equal(await page.evaluate(() => document.body.textContent.includes('Pay $')), false);
     } else {
