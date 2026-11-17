@@ -1,6 +1,7 @@
 import React, {
   useState,
   useEffect,
+  useLayoutEffect,
   useCallback,
   lazy,
   Suspense,
@@ -61,7 +62,7 @@ const CheckoutSuccess = named(() => import('./components/checkout'), 'CheckoutSu
 const CheckoutCancel = named(() => import('./components/checkout'), 'CheckoutCancel');
 const SearchModal = named(() => import('./components/SearchModal'), 'SearchModal');
 
-const PageFallback = () => (
+const PageFallback = () => document.getElementById('lm-product-document') ? null : (
   <main className="min-h-[100svh] flex items-center justify-center text-earth" aria-busy="true">
     <p role="status">Loading page…</p>
   </main>
@@ -156,6 +157,14 @@ const AppContent = () => {
   const [mobileMenuBuilt, setMobileMenuBuilt] = useState(false);
   const wideNav = useSyncExternalStore(subscribeWideNav, isWideNav);
   const [activePage, setActivePage] = useState(() => storefrontRoute(window.location));
+  useLayoutEffect(() => {
+    const initial = document.getElementById('lm-product-document');
+    const route = productRoute(activePage);
+    if (initial && (initial.dataset.productId !== route?.id || initial.dataset.variantId !== (route?.variantId ?? ''))) {
+      initial.remove();
+      document.getElementById('lm-product-structured-data')?.remove();
+    }
+  }, [activePage]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchInitialTerm, setSearchInitialTerm] = useState('');
   const closeSearch = () => {
@@ -336,8 +345,9 @@ const AppContent = () => {
           href="#main-content"
           onClick={(event) => {
             event.preventDefault();
-            document.getElementById('main-content')?.focus();
-            document.getElementById('main-content')?.scrollIntoView();
+            const target = document.getElementById('lm-product-document') ?? document.getElementById('main-content');
+            target?.focus();
+            target?.scrollIntoView();
           }}
         >
           Skip to main content

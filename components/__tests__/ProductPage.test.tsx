@@ -39,6 +39,25 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+it('retains the matching read-only server document only while the live detail is pending', () => {
+  const initial = document.createElement('main');
+  initial.id = 'lm-product-document';
+  initial.dataset.productId = 'stable-id';
+  initial.dataset.variantId = '';
+  initial.textContent = 'Server product';
+  document.body.append(initial);
+  state.product = null;
+  state.loading = true;
+  const view = render(<ProductPage id="stable-id" />);
+  expect(initial.isConnected).toBe(true);
+  expect(screen.queryByRole('button', { name: 'Add to Cart' })).toBeNull();
+  state.loading = false;
+  state.failed = true;
+  view.rerender(<ProductPage id="stable-id" />);
+  expect(initial.isConnected).toBe(false);
+  expect(screen.getByRole('heading')).toHaveTextContent('temporarily unavailable');
+});
+
 it('uses the URL option and current price for a cart selection', () => {
   render(<ProductPage id="stable-id" variantId="two" />);
   expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Rowan Chair');
