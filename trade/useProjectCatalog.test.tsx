@@ -1,0 +1,56 @@
+import { renderHook } from '@testing-library/react';
+import { beforeEach, expect, it, vi } from 'vitest';
+import { holmLegacyId } from '../lib/holmProductIdentity';
+import { liveProducts, type HolmProduct } from './catalog';
+import { projectLines } from './projectLines';
+import { projectResolutionMessage, useProjectCatalog } from './useProjectCatalog';
+const responses = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
+vi.mock('convex/react', () => ({ useQueries: () => responses.value }));
+const source = 'saved-source'; const pid = holmLegacyId(source);
+const item = { id: source, name: 'Saved Chair', description: '', category: 'Chairs', images: [], facts: '', inStock: true, variants: [{ id: 'oak', name: 'Oak', minimum: 2, increment: 2, retail: 10000, trade: 9000 }] };
+beforeEach(() => { responses.value = {}; });
+it('requires independent verification for legacy rows even when their numeric ID is in browse', () => {
+  const [product] = liveProducts([item]);
+  const catalog = new Map([[pid, product]]);
+  const identity = { pid, vid: 'oak', qty: 2 };
+  const view = renderHook(() => useProjectCatalog([identity], catalog));
+  expect(view.result.current.products.has(pid)).toBe(false);
+  expect(projectLines([identity], view.result.current.products).lines).toEqual([]);
+  responses.value = { 'legacy:0': { ready: false, items: [] } }; view.rerender();
+  expect(view.result.current.products.has(pid)).toBe(false);
+  responses.value = { 'legacy:0': { ready: true, items: [{ legacyId: pid, status: 'resolved', item }] } }; view.rerender();
+  expect(projectLines([identity], view.result.current.products).lines).toHaveLength(1);
+  responses.value = { 'legacy:0': { ready: true, items: [{ legacyId: pid, status: 'conflict', item: null }] } }; view.rerender();
+  expect(view.result.current.products.has(pid)).toBe(false);
+  expect(catalog.get(pid)).toBe(product);
+});
+it('resolves an unloaded project item without adding it to the browse catalog', () => {
+  const catalog = new Map<number, HolmProduct>();
+  const identity = { pid, lid: source, vid: 'oak', qty: 2 };
+  const view = renderHook(() => useProjectCatalog([identity], catalog));
+  expect(projectResolutionMessage(identity, view.result.current.states)).toContain('being checked');
+  expect(projectLines([identity], view.result.current.products).lines).toEqual([]);
+  responses.value = { 'source:0': [{ productId: source, item }] }; view.rerender();
+  expect(projectLines([identity], view.result.current.products)).toEqual({ lines: [{ productId: source, variantId: 'oak', packs: 2 }], errors: [] });
+  expect(catalog.size).toBe(0);
+  responses.value = { 'source:0': [{ productId: source, item: null }] }; view.rerender();
+  expect(view.result.current.products.size).toBe(0);
+  expect(projectResolutionMessage(identity, view.result.current.states)).toContain('no longer available');
+});
+it('never overwrites a browse product with a conflicting saved source', () => {
+  const existing = { id: pid, lid: 'different-source' } as HolmProduct;
+  responses.value = { 'source:0': [{ productId: source, item }] };
+  const identity = { pid, lid: source };
+  const view = renderHook(() => useProjectCatalog([identity], new Map([[pid, existing]])));
+  expect(view.result.current.products.get(pid)).toBe(existing);
+  expect(projectResolutionMessage(identity, view.result.current.states)).toContain('conflicting');
+});
+it('keeps transport failures and index preparation distinct from unavailable stock', () => {
+  const identity = { pid };
+  const view = renderHook(() => useProjectCatalog([identity], new Map()));
+  responses.value = { 'legacy:0': { ready: false, items: [] } }; view.rerender();
+  expect(projectResolutionMessage(identity, view.result.current.states)).toContain('cannot be verified yet');
+  responses.value = { 'legacy:0': new Error('private failure') }; view.rerender();
+  expect(projectResolutionMessage(identity, view.result.current.states)).toContain('could not be checked');
+  expect(projectResolutionMessage(identity, view.result.current.states)).not.toContain('private failure');
+});

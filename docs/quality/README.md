@@ -210,3 +210,11 @@ Deploy and verify this backend prerequisite before releasing the independent sav
 4. Resume an interruption from `status`. A stale batch replay returns `advanced:false`; a mismatch changes the phase to `failed`. Do not enable a partial or failed migration.
 5. After `verified`, call `setEnabled` with `enabled:true` and read back `status`. Verify an eligible source, its legacy ID, a withdrawn source and anonymous pricing before frontend cutover. Do not submit a purchase to test lookup.
 6. Retain deployment and migration receipts. Roll back the reader with `setEnabled` using `enabled:false`; preserve the index, saved records and order history. This changes identity lookup only, not product publication, prices, inventory or checkout gates.
+
+## Prepared HOLM frontend connection
+
+Typed newsletter feedback now follows the real subscriber response, with validation, timeout and recoverable errors. The observable catalog store preserves the mounted project UI when the same authorized viewer receives fresh catalog rows, while viewer changes clear cached pricing. Typed discovery controls remain usable with a small catalog and narrow screens.
+
+Saved project and saved-for-later identities resolve in bounded batches independently of browse ordering. Explicit source conflicts fail closed. Numeric-only saved rows always use the verified legacy index, even if the browse page contains the same number. Pending, preparation, failure and conflict states preserve saved records and prevent incomplete project submission. Stable Convex subscription descriptors avoid render loops, and stalled lookups expose a recoverable error after ten seconds.
+
+This connection depends on the deployed and verified backend identity index. Independent boards, collages, planner and product-detail hydration, server filtering/sorting and first-page loading remain outstanding; the initial catalog still exhausts its page cursor in this increment. Previously validated fixtures and regression tests are retained and must pass again on the integrated head before release.

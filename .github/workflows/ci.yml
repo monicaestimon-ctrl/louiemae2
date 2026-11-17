@@ -83,6 +83,7 @@ jobs:
           npm run test:holm:browser
           npm run test:tray-request:browser
           npm run test:application:browser
+          node scripts/lighthouse/newsletter.mjs
 
       - name: Retain HOLM quality evidence
         if: always()

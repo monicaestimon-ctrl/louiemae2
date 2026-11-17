@@ -11,9 +11,9 @@ const css = assets.find((file) => /^trade-.*\.css$/.test(file));
 assert.ok(css, 'Missing trade stylesheet. Run npm run build first.');
 const stubs = {
   auth: `export const useAuthActions=()=>({signIn:async()=>{throw Error('No auth permitted')},signOut:async()=>{throw Error('No auth permitted')}});export const useAuthToken=()=>null;`,
-  convex: `import{getFunctionName}from'convex/server';export const useQuery=(ref)=>getFunctionName(ref)==='holm:me'?{signedIn:true,verified:true,admin:false,tradeStatus:'approved',businessName:'',email:''}:getFunctionName(ref)==='holmSync:load'?window.fixtureRemote:undefined;export const useQueries=q=>Object.fromEntries(Object.keys(q).map(k=>[k,undefined]));export const useMutation=ref=>async()=>{if(getFunctionName(ref)==='holm:ensureProfile'||getFunctionName(ref)==='holmSync:save')return null;window.fixtureCommands=(window.fixtureCommands||0)+1;return new Promise((_,reject)=>{window.rejectFixtureQuote=()=>reject({data:{code:'RATE_LIMITED',message:'You have sent several requests. Please wait an hour before sending another.'}})})};export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});export const useAction=useMutation;export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});`,
+  convex: `import{getFunctionName}from'convex/server';export const useQuery=(ref)=>getFunctionName(ref)==='holm:me'?{signedIn:true,verified:true,admin:false,tradeStatus:'approved',businessName:'',email:''}:getFunctionName(ref)==='holmSync:load'?window.fixtureRemote:undefined;export const useQueries=q=>Object.fromEntries(Object.entries(q).map(([k,v])=>[k,window.fixtureLookupPending?undefined:v.args.productIds?v.args.productIds.map(productId=>({productId,item:window.fixtureLookup?.id===productId?window.fixtureLookup:null})):{ready:true,items:v.args.legacyIds.map(legacyId=>({legacyId,status:'unavailable',item:null}))}]));export const useMutation=ref=>async()=>{if(getFunctionName(ref)==='holm:ensureProfile'||getFunctionName(ref)==='holmSync:save')return null;window.fixtureCommands=(window.fixtureCommands||0)+1;return new Promise((_,reject)=>{window.rejectFixtureQuote=()=>reject({data:{code:'RATE_LIMITED',message:'You have sent several requests. Please wait an hour before sending another.'}})})};export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});export const useAction=useMutation;export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});`,
 };
-const entry = `import React from'react';import{createRoot}from'react-dom/client';import{App,setProducts}from'./trade/app';const image='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';const products=Array.from({length:24},(_,i)=>({id:i+1,lid:'fixture'+i,vid:'fixture'+i,variants:[],name:'Fixture '+(i+1),full:'Fixture '+(i+1),line:'Chair',type:'sofa',mat:'leather',tone:'#6B4A33',price:100,trade:80,seats:1,oos:false,note:'Fixture only',facts:'',img:image,imgs:[image],ar:1,sku:'FIXTURE',likes:0,widthCm:50,dimsCm:{w:50,d:50,h:50},dimsSource:'fixture',cutout:null,cutAR:null,model:null,modelLow:null,hangs:false,mountCm:null,minimum:1,increment:1,checkoutMode:'quote'}));setProducts(products);createRoot(document.getElementById('root')).render(<App/>);`;
+const entry = `import React from'react';import{createRoot}from'react-dom/client';import{App,setProducts}from'./trade/app';import{holmLegacyId}from'./lib/holmProductIdentity';const image='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';const products=Array.from({length:24},(_,i)=>({id:i+1,lid:'fixture'+i,vid:'fixture'+i,variants:[],name:'Fixture '+(i+1),full:'Fixture '+(i+1),line:'Chair',type:'sofa',mat:'leather',tone:'#6B4A33',price:100,trade:80,seats:1,oos:false,note:'Fixture only',facts:'',img:image,imgs:[image],ar:1,sku:'FIXTURE',likes:0,widthCm:50,dimsCm:{w:50,d:50,h:50},dimsSource:'fixture',cutout:null,cutAR:null,model:null,modelLow:null,hangs:false,mountCm:null,minimum:1,increment:1,checkoutMode:'quote'}));if(window.fixtureHydrated){const source='saved-source';window.fixtureSavedPid=holmLegacyId(source);window.fixtureLookup={id:source,name:'Offpage Chair',description:'Verified fixture',category:'Chairs',images:[image],facts:'',inStock:true,variants:[{id:'oak',name:'Oak',minimum:2,increment:2,retail:10000,trade:8000}]};localStorage.setItem('hol:tray',JSON.stringify({active:'offpage',projects:[{id:'offpage',name:'Offpage project',target:2,zones:['Main room'],items:[{pid:window.fixtureSavedPid,lid:source,vid:'oak',qty:2,zone:'Main room'}]}],later:[]}));}window.fixtureRefresh=()=>setProducts(products);setProducts(products);createRoot(document.getElementById('root')).render(<App/>);`;
 const bundle = await build({
   stdin: { contents: entry, resolveDir: process.cwd(), loader: 'tsx' },
   bundle: true,
@@ -214,7 +214,7 @@ try {
     assert.equal(saved.projects[0].items[0].lid, 'missing-source');
     assert.equal(saved.later[0].vid, 'later-option');
     await page.evaluate(() => [...document.querySelectorAll('button')].find(b => b.textContent.startsWith('Saved for later')).click());
-    assert.match(await page.$eval('.tv-main', node => node.textContent), /Saved item 99998 is unavailable/);
+    assert.match(await page.$eval('.tv-main', node => node.textContent), /Saved item 99998 is no longer available/);
     assert.doesNotMatch(await page.$eval('.tv-main', node => node.textContent), /Nothing saved for later/);
     assert.equal(await page.evaluate(() => window.fixtureCommands || 0), 0);
     await page.keyboard.press('Escape');
@@ -253,6 +253,29 @@ try {
     assert.equal(await page.evaluate(() => window.fixtureCommands || 0), 0);
     results.push({ source, missingDraftRetained: true, boardsAndCollagesRetained: true, unavailableBoardPurchaseBlocked: true, unavailableSharingBlocked: true, plannerRetainedUntilExplicitRemoval: true, checkoutBlocked: true, businessCommands: 0 });
   }
+  await page.goto('http://fixture.invalid');
+  await page.evaluate(() => { localStorage.clear(); location.hash='discover'; window.fixtureHydrated=true; });
+  await page.addStyleTag({content:await readFile('dist/assets/'+css,'utf8')});
+  for (const file of bundle.outputFiles.filter(file=>file.path.endsWith('.css'))) await page.addStyleTag({content:file.text});
+  await page.addStyleTag({content:await readFile('trade/style.css','utf8')});
+  await page.addScriptTag({content:bundle.outputFiles.find(file=>file.path.endsWith('.js')).text});
+  await page.waitForSelector('#trayBtn');
+  await page.click('#trayBtn');
+  await page.waitForFunction(()=>document.querySelector('.tv-main')?.textContent.includes('Offpage'));
+  assert.equal(await page.$eval('.tv-sum .btn-ink',node=>node.disabled),false);
+  assert.equal(await page.$eval('.tv-line .tv-th',node=>node.disabled),true);
+  await page.evaluate(()=>{window.fixtureLookupPending=true;window.fixtureRefresh();});
+  await page.waitForFunction(()=>document.querySelector('.tv-main')?.textContent.includes('being checked'));
+  assert.match(await page.$eval('.tv-sum .total',node=>node.textContent),/Checking saved items/);
+  assert.equal(await page.$eval('.tv-sum .btn-ink',node=>node.disabled),true);
+  await page.evaluate(()=>{window.fixtureLookupPending=false;window.fixtureLookup=null;window.fixtureRefresh();});
+  await page.waitForFunction(()=>document.querySelector('.tv-main')?.textContent.includes('no longer available'));
+  assert.equal(await page.$eval('.tv-sum .btn-ink',node=>node.disabled),true);
+  const retainedOffpage=await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:tray')));
+  assert.equal(retainedOffpage.projects[0].items[0].qty,2);
+  assert.equal(retainedOffpage.projects[0].items[0].vid,'oak');
+  assert.equal(await page.evaluate(()=>window.fixtureCommands||0),0);
+  results.push({offpageProjectHydrated:true,withdrawalBlocksCheckout:true,savedVariantAndQuantityRetained:true,businessCommands:0});
   assert.deepEqual(pageErrors, []);
   await writeFile(
     'artifacts/lighthouse/tray-request-browser.json',

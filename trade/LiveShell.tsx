@@ -1,4 +1,4 @@
-import React, { useDeferredValue, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useConvexAuth, usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { api } from '../convex/_generated/api';
@@ -32,18 +32,17 @@ export class TradeBoundary extends React.Component<{ children: React.ReactNode }
 function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
   const { results, status, loadMore } = usePaginatedQuery(api.holm.catalogPage, {}, { initialNumItems: 50 });
   useEffect(() => { if (status === 'CanLoadMore') loadMore(50); }, [status, loadMore]);
-  const catalog = useDeferredValue(results);
-  const mapped = useMemo(() => status === 'Exhausted' && catalog === results ? liveProducts(catalog as LiveItem[]) : null, [catalog, results, status]);
-  const [installed, setInstalled] = useState<typeof mapped>(null);
+  const mapped = useMemo(() => status === 'Exhausted' ? liveProducts(results as LiveItem[]) : null, [results, status]);
+  const [installed, setInstalled] = useState(false);
   // The legacy app reads a module-level catalog. Install only committed data,
-  // and clear it when the viewer or subscription changes; never mutate it during render.
+  // Clear on viewer teardown; refreshing the same viewer must not remount project state.
+  useLayoutEffect(() => () => setProducts([]), []);
   useLayoutEffect(() => {
     if (mapped === null) return;
     setProducts(mapped);
-    setInstalled(mapped);
-    return () => setProducts([]);
+    setInstalled(true);
   }, [mapped]);
-  const ready = mapped !== null && installed === mapped;
+  const ready = installed;
   const timedOut = usePendingTimeout(!ready);
   const shell = document.getElementById('holm-shell');
   useLayoutEffect(() => { if (ready) shell?.remove(); }, [ready, shell]);
@@ -51,7 +50,7 @@ function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
     if (timedOut) return <Recovery retry={() => window.location.reload()} />;
     return shell ? null : <main className="holm-boot" aria-busy="true"><p role="status">Opening House of Louie Mae…</p></main>;
   }
-  if (!catalog.length) return <Recovery empty retry={() => window.location.reload()} />;
+  if (mapped?.length === 0) return <Recovery empty retry={() => window.location.reload()} />;
   return <App key={me?.signedIn && me.verified ? 'trade' : 'retail'} />;
 }
 
