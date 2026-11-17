@@ -42,6 +42,7 @@ export function storefrontRoute(location: { pathname: string; search: string; ha
   if (simple[hash]) return simple[hash];
   if (/^#(?:blog|pages)\//.test(hash)) return hash;
   if (/^#(?:support|collection)(?:\/|$)/.test(hash)) return full;
+  if (path === '/shop' || path === '/story') return path.slice(1);
   if (path.startsWith('/collection/')) return `#${path.slice(1)}${location.search}`;
   if (path.startsWith('/products/') || path === '/products')
     return `${path === '/products' ? '/products/' : path}${location.search}`;

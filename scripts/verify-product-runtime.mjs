@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 assert.ok(existsSync('dist/index.html'), 'Missing dist/index.html: run npm run build before the product runtime check.');
 
 const output = 'artifacts/lighthouse/product-runtime';
-await build({ entryPoints: ['api/product.ts', 'api/collection.ts', 'lib/serverCollectionDocument.ts', 'lib/collectionId.ts', 'lib/productCategories.ts', 'lib/serverProductDocument.ts', 'lib/responsiveImage.ts', 'lib/productMetadata.ts'],
+await build({ entryPoints: ['api/product.ts', 'api/collection.ts', 'api/page.ts', 'lib/serverPageDocument.ts', 'lib/serverCollectionDocument.ts', 'lib/collectionId.ts', 'lib/productCategories.ts', 'lib/serverProductDocument.ts', 'lib/responsiveImage.ts', 'lib/productMetadata.ts'],
   outbase: '.', outdir: output, bundle: false, platform: 'node', format: 'esm', target: 'node24' });
 await mkdir(`${output}/lib`, { recursive: true });
 for (const file of ['imageManifest.json', 'productImageManifest.json']) {
@@ -17,6 +17,7 @@ process.env.VITE_PRELAUNCH_MODE = 'false';
 process.env.VITE_CONVEX_URL = 'https://public-fixture.invalid';
 const { default: handler } = await import('../artifacts/lighthouse/product-runtime/api/product.js');
 const { default: collectionHandler } = await import('../artifacts/lighthouse/product-runtime/api/collection.js');
+const { default: pageHandler } = await import('../artifacts/lighthouse/product-runtime/api/page.js');
 const originalFetch = globalThis.fetch;
 const results = [];
 try {
@@ -62,6 +63,16 @@ try {
       assert.ok(response.body.includes('href="/products/fixture"'));
     }
     results.push({ name, status: response.code });
+  }
+  for (const id of ['shop', 'story']) {
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ status: 'success', value: {
+      home: { categoryImages: { furniture: '/public-fixture.png' } },
+      story: { hero: { title: 'Runtime story' }, prologue: {}, chapters: {} },
+    } }) });
+    const response = { status(code) { this.code = code; return this; }, send(body) { this.body = body; }, setHeader() {} };
+    await pageHandler({ method: 'GET', query: { id } }, response);
+    assert.equal(response.code, 200); assert.ok(response.body.includes('id="lm-page-document"'));
+    assert.ok(response.body.includes('/assets/')); results.push({ name: id, status: response.code });
   }
 } finally { globalThis.fetch = originalFetch; }
 await writeFile('artifacts/lighthouse/product-runtime-check.json', JSON.stringify({ node: process.version, results }, null, 2));

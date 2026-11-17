@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useLayoutEffect } from 'react';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
 import { DynamicSectionRenderer } from './DynamicPage';
@@ -8,23 +8,25 @@ import { responsiveImage } from '../lib/responsiveImage';
 export const StoryPage: React.FC = () => {
    const { siteContent } = useSite();
    const { story } = siteContent;
+   useLayoutEffect(() => { document.getElementById('lm-page-document')?.remove(); }, []);
 
    return (
-      <div className="bg-cream min-h-screen w-full overflow-hidden pt-32 pb-32">
+      <main className="bg-cream min-h-screen w-full overflow-hidden pt-32 pb-32" data-public-page="story">
          {/* Hero Section */}
          <section className="px-6 md:px-12 mb-20 md:mb-32">
             <div className="container mx-auto max-w-5xl">
                <FadeIn className="text-center mb-12 md:mb-20">
-                  <span className="text-bronze text-xs md:text-sm font-sans uppercase tracking-[0.4em] block mb-6 opacity-80">The Origins</span>
+                  <span className="text-bronze text-xs md:text-sm font-sans uppercase tracking-[0.4em] block mb-6">The Origins</span>
                   {/* Title on one line */}
-                  <h1 className="font-serif text-3xl md:text-6xl lg:text-7xl text-earth leading-none tracking-tight whitespace-nowrap">
-                     {story.hero.title} <span className="italic font-light opacity-90">{story.hero.subtitle}</span>
+                  <h1 className="font-serif text-3xl md:text-6xl lg:text-7xl text-earth leading-none tracking-tight">
+                     {story.hero.title} <span className="italic font-light">{story.hero.subtitle}</span>
                   </h1>
                </FadeIn>
 
                <FadeIn delay={200} className="relative w-full overflow-hidden rounded-2xl mb-16 shadow-sm mx-auto max-w-sm">
                   <img
-                     loading="lazy"
+                     loading="eager"
+                     fetchPriority="high"
                      decoding="async"
                      {...responsiveImage(story.hero.image, '(min-width: 1024px) 50vw, 100vw')}
                      alt="Our Journey"
@@ -42,7 +44,7 @@ export const StoryPage: React.FC = () => {
                <p className="font-serif text-2xl md:text-4xl lg:text-5xl text-earth leading-tight italic mb-8 mx-auto">
                   {story.prologue.quote}
                </p>
-               <p className="font-sans text-earth/70 text-[10px] md:text-xs leading-loose tracking-[0.25em] uppercase mx-auto">
+               <p className="font-sans text-earth text-[10px] md:text-xs leading-loose tracking-[0.25em] uppercase mx-auto">
                   {story.prologue.subtext}
                </p>
             </FadeIn>
@@ -57,7 +59,7 @@ export const StoryPage: React.FC = () => {
                      <h2 className="font-serif text-3xl md:text-5xl text-earth mb-6">{story.chapters.oneTitle}</h2>
                   </div>
 
-                  <div className="font-sans text-earth/80 text-base leading-[2.2] space-y-8 max-w-2xl mx-auto text-center">
+                  <div className="font-sans text-earth text-base leading-[2.2] space-y-8 max-w-2xl mx-auto text-center">
                      {story.chapters.oneText.split('\n\n').map((paragraph, i) => {
                         // Check if this paragraph contains the L.O.U.I.E. acronym lines
                         const acronymLines = paragraph.split('\n');
@@ -68,7 +70,7 @@ export const StoryPage: React.FC = () => {
                            return (
                               <div key={i} className="space-y-3 my-4">
                                  {acronymLines.map((line, j) => (
-                                    <p key={j} className="font-serif italic text-earth/70 text-sm md:text-base tracking-wide">
+                                    <p key={j} className="font-serif italic text-earth text-sm md:text-base tracking-wide">
                                        <span className="text-bronze font-semibold not-italic">{line.charAt(0)}</span>
                                        {line.slice(1)}
                                     </p>
@@ -88,7 +90,7 @@ export const StoryPage: React.FC = () => {
                      <h2 className="font-serif text-3xl md:text-5xl text-earth mb-6">{story.chapters.twoTitle}</h2>
                   </div>
 
-                  <div className="font-sans text-earth/80 text-base leading-[2.2] space-y-8 max-w-2xl mx-auto text-center">
+                  <div className="font-sans text-earth text-base leading-[2.2] space-y-8 max-w-2xl mx-auto text-center">
                      {story.chapters.twoText.split('\n\n').map((paragraph, i) => (
                         <p key={i}>{paragraph}</p>
                      ))}
@@ -102,7 +104,7 @@ export const StoryPage: React.FC = () => {
                      <h2 className="font-serif text-3xl md:text-5xl text-earth mb-6">{story.chapters.threeTitle}</h2>
                   </div>
 
-                  <div className="font-sans text-earth/80 text-base leading-[2.2] space-y-8 max-w-2xl mx-auto text-center">
+                  <div className="font-sans text-earth text-base leading-[2.2] space-y-8 max-w-2xl mx-auto text-center">
                      {story.chapters.threeText.split('\n\n').map((paragraph, i) => (
                         <p key={i}>{paragraph}</p>
                      ))}
@@ -116,7 +118,7 @@ export const StoryPage: React.FC = () => {
                      <h2 className="font-serif text-3xl md:text-5xl text-earth mb-6">{story.chapters.fourTitle}</h2>
                   </div>
 
-                  <div className="font-sans text-earth/80 text-base leading-[2.2] space-y-8 max-w-2xl mx-auto text-center">
+                  <div className="font-sans text-earth text-base leading-[2.2] space-y-8 max-w-2xl mx-auto text-center">
                      {story.chapters.fourText.split('\n\n').map((paragraph, i) => (
                         <p key={i}>{paragraph}</p>
                      ))}
@@ -128,10 +130,10 @@ export const StoryPage: React.FC = () => {
                      <p className="font-serif text-3xl md:text-4xl italic mb-6 leading-tight">
                         "We're more than a brand—<br />we're a story."
                      </p>
-                     <p className="font-sans text-xs md:text-sm opacity-80 max-w-md mx-auto leading-loose tracking-wider mb-6">
+                     <p className="font-sans text-xs md:text-sm max-w-md mx-auto leading-loose tracking-wider mb-6">
                         WHETHER YOU'RE SHOPPING FOR YOUR HOME, YOUR LITTLES, OR SOMETHING THAT INSPIRES YOUR EVERYDAY—WE PRAY YOU FEEL THE HEART BEHIND EVERY DETAIL.
                      </p>
-                     <p className="font-serif italic text-lg opacity-90 text-bronze">
+                     <p className="font-serif italic text-lg text-bronze">
                         It's our joy to serve you, inspire you, and walk this creative path together.
                      </p>
                   </div>
@@ -142,10 +144,10 @@ export const StoryPage: React.FC = () => {
                   <p className="text-[10px] uppercase tracking-[0.3em] text-bronze">With deep gratitude</p>
                   <div className="flex flex-col items-center">
                      <h3 className="font-serif text-3xl md:text-4xl font-medium text-earth mb-2 tracking-tight">Monica Alexandra Estimon</h3>
-                     <p className="text-[10px] uppercase tracking-[0.3em] text-earth/60">Founder, Louie Mae</p>
+                     <p className="text-[10px] uppercase tracking-[0.3em] text-earth">Founder, Louie Mae</p>
                   </div>
                   <div className="w-px h-12 bg-bronze/30 mt-2"></div>
-                  <p className="font-serif italic text-lg text-earth/50">Est. 2021</p>
+                  <p className="font-serif italic text-lg text-earth">Est. 2021</p>
                </FadeIn>
 
             </div>
@@ -159,6 +161,6 @@ export const StoryPage: React.FC = () => {
                ))}
             </div>
          )}
-      </div>
+      </main>
    );
 };

@@ -11,6 +11,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe('public product navigation', () => {
+  it.each(['shop', 'story'])('opens the direct %s path without losing native history', page => {
+    expect(storefrontRoute({ pathname: `/${page}`, search: '?ref=PARTNER', hash: '' })).toBe(page);
+    expect(storefrontRoute({ pathname: `/${page}`, search: '', hash: '#collection/decor' })).toBe('#collection/decor');
+  });
   it('opens direct collection paths with their filters and referral query intact', () => {
     expect(storefrontRoute({ pathname: '/collection/furniture', search: '?cat=chairs&view=products&ref=PARTNER', hash: '' }))
       .toBe('#collection/furniture?cat=chairs&view=products&ref=PARTNER');

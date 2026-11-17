@@ -14,6 +14,7 @@ import { DesktopNavigation } from './components/DesktopNavigation';
 import { navigatePlainLink } from './lib/navigation';
 import { useInitialProductDocument } from './components/useInitialProductDocument';
 import { useInitialCollectionDocument } from './components/useInitialCollectionDocument';
+import { useInitialPageDocument } from './components/useInitialPageDocument';
 import {
   navigateStorefront,
   productRoute,
@@ -159,6 +160,7 @@ const AppContent = () => {
   const wideNav = useSyncExternalStore(subscribeWideNav, isWideNav);
   const [activePage, setActivePage] = useState(() => storefrontRoute(window.location));
   const initialDocumentPresent = useInitialProductDocument(activePage);
+  const initialPagePresent = useInitialPageDocument(activePage, siteContentStatus);
   const initialCollectionPresent = useInitialCollectionDocument(activePage, siteContentStatus,
     siteContent.collections.some(collection => activePage.split('?')[0] === `#collection/${collection.id}`));
   const [searchOpen, setSearchOpen] = useState(false);
@@ -293,8 +295,8 @@ const AppContent = () => {
   else if (activePage.startsWith('#blog/')) {
     const postId = activePage.replace('#blog/', '');
     currentView = <BlogPostView postId={postId} />;
-  } else if (activePage === 'story') currentView = <StoryPage />;
-  else if (activePage === 'shop') currentView = <ShopLandingPage />;
+  } else if (activePage === 'story') currentView = siteContentStatus === 'ready' ? <StoryPage /> : <ContentStatusPage status={siteContentStatus} />;
+  else if (activePage === 'shop') currentView = siteContentStatus === 'ready' ? <ShopLandingPage /> : <ContentStatusPage status={siteContentStatus} />;
   else if (activePage === 'new-arrivals') currentView = <NewArrivalsPage />;
   else if (activePage === 'new-collection') currentView = <NewCollectionPage />;
   else if (activePage === 'creators') currentView = <CreatorHub />;
@@ -478,7 +480,7 @@ const AppContent = () => {
       {/* Main Content Area */}
       <div id="main-content" tabIndex={-1}>
         <ErrorBoundary key={activePage} retryLocally>
-          <Suspense fallback={<PageFallback hidden={initialDocumentPresent || initialCollectionPresent} />}>
+          <Suspense fallback={<PageFallback hidden={initialDocumentPresent || initialCollectionPresent || initialPagePresent} />}>
             {activePage.startsWith('#support') ? (
               <SupportPage section={activePage.match(/#support\/(.+)/)?.[1]} />
             ) : (
