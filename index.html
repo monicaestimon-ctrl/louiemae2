@@ -50,6 +50,7 @@
        replaces it: HomePage keeps its text and saved photo in sync and hides it on other pages.
        HomePage draws the same hero itself when this one is gone; keep the two in step.
        The headline is the largest paint, so the photo waits behind its fonts (fetchpriority=low). -->
+  <!--home-document-start-->
   <section id="lm-shell" aria-label="Welcome to Louie Mae" class="relative h-screen h-svh w-full overflow-hidden bg-[#d4c9b8]">
     <img sizes="100vw" alt="Interior" fetchpriority="low" class="absolute inset-0 w-full h-full object-cover"
       srcset="/images/opt/brand/lm3-480.webp 480w, /images/opt/brand/lm3-960.webp 960w, /images/opt/brand/lm3-1600.webp 1600w"
@@ -68,6 +69,8 @@
     if (location.pathname !== '/' || location.hash.replace('#', '')) document.getElementById('lm-shell').remove();
     else document.documentElement.dataset.shell = 'home';
   </script>
+  <!--home-document-end-->
+  <!--product-document-->
   <div id="root"></div>
   <script type="module" src="/index.tsx"></script>
 </body>

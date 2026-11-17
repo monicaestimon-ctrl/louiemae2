@@ -18,10 +18,14 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });
 it('offers a genuine reload for cached lazy module errors instead of a futile local remount', () => {
+  const initial = document.createElement('main'); initial.id = 'lm-product-document'; document.body.append(initial);
+  const schema = document.createElement('script'); schema.id = 'lm-product-structured-data'; document.head.append(schema);
   function FailedModule(): never { throw new ModuleLoadError(); }
   render(<ErrorBoundary retryLocally><FailedModule /></ErrorBoundary>);
   expect(screen.getByRole('button', { name: 'Refresh Page' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  expect(document.getElementById('lm-product-document')).toBeNull();
+  expect(document.getElementById('lm-product-structured-data')).toBeNull();
 });
 it('preserves navigation and cart state while retrying only the failed page', () => {
   render(<Shell />);

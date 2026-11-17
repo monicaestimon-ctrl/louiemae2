@@ -17,12 +17,15 @@ it('bounds a stalled module and clears its timer after success or rejection', as
 
 it('provides non-React recovery without exposing diagnostics or clearing saved carts', () => {
   const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-  document.body.innerHTML = '<section id="lm-shell"></section><section id="holm-shell"></section><div id="root"></div>';
+  document.body.innerHTML = '<section id="lm-shell"></section><main id="lm-product-document"></main><section id="holm-shell"></section><div id="root"></div>';
+  const schema = document.createElement('script'); schema.id = 'lm-product-structured-data'; document.head.append(schema);
   localStorage.setItem('saved-cart', 'retained');
   showStartupFailure(new Error('private module diagnostic'));
   expect(document.querySelectorAll('main')).toHaveLength(1);
   expect(document.querySelector('button')?.textContent).toBe('Reload page');
   expect(document.getElementById('lm-shell')).toBeNull();
+  expect(document.getElementById('lm-product-document')).toBeNull();
+  expect(document.getElementById('lm-product-structured-data')).toBeNull();
   expect(document.body.textContent).not.toContain('private module diagnostic');
   expect(localStorage.getItem('saved-cart')).toBe('retained');
   expect(log).toHaveBeenCalledOnce();

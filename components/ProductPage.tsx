@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStorefrontProductDetail } from './useStorefrontProductDetail';
 import { SafeImage } from './SafeImage';
 import { VariantSelector, NO_IMAGE_KEY } from './VariantSelector';
@@ -10,6 +10,14 @@ import { navigateStorefront, productUrl } from '../lib/storefrontNavigation';
 /** Public detail reads current approved data; URL-selected options never substitute another variant. */
 export function ProductPage({ id, variantId }: { id: string; variantId?: string }) {
   const { product, loading, failed, retry } = useStorefrontProductDetail(id);
+  const initialDocument = document.getElementById('lm-product-document');
+  const initialMatches = initialDocument?.dataset.productId === id && initialDocument.dataset.variantId === (variantId ?? '');
+  useLayoutEffect(() => {
+    if (!loading || !initialMatches) {
+      initialDocument?.remove();
+      document.getElementById('lm-product-structured-data')?.remove();
+    }
+  }, [initialMatches, loading, initialDocument]);
   const [imageSelection, setImageSelection] = useState<{
     key: string;
     value: string | null;
@@ -65,6 +73,7 @@ export function ProductPage({ id, variantId }: { id: string; variantId?: string 
       document.querySelector(selector)?.setAttribute('content', product?.images[0] ?? '');
   }, [id, product, loading, failed]);
   const browse = '#shop';
+  if (loading && initialMatches) return null;
   return (
     <main className="min-h-screen bg-cream text-earth px-6 pt-36 pb-16" aria-busy={loading}>
       <div className="max-w-6xl mx-auto">

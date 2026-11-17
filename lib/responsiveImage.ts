@@ -1,5 +1,5 @@
-import manifest from './imageManifest.json';
-import productManifest from './productImageManifest.json';
+import manifest from './imageManifest.json' with { type: 'json' };
+import productManifest from './productImageManifest.json' with { type: 'json' };
 
 type Entry = { base: string; widths: number[]; ratio: number };
 const ENTRIES = manifest as Record<string, Entry>;
