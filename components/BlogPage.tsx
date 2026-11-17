@@ -1,4 +1,5 @@
 
+import { JournalIndexLead } from './JournalLead';
 import React, { useState } from 'react';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
@@ -64,66 +65,7 @@ export const BlogPage: React.FC = () => {
 
    return (
       <main className="bg-cream min-h-screen pt-32 pb-20 w-full overflow-hidden" data-lm-journal-ready={editorialStatus === 'ready' || editorialStatus === 'empty' ? 'index' : undefined}>
-         {/* Header */}
-         <section className="px-6 md:px-12 mb-20 text-center relative">
-            <div aria-hidden="true" className="mx-auto mb-6 h-10 w-px bg-gradient-to-b from-transparent to-bronze/40" />
-            <FadeIn>
-               <span className="text-muted-earth text-xs tracking-[0.4em] uppercase mb-4 block font-sans">Blog</span>
-               <h1 className="font-serif text-5xl sm:text-6xl md:text-8xl text-earth mb-6 leading-tight tracking-tight">Simply Mae</h1>
-               <div className="flex items-center justify-center gap-4 mb-6">
-                  <div className="h-px w-8 bg-earth/20"></div>
-                  <p className="font-serif text-muted-earth text-xl italic">Curated Reflections</p>
-                  <div className="h-px w-8 bg-earth/20"></div>
-               </div>
-               <p className="font-sans text-muted-earth max-w-lg mx-auto leading-relaxed text-sm tracking-wide">
-                  On faith, family, design, and finding beauty in the everyday rhythms of life.
-               </p>
-            </FadeIn>
-         </section>
-
-         {/* Featured Post */}
-         <section className="px-6 md:px-12 mb-28">
-            <div className="container mx-auto">
-               <FadeIn delay={200} className="group cursor-pointer relative">
-                  <a className="block" href={journalUrl(featuredPost.id)} onClick={event => navigatePlainLink(event, journalUrl(featuredPost.id), navigateStorefront)}>
-                     <div className="relative aspect-[4/5] md:aspect-[21/9] overflow-hidden rounded-sm mb-10 shadow-sm">
-                        <div className="absolute inset-0 bg-black/10 group-hover:bg-black/5 transition-colors z-10"></div>
-                        <img
-                           loading="eager" fetchPriority="high"
-                           decoding="async"
-                           {...responsiveImage(featuredPost.image, '(min-width: 1024px) 50vw, 100vw')}
-                           alt=""
-                           className="w-full h-full object-cover transition-transform duration-[1.5s] ease-out group-hover:scale-105"
-                        />
-                        <div className="absolute top-6 left-6 md:top-10 md:left-10 z-20">
-                           <div className="bg-white/95 backdrop-blur-md px-5 py-3 shadow-sm border border-white/50">
-                              <span className="text-earth text-[10px] uppercase tracking-[0.25em]">Featured Story</span>
-                           </div>
-                        </div>
-                     </div>
-
-                     <div className="text-center max-w-4xl mx-auto px-4">
-                        <div className="flex items-center justify-center gap-4 mb-4 text-muted-earth text-[10px] uppercase tracking-widest font-sans">
-                           <span>{featuredPost.category}</span>
-                           <span className="w-1 h-1 rounded-full bg-bronze/40"></span>
-                           <span>{featuredPost.date}</span>
-                        </div>
-                        <h2 className="font-serif text-4xl md:text-6xl text-earth mb-6 group-hover:text-bronze transition-colors duration-300 leading-tight">
-                           {featuredPost.title}
-                        </h2>
-                        <p className="font-sans text-muted-earth leading-loose mb-8 text-sm md:text-base max-w-2xl mx-auto">
-                           {featuredPost.excerpt}
-                        </p>
-                        <span
-                           className="inline-flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-earth border-b border-earth/20 pb-2 hover:text-bronze hover:border-bronze hover:gap-4 transition-all duration-300"
-                        >
-                           Read The Story <ArrowRight className="w-3 h-3" />
-                        </span>
-                     </div>
-                  </a>
-               </FadeIn>
-            </div>
-         </section>
+         <JournalIndexLead featuredPost={featuredPost} onNavigate={event => navigatePlainLink(event, journalUrl(featuredPost.id), navigateStorefront)} />
 
          {/* Recent Posts Grid */}
          <section className="px-6 md:px-12 pb-24">

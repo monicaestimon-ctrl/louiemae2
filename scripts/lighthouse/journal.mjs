@@ -7,6 +7,9 @@ import { Buffer } from 'node:buffer';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 const css = (await readdir('dist/assets')).find((file) => /^main-.*\.css$/.test(file));
 assert.ok(css, 'Build before the journal fixture.');
+const editorialManifest = JSON.parse(await readFile('lib/editorialImageManifest.json', 'utf8'));
+const heroEntry = Object.values(editorialManifest)[0];
+const heroBytes = await readFile(`public${heroEntry.base}-${heroEntry.widths[0]}.webp`);
 const post = {
   _id: 'journal-fixture',
   id: 'journal-fixture',
@@ -14,7 +17,7 @@ const post = {
   excerpt: 'A public journal story.',
   category: 'Home',
   date: 'November 17, 2026',
-  image: '',
+  image: '/fixture-hero.webp',
   status: 'published',
   content:
     '<h2>Make room for everyday life</h2><p>A readable story with <strong>meaningful details</strong> and a <a href="/shop">shop link</a>.</p><script>window.fixtureAttack=true</script><img src="javascript:bad" onerror="window.fixtureAttack=true">',
@@ -71,7 +74,18 @@ const bundle = await build({
     },
   ],
 });
-const html = `<!doctype html><html lang="en"><head><title>Journal fixture</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="canonical" href="https://www.louiemae.com/blog"><meta name="description" content="Journal fixture"><style>${await readFile('dist/assets/' + css, 'utf8')}</style></head><body><div id="root"></div><script>${bundle.outputFiles[0].text.replaceAll('</script', '<\\/script')}</script></body></html>`;
+const html = `<!doctype html><html lang="en"><head><title>Journal fixture</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="canonical" href="https://www.louiemae.com/blog"><meta name="description" content="Journal fixture"><style>${await readFile('dist/assets/' + css, 'utf8')}</style></head><body><!--product-document--><div id="root"></div><script>${bundle.outputFiles[0].text.replaceAll('</script', '<\\/script')}</script></body></html>`;
+await build({
+  entryPoints: ['lib/serverJournalDocument.ts'],
+  bundle: true,
+  packages: 'external',
+  platform: 'node',
+  format: 'esm',
+  outfile: 'artifacts/lighthouse/journal-document-fixture.mjs',
+});
+const { journalDocument } = await import('../../artifacts/lighthouse/journal-document-fixture.mjs');
+const initialIndex = journalDocument(html, [post]);
+const initialArticle = journalDocument(html, [], { ...post, content: publicDetail.contentHtml });
 const browser = await puppeteer.launch({
   ...(process.env.CHROME_PATH
     ? { executablePath: process.env.CHROME_PATH }
@@ -95,9 +109,34 @@ try {
         request.isNavigationRequest() &&
         new URL(request.url()).origin === 'http://fixture.invalid'
       )
-        void request.respond({ status: 200, contentType: 'text/html', body: html });
-      else void request.abort();
+        void request.respond({
+          status: 200,
+          contentType: 'text/html',
+          body: new URL(request.url()).pathname === '/blog' ? initialIndex : initialArticle,
+        });
+      else if (new URL(request.url()).pathname === '/fixture-hero.webp') {
+        void request.respond({ status: 200, contentType: 'image/webp', body: heroBytes });
+      } else void request.abort();
     });
+    const geometry = () =>
+      page.evaluate(() =>
+        ['main h1', 'main img'].map((selector) => {
+          const rect = document.querySelector(selector).getBoundingClientRect();
+          return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        })
+      );
+    const parity = [];
+    for (const route of ['/blog', '/blog/journal-fixture']) {
+      await page.setJavaScriptEnabled(false);
+      await page.goto('http://fixture.invalid' + route);
+      const before = await geometry();
+      await page.setJavaScriptEnabled(true);
+      await page.goto('http://fixture.invalid' + route);
+      await page.waitForFunction(() => !document.getElementById('lm-journal-document'));
+      const after = await geometry();
+      assert.deepEqual(after, before, 'Initial and interactive journal geometry must agree');
+      parity.push({ route, before, after });
+    }
     await page.goto('http://fixture.invalid/blog');
     await page.waitForSelector('[data-lm-journal-ready="index"]');
     await page.addScriptTag({ content: axe.source });
@@ -173,6 +212,7 @@ try {
       overflow,
       errors,
       keyboardNavigation: true,
+      parity,
       withdrawal: true,
       recovery: true,
       history: true,

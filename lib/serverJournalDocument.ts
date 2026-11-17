@@ -1,3 +1,10 @@
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import {
+  JournalIndexLead,
+  JournalArticleHero,
+  JournalArticleHeading,
+} from '../components/JournalLead.js';
 import { escapeJournalText as escape, journalHtml } from './journalContent.js';
 import { journalUrl } from './journalUrl.js';
 import { publicProductImage, STOREFRONT_ORIGIN } from './productMetadata.js';
@@ -31,7 +38,41 @@ export function journalDocument(template: string, posts: JournalPost[], article?
       ? `<img src="${escape(source.src)}" ${source.srcSet ? `srcset="${escape(source.srcSet)}" sizes="(min-width: 1024px) 800px, 100vw"` : ''} alt="${decorative ? '' : escape(post.title)}" loading="${eager ? 'eager' : 'lazy'}" ${eager ? 'fetchpriority="high"' : ''} decoding="async"/>`
       : '';
   };
-  const content = `<main id="lm-journal-document" data-post-id="${escape(id)}" tabindex="-1"><a href="/blog">Simply Mae journal</a><h1>${escape(title)}</h1><p>${escape(description)}</p>${article ? `<article><p>${escape(article.category)} · ${escape(article.date)}</p>${image(article, true)}<div class="prose-blog">${journalHtml(article.content || '')}</div></article>` : posts.length ? `<div>${posts.map((post, index) => `<article><a href="${journalUrl(post._id)}">${image(post, index === 0, true)}<h2>${escape(post.title)}</h2></a><p>${escape(post.excerpt)}</p><p>${escape(post.date)}</p></article>`).join('')}</div>` : '<p>New stories are coming soon.</p>'}<a href="/shop">Explore the shop</a></main>`;
+  const leadPost = (post: JournalPost) => ({
+    ...post,
+    id: post._id,
+    image: publicProductImage(post.image),
+  });
+  const readingTime = Math.max(
+    1,
+    Math.ceil(
+      (article?.content || '')
+        .replace(/<[^>]*>/g, '')
+        .split(/\s+/)
+        .filter(Boolean).length / 200
+    )
+  );
+  const lead = article
+    ? renderToStaticMarkup(React.createElement(JournalArticleHero, { post: leadPost(article) })) +
+      '<div class="max-w-3xl mx-auto px-6 md:px-8 pt-10"><div class="flex items-center justify-between mb-12"><a href="/blog" class="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-earth"><span aria-hidden="true">←</span>Back to Blog</a><span class="flex items-center gap-2 px-4 py-2 rounded-full bg-earth/5 text-muted-earth"><span aria-hidden="true" class="w-4 h-4"></span><span class="text-[10px] uppercase tracking-[0.15em] font-medium">Share</span></span></div></div>' +
+      '<article class="max-w-3xl mx-auto px-6 md:px-8">' +
+      renderToStaticMarkup(
+        React.createElement(JournalArticleHeading, { post: leadPost(article), readingTime })
+      ) +
+      `<div class="prose-blog font-serif text-lg text-earth leading-relaxed mb-12">${journalHtml(article.content || '')}</div></article>`
+    : posts.length
+      ? renderToStaticMarkup(
+          React.createElement(JournalIndexLead, { featuredPost: leadPost(posts[0]) })
+        ) +
+        `<section class="px-6 md:px-12 pb-24"><div class="container mx-auto"><h2 class="font-serif text-3xl text-earth mb-12">More stories</h2><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">${posts
+          .slice(1)
+          .map(
+            (post) =>
+              `<article><a href="${journalUrl(post._id)}">${image(post, false, true)}<h3>${escape(post.title)}</h3></a><p>${escape(post.excerpt)}</p></article>`
+          )
+          .join('')}</div></div></section>`
+      : '<h1>Simply Mae</h1><p>New stories are coming soon.</p>';
+  const content = `<main id="lm-journal-document" data-post-id="${escape(id)}" tabindex="-1" class="bg-cream min-h-screen ${article ? '' : 'pt-32 '}pb-20 w-full overflow-hidden">${lead}<a href="/shop" class="block px-6 underline">Explore the shop</a></main>`;
   let html = template
     .replace(/<!--home-document-start-->[\s\S]*?<!--home-document-end-->/, '')
     .replace(/<title>[\s\S]*?<\/title>/, () => `<title>${escape(title)} | Louie Mae</title>`);
@@ -68,7 +109,7 @@ export function journalDocument(template: string, posts: JournalPost[], article?
   html = html.replace(
     '</head>',
     () =>
-      `<style>#lm-journal-document{position:absolute;inset:0 0 auto;min-height:100vh;background:#f9f7f2;color:#4a3b32;padding:40px max(24px,calc((100vw - 800px)/2));font:18px/1.7 Arial,sans-serif;overflow-wrap:anywhere}#lm-journal-document~#root{visibility:hidden}#lm-journal-document h1,#lm-journal-document h2{font-family:Georgia,serif;line-height:1.2}#lm-journal-document h1{font-size:clamp(32px,6vw,64px)}#lm-journal-document img{max-width:100%;height:auto;display:block;margin:24px auto}#lm-journal-document a{color:inherit;text-decoration:underline}#lm-journal-document article{margin:40px 0}#lm-journal-document pre,#lm-journal-document table{display:block;max-width:100%;overflow:auto}</style><script id="lm-journal-structured-data" data-post-id="${escape(id)}" type="application/ld+json">${structured}</script></head>`
+      `<style>#lm-journal-document{position:absolute;inset:0 0 auto;overflow-wrap:anywhere}#lm-journal-document~#root{visibility:hidden}#lm-journal-document pre,#lm-journal-document table{display:block;max-width:100%;overflow:auto}</style><script id="lm-journal-structured-data" data-post-id="${escape(id)}" type="application/ld+json">${structured}</script></head>`
   );
   return html.replace('<!--product-document-->', () => content);
 }

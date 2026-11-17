@@ -72,6 +72,7 @@ jobs:
         run: |
           node --test scripts/product-images.node.mjs
           node scripts/verify-product-images.mjs
+          node scripts/verify-editorial-images.mjs
 
       - name: Verify deferred HOLM bundle boundaries
         run: npm run verify:deferred-bundles

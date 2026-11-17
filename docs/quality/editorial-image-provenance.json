@@ -1,0 +1,42 @@
+{
+  "recipe": "editorial-webp-q85-effort6-orient-v1",
+  "records": [
+    {
+      "source": "https://kindred-squid-489.convex.cloud/api/storage/079185ef-9529-4b90-a7f7-e49f6d8ea1d3",
+      "retrievedAt": "2026-11-17T13:55:07.031Z",
+      "contentType": "image/png",
+      "bytes": 2385519,
+      "sha256": "6b8501227caab4ca5abdb88879fdde3cc8b5b57325f27e4c13af966f977b4823",
+      "width": 1024,
+      "height": 1536,
+      "format": "png",
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 30064,
+          "sha256": "9a5a7606bd362d8361ab80c2ed34c2aea4ab1268912acb4e9330f1178b84fce6"
+        },
+        {
+          "width": 480,
+          "bytes": 51532,
+          "sha256": "142c19bee61afcc36063c4d0eed2b3b2d606455b692358b87af429b50cd3af21"
+        },
+        {
+          "width": 640,
+          "bytes": 74752,
+          "sha256": "6a100ddd2d92ab8874530e009ab0f5f7b8dcdfef62905796b241a4ff3a0fc44f"
+        },
+        {
+          "width": 960,
+          "bytes": 127496,
+          "sha256": "8fd474a16a18e921fca2d9b7e6bbe7ec8d674b86e5d174313471afce95e3fa81"
+        },
+        {
+          "width": 1024,
+          "bytes": 135162,
+          "sha256": "1b726d8c340e955229d6cd708c254372fbd0387f77ff0f190369c3dbd798ec68"
+        }
+      ]
+    }
+  ]
+}

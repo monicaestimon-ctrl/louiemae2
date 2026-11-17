@@ -1,12 +1,12 @@
 import { STOREFRONT_ORIGIN } from '../lib/productMetadata';
+import { JournalArticleHero, JournalArticleHeading } from './JournalLead';
 import React, { useState, useRef, useEffect } from 'react';
 import { FadeIn } from './FadeIn';
 import { useRecoverableQuery } from '../contexts/useRecoverableQuery';
 import { api } from '../convex/_generated/api';
 import { journalUrl } from '../lib/journalUrl';
 import { useJournalMetadata } from './useJournalMetadata';
-import { ArrowLeft, Calendar, Clock, Share2, Facebook, Twitter, Link2, Mail, MessageCircle, Check, X } from 'lucide-react';
-import { responsiveImage } from '../lib/responsiveImage';
+import { ArrowLeft, Share2, Facebook, Twitter, Link2, Mail, MessageCircle, Check, X } from 'lucide-react';
 
 interface BlogPostViewProps {
     postId: string;
@@ -145,18 +145,7 @@ export const BlogPostView: React.FC<BlogPostViewProps> = ({ postId }) => {
     return (
         <main className="bg-cream min-h-screen pb-20 w-full overflow-hidden" data-lm-journal-ready={postId}>
             {/* Hero Image */}
-            {post.image && (
-                <div className="w-full aspect-[16/9] md:aspect-[3/1] overflow-hidden relative">
-                    <div className="absolute inset-0 bg-gradient-to-b from-black/10 via-transparent to-cream z-10" />
-                    <img
-                        loading="eager" fetchPriority="high"
-                        decoding="async"
-                        {...responsiveImage(post.image, '100vw')}
-                        alt={post.title}
-                        className="w-full h-full object-cover"
-                    />
-                </div>
-            )}
+            <JournalArticleHero post={{ ...post, id: post._id }} />
 
             {/* Back Button + Share */}
             <div className="max-w-3xl mx-auto px-6 md:px-8 pt-10">
@@ -197,45 +186,7 @@ export const BlogPostView: React.FC<BlogPostViewProps> = ({ postId }) => {
 
             {/* Post Header */}
             <article className="max-w-3xl mx-auto px-6 md:px-8">
-                <>
-                    <div
-                        className="text-center mb-8 md:mb-12"
-                    >
-                        {/* Category & Meta */}
-                        <div className="flex flex-wrap items-center justify-center gap-2 md:gap-4 mb-6 text-muted-earth text-[10px] uppercase tracking-widest font-sans">
-                            <span>{post.category}</span>
-                            <span className="w-1 h-1 rounded-full bg-bronze/40" />
-                            <span className="flex items-center gap-1">
-                                <Calendar className="w-3 h-3" />
-                                {post.date}
-                            </span>
-                            <span className="w-1 h-1 rounded-full bg-bronze/40" />
-                            <span className="flex items-center gap-1">
-                                <Clock className="w-3 h-3" />
-                                {readingTime} min read
-                            </span>
-                        </div>
-
-                        {/* Title */}
-                        <h1 ref={headingRef} tabIndex={-1} className="font-serif text-4xl md:text-6xl text-earth mb-6 leading-tight">
-                            {post.title}
-                        </h1>
-
-                        {/* Excerpt */}
-                        {post.excerpt && (
-                            <p className="font-serif text-muted-earth text-base md:text-xl italic leading-relaxed max-w-2xl mx-auto">
-                                {post.excerpt}
-                            </p>
-                        )}
-
-                        {/* Decorative divider */}
-                        <div className="flex items-center justify-center gap-3 mt-6 md:mt-10">
-                            <div className="h-px w-16 bg-earth/10" />
-                            <div className="w-1.5 h-1.5 rounded-full bg-bronze/30" />
-                            <div className="h-px w-16 bg-earth/10" />
-                        </div>
-                    </div>
-                </>
+                <JournalArticleHeading post={{ ...post, id: post._id }} readingTime={readingTime} headingRef={headingRef} />
 
                 {/* Post Content */}
                 <FadeIn threshold={0.01}>

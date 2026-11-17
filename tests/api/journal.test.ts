@@ -10,7 +10,25 @@ vi.mock('node:fs/promises', async (original) => {
   return { ...actual, readFile, default: { ...actual, readFile } };
 });
 import handler from '../../api/journal';
+import editorialManifest from '../../lib/editorialImageManifest.json';
 const fetchMock = vi.fn();
+
+it('serves source-bound editorial renditions and leaves replacement uploads untouched', async () => {
+  const [source, rendition] = Object.entries(editorialManifest)[0];
+  for (const image of [source, `${source}-replacement`]) {
+    fetchMock.mockResolvedValue({ok:true,json:async()=>({status:'success',value:{...article,image}})});
+    const result = await request('story1');
+    expect(result.status).toBe(200);
+    if (image === source) {
+      expect(result.body).toContain(`${rendition.base}-640.webp 640w`);
+      expect(result.body).toContain('aspect-[16/9]');
+      expect(result.body.indexOf('aspect-[16/9]')).toBeLessThan(result.body.indexOf('<h1'));
+    } else {
+      expect(result.body).toContain(`src="${image}"`);
+      expect(result.body).not.toContain(rendition.base);
+    }
+  }
+});
 
 const article = {
   _id: 'story1',

@@ -1,0 +1,13 @@
+{
+  "https://kindred-squid-489.convex.cloud/api/storage/079185ef-9529-4b90-a7f7-e49f6d8ea1d3": {
+    "base": "/images/opt/editorial/239bd7c669e7eaf801fbb27b",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1024
+    ],
+    "ratio": 1.5
+  }
+}
