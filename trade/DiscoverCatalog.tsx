@@ -6,6 +6,7 @@ type ImageQuery = { src: string; pal: string[] };
 type Trend = { id: string; name: string; image: string };
 type Props = {
   products: HolmProduct[];
+  pricing?: 'retail' | 'trade';
   query: string;
   imageQuery: ImageQuery | null;
   types: Record<string, string>;
@@ -35,20 +36,23 @@ export function DiscoverCatalog(props: Props) {
   const [type, setType] = useState('all');
   const [materials, setMaterials] = useState<string[]>([]);
   const [tones, setTones] = useState<string[]>([]);
-  const [maximum, setMaximum] = useState(3300);
+  const [maximum, setMaximum] = useState<number | null>(null);
   const [inStock, setInStock] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [sort, setSort] = useState('rel');
   const file = useRef<HTMLInputElement>(null);
+  const priceOf = (product: HolmProduct) => props.pricing === 'trade' ? product.trade ?? product.price : product.price;
+  const rangeMaximum = Math.ceil(Math.max(300, maximum ?? 0,
+    ...props.products.map(priceOf).filter(Number.isFinite)) / 50) * 50;
   let products = query.trim() ? props.matchQuery(query) : [...props.products];
   if (query.trim() && !products.length) products = props.products.filter(product => `${product.name} ${product.line}`.toLowerCase().includes(query.toLowerCase()));
   const palette = props.imageQuery?.pal ?? [];
   if (palette.length) products = [...props.products].sort((a, b) => Math.min(...palette.map(color => distance(color, a.tone))) - Math.min(...palette.map(color => distance(color, b.tone))));
-  products = products.filter(product => (type === 'all' || product.type === type) && (!materials.length || materials.includes(product.mat)) && (!tones.length || tones.some(tone => distance(tone, product.tone) < 48)) && product.price <= maximum && (!inStock || !product.oos));
-  if (sort !== 'rel') products = [...products].sort((a, b) => sort === 'lo' ? a.price - b.price : b.price - a.price);
+  products = products.filter(product => (type === 'all' || product.type === type) && (!materials.length || materials.includes(product.mat)) && (!tones.length || tones.some(tone => distance(tone, product.tone) < 48)) && (maximum === null || priceOf(product) <= maximum) && (!inStock || !product.oos));
+  if (sort !== 'rel') products = [...products].sort((a, b) => sort === 'lo' ? priceOf(a) - priceOf(b) : priceOf(b) - priceOf(a));
   const searching = Boolean(query.trim() || props.imageQuery);
-  const count = materials.length + tones.length + Number(inStock) + Number(maximum < 3300);
-  function resetFilters() { setMaterials([]); setTones([]); setType('all'); setMaximum(3300); setInStock(false); }
+  const count = materials.length + tones.length + Number(inStock) + Number(maximum !== null);
+  function resetFilters() { setMaterials([]); setTones([]); setType('all'); setMaximum(null); setInStock(false); }
   return <main className="wrap">
     <div className="ph-head"><div><span className="eyebrow">Discover</span><h1>{searching ? <>Results{query.trim() && <> for <em>{query}</em></>}</> : <>Find the piece, <em>then the room.</em></>}</h1></div>
       <form className="search" style={{ maxWidth: 520, margin: 0, flex: '1 1 320px', display: 'flex' }} onSubmit={event => { event.preventDefault(); props.onQuery(query); props.onClearImage(); }}>
@@ -65,7 +69,7 @@ export function DiscoverCatalog(props: Props) {
     </div>
     {expanded && <div className="filters filters-more">{Object.entries(props.materials).map(([key, label]) => <button key={key} className={`chip${materials.includes(key) ? ' on' : ''}`} aria-pressed={materials.includes(key)} onClick={() => setMaterials(toggle(materials, key))}>{label}</button>)}
       <div className="swatches" role="group" aria-label="Color palette">{PALETTE.map(([name, color]) => <button key={color} className={tones.includes(color) ? 'on' : ''} style={{ background: color, width: 26, height: 26 }} aria-label={name} aria-pressed={tones.includes(color)} onClick={() => setTones(toggle(tones, color))} />)}</div>
-      <label className="row" style={{ fontSize: 13, gap: 8 }}>Up to <b className="num" style={{ fontWeight: 500, minWidth: 56 }}>{dollars(maximum)}</b><input type="range" min="300" max="3300" step="50" value={maximum} onChange={event => setMaximum(Number(event.target.value))} style={{ width: 120 }} aria-label="Maximum price" /></label>
+      <label className="row" style={{ fontSize: 13, gap: 8 }}>Price <b className="num" style={{ fontWeight: 500, minWidth: 56 }}>{maximum === null ? 'Any price' : `Up to ${dollars(maximum)}`}</b><input type="range" min="0" max={rangeMaximum} step="50" value={maximum ?? rangeMaximum} onChange={event => { const value = Number(event.target.value); setMaximum(value === rangeMaximum ? null : value); }} style={{ width: 120 }} aria-label="Maximum price" aria-valuetext={maximum === null ? 'Any price' : dollars(maximum)} /></label>
       <button className="toggle" style={{ fontSize: 13 }} aria-pressed={inStock} onClick={() => setInStock(!inStock)}><span className={`sw${inStock ? ' on' : ''}`} /> In stock</button>
     </div>}
     <p className="mono mute" role="status" style={{ marginBottom: 14 }}>{products.length} piece{products.length === 1 ? '' : 's'}</p>

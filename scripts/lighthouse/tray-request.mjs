@@ -273,6 +273,12 @@ try {
   const detailChecks=[];
   for (const width of [320,844,1440]) {
     await page.setViewport({width,height:width===844?390:900});
+    await page.evaluate(async()=>{
+      await document.fonts.ready;
+      await Promise.all(document.querySelector('dialog').getAnimations({subtree:true})
+        .filter(animation=>animation.effect?.getComputedTiming().iterations!==Infinity)
+        .map(animation=>animation.finished.catch(()=>{})));
+    });
     const violations=await page.evaluate(async()=>(await axe.run(document.querySelector('dialog'))).violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})));
     assert.deepEqual(violations,[]);
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false);

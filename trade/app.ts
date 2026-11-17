@@ -1143,7 +1143,7 @@ function Footer({ctx}){
 
 /* ================= DISCOVER / SEARCH ================= */
 function Discover({ctx}){
-  return html`<${DiscoverCatalog} products=${PRODUCTS} query=${ctx.query} imageQuery=${ctx.imgQ} types=${TYPE} materials=${MAT} trends=${TRENDS.map(t=>({id:t.id,name:t.name,image:byId(t.img).img}))} matchQuery=${matchPrompt} onQuery=${ctx.setQuery} onClearImage=${()=>ctx.setImgQ(null)} onImage=${ctx.imageSearch} onTrend=${id=>{ctx.setTrend(id);ctx.go('trend')}} onSourcing=${()=>ctx.go('sourcing')} renderProducts=${(items,searching)=>html`<${Wall} items=${items} ctx=${ctx} density="normal" mixBoards=${searching?null:COMMUNITY}/>`}/>`;
+  return html`<${DiscoverCatalog} products=${PRODUCTS} pricing=${ctx.mode} query=${ctx.query} imageQuery=${ctx.imgQ} types=${TYPE} materials=${MAT} trends=${TRENDS.map(t=>({id:t.id,name:t.name,image:byId(t.img).img}))} matchQuery=${matchPrompt} onQuery=${ctx.setQuery} onClearImage=${()=>ctx.setImgQ(null)} onImage=${ctx.imageSearch} onTrend=${id=>{ctx.setTrend(id);ctx.go('trend')}} onSourcing=${()=>ctx.go('sourcing')} renderProducts=${(items,searching)=>html`<${Wall} items=${items} ctx=${ctx} density="normal" mixBoards=${searching?null:COMMUNITY}/>`}/>`;
 }
 function Trend({ctx}){
   const t=TRENDS.find(x=>x.id===ctx.trend)||TRENDS[0];
