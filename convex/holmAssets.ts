@@ -1,5 +1,5 @@
 import { v } from 'convex/values';
-import { mutation, query } from './_generated/server';
+import { internalMutation, internalQuery, mutation, query } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { requireCjAdminIdentity } from './cjAdminAccess';
@@ -99,30 +99,71 @@ export const uploadUrl = mutation({
   },
 });
 
+const cutoutArgs = {
+  productId: v.id('commerceProducts'),
+  cutoutId: v.optional(v.id('_storage')),
+  aspect: v.optional(v.number()),
+  status: v.union(v.literal('draft'), v.literal('approved'), v.literal('removed')),
+};
+
+async function saveCutout(
+  ctx: MutationCtx,
+  a: { productId: Id<'commerceProducts'>; cutoutId?: Id<'_storage'>; aspect?: number; status: 'draft' | 'approved' | 'removed' }
+) {
+  const row = await assetsFor(ctx, a.productId);
+  if (a.status === 'removed') {
+    if (row?.cutoutId) await ctx.storage.delete(row.cutoutId);
+    await upsert(ctx, a.productId, { cutoutId: undefined, cutoutAspect: undefined, cutoutStatus: undefined });
+    return;
+  }
+  // An approved cutout always has a file and an aspect, so the Studio can draw it at its true shape.
+  if (a.status === 'approved' && !((a.cutoutId ?? row?.cutoutId) && ((a.aspect ?? 0) > 0 || (row?.cutoutAspect ?? 0) > 0)))
+    throw new Error('Add a cutout before approving it.');
+  if (a.cutoutId && row?.cutoutId && row.cutoutId !== a.cutoutId) await ctx.storage.delete(row.cutoutId);
+  await upsert(ctx, a.productId, {
+    ...(a.cutoutId ? { cutoutId: a.cutoutId } : {}),
+    ...(a.aspect && a.aspect > 0 ? { cutoutAspect: a.aspect } : {}),
+    cutoutStatus: a.status,
+  });
+}
+
 export const setCutout = mutation({
-  args: {
-    productId: v.id('commerceProducts'),
-    cutoutId: v.optional(v.id('_storage')),
-    aspect: v.optional(v.number()),
-    status: v.union(v.literal('draft'), v.literal('approved'), v.literal('removed')),
-  },
+  args: cutoutArgs,
   handler: async (ctx, a) => {
     await requireCjAdminIdentity(ctx);
-    const row = await assetsFor(ctx, a.productId);
-    if (a.status === 'removed') {
-      if (row?.cutoutId) await ctx.storage.delete(row.cutoutId);
-      await upsert(ctx, a.productId, { cutoutId: undefined, cutoutAspect: undefined, cutoutStatus: undefined });
-      return;
+    await saveCutout(ctx, a);
+  },
+});
+
+// The daily cutout job (scripts/cutouts/) runs these with a deploy key; they are not callable from a browser.
+
+/** Published House products with no approved cutout yet, with their photos. */
+export const cutoutQueue = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const listings = await ctx.db
+      .query('commerceListings')
+      .withIndex('by_channel_published', (q) => q.eq('channel', 'house').eq('published', true))
+      .take(300);
+    const out = [];
+    for (const l of listings) {
+      const a = await assetsFor(ctx, l.productId);
+      if (a?.cutoutStatus === 'approved' && a.cutoutId) continue;
+      out.push({ productId: l.productId, name: l.snapshot.name, category: l.snapshot.category, images: l.snapshot.images.slice(0, 8), cutoutStatus: a?.cutoutStatus ?? null });
     }
-    // An approved cutout always has a file and an aspect, so the Studio can draw it at its true shape.
-    if (a.status === 'approved' && !((a.cutoutId ?? row?.cutoutId) && ((a.aspect ?? 0) > 0 || (row?.cutoutAspect ?? 0) > 0)))
-      throw new Error('Add a cutout before approving it.');
-    if (a.cutoutId && row?.cutoutId && row.cutoutId !== a.cutoutId) await ctx.storage.delete(row.cutoutId);
-    await upsert(ctx, a.productId, {
-      ...(a.cutoutId ? { cutoutId: a.cutoutId } : {}),
-      ...(a.aspect && a.aspect > 0 ? { cutoutAspect: a.aspect } : {}),
-      cutoutStatus: a.status,
-    });
+    return out;
+  },
+});
+
+export const cutoutUploadUrl = internalMutation({
+  args: {},
+  handler: async (ctx) => await ctx.storage.generateUploadUrl(),
+});
+
+export const saveCutoutInternal = internalMutation({
+  args: cutoutArgs,
+  handler: async (ctx, a) => {
+    await saveCutout(ctx, a);
   },
 });
 

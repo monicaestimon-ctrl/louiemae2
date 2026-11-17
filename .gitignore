@@ -28,3 +28,5 @@ tmp/lighthouse-profiles/
 # AI Agents
 .agents/skills/
 .trellis/
+.cutouts/
+__pycache__/
