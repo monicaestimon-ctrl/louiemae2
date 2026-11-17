@@ -13,6 +13,7 @@ import type { HolmProduct } from './catalog';
 import { displayProduct } from './catalogLookup';
 import { unresolvedPlannerItems } from './plannerDraft';
 import { useProjectCatalog, projectResolutionMessage } from './useProjectCatalog';
+import { useSavedBoardShelf } from './useSavedBoardShelf';
 import { PlannerReview } from './PlannerReview';
 import { usePlannerPersistence } from './usePlannerPersistence';
 import { BUSINESS_TYPES as BTYPES } from './application';
@@ -181,20 +182,21 @@ function Toast({t,onClose}){
 }
 function useOutside(ref,fn){useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))fn()};document.addEventListener('pointerdown',h);return()=>document.removeEventListener('pointerdown',h)},[fn])}
 
-function SaveMenu({ctx,pid,onDone,align='right'}){
+function SaveMenu({ctx,pid,product,onDone,align='right'}){
   const ref=useRef();const [q,setQ]=useState('');const [making,setMaking]=useState(false);const [name,setName]=useState('');
   useOutside(ref,onDone);
   const list=ctx.boards.filter(b=>b.title.toLowerCase().includes(q.toLowerCase()));
+  const {productFor}=useSavedBoardShelf(ctx.boards,[],BY_ID);
   return html`<div className="pop boardpick" ref=${ref} style=${align==='left'?{left:0,right:'auto',top:52}:{}} onClick=${e=>e.stopPropagation()}>
-    ${making?html`<form onSubmit=${e=>{e.preventDefault();if(!name.trim())return;const id=ctx.createBoard(name.trim(),pid);onDone();}} style=${{display:'grid',gap:10,padding:6}}>
+    ${making?html`<form onSubmit=${e=>{e.preventDefault();if(!name.trim())return;const id=ctx.createBoard(name.trim(),pid,false,product);onDone();}} style=${{display:'grid',gap:10,padding:6}}>
         <label className="lbl" htmlFor="nb-name">Board name</label>
         <input id="nb-name" className="field" autoFocus value=${name} onInput=${e=>setName(e.target.value)} placeholder="e.g. Fernwood Café, patio"/>
         <div className="row"><button type="button" className="btn btn-line btn-sm" onClick=${()=>setMaking(false)}>Back</button><button className="btn btn-ink btn-sm">Create and save</button></div>
       </form>`:html`
       <div style=${{padding:'4px 6px 8px'}}><input className="field" style=${{height:38}} placeholder="Search your boards" value=${q} onInput=${e=>setQ(e.target.value)} aria-label="Search your boards"/></div>
       <div className="st-h" style=${{padding:'2px 8px 6px'}}>Save to board</div>
-      ${list.map(b=>html`<button key=${b.id} className="bp" onClick=${()=>{ctx.saveTo(pid,b.id);onDone()}}>
-        <span className="th" style=${{backgroundImage:`url(${byId(b.pins[0]?.pid||1).img})`}}></span>
+      ${list.map(b=>html`<button key=${b.id} className="bp" onClick=${()=>{ctx.saveTo(pid,b.id,false,product);onDone()}}>
+        <span className="th" style=${{backgroundImage:b.pins[0]&&productFor(b.pins[0])?`url(${productFor(b.pins[0]).img})`:'none'}}></span>
         <span><b style=${{fontWeight:500,fontSize:14}}>${b.title}</b><br/><small className="mute">${b.pins.length} pins${b.secret?' · Secret':''}</small></span>
         <span className="go btn btn-cog btn-sm">Save</span></button>`)}
       <button className="bp" onClick=${()=>setMaking(true)}><span className="th" style=${{display:'grid',placeItems:'center',background:'var(--plaster)'}}>${I('plus',{width:18})}</span><b style=${{fontWeight:500}}>Create board</b></button>`}
@@ -217,19 +219,19 @@ function PinCard({p,ctx}){
       <div className="pin-ov">
         <div className="r1" onClick=${e=>e.stopPropagation()}>
           <button className="pin-board" onClick=${()=>setMenu(!menu)} aria-label=${'Choose board for '+p.name}><span>${lastBoard?.title||'Boards'}</span>${I('down',{width:14})}</button>
-          <button className=${'pin-save'+(saved?' saved':'')} aria-label=${(saved?'Saved ':'Save ')+p.name+' to board'} onClick=${()=>saved||!lastBoard?setMenu(true):ctx.saveTo(p.id,lastBoard.id)}>${saved?'Saved':'Save'}</button>
+          <button className=${'pin-save'+(saved?' saved':'')} aria-label=${(saved?'Saved ':'Save ')+p.name+' to board'} onClick=${()=>saved||!lastBoard?setMenu(true):ctx.saveTo(p.id,lastBoard.id,false,p)}>${saved?'Saved':'Save'}</button>
         </div>
         <div className="r2" onClick=${e=>e.stopPropagation()}>
           <span className="pin-board" style=${{fontFamily:'var(--mono)',fontSize:11.5}}>${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span>
           <span className="row" style=${{gap:6}}>
             <a className="pin-act" title="Save to Pinterest" aria-label=${'Save '+p.name+' to Pinterest'} href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'pin'))} target="_blank" rel="noopener">${I('pint')}</a>
             <button className="pin-act" disabled=${!has(p.id)} title="Place in Studio" aria-label=${'Place '+p.name+' in Studio'} onClick=${()=>ctx.toStudio([p.id])}>${I('brush')}</button>
-            <button className="pin-act" title="Add to project tray" aria-label=${'Add '+p.name+' to project tray'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.pin').querySelector('img'))}>${I('plus')}</button>
+            <button className="pin-act" title="Add to project tray" aria-label=${'Add '+p.name+' to project tray'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.pin').querySelector('img'),false,p)}>${I('plus')}</button>
           </span>
         </div>
       </div>
     </div>
-    ${menu&&html`<${SaveMenu} ctx=${ctx} pid=${p.id} align="left" onDone=${()=>setMenu(false)}/>`}
+    ${menu&&html`<${SaveMenu} ctx=${ctx} pid=${p.id} product=${p} align="left" onDone=${()=>setMenu(false)}/>`}
     <div className="pin-meta"><b>${p.name} <span className="mute" style=${{fontWeight:400}}>${p.line}</span></b></div>
   </div>`;
 }
@@ -243,7 +245,7 @@ function BoardPin({b,ctx}){
   </div>`;
 }
 function Wall({items,ctx,density='normal',mixBoards}){
-  const out=[];items.forEach((p,i)=>{out.push(html`<${PinCard} key=${'p'+p.id} p=${p} ctx=${ctx}/>`);if(mixBoards?.length&&i%5===2){const b=mixBoards[Math.floor(i/5)%mixBoards.length];out.push(html`<${BoardPin} key=${'b'+b.id+i} b=${b} ctx=${ctx}/>`)}});
+  const out=[];items.forEach((p,i)=>{out.push(html`<${PinCard} key=${projectItemKey({pid:p.id,lid:p.lid,vid:p.vid})} p=${p} ctx=${ctx}/>`);if(mixBoards?.length&&i%5===2){const b=mixBoards[Math.floor(i/5)%mixBoards.length];out.push(html`<${BoardPin} key=${'b'+b.id+i} b=${b} ctx=${ctx}/>`)}});
   return html`<div className=${'wall '+(density==='compact'?'compact':density==='wide'?'wide':'')}>${out}</div>`;
 }
 
@@ -1356,7 +1358,7 @@ function PinDetail({ctx}){
           <button ref=${addRef} className="btn btn-ink btn-lg pp-add" onClick=${e=>add()}>${I('tray',{width:18})} Add ${qty>1?qty+' ':''}to ${P.name}</button>
           <div className="pp-tier"><div className="ix-meter"><i style=${{width:'0%'}}></i></div><span>${tierLine(after,P.name)}</span></div>
           <div className="row pp-acts">
-            <span style=${{position:'relative'}}><button className="btn btn-line btn-sm" onClick=${()=>setSave(!save)}>${I('pin',{width:15})} Save</button>${save&&html`<${SaveMenu} ctx=${ctx} pid=${p.id} align="left" onDone=${()=>setSave(false)}/>`}</span>
+            <span style=${{position:'relative'}}><button className="btn btn-line btn-sm" onClick=${()=>setSave(!save)}>${I('pin',{width:15})} Save</button>${save&&html`<${SaveMenu} ctx=${ctx} pid=${p.id} product=${p} align="left" onDone=${()=>setSave(false)}/>`}</span>
             <button className="btn btn-line btn-sm" disabled=${!has(p.id)} title=${!has(p.id)?"Studio is unavailable for this saved product":undefined} onClick=${()=>ctx.toStudio([p.id])}>${I('brush',{width:15})} Studio</button>
             <button className="btn btn-line btn-sm" disabled=${!has(p.id)} title=${!has(p.id)?"3D planning is unavailable for this saved product":undefined} onClick=${()=>{ctx.setRoomSeed([p.id]);ctx.openPin(null);ctx.go('room')}}>${I('cube',{width:15})} 3D</button>
             <button className="ib" aria-pressed=${liked} aria-label="Like" onClick=${()=>ctx.toggleLike(p.id)} style=${{color:liked?'var(--cognac)':''}}>${I('heart',liked?{fill:'currentColor'}:{})}</button>
@@ -3132,7 +3134,9 @@ async function planPdf(doc,{title,units,link}){
 function Boards({ctx}){
   const [tab,setTab]=useState('boards');const [sort,setSort]=useState('recent');const [mk,setMk]=useState(false);const [n,setN]=useState('');const [sec,setSec]=useState(false);
   let bs=[...ctx.boards];if(sort==='az')bs.sort((a,b)=>a.title.localeCompare(b.title));else bs.sort((a,b)=>b.t-a.t);
-  const allPins=[...new Set(ctx.boards.flatMap(b=>b.pins.map(p=>p.pid)))].map(byId);
+  const savedCatalog=useSavedBoardShelf(ctx.boards,ctx.collages,BY_ID);
+  const {productFor,allPins,reviewCount}=savedCatalog;
+  ctx={...ctx,savedProducts:savedCatalog.products};
   return html`<main className="wrap">
     <div className="ph-head"><div><span className="eyebrow">Your saved ideas</span><h1>Boards & <em>collages</em></h1></div>
       <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-line" onClick=${()=>ctx.go('inspo')}>${I('img',{width:16})} My Inspo</button><button className="btn btn-line" onClick=${()=>ctx.go('profile')}>View profile</button><button className="btn btn-ink" onClick=${()=>setMk(true)}>${I('plus',{width:16})} Create</button></div></div>
@@ -3142,13 +3146,14 @@ function Boards({ctx}){
     </div>
     ${tab==='boards'&&html`<div className="boards">
       ${bs.map(b=>html`<button key=${b.id} className="bcard" onClick=${()=>{ctx.setBoard(b.id);ctx.go('board')}}>
-        <div className="cov">${[0,1,2].map(i=>html`<div key=${i} style=${{backgroundImage:b.pins[i]?`url(${byId(b.pins[i].pid).img})`:'none'}}></div>`)}</div>
+        <div className="cov">${[0,1,2].map(i=>html`<div key=${i} style=${{backgroundImage:b.pins[i]&&productFor(b.pins[i])?`url(${productFor(b.pins[i]).img})`:'none'}}></div>`)}</div>
         <h2>${b.title}</h2><p>${b.pins.length} pins${b.sections.length?` · ${b.sections.length} sections`:''}${b.secret?' · Secret':''}${b.collab?` · ${b.collab} collaborator${b.collab>1?'s':''}`:''}</p></button>`)}
       <button className="newboard" onClick=${()=>setMk(true)}><span>${I('plus',{width:22})}<br/>New board</span></button>
     </div>`}
+    ${reviewCount>0&&html`<p role="status">${savedCatalog.pending?'Checking saved products…':savedCatalog.failed?'Some saved products could not be checked. Reload to try again.':'Some saved products need review.'} Your boards and collages are preserved.</p>`}
     ${tab==='pins'&&html`<${Wall} items=${allPins} ctx=${ctx}/>`}
     ${tab==='collages'&&html`<div className="boards">${ctx.collages.map((c,i)=>html`<button key=${i} className="bcard" onClick=${()=>{ctx.setStudioSeed({collage:c});ctx.go('studio')}}>
-        <div className="cov" style=${{background:'var(--plaster)'}}>${c.els.filter(e=>e.kind==='img').slice(0,3).map((e,j)=>html`<div key=${j} style=${{backgroundImage:`url(${byId(e.pid).img})`}}></div>`)}</div><h2>${c.title}</h2><p>${c.els.filter(e=>e.kind==='img').length} pieces · Open in Studio</p></button>`)}
+        <div className="cov" style=${{background:'var(--plaster)'}}>${c.els.filter(e=>e.kind==='img').slice(0,3).map((e,j)=>html`<div key=${j} style=${{backgroundImage:productFor(e)?`url(${productFor(e).img})`:'none'}}></div>`)}</div><h2>${c.title}</h2><p>${c.els.filter(e=>e.kind==='img').length} pieces · Open in Studio</p></button>`)}
       <button className="newboard" onClick=${()=>ctx.go('studio')}><span>${I('brush',{width:22})}<br/>New collage</span></button></div>`}
     ${mk&&html`<${Modal} open label="Create board" onClose=${()=>setMk(false)} initialFocus="#bn"><div className="scrim" onClick=${e=>e.target===e.currentTarget&&setMk(false)}><form className="sheet share" onSubmit=${e=>{e.preventDefault();if(!n.trim())return;const id=ctx.createBoard(n.trim(),null,sec);setMk(false);setN('');ctx.setBoard(id);ctx.go('board')}}>
       <h2 style=${{fontSize:38}}>Create a board</h2>
@@ -3204,6 +3209,7 @@ function BoardDetail({ctx}){
 /* ================= PROFILE ================= */
 function Profile({ctx}){
   const me=ctx.me;const [tab,setTab]=useState('saved');
+  const {productFor}=useSavedBoardShelf(ctx.boards,ctx.collages,BY_ID);
   if(!me.signedIn)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h3>Sign in to see your profile</h3><p>Your boards, collages and trade status live here.</p><button className="btn btn-ink" onClick=${()=>ctx.go('welcome')}>Sign in</button></div></main>`;
   const name=me.businessName||me.displayName;
   return html`<main>
@@ -3214,8 +3220,8 @@ function Profile({ctx}){
     </div>
     <div className="wrap">
       <div className="tabs">${[['saved','Boards'],['collages','Collages']].map(([k,l])=>html`<button key=${k} className=${tab===k?'on':''} onClick=${()=>setTab(k)}>${l}</button>`)}</div>
-      ${tab==='saved'&&(ctx.boards.length?html`<div className="boards">${ctx.boards.map(b=>html`<button key=${b.id} className="bcard" onClick=${()=>{ctx.setBoard(b.id);ctx.go('board')}}><div className="cov">${[0,1,2].map(i=>html`<div key=${i} style=${{backgroundImage:b.pins[i]?`url(${byId(b.pins[i].pid).img})`:'none'}}></div>`)}</div><h2>${b.title}</h2><p>${b.pins.length} pins</p></button>`)}</div>`:html`<div className="empty"><h2>No boards yet</h2><p>Save pieces from the floor to start a board.</p></div>`)}
-      ${tab==='collages'&&(ctx.collages.length?html`<div className="boards">${ctx.collages.map((c,i)=>html`<button key=${i} className="bcard" onClick=${()=>{ctx.setStudioSeed({collage:c});ctx.go('studio')}}><div className="cov">${c.els.filter(e=>e.kind==='img').slice(0,3).map((e,j)=>html`<div key=${j} style=${{backgroundImage:`url(${byId(e.pid).img})`}}></div>`)}</div><h2>${c.title}</h2></button>`)}</div>`:html`<div className="empty"><h2>No collages yet</h2><p>Compose one in Studio and save it here.</p><button className="btn btn-line" onClick=${()=>ctx.go('studio')}>Open Studio</button></div>`)}
+      ${tab==='saved'&&(ctx.boards.length?html`<div className="boards">${ctx.boards.map(b=>html`<button key=${b.id} className="bcard" onClick=${()=>{ctx.setBoard(b.id);ctx.go('board')}}><div className="cov">${[0,1,2].map(i=>html`<div key=${i} style=${{backgroundImage:b.pins[i]&&productFor(b.pins[i])?`url(${productFor(b.pins[i]).img})`:'none'}}></div>`)}</div><h2>${b.title}</h2><p>${b.pins.length} pins</p></button>`)}</div>`:html`<div className="empty"><h2>No boards yet</h2><p>Save pieces from the floor to start a board.</p></div>`)}
+      ${tab==='collages'&&(ctx.collages.length?html`<div className="boards">${ctx.collages.map((c,i)=>html`<button key=${i} className="bcard" onClick=${()=>{ctx.setStudioSeed({collage:c});ctx.go('studio')}}><div className="cov">${c.els.filter(e=>e.kind==='img').slice(0,3).map((e,j)=>html`<div key=${j} style=${{backgroundImage:productFor(e)?`url(${productFor(e).img})`:'none'}}></div>`)}</div><h2>${c.title}</h2></button>`)}</div>`:html`<div className="empty"><h2>No collages yet</h2><p>Compose one in Studio and save it here.</p><button className="btn btn-line" onClick=${()=>ctx.go('studio')}>Open Studio</button></div>`)}
     </div>
     <div className="wrap"><${Footer} ctx=${ctx}/></div>
   </main>`;
@@ -3776,8 +3782,8 @@ export function App(){
     im.animate([{transform:'translate(0,0) scale(1)',opacity:1},{transform:`translate(${b.left+b.width/2-(a.left+a.width/2)}px,${b.top+b.height/2-(a.top+a.height/2)}px) scale(.12)`,opacity:.6}],{duration:700,easing:'cubic-bezier(.5,0,.2,1)'}).onfinish=()=>im.remove()}catch(e){}};
   const addToTray=(pid,qty=1,fromEl,quiet,verifiedProduct)=>{const selected=verifiedProduct?.id===pid?verifiedProduct:BY_ID.get(pid);if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==t.active)return p;const z=p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));
     fly(fromEl);if(!quiet)toast(`${selected.name} added to ${activeProject.name}`,{label:'Open tray',fn:()=>setTray(true)})};
-  const saveTo=(pid,bid,quiet)=>{setBoards(bs=>bs.map(b=>b.id===bid?{...b,t:Date.now(),pins:b.pins.some(x=>x.pid===pid)?b.pins:[{pid,sec:b.sections[0]||''},...b.pins]}:b).sort((a,b)=>b.t-a.t));if(!quiet){const b=boards.find(x=>x.id===bid);toast(`Saved to ${b?b.title:'board'}`,{label:'View',fn:()=>{setBoard(bid);go('board')}})}};
-  const createBoard=(title,pid,secret=false)=>{const id='b'+uid();setBoards(bs=>[{id,title,secret,collab:0,sections:[],pins:pid?[{pid,sec:''}]:[],t:Date.now()},...bs]);if(pid)toast('Saved to '+title);return id};
+  const saveTo=(pid,bid,quiet,verifiedProduct)=>{const selected=verifiedProduct?.id===pid?verifiedProduct:detailProduct?.id===pid?detailProduct:BY_ID.get(pid);if(!selected?.lid||!selected?.vid){toast('This product needs review before it can be saved.');return}setBoards(bs=>bs.map(b=>b.id===bid?{...b,t:Date.now(),pins:b.pins.some(x=>x.pid===pid)?b.pins:[{pid,lid:selected.lid,vid:selected.vid,sec:b.sections[0]||''},...b.pins]}:b).sort((a,b)=>b.t-a.t));if(!quiet){const b=boards.find(x=>x.id===bid);toast(`Saved to ${b?b.title:'board'}`,{label:'View',fn:()=>{setBoard(bid);go('board')}})}};
+  const createBoard=(title,pid,secret=false,verifiedProduct)=>{const selected=pid?(verifiedProduct?.id===pid?verifiedProduct:detailProduct?.id===pid?detailProduct:BY_ID.get(pid)):null;if(pid&&(!selected?.lid||!selected?.vid)){toast('This product needs review before it can be saved.');return null}const id='b'+uid();setBoards(bs=>[{id,title,secret,collab:0,sections:[],pins:pid?[{pid,lid:selected.lid,vid:selected.vid,sec:''}]:[],t:Date.now()},...bs]);if(pid)toast('Saved to '+title);return id};
   const updateBoard=(id,fn)=>setBoards(bs=>bs.map(b=>b.id===id?fn(b):b));
   const imageSearch=f=>{const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{const c=document.createElement('canvas');c.width=c.height=48;const g=c.getContext('2d');g.drawImage(img,0,0,48,48);const d=g.getImageData(0,0,48,48).data;const buckets={};for(let i=0;i<d.length;i+=4){const k=[d[i]>>5,d[i+1]>>5,d[i+2]>>5].join();(buckets[k]=buckets[k]||{n:0,r:0,g:0,b:0});const B=buckets[k];B.n++;B.r+=d[i];B.g+=d[i+1];B.b+=d[i+2]}
     const pal=Object.values(buckets).sort((a,b)=>b.n-a.n).slice(0,5).map(B=>rgb2hex(B.r/B.n,B.g/B.n,B.b/B.n));setImgQ({src:r.result,pal});setQuery('');go('discover')};img.src=r.result};r.readAsDataURL(f)};
