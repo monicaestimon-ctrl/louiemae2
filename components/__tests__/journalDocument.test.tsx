@@ -31,7 +31,7 @@ it('keeps matching server content while loading and removes stale content on rou
 it('hands off current metadata and removes indexability/schema on withdrawal without affecting the next page', () => {
   document.body.innerHTML = '<main id="lm-journal-document" data-post-id="story1"></main>';
   document.head.innerHTML =
-    '<link rel="canonical" href="https://louiemae.com/"><meta name="description">';
+    '<link rel="canonical" href="https://www.louiemae.com/"><meta name="description">';
   const view = renderHook(
     ({ loading, current }: { loading: boolean; current: typeof post | null }) =>
       useJournalMetadata('story1', loading, false, current),
@@ -42,7 +42,7 @@ it('hands off current metadata and removes indexability/schema on withdrawal wit
   expect(document.getElementById('lm-journal-document')).toBeNull();
   expect(document.title).toBe('Current story | Louie Mae');
   expect(document.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe(
-    'https://louiemae.com/blog/story1'
+    'https://www.louiemae.com/blog/story1'
   );
   expect(document.getElementById('lm-journal-structured-data')?.textContent).toContain(
     'BlogPosting'

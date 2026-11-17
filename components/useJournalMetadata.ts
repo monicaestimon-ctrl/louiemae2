@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect } from 'react';
 import type { JournalPost } from '../lib/serverJournalDocument';
 import { journalUrl } from '../lib/journalUrl';
-import { publicProductImage } from '../lib/productMetadata';
+import { publicProductImage, STOREFRONT_ORIGIN } from '../lib/productMetadata';
 
 export function useJournalMetadata(
   id: string,
@@ -27,7 +27,7 @@ export function useJournalMetadata(
       post?.excerpt ||
       'On faith, family, design, and finding beauty in the everyday rhythms of life.'
     ).slice(0, 160);
-    const canonical = `https://louiemae.com${id === 'index' ? '/blog' : journalUrl(id)}`;
+    const canonical = `${STOREFRONT_ORIGIN}${id === 'index' ? '/blog' : journalUrl(id)}`;
     document.title = `${title} | Louie Mae`;
     document.querySelector('link[rel="canonical"]')?.setAttribute('href', canonical);
     const image = publicProductImage(post?.image || indexImage || '');
@@ -39,8 +39,8 @@ export function useJournalMetadata(
       'twitter:description': description,
       'og:url': canonical,
       'og:type': post ? 'article' : 'website',
-      'og:image': image ? new URL(image, 'https://louiemae.com').href : '',
-      'twitter:image': image ? new URL(image, 'https://louiemae.com').href : '',
+      'og:image': image ? new URL(image, STOREFRONT_ORIGIN).href : '',
+      'twitter:image': image ? new URL(image, STOREFRONT_ORIGIN).href : '',
     }))
       document
         .querySelector(`meta[name="${name}"],meta[property="${name}"]`)

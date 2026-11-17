@@ -1,4 +1,4 @@
-export const STOREFRONT_ORIGIN = 'https://louiemae.com';
+export const STOREFRONT_ORIGIN = 'https://www.louiemae.com';
 export const canonicalProductUrl = (id: string) => `${STOREFRONT_ORIGIN}/products/${encodeURIComponent(id)}`;
 
 export function publicProductImage(value: string) {

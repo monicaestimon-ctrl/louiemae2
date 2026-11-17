@@ -39,7 +39,7 @@ describe('initial public product document', () => {
     expect(doc.querySelector('#lm-shell')).toBeNull();
     expect(doc.body.textContent).toContain('$140.00');
     expect(doc.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe(
-      'https://louiemae.com/products/fixture'
+      'https://www.louiemae.com/products/fixture'
     );
     expect(doc.querySelector('meta[property="og:title"]')?.getAttribute('content')).toContain(
       product.name

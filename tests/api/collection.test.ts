@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 vi.mock('node:fs/promises', async original => {
   const actual = await original<typeof import('node:fs/promises')>();
-  const readFile = vi.fn().mockResolvedValue('<html><head><title>Home</title><meta name="description" content="Home"><meta property="og:image" content="home"><link rel="canonical" href="https://louiemae.com"></head><body><!--home-document-start-->Home hero<!--home-document-end--><!--product-document--><div id="root"></div></body></html>');
+  const readFile = vi.fn().mockResolvedValue('<html><head><title>Home</title><meta name="description" content="Home"><meta property="og:image" content="home"><link rel="canonical" href="https://www.louiemae.com"></head><body><!--home-document-start-->Home hero<!--home-document-end--><!--product-document--><div id="root"></div></body></html>');
   return { ...actual, readFile, default: { ...actual, readFile } };
 });
 import { readFile } from 'node:fs/promises';
@@ -38,7 +38,7 @@ it('renders escaped public collection content and bounded matching product previ
   expect(result.body).toContain('/products/chair'); expect(result.body).not.toContain('/products/lamp');
   expect(result.body).toContain('Chair &lt;/script&gt;'); expect(result.body).not.toContain('javascript:bad');
   expect(result.body).not.toContain('Home hero'); expect(result.body).not.toContain('http-equiv="refresh"');
-  expect(result.body).toContain('href="https://louiemae.com/collection/furniture"');
+  expect(result.body).toContain('href="https://www.louiemae.com/collection/furniture"');
   expect(result.body).toContain('data-collection-id="furniture"'); expect(fetchMock).toHaveBeenCalledTimes(3);
   expect(result.body).toContain('rel="preload" as="image"');
   expect(vi.mocked(readFile)).toHaveBeenCalled();

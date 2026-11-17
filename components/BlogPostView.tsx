@@ -1,3 +1,4 @@
+import { STOREFRONT_ORIGIN } from '../lib/productMetadata';
 import React, { useState, useRef, useEffect } from 'react';
 import { FadeIn } from './FadeIn';
 import { useRecoverableQuery } from '../contexts/useRecoverableQuery';
@@ -59,7 +60,7 @@ export const BlogPostView: React.FC<BlogPostViewProps> = ({ postId }) => {
     const wordCount = post.contentHtml.replace(/<[^>]*>/g, '').split(/\s+/).filter(Boolean).length;
     const readingTime = Math.max(1, Math.ceil(wordCount / 200));
 
-    const shareUrl = `https://louiemae.com${journalUrl(post._id)}`;
+    const shareUrl = `${STOREFRONT_ORIGIN}${journalUrl(post._id)}`;
     const shareTitle = post.title;
     const shareText = post.excerpt || post.title;
 

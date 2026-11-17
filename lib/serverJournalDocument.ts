@@ -1,6 +1,6 @@
 import { escapeJournalText as escape, journalHtml } from './journalContent.js';
 import { journalUrl } from './journalUrl.js';
-import { publicProductImage } from './productMetadata.js';
+import { publicProductImage, STOREFRONT_ORIGIN } from './productMetadata.js';
 import { responsiveImage } from './responsiveImage.js';
 
 export type JournalPost = {
@@ -16,7 +16,7 @@ export function journalDocument(template: string, posts: JournalPost[], article?
   if (!template.includes('<!--product-document-->')) throw new Error('Document marker missing');
   const id = article?._id || 'index';
   const path = article ? journalUrl(article._id) : '/blog';
-  const canonical = `https://louiemae.com${path}`;
+  const canonical = `${STOREFRONT_ORIGIN}${path}`;
   const title = article?.title || 'Simply Mae';
   const description = (
     article?.excerpt ||
@@ -36,7 +36,7 @@ export function journalDocument(template: string, posts: JournalPost[], article?
     .replace(/<!--home-document-start-->[\s\S]*?<!--home-document-end-->/, '')
     .replace(/<title>[\s\S]*?<\/title>/, () => `<title>${escape(title)} | Louie Mae</title>`);
   const source = publicProductImage(article?.image || posts[0]?.image || '');
-  const social = source ? new URL(source, 'https://louiemae.com').href : '';
+  const social = source ? new URL(source, STOREFRONT_ORIGIN).href : '';
   for (const [key, value] of Object.entries({
     description,
     'og:title': `${title} | Louie Mae`,

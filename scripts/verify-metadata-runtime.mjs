@@ -2,7 +2,7 @@
 import { build } from 'esbuild';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
-await build({ entryPoints: ['api/og.ts', 'lib/collectionId.ts'], outbase: '.',
+await build({ entryPoints: ['api/og.ts', 'lib/collectionId.ts', 'lib/productMetadata.ts'], outbase: '.',
   outdir: 'artifacts/lighthouse/metadata-runtime', bundle: false, platform: 'node', format: 'esm' });
 process.env.VITE_PRELAUNCH_MODE = 'false';
 const { default: handler } = await import('../artifacts/lighthouse/metadata-runtime/api/og.js');

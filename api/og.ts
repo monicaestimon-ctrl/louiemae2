@@ -1,3 +1,4 @@
+import { STOREFRONT_ORIGIN } from '../lib/productMetadata.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { isCollectionId } from '../lib/collectionId.js';
 
@@ -76,7 +77,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(404).send('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Page not found | Louie Mae</title></head><body><main><h1>Page not found</h1><a href="/">Return to Louie Mae</a></main></body></html>');
     }
     const meta = Object.prototype.hasOwnProperty.call(PAGE_META, path) ? PAGE_META[path] : DEFAULT_META;
-    const BASE_URL = 'https://louiemae.com';
+    const BASE_URL = STOREFRONT_ORIGIN;
     const imageUrl = `${BASE_URL}${meta.image}`;
     const pageUrl = `${BASE_URL}/${path}`;
     const hashUrl = `${BASE_URL}/${partner}#${path}`;

@@ -71,7 +71,7 @@ const bundle = await build({
     },
   ],
 });
-const html = `<!doctype html><html lang="en"><head><title>Journal fixture</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="canonical" href="https://louiemae.com/blog"><meta name="description" content="Journal fixture"><style>${await readFile('dist/assets/' + css, 'utf8')}</style></head><body><div id="root"></div><script>${bundle.outputFiles[0].text.replaceAll('</script', '<\\/script')}</script></body></html>`;
+const html = `<!doctype html><html lang="en"><head><title>Journal fixture</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="canonical" href="https://www.louiemae.com/blog"><meta name="description" content="Journal fixture"><style>${await readFile('dist/assets/' + css, 'utf8')}</style></head><body><div id="root"></div><script>${bundle.outputFiles[0].text.replaceAll('</script', '<\\/script')}</script></body></html>`;
 const browser = await puppeteer.launch({
   ...(process.env.CHROME_PATH
     ? { executablePath: process.env.CHROME_PATH }
@@ -118,7 +118,7 @@ try {
     assert.equal(await page.evaluate(() => location.pathname), '/blog/journal-fixture');
     assert.equal(
       await page.$eval('link[rel="canonical"]', (element) => element.href),
-      'https://louiemae.com/blog/journal-fixture'
+      'https://www.louiemae.com/blog/journal-fixture'
     );
     assert.equal(await page.evaluate(() => Boolean(window.fixtureAttack)), false);
     assert.equal(

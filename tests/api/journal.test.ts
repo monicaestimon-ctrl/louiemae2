@@ -5,7 +5,7 @@ vi.mock('node:fs/promises', async (original) => {
   const readFile = vi
     .fn()
     .mockResolvedValue(
-      '<html><head><title>Home</title><meta name="description" content="Home"><meta property="og:image" content="home"><link rel="canonical" href="https://louiemae.com"></head><body><!--home-document-start-->Home hero<!--home-document-end--><!--product-document--><div id="root"></div></body></html>'
+      '<html><head><title>Home</title><meta name="description" content="Home"><meta property="og:image" content="home"><link rel="canonical" href="https://www.louiemae.com"></head><body><!--home-document-start-->Home hero<!--home-document-end--><!--product-document--><div id="root"></div></body></html>'
     );
   return { ...actual, readFile, default: { ...actual, readFile } };
 });
@@ -62,7 +62,7 @@ it('serves sanitized article text and direct canonical metadata from an anonymou
   expect(result.status).toBe(200);
   expect(result.body).toContain('A &lt;story&gt;');
   expect(result.body).toContain('<p>A real story</p>');
-  expect(result.body).toContain('https://louiemae.com/blog/story1');
+  expect(result.body).toContain('https://www.louiemae.com/blog/story1');
   for (const value of ['attack()', 'not-public', 'Home hero', 'http-equiv="refresh"'])
     expect(result.body).not.toContain(value);
   const options = fetchMock.mock.calls[0][1];

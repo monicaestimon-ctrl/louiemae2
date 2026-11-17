@@ -1,4 +1,4 @@
-import { publicProductImage } from './productMetadata.js';
+import { publicProductImage, STOREFRONT_ORIGIN } from './productMetadata.js';
 import { responsiveImage } from './responsiveImage.js';
 
 export type PublicPageDocument = {
@@ -12,7 +12,7 @@ const escape = (value: string) => value.replace(/[&<>"']/g, char =>
 /** Render source-owned public text; no raw rich HTML or private account data is accepted. */
 export function pageDocument(template: string, page: PublicPageDocument) {
   if (!template.includes('<!--product-document-->')) throw new Error('Document marker missing');
-  const canonical = `https://louiemae.com/${page.id}`;
+  const canonical = `${STOREFRONT_ORIGIN}/${page.id}`;
   const title = `${page.id === 'story' ? 'Our Story' : 'Shop'} | Louie Mae`;
   const image = (source: string | undefined, alt: string, eager = false) => {
     const responsive = responsiveImage(publicProductImage(source || ''), '(min-width: 1024px) 800px, 100vw');
@@ -22,7 +22,7 @@ export function pageDocument(template: string, page: PublicPageDocument) {
   let html = template.replace(/<!--home-document-start-->[\s\S]*?<!--home-document-end-->/, '')
     .replace(/<title>[\s\S]*?<\/title>/, () => `<title>${escape(title)}</title>`);
   const source = publicProductImage(page.image || '');
-  const social = source ? new URL(source, 'https://louiemae.com').href : '';
+  const social = source ? new URL(source, STOREFRONT_ORIGIN).href : '';
   for (const [key, value] of Object.entries({ description: page.description, 'og:title': title, 'twitter:title': title,
     'og:description': page.description, 'twitter:description': page.description, 'og:url': canonical,
     'og:type': 'website', 'og:image': social, 'twitter:image': social })) {

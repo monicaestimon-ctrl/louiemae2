@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 vi.mock('node:fs/promises', async original => {
   const actual = await original<typeof import('node:fs/promises')>();
-  const readFile = vi.fn().mockResolvedValue('<html><head><title>Home</title><meta name="description" content="Home"><meta property="og:image" content="home"><link rel="canonical" href="https://louiemae.com"></head><body><!--home-document-start-->Home hero<!--home-document-end--><!--product-document--><div id="root"></div></body></html>');
+  const readFile = vi.fn().mockResolvedValue('<html><head><title>Home</title><meta name="description" content="Home"><meta property="og:image" content="home"><link rel="canonical" href="https://www.louiemae.com"></head><body><!--home-document-start-->Home hero<!--home-document-end--><!--product-document--><div id="root"></div></body></html>');
   return { ...actual, readFile, default: { ...actual, readFile } };
 });
 import handler from '../../api/page';
@@ -21,7 +21,7 @@ async function request(id: unknown, method = 'GET') {
 it('serves public story text and safe metadata without redirecting or leaking unrelated fields', async () => {
   const result = await request('story');
   expect(result.status).toBe(200); expect(result.body).toContain('Our &lt;Story&gt; &amp; Purpose');
-  expect(result.body).toContain('Public chapter text'); expect(result.body).toContain('href="https://louiemae.com/story"');
+  expect(result.body).toContain('Public chapter text'); expect(result.body).toContain('href="https://www.louiemae.com/story"');
   for (const text of ['privateCost', '12345', 'javascript:bad', 'http-equiv="refresh"', 'Home hero']) expect(result.body).not.toContain(text);
   const options = fetchMock.mock.calls[0][1];
   expect(options.headers.Authorization).toBeUndefined(); expect(JSON.parse(options.body).path).toBe('siteContent:get');

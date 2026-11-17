@@ -1,4 +1,4 @@
-import { publicProductImage } from './productMetadata.js';
+import { publicProductImage, STOREFRONT_ORIGIN } from './productMetadata.js';
 import { responsiveImage } from './responsiveImage.js';
 
 export type PublicCollectionDocument = {
@@ -12,11 +12,11 @@ const escape = (value: string) => value.replace(/[&<>"']/g,
 /** Crawlable public content only; checkout always rechecks current authority. */
 export function collectionDocument(template: string, collection: PublicCollectionDocument) {
   if (!template.includes('<!--product-document-->')) throw new Error('Document marker missing');
-  const canonical = `https://louiemae.com/collection/${encodeURIComponent(collection.id)}`;
+  const canonical = `${STOREFRONT_ORIGIN}/collection/${encodeURIComponent(collection.id)}`;
   const title = `${collection.title} | Louie Mae`;
   const description = collection.subtitle.slice(0, 160);
   const socialSource = publicProductImage(collection.heroImage || collection.cards[0]?.image || '');
-  const socialImage = socialSource ? new URL(socialSource, 'https://louiemae.com').href : '';
+  const socialImage = socialSource ? new URL(socialSource, STOREFRONT_ORIGIN).href : '';
   const primaryImage = responsiveImage(publicProductImage(collection.primaryCategoryImage || ''), '(min-width: 768px) 33vw, 70vw');
   const preload = primaryImage.src ? `<link rel="preload" as="image" href="${escape(primaryImage.src)}" ${primaryImage.srcSet ? `imagesrcset="${escape(primaryImage.srcSet)}" imagesizes="(min-width: 768px) 33vw, 70vw"` : ''} fetchpriority="high"/>` : '';
   const cards = collection.cards.map((card, index) => {
@@ -39,7 +39,7 @@ export function collectionDocument(template: string, collection: PublicCollectio
   const structured = JSON.stringify({ '@context': 'https://schema.org', '@type': 'CollectionPage',
     name: collection.title, description, url: canonical,
     mainEntity: { '@type': 'ItemList', itemListElement: collection.cards.map((card, index) => ({
-      '@type': 'ListItem', position: index + 1, url: `https://louiemae.com/products/${encodeURIComponent(card.id)}`,
+      '@type': 'ListItem', position: index + 1, url: `${STOREFRONT_ORIGIN}/products/${encodeURIComponent(card.id)}`,
     })) } }).replace(/</g, '\\u003c');
   html = html.replace('</head>', () => `<style>#lm-collection-document{position:absolute;inset:0 0 auto;z-index:1;min-height:100vh;background:#f9f7f2;color:#4a3b32;padding:40px max(24px,calc((100vw - 1200px)/2));font-family:Arial,sans-serif}#lm-collection-document~#root{visibility:hidden}#lm-collection-document h1{font-family:Georgia,serif;font-size:clamp(36px,6vw,64px);margin:32px 0 16px}#lm-collection-document a{color:inherit;text-decoration:underline}#lm-collection-document nav{display:flex;flex-wrap:wrap;gap:12px;margin:24px 0}#lm-collection-document nav a{padding:12px;border:1px solid #d6cfc7}.lm-collection-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}.lm-collection-card{min-width:0}.lm-collection-card img{width:100%;height:auto;aspect-ratio:1;object-fit:contain;background:white}.lm-collection-card h2{font:22px Georgia,serif;overflow-wrap:anywhere;margin-top:12px}@media(min-width:1024px){.lm-collection-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}</style><script id="lm-collection-structured-data" data-collection-id="${escape(collection.id)}" type="application/ld+json">${structured}</script></head>`);
   return html.replace('<!--product-document-->', () => content);

@@ -1,3 +1,4 @@
+import { STOREFRONT_ORIGIN } from './lib/productMetadata';
 import React, {
   useState,
   useEffect,
@@ -222,7 +223,7 @@ const AppContent = () => {
   // Dynamic meta tags per page
   useEffect(() => {
     if (productRoute(activePage) || activePage === 'blog' || activePage.startsWith('#blog/')) return; // Detail metadata belongs to its current public query.
-    const BASE_URL = 'https://louiemae.com';
+    const BASE_URL = STOREFRONT_ORIGIN;
     const setMeta = (selector: string, content: string) => {
       const el = document.querySelector(selector);
       if (el) el.setAttribute('content', content);
