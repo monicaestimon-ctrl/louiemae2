@@ -869,6 +869,8 @@ a.pin-act{text-decoration:none}
 .pp-loupe{position:absolute;width:180px;height:180px;border-radius:50%;transform:translate(-50%,-50%);border:3px solid #FFFDF9;box-shadow:0 20px 40px rgba(0,0,0,.35);background-repeat:no-repeat;pointer-events:none}
 .pp-panel{padding:28px clamp(18px,3vw,44px) 40px;display:flex;flex-direction:column;gap:20px;border-left:1px solid var(--line);min-width:0}
 .pp-panel h1{font-size:clamp(48px,5vw,76px);letter-spacing:-.02em;margin-top:4px}
+.pp .ix-dim{opacity:1;color:var(--mute)}
+.pp .save-pill{color:var(--ink)}
 .pp-line{color:var(--mute);font-size:16px;margin-top:-12px}
 .pp-price{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
 .pp-price b{font-family:var(--display);font-size:42px;font-weight:500}
