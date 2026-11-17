@@ -59,6 +59,9 @@ jobs:
       - name: Verify API route source boundary
         run: node scripts/verify-api-routes.mjs
 
+      - name: Verify unbundled metadata function runtime
+        run: node scripts/verify-metadata-runtime.mjs
+
       - name: Build
         run: npm run build
 
