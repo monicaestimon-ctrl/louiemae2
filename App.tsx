@@ -2,6 +2,7 @@ import { STOREFRONT_ORIGIN } from './lib/productMetadata';
 import React, {
   useState,
   useEffect,
+  useLayoutEffect,
   useCallback,
   lazy,
   Suspense,
@@ -23,7 +24,6 @@ import {
   productUrl,
   storefrontRoute,
 } from './lib/storefrontNavigation';
-import { HomePage } from './components/HomePage';
 import { DynamicPage } from './components/DynamicPage';
 import { NewsletterPopup } from './components/NewsletterPopup';
 import { SiteProvider, useSite } from './contexts/BlogContext';
@@ -35,7 +35,7 @@ import { useConvex, useMutation } from 'convex/react';
 import { api } from './convex/_generated/api';
 import { captureRefFromUrl, visitorId } from './lib/partnerLink';
 import { safeRedirect } from './lib/enrollment';
-import { DeliveryQuoteAccess } from './components/delivery/DeliveryQuoteStatus';
+import { LazyDeliveryQuoteAccess } from './components/delivery/LazyDeliveryQuoteAccess';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ContentStatusPage } from './components/ContentStatusPage';
 import { Modal } from './components/Modal';
@@ -56,6 +56,7 @@ const named = <K extends string, T extends Record<K, React.ComponentType<never>>
   }
   return Object.assign(PreloadedPage, { preload: resource.preload });
 };
+const HomePage = named(() => import('./components/HomePage'), 'HomePage');
 const StoryPage = named(() => import('./components/StoryPage'), 'StoryPage');
 const BlogPage = named(() => import('./components/BlogPage'), 'BlogPage');
 const BlogPostView = named(() => import('./components/BlogPostView'), 'BlogPostView');
@@ -78,7 +79,8 @@ const SearchModal = named(() => import('./components/SearchModal'), 'SearchModal
 // remain demand-loaded. A preload failure stays owned by the existing route boundary.
 if (typeof window !== 'undefined') {
   const route = storefrontRoute(window.location);
-  if (route === 'shop') ShopLandingPage.preload();
+  if (route === 'home') HomePage.preload();
+  else if (route === 'shop') ShopLandingPage.preload();
   else if (route === 'story') StoryPage.preload();
   else if (route === 'blog') BlogPage.preload();
   else if (route.startsWith('#blog/')) BlogPostView.preload();
@@ -181,6 +183,10 @@ const AppContent = () => {
   const [mobileMenuBuilt, setMobileMenuBuilt] = useState(false);
   const wideNav = useSyncExternalStore(subscribeWideNav, isWideNav);
   const [activePage, setActivePage] = useState(() => storefrontRoute(window.location));
+  useLayoutEffect(() => {
+    const shell = document.getElementById('lm-shell');
+    if (shell) shell.hidden = activePage !== 'home';
+  }, [activePage]);
   const initialDocumentPresent = useInitialProductDocument(activePage);
   const initialPagePresent = useInitialPageDocument(activePage, siteContentStatus);
   const initialJournalPresent = useInitialJournalDocument(activePage);
@@ -474,7 +480,7 @@ const AppContent = () => {
 
       {/* Cart Drawer */}
       <LazyCartDrawer />
-      <DeliveryQuoteAccess />
+      <LazyDeliveryQuoteAccess />
 
       {/* Search Modal */}
       {searchOpen && (
