@@ -22,3 +22,8 @@ export function reconcileEditorSelections(have: readonly SavedProductIdentity[],
   });
   return { keep, add: remaining };
 }
+
+/** Show the same supplier minimum/increment adjustment before and after adding to a project. */
+export function editorOrderQuantity(quantity: number, product: { minimum: number; increment: number }) {
+  return Math.max(product.minimum, product.minimum + Math.ceil((quantity - product.minimum) / product.increment) * product.increment);
+}

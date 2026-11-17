@@ -396,7 +396,7 @@ try {
   await page.click('.sx-pill');
   await page.waitForSelector('dialog[aria-label="Pieces"]');
   const studioRows=await page.$$eval('.sx-row',nodes=>nodes.map(node=>node.textContent));
-  assert.equal(studioRows.length,2);assert.match(studioRows[0],/Oak.*80/);assert.doesNotMatch(studioRows[1],/Oak/);assert.match(studioRows[1],/160/);
+  assert.equal(studioRows.length,2);assert.match(studioRows[0],/Oak.*1 planned.*requires 2.*160/);assert.doesNotMatch(studioRows[1],/Oak/);assert.match(studioRows[1],/160/);
   await page.evaluate(()=>[...document.querySelectorAll('dialog button')].find(button=>button.textContent.includes('Add all to project')).click());
   await page.waitForFunction(()=>!document.querySelector('dialog'));
   const fromStudio=await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:tray')).projects[0].items);
@@ -414,7 +414,7 @@ try {
   await page.evaluate(()=>{window.fixtureLookupPending=false;window.fixtureRefresh();location.hash='board';});
   await page.waitForFunction(()=>document.querySelector('main h1')?.textContent==='Verified saved board');
   results.push({studioIndependentVariantImagesAndPrices:true,studioProjectAddPreservesBothVariants:true,offpageImageExport:true,sharingWithdrawsOnPendingLookup:true,businessCommands:0});
-  await page.evaluate(()=>{window.fixtureShared={mode:'shop',title:'Shared selection',by:'Fixture',items:[{productId:'saved-source',variantId:'oak',qty:2},{productId:'saved-source',variantId:'walnut',qty:1}]};location.hash='b/fixture';});
+  await page.evaluate(()=>{window.fixtureShared={mode:'shop',title:'Shared selection',by:'Fixture',items:[{productId:'saved-source',variantId:'oak',qty:1},{productId:'saved-source',variantId:'walnut',qty:1}]};location.hash='b/fixture';});
   await page.waitForSelector('.bundle-row');
   await page.waitForFunction(()=>document.querySelectorAll('.bundle-row').length===2);
   const sharedRows=await page.$$eval('.bundle-row',nodes=>nodes.map(node=>node.textContent));
@@ -439,7 +439,7 @@ try {
   await page.click('.sx-pill');
   await page.waitForSelector('dialog[aria-label="Pieces"]');
   const plannerRows=await page.$$eval('.sx-row',nodes=>nodes.map(node=>node.textContent));
-  assert.equal(plannerRows.length,2);assert.match(plannerRows[0],/Oak.*80/);assert.match(plannerRows[1],/160/);
+  assert.equal(plannerRows.length,2);assert.match(plannerRows[0],/Oak.*1 planned.*requires 2.*160/);assert.match(plannerRows[1],/160/);
   await page.keyboard.press('Escape');
   await page.evaluate(()=>{window.fixtureLookupPending=true;window.fixtureRefresh();});
   await page.waitForFunction(()=>document.querySelector('main h1')?.textContent==='Review saved room items');

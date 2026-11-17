@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import type { HolmProduct } from './catalog';
-import { editorSelections, reconcileEditorSelections } from './editorSelections';
+import { editorSelections, reconcileEditorSelections, editorOrderQuantity } from './editorSelections';
 import { projectItemKey } from './projectIdentity';
 const product = { id: 1, lid: 'source', vid: 'oak', price: 100, trade: 90, variants: [{ id: 'walnut', name: 'Walnut', retail: 20000, trade: 18000, minimum: 2, increment: 2 }] } as HolmProduct;
 it('groups repeated copies by exact source/option and visibility without changing layout records', () => {
@@ -23,4 +23,10 @@ it('synchronizes copies without moving or replacing the other option', () => {
   expect([...result.keep]).toEqual([0, 1]);
   expect(result.add).toEqual([walnut]);
   expect(reconcileEditorSelections([oak], [{ ...oak, lid: 'different' }]).keep.size).toBe(0);
+});
+
+it('previews the supplier quantity that adding the design will require', () => {
+  expect(editorOrderQuantity(1, {minimum:2,increment:2})).toBe(2);
+  expect(editorOrderQuantity(3, {minimum:2,increment:2})).toBe(4);
+  expect(editorOrderQuantity(5, {minimum:3,increment:2})).toBe(5);
 });

@@ -13,7 +13,7 @@ import { displayProduct } from './catalogLookup';
 import { plannerGeometry, rugExtents as rugExt, clampRug as rugClamp } from './plannerGeometry';
 import { studioGeometry, studioStyle as styleOf, frameAspect as frameAR } from './studioGeometry';
 import { holmLegacyId } from '../lib/holmProductIdentity';
-import { editorSelections, reconcileEditorSelections } from './editorSelections';
+import { editorSelections, reconcileEditorSelections, editorOrderQuantity } from './editorSelections';
 import { editorShortcutsBlocked } from './editorShortcuts';
 import { useProjectCatalog, projectResolutionMessage } from './useProjectCatalog';
 import { useSavedBoardShelf } from './useSavedBoardShelf';
@@ -1768,18 +1768,19 @@ function SxTray({ctx,rows,onClose}){
   const [proj,setProj]=useState(ctx.tray.active);const live=rows.filter(r=>!r.hidden);
   const productFor=r=>resolveProjectProduct(r,ctx.savedProducts||BY_ID)||displayProduct(new Map(),r.pid);
   const unavailable=live.some(r=>!productFor(r).lid);
-  const total=live.reduce((s,r)=>s+pr(productFor(r),ctx.mode)*r.qty,0);
+  const orderQty=r=>editorOrderQuantity(r.qty,productFor(r));
+  const total=live.reduce((s,r)=>s+pr(productFor(r),ctx.mode)*orderQty(r),0);
   return html`<${Modal} open label="Pieces" onClose=${onClose}><div className="scrim sx-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()}>
     <div className="sx-sheet">
       <div className="sx-drawer-h"><b>Pieces</b><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>
       <div className="sx-rows" tabIndex="0" role="region" aria-label="Piece quantities and prices">${rows.length?rows.map(r=>{const p=productFor(r);return html`<div key=${r.key||projectItemKey(r)+(r.hidden?'h':'')} className=${'sx-row'+(r.hidden?' off':'')}>
-        <span className="sx-th"><img src=${p.cutout||p.img} alt=""/></span><span className="sx-row-t"><b>${p.name}</b><span>${p.line}${r.hidden?' · hidden, not counted':''}</span></span>
-        <span className="mono">× ${r.qty}</span><span className="num sx-price">${fmt(pr(p,ctx.mode)*r.qty)}</span></div>`}):html`<p className="sx-note">No pieces yet. Add some from the rail.</p>`}</div>
+        <span className="sx-th"><img src=${p.cutout||p.img} alt=""/></span><span className="sx-row-t"><b>${p.name}</b><span>${p.line}${r.hidden?' · hidden, not counted':orderQty(r)!==r.qty?` · ${r.qty} planned; supplier minimum/increment requires ${orderQty(r)}`:''}</span></span>
+        <span className="mono">× ${orderQty(r)}</span><span className="num sx-price">${fmt(pr(p,ctx.mode)*orderQty(r))}</span></div>`}):html`<p className="sx-note">No pieces yet. Add some from the rail.</p>`}</div>
       <div className="sx-sheet-f">
-        <span><span className="sx-note">${live.reduce((s,r)=>s+r.qty,0)} pieces · ${ctx.mode==='trade'?'trade':'retail'}</span><br/><b className="num sx-total">${fmt(total)}</b></span>
+        <span><span className="sx-note">${live.reduce((s,r)=>s+orderQty(r),0)} pieces · ${ctx.mode==='trade'?'trade':'retail'}</span><br/><b className="num sx-total">${fmt(total)}</b></span>
         <span className="row" style=${{gap:8,flexWrap:'wrap'}}>
           <select className="field" style=${{height:38,width:'auto'}} value=${proj} onChange=${e=>setProj(e.target.value)} aria-label="Project">${ctx.tray.projects.map(p=>html`<option key=${p.id} value=${p.id}>${p.name}</option>`)}</select>
-          <button className="btn btn-cog btn-sm" disabled=${!live.length||unavailable||!ctx.tray.projects.some(p=>p.id===proj)} onClick=${()=>{const P=ctx.tray.projects.find(p=>p.id===proj);live.forEach(r=>ctx.addToProject(r.pid,r.qty,proj,P.zones[0],null,true,productFor(r)));ctx.toast(`${live.reduce((s,r)=>s+r.qty,0)} pieces added to ${P.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)});onClose()}}>${I('tray',{width:15})} Add all to project</button>
+          <button className="btn btn-cog btn-sm" disabled=${!live.length||unavailable||!ctx.tray.projects.some(p=>p.id===proj)} onClick=${()=>{const P=ctx.tray.projects.find(p=>p.id===proj);live.forEach(r=>ctx.addToProject(r.pid,orderQty(r),proj,P.zones[0],null,true,productFor(r)));ctx.toast(`${live.reduce((s,r)=>s+orderQty(r),0)} pieces added to ${P.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)});onClose()}}>${I('tray',{width:15})} Add all to project</button>
         </span></div>
     </div></div><//>`;
 }
@@ -2455,7 +2456,7 @@ function SharedBoard({ctx,slug}){
   if(b===undefined)return html`<main className="wrap"><p className="help" style=${{padding:'80px 0'}}>Opening the board…</p></main>`;
   if(!b)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h3>This board link isn't complete</h3><p>Ask for the link again.</p><button className="btn btn-line" onClick=${()=>ctx.go('home')}>Visit House of Louie Mae</button></div></main>`;
   const shop=b.mode==='shop';const trade=ctx.mode==='trade';
-  const lines=resolved.resolved;
+  const lines=resolved.resolved.map(row=>({...row,requestedQty:row.qty,qty:editorOrderQuantity(row.qty,row.p)}));
   const buyable=lines.filter(l=>!l.p.oos);const total=buyable.reduce((s,l)=>s+pr(l.p,ctx.mode)*l.qty,0);
   const similar=p=>PRODUCTS.find(x=>x.type===p.type&&x.id!==p.id&&!x.oos);
   const addAll=()=>{buyable.forEach(l=>ctx.addToTray(l.p.id,l.qty,null,true,l.p));ctx.toast(`${buyable.reduce((s,l)=>s+l.qty,0)} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})};
@@ -2468,9 +2469,9 @@ function SharedBoard({ctx,slug}){
           <p className="help">Prices are live. Delivery and tax are confirmed with your quote.</p>`}</div>
     </div>
     ${resolved.missing.map(item=>html`<p key=${projectItemKey(item)} role="status">${projectResolutionMessage(item,savedCatalog.states)}</p>`)}
-    <div className="bundle-list">${lines.map(({p,qty})=>{const alt=p.oos&&similar(p);return html`<article key=${projectItemKey({pid:p.id,lid:p.lid,vid:p.vid})} className=${'bundle-row'+(p.oos?' oos':'')}>
+    <div className="bundle-list">${lines.map(({p,qty,requestedQty})=>{const alt=p.oos&&similar(p);return html`<article key=${projectItemKey({pid:p.id,lid:p.lid,vid:p.vid})} className=${'bundle-row'+(p.oos?' oos':'')}>
       <button className="bundle-th" onClick=${()=>ctx.openPin(p.id,{pid:p.id,lid:p.lid,vid:p.vid})} aria-label=${'View '+p.name}><img src=${p.cutout||p.img} alt="" loading="lazy"/></button>
-      <div className="bundle-t"><b>${p.name}</b><span>${p.line}</span>${dimsText(p)&&html`<small className="mute">${dimsText(p)}</small>`}
+      <div className="bundle-t"><b>${p.name}</b><span>${p.line}${qty!==requestedQty?` · ${requestedQty} planned; supplier minimum/increment requires ${qty}`:""}</span>${dimsText(p)&&html`<small className="mute">${dimsText(p)}</small>`}
         ${p.oos&&html`<small className="bundle-oos">Sold out${alt?html` · try <button className="lnk" onClick=${()=>ctx.openPin(alt.id)}>${alt.name}</button>`:''}</small>`}</div>
       ${shop&&html`<span className="mono">× ${qty}</span><span className="num bundle-p">${fmt(pr(p,ctx.mode)*qty)}</span>
         <button className="ib" disabled=${p.oos} aria-label=${'Add '+p.name} onClick=${e=>ctx.addToTray(p.id,qty,e.currentTarget.closest('.bundle-row').querySelector('img'),false,p)}>${I('plus',{width:16})}</button>`}
@@ -3779,7 +3780,7 @@ export function App(){
   const trayCount=activeProject.items.reduce((s,i)=>s+i.qty,0);
   const fly=(fromEl)=>{try{const btn=document.getElementById('trayBtn');if(!fromEl||!btn)return;const a=fromEl.getBoundingClientRect(),b=btn.getBoundingClientRect();const im=document.createElement('img');im.src=fromEl.src||fromEl.style.backgroundImage.slice(5,-2);im.className='fly';const sz=Math.min(140,a.width);Object.assign(im.style,{left:a.left+a.width/2-sz/2+'px',top:a.top+a.height/2-sz/2+'px',width:sz+'px',height:sz+'px'});document.body.appendChild(im);
     im.animate([{transform:'translate(0,0) scale(1)',opacity:1},{transform:`translate(${b.left+b.width/2-(a.left+a.width/2)}px,${b.top+b.height/2-(a.top+a.height/2)}px) scale(.12)`,opacity:.6}],{duration:700,easing:'cubic-bezier(.5,0,.2,1)'}).onfinish=()=>im.remove()}catch(e){}};
-  const addToTray=(pid,qty=1,fromEl,quiet,verifiedProduct)=>{const selected=verifiedProduct?.id===pid?verifiedProduct:BY_ID.get(pid);if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==t.active)return p;const z=p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));
+  const addToTray=(pid,qty=1,fromEl,quiet,verifiedProduct)=>{const selected=verifiedProduct?.id===pid?verifiedProduct:BY_ID.get(pid);if(!selected)return;qty=editorOrderQuantity(qty,selected);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==t.active)return p;const z=p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));
     fly(fromEl);if(!quiet)toast(`${selected.name} added to ${activeProject.name}`,{label:'Open tray',fn:()=>setTray(true)})};
   const saveTo=(pid,bid,quiet,verifiedProduct)=>{const selected=verifiedProduct?.id===pid?verifiedProduct:detailProduct?.id===pid?detailProduct:BY_ID.get(pid);if(!selected?.lid||!selected?.vid){toast('This product needs review before it can be saved.');return}setBoards(bs=>bs.map(b=>b.id===bid?{...b,t:Date.now(),pins:b.pins.some(x=>sameProjectSelection(x,{pid,lid:selected.lid,vid:selected.vid}))?b.pins:[{pid,lid:selected.lid,vid:selected.vid,sec:b.sections[0]||''},...b.pins]}:b).sort((a,b)=>b.t-a.t));if(!quiet){const b=boards.find(x=>x.id===bid);toast(`Saved to ${b?b.title:'board'}`,{label:'View',fn:()=>{setBoard(bid);go('board')}})}};
   const createBoard=(title,pid,secret=false,verifiedProduct)=>{const selected=pid?(verifiedProduct?.id===pid?verifiedProduct:detailProduct?.id===pid?detailProduct:BY_ID.get(pid)):null;if(pid&&(!selected?.lid||!selected?.vid)){toast('This product needs review before it can be saved.');return null}const id='b'+uid();setBoards(bs=>[{id,title,secret,collab:0,sections:[],pins:pid?[{pid,lid:selected.lid,vid:selected.vid,sec:''}]:[],t:Date.now()},...bs]);if(pid)toast('Saved to '+title);return id};
@@ -3788,7 +3789,7 @@ export function App(){
     const pal=Object.values(buckets).sort((a,b)=>b.n-a.n).slice(0,5).map(B=>rgb2hex(B.r/B.n,B.g/B.n,B.b/B.n));setImgQ({src:r.result,pal});setQuery('');go('discover')};img.src=r.result};r.readAsDataURL(f)};
   const toStudio=(ids,title)=>{setStudioSeed({ids,title:title||'New collage'});setNonce(n=>n+1);setPin(null);go('studio')};
   const openPin=(id,identity)=>{if(id&&trayOpen){setPinReturnsToTray(true);setTray(false)}else if(!id&&pinReturnsToTray){setTray(true);setPinReturnsToTray(false)}const p=BY_ID.get(id);setPinIdentity(id?(identity||(p?{pid:id,lid:p.lid,vid:p.vid}:{pid:id})):null);setPin(id);if(id)setRecent(r=>[id,...r.filter(x=>x!==id)].slice(0,8))};
-  const addToProject=(pid,qty,projId,zone,fromEl,quiet,resolved)=>{const selected=resolved||(detailProduct?.id===pid?detailProduct:BY_ID.get(pid));if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==projId)return p;const z=zone||p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));fly(fromEl);if(!quiet){const pn=(tray.projects.find(p=>p.id===projId)||{}).name||'project';toast(selected.name+' added to '+pn+(zone?' · '+zone:''),{label:'Open tray',fn:()=>{setPin(null);setTray(true)}})}};
+  const addToProject=(pid,qty,projId,zone,fromEl,quiet,resolved)=>{const selected=resolved||(detailProduct?.id===pid?detailProduct:BY_ID.get(pid));if(!selected)return;qty=editorOrderQuantity(qty,selected);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==projId)return p;const z=zone||p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));fly(fromEl);if(!quiet){const pn=(tray.projects.find(p=>p.id===projId)||{}).name||'project';toast(selected.name+' added to '+pn+(zone?' · '+zone:''),{label:'Open tray',fn:()=>{setPin(null);setTray(true)}})}};
   const createProject=name=>{const id=uid();setTrayState(t=>({...t,projects:[...t.projects,{id,name,target:20,zones:['Main room'],items:[]}]}));toast(`Project "${name}" created`);return id};
   const addZone=(pid,z)=>setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===pid&&!p.zones.includes(z)?{...p,zones:[...p.zones,z]}:p)}));
   const inspoCtx={inspo,addInspo:items=>setInspo(l=>[...items,...l]),removeInspo:id=>setInspo(l=>l.filter(x=>x.id!==id)),updateInspo:(id,o)=>setInspo(l=>l.map(x=>x.id===id?{...x,...o}:x)),roomWall,setRoomWall,inspoToStudio:(x,ids=[])=>{setStudioSeed({inspo:x,ids,title:x.title});setNonce(n=>n+1);go('studio')}};
