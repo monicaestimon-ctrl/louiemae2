@@ -1,4 +1,4 @@
-/* global window, document, URL, Event */
+/* global window, document, URL, Event, getComputedStyle */
 import { build } from 'esbuild';
 import { readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
@@ -173,6 +173,14 @@ try {
       await page.waitForSelector(selector, { visible: true, timeout: 8000 });
       assert.equal(await page.evaluate(() => Boolean(window.fixtureLive)), false);
       assert.equal(await page.$('#lm-page-document,#lm-journal-document,#lm-collection-document'), null);
+      if (path === '/blog/story1') {
+        // Text over an arbitrary photograph cannot rely on automated contrast detection.
+        assert.equal(await page.$eval('header', el => getComputedStyle(el).backgroundColor), 'rgb(249, 247, 242)');
+        await page.evaluate(() => window.scrollTo(0, 250));
+        await page.waitForFunction(() => document.querySelector('header')?.classList.contains('py-3'));
+        assert.equal(await page.$eval('header', el => getComputedStyle(el).backgroundColor), 'rgb(249, 247, 242)');
+        await page.evaluate(() => window.scrollTo(0, 0));
+      }
       await page.addScriptTag({ content: axe.source });
       assert.deepEqual(await page.evaluate(async () => (await window.axe.run()).violations), []);
       if(collectionPaths.includes(path)) {
