@@ -144,7 +144,6 @@ export const BlogPostView: React.FC<BlogPostViewProps> = ({ postId }) => {
 
     return (
         <main className="bg-cream min-h-screen pb-20 w-full overflow-hidden" data-lm-journal-ready={postId}>
-            <style>{`@keyframes blogFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }`}</style>
             {/* Hero Image */}
             {post.image && (
                 <div className="w-full aspect-[16/9] md:aspect-[3/1] overflow-hidden relative">
@@ -201,7 +200,6 @@ export const BlogPostView: React.FC<BlogPostViewProps> = ({ postId }) => {
                 <>
                     <div
                         className="text-center mb-8 md:mb-12"
-                        style={{ animation: 'blogFadeIn 0.4s ease-out both' }}
                     >
                         {/* Category & Meta */}
                         <div className="flex flex-wrap items-center justify-center gap-2 md:gap-4 mb-6 text-muted-earth text-[10px] uppercase tracking-widest font-sans">
