@@ -1,3 +1,5 @@
+import { paginationOptsValidator } from 'convex/server';
+import { catalogPageOptions } from '../lib/catalogPagination';
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireCjAdminIdentity } from "./cjAdminAccess";
@@ -103,5 +105,15 @@ export const remove = mutation({
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
         await ctx.db.delete(args.id);
+    },
+});
+
+/** Published article identities only; draft bodies and dates never enter the sitemap. */
+export const sitemapPage = query({
+    args: { paginationOpts: paginationOptsValidator },
+    handler: async (ctx, args) => {
+        const batch = await ctx.db.query('blogPosts').withIndex('by_status', q => q.eq('status', 'published'))
+            .paginate(catalogPageOptions(args.paginationOpts, 100, 500_000));
+        return { page: batch.page.map(post => `/blog/${encodeURIComponent(post._id)}`), isDone: batch.isDone, continueCursor: batch.continueCursor, pageStatus: batch.pageStatus, splitCursor: batch.splitCursor };
     },
 });

@@ -1,0 +1,11 @@
+# Current public sitemap
+
+`/sitemap.xml` is generated from current public sources instead of a fixed file. It includes the real marketing/legal entry routes, configured collection roots, products in the verified public search index, and published journal article identities. Product candidates are checked again through the existing public visibility authority; removing publication removes their URL even if the search projection has not yet caught up. Private fields and authenticated trade prices never enter the response.
+
+Products and articles use bounded cursor pages. An empty eligible page still advances its source cursor. Duplicate URLs are removed, malformed paths and repeated cursors fail closed, and unsupported methods return 405. All responses are no-store. A source error, an unverified index, the shared 20-second request deadline, or the 50,000-URL bound produces a retryable 503 instead of a quietly truncated successful sitemap. A future catalog exceeding that bound needs a partitioned sitemap index before release.
+
+The sitemap emits no invented last-modified timestamp: the current projection does not provide a reliable content-modification date for every product. Out-of-stock public pages may remain indexed when the existing product authority still permits their descriptive page; private, hidden and unpublished records are omitted. Search/filter combinations, carts, checkout, account pages, private boards and hash-only custom navigation are excluded.
+
+Prelaunch returns an unavailable/noindex response rather than disclosing a full catalog. HEAD performs the same source validation but returns no body. Successful XML uses the shared final www canonical origin, and robots.txt continues to point to `/sitemap.xml`.
+
+Tests cover pagination through empty candidate pages, deduplication, current withdrawal, draft article omission, anonymous DTO boundaries, malformed paths/cursors, prelaunch, source failure and HEAD/method behavior. Unbundled Node import verification covers the deployment boundary. After merging, verify the backend and frontend deployments, fetch the production XML, and confirm representative emitted URLs return their intended public pages. These local tests do not prove production freshness or complete metadata acceptance.

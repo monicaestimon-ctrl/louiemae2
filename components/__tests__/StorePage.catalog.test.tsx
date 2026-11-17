@@ -108,3 +108,10 @@ describe('quick view purchasing', () => {
     expect(screen.getByRole('button', { name: 'Add to Cart' })).toBeEnabled();
   });
 });
+
+it('uses the configured category title for leaf signup copy while retaining the route identity', () => {
+  mocks.complete=true;
+  render(<StorePage collection="kids" initialCategory="dresses" forceProductView />);
+  expect(screen.getByText(/Receive 24-hour early access/)).toHaveTextContent('Dresses drops');
+  expect(screen.getByRole('heading',{level:1})).toHaveTextContent('Dresses — Kids');
+});

@@ -1,4 +1,4 @@
-/* global document, window, location, localStorage */
+/* global document, window, location, localStorage, URL */
 import { build } from 'esbuild';
 import puppeteer from 'puppeteer-core';
 import axe from 'axe-core';
@@ -11,9 +11,9 @@ const css = assets.find((file) => /^trade-.*\.css$/.test(file));
 assert.ok(css, 'Missing trade stylesheet. Run npm run build first.');
 const stubs = {
   auth: `export const useAuthActions=()=>({signIn:async()=>{throw Error('No auth permitted')},signOut:async()=>{throw Error('No auth permitted')}});export const useAuthToken=()=>null;`,
-  convex: `import{getFunctionName}from'convex/server';export const useQuery=(ref)=>getFunctionName(ref)==='holm:me'?{signedIn:true,verified:true,admin:false,tradeStatus:'approved',businessName:'',email:''}:getFunctionName(ref)==='holmSync:load'?window.fixtureRemote:undefined;export const useQueries=q=>Object.fromEntries(Object.entries(q).map(([k,v])=>[k,window.fixtureLookupPending?undefined:v.args.productIds?v.args.productIds.map(productId=>({productId,item:window.fixtureLookup?.id===productId?window.fixtureLookup:null})):{ready:true,items:v.args.legacyIds.map(legacyId=>({legacyId,status:'unavailable',item:null}))}]));export const useMutation=ref=>async()=>{if(getFunctionName(ref)==='holm:ensureProfile'||getFunctionName(ref)==='holmSync:save')return null;window.fixtureCommands=(window.fixtureCommands||0)+1;return new Promise((_,reject)=>{window.rejectFixtureQuote=()=>reject({data:{code:'RATE_LIMITED',message:'You have sent several requests. Please wait an hour before sending another.'}})})};export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});export const useAction=useMutation;export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});`,
+  convex: `import{getFunctionName}from'convex/server';export const useQuery=(ref)=>getFunctionName(ref)==='holm:me'?{signedIn:true,verified:true,admin:false,tradeStatus:'approved',businessName:'',email:''}:getFunctionName(ref)==='holmSync:load'?window.fixtureRemote:getFunctionName(ref)==='holmSync:sharedBoard'?window.fixtureShared:undefined;export const useQueries=q=>Object.fromEntries(Object.entries(q).map(([k,v])=>[k,window.fixtureLookupPending?undefined:v.args.productIds?v.args.productIds.map(productId=>({productId,item:window.fixtureLookup?.id===productId?window.fixtureLookup:null})):{ready:true,items:v.args.legacyIds.map(legacyId=>({legacyId,status:'unavailable',item:null}))}]));export const useMutation=ref=>async()=>{if(getFunctionName(ref)==='holm:ensureProfile'||getFunctionName(ref)==='holmSync:save'||getFunctionName(ref)==='holmSync:boardOpened')return null;window.fixtureCommands=(window.fixtureCommands||0)+1;return new Promise((_,reject)=>{window.rejectFixtureQuote=()=>reject({data:{code:'RATE_LIMITED',message:'You have sent several requests. Please wait an hour before sending another.'}})})};export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});export const useAction=useMutation;export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});`,
 };
-const entry = `import React from'react';import{createRoot}from'react-dom/client';import{App,setProducts}from'./trade/app';import{holmLegacyId}from'./lib/holmProductIdentity';const image='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';const products=Array.from({length:24},(_,i)=>({id:i+1,lid:'fixture'+i,vid:'fixture'+i,variants:[],name:'Fixture '+(i+1),full:'Fixture '+(i+1),line:'Chair',type:'sofa',mat:'leather',tone:'#6B4A33',price:100,trade:80,seats:1,oos:false,note:'Fixture only',facts:'',img:image,imgs:[image],ar:1,sku:'FIXTURE',likes:0,widthCm:50,dimsCm:{w:50,d:50,h:50},dimsSource:'fixture',cutout:null,cutAR:null,model:null,modelLow:null,hangs:false,mountCm:null,minimum:1,increment:1,checkoutMode:'quote'}));if(window.fixtureHydrated){const source='saved-source';window.fixtureSavedPid=holmLegacyId(source);window.fixtureLookup={id:source,name:'Offpage Chair',description:'Verified fixture',category:'Chairs',images:[image],facts:'',inStock:true,variants:[{id:'oak',name:'Oak',minimum:2,increment:2,retail:10000,trade:8000}]};localStorage.setItem('hol:tray',JSON.stringify({active:'offpage',projects:[{id:'offpage',name:'Offpage project',target:2,zones:['Main room'],items:[{pid:window.fixtureSavedPid,lid:source,vid:'oak',qty:2,zone:'Main room'}]}],later:[]}));}if(window.fixtureBoardHydrated){window.fixtureLookup.variants.unshift({id:'walnut',name:'Walnut',minimum:1,increment:1,retail:20000,trade:16000});localStorage.setItem('hol:boards',JSON.stringify([{id:'b1',title:'Verified saved board',sections:['Main'],pins:[{pid:window.fixtureSavedPid,lid:'saved-source',vid:'oak',sec:'Main'}]}]));location.hash='board';}window.fixtureRefresh=()=>setProducts(products);setProducts(products);createRoot(document.getElementById('root')).render(<App/>);`;
+const entry = `import React from'react';import{createRoot}from'react-dom/client';import{App,setProducts}from'./trade/app';import{holmLegacyId}from'./lib/holmProductIdentity';const image='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';const products=Array.from({length:24},(_,i)=>({id:i+1,lid:'fixture'+i,vid:'fixture'+i,variants:[],name:'Fixture '+(i+1),full:'Fixture '+(i+1),line:'Chair',type:'sofa',mat:'leather',tone:'#6B4A33',price:100,trade:80,seats:1,oos:false,note:'Fixture only',facts:'',img:image,imgs:[image],ar:1,sku:'FIXTURE',likes:0,widthCm:50,dimsCm:{w:50,d:50,h:50},dimsSource:'fixture',cutout:null,cutAR:null,model:null,modelLow:null,hangs:false,mountCm:null,minimum:1,increment:1,checkoutMode:'quote'}));if(window.fixtureHydrated){const source='saved-source';window.fixtureSavedPid=holmLegacyId(source);window.fixtureLookup={id:source,name:'Offpage Chair',description:'Verified fixture',category:'Chairs',images:[image],facts:'Overall dimensions (W x D x H): 50 x 50 x 80 cm',inStock:true,variants:[{id:'oak',name:'Oak',minimum:2,increment:2,retail:10000,trade:8000}]};localStorage.setItem('hol:tray',JSON.stringify({active:'offpage',projects:[{id:'offpage',name:'Offpage project',target:2,zones:['Main room'],items:[{pid:window.fixtureSavedPid,lid:source,vid:'oak',qty:2,zone:'Main room'}]}],later:[]}));}if(window.fixtureBoardHydrated){window.fixtureLookup.variants.unshift({id:'walnut',name:'Walnut',minimum:1,increment:1,retail:20000,trade:16000});localStorage.setItem('hol:boards',JSON.stringify([{id:'b1',title:'Verified saved board',sections:['Main'],pins:[{pid:window.fixtureSavedPid,lid:'saved-source',vid:'oak',sec:'Main'}]}]));if(window.fixtureTwoVariants){const boards=JSON.parse(localStorage.getItem('hol:boards'));boards[0].pins.push({pid:window.fixtureSavedPid,lid:'saved-source',vid:'walnut',sec:'Main'});localStorage.setItem('hol:boards',JSON.stringify(boards));}location.hash='board';}window.fixtureRefresh=()=>setProducts(products);setProducts(products);createRoot(document.getElementById('root')).render(<App/>);`;
 const bundle = await build({
   stdin: { contents: entry, resolveDir: process.cwd(), loader: 'tsx' },
   bundle: true,
@@ -373,6 +373,112 @@ try {
   assert.equal(await page.evaluate(()=>window.fixtureCommands||0),0);
   results.push({offpageBoardHydrated:true,independentBoardAndProfileCovers:true,shelfAddPreservesVariantAndPack:true,nondefaultBoardVariantAndQuantityPreserved:true,pendingBoardPurchaseBlocked:true,removedVariantNotSubstituted:true,businessCommands:0});
   await page.goto('http://fixture.invalid');
+  await page.evaluate(()=>{localStorage.clear();window.fixtureHydrated=true;window.fixtureBoardHydrated=true;window.fixtureTwoVariants=true;});
+  await page.addStyleTag({content:await readFile('dist/assets/'+css,'utf8')});
+  for (const file of bundle.outputFiles.filter(file=>file.path.endsWith('.css'))) await page.addStyleTag({content:file.text});
+  await page.addStyleTag({content:await readFile('trade/style.css','utf8')});
+  await page.addScriptTag({content:bundle.outputFiles.find(file=>file.path.endsWith('.js')).text});
+  await page.waitForFunction(()=>document.querySelector('main h1')?.textContent==='Verified saved board');
+  await page.waitForFunction(()=>document.querySelectorAll('main .pin-open').length===2);
+  await page.evaluate(()=>[...document.querySelectorAll('main button')].find(button=>button.textContent==='Shop').click());
+  await page.waitForFunction(()=>[...document.querySelectorAll('main button')].some(button=>button.textContent==='Add all to tray'&&!button.disabled));
+  assert.match(await page.$eval('main .panel .sumrow',node=>node.textContent),/320/);
+  const boardRows=await page.$$eval('main .line',nodes=>nodes.map(node=>node.textContent));
+  assert.match(boardRows[0],/Oak/);assert.doesNotMatch(boardRows[1],/Oak/);
+  assert.match(boardRows[0],/160.*2 units/);assert.match(boardRows[1],/160/);
+  await page.evaluate(()=>[...document.querySelectorAll('main button')].find(button=>button.textContent==='Add all to tray').click());
+  const both=await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:tray')).projects[0].items);
+  assert.deepEqual(both.map(row=>[row.vid,row.qty]),[['oak',4],['walnut',1]]);
+  await page.evaluate(()=>[...document.querySelectorAll('main button')].find(button=>button.textContent.includes('Open in Studio')).click());
+  await page.waitForSelector('.sx-canvas .el img');
+  await page.waitForFunction(()=>[...document.querySelectorAll('.sx-canvas .el img')].filter(img=>img.alt==='Offpage').length===2);
+  await page.waitForFunction(()=>{const button=document.querySelector('.sx-pill');const r=button.getBoundingClientRect();return button.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));});
+  await page.click('.sx-pill');
+  await page.waitForSelector('dialog[aria-label="Pieces"]');
+  const studioRows=await page.$$eval('.sx-row',nodes=>nodes.map(node=>node.textContent));
+  assert.equal(studioRows.length,2);assert.match(studioRows[0],/Oak.*1 planned.*requires 2.*160/);assert.doesNotMatch(studioRows[1],/Oak/);assert.match(studioRows[1],/160/);
+  await page.evaluate(()=>[...document.querySelectorAll('dialog button')].find(button=>button.textContent.includes('Add all to project')).click());
+  await page.waitForFunction(()=>!document.querySelector('dialog'));
+  const fromStudio=await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:tray')).projects[0].items);
+  assert.deepEqual(fromStudio.map(row=>[row.vid,row.qty]),[['oak',6],['walnut',2]]);
+  await page.evaluate(()=>{window.fixtureDownloads=[];const create=URL.createObjectURL.bind(URL);URL.createObjectURL=blob=>{window.fixtureDownloads.push({type:blob.type,size:blob.size});return create(blob)};});
+  await page.evaluate(()=>[...document.querySelectorAll('.sx-top button')].find(button=>button.textContent.trim()==='Share').click());
+  await page.waitForSelector('dialog[aria-label="Share"]');
+  await page.evaluate(()=>[...document.querySelectorAll('.sx-route')].find(button=>button.textContent.includes('Download image')).click());
+  await page.waitForFunction(()=>window.fixtureDownloads.some(file=>file.type==='image/png'&&file.size>1000));
+  assert.equal(await page.evaluate(()=>window.fixtureCommands||0),0);
+  await page.evaluate(()=>{window.fixtureLookupPending=true;window.fixtureRefresh();});
+  await page.waitForSelector('dialog[aria-label="Review unavailable items"]');
+  assert.match(await page.$eval('dialog',node=>node.textContent),/Checking saved products/);
+  await page.keyboard.press('Escape');
+  await page.evaluate(()=>{window.fixtureLookupPending=false;window.fixtureRefresh();location.hash='board';});
+  await page.waitForFunction(()=>document.querySelector('main h1')?.textContent==='Verified saved board');
+  results.push({studioIndependentVariantImagesAndPrices:true,studioProjectAddPreservesBothVariants:true,offpageImageExport:true,sharingWithdrawsOnPendingLookup:true,businessCommands:0});
+  await page.evaluate(()=>{window.fixtureShared={mode:'shop',title:'Shared selection',by:'Fixture',items:[{productId:'saved-source',variantId:'oak',qty:1},{productId:'saved-source',variantId:'walnut',qty:1}]};location.hash='b/fixture';});
+  await page.waitForSelector('.bundle-row');
+  await page.waitForFunction(()=>document.querySelectorAll('.bundle-row').length===2);
+  const sharedRows=await page.$$eval('.bundle-row',nodes=>nodes.map(node=>node.textContent));
+  assert.match(sharedRows[0],/Oak.*160/);assert.doesNotMatch(sharedRows[1],/Oak/);assert.match(sharedRows[1],/160/);
+  await page.click('.bundle-sum .btn-ink');
+  const fromShared=await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:tray')).projects[0].items);
+  assert.deepEqual(fromShared.map(row=>[row.vid,row.qty]),[['oak',8],['walnut',3]]);
+  await page.evaluate(()=>{window.fixtureLookupPending=true;window.fixtureRefresh();});
+  await page.waitForFunction(()=>document.querySelector('.bundle-sum .btn-ink')?.disabled);
+  assert.match(await page.$eval('main',node=>node.textContent),/being checked/);
+  await page.evaluate(()=>{window.fixtureLookupPending=false;window.fixtureRefresh();location.hash='board';});
+  await page.waitForFunction(()=>document.querySelector('main h1')?.textContent==='Verified saved board');
+  results.push({sharedBoardIndependentlyHydrated:true,sharedOptionsRemainDistinct:true,sharedPendingPreventsPartialAdd:true,businessCommands:0});
+  await page.evaluate(()=>[...document.querySelectorAll('main button')].find(button=>button.textContent.includes('Open in Studio')).click());
+  await page.waitForSelector('.sx-canvas');
+  await page.evaluate(()=>[...document.querySelectorAll('.sx-views button')].find(button=>button.textContent==='3D').click());
+  await page.waitForSelector('.pl-cv');
+  await page.waitForFunction(()=>JSON.parse(localStorage.getItem('hol:room')||'null')?.items.length===2);
+  const roomSelections=await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:room')).items);
+  assert.deepEqual(roomSelections.map(row=>row.vid),['oak','walnut']);
+  await page.waitForFunction(()=>{const button=document.querySelector('.sx-pill');const r=button.getBoundingClientRect();return button.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2));});
+  await page.click('.sx-pill');
+  await page.waitForSelector('dialog[aria-label="Pieces"]');
+  const plannerRows=await page.$$eval('.sx-row',nodes=>nodes.map(node=>node.textContent));
+  assert.equal(plannerRows.length,2);assert.match(plannerRows[0],/Oak.*1 planned.*requires 2.*160/);assert.match(plannerRows[1],/160/);
+  await page.keyboard.press('Escape');
+  await page.evaluate(()=>{window.fixtureLookupPending=true;window.fixtureRefresh();});
+  await page.waitForFunction(()=>document.querySelector('main h1')?.textContent==='Review saved room items');
+  assert.match(await page.$eval('main',node=>node.textContent),/being checked/);
+  assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:room')).items),roomSelections);
+  await page.evaluate(()=>{window.fixtureLookupPending=false;window.fixtureRefresh();});
+  await page.waitForSelector('.pl-cv');
+  await page.evaluate(()=>[...document.querySelectorAll('.sx-views button')].find(button=>button.textContent==='Collage').click());
+  await page.waitForSelector('.sx-canvas');
+  await page.waitForFunction(()=>[...document.querySelectorAll('.sx-canvas .el img')].filter(img=>img.alt==='Offpage').length===2);
+  await page.evaluate(()=>{location.hash='board';});
+  await page.waitForFunction(()=>document.querySelector('main h1')?.textContent==='Verified saved board');
+  results.push({plannerIndependentSelections:true,plannerPendingPreservesLayout:true,plannerRoundTripKeepsOptions:true,businessCommands:0});
+
+
+  await page.evaluate(()=>[...document.querySelectorAll('main button')].find(button=>button.textContent==='Organize').click());
+  await page.click('main .organize .pin');
+  assert.equal(await page.$$eval('main .organize button[aria-pressed="true"]',nodes=>nodes.length),1);
+  await page.evaluate(()=>[...document.querySelectorAll('main button')].find(button=>button.textContent==='Remove').click());
+  const remaining=await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:boards'))[0].pins);
+  assert.equal(remaining.length,1);assert.equal(remaining[0].vid,'walnut');
+  assert.equal(await page.evaluate(()=>window.fixtureCommands||0),0);
+  results.push({twoBoardVariantsKeepIndependentPricesAndPackMinimums:true,organizeRemovesOnlySelectedVariant:true,businessCommands:0});
+  await page.click('[aria-label="Open project tray"]');
+  await page.waitForSelector('.tv-line .tv-th');
+  await page.click('.tv-line .tv-th');
+  await page.waitForSelector('.pp-price');
+  assert.match(await page.$eval('.pp-price',node=>node.textContent),/80/);
+  await page.evaluate(()=>[...document.querySelectorAll('dialog button')].find(button=>button.textContent.trim()==='Save').click());
+  await page.waitForSelector('.boardpick .bp');
+  await page.click('.boardpick .bp');
+  await page.waitForFunction(()=>JSON.parse(localStorage.getItem('hol:boards'))[0].pins.length===2);
+  assert.deepEqual(await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:boards'))[0].pins.map(pin=>pin.vid)),['oak','walnut']);
+  await page.evaluate(()=>[...document.querySelectorAll('dialog button')].find(button=>button.textContent.trim()==='Save').click());
+  await page.waitForSelector('.boardpick .bp');await page.click('.boardpick .bp');
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:boards'))[0].pins.length),2);
+  results.push({savingSecondOptionPreservesFirst:true,repeatedSaveIsIdempotent:true,businessCommands:0});
+
+  await page.goto('http://fixture.invalid');
   await page.evaluate(()=>{localStorage.clear();localStorage.setItem('hol:boards','[]');location.hash='board';});
   await page.addStyleTag({content:await readFile('trade/style.css','utf8')});
   await page.addScriptTag({content:bundle.outputFiles.find(file=>file.path.endsWith('.js')).text});
@@ -388,4 +494,3 @@ try {
   await writeFile('artifacts/lighthouse/tray-request-last-state.json', JSON.stringify({ errors: pageErrors, body: await page.evaluate(()=>document.body.innerText).catch(()=>null) }, null, 2));
   await browser.close();
 }
-

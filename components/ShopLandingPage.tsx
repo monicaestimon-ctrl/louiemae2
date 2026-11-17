@@ -23,12 +23,12 @@ export const ShopLandingPage: React.FC = () => {
          {/* Header - Cloned from Home Brand Feature */}
          <section className="px-6 md:px-12 mb-20">
             <div className="container mx-auto flex flex-col items-center">
-               <FadeIn className="text-center mb-10">
+               <div className="text-center mb-10">
                   <p className="text-bronze text-xs md:text-sm uppercase tracking-[0.25em] mb-3">Est. 2021</p>
                   <h1 className="font-serif text-6xl md:text-8xl text-earth leading-none">Louie Mae</h1>
-               </FadeIn>
+               </div>
 
-               <FadeIn delay={200} className="w-full relative overflow-hidden rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-earth/5">
+               <div className="w-full relative overflow-hidden rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-earth/5">
                   <img loading="eager"
                      {...responsiveImage(home.shop?.headerImage || "/images/brand/DINNERTABLE.png", '100vw')}
                      alt="Louie Mae Signature"
@@ -38,7 +38,7 @@ export const ShopLandingPage: React.FC = () => {
                   />
                   {/* Subtle edge highlight */}
                   <div className="absolute inset-0 border border-white/30 rounded-[2.5rem] pointer-events-none mix-blend-overlay"></div>
-               </FadeIn>
+               </div>
             </div>
          </section>
 

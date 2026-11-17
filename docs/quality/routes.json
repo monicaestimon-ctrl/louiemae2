@@ -60,7 +60,7 @@
       "id": "public-story",
       "path": "/story",
       "readySelector": "main[data-public-page=\"story\"]",
-      "requiredText": "The Origins"
+      "requiredText": "THE ORIGINS"
     },
     {
       "id": "public-journal",

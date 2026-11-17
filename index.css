@@ -1,3 +1,6 @@
+/* Reserve the same scrollbar space before deferred modal/app CSS arrives. */
+html { scrollbar-gutter: stable; }
+
 /* Self-hosted Latin subsets of the storefront fonts (public/fonts, SIL OFL). Fixed URLs let
    index.html preload the hero faces so the headline paints in Cormorant, not a fallback. */
 

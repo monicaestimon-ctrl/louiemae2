@@ -34,7 +34,7 @@ async function request(query: Record<string, unknown>, method = 'GET') {
 it('renders escaped public collection content and bounded matching product previews', async () => {
   const result = await request({ id: 'furniture', ref: 'PARTNER' });
   expect(result.code).toBe(200); expect(result.headers['Cache-Control']).toBe('no-store');
-  expect(result.body).toContain('<h1>Furniture &amp; objects</h1>');
+  expect(new globalThis.DOMParser().parseFromString(result.body, 'text/html').querySelector('h1')?.textContent).toBe('Furniture & objects');
   expect(result.body).toContain('/products/chair'); expect(result.body).not.toContain('/products/lamp');
   expect(result.body).toContain('Chair &lt;/script&gt;'); expect(result.body).not.toContain('javascript:bad');
   expect(result.body).not.toContain('Home hero'); expect(result.body).not.toContain('http-equiv="refresh"');

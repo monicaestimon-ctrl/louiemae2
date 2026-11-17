@@ -6,12 +6,15 @@ import { TradeNewsletter } from './TradeNewsletter';
 import { DiscoverCatalog } from './DiscoverCatalog';
 import { products as PRODUCTS, productsById as BY_ID, catalogGeneration, useCatalogRevision } from './catalogStore';
 export { setProducts } from './catalogStore';
-import { catalogOperationGuard } from './catalogOperation';
 import React, { useState, useEffect, useLayoutEffect, useRef, useId, useMemo, startTransition } from 'react';
 import htm from 'htm';
 import type { HolmProduct } from './catalog';
 import { displayProduct } from './catalogLookup';
-import { unresolvedPlannerItems } from './plannerDraft';
+import { plannerGeometry, rugExtents as rugExt, clampRug as rugClamp } from './plannerGeometry';
+import { studioGeometry, studioStyle as styleOf, frameAspect as frameAR } from './studioGeometry';
+import { holmLegacyId } from '../lib/holmProductIdentity';
+import { editorSelections, reconcileEditorSelections, editorOrderQuantity } from './editorSelections';
+import { editorShortcutsBlocked } from './editorShortcuts';
 import { useProjectCatalog, projectResolutionMessage } from './useProjectCatalog';
 import { useSavedBoardShelf } from './useSavedBoardShelf';
 import { PlannerReview } from './PlannerReview';
@@ -44,6 +47,7 @@ const TYPE = {sofa:'Sofas',sectional:'Sectionals',ottoman:'Ottomans',bench:'Benc
 // their numeric ids so hero films, scenes and cutouts stay attached to the right product.
 const byId = (id: number): HolmProduct => displayProduct(BY_ID, id);
 const has = (id: number) => BY_ID.has(id);
+const editorIdentity=reference=>typeof reference==='number'?{pid:reference,...(has(reference)?{lid:byId(reference).lid,vid:byId(reference).vid}:{})}:{pid:reference.pid,lid:reference.lid,vid:reference.vid};
 const tp = (p: HolmProduct) => p.trade ?? p.price;
 const pr = (p: HolmProduct, mode: string) => (mode === 'trade' ? tp(p) : p.price);
 // A piece's seamless cutout when it has one (from its asset record, or the curated studio set), else its photo.
@@ -206,7 +210,7 @@ function SaveMenu({ctx,pid,product,onDone,align='right'}){
 /** Expose product opening as a native button while keeping save/project actions independent. */
 function PinCard({p,ctx}){
   const [menu,setMenu]=useState(false);
-  const saved=ctx.boards.some(b=>b.pins.some(x=>x.pid===p.id));
+  const saved=ctx.boards.some(b=>b.pins.some(x=>sameProjectSelection(x,{pid:p.id,lid:p.lid,vid:p.vid})));
   const lastBoard=ctx.boards[0];
   const available=ctx.savedProducts?ctx.savedProducts.get(p.id)?.lid===p.lid:has(p.id);
   if(!available)return html`<div className="pin"><div className="pin-img"><img src=${p.img} alt="Unavailable saved product" style=${{aspectRatio:1}}/></div><div className="pin-meta"><b>${p.name}</b><p>${p.line}. Use Organize to remove this saved item.</p></div></div>`;
@@ -225,7 +229,7 @@ function PinCard({p,ctx}){
           <span className="pin-board" style=${{fontFamily:'var(--mono)',fontSize:11.5}}>${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span>
           <span className="row" style=${{gap:6}}>
             <a className="pin-act" title="Save to Pinterest" aria-label=${'Save '+p.name+' to Pinterest'} href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'pin'))} target="_blank" rel="noopener">${I('pint')}</a>
-            <button className="pin-act" disabled=${!has(p.id)} title="Place in Studio" aria-label=${'Place '+p.name+' in Studio'} onClick=${()=>ctx.toStudio([p.id])}>${I('brush')}</button>
+            <button className="pin-act" disabled=${!available} title="Place in Studio" aria-label=${'Place '+p.name+' in Studio'} onClick=${()=>ctx.toStudio([{pid:p.id,lid:p.lid,vid:p.vid}])}>${I('brush')}</button>
             <button className="pin-act" title="Add to project tray" aria-label=${'Add '+p.name+' to project tray'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.pin').querySelector('img'),false,p)}>${I('plus')}</button>
           </span>
         </div>
@@ -1267,7 +1271,7 @@ function PinDetail({ctx}){
   useEffect(()=>{const el=addRef.current,root=scRef.current;if(!el||!root)return;const io=new IntersectionObserver(([e])=>setMini(!e.isIntersecting&&e.boundingClientRect.top<0),{root});io.observe(el);return()=>io.disconnect()},[p.id]);
   const liked=ctx.likes.includes(p.id);const unit=pr(p,ctx.mode);
   const sim=PRODUCTS.filter(x=>x.id!==p.id).filter(x=>simF==='mat'?x.mat===p.mat:simF==='type'?x.type===p.type:true).sort((a,b)=>simF==='tone'?cdist(a.tone,p.tone)-cdist(b.tone,p.tone):0).slice(0,8);
-  const onBoards=[...ctx.boards.filter(b=>b.pins.some(x=>x.pid===p.id)).map(b=>({t:b.title,by:'You'})),...COMMUNITY.filter(b=>b.items.includes(p.id)).map(b=>({t:b.title,by:b.by}))];
+  const onBoards=[...ctx.boards.filter(b=>b.pins.some(x=>sameProjectSelection(x,{pid:p.id,lid:p.lid,vid:p.vid}))).map(b=>({t:b.title,by:'You'})),...COMMUNITY.filter(b=>b.items.includes(p.id)).map(b=>({t:b.title,by:b.by}))];
   const room=ROOMS[ctx.space];const F=texture(room.floor);const L=texture('lime');
   const cm=p.dimsCm?.w??p.widthCm??100,hcm=Math.round(p.dimsCm?.h??cm/(p.cutAR||1));
   const projectSelection=resolveProjectItems(P.items,ctx.projectCatalog.products);const projTrade=projectSelection.missing.length?NaN:projectSelection.resolved.reduce((s,i)=>s+tp(i.p)*i.qty,0);const after=projTrade+tp(p)*qty;
@@ -1359,8 +1363,8 @@ function PinDetail({ctx}){
           <div className="pp-tier"><div className="ix-meter"><i style=${{width:'0%'}}></i></div><span>${tierLine(after,P.name)}</span></div>
           <div className="row pp-acts">
             <span style=${{position:'relative'}}><button className="btn btn-line btn-sm" onClick=${()=>setSave(!save)}>${I('pin',{width:15})} Save</button>${save&&html`<${SaveMenu} ctx=${ctx} pid=${p.id} product=${p} align="left" onDone=${()=>setSave(false)}/>`}</span>
-            <button className="btn btn-line btn-sm" disabled=${!has(p.id)} title=${!has(p.id)?"Studio is unavailable for this saved product":undefined} onClick=${()=>ctx.toStudio([p.id])}>${I('brush',{width:15})} Studio</button>
-            <button className="btn btn-line btn-sm" disabled=${!has(p.id)} title=${!has(p.id)?"3D planning is unavailable for this saved product":undefined} onClick=${()=>{ctx.setRoomSeed([p.id]);ctx.openPin(null);ctx.go('room')}}>${I('cube',{width:15})} 3D</button>
+            <button className="btn btn-line btn-sm" disabled=${!has(p.id)} title=${!has(p.id)?"Studio is unavailable for this saved product":undefined} onClick=${()=>ctx.toStudio([{pid:p.id,lid:p.lid,vid:p.vid}])}>${I('brush',{width:15})} Studio</button>
+            <button className="btn btn-line btn-sm" disabled=${!p.dimsCm} title=${!p.dimsCm?"Measurements are needed for 3D planning":undefined} onClick=${()=>{ctx.setRoomSeed([{pid:p.id,lid:p.lid,vid:p.vid}]);ctx.openPin(null);ctx.go('room')}}>${I('cube',{width:15})} 3D</button>
             <button className="ib" aria-pressed=${liked} aria-label="Like" onClick=${()=>ctx.toggleLike(p.id)} style=${{color:liked?'var(--cognac)':''}}>${I('heart',liked?{fill:'currentColor'}:{})}</button>
             <button className="ib" aria-label="Copy link" onClick=${()=>copyText(pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'link'),ctx.toast)}>${I('share')}</button>
             <a className="ib" aria-label="Save to Pinterest" href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'pin'))} target="_blank" rel="noopener">${I('pint')}</a>
@@ -1385,7 +1389,7 @@ function PinDetail({ctx}){
           <div className="pp-bitem main"><img src=${cut(p.id)} alt=${p.name}/><span>${p.name}</span></div>
           ${pairs.map(x=>html`<button key=${x.id} className=${'pp-bitem'+(bundle.includes(x.id)?' on':'')} onClick=${()=>setBundle(bundle.includes(x.id)?bundle.filter(y=>y!==x.id):[...bundle,x.id])} aria-pressed=${bundle.includes(x.id)}><img src=${cut(x.id)} alt=${x.name}/><span>${bundle.includes(x.id)?'✓ ':''}${x.name}</span><small className="mono">${ctx.mode==='trade'?fmt(tp(x)):fmt(x.price)}</small></button>`)}
         </div>
-        <div className="pp-bundle-sum"><span className="mono ix-dim">${bundle.length} pairing${bundle.length===1?'':'s'} selected</span><b className="num">${fmt(bundleTot)}</b><button className="btn btn-ink" disabled=${!bundle.length} onClick=${()=>{bundle.forEach(id=>ctx.addToProject(id,1,P.id,Z,null,true));ctx.toast(`${bundle.length} pairings added to ${P.name}`,{label:'Open tray',fn:()=>{ctx.openPin(null);ctx.setTray(true)}})}}>Add pairings to ${P.name}</button><button className="lnk" disabled=${!has(p.id)} onClick=${()=>ctx.toStudio([p.id,...bundle],p.name+' look')}>Arrange them in Studio</button></div>
+        <div className="pp-bundle-sum"><span className="mono ix-dim">${bundle.length} pairing${bundle.length===1?'':'s'} selected</span><b className="num">${fmt(bundleTot)}</b><button className="btn btn-ink" disabled=${!bundle.length} onClick=${()=>{bundle.forEach(id=>ctx.addToProject(id,1,P.id,Z,null,true));ctx.toast(`${bundle.length} pairings added to ${P.name}`,{label:'Open tray',fn:()=>{ctx.openPin(null);ctx.setTray(true)}})}}>Add pairings to ${P.name}</button><button className="lnk" onClick=${()=>ctx.toStudio([{pid:p.id,lid:p.lid,vid:p.vid},...bundle],p.name+' look')}>Arrange them in Studio</button></div>
       </div>
     </section>
 
@@ -1762,18 +1766,21 @@ function SxPill({ctx,count,total,onOpen}){
 /** Show canvas quantities in a keyboard-scrollable modal before copying items to a local project draft. */
 function SxTray({ctx,rows,onClose}){
   const [proj,setProj]=useState(ctx.tray.active);const live=rows.filter(r=>!r.hidden);
-  const total=live.reduce((s,r)=>s+pr(byId(r.pid),ctx.mode)*r.qty,0);
+  const productFor=r=>resolveProjectProduct(r,ctx.savedProducts||BY_ID)||displayProduct(new Map(),r.pid);
+  const unavailable=live.some(r=>!productFor(r).lid);
+  const orderQty=r=>editorOrderQuantity(r.qty,productFor(r));
+  const total=live.reduce((s,r)=>s+pr(productFor(r),ctx.mode)*orderQty(r),0);
   return html`<${Modal} open label="Pieces" onClose=${onClose}><div className="scrim sx-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()}>
     <div className="sx-sheet">
       <div className="sx-drawer-h"><b>Pieces</b><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>
-      <div className="sx-rows" tabIndex="0" role="region" aria-label="Piece quantities and prices">${rows.length?rows.map(r=>{const p=byId(r.pid);return html`<div key=${r.pid+(r.hidden?'h':'')} className=${'sx-row'+(r.hidden?' off':'')}>
-        <span className="sx-th"><img src=${cut(r.pid)} alt=""/></span><span className="sx-row-t"><b>${p.name}</b><span>${p.line}${r.hidden?' · hidden, not counted':''}</span></span>
-        <span className="mono">× ${r.qty}</span><span className="num sx-price">${fmt(pr(p,ctx.mode)*r.qty)}</span></div>`}):html`<p className="sx-note">No pieces yet. Add some from the rail.</p>`}</div>
+      <div className="sx-rows" tabIndex="0" role="region" aria-label="Piece quantities and prices">${rows.length?rows.map(r=>{const p=productFor(r);return html`<div key=${r.key||projectItemKey(r)+(r.hidden?'h':'')} className=${'sx-row'+(r.hidden?' off':'')}>
+        <span className="sx-th"><img src=${p.cutout||p.img} alt=""/></span><span className="sx-row-t"><b>${p.name}</b><span>${p.line}${r.hidden?' · hidden, not counted':orderQty(r)!==r.qty?` · ${r.qty} planned; supplier minimum/increment requires ${orderQty(r)}`:''}</span></span>
+        <span className="mono">× ${orderQty(r)}</span><span className="num sx-price">${fmt(pr(p,ctx.mode)*orderQty(r))}</span></div>`}):html`<p className="sx-note">No pieces yet. Add some from the rail.</p>`}</div>
       <div className="sx-sheet-f">
-        <span><span className="sx-note">${live.reduce((s,r)=>s+r.qty,0)} pieces · ${ctx.mode==='trade'?'trade':'retail'}</span><br/><b className="num sx-total">${fmt(total)}</b></span>
+        <span><span className="sx-note">${live.reduce((s,r)=>s+orderQty(r),0)} pieces · ${ctx.mode==='trade'?'trade':'retail'}</span><br/><b className="num sx-total">${fmt(total)}</b></span>
         <span className="row" style=${{gap:8,flexWrap:'wrap'}}>
           <select className="field" style=${{height:38,width:'auto'}} value=${proj} onChange=${e=>setProj(e.target.value)} aria-label="Project">${ctx.tray.projects.map(p=>html`<option key=${p.id} value=${p.id}>${p.name}</option>`)}</select>
-          <button className="btn btn-cog btn-sm" disabled=${!live.length} onClick=${()=>{const P=ctx.tray.projects.find(p=>p.id===proj);live.forEach(r=>ctx.addToProject(r.pid,r.qty,proj,P.zones[0],null,true));ctx.toast(`${live.reduce((s,r)=>s+r.qty,0)} pieces added to ${P.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)});onClose()}}>${I('tray',{width:15})} Add all to project</button>
+          <button className="btn btn-cog btn-sm" disabled=${!live.length||unavailable||!ctx.tray.projects.some(p=>p.id===proj)} onClick=${()=>{const P=ctx.tray.projects.find(p=>p.id===proj);live.forEach(r=>ctx.addToProject(r.pid,orderQty(r),proj,P.zones[0],null,true,productFor(r)));ctx.toast(`${live.reduce((s,r)=>s+orderQty(r),0)} pieces added to ${P.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)});onClose()}}>${I('tray',{width:15})} Add all to project</button>
         </span></div>
     </div></div><//>`;
 }
@@ -1782,26 +1789,13 @@ function SxDialog({title,onClose,wide,children}){
   return html`<${Modal} open label=${title} onClose=${onClose}><div className="scrim sx-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()}>
     <div className=${'sx-dialog'+(wide?' wide':'')}><div className="sx-drawer-h"><b>${title}</b><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>${children}</div></div><//>`;
 }
-// The Collage, Room and 3D views show the same pieces: given what a view holds and the pieces the
-// other view has, keep matching items (by index) and list the pieces to add.
-function reconcile(have,want){const need={};want.forEach(p=>need[p]=(need[p]||0)+1);const keep=new Set();have.forEach((p,i)=>{if(need[p]>0){need[p]--;keep.add(i)}});
-  return {keep,add:Object.entries(need).flatMap(([p,n])=>Array(n).fill(+p))}}
-const pieceRows=pids=>{const m=new Map();pids.forEach(([pid,hidden])=>{const k=pid+(hidden?'h':'');const r=m.get(k);if(r)r.qty++;else m.set(k,{pid,qty:1,hidden})});return [...m.values()]};
-
 /* ================= STUDIO ================= */
 const BGS=[['Plaster','#EFE6D8'],['Sand','#E1D2BB'],['Limewash','#F4EFE6'],['Olive','#6C6948'],['Cognac','#9A5A2E'],['Espresso','#2B211A']];
 const SHAPES=[['rect','Square'],['arch','Arch'],['circle','Circle'],['pill','Pill'],['rounded','Rounded'],['oval','Oval']];
 // Every piece picks one of four looks. Switching keeps its place, size and layer.
 const LOOKS=[['cutout','Seamless cutout','The piece on the board with a soft contact shadow'],['framed','Framed photo','The product photo in a shape, with an optional border'],['3d','3D cutout','A lit model you can turn to any angle'],['room','In the room','On your room photo at true scale']];
-const styleOf=e=>e.style||(e.room?'room':'framed');
 const borderOf=e=>e.border===true||e.border==null?'white':e.border===false?'none':e.border;
-const hasCutout=pid=>has(pid)&&!!byId(pid).cutout;
-const cutAR=pid=>byId(pid).cutAR||byId(pid).ar||1;
-const frameAR=(shape,ar)=>shape==='circle'?1:shape==='arch'||shape==='oval'?.8:shape==='pill'?.75:ar;
-const elAR=e=>e.kind==='inspo'?frameAR(e.shape,e.ar||1):styleOf(e)==='framed'?frameAR(e.shape,byId(e.pid).ar||1):cutAR(e.pid);
-// In the room, a piece is drawn at its real width against the photo's measured width.
-const lockW=(e,bg)=>{if(e.kind!=='img'||styleOf(e)!=='room'||!bg?.img||!(bg.widthM>0))return null;const cm=byId(e.pid).dimsCm?.w;return cm?cm/(bg.widthM*100)*100:null};
-const wOf=(e,bg)=>lockW(e,bg)??e.w;
+const {hasCutout,cutoutAspect:cutAR,elementAspect:elAR,lockedWidth:lockW,width:wOf}=studioGeometry(BY_ID);
 const BOARD_SHAPES=[['rect','Rectangle'],['rounded','Rounded'],['arch','Arch'],['circle','Circle'],['oval','Oval'],['scallop','Scalloped'],['torn','Torn paper'],['poly','Free shape']];
 const EDGES=[['none','None'],['hairline','Hairline'],['thick','Thick border'],['deckle','Deckled paper'],['shadow','Drop shadow']];
 const EDGE_COLORS=['#FBF8F2','#2B211A','#A65F2C','#6C6948','#AE884C','#E1D2BB'];
@@ -1841,7 +1835,7 @@ const LAYOUTS=[
   [[22,3,56,0,'arch'],[4,52,30,-2,'circle'],[66,52,30,2,'circle'],[37,63,26,0,'rect'],[84,4,12,0,'pill'],[4,4,12,0,'pill']],
 ];
 const SLOTS=LAYOUTS[0];
-function mkImg(pid,i=0,mode='collage',L=SLOTS,style){const s=L[i%L.length];const st=style||(mode==='room'?'room':'framed');return {id:uid(),kind:'img',pid,x:s[0],y:s[1],w:s[2],rot:st==='framed'?s[3]:0,shape:s[4],border:'white',style:st,shadow:st==='room'?'floor':'soft',flip:false,motion:false,tone:'none',locked:false,hidden:false}}
+function mkImg(reference,i=0,mode='collage',L=SLOTS,style){const identity=typeof reference==='number'?{pid:reference,...(has(reference)?{lid:byId(reference).lid,vid:byId(reference).vid}:{})}:{pid:reference.pid,lid:reference.lid,vid:reference.vid};const s=L[i%L.length];const st=style||(mode==='room'?'room':'framed');return {id:uid(),kind:'img',...identity,x:s[0],y:s[1],w:s[2],rot:st==='framed'?s[3]:0,shape:s[4],border:'white',style:st,shadow:st==='room'?'floor':'soft',flip:false,motion:false,tone:'none',locked:false,hidden:false}}
 function mkInspo(x){return {id:uid(),kind:'inspo',src:x.src,ar:x.ar||1,title:x.title,x:6,y:6,w:48,rot:-2,shape:'rect',border:'white',motion:false,tone:'none',locked:false,hidden:false}}
 function mkText(t,x=8,y=84,size=7.5){return {id:uid(),kind:'text',text:t,x,y,w:70,rot:0,size,font:'display',color:'#2B211A',locked:false,hidden:false}}
 function compose(prompt,mode,v=0){
@@ -1857,21 +1851,22 @@ const toneF={none:'none',warm:'sepia(.25) saturate(1.1)',mono:'grayscale(1) cont
 const nameOf=e=>e.kind==='img'?byId(e.pid).name:e.kind==='inspo'?'Inspo · '+e.title:e.kind==='text'?e.text:'Swatch';
 // What an item looks like on a board. Sizes are in container units, so the same markup draws the canvas and its previews.
 const cropStyle=c=>c?{objectPosition:`${c.x}% ${c.y}%`,transform:`scale(${c.z})`,transformOrigin:`${c.x}% ${c.y}%`}:{};
-function ElView({e}){
-  if(e.kind==='img'){const p=byId(e.pid);const st=styleOf(e);
+function ElView({e,products=BY_ID}){
+  const geometry=studioGeometry(products);const elAR=geometry.elementAspect;
+  if(e.kind==='img'){const p=geometry.product(e);const st=styleOf(e);
     if(st==='framed')return html`<div className=${'cut shape-'+e.shape+' bd-'+borderOf(e)+(e.motion?' float':'')} style=${{aspectRatio:elAR(e)}}><img src=${p.img} alt=${p.name} draggable="false" style=${{filter:toneF[e.tone],...cropStyle(e.crop)}}/></div>`;
-    return html`<div className=${'cutout sh-'+(e.shadow||(st==='room'?'floor':'soft'))+(hasCutout(e.pid)?'':' nocut')+(e.motion?' float':'')} style=${{aspectRatio:elAR(e)}}><img src=${cut(e.pid)} alt=${p.name} draggable="false" style=${{filter:toneF[e.tone],transform:e.flip?'scaleX(-1)':undefined}}/></div>`}
+    return html`<div className=${'cutout sh-'+(e.shadow||(st==='room'?'floor':'soft'))+(geometry.hasCutout(e)?'':' nocut')+(e.motion?' float':'')} style=${{aspectRatio:elAR(e)}}><img src=${p.cutout||p.img} alt=${p.name} draggable="false" style=${{filter:toneF[e.tone],transform:e.flip?'scaleX(-1)':undefined}}/></div>`}
   if(e.kind==='inspo')return html`<div className=${'cut shape-'+e.shape+' bd-'+borderOf(e)+(e.motion?' float':'')} style=${{aspectRatio:elAR(e)}}><img src=${e.src} alt=${e.title} draggable="false" style=${{filter:toneF[e.tone],...cropStyle(e.crop)}}/></div>`;
   if(e.kind==='text')return html`<div className="tx" style=${{fontFamily:`var(--${e.font})`,fontStyle:e.font==='display'?'italic':'normal',color:e.color,fontSize:e.size+'cqw',textTransform:e.font==='mono'?'uppercase':'none',letterSpacing:e.font==='mono'?'.08em':'-.01em'}}>${e.text}</div>`;
   return html`<div className="sw-shape" style=${{background:e.color,borderRadius:'50%',boxShadow:'0 0 0 .6cqw #FFFDF9'}}></div>`;
 }
 // A photo without a true cutout multiplies onto the board, so its white studio ground disappears.
-const blends=e=>e.kind==='img'&&styleOf(e)!=='framed'&&!hasCutout(e.pid);
-const elStyle=(e,i,bg)=>({left:e.x+'%',top:e.y+'%',width:e.kind==='text'?'auto':wOf(e,bg)+'%',maxWidth:e.kind==='text'?'88%':'none',transform:`rotate(${e.rot}deg)`,zIndex:i});
+const blends=(e,products=BY_ID)=>e.kind==='img'&&styleOf(e)!=='framed'&&!studioGeometry(products).hasCutout(e);
+const elStyle=(e,i,bg,products=BY_ID)=>({left:e.x+'%',top:e.y+'%',width:e.kind==='text'?'auto':studioGeometry(products).width(e,bg)+'%',maxWidth:e.kind==='text'?'88%':'none',transform:`rotate(${e.rot}deg)`,zIndex:i});
 const bgStyle=bg=>bg.img?{backgroundImage:`url(${bg.img})`}:{backgroundColor:bg.color};
 // A read-only board, for Compose drafts and Ideas previews.
-function BoardPreview({els,bg,page,shape,poly}){const P=pageOf(page);
-  return html`<div className=${'canvas sx-preview'+(bg.grid&&!bg.img?' grid':'')} style=${{...bgStyle(bg),aspectRatio:`${P[2]}/${P[3]}`,...maskOf(shape,BW,boardH(page),poly)}}>${els.map((e,i)=>e.hidden?null:html`<div key=${e.id} className=${'el'+(blends(e)?' blend':'')} style=${elStyle(e,i,bg)}><${ElView} e=${e}/></div>`)}</div>`;
+function BoardPreview({els,bg,page,shape,poly,products=BY_ID}){const P=pageOf(page);
+  return html`<div className=${'canvas sx-preview'+(bg.grid&&!bg.img?' grid':'')} style=${{...bgStyle(bg),aspectRatio:`${P[2]}/${P[3]}`,...maskOf(shape,BW,boardH(page),poly)}}>${els.map((e,i)=>e.hidden?null:html`<div key=${e.id} className=${'el'+(blends(e,products)?' blend':'')} style=${elStyle(e,i,bg,products)}><${ElView} e=${e} products=${products}/></div>`)}</div>`;
 }
 // A saved board of pins has no layout of its own; exports lay its pieces out as cutouts in a grid.
 const pinsDoc=(title,pids)=>({id:'pins',title,page:'portrait',shape:'rect',edge:'none',mode:'collage',bg:{color:'#EFE6D8'},els:[...pids.slice(0,6).map((pid,i)=>mkImg(pid,i,'collage',LAYOUTS[1],'cutout')),mkText(title,6,88,5.2)]});
@@ -1903,15 +1898,19 @@ function Studio({ctx}){
     if(seed?.ids)return {...base,els:seed.ids.map((id,i)=>mkImg(id,i,seed.mode))};
     const last=ctx.collages.find(c=>c.id&&c.id===load('collage',null));
     const d=last?{page:'portrait',mode:'collage',shape:'rect',edge:'shadow',...last,...(seed?.view?{mode:seed.view}:{})}:{...base,...(seed?.view?{mode:seed.view}:{}),els:SAMPLE()};
-    {if(!seed?.sync)return d;
-      // Coming from the 3D room: pieces added there arrive as cutouts; pieces removed there leave the board.
-      const imgs=d.els.filter(e=>e.kind==='img');const {keep,add}=reconcile(imgs.map(e=>e.pid),seed.sync);const drop=new Set(imgs.filter((_,i)=>!keep.has(i)).map(e=>e.id));
-      const st=d.mode==='room'?'room':'cutout';return {...d,els:[...d.els.filter(e=>!drop.has(e.id)),...add.map((pid,i)=>({...mkImg(pid,0,d.mode,SLOTS,st),x:6+(i%4)*23,y:60+Math.floor(i/4)*14,w:20}))]}}
+    return d;
   });
   const {els,bg,mode,page,title}=doc;
+  const [tab,setTab]=useState('pieces');const [pq,setPq]=useState('');const [pf,setPf]=useState('all');
+  const syncRef=useRef(seed?.sync?.map(editorIdentity)||null);
+  const savedCatalog=useProjectCatalog([...els.filter(e=>e.kind==='img'),...(syncRef.current||[]),...(tab==='boards'?ctx.boards.flatMap(b=>b.pins):[])],BY_ID);
+  const geometry=studioGeometry(savedCatalog.products);
+  const productFor=reference=>geometry.product(reference);
+  const {elementAspect:elAR,lockedWidth:lockW,width:wOf}=geometry;
+  const pieceImage=reference=>{const p=productFor(reference);return p.cutout||p.img};
+  const nameOf=e=>e.kind==='img'?productFor(e).name:e.kind==='inspo'?'Inspo · '+e.title:e.kind==='text'?e.text:'Swatch';
   // Several items can be selected (Shift-click); the last one picked leads.
   const [sels,setSels]=useState([]);const sel=sels[sels.length-1]||null;const setSel=id=>setSels(id?[id]:[]);const [drawer,setDrawer]=useState(null);const [pop,setPop]=useState(null);
-  const [tab,setTab]=useState('pieces');const [pq,setPq]=useState('');const [pf,setPf]=useState('all');
   const [share,setShare]=useState(false);const [traySheet,setTraySheet]=useState(false);const [composeOpen,setComposeOpen]=useState(false);const [idea,setIdea]=useState(null);
   const [dragL,setDragL]=useState(null);const [overL,setOverL]=useState(null);
   const [polyEdit,setPolyEdit]=useState(false);const [zoom,setZoom]=useState(1);const [fitW,setFitW]=useState(480);const [guides,setGuides]=useState(null);const [box,setBox]=useState(null);
@@ -1922,6 +1921,7 @@ function Studio({ctx}){
   const record=prev=>{hist.current.past.push(prev);if(hist.current.past.length>80)hist.current.past.shift();hist.current.future=[];dirty.current=true;setSteps(s=>s+1)};
   const commitDoc=next=>{record(docRef.current);setDoc(next)};
   const commit=nextEls=>commitDoc({...docRef.current,els:nextEls});
+  useEffect(()=>{const requested=syncRef.current;if(!requested)return;const currentDoc=docRef.current;const imgs=currentDoc.els.filter(e=>e.kind==='img'&&productFor(e).lid);if(requested.some(item=>!productFor(item).lid))return;const verified=item=>{const p=productFor(item);return {pid:item.pid,lid:p.lid,vid:p.vid}};const {keep,add}=reconcileEditorSelections(imgs.map(verified),requested.map(verified));const drop=new Set(imgs.filter((_,i)=>!keep.has(i)).map(e=>e.id));syncRef.current=null;const st=currentDoc.mode==='room'?'room':'cutout';commitDoc({...currentDoc,els:[...currentDoc.els.filter(e=>!drop.has(e.id)),...add.map((identity,i)=>({...mkImg(identity,0,currentDoc.mode,SLOTS,st),x:6+(i%4)*23,y:60+Math.floor(i/4)*14,w:20}))]})});
   const undo=()=>{const h=hist.current;if(!h.past.length)return;h.future.push(docRef.current);dirty.current=true;setDoc(h.past.pop());setSteps(s=>s+1)};
   const redo=()=>{const h=hist.current;if(!h.future.length)return;h.past.push(docRef.current);dirty.current=true;setDoc(h.future.pop());setSteps(s=>s+1)};
   const setTitle=t=>{dirty.current=true;setDoc(d=>({...d,title:t.slice(0,TITLE_MAX)}))};
@@ -1995,7 +1995,7 @@ function Studio({ctx}){
   // Switch a piece's look, keeping its centre where it was.
   const restyle=(e,st)=>{const k=pageOf(docRef.current.page);const ratio=k[2]/k[3];const n={...e,style:st,shadow:st==='room'?'floor':e.shadow==='floor'?'soft':e.shadow};if(st!=='framed')n.rot=0;
     const w0=wOf(e,bg),w1=wOf(n,bg);n.x=e.x+(w0-w1)/2;n.y=e.y+(w0*ratio/elAR(e)-w1*ratio/elAR(n))/2;return n};
-  useEffect(()=>{const k=e=>{const tag=document.activeElement?.tagName;if(['INPUT','TEXTAREA','SELECT'].includes(tag))return;
+  useEffect(()=>{const k=e=>{if(editorShortcutsBlocked(e))return;
     if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo();return}
     if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='d'){e.preventDefault();dup();return}
     if(e.key==='Escape'){if(pop)setPop(null);else if(sels.length)setSels([]);else setDrawer(null);return}
@@ -2008,12 +2008,12 @@ function Studio({ctx}){
     if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();del();return}
     const st=e.shiftKey?2:.5;const mv={ArrowLeft:[-st,0],ArrowRight:[st,0],ArrowUp:[0,-st],ArrowDown:[0,st]}[e.key];if(mv){e.preventDefault();commit(els.map(x=>sels.includes(x.id)&&!x.locked?{...x,x:x.x+mv[0],y:x.y+mv[1]}:x))}};
     addEventListener('keydown',k);return()=>removeEventListener('keydown',k)});
-  const pieces=els.filter(e=>e.kind==='img'&&!e.hidden).map(e=>byId(e.pid));
+  const pieces=els.filter(e=>e.kind==='img'&&!e.hidden).map(e=>productFor(e));
   const total=pieces.reduce((s,p)=>s+pr(p,ctx.mode),0);
-  const rows=pieceRows(els.filter(e=>e.kind==='img').map(e=>[e.pid,e.hidden]));
+  const rows=editorSelections(els.filter(e=>e.kind==='img'),savedCatalog.products);
   const openNew=(next,msg)=>{const prev=docRef.current;hist.current={past:[],future:[]};setSteps(0);dirty.current=true;setDoc({id:uid(),page:prev.page,mode:prev.mode,bg:prev.bg,...next});setSel(null);ctx.toast(msg,{label:'Back to '+prev.title,fn:()=>{dirty.current=false;setDoc(prev)}})};
   // Room view puts every piece on the room photo at true scale; Collage brings room pieces back as cutouts.
-  const onView=k=>{if(k==='3d'){ctx.setRoomSeed({ids:pieces.map(p=>p.id),sync:true});ctx.go('room');return}
+  const onView=k=>{if(k==='3d'){ctx.setRoomSeed({ids:els.filter(e=>e.kind==='img'&&!e.hidden).map(editorIdentity),sync:true});ctx.go('room');return}
     commitDoc({...doc,mode:k,els:els.map(x=>x.kind!=='img'?x:k==='room'?(styleOf(x)==='room'?x:restyle(x,'room')):(styleOf(x)==='room'?restyle(x,'cutout'):x))});
     if(k==='room'&&!bg.img){setDrawer('bg');ctx.toast('Add a photo of your space to see the pieces in it')}};
   const pickRail=k=>{setPop(null);if(k==='compose'){setComposeOpen(true);return}setDrawer(d=>d===k?null:k)};
@@ -2060,15 +2060,15 @@ function Studio({ctx}){
       ${tab==='inspo'&&html`<${React.Fragment}><p className="sx-note">Inspo carries no price or link and never counts in the total. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Library</button></p>
         ${ctx.inspo.length?html`<div className="sx-grid">${ctx.inspo.map(x=>html`<button key=${x.id} className="sx-card" onClick=${()=>addEl({...mkInspo(x),x:26,y:20,w:44,rot:0})} title=${'Add '+x.title}><span className="sx-card-i photo"><img src=${x.src} alt="" loading="lazy"/></span><b>${x.title}</b></button>`)}</div>`
           :html`<p className="sx-note">No inspo yet. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Upload inspiration</button></p>`}<//>`}
-      ${tab==='boards'&&html`<${React.Fragment}><p className="sx-note">Adds to the canvas; never replaces it.</p>${ctx.boards.map(b=>html`<div key=${b.id} className="sx-board"><div className="row" style=${{justifyContent:'space-between'}}><b>${b.title}</b><button className="lnk" disabled=${!b.pins.length} onClick=${()=>{commit([...els,...b.pins.slice(0,6).map((x,i)=>mkImg(x.pid,i+els.length,mode,SLOTS,mode==='room'?'room':'cutout'))]);ctx.toast(`${Math.min(6,b.pins.length)} pieces added`)}}>Add all</button></div>
-        <div className="sx-grid three">${b.pins.map(x=>html`<button key=${x.pid} className="sx-card" onClick=${()=>addProduct(x.pid)} title=${'Add '+byId(x.pid).name}><span className="sx-card-i"><img src=${cut(x.pid)} alt="" loading="lazy"/></span></button>`)}</div></div>`)}<//>`}
+      ${tab==='boards'&&html`<${React.Fragment}><p className="sx-note">Adds to the canvas; never replaces it.</p>${ctx.boards.map(b=>html`<div key=${b.id} className="sx-board"><div className="row" style=${{justifyContent:'space-between'}}><b>${b.title}</b><button className="lnk" disabled=${!b.pins.length} onClick=${()=>{commit([...els,...b.pins.slice(0,6).map((x,i)=>mkImg(x,i+els.length,mode,SLOTS,mode==='room'?'room':'cutout'))]);ctx.toast(`${Math.min(6,b.pins.length)} pieces added`)}}>Add all</button></div>
+        <div className="sx-grid three">${b.pins.map(x=>html`<button key=${projectItemKey(x)} className="sx-card" onClick=${()=>addProduct(x)} title=${'Add '+productFor(x).name}><span className="sx-card-i"><img src=${pieceImage(x)} alt="" loading="lazy"/></span></button>`)}</div></div>`)}<//>`}
       ${tab==='ideas'&&html`${COMMUNITY.length?html`<div className="sx-grid">${COMMUNITY.map(b=>html`<button key=${b.id} className="sx-card" onClick=${()=>setIdea(b)}><span className="sx-card-i photo" style=${{backgroundImage:`url(${byId(b.items[0]).img})`,backgroundSize:'cover'}}></span><b>${b.title}</b><span>${b.by}</span></button>`)}</div>`
         :html`<p className="sx-note">Community boards appear here as members share them. Compose a board of your own from the wand in the rail.</p>`}`}
     <//>`}
     ${drawer==='layers'&&html`<${SxDrawer} title="Layers" onClose=${()=>setDrawer(null)}>
       <p className="sx-note">Top of the list is in front. Drag to reorder; Shift-click to select several.</p>
       <div className="sx-layers">${layers.map(({e})=>html`<div key=${e.id} className=${'layer sx-layer'+(sels.includes(e.id)?' on':'')+(overL===e.id?' drop':'')} draggable="true" onDragStart=${()=>setDragL(e.id)} onDragOver=${ev=>{ev.preventDefault();setOverL(e.id)}} onDragLeave=${()=>setOverL(null)} onDrop=${()=>{dropLayer(dragL,e.id);setOverL(null)}} onClick=${ev=>pick(e.id,ev.shiftKey)}>
-        <span className="th" style=${e.kind==='img'?{backgroundImage:`url(${cut(e.pid)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat'}:e.kind==='inspo'?{backgroundImage:`url(${e.src})`}:e.kind==='swatch'?{background:e.color}:{}}>${e.kind==='text'?'T':''}</span>
+        <span className="th" style=${e.kind==='img'?{backgroundImage:`url(${pieceImage(e)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat'}:e.kind==='inspo'?{backgroundImage:`url(${e.src})`}:e.kind==='swatch'?{background:e.color}:{}}>${e.kind==='text'?'T':''}</span>
         <span style=${{opacity:e.hidden?.45:1}}>${nameOf(e)}${e.g&&html` <small className="sx-gtag">Group</small>`}</span>
         <button className=${'ib'+(e.hidden?' keep':'')} aria-label=${e.hidden?'Show layer':'Hide layer'} onClick=${ev=>{ev.stopPropagation();patch(e.id,{hidden:!e.hidden})}}>${I(e.hidden?'eyeoff':'eye')}</button>
         <button className=${'ib'+(e.locked?' keep':'')} aria-label=${e.locked?'Unlock layer':'Lock layer'} onClick=${ev=>{ev.stopPropagation();patch(e.id,{locked:!e.locked})}}>${I(e.locked?'lock':'unlock')}</button>
@@ -2103,8 +2103,8 @@ function Studio({ctx}){
       <div className="sx-stage" ref=${stageRef} onPointerDown=${()=>{setSels([]);setPop(null)}}>
         <div className=${'sx-board edge-'+(doc.edge||'none')} style=${{width:fitW*zoom,aspectRatio:`${P[2]}/${P[3]}`}}>
         <div className=${'canvas sx-canvas'+(bg.grid&&!bg.img?' grid':'')} ref=${canvasRef} style=${{...bgStyle(bg),...maskOf(doc.shape,W0,H0,doc.poly)}} onDragOver=${e=>e.preventDefault()} onDrop=${dropOnCanvas}>
-          ${els.map((e,i)=>e.hidden?null:html`<div key=${e.id} data-id=${e.id} className=${'el'+(sels.includes(e.id)?' sel':'')+(blends(e)?' blend':'')} style=${{...elStyle(e,i,bg),cursor:e.locked?'default':'move'}} onPointerDown=${ev=>onDown(ev,e)} onDoubleClick=${()=>{if(e.kind==='text')setPop('text')}}>
-            <${ElView} e=${e}/>
+          ${els.map((e,i)=>e.hidden?null:html`<div key=${e.id} data-id=${e.id} className=${'el'+(sels.includes(e.id)?' sel':'')+(blends(e,savedCatalog.products)?' blend':'')} style=${{...elStyle(e,i,bg,savedCatalog.products),cursor:e.locked?'default':'move'}} onPointerDown=${ev=>onDown(ev,e)} onDoubleClick=${()=>{if(e.kind==='text')setPop('text')}}>
+            <${ElView} e=${e} products=${savedCatalog.products}/>
             ${S&&sel===e.id&&!e.locked&&html`<${React.Fragment}>${!lockW(e,bg)&&html`<span className="h h-rs" onPointerDown=${ev=>onDown(ev,e,'rs')}></span>`}<span className="h h-rot" onPointerDown=${ev=>onDown(ev,e,'rot')}></span><//>`}
           </div>`)}
           ${guides&&html`<${React.Fragment}>${guides.gx.map(x=>html`<i key=${'x'+x} className="sx-guide v" style=${{left:x+'%'}}></i>`)}${guides.gy.map(y=>html`<i key=${'y'+y} className="sx-guide h" style=${{top:y+'%'}}></i>`)}
@@ -2129,11 +2129,11 @@ function Studio({ctx}){
               return html`<button key=${k} role="radio" aria-checked=${on} className=${on?'on':''} disabled=${off} onClick=${()=>!on&&commit(els.map(x=>x.id===S.id?restyle(x,k):x))}><b>${l}</b><span>${k==='3d'?'Model coming soon':k==='room'&&!bg.img?'Add a room photo in Background':hint}</span></button>`})}</div>
             ${styleOf(S)!=='framed'?html`<${React.Fragment}><span className="sx-lbl">Shadow</span><div className="seg">${[['none','None'],['soft','Soft'],['floor','Floor']].map(([k,l])=>html`<button key=${k} className=${(S.shadow||'soft')===k?'on':''} onClick=${()=>patch(S.id,{shadow:k})}>${l}</button>`)}</div>
               <button className="toggle" onClick=${()=>patch(S.id,{flip:!S.flip})}><span>Flip</span><span className=${'sw'+(S.flip?' on':'')}></span></button>
-              ${!hasCutout(S.pid)&&html`<span className="sx-note">This piece has no studio cutout yet, so its photo blends onto the board.</span>`}<//>`
+              ${!geometry.hasCutout(S)&&html`<span className="sx-note">This piece has no studio cutout yet, so its photo blends onto the board.</span>`}<//>`
             :html`<${React.Fragment}><span className="sx-lbl">Border</span><div className="seg">${[['none','None'],['white','White'],['hairline','Hairline']].map(([k,l])=>html`<button key=${k} className=${borderOf(S)===k?'on':''} onClick=${()=>patch(S.id,{border:k})}>${l}</button>`)}</div>
               <span className="sx-lbl">Tilt</span><div className="seg">${[-4,-2,0,2,4].map(t=>html`<button key=${t} className=${Math.round(S.rot)===t?'on':''} onClick=${()=>patch(S.id,{rot:t})}>${t>0?'+'+t:t}°</button>`)}</div><//>`}
             <button className="toggle" onClick=${()=>patch(S.id,{motion:!S.motion})}><span>Gentle motion</span><span className=${'sw'+(S.motion?' on':'')}></span></button>
-            <button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>ctx.openPin(S.pid)}>View ${byId(S.pid).name} details</button><//>`}
+            <button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>ctx.openPin(S.pid,{pid:S.pid,lid:S.lid,vid:S.vid})}>View ${productFor(S).name} details</button><//>`}
           ${pop==='crop'&&framedSel&&html`<${React.Fragment}>${[['z','Zoom',1,3,.05,1],['x','Across',0,100,1,50],['y','Up and down',0,100,1,50]].map(([k,l,mn,mx,st,d])=>html`<label key=${k} className="sx-range"><span className="sx-lbl">${l}</span><input type="range" min=${mn} max=${mx} step=${st} value=${(S.crop||{})[k]??d} onPointerDown=${()=>record(docRef.current)} onInput=${e=>live(S.id,{crop:{z:1,x:50,y:50,...S.crop,[k]:+e.target.value}})}/></label>`)}
             <button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>patch(S.id,{crop:undefined})}>Reset crop</button><//>`}
           ${pop==='shape'&&html`<div className="seg">${SHAPES.map(([k,l])=>html`<button key=${k} className=${S.shape===k?'on':''} onClick=${()=>patch(S.id,{shape:k})}>${l}</button>`)}</div>`}
@@ -2158,7 +2158,7 @@ function Studio({ctx}){
       <${SxPill} ctx=${ctx} count=${pieces.length} total=${total} onOpen=${()=>setTraySheet(true)}/>
     </section>
 
-    ${traySheet&&html`<${SxTray} ctx=${ctx} rows=${rows} onClose=${()=>setTraySheet(false)}/>`}
+    ${traySheet&&html`<${SxTray} ctx=${{...ctx,savedProducts:savedCatalog.products}} rows=${rows} onClose=${()=>setTraySheet(false)}/>`}
     ${composeOpen&&html`<${ComposeDialog} mode=${mode} page=${page} bg=${bg} onClose=${()=>setComposeOpen(false)} onUse=${(p,draft)=>{setComposeOpen(false);openNew({title:(p.charAt(0).toUpperCase()+p.slice(1)).slice(0,TITLE_MAX),els:draft},'Opened as a new collage')}}/>`}
     ${idea&&html`<${SxDialog} title=${idea.title} onClose=${()=>setIdea(null)}>
       <${BoardPreview} els=${idea.items.map((id,i)=>mkImg(id,i,'collage')).concat([mkText(idea.title,6,88,4.6)])} bg=${{color:'#EFE6D8',grid:true}} page="portrait"/>
@@ -2213,7 +2213,8 @@ function edgeSvg(doc,W,H){const d=boardPath(doc.shape,BW,boardH(doc.page),doc.po
  * Draws a collage at width W (height from its page size). Outside a shaped board stays
  * transparent unless a ground colour is given.
  */
-async function renderBoard(doc,W,{ground=null}={}){
+async function renderBoard(doc,W,{ground=null,products=BY_ID}={}){
+  const geometry=studioGeometry(products);const {elementAspect:elAR,width:wOf}=geometry;
   await fontsReady();const P=pageOf(doc.page);const H=Math.round(W*P[3]/P[2]);const k=W/100;
   const c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d');
   if(ground){g.fillStyle=ground;g.fillRect(0,0,W,H)}
@@ -2230,11 +2231,11 @@ async function renderBoard(doc,W,{ground=null}={}){
     if(e.kind==='swatch'){const d=e.w*k;g.translate(x+d/2,y+d/2);g.beginPath();g.arc(0,0,d/2+.6*k,0,Math.PI*2);g.fillStyle='#FFFDF9';g.fill();g.beginPath();g.arc(0,0,d/2,0,Math.PI*2);g.fillStyle=e.color;g.fill();g.restore();continue}
     const w=wOf(e,bg)*k,h=w/elAR(e);g.translate(x+w/2,y+h/2);g.rotate((e.rot||0)*Math.PI/180);g.translate(-w/2,-h/2);
     const framed=e.kind==='inspo'||styleOf(e)==='framed';
-    const src=e.kind==='inspo'?e.src:framed?byId(e.pid).img:cut(e.pid);const im=await loadImg(absUrl(src));
+    const src=e.kind==='inspo'?e.src:framed?geometry.product(e).img:(geometry.product(e).cutout||geometry.product(e).img);const im=await loadImg(absUrl(src));
     if(framed){const b=borderOf(e),ring=b==='white'?1.4*k:b==='hairline'?.25*k:0;
       g.save();g.shadowColor='rgba(0,0,0,.35)';g.shadowBlur=3*k;g.shadowOffsetY=1.4*k;g.translate(-ring,-ring);framePath(g,e.shape,w+2*ring,h+2*ring);g.fillStyle=b==='hairline'?'#2B211A':b==='white'?'#FFFDF9':'#E5D8C4';g.fill();g.restore();
       framePath(g,e.shape,w,h);g.clip();g.fillStyle='#E5D8C4';g.fillRect(0,0,w,h);if(im){g.filter=toneF[e.tone]||'none';drawCover(g,im,w,h,e.crop)}}
-    else{const sh=e.shadow||(styleOf(e)==='room'?'floor':'soft');const real=hasCutout(e.pid);
+    else{const sh=e.shadow||(styleOf(e)==='room'?'floor':'soft');const real=geometry.hasCutout(e);
       if(sh==='floor'||(sh==='soft'&&!real)){const gr=g.createRadialGradient(w/2,h*1.0,0,w/2,h*1.0,w*.43);gr.addColorStop(0,'rgba(35,22,12,.32)');gr.addColorStop(1,'rgba(35,22,12,0)');g.save();g.translate(0,h);g.scale(1,.09);g.translate(0,-h);g.fillStyle=gr;g.fillRect(0,h-w*.43,w,w*.86);g.restore()}
       if(im){if(!real)g.globalCompositeOperation='multiply';if(sh==='soft'&&real){g.shadowColor='rgba(35,22,12,.26)';g.shadowBlur=2*k;g.shadowOffsetY=1.2*k}
         g.filter=toneF[e.tone]||'none';if(e.flip){g.translate(w,0);g.scale(-1,1)}const s=Math.min(w/im.width,h/im.height);g.drawImage(im,(w-im.width*s)/2,(h-im.height*s)/2,im.width*s,im.height*s)}}
@@ -2261,14 +2262,16 @@ const GROUNDS=['#EFE6D8','#E1D2BB','#F4EFE6','#6C6948','#9A5A2E','#2B211A'];
 const isDark=hex=>{const n=parseInt(String(hex).slice(1),16);return ((n>>16)*299+((n>>8)&255)*587+(n&255)*114)/1000<128};
 function pillText(g,text,cx,y,{fg,bg,size=34}){g.font=`500 ${size}px ${FONTS.sans}`;const tw=g.measureText(text).width;const w=tw+size*1.8,h=size*2;g.fillStyle=bg;g.beginPath();g.roundRect(cx-w/2,y,w,h,h/2);g.fill();g.fillStyle=fg;g.textAlign='center';g.textBaseline='middle';g.fillText(text,cx,y+h/2);g.textAlign='left'}
 function centred(g,text,cx,y,font,color,max){g.font=font;g.fillStyle=color;g.textAlign='center';g.textBaseline='top';const lines=wrapLines(g,text,max);const lh=parseFloat(font.match(/(\d+)px/)[1])*1.15;lines.slice(0,3).forEach((l,i)=>g.fillText(l,cx,y+i*lh));g.textAlign='left';return y+Math.min(3,lines.length)*lh}
-async function drawCutout(g,pid,cx,bottom,maxW,maxH,shadow=true){const im=await loadImg(absUrl(cut(pid)));if(!im)return;const s=Math.min(maxW/im.width,maxH/im.height);const w=im.width*s,h=im.height*s;
+async function drawCutout(g,pid,cx,bottom,maxW,maxH,shadow=true,productLookup=byId){const p=productLookup(pid);const im=await loadImg(absUrl(p.cutout||p.img));if(!im)return;const s=Math.min(maxW/im.width,maxH/im.height);const w=im.width*s,h=im.height*s;
   if(shadow){const gr=g.createRadialGradient(cx,bottom,0,cx,bottom,w*.45);gr.addColorStop(0,'rgba(35,22,12,.3)');gr.addColorStop(1,'rgba(35,22,12,0)');g.save();g.translate(0,bottom);g.scale(1,.1);g.translate(0,-bottom);g.fillStyle=gr;g.fillRect(cx-w/2,bottom-w*.45,w,w*.9);g.restore()}
-  g.save();if(!hasCutout(pid))g.globalCompositeOperation='multiply';g.drawImage(im,cx-w/2,bottom-h,w,h);g.restore()}
+  g.save();if(!p.cutout)g.globalCompositeOperation='multiply';g.drawImage(im,cx-w/2,bottom-h,w,h);g.restore()}
 /**
  * Draws a Story (1080 × 1920) or a Pin/post image. `t` is the template, `o` the user's choices:
  * ground colour, caption, prices on or off, the piece for single-product templates.
  */
 async function renderStory(doc,o){await fontsReady();
+  const byId=o.productLookup||((id)=>displayProduct(BY_ID,+id));
+  const drawPiece=(...args)=>drawCutout(...args.slice(0,6),args[6]??true,byId);
   const size=o.size||STORY;const {w:W,h:H}=size;const top=size.top||0,bot=size.bottom||0;
   const c=document.createElement('canvas');c.width=W;c.height=H;const g=c.getContext('2d');
   const ground=o.ground||'#EFE6D8';const dark=isDark(ground);const ink=dark?'#FBF8F2':'#2B211A',soft=dark?'rgba(251,248,242,.72)':'rgba(43,33,26,.66)';
@@ -2277,11 +2280,11 @@ async function renderStory(doc,o){await fontsReady();
     if(t==='espresso'){g.fillStyle='#2B211A';g.fillRect(0,0,W,H)}
     const fg=t==='espresso'?'#FBF8F2':ink,sub=t==='espresso'?'rgba(251,248,242,.72)':soft;
     if(t==='arch'){const aw=W*.78,ah=area.h*.62,ax=cx-aw/2,ay=area.y+area.h*.04;g.fillStyle=dark?'rgba(255,255,255,.08)':'#E1D2BB';g.beginPath();g.moveTo(ax,ay+ah);g.lineTo(ax,ay+aw/2);g.arc(cx,ay+aw/2,aw/2,Math.PI,0);g.lineTo(ax+aw,ay+ah);g.closePath();g.fill();
-      await drawCutout(g,o.pid,cx,ay+ah-ah*.08,aw*.86,ah*.6)}
+      await drawPiece(g,o.pid,cx,ay+ah-ah*.08,aw*.86,ah*.6)}
     else if(t==='scene'){const fy=area.y+area.h*.56;if(doc?.bg?.img){const im=await loadImg(absUrl(doc.bg.img));if(im){g.save();g.beginPath();g.rect(0,area.y,W,area.h*.66);g.clip();drawCover(g,im,W,area.h*.66);g.restore()}}
       else{g.fillStyle=dark?'rgba(255,255,255,.06)':'#E6DBC9';g.fillRect(0,area.y,W,fy-area.y);g.fillStyle=dark?'rgba(0,0,0,.18)':'#D9CBB4';g.fillRect(0,fy,W,area.h*.1)}
-      await drawCutout(g,o.pid,cx,fy+area.h*.05,W*.84,area.h*.44)}
-    else await drawCutout(g,o.pid,cx,area.y+area.h*.6,W*.86,area.h*.52);
+      await drawPiece(g,o.pid,cx,fy+area.h*.05,W*.84,area.h*.44)}
+    else await drawPiece(g,o.pid,cx,area.y+area.h*.6,W*.86,area.h*.52);
     let y=area.y+area.h*.66;y=centred(g,p.name,cx,y,`italic 400 84px ${FONTS.display}`,fg,W*.86);
     y=centred(g,o.caption||p.line,cx,y+12,`400 34px ${FONTS.sans}`,sub,W*.8);
     if(o.prices)y=centred(g,fmt(pr(p,'retail')),cx,y+10,`400 40px ${FONTS.display}`,fg,W);
@@ -2289,7 +2292,7 @@ async function renderStory(doc,o){await fontsReady();
     return c}
   // Whole collage
   const t=o.t;const ids=o.ids||doc.els.filter(e=>e.kind==='img'&&!e.hidden).map(e=>e.pid);const n=ids.length;
-  const board=o.board||await renderBoard(doc,1080*2);const bw=board.width,bh=board.height;
+  const board=o.board||await renderBoard(doc,1080*2,{products:o.products||BY_ID});const bw=board.width,bh=board.height;
   const titleBlock=async y=>{y=centred(g,o.caption||o.title||doc?.title||'',cx,y,`italic 400 72px ${FONTS.display}`,ink,W*.86);y=centred(g,`${n} piece${n===1?'':'s'}${o.prices&&n?' · '+fmt(ids.map(byId).reduce((s,p)=>s+pr(p,'retail'),0)):''}`,cx,y+8,`400 32px ${FONTS.sans}`,soft,W);return y};
   if(t==='bleed'){const s=Math.min(W/bw,(area.h*.8)/bh);const dw=bw*s,dh=bh*s;const by=area.y+Math.max(0,(area.h-dh-260)/2);g.drawImage(board,cx-dw/2,by,dw,dh);const y=await titleBlock(by+dh+28);pillText(g,'Shop the board',cx,Math.min(y+22,area.y+area.h-76),{fg:dark?'#2B211A':'#FBF8F2',bg:ink});return c}
   if(t==='card'){const pad=W*.08;const s=Math.min((W-2*pad-48)/bw,(area.h*.7)/bh);const dw=bw*s,dh=bh*s;const cy=area.y+Math.max(20,(area.h-dh-48-290)/2);
@@ -2297,7 +2300,7 @@ async function renderStory(doc,o){await fontsReady();
     const y=await titleBlock(cy+dh+48+30);pillText(g,'Shop the board',cx,Math.min(y+22,area.y+area.h-76),{fg:dark?'#2B211A':'#FBF8F2',bg:ink});return c}
   if(t==='grid'){const s=Math.min(W*.74/bw,(area.h*.5)/bh);const dw=bw*s,dh=bh*s;g.drawImage(board,cx-dw/2,area.y,dw,dh);let y=await titleBlock(area.y+dh+20);
     const show=[...new Set(ids)].slice(0,6),cols=3,cw=(W*.86)/cols,ch=Math.min(200,(area.y+area.h-y-120)/2);let i=0;
-    for(const pid of show){const col=i%cols,row=Math.floor(i/cols);const x0=W*.07+col*cw,y0=y+24+row*(ch+10);g.fillStyle=dark?'rgba(255,255,255,.07)':'#F4EFE6';g.beginPath();g.roundRect(x0+6,y0,cw-12,ch,14);g.fill();await drawCutout(g,pid,x0+cw/2,y0+ch*.74,cw*.8,ch*.62,false);
+    for(const pid of show){const col=i%cols,row=Math.floor(i/cols);const x0=W*.07+col*cw,y0=y+24+row*(ch+10);g.fillStyle=dark?'rgba(255,255,255,.07)':'#F4EFE6';g.beginPath();g.roundRect(x0+6,y0,cw-12,ch,14);g.fill();await drawPiece(g,pid,x0+cw/2,y0+ch*.74,cw*.8,ch*.62,false);
       g.font=`400 22px ${FONTS.sans}`;g.fillStyle=soft;g.textAlign='center';g.textBaseline='alphabetic';g.fillText(byId(pid).name+(o.prices?' · '+fmt(pr(byId(pid),'retail')):''),x0+cw/2,y0+ch-14);g.textAlign='left';i++}
     pillText(g,'Shop the board',cx,area.y+area.h-76,{fg:dark?'#2B211A':'#FBF8F2',bg:ink});return c}
   if(t==='before'){const half=(area.h-140)/2;const lab=(txt,y)=>{g.font=`500 26px ${FONTS.sans}`;g.fillStyle=dark?'#2B211A':'#FBF8F2';const tw=g.measureText(txt).width;g.fillStyle=ink;g.beginPath();g.roundRect(W*.07,y+16,tw+36,48,24);g.fill();g.fillStyle=dark?'#2B211A':'#FBF8F2';g.textBaseline='middle';g.fillText(txt,W*.07+18,y+40)};
@@ -2309,7 +2312,8 @@ async function renderStory(doc,o){await fontsReady();
 }
 
 /* ---------- PDF: the board, then a product sheet with live links ---------- */
-async function boardPdf(doc,{title,board,counts:given,link,pieceLink,prices,mode}){
+async function boardPdf(doc,{title,board,counts:given,link,pieceLink,prices,mode,products=BY_ID,productLookup}){
+  const byId=productLookup||((id)=>displayProduct(products,+id));const has=id=>!!byId(id).lid;const cut=id=>byId(id).cutout||byId(id).img;
   const {PDFDocument,StandardFonts,rgb,PDFName,PDFString}=await import('pdf-lib');
   const pdf=await PDFDocument.create();pdf.setTitle(title);pdf.setCreator('House of Louie Mae');
   const serif=await pdf.embedFont(StandardFonts.TimesRomanItalic),sans=await pdf.embedFont(StandardFonts.Helvetica),sansB=await pdf.embedFont(StandardFonts.HelveticaBold);
@@ -2320,7 +2324,7 @@ async function boardPdf(doc,{title,board,counts:given,link,pieceLink,prices,mode
   const toPng=async c=>new Uint8Array(await (await canvasBlob(c,'image/png')).arrayBuffer());
   const LW=612,LH=792,M=48;
   // Page 1: the board
-  const shaped=!!doc&&doc.shape&&doc.shape!=='rect';const bc=board||await renderBoard(doc,1600);
+  const shaped=!!doc&&doc.shape&&doc.shape!=='rect';const bc=board||await renderBoard(doc,1600,{products});
   const bimg=shaped?await pdf.embedPng(await toPng(bc)):await pdf.embedJpg(await toJpg(bc,.9));
   const p1=pdf.addPage([LW,LH]);p1.drawRectangle({x:0,y:0,width:LW,height:LH,color:rgb(.937,.902,.847)});
   p1.drawText(title,{x:M,y:LH-M-22,size:26,font:serif,color:ink});
@@ -2329,7 +2333,7 @@ async function boardPdf(doc,{title,board,counts:given,link,pieceLink,prices,mode
   if(link){p1.drawText(mode==='shop'?'Shop the board':'View the board',{x:M,y:M,size:11,font:sansB,color:cognac});p1.drawText(link,{x:M+(mode==='shop'?92:96),y:M,size:10,font:sans,color:mute});addLink(p1,M,M-4,LW-2*M,18,link)}
   // Page 2+: the product sheet
   const counts=given||{};if(!given)doc.els.forEach(e=>{if(e.kind==='img'&&!e.hidden)counts[e.pid]=(counts[e.pid]||0)+1});
-  const ids=Object.keys(counts).map(Number).filter(has);
+  const ids=Object.keys(counts).filter(has);
   let page=null,y=0;const row=96;
   const newPage=()=>{page=pdf.addPage([LW,LH]);page.drawText('The pieces',{x:M,y:LH-M-22,size:24,font:serif,color:ink});if(link){page.drawText(link,{x:M,y:LH-M-42,size:9,font:sans,color:mute});addLink(page,M,LH-M-46,LW-2*M,14,link)}y=LH-M-70};
   newPage();let total=0;
@@ -2356,32 +2360,40 @@ const ROUTES=[['image','Download image','PNG at 2×, ready to print or post','do
  * The Share sheet: every way a board leaves the site, each carrying the same bundle link with the
  * partner's code. `doc` is a collage; the planner passes `image` (its snapshot) and piece ids instead.
  */
-function ShareSheet({ctx,title,doc,image,ids,boardKey,room,units,onClose}){
+function ShareSheet({ctx,title,doc,image,ids,selections,boardKey,room,units,onClose}){
   const [m,setM]=useState('shop');const [links,setLinks]=useState({});const [busy,setBusy]=useState('');const [err,setErr]=useState('');const [view,setView]=useState('routes');
   const [qr,setQr]=useState(false);const [qrFor,setQrFor]=useState(null);
   const share=useMutation(api.holmSync.shareBoard);const uploadCover=useAction(api.holmSync.uploadCover);
-  if((ids||[]).some(id=>!has(id)))return html`<${Modal} open label="Review unavailable items" onClose=${onClose}><h2>Review unavailable items before sharing</h2><p>Your saved composition is preserved. Remove or replace unavailable pieces before creating a link or export.</p><button className="btn btn-line" onClick=${onClose}>Close</button><//>`;
-  const counts={};(ids||[]).forEach(id=>{if(has(id))counts[id]=(counts[id]||0)+1});const pieces=Object.keys(counts).map(Number);
+  const identities=selections||doc?.els.filter(e=>e.kind==='img'&&!e.hidden)||room?.items||(ids||[]).map(pid=>({pid,...(has(pid)?{lid:byId(pid).lid,vid:byId(pid).vid}:{})}));
+  const savedCatalog=useProjectCatalog(identities,BY_ID);
+  const rows=editorSelections(identities,savedCatalog.products);
+  const selectedProducts=new Map(rows.filter(row=>row.product).map(row=>[row.key,row.product]));
+  const productLookup=key=>selectedProducts.get(key);
+  const signature=JSON.stringify(rows.map(row=>[row.key,row.qty,row.product]));
+  const current=useRef(signature);current.current=signature;
+  const mounted=useRef(true);useEffect(()=>{mounted.current=true;return()=>{mounted.current=false}},[]);
   const generation=catalogGeneration;
-  const check=catalogOperationGuard(generation,()=>catalogGeneration,pieces,has);
+  const check=()=>{if(!mounted.current||generation!==catalogGeneration||current.current!==signature||rows.some(row=>!row.product))throw new Error('The catalog changed. Review your saved items and try again.');};
+  if(rows.some(row=>!row.product))return html`<${Modal} open label="Review unavailable items" onClose=${onClose}><h2>Review saved items before sharing</h2><p>${savedCatalog.pending?'Checking saved products.':savedCatalog.preparing?'Saved products need verification.':savedCatalog.failed?'Saved products could not be checked. Reload to try again.':'Some saved products are unavailable or have conflicting identities.'} Your composition is preserved. Resolve these items before creating a link or export.</p><button className="btn btn-line" onClick=${onClose}>Close</button><//>`;
+  const counts=Object.fromEntries(rows.map(row=>[row.key,row.qty]));const pieces=rows.map(row=>row.key);
   const download=(blob,name)=>{check();saveBlob(blob,name)};
   const shop=m==='shop';const prices=shop;
-  const boardCanvas=async w=>{if(doc)return renderBoard(doc,w);const im=await loadImg(image);const c=document.createElement('canvas');c.width=w;c.height=Math.round(w*im.height/im.width);c.getContext('2d').drawImage(im,0,0,c.width,c.height);return c};
+  const boardCanvas=async w=>{if(doc)return renderBoard(doc,w,{products:savedCatalog.products});const im=await loadImg(image);const c=document.createElement('canvas');c.width=w;c.height=Math.round(w*im.height/im.width);c.getContext('2d').drawImage(im,0,0,c.width,c.height);return c};
   // The link is made once per mode (with the rendered board as its cover) and reused by every route.
-  const ensure=async()=>{check();if(links[m]?.catalogGeneration===generation)return links[m];if(!ctx.me.signedIn){onClose();ctx.toast('Sign in to share a link');ctx.signInThen(ctx.route);return null}
+  const ensure=async()=>{check();if(links[m]?.signature===signature)return links[m];if(!ctx.me.signedIn){onClose();ctx.toast('Sign in to share a link');ctx.signInThen(ctx.route);return null}
     let coverId;try{const c=await boardCanvas(1200);const b=await canvasBlob(c,'image/jpeg',.88);const bytes=await b.arrayBuffer();check();coverId=await uploadCover({bytes,type:'image/jpeg'});check()}catch(e){coverId=undefined}
-    check();const r=await share({title,mode:shop?'shop':'presentation',items:pieces.map(id=>({productId:byId(id).lid,variantId:byId(id).vid,qty:counts[id]})),boardKey:boardKey||undefined,doc:doc?shareableDoc(doc):undefined,coverId});
-    check();setLinks(l=>({...l,[m]:{...r,catalogGeneration:generation}}));return r};
+    check();const r=await share({title,mode:shop?'shop':'presentation',items:pieces.map(id=>({productId:productLookup(id).lid,variantId:productLookup(id).vid,qty:counts[id]})),boardKey:boardKey||undefined,doc:doc?shareableDoc(doc):undefined,coverId});
+    check();setLinks(l=>({...l,[m]:{...r,signature}}));return r};
   const run=async(k,fn)=>{setBusy(k);setErr('');try{check();await fn()}catch(e){setErr(errText(e))}finally{setBusy('')}};
   const go=k=>{
     if(k==='image')return run(k,async()=>{if(!doc&&image){download(await (await fetch(image)).blob(),fileName(title,'jpg'));return}
-      const c=await renderBoard(doc,2160);if(qr){const l=await ensure();if(!l)return;await drawQR(c.getContext('2d'),bundleUrl(l.slug,'qr'),c.width-c.width*.15,c.height-c.width*.15,c.width*.12)}
+      const c=await renderBoard(doc,2160,{products:savedCatalog.products});if(qr){const l=await ensure();if(!l)return;await drawQR(c.getContext('2d'),bundleUrl(l.slug,'qr'),c.width-c.width*.15,c.height-c.width*.15,c.width*.12)}
       download(await canvasBlob(c),fileName(title,'png'));ctx.toast('Image downloaded')});
     if(k==='pdf')return run(k,async()=>{const l=ctx.me.signedIn?await ensure():null;
-      const blob=await boardPdf(doc,{title,board:doc?null:await boardCanvas(1600),counts,link:l?bundleUrl(l.slug,'pdf'):null,pieceLink:pid=>l||!ctx.me.signedIn?pieceUrl(pid,l?.refCode,'pdf'):null,prices,mode:m});
+      const blob=await boardPdf(doc,{title,board:doc?null:await boardCanvas(1600),counts,link:l?bundleUrl(l.slug,'pdf'):null,pieceLink:pid=>l||!ctx.me.signedIn?pieceUrl(productLookup(pid).id,l?.refCode,'pdf'):null,prices,mode:m,products:savedCatalog.products,productLookup});
       if(blob.size>8e6)ctx.toast('This PDF is large. Fewer uploaded photos make it smaller.');download(blob,fileName(title,'pdf'));ctx.toast(l?'PDF downloaded, with live links':'PDF downloaded. Sign in to add live links.')});
     if(k==='link')return run(k,async()=>{const l=await ensure();check();if(l)copyText(bundleUrl(l.slug,'link'),ctx.toast)});
-    if(k==='plan')return run(k,async()=>{const l=ctx.me.signedIn?await ensure():null;download(await planPdf(room,{title,units,link:l?bundleUrl(l.slug,'pdf'):null}),fileName(title+'-plan','pdf'));ctx.toast(l?'Plan PDF downloaded, with the bundle link':'Plan PDF downloaded. Sign in to add the bundle link.')});
+    if(k==='plan')return run(k,async()=>{const l=ctx.me.signedIn?await ensure():null;download(await planPdf(room,{title,units,link:l?bundleUrl(l.slug,'pdf'):null,products:savedCatalog.products}),fileName(title+'-plan','pdf'));ctx.toast(l?'Plan PDF downloaded, with the bundle link':'Plan PDF downloaded. Sign in to add the bundle link.')});
     if(k==='share')return run(k,async()=>{const l=await ensure();if(!l)return;check();const url=bundleUrl(l.slug,'share');
       if(navigator.share&&isPhone()){try{await navigator.share({title,text:title,url})}catch(e){}}else location.href=`mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(`${title}\n\n${url}`)}`});
     setView(k)};
@@ -2395,8 +2407,8 @@ function ShareSheet({ctx,title,doc,image,ids,boardKey,room,units,onClose}){
       ${view==='routes'&&html`<${React.Fragment}><div className="sx-routes">${(room?[...ROUTES.slice(0,2),['plan','Plan PDF','The floor plan to scale, every room, piece and seat count','board'],...ROUTES.slice(2)]:ROUTES).map(([k,l,hint,ic])=>html`<button key=${k} className="sx-route" disabled=${!!busy||!pieces.length&&k!=='image'} onClick=${()=>go(k)}>
           <span className="sx-route-i">${I(ic,{width:18})}</span><span><b>${busy===k?'One moment…':l}</b><small>${hint}</small></span></button>`)}</div>
         ${doc&&html`<label className="toggle"><span>Add a QR code to the image's corner</span><input type="checkbox" className="sr" checked=${qr} onChange=${e=>setQr(e.target.checked)}/><span className=${'sw'+(qr?' on':'')}></span></label>`}
-        ${links[m]?.catalogGeneration===generation&&html`<div className="linkbox"><code>${bundleUrl(links[m].slug,'link')}</code><button className="btn btn-ink btn-sm" onClick=${()=>run('link',async()=>{check();await copyText(bundleUrl(links[m].slug,'link'),ctx.toast)})}>${I('link',{width:15})} Copy</button></div>`}<//>`}
-      ${(view==='story'||view==='pin')&&html`<${StoryBuilder} ctx=${ctx} doc=${doc} boardCanvas=${doc?null:boardCanvas} pieces=${pieces} title=${title} pin=${view==='pin'} prices=${prices} ensure=${ensure} onQR=${setQrFor} busy=${busy} run=${run} check=${check} download=${download}/>`}
+        ${links[m]?.signature===signature&&html`<div className="linkbox"><code>${bundleUrl(links[m].slug,'link')}</code><button className="btn btn-ink btn-sm" onClick=${()=>run('link',async()=>{check();await copyText(bundleUrl(links[m].slug,'link'),ctx.toast)})}>${I('link',{width:15})} Copy</button></div>`}<//>`}
+      ${(view==='story'||view==='pin')&&html`<${StoryBuilder} ctx=${ctx} products=${savedCatalog.products} productLookup=${productLookup} signature=${signature} doc=${doc} boardCanvas=${doc?null:boardCanvas} pieces=${pieces} title=${title} pin=${view==='pin'} prices=${prices} ensure=${ensure} onQR=${setQrFor} busy=${busy} run=${run} check=${check} download=${download}/>`}
       ${qrFor&&html`<div className="sx-qr"><canvas ref=${c=>{if(c&&c.dataset.u!==qrFor){c.dataset.u=qrFor;c.width=c.height=220;drawQR(c.getContext('2d'),qrFor,0,0,220)}}} width="220" height="220" aria-label="QR code for the board link"></canvas>
         <p className="sx-note">Scan with your phone to open the board there, then post the image from your camera roll with a Link sticker.</p></div>`}
       ${err&&html`<p className="sx-note" style=${{color:'var(--bad)'}}>${err}</p>`}
@@ -2405,13 +2417,14 @@ function ShareSheet({ctx,title,doc,image,ids,boardKey,room,units,onClose}){
     </div></div><//>`;
 }
 // Story and Pin/post templates: flip between looks with the arrows, then share or download.
-function StoryBuilder({ctx,doc,boardCanvas,pieces,title,pin,prices,ensure,onQR,busy,run,check,download}){
+function StoryBuilder({ctx,doc,boardCanvas,pieces,title,pin,prices,ensure,onQR,busy,run,check,download,products,productLookup,signature}){
+  const byId=productLookup;
   const [kind,setKind]=useState(pin||!pieces.length?'board':'single');const [ti,setTi]=useState(pin?1:0);const [pid,setPid]=useState(pieces[0]);
   const [ground,setGround]=useState('#EFE6D8');const [caption,setCaption]=useState('');const [showP,setShowP]=useState(prices);const [size,setSize]=useState('pin');const [url,setUrl]=useState(null);
   const list=kind==='single'?STORY_SINGLE:STORY_BOARD.filter(([k])=>k!=='before'||doc?.bg?.img);const t=list[((ti%list.length)+list.length)%list.length];
   const SIZES={pin:{w:1000,h:1500},feed:{w:1080,h:1350}};const dims=pin?SIZES[size]:STORY;
-  useEffect(()=>{let live=true;const tm=setTimeout(async()=>{try{const c=await renderStory(doc,{title,kind,t:t[0],pid,ground,caption,prices:prices&&showP,size:dims,board:boardCanvas?await boardCanvas(2160):null,ids:boardCanvas?pieces:null});if(live)setUrl(c.toDataURL('image/jpeg',.8))}catch(e){}},150);return()=>{live=false;clearTimeout(tm)}},[kind,t[0],pid,ground,caption,showP,size,pin]);
-  const out=()=>run('story',async()=>{const c=await renderStory(doc,{title,kind,t:t[0],pid,ground,caption,prices:prices&&showP,size:dims,board:boardCanvas?await boardCanvas(2160):null,ids:boardCanvas?pieces:null});const blob=await canvasBlob(c);
+  useEffect(()=>{let live=true;const tm=setTimeout(async()=>{try{const c=await renderStory(doc,{products,productLookup,title,kind,t:t[0],pid,ground,caption,prices:prices&&showP,size:dims,board:boardCanvas?await boardCanvas(2160):null,ids:pieces});if(live)setUrl(c.toDataURL('image/jpeg',.8))}catch(e){}},150);return()=>{live=false;clearTimeout(tm)}},[kind,t[0],pid,ground,caption,showP,size,pin,signature]);
+  const out=()=>run('story',async()=>{const c=await renderStory(doc,{products,productLookup,title,kind,t:t[0],pid,ground,caption,prices:prices&&showP,size:dims,board:boardCanvas?await boardCanvas(2160):null,ids:pieces});const blob=await canvasBlob(c);
     check();const l=await ensure();if(!l)return;check();const ch=pin?(size==='pin'?'pin':'post'):'story';const link=bundleUrl(l.slug,ch);const file=new File([blob],fileName(title,'png'),{type:'image/png'});
     if(isPhone()&&navigator.canShare?.({files:[file]})){await copyText(link,()=>{});ctx.toast(pin?'Link copied. Paste it as the post\'s link.':'Link copied. Add a Link sticker and paste.');try{check();await navigator.share({files:[file],title})}catch(e){}return}
     download(blob,file.name);await copyText(link,()=>{});ctx.toast(pin?'Image downloaded and link copied':'Image downloaded and link copied for the Link sticker');if(!pin)onQR(bundleUrl(l.slug,'qr'))});
@@ -2424,7 +2437,7 @@ function StoryBuilder({ctx,doc,boardCanvas,pieces,title,pin,prices,ensure,onQR,b
     <div className="sx-story-opts">
       ${!pin&&html`<div className="seg" role="group" aria-label="Start from"><button className=${kind==='single'?'on':''} disabled=${!pieces.length} onClick=${()=>{setKind('single');setTi(0)}}>Single product</button><button className=${kind==='board'?'on':''} onClick=${()=>{setKind('board');setTi(0)}}>Whole board</button></div>`}
       ${pin&&html`<div className="seg" role="group" aria-label="Size"><button className=${size==='pin'?'on':''} title="1000 × 1500" onClick=${()=>setSize('pin')}>Pinterest</button><button className=${size==='feed'?'on':''} title="1080 × 1350" onClick=${()=>setSize('feed')}>Feed post</button></div>`}
-      ${kind==='single'&&html`<label className="sx-col" style=${{gap:4}}><span className="sx-lbl">Piece</span><select className="field" style=${{height:38}} value=${pid} onChange=${e=>setPid(+e.target.value)}>${pieces.map(id=>html`<option key=${id} value=${id}>${byId(id).name} · ${byId(id).line}</option>`)}</select></label>`}
+      ${kind==='single'&&html`<label className="sx-col" style=${{gap:4}}><span className="sx-lbl">Piece</span><select className="field" style=${{height:38}} value=${pid} onChange=${e=>setPid(e.target.value)}>${pieces.map(id=>html`<option key=${id} value=${id}>${byId(id).name} · ${byId(id).line}</option>`)}</select></label>`}
       <span className="sx-lbl">Ground</span><div className="swatches">${GROUNDS.map(c=>html`<button key=${c} style=${{background:c}} className=${ground===c?'on':''} aria-label=${'Ground '+c} onClick=${()=>setGround(c)}></button>`)}</div>
       <label className="sx-col" style=${{gap:4}}><span className="sx-lbl">Caption</span><input className="field" style=${{height:38}} maxLength="80" placeholder=${kind==='single'?byId(pid)?.line:title} value=${caption} onInput=${e=>setCaption(e.target.value)}/></label>
       ${prices&&html`<button className="toggle" onClick=${()=>setShowP(!showP)}><span>Show prices</span><span className=${'sw'+(showP?' on':'')}></span></button>`}
@@ -2435,29 +2448,33 @@ function StoryBuilder({ctx,doc,boardCanvas,pieces,title,pin,prices,ensure,onQR,b
 // A board someone shared by link: the board on top, then every piece with live prices.
 function SharedBoard({ctx,slug}){
   const b=useQuery(api.holmSync.sharedBoard,{slug});const opened=useMutation(api.holmSync.boardOpened);const seen=useRef(false);
+  const identities=(b?.items||b?.productIds?.map(productId=>({productId,qty:1}))||[]).map(i=>({pid:holmLegacyId(i.productId),lid:i.productId,vid:i.variantId||undefined,qty:i.qty||1}));
+  const savedCatalog=useProjectCatalog([...identities,...(b?.doc?.els||[]).filter(e=>e.kind==='img')],BY_ID);
+  const resolved=resolveProjectItems(identities,savedCatalog.products);
   const channel=new URLSearchParams(location.search).get('c')||'link';
   useEffect(()=>{if(!b||seen.current)return;seen.current=true;if(b.refCode)rememberRef(b.refCode,channel);opened({slug,channel,visitorId:visitorId()}).catch(()=>{})},[b]);
   if(b===undefined)return html`<main className="wrap"><p className="help" style=${{padding:'80px 0'}}>Opening the board…</p></main>`;
   if(!b)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h3>This board link isn't complete</h3><p>Ask for the link again.</p><button className="btn btn-line" onClick=${()=>ctx.go('home')}>Visit House of Louie Mae</button></div></main>`;
   const shop=b.mode==='shop';const trade=ctx.mode==='trade';
-  const lines=(b.items||b.productIds.map(productId=>({productId,qty:1}))).map(i=>({p:PRODUCTS.find(p=>p.lid===i.productId),qty:i.qty||1})).filter(l=>l.p);
+  const lines=resolved.resolved.map(row=>({...row,requestedQty:row.qty,qty:editorOrderQuantity(row.qty,row.p)}));
   const buyable=lines.filter(l=>!l.p.oos);const total=buyable.reduce((s,l)=>s+pr(l.p,ctx.mode)*l.qty,0);
   const similar=p=>PRODUCTS.find(x=>x.type===p.type&&x.id!==p.id&&!x.oos);
-  const addAll=()=>{buyable.forEach(l=>ctx.addToTray(l.p.id,l.qty,null,true));ctx.toast(`${buyable.reduce((s,l)=>s+l.qty,0)} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})};
+  const addAll=()=>{buyable.forEach(l=>ctx.addToTray(l.p.id,l.qty,null,true,l.p));ctx.toast(`${buyable.reduce((s,l)=>s+l.qty,0)} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})};
   return html`<main className="wrap bundle" style=${{paddingBottom:60}}>
     <div className="bundle-head">
-      <div className="bundle-board">${b.coverUrl?html`<img src=${b.coverUrl} alt=${b.title}/>`:b.doc?html`<${BoardPreview} els=${b.doc.els||[]} bg=${b.doc.bg||{color:'#EFE6D8'}} page=${b.doc.page} shape=${b.doc.shape} poly=${b.doc.poly}/>`:null}</div>
-      <div className="bundle-sum"><span className="eyebrow">Shared by ${b.by}</span><h1>${b.title}</h1><p className="mute">${lines.length} piece${lines.length===1?'':'s'}</p>
-        ${shop&&html`<div className="sumrow total"><span>${trade?'Trade':'Retail'} total</span><span className="num">${fmt(total)}</span></div>
-          <button className="btn btn-ink btn-lg" disabled=${!buyable.length} onClick=${addAll}>${I('tray',{width:17})} ${trade?'Add to project':'Add all to cart'}</button>
+      <div className="bundle-board">${b.coverUrl?html`<img src=${b.coverUrl} alt=${b.title}/>`:b.doc?html`<${BoardPreview} els=${b.doc.els||[]} bg=${b.doc.bg||{color:'#EFE6D8'}} page=${b.doc.page} shape=${b.doc.shape} poly=${b.doc.poly} products=${savedCatalog.products}/>`:null}</div>
+      <div className="bundle-sum"><span className="eyebrow">Shared by ${b.by}</span><h1>${b.title}</h1><p className="mute">${identities.length} piece${identities.length===1?'':'s'}</p>
+        ${shop&&html`<div className="sumrow total"><span>${trade?'Trade':'Retail'} total</span><span className="num">${resolved.missing.length?'Checking saved items':fmt(total)}</span></div>
+          <button className="btn btn-ink btn-lg" disabled=${!buyable.length||!!resolved.missing.length} onClick=${addAll}>${I('tray',{width:17})} ${trade?'Add to project':'Add all to cart'}</button>
           <p className="help">Prices are live. Delivery and tax are confirmed with your quote.</p>`}</div>
     </div>
-    <div className="bundle-list">${lines.map(({p,qty})=>{const alt=p.oos&&similar(p);return html`<article key=${p.id} className=${'bundle-row'+(p.oos?' oos':'')}>
-      <button className="bundle-th" onClick=${()=>ctx.openPin(p.id,{pid:p.id,lid:p.lid,vid:p.vid})} aria-label=${'View '+p.name}><img src=${cut(p.id)} alt="" loading="lazy"/></button>
-      <div className="bundle-t"><b>${p.name}</b><span>${p.line}</span>${dimsText(p)&&html`<small className="mute">${dimsText(p)}</small>`}
+    ${resolved.missing.map(item=>html`<p key=${projectItemKey(item)} role="status">${projectResolutionMessage(item,savedCatalog.states)}</p>`)}
+    <div className="bundle-list">${lines.map(({p,qty,requestedQty})=>{const alt=p.oos&&similar(p);return html`<article key=${projectItemKey({pid:p.id,lid:p.lid,vid:p.vid})} className=${'bundle-row'+(p.oos?' oos':'')}>
+      <button className="bundle-th" onClick=${()=>ctx.openPin(p.id,{pid:p.id,lid:p.lid,vid:p.vid})} aria-label=${'View '+p.name}><img src=${p.cutout||p.img} alt="" loading="lazy"/></button>
+      <div className="bundle-t"><b>${p.name}</b><span>${p.line}${qty!==requestedQty?` · ${requestedQty} planned; supplier minimum/increment requires ${qty}`:""}</span>${dimsText(p)&&html`<small className="mute">${dimsText(p)}</small>`}
         ${p.oos&&html`<small className="bundle-oos">Sold out${alt?html` · try <button className="lnk" onClick=${()=>ctx.openPin(alt.id)}>${alt.name}</button>`:''}</small>`}</div>
       ${shop&&html`<span className="mono">× ${qty}</span><span className="num bundle-p">${fmt(pr(p,ctx.mode)*qty)}</span>
-        <button className="ib" disabled=${p.oos} aria-label=${'Add '+p.name} onClick=${e=>ctx.addToTray(p.id,qty,e.currentTarget.closest('.bundle-row').querySelector('img'))}>${I('plus',{width:16})}</button>`}
+        <button className="ib" disabled=${p.oos} aria-label=${'Add '+p.name} onClick=${e=>ctx.addToTray(p.id,qty,e.currentTarget.closest('.bundle-row').querySelector('img'),false,p)}>${I('plus',{width:16})}</button>`}
     </article>`})}</div>
   </main>`;
 }
@@ -2532,30 +2549,12 @@ const PL_WALLS=['#F1E9DC','#E9DCC8','#ECE4D1','#D8B4A6','#C9BFA9','#6C6948','#3B
 
 // Pieces outside the curated 24 have no measured cutout: width comes from the listing's facts, the rest from their type.
 // Every piece is placed from its catalog W × D × H; one without dimensions can't be placed.
-const plCm=pid=>byId(pid).dimsCm?.w
 const PL_TEMPLATES={blank:{label:'Blank room',W:8,D:6,H:3.2,wall:'#F1E9DC',floor:'oak',openings:[{wall:'back',t:'win',x:0,w:2.4,h:1.8,y:.8}],items:[]}};
 SPACE_KEYS.forEach(k=>{const s=STUDY[k];PL_TEMPLATES[k]={label:SPACES[k].label+' study',W:s.W,D:s.D,H:s.H,wall:s.dark?'#3B2A1E':ROOMS[k].wall,floor:ROOMS[k].floor,openings:s.openings.map(o=>({...o,wall:'back'})),items:s.items.map(i=>({pid:i.id,x:i.x,z:i.z,rot:0,hang:!!i.hang}))}});
-const plDims=pid=>{const p=byId(pid);const D=p.dimsCm||{w:100,d:100,h:80};const w=D.w/100;return {p,w,d:D.d/100,hp:D.h/100,hb:D.h/100}};
-const plReady=pid=>has(pid)&&!!byId(pid).dimsCm;
-// Physical footprint: axis-aligned extents of the rotated piece, used for walls and collisions.
-const plExt=it=>{const {w,d}=plDims(it.pid);const r=(it.rot||0)*Math.PI/180,c=Math.abs(Math.cos(r)),sn=Math.abs(Math.sin(r));return [c*w/2+sn*d/2,sn*w/2+c*d/2]};
-const PL_GAP=.02,PL_SNAP=.12;
-// Keep the piece inside the room; side and back walls pull it flush when it comes within 12 cm.
-const plClamp=(doc,it,x,z)=>{const [ex,ez]=plExt(it);const lx=doc.W/2-ex,lz=doc.D/2-ez;x=Math.max(-lx,Math.min(lx,x));z=Math.max(-lz,Math.min(lz,z));
-  if(lx-Math.abs(x)<PL_SNAP)x=(x<0?-1:1)*lx;if(z<0&&lz+z<PL_SNAP)z=-lz;return [x,z]};
-// Floor pieces are solid: no two footprints may overlap (hanging lights are in the air and skip this).
-// A drawn floor plan: every corner of a piece's footprint must sit inside one of the plan's rooms,
-// clear of its columns and fixed blocks.
-const outsidePlan=(doc,x,z,ex,ez)=>{if(!doc.zones?.length)return false;const zs=doc.zones.map(zn=>zn.poly);const pts=[[x-ex,z-ez],[x+ex,z-ez],[x+ex,z+ez],[x-ex,z+ez],[x,z]];
-  return !pts.every(p=>zs.some(pl=>inPoly(p,pl)))||(doc.blocks||[]).some(b=>Math.abs(b.x-x)<b.w/2+ex+PL_GAP&&Math.abs(b.z-z)<b.d/2+ez+PL_GAP)};
-const plHit=(doc,it,x,z)=>{if(it.hang)return false;const [ex,ez]=plExt(it);if(outsidePlan(doc,x,z,ex,ez))return true;return doc.items.some(o=>{if(o.uid===it.uid||o.hang)return false;const [ox,oz]=plExt(o);return Math.abs(o.x-x)<ex+ox+PL_GAP-1e-6&&Math.abs(o.z-z)<ez+oz+PL_GAP-1e-6})};
+const { widthCm:plCm, dimensions:plDims, ready:plReady, extents:plExt, clamp:plClamp, collides:plHit, place:plPlace, reflow:plReflow }=plannerGeometry(BY_ID);
 // Every room as polygons: a drawn plan's rooms, or the rectangle W × D.
 const roomZones=doc=>doc.zones?.length?doc.zones:[{id:'room',name:'Room',poly:[[-doc.W/2,-doc.D/2],[doc.W/2,-doc.D/2],[doc.W/2,doc.D/2],[-doc.W/2,doc.D/2]],floor:doc.floor,wall:doc.wall}];
 const zoneOf=(doc,x,z)=>roomZones(doc).find(zn=>inPoly([x,z],zn.poly))||null;
-// Nearest free, in-bounds spot to (x, z), searched outward in 5 cm rings.
-const plPlace=(doc,it,x,z)=>{const [cx,cz]=plClamp(doc,it,x,z);if(!plHit(doc,it,cx,cz))return [cx,cz];
-  for(let r=.05;r<5;r+=.05){const n=Math.max(8,Math.round(r*40));for(let k=0;k<n;k++){const a=k/n*Math.PI*2;const [px,pz]=plClamp(doc,it,x+Math.cos(a)*r,z+Math.sin(a)*r);if(!plHit(doc,it,px,pz))return [px,pz]}}
-  return [cx,cz]};
 const r2=v=>Math.round(v*100)/100;
 // Lengths read in metres or in feet and inches, to the centimetre or half inch.
 const fmtLen=(m,u)=>{if(u!=='ft')return `${m.toFixed(2)} m`;const inch=Math.round(m/.0254*2)/2;const ft=Math.floor(inch/12);const r=inch-ft*12;return `${ft}′ ${String(r).replace('.5','½')}″`};
@@ -2564,10 +2563,6 @@ const fmtCm=(cm,u)=>u==='ft'?`${String(Math.round(cm/2.54*2)/2).replace('.5','½
 const RUG_SIZES=[['5 × 8 ft',1.52,2.44],['6 × 9 ft',1.83,2.74],['8 × 10 ft',2.44,3.05],['9 × 12 ft',2.74,3.66],['10 × 14 ft',3.05,4.27],['2.5 × 8 ft runner',.76,2.44],['6 ft round',1.83,1.83,1],['8 ft round',2.44,2.44,1]];
 const RUG_MATS=[['jute','Jute'],['wool','Wool']];
 const RUG_COLORS=[['','Natural'],['#F1EADC','Ivory'],['#D9C8A9','Oatmeal'],['#B4683F','Rust'],['#8E9A7C','Sage'],['#6E7787','Slate'],['#4A4440','Charcoal']];
-const rugExt=r=>{if(r.round)return [r.w/2,r.w/2];const a=(r.rot||0)*Math.PI/180,c=Math.abs(Math.cos(a)),sn=Math.abs(Math.sin(a));return [c*r.w/2+sn*r.d/2,sn*r.w/2+c*r.d/2]};
-const rugClamp=(doc,r,x,z)=>{const [ex,ez]=rugExt(r);const lx=Math.max(0,doc.W/2-ex),lz=Math.max(0,doc.D/2-ez);return [r2(Math.max(-lx,Math.min(lx,x))),r2(Math.max(-lz,Math.min(lz,z)))]};
-// Re-seat every piece in order so nothing overlaps or pokes through a wall (after loading or resizing the room).
-const plReflow=doc=>{const placed=[];for(const it of doc.items){const d={...doc,items:placed};const [x,z]=plPlace(d,it,it.x,it.z);placed.push({...it,x:r2(x),z:r2(z)})}return {...doc,items:placed,rugs:(doc.rugs||[]).map(r=>{const [x,z]=rugClamp(doc,r,r.x,r.z);return {...r,x,z}})}};
 // Fit a back-wall preset to the room: openings never overlap, cross the wall's ends or rise past the ceiling.
 const plFit=(W,H,ops)=>ops.map((o,i)=>{const near=Math.min(Infinity,...ops.filter((_,j)=>j!==i).map(p=>Math.abs(p.x-o.x)))-.15;let w=Math.max(.3,Math.min(o.w,near,2*(W/2-.1-Math.abs(o.x))));const y=Math.min(o.y,Math.max(.05,H-.5));const h=Math.max(.3,Math.min(o.h,H-y-.1));if(o.t==='arch')w=Math.min(w,2*(h-.05));return {...o,w:r2(w),y:r2(y),h:r2(h)}});
 const plWord=(it,doc)=>`${it.x<-doc.W/6?'left':it.x>doc.W/6?'right':'centre'}${it.z<-doc.D/6?' back':it.z>doc.D/6?' front':''}`;
@@ -2575,23 +2570,34 @@ const plWord=(it,doc)=>`${it.x<-doc.W/6?'left':it.x>doc.W/6?'right':'centre'}${i
 /** Keep the planner canvas mounted behind independently dismissible snapshot and render dialogs. */
 function Room({ctx}){
   const [saved,setSaved]=useState(()=>load('room',null));
-  const missing=unresolvedPlannerItems(saved?.items||[],BY_ID);
-  if(missing.length)return html`<${PlannerReview} missing=${missing} remove=${index=>{const next={...saved,items:saved.items.filter((_,i)=>i!==index)};store('room',next);setSaved(next)}} back=${()=>ctx.go('discover')}/>`;
-  return html`<${ReadyRoom} ctx=${ctx} onDraftChange=${setSaved}/>`;
+  const raw=ctx.roomSeed;const seed=((Array.isArray(raw)?raw:raw?.ids)||[]).map(editorIdentity);
+  const identities=[...(saved?.items||[]),...seed];
+  const savedCatalog=useProjectCatalog(identities,BY_ID);
+  const missing=identities.flatMap((item,index)=>{const p=resolveProjectProduct(item,savedCatalog.products);return !p||!p.dimsCm?[{item,index}]:[]});
+  if(missing.length)return html`<${PlannerReview} missing=${missing} message=${item=>resolveProjectProduct(item,savedCatalog.products)?.lid?'Measurements are needed before this piece can be placed. Your saved item is preserved.':projectResolutionMessage(item,savedCatalog.states)} remove=${index=>{const count=saved?.items?.length||0;if(index<count){const next={...saved,items:saved.items.filter((_,i)=>i!==index)};store('room',next);setSaved(next)}else{const next=seed.filter((_,i)=>i!==index-count);ctx.setRoomSeed(Array.isArray(raw)?next:{...raw,ids:next})}}} back=${()=>ctx.go('discover')}/>`;
+  return html`<${ReadyRoom} ctx=${ctx} products=${savedCatalog.products} onDraftChange=${setSaved}/>`;
 }
 const persistPlannerRoom=doc=>store('room',doc);
-function ReadyRoom({ctx,onDraftChange}){
+function ReadyRoom({ctx,onDraftChange,products}){
+  const catalogRef=useRef(products);catalogRef.current=products;
+  const geometryRef=useRef(null);geometryRef.current=plannerGeometry(products);
+  const byId=reference=>studioGeometry(catalogRef.current).product(reference);
+  const has=reference=>!!byId(reference).lid;
+  const cut=reference=>byId(reference).cutout||byId(reference).img;
+  const plDims=(...args)=>geometryRef.current.dimensions(...args),plReady=(...args)=>geometryRef.current.ready(...args),plCm=(...args)=>geometryRef.current.widthCm(...args),plExt=(...args)=>geometryRef.current.extents(...args),plClamp=(...args)=>geometryRef.current.clamp(...args),plHit=(...args)=>geometryRef.current.collides(...args),plPlace=(...args)=>geometryRef.current.place(...args),plReflow=(...args)=>geometryRef.current.reflow(...args);
+  const currentIdentity=reference=>{const identity=editorIdentity(reference);const p=byId(identity);return p.lid?{pid:identity.pid,lid:p.lid,vid:p.vid}:identity};
   // Pieces sent here join the saved room. From the Studio's 3D switch (sync) the room follows the board
   // instead: its new pieces arrive and the ones it dropped leave.
-  const init=()=>{const saved=load('room',null);const raw=ctx.roomSeed;const sync=!!raw?.sync;const seed=(Array.isArray(raw)?raw:raw?.ids)||[];
-    if(saved&&Array.isArray(saved.items)){const kept=saved.items.filter(i=>has(i.pid));const place=(pids,z)=>pids.map((pid,i)=>({uid:uid(),pid,x:(i-(pids.length-1)/2)*1.4,z,rot:0,hang:byId(pid).hangs}));
-      if(sync){const {keep,add}=reconcile(kept.map(i=>i.pid),seed.filter(plReady));return plReflow({...saved,items:[...kept.filter((_,i)=>keep.has(i)),...place(add,0)],wallImg:ctx.roomWall||saved.wallImg||null})}
+  const init=()=>{const saved=load('room',null);const raw=ctx.roomSeed;const sync=!!raw?.sync;const seed=((Array.isArray(raw)?raw:raw?.ids)||[]).map(currentIdentity);
+    if(saved&&Array.isArray(saved.items)){const kept=saved.items.map(i=>({...i,...currentIdentity(i)}));const place=(pids,z)=>pids.map((reference,i)=>({uid:uid(),...currentIdentity(reference),x:(i-(pids.length-1)/2)*1.4,z,rot:0,hang:byId(reference).hangs}));
+      if(sync){const {keep,add}=reconcileEditorSelections(kept,seed.filter(plReady));return plReflow({...saved,items:[...kept.filter((_,i)=>keep.has(i)),...place(add,0)],wallImg:ctx.roomWall||saved.wallImg||null})}
       // Only pieces the room doesn't already hold are added, so nothing is duplicated.
-      const have={};kept.forEach(i=>have[i.pid]=(have[i.pid]||0)+1);const fresh=seed.filter(pid=>plReady(pid)&&!(have[pid]-->0));
+      const fresh=reconcileEditorSelections(kept,seed.filter(plReady)).add;
+      if(!fresh.length)return {...saved,items:kept,wallImg:ctx.roomWall||saved.wallImg||null};
       return plReflow({...saved,items:[...kept,...place(fresh,-saved.D/2+1.3)],wallImg:ctx.roomWall||saved.wallImg||null})}
     const key=PL_TEMPLATES[ctx.space]?ctx.space:'blank';const t=JSON.parse(JSON.stringify(PL_TEMPLATES[key]));let items=t.items;
-    if(seed.length){items=seed.filter(plReady).map((pid,i,a)=>({pid,x:(i-(a.length-1)/2)*1.7,z:-t.D/2+1.3,rot:0,hang:byId(pid).hangs}))}
-    return plReflow({...t,tpl:key,items:items.map(it=>({...it,uid:uid()})),rugs:[],wallImg:ctx.roomWall||null})};
+    if(seed.length){items=seed.filter(plReady).map((reference,i,a)=>({...currentIdentity(reference),x:(i-(a.length-1)/2)*1.7,z:-t.D/2+1.3,rot:0,hang:byId(reference).hangs}))}
+    return plReflow({...t,tpl:key,items:items.filter(plReady).map(it=>({...it,...currentIdentity(it),uid:uid()})),rugs:[],wallImg:ctx.roomWall||null})};
   const [doc,setDoc]=useState(init);const [view,setView]=useState('orbit');const [style,setStyle]=useState('material');const [tod,setTod]=useState(.12);
   useEffect(()=>onDraftChange(doc),[doc,onDraftChange]);
   const [sel,setSel]=useState(null);const [tab,setTab]=useState('pieces');const [snap,setSnap]=useState(true);const [q,setQ]=useState('');const [cat,setCat]=useState('all');
@@ -2602,11 +2608,11 @@ function ReadyRoom({ctx,onDraftChange}){
   const [title,setTitle]=useState(()=>load('roomTitle','Untitled room'));useEffect(()=>store('roomTitle',title),[title]);
   const [three,threeFailed]=useThree();const [eng,setEng]=useState(0);
   const hist=useRef({past:[],future:[]});const vpRef=useRef(),cvRef=useRef(),labRef=useRef(),E=useRef({}),docRef=useRef(doc);docRef.current=doc;
-  const commit=next=>{hist.current.past.push(docRef.current);if(hist.current.past.length>60)hist.current.past.shift();hist.current.future=[];setDoc(next)};
+  const commit=next=>{next={...next,placementConflicts:next.items.filter(i=>plHit(next,i,i.x,i.z)).map(i=>i.uid)};hist.current.past.push(docRef.current);if(hist.current.past.length>60)hist.current.past.shift();hist.current.future=[];setDoc(next)};
   const undo=()=>{const h=hist.current;if(!h.past.length)return;h.future.push(docRef.current);setDoc(h.past.pop())};
   const redo=()=>{const h=hist.current;if(!h.future.length)return;h.past.push(docRef.current);setDoc(h.future.pop())};
-  const patchItem=(id,o)=>{const d=docRef.current;commit({...d,items:d.items.map(i=>{if(i.uid!==id)return i;const n={...i,...o};if('x' in o||'z' in o||'rot' in o){const [x,z]=plPlace(d,n,n.x,n.z);n.x=r2(x);n.z=r2(z)}return n})})};
-  const addItem=(pid,x,z)=>{if(!plReady(pid)){ctx.toast(`Measurements needed: ${byId(pid).name} has no width, depth and height yet`);return}const d=docRef.current;const it={uid:uid(),pid,x:0,z:0,rot:0,hang:byId(pid).hangs};const [px,pz]=plPlace(d,it,x??0,z??0);it.x=r2(px);it.z=r2(pz);commit({...d,items:[...d.items,it]});setSel(it.uid)};
+  const patchItem=(id,o)=>{const d=docRef.current;commit({...d,items:d.items.map(i=>{if(i.uid!==id)return i;const n={...i,...o};if('x' in o||'z' in o||'rot' in o){const position=plPlace(d,n,n.x,n.z);if(!position){ctx.toast('No clear space for this move. Your previous position is preserved.');return i}const [x,z]=position;n.x=r2(x);n.z=r2(z)}return n})})};
+  const addItem=(pid,x,z)=>{if(!plReady(pid)){ctx.toast(`Measurements needed: ${byId(pid).name} has no width, depth and height yet`);return}const d=docRef.current;const it={uid:uid(),...currentIdentity(pid),x:0,z:0,rot:0,hang:byId(pid).hangs};const position=plPlace(d,it,x??0,z??0);if(!position){ctx.toast('There is no clear space for this piece. Enlarge the room or remove another piece.');return}const [px,pz]=position;it.x=r2(px);it.z=r2(pz);commit({...d,items:[...d.items,it]});setSel(it.uid)};
   const removeItem=id=>{const d=docRef.current;commit({...d,items:d.items.filter(i=>i.uid!==id),rugs:(d.rugs||[]).filter(r=>r.uid!==id)});setSel(null)};
   const rugOf=id=>(docRef.current.rugs||[]).find(r=>r.uid===id);
   const patchRug=(id,o)=>{const d=docRef.current;commit({...d,rugs:(d.rugs||[]).map(r=>{if(r.uid!==id)return r;const n={...r,...o};[n.x,n.z]=rugClamp(d,n,n.x,n.z);return n})})};
@@ -2614,7 +2620,7 @@ function ReadyRoom({ctx,onDraftChange}){
   const addRug=([size,w,dp,round])=>{const d=docRef.current;const at=d.items.find(i=>i.uid===sel);const r={uid:uid(),x:0,z:0,rot:0,w,d:dp,round:!!round,size,mat:'jute',color:''};[r.x,r.z]=rugClamp(d,r,at?at.x:0,at?at.z:0);commit({...d,rugs:[...(d.rugs||[]),r]});setSel(r.uid)};
   const patchSel=(id,o)=>rugOf(id)?patchRug(id,o):patchItem(id,o);
   const dupItem=id=>{const rg=rugOf(id);if(rg){const d=docRef.current;const n={...rg,uid:uid()};[n.x,n.z]=rugClamp(d,n,rg.x+.6,rg.z+.3);commit({...d,rugs:[...d.rugs,n]});setSel(n.uid);return}
-    const it=docRef.current.items.find(i=>i.uid===id);if(!it)return;const d=docRef.current;const n={...it,uid:uid()};const [px,pz]=plPlace(d,n,it.x+.6,it.z+.3);n.x=r2(px);n.z=r2(pz);commit({...d,items:[...d.items,n]});setSel(n.uid)};
+    const it=docRef.current.items.find(i=>i.uid===id);if(!it)return;const d=docRef.current;const n={...it,uid:uid()};const position=plPlace(d,n,it.x+.6,it.z+.3);if(!position){ctx.toast('There is no clear space for another copy.');return}const [px,pz]=position;n.x=r2(px);n.z=r2(pz);commit({...d,items:[...d.items,n]});setSel(n.uid)};
   useEffect(()=>{if(ctx.roomSeed)ctx.setRoomSeed(null);if(ctx.roomWall)ctx.setRoomWall(null)},[]);
   // The room autosaves on this device; a photo on the wall is too large to keep, so it is left out.
   usePlannerPersistence(doc,persistPlannerRoom);
@@ -2682,14 +2688,14 @@ function ReadyRoom({ctx,onDraftChange}){
       mk(D,d.openings.filter(o=>o.wall==='right'),m=>{m.rotation.y=-Math.PI/2;m.position.set(W/2+t,0,0)});
       const ceil=new T.Mesh(new T.PlaneGeometry(W+2*t,D),new T.MeshStandardMaterial({color:'#F3EEE6',roughness:1,side:T.DoubleSide}));ceil.rotation.x=Math.PI/2;ceil.position.y=H;roomG.add(ceil);S.ceil=ceil;
       S.doc=d;applyLook()}
-    function makeItem(it){const {p,w,d,hp,hb}=plDims(it.pid);const g=new T.Group();g.userData.uid=it.uid;
+    function makeItem(it){const {p,w,d,hp,hb}=plDims(it);const g=new T.Group();g.userData.uid=it.uid;
       const box=new T.BoxGeometry(w,hp,d);const proxy=new T.Mesh(box,CLAY);proxy.position.y=it.hang?0:hp/2;proxy.castShadow=proxy.receiveShadow=true;proxy.userData.uid=it.uid;g.add(proxy);
       const pe=new T.LineSegments(new T.EdgesGeometry(box),edgeM);pe.position.copy(proxy.position);g.add(pe);
-      const map=tex(cut(it.pid));const bm=new T.MeshStandardMaterial({map,transparent:true,alphaTest:.45,side:T.DoubleSide,roughness:.85});const bb=new T.Mesh(new T.PlaneGeometry(w,hb),bm);bb.castShadow=true;bb.customDepthMaterial=new T.MeshDepthMaterial({depthPacking:T.RGBADepthPacking,map,alphaTest:.45});bb.position.y=it.hang?0:hb/2;g.add(bb);
+      const map=tex(cut(it));const bm=new T.MeshStandardMaterial({map,transparent:true,alphaTest:.45,side:T.DoubleSide,roughness:.85});const bb=new T.Mesh(new T.PlaneGeometry(w,hb),bm);bb.castShadow=true;bb.customDepthMaterial=new T.MeshDepthMaterial({depthPacking:T.RGBADepthPacking,map,alphaTest:.45});bb.position.y=it.hang?0:hb/2;g.add(bb);
       const fp=new T.LineSegments(rect(w,d),fpM);g.add(fp);
       const cs=new T.Mesh(new T.PlaneGeometry(w*1.3,d*1.3),new T.MeshBasicMaterial({map:contactTex,transparent:true,depthWrite:false,opacity:.75}));cs.rotation.x=-Math.PI/2;cs.position.y=.006;cs.visible=!it.hang;g.add(cs);
       const v0={g,proxy,pe,bb,fp,cs,lamp:null,w,d,hp,hb,model:null,modelState:p.model?'loading':'none',hi:false};
-      if(p.model){loadGLB(p.modelLow||p.model,renderer).then(obj=>{if(!S.alive||!S.items.has(it.uid))return;fitToDims(T,obj,p.dimsCm);obj.position.y+=it.hang?-hp/2:0;g.add(obj);v0.model=obj;v0.modelState='ready';applyLook()}).catch(()=>{v0.modelState='failed';applyLook()})}
+      if(p.model){loadGLB(p.modelLow||p.model,renderer).then(obj=>{if(!S.alive||S.items.get(it.uid)!==v0)return;fitToDims(T,obj,p.dimsCm);obj.position.y+=it.hang?-hp/2:0;g.add(obj);v0.model=obj;v0.modelState='ready';applyLook()}).catch(()=>{v0.modelState='failed';applyLook()})}
       let lamp=null;if(GLOW_AT[it.pid]){const gl=GLOW_AT[it.pid];const light=new T.PointLight('#FFB868',0,7,2);const spr=new T.Sprite(new T.SpriteMaterial({map:glowTex,transparent:true,opacity:0,depthWrite:false,blending:T.AdditiveBlending}));spr.scale.set(w*1.4,w*1.4,1);const ly=(.5-gl[1]/100)*hb+(it.hang?0:hb/2);light.position.set((gl[0]/100-.5)*w,ly,.05);spr.position.copy(light.position);g.add(light,spr);lamp={light,spr}}
       itemsG.add(g);v0.lamp=lamp;return v0}
     const circ=r=>{const pts=[];for(let k=0;k<64;k++){const a=k/64*Math.PI*2,b=(k+1)/64*Math.PI*2;pts.push(new T.Vector3(Math.cos(a)*r,0,Math.sin(a)*r),new T.Vector3(Math.cos(b)*r,0,Math.sin(b)*r))}return new T.BufferGeometry().setFromPoints(pts)};
@@ -2701,7 +2707,7 @@ function ReadyRoom({ctx,onDraftChange}){
     function syncRugs(rugs){const keep=new Set(rugs.map(r=>r.uid));for(const [k,v] of S.rugs){if(!keep.has(k)){rugsG.remove(v.g);v.g.traverse(c=>{if(c.geometry)c.geometry.dispose()});S.rugs.delete(k)}}
       rugs.forEach((r,i)=>{const sig=[r.w,r.d,r.round,r.mat,r.color].join();let v=S.rugs.get(r.uid);if(!v||v.sig!==sig){if(v){rugsG.remove(v.g);v.g.traverse(c=>{if(c.geometry)c.geometry.dispose()})}v=makeRug(r);v.sig=sig;S.rugs.set(r.uid,v)}v.it=r;v.m.position.y=.004+i*.0015;v.ol.position.y=.009+i*.0015;placeRug(v)});applyLook()}
     function syncItems(items){const keep=new Set(items.map(i=>i.uid));for(const [k,v] of S.items){if(!keep.has(k)){itemsG.remove(v.g);v.g.traverse(c=>{if(c.geometry)c.geometry.dispose()});S.items.delete(k)}}
-      items.forEach(it=>{let v=S.items.get(it.uid);if(!v||v.pid!==it.pid){if(v){itemsG.remove(v.g)}v=makeItem(it);v.pid=it.pid;S.items.set(it.uid,v);if(S.ready&&!it.hang)v.drop=performance.now()}v.it=it;placeItem(v)});applyLook()}
+      items.forEach(it=>{const p=byId(it);const signature=JSON.stringify([p.lid,p.vid,p.img,p.cutout,p.dimsCm,p.model,p.modelLow,p.hangs]);let v=S.items.get(it.uid);if(!v||v.signature!==signature){if(v){itemsG.remove(v.g)}v=makeItem(it);v.pid=it.pid;v.signature=signature;S.items.set(it.uid,v);if(S.ready&&!it.hang)v.drop=performance.now()}v.it=it;placeItem(v)});applyLook()}
     function placeItem(v){const it=v.it,d=S.doc;const y=it.hang?d.H-v.hb/2-.05:0;v.baseY=y;v.g.position.set(it.x,y,it.z);v.g.rotation.y=(it.rot||0)*Math.PI/180;v.fp.position.y=it.hang?-y+.012:.012}
     function applyLook(){const st=S.style,plan=S.view==='plan';
       S.surfaces.forEach(m=>{m.material=st==='material'?m.userData.fin:st==='clay'?CLAY:LINE});
@@ -2758,8 +2764,8 @@ function ReadyRoom({ctx,onDraftChange}){
     const onWheel=e=>{e.preventDefault();const s=Math.sign(e.deltaY);if(S.view==='plan')S.plan.zoom=Math.max(.5,Math.min(4,S.plan.zoom*(s>0?.9:1.1)));else if(S.view==='eye'){const d=S.doc;S.eye.x=Math.max(-d.W/2+.4,Math.min(d.W/2-.4,S.eye.x-Math.sin(S.eye.yaw)*s*.35));S.eye.z=Math.max(-d.D/2+.4,Math.min(d.D/2+.4,S.eye.z+Math.cos(S.eye.yaw)*s*.35))}else S.cam.r=Math.max(2,Math.min(32,S.cam.r*(s>0?1.08:.93)))};
     // Double-click a piece to bring the orbit round to it.
     const onDbl=e=>{if(S.view!=='orbit')return;const id=pickItem(e);const v=id&&S.items.get(id);if(!v)return;S.focus={tx:v.it.x,ty:Math.min(1.2,v.hp/2),tz:v.it.z,r:Math.max(2.2,Math.max(v.w,v.d)*3)}};
-    const onKey=(e,on)=>{if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))return;const k={w:'f',arrowup:'f',s:'b',arrowdown:'b',a:'l',arrowleft:'l',d:'r',arrowright:'r'}[e.key.toLowerCase()];if(!k||S.view!=='eye')return;if(on){S.keys.add(k);e.preventDefault()}else S.keys.delete(k)};
-    const kd=e=>onKey(e,true),ku=e=>onKey(e,false);addEventListener('keydown',kd);addEventListener('keyup',ku);cv.addEventListener('dblclick',onDbl);
+    const onKey=(e,on)=>{if(editorShortcutsBlocked(e)){S.keys.clear();return;}const k={w:'f',arrowup:'f',s:'b',arrowdown:'b',a:'l',arrowleft:'l',d:'r',arrowright:'r'}[e.key.toLowerCase()];if(!k||S.view!=='eye')return;if(on){S.keys.add(k);e.preventDefault()}else S.keys.delete(k)};
+    const kd=e=>onKey(e,true),ku=e=>onKey(e,false),stopWalking=()=>S.keys.clear();addEventListener('keydown',kd);addEventListener('keyup',ku);addEventListener('blur',stopWalking);document.addEventListener('focusin',stopWalking);cv.addEventListener('dblclick',onDbl);
     const onDrop=e=>{e.preventDefault();const pid=+e.dataTransfer.getData('text/pid');if(!pid)return;const f=floorAt(e);api.onDrop(pid,f?snapV(f.x):0,f?snapV(f.z):0)};
     cv.addEventListener('pointerdown',onDown);cv.addEventListener('pointermove',onMove);cv.addEventListener('pointerup',onUp);cv.addEventListener('pointercancel',onUp);cv.addEventListener('wheel',onWheel,{passive:false});cv.addEventListener('contextmenu',e=>e.preventDefault());cv.addEventListener('dragover',e=>e.preventDefault());cv.addEventListener('drop',onDrop);
     // labels (plan names, room dims, distances)
@@ -2767,12 +2773,12 @@ function ReadyRoom({ctx,onDraftChange}){
     function labels(){const el=labRef.current;if(!el)return;const d=S.doc;const u=S.units;const out=[];const proj=(x,y,z)=>{tmp.set(x,y,z).project(S.camObj);return [(tmp.x+1)/2*size.w,(1-tmp.y)/2*size.h,tmp.z<1]};
       const lab=(cls,p,t)=>{if(p[2])out.push(`<span class="pl-lab ${cls}" style="left:${p[0]}px;top:${p[1]}px">${t}</span>`)};
       if(S.view==='plan'&&d.zones?.length){const t=d.wallT||.12;for(const zn of d.zones){const cw=polyArea(zn.poly)>0;zn.poly.forEach((a,i)=>{const b=zn.poly[(i+1)%zn.poly.length];const len=Math.hypot(b[0]-a[0],b[1]-a[1]);if(len<.3)return;const ux=(b[0]-a[0])/len,uz=(b[1]-a[1])/len;const nx=cw?uz:-uz,nz=cw?-ux:ux;lab('dim',proj((a[0]+b[0])/2+nx*(t+.3),0,(a[1]+b[1])/2+nz*(t+.3)),fmtLen(len,u))});
-          const c=polyCentre(zn.poly);const seats=d.items.filter(it=>!it.hang&&inPoly([it.x,it.z],zn.poly)).reduce((s2,it)=>s2+byId(it.pid).seats,0);lab('zone',proj(c[0],0,c[1]),`${zn.name} · ${seats} seat${seats===1?'':'s'}`)}
+          const c=polyCentre(zn.poly);const seats=d.items.filter(it=>!it.hang&&inPoly([it.x,it.z],zn.poly)).reduce((s2,it)=>s2+byId(it).seats,0);lab('zone',proj(c[0],0,c[1]),`${zn.name} · ${seats} seat${seats===1?'':'s'}`)}
         for(const v of S.rugs.values()){const r=v.it;lab('rug'+(r.uid===S.sel?' sel':''),proj(r.x,0,r.z+rugExt(r)[1]-.22),`Rug · ${r.size}`)}
-        for(const v of S.items.values())lab(v.it.uid===S.sel?'sel':'',proj(v.it.x,0,v.it.z),byId(v.it.pid).name)}
+        for(const v of S.items.values())lab(v.it.uid===S.sel?'sel':'',proj(v.it.x,0,v.it.z),byId(v.it).name)}
       else if(S.view==='plan'){const t=d.wallT||.12;lab('dim',proj(0,0,-d.D/2-t-.35),fmtLen(d.W,u));lab('dim',proj(0,0,d.D/2+.45),fmtLen(d.W,u));lab('dim',proj(-d.W/2-t-.45,0,0),fmtLen(d.D,u));lab('dim',proj(d.W/2+t+.55,0,0),fmtLen(d.D,u));
         for(const v of S.rugs.values()){const r=v.it;lab('rug'+(r.uid===S.sel?' sel':''),proj(r.x,0,r.z+rugExt(r)[1]-.22),`Rug · ${r.size}`)}
-        for(const v of S.items.values())lab(v.it.uid===S.sel?'sel':'',proj(v.it.x,0,v.it.z),byId(v.it.pid).name)}
+        for(const v of S.items.values())lab(v.it.uid===S.sel?'sel':'',proj(v.it.x,0,v.it.z),byId(v.it).name)}
       const sv=S.sel&&(S.items.get(S.sel)||S.rugs.get(S.sel));const lines=[];
       if(sv&&S.view!=='eye'){const it=sv.it;const isRug=S.rugs.has(S.sel);const [hw,hd]=isRug?rugExt(it):plExt(it);
         // Distances to the nearest wall in each direction; a drawn plan casts against every wall it has.
@@ -2784,7 +2790,7 @@ function ReadyRoom({ctx,onDraftChange}){
           const gap=Math.max(gx,gz);if(gap<=0)continue;if(!best||gap<best.gap){const sx=Math.sign(o.it.x-it.x),sz=Math.sign(o.it.z-it.z);best={gap,seg:gx>=gz?[it.x+sx*hw,it.z,it.x+sx*(hw+gx),it.z]:[it.x,it.z+sz*hd,it.x,it.z+sz*(hd+gz)]}}}
           if(best&&best.gap<4)segs.push(best.seg)}
         segs.forEach(([x1,z1,x2,z2])=>{const len=Math.hypot(x2-x1,z2-z1);if(len<.01)return;lines.push([x1,z1,x2,z2]);lab('dist',proj((x1+x2)/2,.03,(z1+z2)/2),fmtLen(len,u))});
-        if(!isRug){const D=byId(it.pid).dimsCm;if(D)lab('size',proj(it.x,(it.hang?sv.g.position.y:0)+sv.hp+.18,it.z),`${fmtCm(D.w,u)} W × ${fmtCm(D.d,u)} D × ${fmtCm(D.h,u)} H`)}}
+        if(!isRug){const D=byId(it).dimsCm;if(D)lab('size',proj(it.x,(it.hang?sv.g.position.y:0)+sv.hp+.18,it.z),`${fmtCm(D.w,u)} W × ${fmtCm(D.d,u)} D × ${fmtCm(D.h,u)} H`)}}
       // Rebuild the measure lines and labels only when they change, so an idle view costs nothing.
       const lk=JSON.stringify(lines);if(lk!==S.lineKey){S.lineKey=lk;clear(dimG);lines.forEach(([x1,z1,x2,z2])=>dimG.add(new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(x1,.03,z1),new T.Vector3(x2,.03,z2)]),dimM)))}
       const html=out.join('');if(html!==S.labHtml){S.labHtml=html;el.innerHTML=html}}
@@ -2798,7 +2804,7 @@ function ReadyRoom({ctx,onDraftChange}){
       if(S.view==='eye')walk(dt);if(S.view==='product'&&S.prod.auto&&!S.drag)S.prod.th+=dt*.35;
       S.camObj=camera();
       // The high-detail model loads once the camera comes within 3.5 m of a piece.
-      for(const v of S.items.values()){const p=byId(v.it.pid);if(v.model&&p.modelLow&&!v.hi&&S.view!=='plan'&&S.camObj.position.distanceTo(v.g.position)<3.5){v.hi=true;loadGLB(p.model,renderer).then(obj=>{if(!S.alive||!v.model)return;fitToDims(T,obj,p.dimsCm);obj.position.y=v.model.position.y;v.g.remove(v.model);v.g.add(obj);v.model=obj;applyLook()}).catch(()=>{})}}for(const v of S.items.values()){if(v.drop!=null){const t=Math.min(1,(now-v.drop)/520);v.g.position.y=v.baseY+.45*(1-bounce(t));if(t>=1)v.drop=null}}for(const v of S.items.values()){if(v.bb.visible){const wp=v.g.position;v.bb.rotation.y=Math.atan2(S.camObj.position.x-wp.x,S.camObj.position.z-wp.z)-v.g.rotation.y}}// Hold frame rate: if frames run long for about a second, ambient occlusion steps aside.
+      for(const v of S.items.values()){const p=byId(v.it);if(v.model&&p.modelLow&&!v.hi&&S.view!=='plan'&&S.camObj.position.distanceTo(v.g.position)<3.5){v.hi=true;loadGLB(p.model,renderer).then(obj=>{if(!S.alive||S.items.get(v.it.uid)!==v||!v.model)return;fitToDims(T,obj,p.dimsCm);obj.position.y=v.model.position.y;v.g.remove(v.model);v.g.add(obj);v.model=obj;applyLook()}).catch(()=>{})}}for(const v of S.items.values()){if(v.drop!=null){const t=Math.min(1,(now-v.drop)/520);v.g.position.y=v.baseY+.45*(1-bounce(t));if(t>=1)v.drop=null}}for(const v of S.items.values()){if(v.bb.visible){const wp=v.g.position;v.bb.rotation.y=Math.atan2(S.camObj.position.x-wp.x,S.camObj.position.z-wp.z)-v.g.rotation.y}}// Hold frame rate: if frames run long for about a second, ambient occlusion steps aside.
       {const raw=now-(S.prev??now);S.prev=now;if(raw>24)S.slowT=(S.slowT||0)+raw;else S.slowT=Math.max(0,(S.slowT||0)-raw);if(S.slowT>1500)S.aoOff=true}
       lights();if(composer&&aoPass&&!S.aoOff&&S.style==='material'&&S.view!=='plan'){composer.rp.camera=S.camObj;aoPass.camera=S.camObj;composer.render()}else renderer.render(scene,S.camObj);labels();raf=requestAnimationFrame(loop)};
     const api={select:id=>{S.sel=id;applyLook();E.current.onSelect&&E.current.onSelect(id)},onMoved:(id,o)=>E.current.onMoved&&E.current.onMoved(id,o),onDrop:(pid,x,z)=>E.current.onDrop&&E.current.onDrop(pid,x,z)};
@@ -2806,7 +2812,7 @@ function ReadyRoom({ctx,onDraftChange}){
     // bounced light, at 2560 × 1440, for up to 18 seconds. Where it can't run, a high-quality raster frame stands in.
     async function still(onProgress,W=2560,H=1440){if(S.view==='plan')throw new Error('Switch to Orbit or Walk to render.');const cam=S.camObj.clone();cam.aspect=W/H;cam.updateProjectionMatrix();
       const hidden=[];scene.traverse(o=>{if(o.visible&&(o.isLine||o.isLineSegments||o.isSprite||o===grid||o===sky||o===ground)){hidden.push(o);o.visible=false}});
-      for(const v of S.items.values()){const p=byId(v.it.pid);if(v.model&&p.modelLow&&!v.hi){v.hi=true;try{const obj=await loadGLB(p.model,renderer);fitToDims(T,obj,p.dimsCm);obj.position.y=v.model.position.y;v.g.remove(v.model);v.g.add(obj);v.model=obj}catch(e){}}}
+      for(const v of S.items.values()){const p=byId(v.it);if(v.model&&p.modelLow&&!v.hi){v.hi=true;try{const obj=await loadGLB(p.model,renderer);fitToDims(T,obj,p.dimsCm);obj.position.y=v.model.position.y;v.g.remove(v.model);v.g.add(obj);v.model=obj}catch(e){}}}
       const off=new T.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});off.setSize(W,H,false);off.outputColorSpace=T.SRGBColorSpace;off.toneMapping=T.ACESFilmicToneMapping;off.toneMappingExposure=renderer.toneMappingExposure;off.shadowMap.enabled=true;off.shadowMap.type=T.PCFSoftShadowMap;off.setClearColor(renderer.getClearColor(new T.Color()));
       const restore=()=>{hidden.forEach(o=>o.visible=true);off.dispose()};
       try{if(!canTrace(renderer)||window.__forceTrace===false)throw new Error('This device renders stills without path tracing.');const {WebGLPathTracer}=await import('three-gpu-pathtracer');const sky=renderer.getClearColor(new T.Color());const env=new T.DataTexture(new Float32Array([sky.r,sky.g,sky.b,1,sky.r,sky.g,sky.b,1,.35,.3,.26,1,.35,.3,.26,1]),2,2,T.RGBAFormat,T.FloatType);env.mapping=T.EquirectangularReflectionMapping;env.needsUpdate=true;
@@ -2820,16 +2826,18 @@ function ReadyRoom({ctx,onDraftChange}){
       catch(e){console.warn('Path tracing unavailable; rendering a raster still instead.',e);const o2=new T.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});o2.setSize(W,H,false);o2.outputColorSpace=T.SRGBColorSpace;o2.toneMapping=T.ACESFilmicToneMapping;o2.shadowMap.enabled=true;o2.setClearColor(renderer.getClearColor(new T.Color()));o2.render(scene,cam);const url=o2.domElement.toDataURL('image/jpeg',.94);o2.dispose();return {url,samples:0,traced:false}}}
     Object.assign(E.current,{S,buildRoom,syncItems,syncRugs,applyLook,api,still,snapshot:()=>{renderer.render(scene,S.camObj);return cv.toDataURL('image/jpeg',.92)}});
     loop();setEng(n=>n+1);
-    return()=>{run=false;S.alive=false;cancelAnimationFrame(raf);ro.disconnect();removeEventListener('keydown',kd);removeEventListener('keyup',ku);scene.traverse(o=>{if(o.geometry)o.geometry.dispose()});pmrem.dispose();envTex?.dispose();composer?.dispose?.();renderer.dispose()};
+    return()=>{run=false;S.alive=false;cancelAnimationFrame(raf);ro.disconnect();removeEventListener('keydown',kd);removeEventListener('keyup',ku);removeEventListener('blur',stopWalking);document.removeEventListener('focusin',stopWalking);scene.traverse(o=>{if(o.geometry)o.geometry.dispose()});pmrem.dispose();envTex?.dispose();composer?.dispose?.();renderer.dispose()};
   },[three]);
   // wire engine callbacks to React
   useEffect(()=>{Object.assign(E.current,{onSelect:id=>setSel(id),onMoved:(id,o)=>patchSel(id,o),onDrop:(pid,x,z)=>addItem(pid,x,z)})});
   const geoKey=JSON.stringify([doc.W,doc.D,doc.H,doc.wallT,doc.wall,doc.floor,doc.floorTint,doc.openings,doc.wallImg?doc.wallImg.length:0,doc.zones,doc.blocks,doc.underlay?{...doc.underlay,img:doc.underlay.img.length}:null]);
   useEffect(()=>{const e=E.current;if(!e.buildRoom)return;e.buildRoom(doc);e.syncItems(doc.items);setTimeout(()=>{if(e.S)e.S.ready=true},50)},[geoKey,eng]);
-  useEffect(()=>{const e=E.current;if(e.syncItems)e.syncItems(doc.items)},[doc.items,eng]);
+  const catalogSignature=JSON.stringify(doc.items.map(it=>byId(it)));
+  useEffect(()=>setShareImg(null),[catalogSignature]);
+  useEffect(()=>{const e=E.current;if(e.syncItems)e.syncItems(doc.items)},[doc.items,eng,catalogSignature]);
   useEffect(()=>{const e=E.current;if(e.syncRugs)e.syncRugs(doc.rugs||[])},[doc.rugs,eng]);
   useEffect(()=>{const e=E.current;if(!e.S)return;e.S.view=view;e.S.style=style;e.S.tod=tod;e.S.snap=snap;e.S.sel=sel;e.S.units=units;if(view==='product')e.S.prod.auto=true;e.applyLook()},[view,style,tod,snap,sel,units,eng]);
-  useEffect(()=>{const k=e=>{if(['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName))return;if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();e.shiftKey?redo():undo();return}
+  useEffect(()=>{const k=e=>{if(editorShortcutsBlocked(e))return;if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();e.shiftKey?redo():undo();return}
       if(e.key==='Escape'&&!sel){setDrawer(null);setLookOpen(false);return}
       if(e.key==='1')setView('plan');if(e.key==='2')setView('orbit');if(e.key==='3')setView('eye');if(e.key==='4'&&S0)setView('product');
       if(view==='eye'&&/^(w|a|s|d|arrow\w+)$/i.test(e.key))return;
@@ -2839,18 +2847,18 @@ function ReadyRoom({ctx,onDraftChange}){
     addEventListener('keydown',k);return()=>removeEventListener('keydown',k)});
 
   // ---------- derived ----------
-  const S0=doc.items.find(i=>i.uid===sel);const SD=S0&&plDims(S0.pid);const R0=!S0&&(doc.rugs||[]).find(r=>r.uid===sel);
+  const S0=doc.items.find(i=>i.uid===sel);const SD=S0&&plDims(S0);const R0=!S0&&(doc.rugs||[]).find(r=>r.uid===sel);
   const rugName=r=>`${r.color?RUG_COLORS.find(c=>c[0]===r.color)?.[1].toLowerCase()+' ':''}${r.mat} rug, ${r.size}`;
-  const pieces=doc.items.map(i=>byId(i.pid));const retail=pieces.reduce((s,p)=>s+p.price,0);const seats=pieces.reduce((s,p)=>s+p.seats,0);
+  const pieces=doc.items.map(i=>byId(i));const retail=pieces.reduce((s,p)=>s+p.price,0);const seats=pieces.reduce((s,p)=>s+p.seats,0);
   const todLabel=(()=>{const m=Math.round((7.5*60+tod*15.5*60)/10)*10;return `${String(Math.floor(m/60)%24).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`})();
-  const prompt=`Photorealistic interior photograph of a ${doc.W} × ${doc.D} m room with a ${doc.H} m ceiling. Walls in ${doc.wall} limewash plaster, ${PL_FLOORS.find(f=>f[0]===doc.floor)?.[1].toLowerCase()} floor. Openings: ${doc.openings.map(o=>`${o.t==='arch'?'an arched window':o.t==='door'?'a doorway':'a window'} on the ${o.wall} wall`).join(', ')||'none'}.\n${(doc.rugs||[]).length?`Rugs: ${doc.rugs.map(r=>`a ${rugName(r)} at ${plWord(r,doc)}`).join('; ')}.\n`:''}Furnished with exactly these Louie Mae pieces, matching their product photos: ${doc.items.map(i=>{const p=byId(i.pid);return `${p.name} ${p.line} at ${plWord(i,doc)}`}).join('; ')||'no furniture yet'}.\nLight: ${tod<.35?'soft morning daylight':tod<.7?'warm golden-hour sun':'after dark, lit by warm lamps'} (${todLabel}). Three-quarter view at 1.3 m height, 26 mm lens, straight verticals, editorial interior photography. No people, no text.`;
+  const prompt=`Photorealistic interior photograph of a ${doc.W} × ${doc.D} m room with a ${doc.H} m ceiling. Walls in ${doc.wall} limewash plaster, ${PL_FLOORS.find(f=>f[0]===doc.floor)?.[1].toLowerCase()} floor. Openings: ${doc.openings.map(o=>`${o.t==='arch'?'an arched window':o.t==='door'?'a doorway':'a window'} on the ${o.wall} wall`).join(', ')||'none'}.\n${(doc.rugs||[]).length?`Rugs: ${doc.rugs.map(r=>`a ${rugName(r)} at ${plWord(r,doc)}`).join('; ')}.\n`:''}Furnished with exactly these Louie Mae pieces, matching their product photos: ${doc.items.map(i=>{const p=byId(i);return `${p.name} ${p.line} at ${plWord(i,doc)}`}).join('; ')||'no furniture yet'}.\nLight: ${tod<.35?'soft morning daylight':tod<.7?'warm golden-hour sun':'after dark, lit by warm lamps'} (${todLabel}). Three-quarter view at 1.3 m height, 26 mm lens, straight verticals, editorial interior photography. No people, no text.`;
   const prods=PRODUCTS.filter(p=>(cat==='all'||p.type===cat)&&(p.name+' '+p.line+' '+p.mat).toLowerCase().includes(q.toLowerCase()));
   const setOpening=(i,o)=>commit({...doc,openings:doc.openings.map((x,k)=>k===i?{...x,...o}:x)});
   const planWalls=doc.zones?.length?doc.zones.flatMap(z=>z.poly.map((a,i)=>{const b=z.poly[(i+1)%z.poly.length];return [`${z.id}:${i}`,`${z.name} · wall ${i+1}`,Math.hypot(b[0]-a[0],b[1]-a[1])]})):null;
   const wallLen=w=>planWalls?(planWalls.find(x=>x[0]===w)?.[2]??4):w==='back'?doc.W:doc.D;
   const applyPlan=r=>{setPlanOpen(false);if(!r){commit(plReflow({...doc,zones:undefined,blocks:undefined,underlay:undefined,openings:doc.openings.filter(o=>['back','left','right'].includes(o.wall))}));ctx.toast('Back to a rectangular room',{label:'Undo',fn:undo});return}
     const ok=new Set(r.zones.flatMap(z=>z.poly.map((_,i)=>`${z.id}:${i}`)));commit(plReflow({...doc,...r,openings:doc.openings.filter(o=>ok.has(o.wall))}));ctx.toast('Floor plan in place',{label:'Undo',fn:undo})};
-  const plRows=pieceRows(doc.items.map(i=>[i.pid,false]));
+  const plRows=editorSelections(doc.items,products);
   const pickRail=k=>setDrawer(d=>d===k?null:k);
   const selRug=R0,selPiece=S0;
   // AI render: the current view and its written brief go to an image model; the member sees the
@@ -2858,18 +2866,18 @@ function ReadyRoom({ctx,onDraftChange}){
   const startAi=async()=>{if(!eng)return;if(!ctx.me.signedIn){setShowPrompt(false);ctx.toast('Sign in to make an AI render');ctx.signInThen('room');return}
     if(view==='plan'){ctx.toast('Switch to Orbit or Walk to make an AI render.');return}
     setAiBusy(true);try{const S=E.current.S;const snap=await dataUrlBlob(E.current.snapshot());
-      const pieces=[...new Set(doc.items.map(i=>byId(i.pid)?.lid).filter(Boolean))].slice(0,6);
+      const pieces=[...new Set(doc.items.map(i=>byId(i)?.lid).filter(Boolean))].slice(0,6);
       const id=await createRender({title,prompt,snapshot:await snap.arrayBuffer(),camera:S?{view:S.view,orbit:S.cam,walk:S.eye}:undefined,pieces});
       setShowPrompt(false);setAiJob(id)}catch(e){ctx.toast(errText(e))}finally{setAiBusy(false)}};
-  return html`<main className="sx planner2"><h1 className="sr">Room planner</h1>
-    <${SxTop} ctx=${ctx} title=${title} setTitle=${t=>setTitle(t.slice(0,TITLE_MAX))} view="3d" onView=${k=>{ctx.setStudioSeed({view:k==='room'?'room':'collage',sync:doc.items.map(i=>i.pid)});ctx.go('studio')}} saved="Saved on this device" onShare=${()=>eng&&setShareImg(E.current.snapshot())}>
+  return html`<main className="sx planner2"><h1 className="sr">Room planner</h1>${!!doc.placementConflicts?.length&&html`<p role="alert" className="help">Some pieces could not be placed without overlap or outside the floor plan. Your pieces are preserved. Enlarge the room, move or remove these pieces: ${doc.items.filter(i=>doc.placementConflicts.includes(i.uid)).map(i=>byId(i).name).join(", ")}</p>`}
+    <${SxTop} ctx=${ctx} title=${title} setTitle=${t=>setTitle(t.slice(0,TITLE_MAX))} view="3d" onView=${k=>{ctx.setStudioSeed({view:k==='room'?'room':'collage',sync:doc.items.map(currentIdentity)});ctx.go('studio')}} saved="Saved on this device" onShare=${()=>eng&&setShareImg(E.current.snapshot())}>
       <${SxMenu} ctx=${ctx} hist=${{undo,redo,canUndo:hist.current.past.length>0,canRedo:hist.current.future.length>0,steps:hist.current.past.length}}>
         <div className="sx-pop-sec"><span className="sx-lbl">Placing</span>
           <button className="toggle" onClick=${()=>setSnap(!snap)}><span>Snap to 5 cm and walls</span><span className=${'sw'+(snap?' on':'')}></span></button></div>
         <div className="sx-pop-sec"><span className="sx-lbl">Units</span><div className="seg" role="group" aria-label="Units">${[['m','Metres'],['ft','Feet and inches']].map(([k,l])=>html`<button key=${k} className=${units===k?'on':''} onClick=${()=>setUnits(k)}>${l}</button>`)}</div></div>
         <div className="sx-pop-sec"><span className="sx-lbl">This room</span>
           <button className="pop-item" data-close disabled=${!eng} onClick=${()=>setShot(E.current.snapshot())}>${I('cam',{width:16})} Snapshot</button>
-          <button className="pop-item" data-close onClick=${async()=>{try{saveBlob(await planPdf(doc,{title,units,link:null}),fileName(title+'-plan','pdf'));ctx.toast('Plan PDF downloaded')}catch(e){ctx.toast(errText(e))}}}>${I('board',{width:16})} Download the plan as a PDF</button>
+          <button className="pop-item" data-close onClick=${async()=>{try{const signature=JSON.stringify(doc.items.map(i=>byId(i)));const generation=catalogGeneration;const blob=await planPdf(doc,{title,units,link:null,products});if(generation!==catalogGeneration||signature!==JSON.stringify(docRef.current.items.map(i=>byId(i)))||!E.current.S?.alive)throw Error('The catalog changed. Review your saved items and try again.');saveBlob(blob,fileName(title+'-plan','pdf'));ctx.toast('Plan PDF downloaded')}catch(e){ctx.toast(errText(e))}}}>${I('board',{width:16})} Download the plan as a PDF</button>
           <button className="pop-item" data-close disabled=${!eng||!doc.items.length} onClick=${()=>{const img=E.current.snapshot();const ids=doc.items.map(i=>i.pid);const els=ids.slice(0,8).map((pid,i)=>({...mkImg(pid,0,'collage',SLOTS,'cutout'),x:4+i*12,y:84,w:11,rot:0}));ctx.setStudioSeed({collage:{id:uid(),title:(title+' view').slice(0,TITLE_MAX),mode:'collage',page:'landscape',shape:'rect',edge:'shadow',bg:{img},els}});ctx.go('studio')}}>${I('img',{width:16})} Send this view to the Studio</button>
           <button className="pop-item" data-close onClick=${()=>setShowPrompt(true)}>${I('wand',{width:16})} Render brief</button></div>
       <//>
@@ -2878,7 +2886,7 @@ function ReadyRoom({ctx,onDraftChange}){
     ${drawer==='room'&&html`<${SxDrawer} title="Room" onClose=${()=>setDrawer(null)}><div className="pl-sec sx-pl">
         <div className="pl-plan"><b>${doc.zones?.length?`Floor plan · ${doc.zones.length} room${doc.zones.length===1?'':'s'}`:'Your own floor plan'}</b><span className="help" style=${{margin:0}}>${doc.zones?.length?'Rooms, walls and columns from your plan.':'Upload a plan, set its scale, then trace L-shapes, alcoves and angled walls.'}</span>
           <button className="btn btn-line btn-sm" onClick=${()=>setPlanOpen(true)}>${doc.zones?.length?'Edit the floor plan':'Draw a floor plan'}</button></div>
-        ${doc.zones?.length>0&&html`<div className="pl-zones">${doc.zones.map(z=>{const its=doc.items.filter(it=>inPoly([it.x,it.z],z.poly));const seats=its.filter(i=>!i.hang).reduce((s2,i)=>s2+byId(i.pid).seats,0);const sub=its.reduce((s2,i)=>s2+pr(byId(i.pid),ctx.mode),0);
+        ${doc.zones?.length>0&&html`<div className="pl-zones">${doc.zones.map(z=>{const its=doc.items.filter(it=>inPoly([it.x,it.z],z.poly));const seats=its.filter(i=>!i.hang).reduce((s2,i)=>s2+byId(i).seats,0);const sub=its.reduce((s2,i)=>s2+pr(byId(i),ctx.mode),0);
           const setZ=o=>commit({...doc,zones:doc.zones.map(x=>x.id===z.id?{...x,...o}:x)});
           return html`<div key=${z.id} className="pl-zone"><div className="row" style=${{justifyContent:'space-between'}}><b>${z.name}</b><span className="mono">${its.length} pieces · ${seats} seats · ${fmt(sub)}</span></div>
             <div className="row" style=${{gap:6}}><select className="field" style=${{height:34}} value=${z.floor||doc.floor} onChange=${e=>setZ({floor:e.target.value})} aria-label=${z.name+' floor'}>${PL_FLOORS.map(([k,l])=>html`<option key=${k} value=${k}>${l}</option>`)}</select>
@@ -2916,7 +2924,7 @@ function ReadyRoom({ctx,onDraftChange}){
         <p className="help" style=${{margin:0}}>Click to place in the middle of the room, or drag onto the floor.</p>
         <div className="pl-cat">${prods.map(p=>html`<button key=${p.id} draggable="true" onDragStart=${e=>e.dataTransfer.setData('text/pid',String(p.id))} onClick=${()=>addItem(p.id,0,0)} title=${'Place '+p.name}><img src=${cut(p.id)} alt="" loading="lazy"/><b>${p.name}</b><span className="mono">${plCm(p.id)?Math.round(plCm(p.id))+' cm':'Measurements needed'} · ${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span></button>`)}</div>
 </div><//>`}
-    ${drawer==='layers'&&html`<${SxDrawer} title="Layers" onClose=${()=>setDrawer(null)}><div className="pl-sec sx-pl">${doc.items.length?doc.items.map(it=>{const p=byId(it.pid);return html`<div key=${it.uid} className=${'layer'+(sel===it.uid?' on':'')} onClick=${()=>setSel(it.uid)}><span className="th" style=${{backgroundImage:`url(${cut(it.pid)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat',backgroundPosition:'center'}}></span><span>${p.name}</span><button className="ib" aria-label=${it.lock?'Unlock':'Lock'} onClick=${e=>{e.stopPropagation();patchItem(it.uid,{lock:!it.lock})}}>${I(it.lock?'lock':'unlock')}</button><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(it.uid)}}>${I('trash')}</button></div>`}):html`<p className="help">No pieces yet. Add some from the Pieces tab.</p>`}
+    ${drawer==='layers'&&html`<${SxDrawer} title="Layers" onClose=${()=>setDrawer(null)}><div className="pl-sec sx-pl">${doc.items.length?doc.items.map(it=>{const p=byId(it);return html`<div key=${it.uid} className=${'layer'+(sel===it.uid?' on':'')} onClick=${()=>setSel(it.uid)}><span className="th" style=${{backgroundImage:`url(${cut(it)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat',backgroundPosition:'center'}}></span><span>${p.name}</span><button className="ib" aria-label=${it.lock?'Unlock':'Lock'} onClick=${e=>{e.stopPropagation();patchItem(it.uid,{lock:!it.lock})}}>${I(it.lock?'lock':'unlock')}</button><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(it.uid)}}>${I('trash')}</button></div>`}):html`<p className="help">No pieces yet. Add some from the Pieces tab.</p>`}
         ${(doc.rugs||[]).map(r=>html`<div key=${r.uid} className=${'layer'+(sel===r.uid?' on':'')} onClick=${()=>setSel(r.uid)}><span className="th" style=${{background:r.color||'#D8C7A6',borderRadius:r.round?'50%':'4px'}}></span><span>Rug · ${r.size}</span><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(r.uid)}}>${I('trash')}</button></div>`)}</div><//>`}
 
     <section className=${'sx-stagewrap'+(sel?' has-sel':'')}>
@@ -2937,7 +2945,7 @@ function ReadyRoom({ctx,onDraftChange}){
         <div className="pl-hint sx-hint">${view==='plan'?'Drag to pan · scroll to zoom · drag a piece to move it':view==='eye'?'WASD or arrows to walk · drag to look':view==='product'?'Drag to turn the piece':'Drag to orbit · right-drag or two fingers to pan · scroll to zoom · double-click a piece to focus'}</div>
       </div>
       ${(selRug||selPiece)&&html`<div className="sx-selbar sx-selbar-pl" role="toolbar" aria-label="Edit selection" onPointerDown=${e=>e.stopPropagation()}>
-        <button className=${pop==='info'?'on':''} aria-expanded=${pop==='info'} onClick=${()=>setPop(pop==='info'?null:'info')}>${selRug?'Rug':byId(selPiece.pid).name}</button>
+        <button className=${pop==='info'?'on':''} aria-expanded=${pop==='info'} onClick=${()=>setPop(pop==='info'?null:'info')}>${selRug?'Rug':byId(selPiece).name}</button>
         <button aria-label="Rotate left 15°" title="Rotate (Shift+R)" onClick=${()=>patchSel(sel,{rot:(((selRug||selPiece).rot||0)+345)%360})}>↺</button>
         <button aria-label="Rotate right 15°" title="Rotate (R)" onClick=${()=>patchSel(sel,{rot:(((selRug||selPiece).rot||0)+15)%360})}>↻</button>
         <button aria-label="Duplicate" title="Duplicate (D)" onClick=${()=>dupItem(sel)}>${I('copy',{width:16})}</button>
@@ -2956,23 +2964,23 @@ function ReadyRoom({ctx,onDraftChange}){
         <div className="pl-dims">${[['x','X (m)'],['z','Z (m)']].map(([k,l])=>html`<label key=${k}><span className="mono mute">${l}</span><input className="field num" type="number" step="0.05" value=${R0[k]} onChange=${e=>patchRug(R0.uid,{[k]:+e.target.value||0})}/></label>`)}<label><span className="mono mute">Rotate</span><input className="field num" type="number" step="15" value=${R0.rot||0} onChange=${e=>patchRug(R0.uid,{rot:((+e.target.value||0)%360+360)%360})}/></label></div>
         
 </div>`:html`<div className="pl-sec" style=${{padding:0}}>
-        <div className="pl-insp-h"><img src=${cut(S0.pid)} alt=""/><div><span className="mono mute">${SD.p.sku} · ${MAT[SD.p.mat]}</span><h3>${SD.p.name}</h3><p className="mute" style=${{fontSize:13}}>${SD.p.line}</p></div></div>
+        <div className="pl-insp-h"><img src=${cut(S0)} alt=""/><div><span className="mono mute">${SD.p.sku} · ${MAT[SD.p.mat]}</span><h3>${SD.p.name}</h3><p className="mute" style=${{fontSize:13}}>${SD.p.line}</p></div></div>
         <div className="kv"><span className="mono mute">Footprint</span><span>${SD.w.toFixed(2)} × ${SD.d.toFixed(2)} m (approx.)</span><span className="mono mute">Price</span><span>${ctx.mode==='trade'?fmt(tp(SD.p),true):fmt(SD.p.price,true)}</span>
           <span className="mono mute">To left wall</span><span>${(S0.x-SD.w/2+doc.W/2).toFixed(2)} m</span><span className="mono mute">To right wall</span><span>${(doc.W/2-S0.x-SD.w/2).toFixed(2)} m</span><span className="mono mute">To back wall</span><span>${(S0.z-SD.d/2+doc.D/2).toFixed(2)} m</span></div>
         <div className="pl-dims">${[['x','X (m)'],['z','Z (m)']].map(([k,l])=>html`<label key=${k}><span className="mono mute">${l}</span><input className="field num" type="number" step="0.05" value=${S0[k]} onChange=${e=>patchItem(S0.uid,{[k]:+e.target.value||0})}/></label>`)}<label><span className="mono mute">Rotate</span><input className="field num" type="number" step="15" value=${S0.rot||0} onChange=${e=>patchItem(S0.uid,{rot:((+e.target.value||0)%360+360)%360})}/></label></div>
         
-        <button className="btn btn-ink btn-sm" onClick=${()=>ctx.openPin(S0.pid)}>View product</button>
+        <button className="btn btn-ink btn-sm" onClick=${()=>ctx.openPin(S0.pid,currentIdentity(S0))}>View product</button>
 </div>`}</div>`}
       </div>`}
       <${SxPill} ctx=${ctx} count=${doc.items.length} total=${pieces.reduce((s,p)=>s+pr(p,ctx.mode),0)} onOpen=${()=>setTraySheet(true)}/>
     </section>
-    ${traySheet&&html`<${SxTray} ctx=${ctx} rows=${plRows} onClose=${()=>setTraySheet(false)}/>`}
+    ${traySheet&&html`<${SxTray} ctx=${{...ctx,savedProducts:products}} rows=${plRows} onClose=${()=>setTraySheet(false)}/>`}
     ${shareImg&&html`<${ShareSheet} ctx=${ctx} title=${title} image=${shareImg} ids=${doc.items.map(i=>i.pid)} boardKey=${roomKey} room=${doc} units=${units} onClose=${()=>setShareImg(null)}/>`}
     ${planOpen&&html`<${FloorPlanEditor} ctx=${ctx} doc=${doc} units=${units} onClose=${()=>setPlanOpen(false)} onApply=${applyPlan}/>`}
     ${tplAsk&&html`<${SxDialog} title="Replace this room?" onClose=${()=>setTplAsk(null)}>
       <p className="sx-note">Starting from <b>${PL_TEMPLATES[tplAsk].label}</b> replaces the room and its ${doc.items.length} piece${doc.items.length===1?'':'s'} with:</p>
       <div className="sx-tplpre"><b>${PL_TEMPLATES[tplAsk].W} × ${PL_TEMPLATES[tplAsk].D} m</b><span>${PL_TEMPLATES[tplAsk].H} m ceiling · ${PL_FLOORS.find(f=>f[0]===PL_TEMPLATES[tplAsk].floor)?.[1]||'Oak'} floor</span>
-        <span className="sx-tplpcs">${PL_TEMPLATES[tplAsk].items.length?PL_TEMPLATES[tplAsk].items.map((it,i)=>html`<img key=${i} src=${cut(it.pid)} alt=${byId(it.pid).name} title=${byId(it.pid).name}/>`):html`<span className="sx-note">No pieces</span>`}</span></div>
+        <span className="sx-tplpcs">${PL_TEMPLATES[tplAsk].items.length?PL_TEMPLATES[tplAsk].items.map((it,i)=>html`<img key=${i} src=${cut(it)} alt=${byId(it).name} title=${byId(it).name}/>`):html`<span className="sx-note">No pieces</span>`}</span></div>
       <div className="row" style=${{gap:8,justifyContent:'flex-end'}}><button className="btn btn-line btn-sm" onClick=${()=>setTplAsk(null)}>Keep my room</button>
         <button className="btn btn-cog btn-sm" onClick=${()=>{const k=tplAsk;const t=JSON.parse(JSON.stringify(PL_TEMPLATES[k]));commit(plReflow({...t,tpl:k,items:t.items.map(it=>({...it,uid:uid()})),rugs:[],wallImg:null}));setSel(null);setTplAsk(null);ctx.toast('Room replaced',{label:'Undo',fn:undo})}}>Replace canvas</button></div>
     <//>`}
@@ -3103,29 +3111,30 @@ function FloorPlanEditor({ctx,doc,units,onClose,onApply}){
 }
 // A dimensioned plan PDF: every room with its wall lengths, each piece, rug and block labelled, a
 // seat count per room, then a piece list per room and the bundle link.
-async function planPdf(doc,{title,units,link}){
+async function planPdf(doc,{title,units,link,products=BY_ID}){
+  const byId=studioGeometry(products).product;const {extents:plExt}=plannerGeometry(products);
   const {PDFDocument,StandardFonts,rgb,PDFName,PDFString}=await import('pdf-lib');
   const pdf=await PDFDocument.create();pdf.setTitle(title+' plan');const serif=await pdf.embedFont(StandardFonts.TimesRomanItalic),sans=await pdf.embedFont(StandardFonts.Helvetica),bold=await pdf.embedFont(StandardFonts.HelveticaBold);
   const ink=rgb(.17,.13,.1),mute=rgb(.44,.39,.34),cog=rgb(.65,.37,.17),line=rgb(.8,.76,.7);
   const zones=roomZones(doc);const b=polyBounds(zones.map(z=>z.poly));const PW=792,PH=612,M=40;const sc=Math.min((PW-2*M)/(b.maxX-b.minX+1.2),(PH-2*M-50)/(b.maxZ-b.minZ+1.2));
   const X=x=>M+(x-b.minX+.6)*sc,Y=z=>PH-M-40-(z-b.minZ+.6)*sc;const u=units==='ft'?'ft':'m';const L=m=>fmtLen(m,units).replace('′',"'").replace('″','"').replace('½','.5');
   const page=pdf.addPage([PW,PH]);page.drawText(`${title} · floor plan`,{x:M,y:PH-M-10,size:18,font:serif,color:ink});
-  const seatsIn=z=>doc.items.filter(it=>!it.hang&&inPoly([it.x,it.z],z.poly)).reduce((s,it)=>s+byId(it.pid).seats,0);
+  const seatsIn=z=>doc.items.filter(it=>!it.hang&&inPoly([it.x,it.z],z.poly)).reduce((s,it)=>s+byId(it).seats,0);
   for(const z of zones){const p=z.poly;p.forEach((a,i)=>{const c=p[(i+1)%p.length];page.drawLine({start:{x:X(a[0]),y:Y(a[1])},end:{x:X(c[0]),y:Y(c[1])},thickness:2.2,color:ink});
       const len=Math.hypot(c[0]-a[0],c[1]-a[1]);if(len>.3){const t=L(len);const cw=polyArea(p)>0;const ux=(c[0]-a[0])/len,uz=(c[1]-a[1])/len;const nx=cw?uz:-uz,nz=cw?-ux:ux;page.drawText(t,{x:X((a[0]+c[0])/2+nx*.35)-sans.widthOfTextAtSize(t,7)/2,y:Y((a[1]+c[1])/2+nz*.35)-2,size:7,font:sans,color:mute})}});
     const c=polyCentre(p);const t=`${z.name} · ${seatsIn(z)} seats`;page.drawText(t,{x:X(c[0])-serif.widthOfTextAtSize(t,11)/2,y:Y(c[1]),size:11,font:serif,color:cog})}
   for(const bk of doc.blocks||[])page.drawRectangle({x:X(bk.x-bk.w/2),y:Y(bk.z+bk.d/2),width:bk.w*sc,height:bk.d*sc,color:rgb(.9,.87,.82),borderColor:mute,borderWidth:.6});
   for(const r of doc.rugs||[]){if(r.round)page.drawEllipse({x:X(r.x),y:Y(r.z),xScale:r.w/2*sc,yScale:r.w/2*sc,borderColor:line,borderWidth:.8,borderDashArray:[3,2]});else{const [ex,ez]=rugExt(r);page.drawRectangle({x:X(r.x-ex),y:Y(r.z+ez),width:2*ex*sc,height:2*ez*sc,borderColor:line,borderWidth:.8,borderDashArray:[3,2]})}}
-  for(const it of doc.items){const p=byId(it.pid);const [ex,ez]=plExt(it);page.drawRectangle({x:X(it.x-ex),y:Y(it.z+ez),width:2*ex*sc,height:2*ez*sc,color:rgb(.93,.88,.8),borderColor:ink,borderWidth:.5,opacity:it.hang?.4:1});
+  for(const it of doc.items){const p=byId(it);const [ex,ez]=plExt(it);page.drawRectangle({x:X(it.x-ex),y:Y(it.z+ez),width:2*ex*sc,height:2*ez*sc,color:rgb(.93,.88,.8),borderColor:ink,borderWidth:.5,opacity:it.hang?.4:1});
     page.drawText(p.name,{x:X(it.x)-sans.widthOfTextAtSize(p.name,6.5)/2,y:Y(it.z)-2,size:6.5,font:sans,color:ink})}
   page.drawText(`Measurements in ${u === 'ft' ? 'feet and inches' : 'metres'}. Walls ${fmtCm((doc.wallT||.12)*100,units)} thick, ceiling ${L(doc.H)}.`,{x:M,y:M-14,size:8,font:sans,color:mute});
   const addLink=(pg,x,y,w,h,url)=>{const ref=pdf.context.register(pdf.context.obj({Type:'Annot',Subtype:'Link',Rect:[x,y,x+w,y+h],Border:[0,0,0],A:{Type:'Action',S:'URI',URI:PDFString.of(url)}}));const a=pg.node.lookup(PDFName.of('Annots'));if(a)a.push(ref);else pg.node.set(PDFName.of('Annots'),pdf.context.obj([ref]))};
   // Piece list per room
   let pg=pdf.addPage([612,792]),y=792-M-20;pg.drawText('Pieces by room',{x:M,y,size:20,font:serif,color:ink});y-=16;if(link){pg.drawText(link,{x:M,y,size:9,font:sans,color:cog});addLink(pg,M,y-3,532,13,link)}y-=26;
   const rows=[...zones.map(z=>({z,items:doc.items.filter(it=>inPoly([it.x,it.z],z.poly))})),{z:{name:'Elsewhere'},items:doc.items.filter(it=>!zones.some(z=>inPoly([it.x,it.z],z.poly)))}].filter(r=>r.items.length);
-  for(const {z,items} of rows){if(y<M+80){pg=pdf.addPage([612,792]);y=792-M}const seats=items.filter(i=>!i.hang).reduce((s,i)=>s+byId(i.pid).seats,0);const sub=items.reduce((s,i)=>s+byId(i.pid).price,0);
+  for(const {z,items} of rows){if(y<M+80){pg=pdf.addPage([612,792]);y=792-M}const seats=items.filter(i=>!i.hang).reduce((s,i)=>s+byId(i).seats,0);const sub=items.reduce((s,i)=>s+byId(i).price,0);
     pg.drawText(`${z.name} · ${seats} seats · ${fmt(sub)} retail`,{x:M,y,size:12,font:bold,color:ink});y-=16;
-    for(const r of pieceRows(items.map(i=>[i.pid,false]))){const p=byId(r.pid);if(y<M){pg=pdf.addPage([612,792]);y=792-M}pg.drawText(`${r.qty} × ${p.name} — ${p.line}`.slice(0,90),{x:M+10,y,size:10,font:sans,color:ink});const t=fmt(p.price*r.qty);pg.drawText(t,{x:572-M-sans.widthOfTextAtSize(t,10),y,size:10,font:sans,color:ink});y-=14}y-=10}
+    for(const r of editorSelections(items,products)){const p=byId(r);if(y<M){pg=pdf.addPage([612,792]);y=792-M}pg.drawText(`${r.qty} × ${p.name} — ${p.line}`.slice(0,90),{x:M+10,y,size:10,font:sans,color:ink});const t=fmt(p.price*r.qty);pg.drawText(t,{x:572-M-sans.widthOfTextAtSize(t,10),y,size:10,font:sans,color:ink});y-=14}y-=10}
   return new Blob([await pdf.save()],{type:'application/pdf'});
 }
 
@@ -3165,25 +3174,16 @@ function Boards({ctx}){
 function BoardDetail({ctx}){
   const b=ctx.boards.find(x=>x.id===ctx.board)||ctx.boards[0];
   const savedCatalog=useProjectCatalog(b?.pins||[],BY_ID);
-  const byId=id=>{
-    const identity=b?.pins.find(pin=>pin.pid===id);
-    const product=identity?resolveProjectProduct(identity,savedCatalog.products):savedCatalog.products.get(id);
-    return product||displayProduct(new Map(),id);
-  };
-  const has=id=>Boolean(byId(id).lid);
-  const originalCtx=ctx;
-  ctx={...ctx,savedProducts:savedCatalog.products,addToTray:(pid,qty,element,quiet)=>{
-    const product=byId(pid);
-    if(product.lid)originalCtx.addToTray(pid,qty,element,quiet,product);
-  }};
+  const productFor=identity=>resolveProjectProduct(identity,savedCatalog.products)||displayProduct(new Map(),identity.pid);
+  ctx={...ctx,savedProducts:savedCatalog.products};
   const [tab,setTab]=useState('pins');const [secF,setSecF]=useState('all');const [org,setOrg]=useState(false);const [picked,setPicked]=useState([]);const [ns,setNs]=useState('');const [adding,setAdding]=useState(false);const [mat,setMat]=useState('all');const [share,setShare]=useState(false);
   if(!b)return html`<main className="wrap"><h1>Board unavailable</h1><p>This board no longer exists.</p><button className="btn btn-line" onClick=${()=>ctx.go('boards')}>Back to boards</button></main>`;
-  const pins=b.pins.filter(p=>secF==='all'||p.sec===secF).map(p=>byId(p.pid)).filter(p=>mat==='all'||p.mat===mat);
-  const total=b.pins.reduce((s,x)=>s+byId(x.pid).price,0);
+  const pins=b.pins.filter(p=>secF==='all'||p.sec===secF).map(identity=>({identity,key:projectItemKey(identity),p:productFor(identity)})).filter(row=>mat==='all'||row.p.mat===mat);
+  const unavailable=b.pins.some(identity=>!productFor(identity).lid);
   return html`<main className="wrap">
     <div className="ph-head" style=${{alignItems:'flex-start'}}><div><button className="btn btn-line btn-sm" onClick=${()=>ctx.go('boards')}>${I('back',{width:15})} Boards</button>
       <h1 style=${{marginTop:18}}>${b.title}</h1><p className="mute" style=${{marginTop:8}}>${b.pins.length} pins · ${b.sections.length} sections${b.secret?' · Secret board':''}</p></div>
-      <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-line" onClick=${()=>ctx.toStudio(b.pins.slice(0,6).map(x=>x.pid),b.title)}>${I('brush',{width:16})} Open in Studio</button><button className="btn btn-cog" onClick=${()=>setShare(true)}>${I('share',{width:16})} Share</button></div></div>
+      <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-line" onClick=${()=>ctx.toStudio(b.pins.slice(0,6).map(x=>({pid:x.pid,lid:x.lid,vid:x.vid})),b.title)}>${I('brush',{width:16})} Open in Studio</button><button className="btn btn-cog" onClick=${()=>setShare(true)}>${I('share',{width:16})} Share</button></div></div>
     ${[...savedCatalog.states.values()].some(row=>row.status!=='resolved')&&html`<div role="status" className="note">${savedCatalog.pending?'Checking saved products.':savedCatalog.preparing?'Saved products need verification.':savedCatalog.failed?'Saved products could not be checked. Reload to try again.':'Some saved products are unavailable or have conflicting identities.'} Your pins are preserved; unavailable pieces cannot be added to a project.</div>`}
     <div className="row" style=${{justifyContent:'space-between',flexWrap:'wrap',borderBottom:'1px solid var(--line)'}}>
       <div className="tabs left" style=${{margin:0}}>${[['pins','Pins'],['shop','Shop'],['organize','Organize']].map(([k,l])=>html`<button key=${k} className=${tab===k?'on':''} onClick=${()=>{setTab(k);setOrg(k==='organize');setPicked([])}}>${l}</button>`)}</div>
@@ -3196,13 +3196,13 @@ function BoardDetail({ctx}){
       ${[['all','Any material'],...Object.entries(MAT)].map(([k,l])=>html`<button key=${k} className=${'chip'+(mat===k?' on':'')} onClick=${()=>setMat(k)}>${l}</button>`)}
     </div>`}
     ${org&&html`<div className="note" style=${{marginBottom:18,alignItems:'center',flexWrap:'wrap'}}><b style=${{fontWeight:500}}>${picked.length} selected</b><span className="mute">Tap pins to select, then move them into a section.</span><span style=${{flex:1}}></span>
-      ${b.sections.map(s=>html`<button key=${s} className="btn btn-line btn-sm" disabled=${!picked.length} onClick=${()=>{ctx.updateBoard(b.id,x=>({...x,pins:x.pins.map(p=>picked.includes(p.pid)?{...p,sec:s}:p)}));ctx.toast(`Moved ${picked.length} to ${s}`);setPicked([])}}>Move to ${s}</button>`)}
-      <button className="btn btn-line btn-sm" style=${{color:'var(--bad)'}} disabled=${!picked.length} onClick=${()=>{ctx.updateBoard(b.id,x=>({...x,pins:x.pins.filter(p=>!picked.includes(p.pid))}));setPicked([])}}>Remove</button></div>`}
+      ${b.sections.map(s=>html`<button key=${s} className="btn btn-line btn-sm" disabled=${!picked.length} onClick=${()=>{ctx.updateBoard(b.id,x=>({...x,pins:x.pins.map(p=>picked.includes(projectItemKey(p))?{...p,sec:s}:p)}));ctx.toast(`Moved ${picked.length} to ${s}`);setPicked([])}}>Move to ${s}</button>`)}
+      <button className="btn btn-line btn-sm" style=${{color:'var(--bad)'}} disabled=${!picked.length} onClick=${()=>{ctx.updateBoard(b.id,x=>({...x,pins:x.pins.filter(p=>!picked.includes(projectItemKey(p)))}));setPicked([])}}>Remove</button></div>`}
     ${tab==='shop'?html`<div className="g2" style=${{marginTop:22}}>
-      <div>${b.pins.map(x=>{const p=byId(x.pid);return html`<div key=${p.id} className="line" style=${{gridTemplateColumns:'88px minmax(0,1fr) auto'}}><button className="th" style=${{backgroundImage:`url(${p.img})`}} onClick=${()=>ctx.openPin(p.id,{pid:x.pid,lid:x.lid,vid:x.vid})} aria-label=${'View '+p.name}></button><div><b>${p.name} <span className="mute" style=${{fontWeight:400}}>${p.line}</span></b><div className="meta">${x.sec||'No section'} · <span className="mono">${p.sku}</span></div></div><div className="row"><span className="mono">${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span><button className="ib" disabled=${!has(p.id)} aria-label=${'Add '+p.name+' to tray'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.line').querySelector('.th'))}>${I('plus')}</button></div></div>`})}</div>
-      <div className="panel" style=${{alignSelf:'start',display:'grid',gap:12}}><h3>Shop the board</h3><div className="sumrow"><span>${b.pins.length} pieces</span><span>${fmt(b.pins.reduce((s,x)=>s+pr(byId(x.pid),ctx.mode),0))}</span></div><button className="btn btn-ink" disabled=${b.pins.some(x=>!has(x.pid))} onClick=${()=>{if(b.pins.some(x=>!has(x.pid)))return;b.pins.forEach(x=>ctx.addToTray(x.pid,1,null,true));ctx.toast(`${b.pins.length} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Add all to tray</button><p className="help">Shared in shoppable mode, this tab is what your client sees, with your partner link attached.</p></div>
-    </div>`:html`<div className=${org?'wall organize':'wall'}>${pins.map(p=>org?html`<button key=${p.id} className="pin" onClick=${()=>setPicked(picked.includes(p.id)?picked.filter(x=>x!==p.id):[...picked,p.id])} aria-pressed=${picked.includes(p.id)}><div className="pin-img" style=${{outline:picked.includes(p.id)?'3px solid var(--cognac)':'none',outlineOffset:2}}><img src=${p.img} alt=${p.name} style=${{aspectRatio:p.ar,opacity:picked.includes(p.id)?.75:1}}/>${picked.includes(p.id)&&html`<span className="oos" style=${{left:'auto',right:10,top:10,bottom:'auto',background:'var(--cognac)',color:'#fff'}}>Selected</span>`}</div><div className="pin-meta"><b>${p.name}</b></div></button>`:html`<${PinCard} key=${p.id} p=${p} ctx=${ctx}/>`)}</div>`}
-    ${share&&html`<${ShareSheet} ctx=${ctx} title=${b.title} doc=${pinsDoc(b.title,b.pins.map(x=>x.pid))} ids=${b.pins.map(x=>x.pid)} boardKey=${'pins-'+b.id} onClose=${()=>setShare(false)}/>`}
+      <div>${b.pins.map(x=>{const p=productFor(x);return html`<div key=${projectItemKey(x)} className="line" style=${{gridTemplateColumns:'88px minmax(0,1fr) auto'}}><button className="th" style=${{backgroundImage:`url(${p.img})`}} onClick=${()=>ctx.openPin(p.id,{pid:x.pid,lid:x.lid,vid:x.vid})} aria-label=${'View '+p.name}></button><div><b>${p.name} <span className="mute" style=${{fontWeight:400}}>${p.line}</span></b><div className="meta">${x.sec||'No section'} · <span className="mono">${p.sku}</span></div></div><div className="row"><span className="mono">${fmt(pr(p,ctx.mode)*p.minimum)}${p.minimum>1?` / ${p.minimum} units`:""}</span><button className="ib" disabled=${!p.lid} aria-label=${'Add '+p.name+' to tray'} onClick=${e=>ctx.addToTray(p.id,p.minimum,e.currentTarget.closest('.line').querySelector('.th'),false,p)}>${I('plus')}</button></div></div>`})}</div>
+      <div className="panel" style=${{alignSelf:'start',display:'grid',gap:12}}><h3>Shop the board</h3><div className="sumrow"><span>${b.pins.length} pieces</span><span>${unavailable?'Review saved items':fmt(b.pins.reduce((s,x)=>{const p=productFor(x);return s+pr(p,ctx.mode)*p.minimum},0))}</span></div><button className="btn btn-ink" disabled=${unavailable} onClick=${()=>{if(unavailable)return;b.pins.forEach(x=>{const p=productFor(x);ctx.addToTray(x.pid,p.minimum,null,true,p)});ctx.toast(`${b.pins.length} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Add all to tray</button><p className="help">Shared in shoppable mode, this tab is what your client sees, with your partner link attached.</p></div>
+    </div>`:html`<div className=${org?'wall organize':'wall'}>${pins.map(({p,key})=>org?html`<button key=${key} className="pin" onClick=${()=>setPicked(picked.includes(key)?picked.filter(x=>x!==key):[...picked,key])} aria-pressed=${picked.includes(key)}><div className="pin-img" style=${{outline:picked.includes(key)?'3px solid var(--cognac)':'none',outlineOffset:2}}><img src=${p.img} alt=${p.name} style=${{aspectRatio:p.ar,opacity:picked.includes(key)?.75:1}}/>${picked.includes(key)&&html`<span className="oos" style=${{left:'auto',right:10,top:10,bottom:'auto',background:'var(--cognac)',color:'#fff'}}>Selected</span>`}</div><div className="pin-meta"><b>${p.name}</b></div></button>`:html`<${PinCard} key=${key} p=${p} ctx=${ctx}/>`)}</div>`}
+    ${share&&html`<${ShareSheet} ctx=${ctx} title=${b.title} doc=${pinsDoc(b.title,b.pins)} selections=${b.pins} ids=${b.pins.map(x=>x.pid)} boardKey=${'pins-'+b.id} onClose=${()=>setShare(false)}/>`}
   </main>`;
 }
 
@@ -3780,16 +3780,16 @@ export function App(){
   const trayCount=activeProject.items.reduce((s,i)=>s+i.qty,0);
   const fly=(fromEl)=>{try{const btn=document.getElementById('trayBtn');if(!fromEl||!btn)return;const a=fromEl.getBoundingClientRect(),b=btn.getBoundingClientRect();const im=document.createElement('img');im.src=fromEl.src||fromEl.style.backgroundImage.slice(5,-2);im.className='fly';const sz=Math.min(140,a.width);Object.assign(im.style,{left:a.left+a.width/2-sz/2+'px',top:a.top+a.height/2-sz/2+'px',width:sz+'px',height:sz+'px'});document.body.appendChild(im);
     im.animate([{transform:'translate(0,0) scale(1)',opacity:1},{transform:`translate(${b.left+b.width/2-(a.left+a.width/2)}px,${b.top+b.height/2-(a.top+a.height/2)}px) scale(.12)`,opacity:.6}],{duration:700,easing:'cubic-bezier(.5,0,.2,1)'}).onfinish=()=>im.remove()}catch(e){}};
-  const addToTray=(pid,qty=1,fromEl,quiet,verifiedProduct)=>{const selected=verifiedProduct?.id===pid?verifiedProduct:BY_ID.get(pid);if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==t.active)return p;const z=p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));
+  const addToTray=(pid,qty=1,fromEl,quiet,verifiedProduct)=>{const selected=verifiedProduct?.id===pid?verifiedProduct:BY_ID.get(pid);if(!selected)return;qty=editorOrderQuantity(qty,selected);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==t.active)return p;const z=p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));
     fly(fromEl);if(!quiet)toast(`${selected.name} added to ${activeProject.name}`,{label:'Open tray',fn:()=>setTray(true)})};
-  const saveTo=(pid,bid,quiet,verifiedProduct)=>{const selected=verifiedProduct?.id===pid?verifiedProduct:detailProduct?.id===pid?detailProduct:BY_ID.get(pid);if(!selected?.lid||!selected?.vid){toast('This product needs review before it can be saved.');return}setBoards(bs=>bs.map(b=>b.id===bid?{...b,t:Date.now(),pins:b.pins.some(x=>x.pid===pid)?b.pins:[{pid,lid:selected.lid,vid:selected.vid,sec:b.sections[0]||''},...b.pins]}:b).sort((a,b)=>b.t-a.t));if(!quiet){const b=boards.find(x=>x.id===bid);toast(`Saved to ${b?b.title:'board'}`,{label:'View',fn:()=>{setBoard(bid);go('board')}})}};
+  const saveTo=(pid,bid,quiet,verifiedProduct)=>{const selected=verifiedProduct?.id===pid?verifiedProduct:detailProduct?.id===pid?detailProduct:BY_ID.get(pid);if(!selected?.lid||!selected?.vid){toast('This product needs review before it can be saved.');return}setBoards(bs=>bs.map(b=>b.id===bid?{...b,t:Date.now(),pins:b.pins.some(x=>sameProjectSelection(x,{pid,lid:selected.lid,vid:selected.vid}))?b.pins:[{pid,lid:selected.lid,vid:selected.vid,sec:b.sections[0]||''},...b.pins]}:b).sort((a,b)=>b.t-a.t));if(!quiet){const b=boards.find(x=>x.id===bid);toast(`Saved to ${b?b.title:'board'}`,{label:'View',fn:()=>{setBoard(bid);go('board')}})}};
   const createBoard=(title,pid,secret=false,verifiedProduct)=>{const selected=pid?(verifiedProduct?.id===pid?verifiedProduct:detailProduct?.id===pid?detailProduct:BY_ID.get(pid)):null;if(pid&&(!selected?.lid||!selected?.vid)){toast('This product needs review before it can be saved.');return null}const id='b'+uid();setBoards(bs=>[{id,title,secret,collab:0,sections:[],pins:pid?[{pid,lid:selected.lid,vid:selected.vid,sec:''}]:[],t:Date.now()},...bs]);if(pid)toast('Saved to '+title);return id};
   const updateBoard=(id,fn)=>setBoards(bs=>bs.map(b=>b.id===id?fn(b):b));
   const imageSearch=f=>{const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{const c=document.createElement('canvas');c.width=c.height=48;const g=c.getContext('2d');g.drawImage(img,0,0,48,48);const d=g.getImageData(0,0,48,48).data;const buckets={};for(let i=0;i<d.length;i+=4){const k=[d[i]>>5,d[i+1]>>5,d[i+2]>>5].join();(buckets[k]=buckets[k]||{n:0,r:0,g:0,b:0});const B=buckets[k];B.n++;B.r+=d[i];B.g+=d[i+1];B.b+=d[i+2]}
     const pal=Object.values(buckets).sort((a,b)=>b.n-a.n).slice(0,5).map(B=>rgb2hex(B.r/B.n,B.g/B.n,B.b/B.n));setImgQ({src:r.result,pal});setQuery('');go('discover')};img.src=r.result};r.readAsDataURL(f)};
   const toStudio=(ids,title)=>{setStudioSeed({ids,title:title||'New collage'});setNonce(n=>n+1);setPin(null);go('studio')};
   const openPin=(id,identity)=>{if(id&&trayOpen){setPinReturnsToTray(true);setTray(false)}else if(!id&&pinReturnsToTray){setTray(true);setPinReturnsToTray(false)}const p=BY_ID.get(id);setPinIdentity(id?(identity||(p?{pid:id,lid:p.lid,vid:p.vid}:{pid:id})):null);setPin(id);if(id)setRecent(r=>[id,...r.filter(x=>x!==id)].slice(0,8))};
-  const addToProject=(pid,qty,projId,zone,fromEl,quiet)=>{const selected=detailProduct?.id===pid?detailProduct:BY_ID.get(pid);if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==projId)return p;const z=zone||p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));fly(fromEl);if(!quiet){const pn=(tray.projects.find(p=>p.id===projId)||{}).name||'project';toast(selected.name+' added to '+pn+(zone?' · '+zone:''),{label:'Open tray',fn:()=>{setPin(null);setTray(true)}})}};
+  const addToProject=(pid,qty,projId,zone,fromEl,quiet,resolved)=>{const selected=resolved||(detailProduct?.id===pid?detailProduct:BY_ID.get(pid));if(!selected)return;qty=editorOrderQuantity(qty,selected);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==projId)return p;const z=zone||p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));fly(fromEl);if(!quiet){const pn=(tray.projects.find(p=>p.id===projId)||{}).name||'project';toast(selected.name+' added to '+pn+(zone?' · '+zone:''),{label:'Open tray',fn:()=>{setPin(null);setTray(true)}})}};
   const createProject=name=>{const id=uid();setTrayState(t=>({...t,projects:[...t.projects,{id,name,target:20,zones:['Main room'],items:[]}]}));toast(`Project "${name}" created`);return id};
   const addZone=(pid,z)=>setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===pid&&!p.zones.includes(z)?{...p,zones:[...p.zones,z]}:p)}));
   const inspoCtx={inspo,addInspo:items=>setInspo(l=>[...items,...l]),removeInspo:id=>setInspo(l=>l.filter(x=>x.id!==id)),updateInspo:(id,o)=>setInspo(l=>l.map(x=>x.id===id?{...x,...o}:x)),roomWall,setRoomWall,inspoToStudio:(x,ids=[])=>{setStudioSeed({inspo:x,ids,title:x.title});setNonce(n=>n+1);go('studio')}};

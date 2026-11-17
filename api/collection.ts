@@ -67,8 +67,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     const categories = collection.subcategories.map(record).filter((value): value is Record<string, unknown> => value !== null);
     const primaryCategory = categories.find(value => value.isMainCategory) || categories[0];
-    const document: PublicCollectionDocument = { id, title: collection.title.slice(0, 200), subtitle: collection.subtitle.slice(0, 1000),
-      primaryCategoryImage: !filter && typeof primaryCategory?.image === 'string' ? primaryCategory.image : undefined,
+    const rootCategories = categories.some(value => value.isMainCategory) ? categories.filter(value => value.isMainCategory) : categories;
+    const document: PublicCollectionDocument = { rootCategories: !filter && req.query.view !== 'products' ? rootCategories.slice(0,100).map(category => ({id: String(category.id), title: String(category.title), image: typeof category.image === 'string' ? category.image : '', caption: typeof category.caption === 'string' ? category.caption : undefined, redirect: typeof category.redirect === 'string' ? category.redirect : undefined})) : undefined, id, title: collection.title.slice(0, 200), subtitle: collection.subtitle.slice(0, 1000),
+      primaryCategoryImage: !filter && req.query.view !== 'products' && typeof primaryCategory?.image === 'string' ? primaryCategory.image : undefined,
       heroImage: typeof collection.heroImage === 'string' ? collection.heroImage : undefined,
       categories: collection.subcategories.map(record).flatMap(category => category && typeof category.id === 'string' && typeof category.title === 'string'
         ? [{ id: category.id.slice(0, 200), title: category.title.slice(0, 200) }] : []).slice(0, 100), cards };

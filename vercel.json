@@ -23,6 +23,7 @@
     { "source": "/furniture/", "destination": "/trade", "permanent": false }
   ],
   "rewrites": [
+    { "source": "/sitemap.xml", "destination": "/api/sitemap" },
     { "source": "/products/:id", "destination": "/api/product?id=:id" },
     { "source": "/furniture/admin", "destination": "/furniture/index.html" },
     { "source": "/privacy", "destination": "/privacy.html" },

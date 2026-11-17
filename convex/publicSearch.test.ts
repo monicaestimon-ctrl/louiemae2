@@ -225,3 +225,15 @@ describe('verified public search', () => {
     expect((await search(t)).page).toHaveLength(1);
   });
 });
+
+it('sitemap pagination rechecks publication and exposes paths only', async () => {
+  const t = convexTest(schema, modules);
+  const id = await t.run(ctx => ctx.db.insert('products', { ...legacy, confirmedLandedCost: 50 }));
+  await expect(t.query(api.publicSearch.sitemapPage, { paginationOpts: {cursor:null,numItems:24} })).rejects.toThrow(/Public index/);
+  await prepare(t);
+  const current = await t.query(api.publicSearch.sitemapPage, { paginationOpts: {cursor:null,numItems:24} });
+  expect(current.page).toEqual([`/products/${encodeURIComponent(id)}`]);
+  expect(JSON.stringify(current)).not.toMatch(/confirmedLandedCost|price|Private supplier/);
+  await t.run(ctx => ctx.db.patch(id,{storefrontStatus:'hidden'}));
+  expect((await t.query(api.publicSearch.sitemapPage, { paginationOpts: {cursor:null,numItems:24} })).page).toEqual([]);
+});
