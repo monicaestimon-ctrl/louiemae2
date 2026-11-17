@@ -940,9 +940,9 @@ function StartRoom({ctx}){
   const ref=useLux();const sp=SPACES[ctx.space];const upRef=useRef();
   const [open,setOpen]=useState(1);const [mood,setMood]=useState('');const [drag,setDrag]=useState(false);
   const toStudioWith=f=>{if(!f||!f.type.startsWith('image/'))return;const r=new FileReader();r.onload=()=>{ctx.setStudioSeed({bg:r.result,mode:'room',ids:sp.picks.slice(0,3),title:'My space'});ctx.go('studio')};r.readAsDataURL(f)};
-  const live=useMemo(()=>{const q=mood.trim();if(q.length<3)return [];return matchPrompt(q).slice(0,3)},[mood,catalogGeneration]);
+  const live=useMemo(()=>{const q=mood.trim();if(!ctx.catalogComplete||q.length<3)return [];return matchPrompt(q).slice(0,3)},[mood,catalogGeneration,ctx.catalogComplete]);
   const moodPieces=live.map(p=>p.id);
-  const compose=()=>{ctx.setStudioSeed({prompt:mood||'cognac leather and rattan for a café'});ctx.go('studio')};
+  const compose=()=>{if(!ctx.catalogComplete){ctx.toast('The catalog is still loading. Your description is preserved.');return}ctx.setStudioSeed({prompt:mood||'cognac leather and rattan for a café'});ctx.go('studio')};
   const door=(i,props)=>({className:'door'+(open===i?' open':''),onMouseEnter:()=>setOpen(i),onFocusCapture:()=>setOpen(i),onClick:()=>setOpen(i),...props});
   return html`<section className="lx gallery" ref=${ref} aria-label="Start with your room">
     <div className="gal-glow" aria-hidden="true"></div>
@@ -972,7 +972,7 @@ function StartRoom({ctx}){
             <div className="arch-panel">
               <h3>Describe a feeling</h3>
               <div className="arch-more"><p>${live.length?'Pieces that match, floating in now.':'Type a mood. Matching pieces drift in as you write.'}</p>
-                <form className="door-mood" onSubmit=${e=>{e.preventDefault();compose()}} onClick=${e=>e.stopPropagation()}><input aria-label="Describe a feeling" value=${mood} onInput=${e=>setMood(e.target.value)} placeholder="Cognac leather, low light, brass"/><button aria-label="Compose in Studio">${I('arrow',{width:16})}</button></form></div>
+                <form className="door-mood" onSubmit=${e=>{e.preventDefault();compose()}} onClick=${e=>e.stopPropagation()}><input aria-label="Describe a feeling" value=${mood} onInput=${e=>setMood(e.target.value)} placeholder="Cognac leather, low light, brass"/><button disabled=${!ctx.catalogComplete} title=${!ctx.catalogComplete?"Available when the catalog finishes loading":undefined} aria-label="Compose in Studio">${I('arrow',{width:16})}</button></form></div>
             </div>
           </div>
         </div>
@@ -2159,7 +2159,7 @@ function Studio({ctx}){
     </section>
 
     ${traySheet&&html`<${SxTray} ctx=${{...ctx,savedProducts:savedCatalog.products}} rows=${rows} onClose=${()=>setTraySheet(false)}/>`}
-    ${composeOpen&&html`<${ComposeDialog} mode=${mode} page=${page} bg=${bg} onClose=${()=>setComposeOpen(false)} onUse=${(p,draft)=>{setComposeOpen(false);openNew({title:(p.charAt(0).toUpperCase()+p.slice(1)).slice(0,TITLE_MAX),els:draft},'Opened as a new collage')}}/>`}
+    ${composeOpen&&html`<${ComposeDialog} catalogComplete=${ctx.catalogComplete} mode=${mode} page=${page} bg=${bg} onClose=${()=>setComposeOpen(false)} onUse=${(p,draft)=>{setComposeOpen(false);openNew({title:(p.charAt(0).toUpperCase()+p.slice(1)).slice(0,TITLE_MAX),els:draft},'Opened as a new collage')}}/>`}
     ${idea&&html`<${SxDialog} title=${idea.title} onClose=${()=>setIdea(null)}>
       <${BoardPreview} els=${idea.items.map((id,i)=>mkImg(id,i,'collage')).concat([mkText(idea.title,6,88,4.6)])} bg=${{color:'#EFE6D8',grid:true}} page="portrait"/>
       <p className="sx-note">By ${idea.by}. Remixing opens a new collage; this one stays as it is.</p>
@@ -2169,15 +2169,16 @@ function Studio({ctx}){
   </main>`;
 }
 // Compose: a prompt, then three drafts to choose from. The chosen one opens as a new collage.
-function ComposeDialog({mode,page,bg,onClose,onUse}){
+function ComposeDialog({mode,page,bg,onClose,onUse,catalogComplete=true}){
   const [p,setP]=useState('');const [drafts,setDrafts]=useState(null);const [pick,setPick]=useState(0);
-  const run=q=>{q=(q??p).trim();if(!q)return;setP(q);setDrafts([0,1,2].map(v=>compose(q,mode,v)));setPick(0)};
+  const run=q=>{if(!catalogComplete)return;q=(q??p).trim();if(!q)return;setP(q);setDrafts([0,1,2].map(v=>compose(q,mode,v)));setPick(0)};
   return html`<${SxDialog} title="Compose" wide onClose=${onClose}>
     <form className="sx-compose" onSubmit=${e=>{e.preventDefault();run()}}>
       <input className="field" autoFocus aria-label="Describe a style, material or colour" placeholder="A style, texture, material or colour" value=${p} onInput=${e=>setP(e.target.value)}/>
-      <button className="btn btn-cog btn-sm">${I('wand',{width:15})} Compose</button></form>
-    <div className="sx-chips">${['cognac leather café','olive velvet bistro','bouclé lobby','rattan coffee bar','brass lounge'].map(c=>html`<button type="button" key=${c} className="chip" onClick=${()=>run(c)}>${c}</button>`)}</div>
-    ${drafts?html`<${React.Fragment}><div className="sx-drafts" role="radiogroup" aria-label="Drafts">${drafts.map((d,i)=>html`<button key=${i} role="radio" aria-checked=${pick===i} className=${'sx-draft'+(pick===i?' on':'')} onClick=${()=>setPick(i)}><${BoardPreview} els=${d} bg=${bg.img?{color:'#EFE6D8',grid:true}:bg} page=${page}/><span>Draft ${i+1}</span></button>`)}</div>
+      <button disabled=${!catalogComplete} className="btn btn-cog btn-sm">${I('wand',{width:15})} Compose</button></form>
+    <div className="sx-chips">${['cognac leather café','olive velvet bistro','bouclé lobby','rattan coffee bar','brass lounge'].map(c=>html`<button type="button" key=${c} className="chip" disabled=${!catalogComplete} onClick=${()=>run(c)}>${c}</button>`)}</div>
+    ${!catalogComplete&&html`<p role="status">The catalog is still loading. Your current collage and description are preserved.</p>`}
+    ${drafts&&catalogComplete?html`<${React.Fragment}><div className="sx-drafts" role="radiogroup" aria-label="Drafts">${drafts.map((d,i)=>html`<button key=${i} role="radio" aria-checked=${pick===i} className=${'sx-draft'+(pick===i?' on':'')} onClick=${()=>setPick(i)}><${BoardPreview} els=${d} bg=${bg.img?{color:'#EFE6D8',grid:true}:bg} page=${page}/><span>Draft ${i+1}</span></button>`)}</div>
       <div className="row" style=${{justifyContent:'space-between',flexWrap:'wrap',gap:8}}><span className="sx-note">Opens as a new collage. The one you are working on stays saved.</span><button className="btn btn-cog btn-sm" onClick=${()=>onUse(p,drafts[pick])}>Use this</button></div><//>`
       :html`<p className="sx-note">Describe a look and we'll draft three boards from the House catalog.</p>`}
   <//>`;
@@ -3802,7 +3803,7 @@ export function App({catalogComplete=true}={}){
     <${Header} ctx=${ctx}/>
     <${DeliveryQuoteAccess}/>
     ${!catalogComplete&&route!=='home'&&html`<p role="status" className="wrap help">Loading the full catalog. More pieces will appear; your saved projects remain available.</p>`}
-    ${!catalogComplete&&['discover','quiz'].includes(route)?html`<main className="wrap" aria-busy="true"><h1>Loading the catalog</h1><p>Search, filters and recommendations will be available when all current products are checked.</p></main>`:route.startsWith('b/')?html`<${SharedBoard} key=${route} ctx=${ctx} slug=${route.slice(2)}/>`:html`<${Page} key=${route+(route==='studio'?nonce:'')} ctx=${ctx}/>`}
+    ${!catalogComplete&&(['discover','quiz'].includes(route)||(route==='studio'&&studioSeed?.prompt))?html`<main className="wrap" aria-busy="true"><h1>Loading the catalog</h1><p>Search, filters and recommendations will be available when all current products are checked.</p></main>`:route.startsWith('b/')?html`<${SharedBoard} key=${route} ctx=${ctx} slug=${route.slice(2)}/>`:html`<${Page} key=${route+(route==='studio'?nonce:'')} ctx=${ctx}/>`}
     ${route!=='studio'&&route!=='room'&&html`<${TabBar} ctx=${ctx}/>`}
     ${pin&&(detailProduct?html`<${PinDetail} key=${detailProduct.lid+':'+detailProduct.vid} ctx=${ctx}/>`:html`<${Modal} open=${true} label=${detailCatalog.pending||detailCatalog.preparing||detailCatalog.failed?"Product availability":"Product unavailable"} onClose=${()=>openPin(null)}><p role="status">${projectResolutionMessage(detailIdentity,detailCatalog.states)}</p><button className="btn btn-line" onClick=${()=>openPin(null)}>Close</button><//>`)}
     ${(trayOpen||pinReturnsToTray)&&html`<${Tray} ctx=${ctx} open=${trayOpen}/>`}

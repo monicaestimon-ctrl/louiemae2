@@ -4,16 +4,16 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { getFunctionName } from 'convex/server';
 import { LiveShell, TradeBoundary } from './LiveShell';
 
-const mocks = vi.hoisted(() => ({ me: undefined as { signedIn: boolean; verified?: boolean } | undefined, authLoading: false, authenticated: undefined as boolean | undefined, curated: [] as unknown[] | undefined, failed: false, rows: [] as unknown[], status: 'LoadingFirstPage', loadMore: vi.fn(), install: vi.fn() }));
+const mocks = vi.hoisted(() => ({ me: undefined as { signedIn: boolean; verified?: boolean } | undefined, authLoading: false, authenticated: undefined as boolean | undefined, curated: [] as unknown[] | undefined, failed: false, rows: [] as unknown[], status: 'LoadingFirstPage', loadMore: vi.fn(), install: vi.fn(), references: vi.fn() }));
 vi.mock('convex/react', () => ({
   useConvexAuth: () => ({ isLoading: mocks.authLoading, isAuthenticated: mocks.authenticated ?? Boolean(mocks.me?.signedIn) }),
   useQuery: (query: Parameters<typeof getFunctionName>[0]) => { if (mocks.failed) throw new Error('account unavailable'); return getFunctionName(query) === 'holm:catalogItems' ? mocks.curated : mocks.me; },
   usePaginatedQuery: () => ({ results: mocks.rows, status: mocks.status, loadMore: mocks.loadMore }),
 }));
 vi.mock('./catalog', () => ({ liveProducts: (rows: unknown[]) => rows }));
-vi.mock('./app', () => ({ App: () => <main className="home">Verified catalog<input aria-label="Unsaved project name" /></main>, setProducts: (rows: unknown[]) => mocks.install(rows) }));
+vi.mock('./app', () => ({ App: () => <main className="home">Verified catalog<input aria-label="Unsaved project name" /></main>, setProducts: (rows: unknown[], refs: unknown[]) => { mocks.install(rows); mocks.references(refs); } }));
 beforeEach(() => {
-  mocks.curated=[]; mocks.me = undefined; mocks.authLoading = false; mocks.authenticated = undefined; mocks.failed = false; mocks.rows = []; mocks.status = 'LoadingFirstPage'; mocks.loadMore.mockReset(); mocks.install.mockReset();
+  mocks.curated=[]; mocks.me = undefined; mocks.authLoading = false; mocks.authenticated = undefined; mocks.failed = false; mocks.rows = []; mocks.status = 'LoadingFirstPage'; mocks.loadMore.mockReset(); mocks.install.mockReset(); mocks.references.mockReset();
   vi.useFakeTimers(); vi.spyOn(console, 'error').mockImplementation(() => undefined);
   const shell = document.createElement('div'); shell.id = 'holm-shell'; shell.textContent = 'Startup hero'; document.body.append(shell);
 });
@@ -140,4 +140,17 @@ it('installs first and complete datasets without reinstalling every intermediate
   expect(mocks.install.mock.calls.length).toBe(count);
   mocks.status='Exhausted';view.rerender(<LiveShell/>);
   expect(mocks.install).toHaveBeenLastCalledWith(mocks.rows);
+});
+
+it('applies price corrections and withdrawals to installed rows and references before loading completes', () => {
+  mocks.me={signedIn:false};mocks.status='CanLoadMore';mocks.rows=[{id:'first',price:10}];mocks.curated=[{productId:'curated',item:{id:'curated',price:20}}];
+  const view=render(<LiveShell/>);
+  mocks.status='LoadingMore';mocks.rows=[{id:'first',price:11},{id:'later',price:30}];mocks.curated=[{productId:'curated',item:{id:'curated',price:21}}];view.rerender(<LiveShell/>);
+  expect(mocks.install).toHaveBeenLastCalledWith([{id:'first',price:11}]);
+  expect(mocks.references).toHaveBeenLastCalledWith([{id:'curated',price:21}]);
+  mocks.rows=[{id:'later',price:30}];mocks.curated=[{productId:'curated',item:null}];view.rerender(<LiveShell/>);
+  expect(mocks.install).toHaveBeenLastCalledWith([]);expect(mocks.references).toHaveBeenLastCalledWith([]);
+  expect(screen.queryByText(/No products are available/)).toBeNull();
+  mocks.status='Exhausted';mocks.rows=[];view.rerender(<LiveShell/>);
+  expect(screen.getByText(/No products are available/)).toBeTruthy();
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useConvexAuth, usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { api } from '../convex/_generated/api';
@@ -39,7 +39,13 @@ function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
   const references = useMemo(() => curatedRows === undefined ? null : liveProducts(curatedRows.flatMap(row => row.item ? [row.item] : []) as LiveItem[]), [curatedRows]);
   useEffect(() => { if (status === 'CanLoadMore') loadMore(24); }, [status, loadMore]);
   const [installed, setInstalled] = useState(false);
-  const mapped = useMemo(() => status === 'Exhausted' || (!installed && status !== 'LoadingFirstPage' && results.length > 0) ? liveProducts(results as LiveItem[]) : null, [results, status, installed]);
+  const [visibleIds, setVisibleIds] = useState<readonly string[] | null>(null);
+  const previousInstallation = useRef('');
+  const mapped = useMemo(() => {
+    if (status === 'LoadingFirstPage' || (!installed && !results.length && status !== 'Exhausted')) return null;
+    const visible = visibleIds && status !== 'Exhausted' ? results.filter(row => visibleIds.includes(row.id)) : results;
+    return liveProducts(visible as LiveItem[]);
+  }, [results, status, installed, visibleIds]);
   const [hasContent, setHasContent] = useState(false);
   const [empty, setEmpty] = useState(false);
   // The legacy app reads a module-level catalog. Install only committed data,
@@ -47,11 +53,15 @@ function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
   useLayoutEffect(() => () => setProducts([]), []);
   useLayoutEffect(() => {
     if (mapped === null || references === null) return;
+    const signature = JSON.stringify([mapped, references, status === 'Exhausted']);
+    if (previousInstallation.current === signature) return;
+    previousInstallation.current = signature;
     setProducts(mapped, references);
+    if (visibleIds === null || status === 'Exhausted') setVisibleIds(results.map(row => row.id));
     setInstalled(true);
-    setEmpty(mapped.length === 0);
+    setEmpty(previous => mapped.length === 0 ? status === 'Exhausted' || previous : false);
     if (mapped.length) setHasContent(true);
-  }, [mapped, references]);
+  }, [mapped, references, visibleIds, status, results]);
   const ready = installed;
   const timedOut = usePendingTimeout(!ready);
   const shell = document.getElementById('holm-shell');

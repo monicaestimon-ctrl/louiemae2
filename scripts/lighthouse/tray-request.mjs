@@ -489,10 +489,25 @@ try {
   await page.evaluate(()=>{window.fixtureSetComplete(false);location.hash='discover';});
   await page.waitForFunction(()=>document.querySelector('main h1')?.textContent==='Loading the catalog');
   assert.equal(await page.$('main input[type="range"]'),null);
+  await page.evaluate(()=>{location.hash='home';});
+  await page.waitForSelector('[aria-label="Describe a feeling"]');
+  await page.type('[aria-label="Describe a feeling"]','cognac leather');
+  assert.equal(await page.$eval('[aria-label="Compose in Studio"]',node=>node.disabled),true);
+  await page.evaluate(()=>{location.hash='studio';});
+  await page.waitForSelector('.sx-canvas');
+  const beforeCompose=await page.$$eval('.sx-canvas .el',nodes=>nodes.length);
+  await page.evaluate(()=>[...document.querySelectorAll('button')].find(button=>button.textContent.trim()==='Compose').click());
+  await page.waitForSelector('.sx-compose');
+  assert.equal(await page.$eval('.sx-compose button',node=>node.disabled),true);
+  assert.equal(await page.$('.sx-drafts'),null);
+  assert.equal(await page.$$eval('.sx-canvas .el',nodes=>nodes.length),beforeCompose);
   await page.evaluate(()=>{window.fixtureSetComplete(true);});
+  await page.waitForFunction(()=>!document.querySelector('.sx-compose button')?.disabled);
+  await page.keyboard.press('Escape');
+  await page.evaluate(()=>{location.hash='discover';});
   await page.waitForFunction(()=>document.querySelector('main h1')?.textContent.includes('Find the piece'));
   assert.equal(await page.evaluate(()=>window.fixtureCommands||0),0);
-  results.push({partialCatalogNeverPresentedAsCompleteSearch:true,businessCommands:0});
+  results.push({partialCatalogNeverPresentedAsCompleteSearch:true,partialRecommendationsBlocked:true,savedDraftPreserved:true,businessCommands:0});
 
   assert.deepEqual(pageErrors, []);
   await writeFile(
