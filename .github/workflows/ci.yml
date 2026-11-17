@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   # Preserve a production run once it starts so a later push cannot cancel a
@@ -55,6 +58,29 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Verify deferred HOLM bundle boundaries
+        run: npm run verify:deferred-bundles
+
+      - name: Verify HOLM interaction fixtures
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: |
+          npm run test:holm:browser
+          npm run test:tray-request:browser
+          npm run test:application:browser
+
+      - name: Retain HOLM quality evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: holm-quality-${{ github.sha }}
+          path: |
+            artifacts/lighthouse/deferred-bundles.json
+            artifacts/lighthouse/holm-modal-integration.json
+            artifacts/lighthouse/*browser.json
+          if-no-files-found: ignore
+          retention-days: 14
 
   deploy-convex:
     # Only deploy to Convex on pushes to main (not on PRs)

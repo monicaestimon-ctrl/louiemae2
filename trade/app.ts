@@ -1,5 +1,7 @@
 /* eslint-disable */
 // @ts-nocheck
+import { TradeAccount, TradeWelcome, TradeApplication, ProjectDeliveryPanel, ProductDeliveryEstimate, ProgramHubV2, TeamPanel } from './deferredFeatures';
+import { DeliveryCalculatorDisclosure } from './DeliveryCalculatorDisclosure';
 import { catalogOperationGuard } from './catalogOperation';
 import React, { useState, useEffect, useLayoutEffect, useRef, useId, useMemo, startTransition } from 'react';
 import htm from 'htm';
@@ -8,8 +10,6 @@ import { displayProduct } from './catalogLookup';
 import { unresolvedPlannerItems } from './plannerDraft';
 import { PlannerReview } from './PlannerReview';
 import { usePlannerPersistence } from './usePlannerPersistence';
-import { TradeWelcome } from './TradeWelcome';
-import { TradeApplication } from './TradeApplication';
 import { BUSINESS_TYPES as BTYPES } from './application';
 import { Modal } from '../components/Modal';
 import { useFormValidation } from '../components/forms/useFormValidation';
@@ -24,14 +24,10 @@ import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { phoneCut } from './phoneCut.mjs';
 import {DeliveryQuoteAccess} from '../components/delivery/DeliveryQuoteStatus';
-import TradeDeliveryCalculator from '../components/delivery/TradeDeliveryCalculator';
-import ProjectDeliveryPanel from '../components/delivery/ProjectDeliveryPanel';
 import { projectLines } from './projectLines';
 import { resolveProjectItems, sameProjectSelection, sameSavedRow, restoreProjectItem, projectItemKey, mergeProjectItem } from './projectIdentity';
-import ProductDeliveryEstimate from '../components/delivery/ProductDeliveryEstimate';
 import { SafeImage } from '../components/SafeImage';
 import DeliveryBoundary from '../components/delivery/DeliveryBoundary';
-import ProgramHubV2, { TeamPanel } from '../components/partner/ProgramHubV2';
 import { area as polyArea, inside as inPoly, centroid as polyCentre, bounds as polyBounds, setWallLength } from '../lib/holmPlan';
 export const html = htm.bind(React.createElement);
 
@@ -1078,7 +1074,7 @@ function TradeBand({ctx}){
         <header data-r style=${{'--i':0}}><h2>Built for the trade.</h2><p>One verified account opens approved prices on eligible pieces, eligible project pricing, and sourcing on request. Join the partner program to earn commission when people order through your links.</p></header>
         <label className="tc-engrave" data-r style=${{'--i':1}}><span>Preview your trade pass</span><input value=${name} maxLength="26" onInput=${e=>setName(e.target.value)} placeholder="Your studio name"/></label>
         <div className="tc-lens" data-r style=${{'--i':2}}>
-          <${TradeDeliveryCalculator}/>
+          <${DeliveryCalculatorDisclosure}/>
         </div>
         <div className="tc-actions" data-r style=${{'--i':3}}><button className="btn btn-lg lx-cream" onClick=${()=>ctx.go('trade')}>Apply for trade</button><button className="btn btn-lg lx-ghost" onClick=${()=>ctx.go('hub')}>Your quotes</button></div>
       </div>
@@ -3733,26 +3729,7 @@ function Quiz({ctx}){
   </div></main>`;
 }
 /* ================= ACCOUNT ================= */
-function Account({ctx}){
-  const me=ctx.me;const app=useQuery(api.holm.myApplication);
-  if(!me.signedIn)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h3>Sign in to manage your account</h3><button className="btn btn-ink" onClick=${()=>ctx.go('welcome')}>Sign in</button></div></main>`;
-  const trade={approved:'Verified',pending:'In review',needs_info:'More information needed',rejected:'Not approved',none:'Not applied'}[me.tradeStatus]||'Not applied';
-  return html`<main className="wrap"><div className="acct">
-    <nav aria-label="Account settings"><button className="on">Account</button><button onClick=${()=>ctx.go('hub')}>Quotes and trade pass</button><button onClick=${ctx.signOut}>Log out</button></nav>
-    <section className="acct-sec">
-      <h2>Your account</h2>
-      <dl className="specs">
-        <div><dt>Email</dt><dd>${me.email}</dd></div>
-        <div><dt>Business</dt><dd>${me.businessName||app?.businessName||'Not added yet'}</dd></div>
-        <div><dt>Trade status</dt><dd style=${me.verified?{color:'var(--ok)'}:{}}>${trade}</dd></div>
-        <div><dt>Pricing</dt><dd>${me.verified?'Trade, with project pricing':'Retail'}</dd></div>
-      </dl>
-      ${!me.verified&&me.tradeStatus!=='pending'&&html`<button className="btn btn-ink" style=${{justifySelf:'start'}} onClick=${()=>ctx.go('trade')}>Apply for trade pricing</button>`}
-      ${me.admin&&html`<button className="btn btn-line" style=${{justifySelf:'start'}} onClick=${()=>ctx.go('admin')}>Review trade applications</button>`}
-      <p className="help">To change your email, add a resale certificate after approval or close your account, email withlove@louiemae.com from the address on this account.</p>
-    </section>
-  </div></main>`;
-}
+function Account({ctx}) { return html`<${TradeAccount} me=${ctx.me} onNavigate=${ctx.go} onSignOut=${ctx.signOut}/>`; }
 /* ================= WELCOME / LOGIN ================= */
 /** Adapt the legacy catalog artwork and route context to the typed trade sign-in screen. */
 function Welcome({ctx}) {

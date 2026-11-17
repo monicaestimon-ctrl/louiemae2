@@ -2,7 +2,7 @@
 
 Prepared November 10, 2026 for Louie Mae and House of Louie Mae. This specification targets 100 Performance, 100 Accessibility, 100 Best Practices and 100 SEO on public, indexable storefront routes, on mobile and desktop. It also requires accessible, fast, secure private trade and checkout journeys without exposing them to search engines.
 
-Status: implementation handoff, not a claim that these changes are implemented or production is healthy. The last known production blocker is Convex account suspension; the owner is handling billing separately. Engineering and fixture-based testing can proceed while that is unresolved. Production acceptance requires the restored backend and real eligible catalog data.
+Status updated November 16, 2026: production service is restored, and PR #295 is merged and deployed. Implementation and acceptance remain incomplete. See README.md for verified increments and remaining work; restored service and passing fixture tests do not establish full commerce or repeated Lighthouse acceptance.
 
 # 1 Success criteria and scope
 

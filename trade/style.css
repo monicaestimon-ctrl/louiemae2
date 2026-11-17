@@ -533,7 +533,7 @@ a.pin-act{text-decoration:none}
 .acct nav button.on{background:var(--plaster);color:var(--ink);font-weight:500}
 .acct nav .danger{color:var(--bad)}
 .acct-sec{display:grid;gap:18px;max-width:640px}
-.acct-sec h2{font-size:40px}
+.acct-sec h1,.acct-sec h2{font-size:40px}
 .linkrow{display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
 .linkrow .lg{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-weight:600;color:#fff;font-size:15px}
 @media (max-width:760px){.acct{grid-template-columns:1fr}.acct nav{position:static;grid-auto-flow:column;overflow-x:auto}}

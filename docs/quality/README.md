@@ -180,3 +180,16 @@ Planner documents with unavailable or conflicting source identities now open in 
 Validation for this prerequisite increment: 1,307 full-suite tests passed with one existing skip, plus the separately added planner regression. Focused catalog/identity tests, TypeScript, targeted lint, production build/client-secret validation, and HOLM, tray and planner browser fixtures passed. These checks do not complete progressive pagination or the historical identity migration.
 
 Sharing and exports also stop at an explicit review state when any referenced piece is unavailable, preventing a mixed board from silently publishing only its remaining products. The local/account browser scenarios verify that no sharing or cover-upload command is issued.
+
+
+## HOLM optional feature loading
+
+Sign-in, account, trade application, delivery calculator, product/project delivery panels and the v2 earnings/team portal now have typed lazy boundaries. They load when mounted, retain their props, show a status while pending, and offer retry after a failed or stalled request. The error boundary is local to the tool. Existing authorization and server pricing remain authoritative.
+
+`npm run verify:deferred-bundles` builds a manifest and asserts that all seven optional module entries are outside the HOLM boot static JavaScript closure. It records chunk bytes in `artifacts/lighthouse/deferred-bundles.json`; these are uncompressed file sizes, not transferred bytes or a Lighthouse score. The existing App, delivery-request and application browser fixtures pass; the boundary tests cover delayed load, failure recovery and a stalled request. Progressive catalog pagination and the remaining legacy module extraction are still open.
+
+PR #295 is merged and deployed: main `7a9c9144e6f520a7dbada9b41ce13090bc0cd817`, frontend `dpl_14UUHSV14Zpt7TZFwPTAK24UN4sR`, successful main CI/backend run `43986066912`. Read-only retail and HOLM catalog smoke checks found current product data with no page errors. This does not establish full checkout or full-spec acceptance.
+
+The account screen is now a typed module using the generated server membership DTO. Anonymous visitors skip private application reads; pending members retain retail pricing and do not see a duplicate application invitation. Account navigation and sign-out behavior are covered by focused tests.
+
+The homepage delivery calculator has an explicit expandable control; hiding it retains inputs after the first open. The actual local production build was checked with live anonymous catalog reads: no optional screen requests on initial home, account/sign-in chunks load on navigation, and a blocked account chunk produces local recovery. No business command or sign-in submission was made. CI now runs the bundle guard and HOLM, delivery-request and application fixtures and retains their JSON evidence.
