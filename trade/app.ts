@@ -1,5 +1,6 @@
 /* eslint-disable */
 // @ts-nocheck
+import { TradeWelcome, TradeApplication, TradeDeliveryCalculator, ProjectDeliveryPanel, ProductDeliveryEstimate, ProgramHubV2, TeamPanel } from './deferredFeatures';
 import { catalogOperationGuard } from './catalogOperation';
 import React, { useState, useEffect, useLayoutEffect, useRef, useId, useMemo, startTransition } from 'react';
 import htm from 'htm';
@@ -8,8 +9,6 @@ import { displayProduct } from './catalogLookup';
 import { unresolvedPlannerItems } from './plannerDraft';
 import { PlannerReview } from './PlannerReview';
 import { usePlannerPersistence } from './usePlannerPersistence';
-import { TradeWelcome } from './TradeWelcome';
-import { TradeApplication } from './TradeApplication';
 import { BUSINESS_TYPES as BTYPES } from './application';
 import { Modal } from '../components/Modal';
 import { useFormValidation } from '../components/forms/useFormValidation';
@@ -24,14 +23,10 @@ import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { phoneCut } from './phoneCut.mjs';
 import {DeliveryQuoteAccess} from '../components/delivery/DeliveryQuoteStatus';
-import TradeDeliveryCalculator from '../components/delivery/TradeDeliveryCalculator';
-import ProjectDeliveryPanel from '../components/delivery/ProjectDeliveryPanel';
 import { projectLines } from './projectLines';
 import { resolveProjectItems, sameProjectSelection, sameSavedRow, restoreProjectItem, projectItemKey, mergeProjectItem } from './projectIdentity';
-import ProductDeliveryEstimate from '../components/delivery/ProductDeliveryEstimate';
 import { SafeImage } from '../components/SafeImage';
 import DeliveryBoundary from '../components/delivery/DeliveryBoundary';
-import ProgramHubV2, { TeamPanel } from '../components/partner/ProgramHubV2';
 import { area as polyArea, inside as inPoly, centroid as polyCentre, bounds as polyBounds, setWallLength } from '../lib/holmPlan';
 export const html = htm.bind(React.createElement);
 

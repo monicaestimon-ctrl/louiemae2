@@ -180,3 +180,12 @@ Planner documents with unavailable or conflicting source identities now open in 
 Validation for this prerequisite increment: 1,307 full-suite tests passed with one existing skip, plus the separately added planner regression. Focused catalog/identity tests, TypeScript, targeted lint, production build/client-secret validation, and HOLM, tray and planner browser fixtures passed. These checks do not complete progressive pagination or the historical identity migration.
 
 Sharing and exports also stop at an explicit review state when any referenced piece is unavailable, preventing a mixed board from silently publishing only its remaining products. The local/account browser scenarios verify that no sharing or cover-upload command is issued.
+
+
+## HOLM optional feature loading
+
+Sign-in, trade application, delivery calculator, product/project delivery panels and the v2 earnings/team portal now have typed lazy boundaries. They load when mounted, retain their props, show a status while pending, and offer retry after a failed or stalled request. The error boundary is local to the tool. Existing authorization and server pricing remain authoritative.
+
+`npm run verify:deferred-bundles` builds a manifest and asserts that all six optional module entries are outside the HOLM boot static JavaScript closure. It records chunk bytes in `artifacts/lighthouse/deferred-bundles.json`; these are uncompressed file sizes, not transferred bytes or a Lighthouse score. The existing App, delivery-request and application browser fixtures pass; the boundary tests cover delayed load, failure recovery and a stalled request. Progressive catalog pagination and the remaining legacy module extraction are still open.
+
+PR #295 is merged and deployed: main `7a9c9144e6f520a7dbada9b41ce13090bc0cd817`, frontend `dpl_14UUHSV14Zpt7TZFwPTAK24UN4sR`, successful main CI/backend run `43986066912`. Read-only retail and HOLM catalog smoke checks found current product data with no page errors. This does not establish full checkout or full-spec acceptance.

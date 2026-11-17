@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "audit:lighthouse": "node scripts/lighthouse/run.mjs",
+    "verify:deferred-bundles": "vite build --manifest && node scripts/lighthouse/verify-deferred-bundles.mjs",
     "test:lighthouse-policy": "node --test scripts/lighthouse/policy.node.mjs scripts/lighthouse/health.node.mjs",
     "predev": "node scripts/verify-environment.mjs",
     "dev": "vite",
