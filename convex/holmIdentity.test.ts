@@ -27,6 +27,31 @@ async function prepare(t: Test) {
   expect(current.phase).toBe('verified');
   await t.mutation(internal.holmIdentityMigration.setEnabled, { enabled: true });
 }
+it('resumes multiple bounded batches and removes an orphan before enabling the reader', async () => {
+  const t = convexTest(schema, modules);
+  const sources: Awaited<ReturnType<typeof seed>>[] = [];
+  for (let index = 0; index < 25; index++) sources.push(await seed(t));
+  let current: Pick<Doc<'holmIdentityState'>, 'phase' | 'cursor'> = await t.mutation(internal.holmIdentityMigration.begin, {});
+  const first = await t.mutation(internal.holmIdentityMigration.step, { expectedPhase: current.phase, expectedCursor: current.cursor });
+  expect(first.phase).toBe('listings');
+  expect(first.checked).toBe(20);
+  expect(first.cursor).not.toBeNull();
+  expect((await t.mutation(internal.holmIdentityMigration.step, { expectedPhase: current.phase, expectedCursor: current.cursor })).advanced).toBe(false);
+  current = first;
+  while (current.phase === 'listings') current = await t.mutation(internal.holmIdentityMigration.step, { expectedPhase: current.phase, expectedCursor: current.cursor });
+  // Simulate an old orphan that predates transactional maintenance.
+  await t.run(ctx => ctx.db.delete(sources[0].listingId));
+  await expect(t.mutation(internal.holmIdentityMigration.setEnabled, { enabled: true })).rejects.toThrow(/Verify/);
+  for (let count = 0; count < 20 && current.phase !== 'verified'; count++) {
+    const resumed = await t.query(internal.holmIdentityMigration.status, {});
+    expect(resumed).toMatchObject({ phase: current.phase, cursor: current.cursor });
+    current = await t.mutation(internal.holmIdentityMigration.step, { expectedPhase: current.phase, expectedCursor: current.cursor });
+  }
+  expect(current.phase).toBe('verified');
+  expect(await t.run(ctx => ctx.db.query('holmCatalogIdentities').collect())).toHaveLength(24);
+  await t.mutation(internal.holmIdentityMigration.setEnabled, { enabled: true });
+  expect(await t.query(internal.holmIdentityMigration.status, {})).toMatchObject({ phase: 'verified', enabled: true, mismatchIds: [] });
+});
 it('resolves legacy identities independently of pages while rechecking current public eligibility', async () => {
   const t = convexTest(schema, modules); const source = await seed(t);
   const query = () => t.query(api.holm.catalogLegacyItems, { legacyIds: [source.legacyId] });
