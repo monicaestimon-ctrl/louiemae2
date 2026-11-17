@@ -1,0 +1,45 @@
+// Exercise emitted, unbundled Node ESM and the built HTML template, not Vitest's resolver.
+import { build } from 'esbuild';
+import assert from 'node:assert/strict';
+import { copyFile, mkdir, writeFile } from 'node:fs/promises';
+
+const output = 'artifacts/lighthouse/product-runtime';
+await build({ entryPoints: ['api/product.ts', 'lib/serverProductDocument.ts', 'lib/responsiveImage.ts'],
+  outbase: '.', outdir: output, bundle: false, platform: 'node', format: 'esm', target: 'node24' });
+await mkdir(`${output}/lib`, { recursive: true });
+for (const file of ['imageManifest.json', 'productImageManifest.json']) {
+  await copyFile(`lib/${file}`, `${output}/lib/${file}`);
+}
+process.env.VITE_PRELAUNCH_MODE = 'false';
+process.env.VITE_CONVEX_URL = 'https://public-fixture.invalid';
+const { default: handler } = await import('../artifacts/lighthouse/product-runtime/api/product.js');
+const originalFetch = globalThis.fetch;
+const results = [];
+try {
+  for (const [name, value, expected] of [
+    ['available', { _id: 'fixture', name: 'Runtime chair', description: 'Public fixture', category: 'Furniture', price: 200, images: [], inStock: true }, 200],
+    ['unavailable', { _id: 'fixture', name: 'Runtime chair', description: 'Public fixture', category: 'Furniture', price: 200, images: [], inStock: false }, 200],
+    ['missing', null, 404], ['failed', undefined, 503],
+  ]) {
+    globalThis.fetch = async (url, options) => {
+      assert.equal(url, 'https://public-fixture.invalid/api/query');
+      assert.equal(options.headers.Authorization, undefined);
+      assert.equal(JSON.parse(options.body).path, 'products:getStorefrontDetail');
+      return { ok: true, json: async () => ({ status: 'success', value }) };
+    };
+    const headers = {};
+    const response = { status(code) { this.code = code; return this; }, send(body) { this.body = body; }, setHeader(key, val) { headers[key] = val; } };
+    await handler({ method: 'GET', query: { id: 'fixture' } }, response);
+    assert.equal(response.code, expected);
+    assert.equal(headers['Cache-Control'], 'no-store');
+    if (expected === 200) {
+      assert.ok(response.body.includes('Runtime chair'));
+      assert.ok(response.body.includes('id="lm-product-document"'));
+      assert.ok(response.body.includes('/assets/'));
+      if (name === 'unavailable') assert.ok(response.body.includes('Currently unavailable'));
+    } else assert.equal(headers['X-Robots-Tag'], 'noindex');
+    results.push({ name, status: response.code });
+  }
+} finally { globalThis.fetch = originalFetch; }
+await writeFile('artifacts/lighthouse/product-runtime-check.json', JSON.stringify({ node: process.version, results }, null, 2));
+console.log('Unbundled product Node runtime and built template verified.');

@@ -1,4 +1,4 @@
-import { responsiveImage } from './responsiveImage';
+import { responsiveImage } from './responsiveImage.js';
 
 export type PublicProductDocument = {
   _id: string;

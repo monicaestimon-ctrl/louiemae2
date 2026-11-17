@@ -65,6 +65,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Verify product Node runtime and built template
+        run: node scripts/verify-product-runtime.mjs
+
       - name: Verify source-bound product image renditions
         run: |
           node --test scripts/product-images.node.mjs

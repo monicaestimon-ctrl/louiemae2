@@ -2,7 +2,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { productDocument, type PublicProductDocument } from '../lib/serverProductDocument';
+import { productDocument, type PublicProductDocument } from '../lib/serverProductDocument.js';
 
 function failure(res: VercelResponse, status: number, title: string) {
   res.setHeader('X-Robots-Tag', 'noindex');
