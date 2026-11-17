@@ -15,6 +15,106 @@ export const PUBLIC_INITIAL_ID = 'lm-public-initial-data';
 const LIMIT = 300_000;
 const record = (value: unknown): value is Record<string, unknown> =>
   Boolean(value && typeof value === 'object' && !Array.isArray(value));
+// Explicit display contracts mirror types.ts. Unknown keys and wrong primitive types
+// are discarded recursively; no stored object is copied wholesale into HTML.
+type DisplayShape =
+  | 'string'
+  | 'boolean'
+  | { readonly [key: string]: DisplayShape }
+  | readonly [DisplayShape];
+const sectionItem = {
+  image: 'string',
+  title: 'string',
+  subtitle: 'string',
+  link: 'string',
+} as const;
+const section = {
+  id: 'string',
+  type: 'string',
+  heading: 'string',
+  subheading: 'string',
+  content: 'string',
+  image: 'string',
+  productId: 'string',
+  layout: 'string',
+  items: [sectionItem],
+} as const;
+const category = {
+  id: 'string',
+  title: 'string',
+  image: 'string',
+  caption: 'string',
+  collection: 'string',
+  redirect: 'string',
+  parentCategory: 'string',
+  parentCategoryId: 'string',
+  isMainCategory: 'boolean',
+} as const;
+const home = {
+  hero: {
+    image: 'string',
+    pretitle: 'string',
+    titleLine1: 'string',
+    titleLine2: 'string',
+    buttonText: 'string',
+  },
+  intro: { text: 'string' },
+  categoryImages: {
+    furniture: 'string',
+    decor: 'string',
+    fashion: 'string',
+    kids: 'string',
+    journal: 'string',
+  },
+  brand: { image: 'string' },
+  shop: { headerImage: 'string' },
+  sections: [section],
+} as const;
+const story = {
+  hero: { image: 'string', title: 'string', subtitle: 'string' },
+  prologue: { quote: 'string', subtext: 'string' },
+  chapters: {
+    oneTitle: 'string',
+    oneText: 'string',
+    twoTitle: 'string',
+    twoText: 'string',
+    threeTitle: 'string',
+    threeText: 'string',
+    fourTitle: 'string',
+    fourText: 'string',
+  },
+  sections: [section],
+} as const;
+function display(value: unknown, shape: DisplayShape): unknown {
+  if (typeof shape === 'string') return typeof value === shape ? value : undefined;
+  if (Array.isArray(shape))
+    return Array.isArray(value)
+      ? value
+          .slice(0, 100)
+          .map((item) => display(item, shape[0]))
+          .filter((item) => item !== undefined)
+      : undefined;
+  if (!record(value)) return undefined;
+  return Object.fromEntries(
+    Object.entries(shape).flatMap(([key, child]) => {
+      const projected = display(value[key], child);
+      return projected === undefined ? [] : [[key, projected]];
+    })
+  );
+}
+function navigation(value: unknown, depth = 0): unknown[] {
+  if (!Array.isArray(value) || depth >= 10) return [];
+  return value.slice(0, 100).flatMap((item) => {
+    if (!record(item) || typeof item.label !== 'string' || typeof item.href !== 'string') return [];
+    return [
+      {
+        label: item.label,
+        href: item.href,
+        ...(Array.isArray(item.children) ? { children: navigation(item.children, depth + 1) } : {}),
+      },
+    ];
+  });
+}
 /** Only public display DTOs belong here. Never add account, pricing or purchase authority. */
 export function publicSiteData(value: unknown): PublicSiteData | undefined {
   if (
@@ -28,11 +128,19 @@ export function publicSiteData(value: unknown): PublicSiteData | undefined {
   )
     return;
   return {
-    navLinks: value.navLinks,
-    collections: value.collections,
-    home: value.home,
-    story: value.story,
-  };
+    navLinks: navigation(value.navLinks),
+    collections: display(value.collections, [
+      {
+        id: 'string',
+        title: 'string',
+        subtitle: 'string',
+        heroImage: 'string',
+        subcategories: [category],
+      },
+    ]),
+    home: display(value.home, home),
+    story: display(value.story, story),
+  } as PublicSiteData;
 }
 function publicPost(value: unknown, article: boolean) {
   if (
