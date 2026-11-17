@@ -13,6 +13,7 @@ import type { HolmProduct } from './catalog';
 import { displayProduct } from './catalogLookup';
 import { unresolvedPlannerItems } from './plannerDraft';
 import { plannerGeometry, rugExtents as rugExt, clampRug as rugClamp } from './plannerGeometry';
+import { studioGeometry, studioStyle as styleOf, frameAspect as frameAR } from './studioGeometry';
 import { editorShortcutsBlocked } from './editorShortcuts';
 import { useProjectCatalog, projectResolutionMessage } from './useProjectCatalog';
 import { useSavedBoardShelf } from './useSavedBoardShelf';
@@ -1795,15 +1796,8 @@ const BGS=[['Plaster','#EFE6D8'],['Sand','#E1D2BB'],['Limewash','#F4EFE6'],['Oli
 const SHAPES=[['rect','Square'],['arch','Arch'],['circle','Circle'],['pill','Pill'],['rounded','Rounded'],['oval','Oval']];
 // Every piece picks one of four looks. Switching keeps its place, size and layer.
 const LOOKS=[['cutout','Seamless cutout','The piece on the board with a soft contact shadow'],['framed','Framed photo','The product photo in a shape, with an optional border'],['3d','3D cutout','A lit model you can turn to any angle'],['room','In the room','On your room photo at true scale']];
-const styleOf=e=>e.style||(e.room?'room':'framed');
 const borderOf=e=>e.border===true||e.border==null?'white':e.border===false?'none':e.border;
-const hasCutout=pid=>has(pid)&&!!byId(pid).cutout;
-const cutAR=pid=>byId(pid).cutAR||byId(pid).ar||1;
-const frameAR=(shape,ar)=>shape==='circle'?1:shape==='arch'||shape==='oval'?.8:shape==='pill'?.75:ar;
-const elAR=e=>e.kind==='inspo'?frameAR(e.shape,e.ar||1):styleOf(e)==='framed'?frameAR(e.shape,byId(e.pid).ar||1):cutAR(e.pid);
-// In the room, a piece is drawn at its real width against the photo's measured width.
-const lockW=(e,bg)=>{if(e.kind!=='img'||styleOf(e)!=='room'||!bg?.img||!(bg.widthM>0))return null;const cm=byId(e.pid).dimsCm?.w;return cm?cm/(bg.widthM*100)*100:null};
-const wOf=(e,bg)=>lockW(e,bg)??e.w;
+const {hasCutout,cutoutAspect:cutAR,elementAspect:elAR,lockedWidth:lockW,width:wOf}=studioGeometry(BY_ID);
 const BOARD_SHAPES=[['rect','Rectangle'],['rounded','Rounded'],['arch','Arch'],['circle','Circle'],['oval','Oval'],['scallop','Scalloped'],['torn','Torn paper'],['poly','Free shape']];
 const EDGES=[['none','None'],['hairline','Hairline'],['thick','Thick border'],['deckle','Deckled paper'],['shadow','Drop shadow']];
 const EDGE_COLORS=['#FBF8F2','#2B211A','#A65F2C','#6C6948','#AE884C','#E1D2BB'];
