@@ -87,6 +87,7 @@ jobs:
           node scripts/lighthouse/security-headers.mjs
           node scripts/lighthouse/journal.mjs
           node scripts/lighthouse/collection-signup.mjs
+          node scripts/lighthouse/reveal.mjs
 
       - name: Retain HOLM quality evidence
         if: always()
@@ -97,6 +98,8 @@ jobs:
             artifacts/lighthouse/deferred-bundles.json
             artifacts/lighthouse/holm-modal-integration.json
             artifacts/lighthouse/*browser.json
+            artifacts/lighthouse/*last-state.json
+            artifacts/lighthouse/*.png
           if-no-files-found: ignore
           retention-days: 14
 

@@ -509,6 +509,37 @@ try {
   assert.equal(await page.evaluate(()=>window.fixtureCommands||0),0);
   results.push({partialCatalogNeverPresentedAsCompleteSearch:true,partialRecommendationsBlocked:true,savedDraftPreserved:true,businessCommands:0});
 
+  // Exercise the real hero controls with deterministic media state. Decoding/network
+  // are covered by the built-site smoke; this fixture permits no external requests.
+  await page.setViewport({width:390,height:844});
+  await page.emulateMediaFeatures([{name:'prefers-reduced-motion',value:'reduce'}]);
+  await page.evaluate(()=>{
+    window.fixturePlayCalls=0;window.fixturePauseCalls=0;
+    window.HTMLMediaElement.prototype.play=function(){window.fixturePlayCalls++;this.dispatchEvent(new window.Event('playing'));return Promise.resolve();};
+    window.HTMLMediaElement.prototype.pause=function(){window.fixturePauseCalls++;};
+    location.hash='home';window.scrollTo(0,0);
+  });
+  await page.waitForSelector('.pf-play[aria-label="Play the film"]');
+  assert.equal(await page.$('.pf video'),null,'No video mounted or fetched before explicit interaction');
+  await page.focus('.pf-play');await page.keyboard.press('Enter');
+  await page.waitForSelector('.pf video');
+  // The intentionally blocked media request can report an error; dispatch metadata
+  // after installing a deterministic ready state, then verify chapter-driven resume.
+  await page.evaluate(()=>{const video=document.querySelector('.pf video');Object.defineProperty(video,'readyState',{value:1});video.dispatchEvent(new window.Event('loadedmetadata'));});
+  await page.click('.pf .hf-prog button:nth-child(2)');
+  await page.waitForSelector('.pf-play[aria-label="Pause the film"]');
+  assert.ok(await page.$eval('.pf video',video=>video.currentTime)>0);
+  await page.focus('.pf-play');await page.keyboard.press('Enter');
+  await page.waitForSelector('.pf-play[aria-label="Play the film"]');
+  assert.ok(await page.evaluate(()=>window.fixturePauseCalls)>0);
+  await page.keyboard.press('Enter');
+  await page.waitForSelector('.pf-play[aria-label="Pause the film"]');
+  await page.evaluate(()=>document.querySelector('.pf video').dispatchEvent(new window.Event('ended')));
+  await page.waitForSelector('.pf-play[aria-label="Play the film"]');
+  assert.ok(await page.evaluate(()=>window.fixturePlayCalls)>=2);
+  assert.equal(await page.evaluate(()=>window.fixtureCommands||0),0);
+  results.push({mobileFilmRequiresExplicitStart:true,keyboardPauseResume:true,chapterSeek:true,completionRequiresReplay:true,reducedMotionStartsWithPoster:true,businessCommands:0});
+
   assert.deepEqual(pageErrors, []);
   await writeFile(
     'artifacts/lighthouse/tray-request-browser.json',
