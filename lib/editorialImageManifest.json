@@ -19,7 +19,8 @@
           960,
           1024
         ],
-        "ratio": 1.25
+        "ratio": 1.25,
+        "avifBase": "/images/opt/editorial/9c0579170ba054339c93ac01"
       },
       "indexDesktop": {
         "base": "/images/opt/editorial/5e5db078c011de471e115244",
@@ -30,7 +31,8 @@
           960,
           1024
         ],
-        "ratio": 0.42857142857142855
+        "ratio": 0.42857142857142855,
+        "avifBase": "/images/opt/editorial/13bfe94e5b71fa4a6d0cb81b"
       },
       "articleMobile": {
         "base": "/images/opt/editorial/4f7c64e70f93cbc50cc2cf89",
@@ -41,7 +43,8 @@
           960,
           1024
         ],
-        "ratio": 0.5625
+        "ratio": 0.5625,
+        "avifBase": "/images/opt/editorial/95b02488310c1e8a1bd6a520"
       },
       "articleDesktop": {
         "base": "/images/opt/editorial/108a8c09c18d107bebe714bd",
@@ -52,7 +55,8 @@
           960,
           1024
         ],
-        "ratio": 0.3333333333333333
+        "ratio": 0.3333333333333333,
+        "avifBase": "/images/opt/editorial/09ca7fd559acda657e1d725c"
       }
     }
   }

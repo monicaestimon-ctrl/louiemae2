@@ -53,6 +53,29 @@ for (const record of evidence.records) {
       assert.equal(meta.width, r.width);
       assert.equal(meta.height, r.height);
     }
+    assert.ok(window.avifBase, 'Reviewed editorial windows require an AVIF source');
+    assert.equal(source.avif.recipe, 'editorial-avif-q55-effort6-cover-centre-v1');
+    assert.equal(
+      window.avifBase,
+      '/images/opt/editorial/' +
+        hash(record.sha256 + ':' + source.avif.recipe + ':' + name).slice(0, 24)
+    );
+    assert.deepEqual(
+      source.avif.renditions.map((r) => r.width),
+      window.widths
+    );
+    for (const r of source.avif.renditions) {
+      const bytes = await readFile('public' + window.avifBase + '-' + r.width + '.avif');
+      assert.equal(hash(bytes), r.sha256);
+      assert.equal(bytes.length, r.bytes);
+      assert.ok(bytes.length < 160000, 'AVIF exceeds editorial transfer budget');
+      assert.equal(r.height, Math.round(r.width * ratio));
+      const meta = await sharp(bytes).metadata();
+      assert.equal(meta.format, 'heif');
+      assert.equal(meta.compression, 'av1');
+      assert.equal(meta.width, r.width);
+      assert.equal(meta.height, r.height);
+    }
   }
   for (const rendition of record.renditions) {
     assert.ok(rendition.width > 0 && rendition.width <= record.width);

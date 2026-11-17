@@ -88,6 +88,7 @@ jobs:
           node scripts/lighthouse/newsletter.mjs
           node scripts/lighthouse/security-headers.mjs
           node scripts/lighthouse/journal.mjs
+          node scripts/lighthouse/editorial-formats.mjs
           node scripts/lighthouse/startup-recovery.mjs
           node scripts/lighthouse/lazy-cart.mjs
           node scripts/lighthouse/product-preview.mjs
@@ -108,6 +109,7 @@ jobs:
             artifacts/lighthouse/*browser.json
             artifacts/lighthouse/*last-state.json
             artifacts/lighthouse/*.png
+            artifacts/lighthouse/editorial-format-fixture/*.png
           if-no-files-found: ignore
           retention-days: 14
 

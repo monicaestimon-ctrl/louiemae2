@@ -33,6 +33,7 @@ if (
 const hash = (b) => createHash('sha256').update(b).digest('hex');
 if (hash(original) !== evidence.sha256) throw Error('Source checksum mismatch');
 const recipe = 'editorial-webp-q85-effort6-orient-v1';
+const avifRecipe = 'editorial-avif-q55-effort6-cover-centre-v1';
 const base = '/images/opt/editorial/' + hash(evidence.sha256 + ':' + recipe).slice(0, 24);
 const widths = [
   ...new Set(
@@ -62,6 +63,9 @@ for (const [name, ratio] of Object.entries(EDITORIAL_WINDOWS)) {
     (width) => width <= evidence.width && Math.round(width * ratio) <= evidence.height
   );
   const outputs = [];
+  const avifBase =
+    '/images/opt/editorial/' + hash(evidence.sha256 + ':' + avifRecipe + ':' + name).slice(0, 24);
+  const avifOutputs = [];
   for (const width of windowWidths) {
     const height = Math.round(width * ratio);
     const bytes = await sharp(original)
@@ -70,10 +74,21 @@ for (const [name, ratio] of Object.entries(EDITORIAL_WINDOWS)) {
       .toBuffer();
     await writeFile('public' + windowBase + '-' + width + '.webp', bytes);
     outputs.push({ width, height, bytes: bytes.length, sha256: hash(bytes) });
+    const avif = await sharp(original)
+      .resize({ width, height, fit: 'cover', position: 'centre', withoutEnlargement: true })
+      .avif({ quality: 55, effort: 6 })
+      .toBuffer();
+    await writeFile('public' + avifBase + '-' + width + '.avif', avif);
+    avifOutputs.push({ width, height, bytes: avif.length, sha256: hash(avif) });
   }
   if (!outputs.length) throw Error('Source is too small for reviewed editorial windows');
-  windows[name] = { base: windowBase, widths: windowWidths, ratio };
-  windowEvidence[name] = { recipe: EDITORIAL_WINDOW_RECIPE, ratio, renditions: outputs };
+  windows[name] = { base: windowBase, widths: windowWidths, ratio, avifBase };
+  windowEvidence[name] = {
+    recipe: EDITORIAL_WINDOW_RECIPE,
+    ratio,
+    renditions: outputs,
+    avif: { recipe: avifRecipe, renditions: avifOutputs },
+  };
 }
 const manifest = JSON.parse(await readFile('lib/editorialImageManifest.json', 'utf8'));
 const provenance = JSON.parse(

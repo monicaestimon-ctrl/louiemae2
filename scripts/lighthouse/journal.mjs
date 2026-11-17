@@ -12,7 +12,10 @@ const heroEntry = Object.values(editorialManifest)[0];
 const heroSource = Object.keys(editorialManifest)[0];
 const allowedImages = new Set(
   [heroEntry, ...Object.values(heroEntry.windows)].flatMap((entry) =>
-    entry.widths.map((width) => `${entry.base}-${width}.webp`)
+    entry.widths.flatMap((width) => [
+      `${entry.base}-${width}.webp`,
+      ...(entry.avifBase ? [`${entry.avifBase}-${width}.avif`] : []),
+    ])
   )
 );
 const allowedFonts = new Set(
@@ -151,7 +154,11 @@ try {
         });
       else if (allowedImages.has(new URL(request.url()).pathname)) {
         void readFile('public' + new URL(request.url()).pathname).then((body) =>
-          request.respond({ status: 200, contentType: 'image/webp', body })
+          request.respond({
+            status: 200,
+            contentType: request.url().endsWith('.avif') ? 'image/avif' : 'image/webp',
+            body,
+          })
         );
       } else if (allowedFonts.has(new URL(request.url()).pathname)) {
         if (holdFonts) pendingFonts.push(request);

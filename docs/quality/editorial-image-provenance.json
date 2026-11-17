@@ -72,7 +72,42 @@
               "bytes": 120438,
               "sha256": "687ad6754ea68e40b625b63ec967363b92130047fbd8066b72f6fd4a0a317bfb"
             }
-          ]
+          ],
+          "avif": {
+            "recipe": "editorial-avif-q55-effort6-cover-centre-v1",
+            "renditions": [
+              {
+                "width": 320,
+                "height": 400,
+                "bytes": 12629,
+                "sha256": "8e7c3c73fabbaffe4edf87082b64afbcf364daa69dd70d1476e9ef364b6d6158"
+              },
+              {
+                "width": 480,
+                "height": 600,
+                "bytes": 23110,
+                "sha256": "4b9cb58a1ae87deeeba5c7bd0809aee387af7dbad0a8fc388eb471c001e2b803"
+              },
+              {
+                "width": 640,
+                "height": 800,
+                "bytes": 34695,
+                "sha256": "cdac1fcb576562a07bffff0197592135b1414bc7b0af1cfad95883b9b8214705"
+              },
+              {
+                "width": 960,
+                "height": 1200,
+                "bytes": 58364,
+                "sha256": "52254b2cff49ec8d9a40461815e2c71b267114c84fb4f2aeadca20a5f4002f6e"
+              },
+              {
+                "width": 1024,
+                "height": 1280,
+                "bytes": 63160,
+                "sha256": "9817f8a4d7e8e91c539c095dac4518876b48a783f01c11e0fa3c7a6905171edf"
+              }
+            ]
+          }
         },
         "indexDesktop": {
           "recipe": "editorial-webp-q85-effort6-cover-centre-v1",
@@ -108,7 +143,42 @@
               "bytes": 45956,
               "sha256": "9b59267e27ac8c56723322db8fbca80fcd8be106c5169c2bb065f60ecbfd20eb"
             }
-          ]
+          ],
+          "avif": {
+            "recipe": "editorial-avif-q55-effort6-cover-centre-v1",
+            "renditions": [
+              {
+                "width": 320,
+                "height": 137,
+                "bytes": 5081,
+                "sha256": "5ceebd5f9f73afb8fbf198f2a25cf48837e459ab38f2802cd18250502987eb43"
+              },
+              {
+                "width": 480,
+                "height": 206,
+                "bytes": 8971,
+                "sha256": "9daf6ae370af9e85acf9e582a50c1ad3ab35f78bd1f4e339a99a57631e320193"
+              },
+              {
+                "width": 640,
+                "height": 274,
+                "bytes": 13674,
+                "sha256": "93289dad4aac1ffde46c35b1f6d9bf41f01e61f42dae0006fc5c73b8fd4d4027"
+              },
+              {
+                "width": 960,
+                "height": 411,
+                "bytes": 22923,
+                "sha256": "a0b0ca007c55e15294bbf8236fb533db103651602fdb4668b953afaa4f16f4dc"
+              },
+              {
+                "width": 1024,
+                "height": 439,
+                "bytes": 24579,
+                "sha256": "619c26b8d0e2535c6ee19493af3b0ed8ce70eb92df39eee04419debb9d1c0d8f"
+              }
+            ]
+          }
         },
         "articleMobile": {
           "recipe": "editorial-webp-q85-effort6-cover-centre-v1",
@@ -144,7 +214,42 @@
               "bytes": 60068,
               "sha256": "e71c78709b70380ade6c8a4b42f0216360326946c7d5c669cf3528a2e0560df5"
             }
-          ]
+          ],
+          "avif": {
+            "recipe": "editorial-avif-q55-effort6-cover-centre-v1",
+            "renditions": [
+              {
+                "width": 320,
+                "height": 180,
+                "bytes": 6390,
+                "sha256": "d69192a8410d9f12e9fd563b47b90b90f713f21f9f5660f402a08b9feeee27b2"
+              },
+              {
+                "width": 480,
+                "height": 270,
+                "bytes": 11787,
+                "sha256": "7384267f45aa2904cefb29a2236965d886d8518d21448ddc389ea47eb4d5d5ba"
+              },
+              {
+                "width": 640,
+                "height": 360,
+                "bytes": 17552,
+                "sha256": "b70fd6d5f60d97fb1451673ee52192f100c5d12cdbd3c65bc2245a70843c4def"
+              },
+              {
+                "width": 960,
+                "height": 540,
+                "bytes": 29385,
+                "sha256": "18cf805d2fcb6b956a119a011ad3085c2e8b0809507b37e8331f67e692de0814"
+              },
+              {
+                "width": 1024,
+                "height": 576,
+                "bytes": 31558,
+                "sha256": "835925b446b47a5fa84c8fbb46cf99fe37883e42c1507940ee3ffa6671379f55"
+              }
+            ]
+          }
         },
         "articleDesktop": {
           "recipe": "editorial-webp-q85-effort6-cover-centre-v1",
@@ -180,7 +285,42 @@
               "bytes": 35422,
               "sha256": "53a2ef4eaf60c9d584acc1e5a88f8fd638a31c18f4b11d8ecb1c431da042598d"
             }
-          ]
+          ],
+          "avif": {
+            "recipe": "editorial-avif-q55-effort6-cover-centre-v1",
+            "renditions": [
+              {
+                "width": 320,
+                "height": 107,
+                "bytes": 3996,
+                "sha256": "5e3b4c3f040965c1f364046803f6d0461eb4ccbcafac91be0a0f693245abb0fa"
+              },
+              {
+                "width": 480,
+                "height": 160,
+                "bytes": 6986,
+                "sha256": "e75a4ec6866ce7c047df90a3f0f96e9fa191fd3e470f80ce73c9d62b2ca70d30"
+              },
+              {
+                "width": 640,
+                "height": 213,
+                "bytes": 10579,
+                "sha256": "2f7643183296ff5c8ee14abfdfdf40fc6cb5fb7722a1754637c9d1083b50887e"
+              },
+              {
+                "width": 960,
+                "height": 320,
+                "bytes": 17723,
+                "sha256": "8d004198a04225b177cd7ab9d6327edb45874e05dca99072b67c7ec32a466278"
+              },
+              {
+                "width": 1024,
+                "height": 341,
+                "bytes": 19446,
+                "sha256": "68de60d5675a93bccfeec23fdde6fc1c663a74a5304b14abff6db615ab56c40f"
+              }
+            ]
+          }
         }
       }
     }

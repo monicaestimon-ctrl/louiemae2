@@ -255,29 +255,52 @@ export function JournalArticleHeading({
   );
 }
 
-type WindowImage = { base: string; widths: number[]; ratio: number };
+type WindowImage = { base: string; widths: number[]; ratio: number; avifBase?: string };
 type EditorialImage = {
   windows: Record<'indexMobile' | 'indexDesktop' | 'articleMobile' | 'articleDesktop', WindowImage>;
 };
-function JournalImage({
-  src,
-  alt,
-  kind,
-  className,
-}: {
+type JournalImageProps = {
   src: string;
   alt: string;
   kind: 'index' | 'article';
   className: string;
-}) {
+};
+function JournalImage(props: JournalImageProps) {
+  // Each source visit owns its recovery state, including A → B → A navigation.
+  return React.createElement(JournalImageAttempt, { ...props, key: `${props.kind}:${props.src}` });
+}
+function JournalImageAttempt({ src, alt, kind, className }: JournalImageProps) {
   const entries = editorialManifest as Record<string, EditorialImage>;
   const entry = Object.hasOwn(entries, src) ? entries[src] : undefined;
+  const [attempt, setAttempt] = React.useState(0);
+  const hasAvif = Boolean(
+    entry?.windows[`${kind}Mobile`].avifBase || entry?.windows[`${kind}Desktop`].avifBase
+  );
+  if (attempt > 0 && (!hasAvif || attempt >= 2)) {
+    return React.createElement(
+      'span',
+      {
+        role: 'img',
+        'aria-label': alt ? `${alt}: image unavailable` : 'Editorial image unavailable',
+        className: 'flex h-full w-full items-center justify-center bg-cream text-earth text-sm',
+      },
+      'Image unavailable'
+    );
+  }
   const attrs = {
     loading: 'eager' as const,
     fetchPriority: 'high' as const,
     decoding: 'async' as const,
     alt,
     className,
+    onError: (event: React.SyntheticEvent<HTMLImageElement>) => {
+      const selected = event.currentTarget.currentSrc;
+      // A browser without AVIF support can fail directly on the final WebP source.
+      // Removing ignored AVIF sources would not cause another image error/retry.
+      setAttempt((previous) =>
+        selected && !selected.endsWith('.avif') ? 2 : Math.min(previous + 1, 2)
+      );
+    },
   };
   if (!entry)
     return React.createElement('img', {
@@ -287,21 +310,45 @@ function JournalImage({
     });
   const mobile = entry.windows[`${kind}Mobile`];
   const desktop = entry.windows[`${kind}Desktop`];
-  const set = (image: WindowImage) =>
-    image.widths.map((width) => `${image.base}-${width}.webp ${width}w`).join(', ');
+  const sizes =
+    kind === 'index'
+      ? '(min-width: 1376px) 1280px, (min-width: 768px) calc(100vw - 96px), calc(100vw - 48px)'
+      : '100vw';
+  const set = (image: WindowImage, format: 'webp' | 'avif' = 'webp') =>
+    image.widths
+      .map(
+        (width) => `${format === 'avif' ? image.avifBase : image.base}-${width}.${format} ${width}w`
+      )
+      .join(', ');
   return React.createElement(
     'picture',
     { className: 'block w-full h-full' },
+    attempt === 0 &&
+      desktop.avifBase &&
+      React.createElement('source', {
+        type: 'image/avif',
+        media: '(min-width: 768px)',
+        srcSet: set(desktop, 'avif'),
+        sizes,
+      }),
     React.createElement('source', {
+      type: 'image/webp',
       media: '(min-width: 768px)',
       srcSet: set(desktop),
-      sizes: '100vw',
+      sizes,
     }),
+    attempt === 0 &&
+      mobile.avifBase &&
+      React.createElement('source', {
+        type: 'image/avif',
+        srcSet: set(mobile, 'avif'),
+        sizes,
+      }),
     React.createElement('img', {
       ...attrs,
       src: `${mobile.base}-${mobile.widths.at(-1)}.webp`,
       srcSet: set(mobile),
-      sizes: '100vw',
+      sizes,
     })
   );
 }
