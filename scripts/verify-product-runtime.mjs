@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 assert.ok(existsSync('dist/index.html'), 'Missing dist/index.html: run npm run build before the product runtime check.');
 
 const output = 'artifacts/lighthouse/product-runtime';
-await build({ entryPoints: ['components/CollectionRootHero.tsx', 'api/journal.ts', 'lib/serverJournalDocument.ts', 'lib/journalContent.ts', 'lib/journalUrl.ts', 'api/product.ts', 'api/collection.ts', 'api/page.ts', 'lib/serverPageDocument.ts', 'lib/serverCollectionDocument.ts', 'lib/collectionId.ts', 'lib/productCategories.ts', 'lib/serverProductDocument.ts', 'lib/publicProductBootstrap.ts', 'lib/responsiveImage.ts', 'lib/productMetadata.ts'],
+await build({ entryPoints: ['components/CollectionRootHero.ts', 'api/journal.ts', 'lib/serverJournalDocument.ts', 'lib/journalContent.ts', 'lib/journalUrl.ts', 'api/product.ts', 'api/collection.ts', 'api/page.ts', 'lib/serverPageDocument.ts', 'lib/serverCollectionDocument.ts', 'lib/collectionId.ts', 'lib/productCategories.ts', 'lib/serverProductDocument.ts', 'lib/publicProductBootstrap.ts', 'lib/responsiveImage.ts', 'lib/productMetadata.ts'],
   outbase: '.', outdir: output, bundle: false, platform: 'node', format: 'esm', target: 'node24' });
 await mkdir(`${output}/lib`, { recursive: true });
 for (const file of ['imageManifest.json', 'productImageManifest.json']) {
@@ -86,3 +86,4 @@ try {
 } finally { globalThis.fetch = originalFetch; }
 await writeFile('artifacts/lighthouse/product-runtime-check.json', JSON.stringify({ node: process.version, results }, null, 2));
 console.log('Unbundled product/collection Node runtime and built template verified.');
+
