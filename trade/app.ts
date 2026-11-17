@@ -206,23 +206,24 @@ function PinCard({p,ctx}){
   const [menu,setMenu]=useState(false);
   const saved=ctx.boards.some(b=>b.pins.some(x=>x.pid===p.id));
   const lastBoard=ctx.boards[0];
-  if(!has(p.id))return html`<div className="pin"><div className="pin-img"><img src=${p.img} alt="Unavailable saved product" style=${{aspectRatio:1}}/></div><div className="pin-meta"><b>${p.name}</b><p>${p.line}. Use Organize to remove this saved item.</p></div></div>`;
+  const available=ctx.savedProducts?ctx.savedProducts.get(p.id)?.lid===p.lid:has(p.id);
+  if(!available)return html`<div className="pin"><div className="pin-img"><img src=${p.img} alt="Unavailable saved product" style=${{aspectRatio:1}}/></div><div className="pin-meta"><b>${p.name}</b><p>${p.line}. Use Organize to remove this saved item.</p></div></div>`;
   return html`<div className="pin">
     <div className="pin-img">
-      <button type="button" className="pin-open" aria-label=${'View '+p.name+' '+p.line} onClick=${()=>ctx.openPin(p.id)}>
+      <button type="button" className="pin-open" aria-label=${'View '+p.name+' '+p.line} onClick=${()=>ctx.openPin(p.id,{pid:p.id,lid:p.lid,vid:p.vid})}>
       <${SafeImage} src=${p.img} media=${p.imageMedia} sizes="(min-width: 1024px) 25vw, 50vw" alt=${p.name+' '+p.line} loading="lazy" style=${{aspectRatio:p.ar}}/>
       </button>
       ${p.oos&&html`<span className="oos">Restock on request</span>`}
       <div className="pin-ov">
         <div className="r1" onClick=${e=>e.stopPropagation()}>
           <button className="pin-board" onClick=${()=>setMenu(!menu)} aria-label=${'Choose board for '+p.name}><span>${lastBoard?.title||'Boards'}</span>${I('down',{width:14})}</button>
-          <button className=${'pin-save'+(saved?' saved':'')} aria-label=${(saved?'Saved ':'Save ')+p.name+' to board'} onClick=${()=>saved?setMenu(true):ctx.saveTo(p.id,lastBoard.id)}>${saved?'Saved':'Save'}</button>
+          <button className=${'pin-save'+(saved?' saved':'')} aria-label=${(saved?'Saved ':'Save ')+p.name+' to board'} onClick=${()=>saved||!lastBoard?setMenu(true):ctx.saveTo(p.id,lastBoard.id)}>${saved?'Saved':'Save'}</button>
         </div>
         <div className="r2" onClick=${e=>e.stopPropagation()}>
           <span className="pin-board" style=${{fontFamily:'var(--mono)',fontSize:11.5}}>${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span>
           <span className="row" style=${{gap:6}}>
             <a className="pin-act" title="Save to Pinterest" aria-label=${'Save '+p.name+' to Pinterest'} href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'pin'))} target="_blank" rel="noopener">${I('pint')}</a>
-            <button className="pin-act" title="Place in Studio" aria-label=${'Place '+p.name+' in Studio'} onClick=${()=>ctx.toStudio([p.id])}>${I('brush')}</button>
+            <button className="pin-act" disabled=${!has(p.id)} title="Place in Studio" aria-label=${'Place '+p.name+' in Studio'} onClick=${()=>ctx.toStudio([p.id])}>${I('brush')}</button>
             <button className="pin-act" title="Add to project tray" aria-label=${'Add '+p.name+' to project tray'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.pin').querySelector('img'))}>${I('plus')}</button>
           </span>
         </div>
@@ -2450,7 +2451,7 @@ function SharedBoard({ctx,slug}){
           <p className="help">Prices are live. Delivery and tax are confirmed with your quote.</p>`}</div>
     </div>
     <div className="bundle-list">${lines.map(({p,qty})=>{const alt=p.oos&&similar(p);return html`<article key=${p.id} className=${'bundle-row'+(p.oos?' oos':'')}>
-      <button className="bundle-th" onClick=${()=>ctx.openPin(p.id)} aria-label=${'View '+p.name}><img src=${cut(p.id)} alt="" loading="lazy"/></button>
+      <button className="bundle-th" onClick=${()=>ctx.openPin(p.id,{pid:p.id,lid:p.lid,vid:p.vid})} aria-label=${'View '+p.name}><img src=${cut(p.id)} alt="" loading="lazy"/></button>
       <div className="bundle-t"><b>${p.name}</b><span>${p.line}</span>${dimsText(p)&&html`<small className="mute">${dimsText(p)}</small>`}
         ${p.oos&&html`<small className="bundle-oos">Sold out${alt?html` · try <button className="lnk" onClick=${()=>ctx.openPin(alt.id)}>${alt.name}</button>`:''}</small>`}</div>
       ${shop&&html`<span className="mono">× ${qty}</span><span className="num bundle-p">${fmt(pr(p,ctx.mode)*qty)}</span>
@@ -3158,13 +3159,27 @@ function Boards({ctx}){
 }
 function BoardDetail({ctx}){
   const b=ctx.boards.find(x=>x.id===ctx.board)||ctx.boards[0];
+  const savedCatalog=useProjectCatalog(b?.pins||[],BY_ID);
+  const byId=id=>{
+    const identity=b?.pins.find(pin=>pin.pid===id);
+    const product=identity?resolveProjectProduct(identity,savedCatalog.products):savedCatalog.products.get(id);
+    return product||displayProduct(new Map(),id);
+  };
+  const has=id=>Boolean(byId(id).lid);
+  const originalCtx=ctx;
+  ctx={...ctx,savedProducts:savedCatalog.products,addToTray:(pid,qty,element,quiet)=>{
+    const product=byId(pid);
+    if(product.lid)originalCtx.addToTray(pid,qty,element,quiet,product);
+  }};
   const [tab,setTab]=useState('pins');const [secF,setSecF]=useState('all');const [org,setOrg]=useState(false);const [picked,setPicked]=useState([]);const [ns,setNs]=useState('');const [adding,setAdding]=useState(false);const [mat,setMat]=useState('all');const [share,setShare]=useState(false);
+  if(!b)return html`<main className="wrap"><h1>Board unavailable</h1><p>This board no longer exists.</p><button className="btn btn-line" onClick=${()=>ctx.go('boards')}>Back to boards</button></main>`;
   const pins=b.pins.filter(p=>secF==='all'||p.sec===secF).map(p=>byId(p.pid)).filter(p=>mat==='all'||p.mat===mat);
   const total=b.pins.reduce((s,x)=>s+byId(x.pid).price,0);
   return html`<main className="wrap">
     <div className="ph-head" style=${{alignItems:'flex-start'}}><div><button className="btn btn-line btn-sm" onClick=${()=>ctx.go('boards')}>${I('back',{width:15})} Boards</button>
       <h1 style=${{marginTop:18}}>${b.title}</h1><p className="mute" style=${{marginTop:8}}>${b.pins.length} pins · ${b.sections.length} sections${b.secret?' · Secret board':''}</p></div>
       <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-line" onClick=${()=>ctx.toStudio(b.pins.slice(0,6).map(x=>x.pid),b.title)}>${I('brush',{width:16})} Open in Studio</button><button className="btn btn-cog" onClick=${()=>setShare(true)}>${I('share',{width:16})} Share</button></div></div>
+    ${[...savedCatalog.states.values()].some(row=>row.status!=='resolved')&&html`<div role="status" className="note">${savedCatalog.pending?'Checking saved products.':savedCatalog.preparing?'Saved products need verification.':savedCatalog.failed?'Saved products could not be checked. Reload to try again.':'Some saved products are unavailable or have conflicting identities.'} Your pins are preserved; unavailable pieces cannot be added to a project.</div>`}
     <div className="row" style=${{justifyContent:'space-between',flexWrap:'wrap',borderBottom:'1px solid var(--line)'}}>
       <div className="tabs left" style=${{margin:0}}>${[['pins','Pins'],['shop','Shop'],['organize','Organize']].map(([k,l])=>html`<button key=${k} className=${tab===k?'on':''} onClick=${()=>{setTab(k);setOrg(k==='organize');setPicked([])}}>${l}</button>`)}</div>
     </div>
@@ -3759,8 +3774,8 @@ export function App(){
   const trayCount=activeProject.items.reduce((s,i)=>s+i.qty,0);
   const fly=(fromEl)=>{try{const btn=document.getElementById('trayBtn');if(!fromEl||!btn)return;const a=fromEl.getBoundingClientRect(),b=btn.getBoundingClientRect();const im=document.createElement('img');im.src=fromEl.src||fromEl.style.backgroundImage.slice(5,-2);im.className='fly';const sz=Math.min(140,a.width);Object.assign(im.style,{left:a.left+a.width/2-sz/2+'px',top:a.top+a.height/2-sz/2+'px',width:sz+'px',height:sz+'px'});document.body.appendChild(im);
     im.animate([{transform:'translate(0,0) scale(1)',opacity:1},{transform:`translate(${b.left+b.width/2-(a.left+a.width/2)}px,${b.top+b.height/2-(a.top+a.height/2)}px) scale(.12)`,opacity:.6}],{duration:700,easing:'cubic-bezier(.5,0,.2,1)'}).onfinish=()=>im.remove()}catch(e){}};
-  const addToTray=(pid,qty=1,fromEl,quiet)=>{const selected=BY_ID.get(pid);if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==t.active)return p;const z=p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));
-    fly(fromEl);if(!quiet)toast(`${byId(pid).name} added to ${activeProject.name}`,{label:'Open tray',fn:()=>setTray(true)})};
+  const addToTray=(pid,qty=1,fromEl,quiet,verifiedProduct)=>{const selected=verifiedProduct?.id===pid?verifiedProduct:BY_ID.get(pid);if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==t.active)return p;const z=p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));
+    fly(fromEl);if(!quiet)toast(`${selected.name} added to ${activeProject.name}`,{label:'Open tray',fn:()=>setTray(true)})};
   const saveTo=(pid,bid,quiet)=>{setBoards(bs=>bs.map(b=>b.id===bid?{...b,t:Date.now(),pins:b.pins.some(x=>x.pid===pid)?b.pins:[{pid,sec:b.sections[0]||''},...b.pins]}:b).sort((a,b)=>b.t-a.t));if(!quiet){const b=boards.find(x=>x.id===bid);toast(`Saved to ${b?b.title:'board'}`,{label:'View',fn:()=>{setBoard(bid);go('board')}})}};
   const createBoard=(title,pid,secret=false)=>{const id='b'+uid();setBoards(bs=>[{id,title,secret,collab:0,sections:[],pins:pid?[{pid,sec:''}]:[],t:Date.now()},...bs]);if(pid)toast('Saved to '+title);return id};
   const updateBoard=(id,fn)=>setBoards(bs=>bs.map(b=>b.id===id?fn(b):b));
