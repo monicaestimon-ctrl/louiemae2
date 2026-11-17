@@ -24,6 +24,7 @@ it('uses fresh SDK pagination identities across logout and trade-role changes', 
     watchQuery: (query: Parameters<typeof getFunctionName>[0], args: { paginationOpts?: { id: number } }) => ({
       localQueryResult: () => {
         if (getFunctionName(query) === 'holm:me') return me;
+        if (getFunctionName(query) === 'holm:catalogItems') return [];
         const id = args.paginationOpts!.id; ids.add(id); return pages.get(id);
       },
       onUpdate: (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); },

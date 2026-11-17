@@ -1,8 +1,7 @@
+import { catalogItem, pricedListing, pricingParts, costCents, variantFreight } from './holmCatalogRead';
 import { ashcroftAvailable } from './ashcroftInventory';
 import { v } from 'convex/values';
 import { paginationOptsValidator } from 'convex/server';
-import { assertSellable, isCurrentPrice } from './catCore';
-import { isCommerceError } from '../lib/errors';
 import { syncTrade } from './prgCore';
 import { maybeConfig } from './sysConfig';
 import { applyProjectTier } from '../lib/projectDiscount';
@@ -11,26 +10,22 @@ import { flag } from '../lib/flags';
 import { CommerceError } from '../lib/errors';
 import { query, mutation } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
-import type { Doc, Id } from './_generated/dataModel';
+import type { Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import { requireCjAdminIdentity } from './cjAdminAccess';
-import { listingReady } from './commerceReadiness';
 import { address } from './commerceTables';
 import { clientShow, holmBusinessType } from './holmTables';
-import { assetIndex, assetsFor, publicAssets } from './holmAssets';
+import { assetIndex, publicAssets } from './holmAssets';
 import { catalogPageOptions } from '../lib/catalogPagination';
 import { holmIdentityState } from './holmIdentityMaintenance';
 import { holmLegacyId } from '../lib/holmProductIdentity';
 import { checkQuantity, totalLines } from '../lib/commerce';
 import { reserveCredit } from './holmCredit';
-import { deliveryCents, freightFor } from '../lib/holmDelivery';
-import { launchPrice, retailDelivery } from '../lib/retailLaunch';
+import { deliveryCents } from '../lib/holmDelivery';
 import {
   HOLM_RULES,
   applyProjectPricing,
   clientSellCents,
-  floorCents,
-  tradeCents,
 } from '../lib/holmPricing';
 
 type Ctx = QueryCtx | MutationCtx;
@@ -87,73 +82,6 @@ export const ensureProfile = mutation({
 });
 
 // ---------- pricing ----------
-type FulfillmentVariant = NonNullable<Doc<'commerceListings'>['fulfillment']>[number];
-
-/**
- * Landed cost of one unit in USD cents: supplier cost, or CJ's landed cost when higher.
- * Ashcroft bills freight separately, so its freight allowance is part of the landed cost.
- */
-function costCents(
-  product: Doc<'commerceProducts'>,
-  variant: FulfillmentVariant,
-  linked: Doc<'products'> | null,
-  freight: number
-) {
-  const supplier = Math.round(variant.cost * (product.draft.usdRate || 1) * 100);
-  if (product.provider === 'ashcroft') return supplier > 0 ? supplier + freight : 0;
-  const landed = linked?.confirmedLandedCost ?? linked?.estimatedLandedCost;
-  return Math.max(supplier, landed ? Math.round(landed * 100) : 0);
-}
-/** Retail unit price in cents. House-only pieces fall back to the House estimate grossed up. */
-function retailCents(variant: FulfillmentVariant) {
-  if (variant.retail > 0) return variant.retail;
-  return Math.round(variant.commercial / 0.75);
-}
-
-/** What pricing a House listing needs besides the listing itself: the CJ product and, for
- * Ashcroft, the louiemae.com listing and its freight/delivery rate. */
-async function pricingParts(ctx: Ctx, product: Doc<'commerceProducts'>, listing: Doc<'commerceListings'>) {
-  const linked = product.cjProductId ? await ctx.db.get(product.cjProductId) : null;
-  // Ashcroft pieces use the louiemae.com price as retail: the storefront builds the freight
-  // allowance into it (see storefrontListing), so trade at 25% off carries freight too.
-  const store =
-    product.provider === 'ashcroft'
-      ? await ctx.db
-          .query('commerceListings')
-          .withIndex('by_product_channel', (q) => q.eq('productId', product._id).eq('channel', 'retail'))
-          .unique()
-      : null;
-  const named = store?.snapshot ?? listing.snapshot;
-  const rate = product.provider === 'ashcroft' ? retailDelivery(named.category, named.name) : null;
-  return { linked, store, rate };
-}
-
-function variantFreight(route: FulfillmentVariant, rate: ReturnType<typeof retailDelivery>) {
-  return rate ? { cents: rate.freight, known: true } : freightFor(route.sku);
-}
-
-async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>) {
-  const product = await ctx.db.get(listing.productId);
-  if (!product || !(await listingReady(ctx, product, listing))) return null;
-  const { linked, store, rate } = await pricingParts(ctx, product, listing);
-  const availableOptions = await Promise.all(listing.snapshot.variants.map(async sv =>
-    product.provider !== 'ashcroft' || await ashcroftAvailable(ctx, listing.fulfillment?.find(f => f.id === sv.id)?.sku, listing.snapshot.description, sv.minimum) ? sv : null));
-  const variants = availableOptions.filter(sv => sv !== null).flatMap((sv) => {
-    const route = listing.fulfillment?.find((f) => f.id === sv.id);
-    if (!route) return [];
-    const base = store?.snapshot.variants.find((v) => v.id === sv.id)?.price || retailCents(route);
-    if (base <= 0) return [];
-    const retail = rate ? launchPrice(base, rate.freight, rate.delivery) : base;
-    const freight = variantFreight(route, rate);
-    const cost = costCents(product, route, linked, freight.cents);
-    // Zuo (v2): the approved trade pack price is the trade price and its floor (10% or the
-    // approved 5%), never the general 25% schedule; it is never discounted further by projects.
-    if (product.provider === 'zuo') return route.commercial > 0 ? [{ ...sv, retail, cost, sku: route.sku, freightKnown: true, trade: route.commercial, floor: route.commercial }] : [];
-    return [{ ...sv, retail, cost, sku: route.sku, freightKnown: freight.known, trade: tradeCents(retail, cost), floor: floorCents(cost) }];
-  });
-  return variants.length ? { product, listing, variants, inStock: linked?.inStock !== false } : null;
-}
-
 /**
  * Landed cost of one unit for each House project line, keyed productId:variantId, worked out
  * the way the catalog prices it. It reads the product's supplier data directly, so a piece that
@@ -196,45 +124,6 @@ export async function houseUnitCosts(
 }
 
 // ---------- catalog ----------
-/** Resolve a House listing through the same current authority for pages and saved identities. */
-async function catalogItem(ctx: QueryCtx, listing: Doc<'commerceListings'>, trade: boolean, now: number) {
-  const product = await ctx.db.get(listing.productId);
-  if (!product || !listing.published || listing.channel !== 'house') return null;
-  const s = listing.snapshot;
-  let variants: { id: string; name: string; image?: string; minimum: number; increment: number; retail: number; trade: number | null }[] = [];
-  let inStock = true;
-  if (product.provider === 'zuo') {
-    if (!flag('TRADE_CHECKOUT_V2_ENABLED')) return null;
-    for (const option of s.variants) {
-      const id = ctx.db.normalizeId('catVariants', option.id);
-      if (!id) continue;
-      try {
-        const cv = await assertSellable(ctx, id, 'estimate', now);
-        const retail = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
-        const approved = cv.tradePriceRevisionId ? await ctx.db.get(cv.tradePriceRevisionId) : null;
-        if (cv.productId !== product._id || !isCurrentPrice(retail, id, 'retail', now) ||
-          !isCurrentPrice(approved, id, 'trade', now) || approved.packPriceMinor !== option.price) continue;
-        variants.push({ id, name: option.name, image: option.image, minimum: cv.orderMinimumPacks,
-          increment: cv.orderIncrementPacks, retail: retail.packPriceMinor, trade: trade ? approved.packPriceMinor : null });
-      } catch (error) {
-        if (!isCommerceError(error)) throw error;
-      }
-    }
-  } else {
-    const priced = await pricedListing(ctx, listing);
-    if (!priced) return null;
-    inStock = priced.inStock;
-    variants = priced.variants.map(x => ({ id: x.id, name: x.name, image: x.image,
-      minimum: x.minimum, increment: x.increment, retail: x.retail, trade: trade ? x.trade : null }));
-  }
-  if (!variants.length) return null;
-  const imageMedia = s.imageMedia?.filter(m => m.variantIds.some(id => variants.some(v => v.id === id)));
-  return { id: product._id, name: s.name, description: s.description, category: s.category,
-    images: imageMedia ? imageMedia.map(m => m.url) : s.images, imageMedia, facts: s.facts,
-    assets: await publicAssets(ctx, (await assetsFor(ctx, product._id)) ?? undefined, s.facts), inStock, variants,
-    checkoutMode: product.provider === 'zuo' ? 'v2' as const : 'quote' as const };
-}
-
 /** Bounded source pages retain their cursor even when current eligibility removes all candidates. */
 export const catalogPage = query({
   args: { paginationOpts: paginationOptsValidator },

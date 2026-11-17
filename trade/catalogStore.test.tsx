@@ -20,3 +20,13 @@ it('re-renders catalog consumers without losing local project state and removes 
   expect(productsById.has(1)).toBe(false);
   expect(screen.getByLabelText('Project')).toHaveValue('Keep me');
 });
+
+it('keeps verified curated references outside browse results and clears both on viewer teardown', () => {
+  const first={...displayProduct(new Map(),31),lid:'browse',name:'First page'};
+  const reference={...displayProduct(new Map(),1),lid:'curated',name:'Curated reference'};
+  setProducts([first],[reference]);
+  expect(products.map(p=>p.id)).toEqual([31]);
+  expect(productsById.get(1)?.lid).toBe('curated');
+  setProducts([first],[]);expect(productsById.has(1)).toBe(false);
+  setProducts([first],[reference]);setProducts([]);expect(productsById.size).toBe(0);
+});

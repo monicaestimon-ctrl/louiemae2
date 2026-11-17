@@ -8,7 +8,7 @@ Use Node 24 and npm ci. Set CHROME_PATH to a clean Chrome executable and AUDIT_C
 
 The runner launches a fresh temporary Chrome profile per run, measures serially and saves Lighthouse JSON/HTML, a viewport screenshot, content-health receipt and assessment under artifacts/lighthouse. Do not use a signed-in personal browser profile. Private routes and authentication are deliberately not supported by this initial public harness.
 
-AUDIT_RUNS=1 runs four diagnostic measurements (two routes and two devices). It always fails the release batch-size gate; it is useful for checking the harness without implying release acceptance. The default is five measurements per route/device. Every run is retained, including failures. The process exits nonzero if any batch fails.
+AUDIT_RUNS=1 runs one diagnostic measurement per selected route/device. It always fails the release batch-size gate; it is useful for checking the harness without implying release acceptance. The default is five measurements per route/device. Every run is retained, including failures. The process exits nonzero if any batch fails.
 
 The content check inspects the actual tab Lighthouse measured. Retail requires its populated, loaded recommendations marker. HOLM requires the live application's home main, which is not rendered by its startup or error shell. Both reject known outage messages, redirects and browser console errors. These are baseline guards, not proof of complete product or checkout correctness.
 
@@ -256,3 +256,21 @@ The following candidate adds [public hero stability](public-page-hero-stability.
 Saved-board actions now resolve each source/variant separately even when two options share one product number. Shop totals include each option's pack minimum, additions retain both options, and Organize removes only the selected identity. The actual-component fixture verifies these behaviors with two off-page variants and no production commands. Studio, sharing/export and planner scopes remain separate outstanding work.
 
 The following editor candidate resolves Studio, planner and shared/export selections independently of browse pages, preserves source/variant identities through the Studio/3D round trip, and blocks unresolved actions without deleting drafts. Actual-component fixtures passed two-option shopping, local image export, shared recipient additions and pending-state layout preservation. See [editor scope](planner-catalog-scope.md). The full local regression suite passed 1,448 tests with one existing skip across 251 files, using two workers after the initial higher-concurrency attempt was stopped; both logs are retained. Production release and first-page pagination are not claimed.
+
+## First verified HOLM page
+
+Home can hydrate after its first nonempty verified source page and a separate bounded read of the 24 source-bound curated references. Those references populate only the viewer-owned identity map, not browse results. Empty candidate pages continue until a usable page or confirmed exhaustion. Same-viewer refreshes preserve mounted project drafts; viewer changes clear both browse and reference data.
+
+This is an interim startup increment, not completion of server-side discovery: remaining pages still load in the background. Discover and recommendations stay behind an explicit loading state until the full catalog is available, so partial results cannot masquerade as complete filtering or sorting. Server-wide indexed filtering/sorting and explicit Load more are still required before claiming the Phase 4 pagination contract complete.
+
+Validation includes 15 shell/store tests with the real SDK subscription lifecycle, strict application types, build/client-secret checks, the actual-component saved-editor/tray fixture, and anonymous live-data navigation on a local production build at 390 and 1440 pixels. The corrected live-data check waits for `#root main.home`, not the static startup shell. No production commerce commands were submitted. The tray fixture now waits for a visible thumbnail, verifies focus and activates it with Enter; earlier pointer/transition failures are retained. Performance acceptance remains outstanding.
+
+Intermediate pagination responses no longer reinstall and rerender the entire legacy app: it receives the first verified set and the completed set, while applying corrections and withdrawals to already-installed items and curated references during loading. A retained local diagnostic improved from Performance 88 mobile / 95 desktop to 99 / 100 after that correction; Accessibility, Best Practices and SEO were 100 in both diagnostics. These single local runs are not repeated production acceptance.
+
+## Collection runtime recovery
+
+Production verification of PR308 found collection HTTP 500 responses: Vercel did not package `CollectionRootHero.tsx` for the server's `.js` import. The explicit local compile list had masked this tracing difference. The frontend was rolled back to verified PR307 (`b46d3a30`, deployment `dpl_3KSAvV4erho1DpPVKLNA7w9AQgCM`); all four collection roots then returned 200. Shop/story had passed eight source/live frontend checks before the collection failure. PR308 backend deployment did not run because the main browser fixture failed; neither full release nor sitemap verification was claimed.
+
+The shared hero now uses the same React markup expressed as createElement in a traceable `.ts` module. The API boundary check traverses actual dependency graphs and rejects runtime JSX sources rather than relying only on an explicit compile list. The corrected runtime and 23 collection tests pass. Verify deployed preview collection responses before merging and re-run production frontend/backend checks after release.
+
+PR309 review corrections also gate Home mood matching and Studio composition while the catalog is incomplete. Existing collages and entered descriptions remain available. The actual-component fixture checks these controls and draft preservation; shell tests check price corrections, withdrawals and curated-reference updates during LoadingMore without admitting new browse rows.

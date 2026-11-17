@@ -7,9 +7,10 @@ export let products: HolmProduct[] = [];
 export let catalogGeneration = 0;
 export const productsById = new Map<number, HolmProduct>();
 const listeners = new Set<() => void>();
-export function setProducts(list: HolmProduct[]) {
+export function setProducts(list: HolmProduct[], references: HolmProduct[] = []) {
   products = [...list];
   productsById.clear();
+  for (const product of references) productsById.set(product.id, product);
   for (const product of products) productsById.set(product.id, product);
   catalogGeneration++;
   for (const notify of listeners) notify();
