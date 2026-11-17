@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { isCollectionId } from '../lib/collectionId';
 
 // Per-page metadata for social sharing previews
 const PAGE_META: Record<string, { title: string; description: string; image: string }> = {
@@ -64,8 +65,17 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
         res.setHeader('Cache-Control', 'no-store');
         return res.redirect(307, `/${partner}`);
     }
-    const path = (req.query.path as string) || '';
-    const meta = PAGE_META[path] || DEFAULT_META;
+    const path = req.query.path ?? '';
+    // Only source-owned routes and bounded collection slugs enter metadata or scripts.
+    // Collections are managed dynamically; preserve their existing safe redirect path.
+    if (typeof path !== 'string' || (path !== '' && !Object.prototype.hasOwnProperty.call(PAGE_META, path) && !(path.startsWith('collection/') && isCollectionId(path.slice('collection/'.length))))) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('X-Robots-Tag', 'noindex');
+        return res.status(404).send('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Page not found | Louie Mae</title></head><body><main><h1>Page not found</h1><a href="/">Return to Louie Mae</a></main></body></html>');
+    }
+    const meta = Object.prototype.hasOwnProperty.call(PAGE_META, path) ? PAGE_META[path] : DEFAULT_META;
     const BASE_URL = 'https://louiemae.com';
     const imageUrl = `${BASE_URL}${meta.image}`;
     const pageUrl = `${BASE_URL}/${path}`;
