@@ -6,6 +6,8 @@ import { isCollectionId } from '../lib/collectionId.js';
 import { collectionDocument, type PublicCollectionDocument } from '../lib/serverCollectionDocument.js';
 import { buildCatalogCategoryFilter, matchesCatalogCategoryFilter } from '../lib/productCategories.js';
 import type { CollectionConfig } from '../types';
+import { publicSiteData } from '../lib/publicInitialData.js';
+import { withPublicInitialData } from '../lib/serverPublicInitialData.js';
 
 const record = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -74,6 +76,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       categories: collection.subcategories.map(record).flatMap(category => category && typeof category.id === 'string' && typeof category.title === 'string'
         ? [{ id: category.id.slice(0, 200), title: category.title.slice(0, 200) }] : []).slice(0, 100), cards };
     const template = await readFile(join(process.cwd(), 'dist', 'index.html'), 'utf8');
-    return res.status(200).send(req.method === 'HEAD' ? '' : collectionDocument(template, document));
+    return res.status(200).send(req.method === 'HEAD' ? '' : withPublicInitialData(collectionDocument(template, document), `/collection/${id}`, { site: publicSiteData(site) }));
   } catch { return failure(res, 503, 'Collections temporarily unavailable'); }
 }

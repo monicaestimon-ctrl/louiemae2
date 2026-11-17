@@ -355,3 +355,14 @@ Validation: 25 focused unit/API/document tests, TypeScript, lint, build and publ
 
 
 PR314 local batch `2026-11-17T17-48-11-170Z` retained 40 runs across shop/story/journal index/article. All 40 passed the unchanged interactive-content health checks. Seven of eight route/device batches still failed repeated performance acceptance; article desktop passed. These are local diagnostics, not controlled production acceptance. Initial CI `44140828429` exposed an incomplete explicit file list in the unbundled Node runtime harness; the two new helpers are now emitted, and the harness checks parsed initial site/article/archive snapshots with the built template. The corrected runtime check passes.
+
+
+### PR314 production and collection-navigation continuation — November 17
+
+PR314 merged as `4253648adc78124b530ae1319968a2efbb29168d` after CI `44146546733` passed. CodeRabbit's nested-field projection finding was fixed in `ee568ce4`, tested and resolved. Production deployment `dpl_EbkL96GwPD5gJV2pPxaw6mkp8yA7` serves that exact merge; anonymous home, HOLM, account entry, product, shop, story, journal and article checks passed without page errors (`pr314-core-production-browser.json`). Main deployment/check status and controlled performance evidence are recorded separately; this is not full-spec acceptance.
+
+Collection continuation: collection HTML now carries the same bounded, route-bound public settings DTO used by shop/story. It does not bootstrap product pages, cursor state, inventory readiness or purchasing authority. Furniture/decor/fashion category-only roots render their verified navigation without waiting for an unrelated catalog migration query. Product-grid/category-preview routes and the kids root still require live catalog readiness. Readiness errors/timeouts use the recoverable query path; configuration failure remains visibly unavailable. No catalog health requirement is removed from product discovery.
+
+Actual-App handoff fixtures now cover 21 route/viewport combinations, including category navigation while inventory is unresolved, entering a blocked product grid, returning to category navigation and subsequent configuration outage. All had zero axe violations and zero commerce commands. Unit/API regressions bind snapshots to the exact collection path, reject expired/mismatched snapshots, exclude private fields and prove that entering a grid reintroduces the live readiness gate. The lazy-preview unit assertion waits for the module's visible loading state before inspecting its hook call; browser behavior remains independently tested.
+
+Outstanding: kids preview startup, global retail/HOLM discovery and pagination, complete route/persona matrix and repeated production score acceptance. Category navigation readiness does not imply complete inventory, product availability or commercial qualification.

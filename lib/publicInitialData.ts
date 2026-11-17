@@ -182,7 +182,8 @@ export function parsePublicInitialData(
     )
       return;
     const data: PublicInitialData = {};
-    if (path === '/shop' || path === '/story') data.site = publicSiteData(parsed.data.site);
+    if (path === '/shop' || path === '/story' || /^\/collection\/[a-z0-9][a-z0-9_-]{0,79}$/.test(path))
+      data.site = publicSiteData(parsed.data.site);
     if (
       path === '/blog' &&
       Array.isArray(parsed.data.posts) &&
