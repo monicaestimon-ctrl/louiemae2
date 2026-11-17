@@ -844,7 +844,7 @@ a.pin-act{text-decoration:none}
 .pp-stage{position:sticky;top:60px;height:calc(100svh - 60px);min-height:520px;padding:18px clamp(16px,2vw,28px);display:flex;flex-direction:column;gap:12px}
 .pp-views{display:flex;gap:4px;padding:3px;background:var(--plaster);border-radius:999px;align-self:flex-start;max-width:100%;overflow-x:auto}
 .pp-views button{height:44px;padding:0 14px;border-radius:999px;font-size:13px;color:var(--ink);font-weight:500;white-space:nowrap}
-.pp-views button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.pp-views button.on{background:var(--card);color:var(--ink);box-shadow:inset 0 -3px 0 var(--ink);font-weight:700}
 .pp-set{position:relative;flex:1;border-radius:28px;overflow:hidden;display:grid;place-items:end center;padding-bottom:17%;isolation:isolate}
 .pp-floorline{position:absolute;left:0;right:0;bottom:0;height:34%;opacity:.35}
 .pp-obj{position:relative;transition:transform .4s ease-out}

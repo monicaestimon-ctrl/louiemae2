@@ -12,6 +12,18 @@ function setup(items = products, pricing: 'retail' | 'trade' = 'retail') {
   return { onQuery };
 }
 afterEach(cleanup);
+it('ranks text matches within a photo search and removes obsolete photo tones', () => {
+  const props = { products, query: '', imageQuery: { src: 'photo', pal: ['#123456'] } as { src: string; pal: string[] } | null,
+    types: {}, materials: {}, trends: [], matchQuery: () => [], onQuery: vi.fn(), onClearImage: vi.fn(), onImage: vi.fn(), onTrend: vi.fn(), onSourcing: vi.fn(),
+    renderProducts: (items: typeof products) => <ul aria-label="Results">{items.map(item => <li key={item.id}>{item.name}</li>)}</ul> };
+  const view = render(<DiscoverCatalog {...props} />);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Search' }), { target: { value: 'sofa' } });
+  expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['Sofa']);
+  fireEvent.click(screen.getByRole('button', { name: 'Filter by #123456' }));
+  expect(screen.queryByRole('listitem')).toBeNull();
+  view.rerender(<DiscoverCatalog {...props} imageQuery={null} />);
+  expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['Sofa']);
+});
 it('combines type/material/stock filters and exposes their selected states', () => {
   setup();
   fireEvent.click(screen.getByRole('button', { name: 'Lighting' }));

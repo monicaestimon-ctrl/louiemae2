@@ -1572,7 +1572,7 @@ function ClientQuote({ctx,code}){
   </main>`;
 }
 /** Present project drafts and delivery steps in a modal; authoritative quote/checkout requests remain server-owned. */
-function Tray({ctx}){
+function Tray({ctx,open=true}){
   const {tray,setTrayState}=ctx;const proj=tray.projects.find(p=>p.id===tray.active);
   const [step,setStep]=useState(0);const [view,setView]=useState('staged');const [tab,setTab]=useState('tray');
   const [newP,setNewP]=useState(false);const [pn,setPn]=useState('');const [drag,setDrag]=useState(null);const [over,setOver]=useState(null);
@@ -1608,7 +1608,7 @@ function Tray({ctx}){
     catch(e){feedback.report({_form:customerMessage(e)})}finally{pending.current=false;setBusy(false)}};
   const fld=(k,label,ph,type='text',auto)=>html`<div><label className="lbl" htmlFor=${'tv-'+k}>${label}</label><input id=${'tv-'+k} className="field" type=${type} autoComplete=${auto} value=${del[k]} placeholder=${ph} aria-invalid=${!!feedback.errors[k]} aria-describedby=${feedback.errors[k]?'tv-'+k+'-error':undefined} onInput=${e=>{setDel({...del,[k]:e.target.value});feedback.clear(k);feedback.clear('_form')}}/>${feedback.errors[k]&&html`<p id=${'tv-'+k+'-error'} className="delivery-error">${feedback.errors[k]}</p>`}</div>`;
   const strip=items.flatMap(i=>Array.from({length:Math.min(i.qty,3)},(_,k)=>({...i,k})));const stripCm=strip.reduce((s,i)=>s+(i.p.dimsCm?.w??i.p.widthCm??100)+30,0);
-  return html`<${Modal} open=${true} label="Project tray" onClose=${()=>ctx.setTray(false)}><div className="tray-scrim" onClick=${()=>ctx.setTray(false)}></div>
+  return html`<${Modal} open=${open} label="Project tray" onClose=${()=>ctx.setTray(false)}><div className="tray-scrim" onClick=${()=>ctx.setTray(false)}></div>
   ${qc&&html`<${QuoteComposer} ctx=${ctx} onClose=${()=>setQc(false)}/>`}
   <section className="tv">
     <header className="tv-head">
@@ -3199,7 +3199,7 @@ function BoardDetail({ctx}){
       ${b.sections.map(s=>html`<button key=${s} className="btn btn-line btn-sm" disabled=${!picked.length} onClick=${()=>{ctx.updateBoard(b.id,x=>({...x,pins:x.pins.map(p=>picked.includes(p.pid)?{...p,sec:s}:p)}));ctx.toast(`Moved ${picked.length} to ${s}`);setPicked([])}}>Move to ${s}</button>`)}
       <button className="btn btn-line btn-sm" style=${{color:'var(--bad)'}} disabled=${!picked.length} onClick=${()=>{ctx.updateBoard(b.id,x=>({...x,pins:x.pins.filter(p=>!picked.includes(p.pid))}));setPicked([])}}>Remove</button></div>`}
     ${tab==='shop'?html`<div className="g2" style=${{marginTop:22}}>
-      <div>${b.pins.map(x=>{const p=byId(x.pid);return html`<div key=${p.id} className="line" style=${{gridTemplateColumns:'88px minmax(0,1fr) auto'}}><button className="th" style=${{backgroundImage:`url(${p.img})`}} onClick=${()=>ctx.openPin(p.id)} aria-label=${'View '+p.name}></button><div><b>${p.name} <span className="mute" style=${{fontWeight:400}}>${p.line}</span></b><div className="meta">${x.sec||'No section'} · <span className="mono">${p.sku}</span></div></div><div className="row"><span className="mono">${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span><button className="ib" disabled=${!has(p.id)} aria-label=${'Add '+p.name+' to tray'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.line').querySelector('.th'))}>${I('plus')}</button></div></div>`})}</div>
+      <div>${b.pins.map(x=>{const p=byId(x.pid);return html`<div key=${p.id} className="line" style=${{gridTemplateColumns:'88px minmax(0,1fr) auto'}}><button className="th" style=${{backgroundImage:`url(${p.img})`}} onClick=${()=>ctx.openPin(p.id,{pid:x.pid,lid:x.lid,vid:x.vid})} aria-label=${'View '+p.name}></button><div><b>${p.name} <span className="mute" style=${{fontWeight:400}}>${p.line}</span></b><div className="meta">${x.sec||'No section'} · <span className="mono">${p.sku}</span></div></div><div className="row"><span className="mono">${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span><button className="ib" disabled=${!has(p.id)} aria-label=${'Add '+p.name+' to tray'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.line').querySelector('.th'))}>${I('plus')}</button></div></div>`})}</div>
       <div className="panel" style=${{alignSelf:'start',display:'grid',gap:12}}><h3>Shop the board</h3><div className="sumrow"><span>${b.pins.length} pieces</span><span>${fmt(b.pins.reduce((s,x)=>s+pr(byId(x.pid),ctx.mode),0))}</span></div><button className="btn btn-ink" disabled=${b.pins.some(x=>!has(x.pid))} onClick=${()=>{if(b.pins.some(x=>!has(x.pid)))return;b.pins.forEach(x=>ctx.addToTray(x.pid,1,null,true));ctx.toast(`${b.pins.length} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Add all to tray</button><p className="help">Shared in shoppable mode, this tab is what your client sees, with your partner link attached.</p></div>
     </div>`:html`<div className=${org?'wall organize':'wall'}>${pins.map(p=>org?html`<button key=${p.id} className="pin" onClick=${()=>setPicked(picked.includes(p.id)?picked.filter(x=>x!==p.id):[...picked,p.id])} aria-pressed=${picked.includes(p.id)}><div className="pin-img" style=${{outline:picked.includes(p.id)?'3px solid var(--cognac)':'none',outlineOffset:2}}><img src=${p.img} alt=${p.name} style=${{aspectRatio:p.ar,opacity:picked.includes(p.id)?.75:1}}/>${picked.includes(p.id)&&html`<span className="oos" style=${{left:'auto',right:10,top:10,bottom:'auto',background:'var(--cognac)',color:'#fff'}}>Selected</span>`}</div><div className="pin-meta"><b>${p.name}</b></div></button>`:html`<${PinCard} key=${p.id} p=${p} ctx=${ctx}/>`)}</div>`}
     ${share&&html`<${ShareSheet} ctx=${ctx} title=${b.title} doc=${pinsDoc(b.title,b.pins.map(x=>x.pid))} ids=${b.pins.map(x=>x.pid)} boardKey=${'pins-'+b.id} onClose=${()=>setShare(false)}/>`}
@@ -3804,7 +3804,7 @@ export function App(){
     ${route.startsWith('b/')?html`<${SharedBoard} key=${route} ctx=${ctx} slug=${route.slice(2)}/>`:html`<${Page} key=${route+(route==='studio'?nonce:'')} ctx=${ctx}/>`}
     ${route!=='studio'&&route!=='room'&&html`<${TabBar} ctx=${ctx}/>`}
     ${pin&&(detailProduct?html`<${PinDetail} key=${detailProduct.lid+':'+detailProduct.vid} ctx=${ctx}/>`:html`<${Modal} open=${true} label=${detailCatalog.pending||detailCatalog.preparing||detailCatalog.failed?"Product availability":"Product unavailable"} onClose=${()=>openPin(null)}><p role="status">${projectResolutionMessage(detailIdentity,detailCatalog.states)}</p><button className="btn btn-line" onClick=${()=>openPin(null)}>Close</button><//>`)}
-    ${trayOpen&&html`<${Tray} ctx=${ctx}/>`}
+    ${(trayOpen||pinReturnsToTray)&&html`<${Tray} ctx=${ctx} open=${trayOpen}/>`}
     ${menu&&html`<${IndexMenu} ctx=${ctx}/>`}
     <${Toast} t=${toastS} onClose=${()=>setToastS(null)}/>
   <//>`;

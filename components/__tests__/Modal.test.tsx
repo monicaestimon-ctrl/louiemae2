@@ -1,11 +1,24 @@
 import React, { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { Modal } from '../Modal';
+import { Modal, ModalSuspensionContext } from '../Modal';
 afterEach(() => {
   cleanup();
   document.body.style.overflow = '';
   vi.restoreAllMocks();
+});
+it('suspends open portals during recovery without dismissing their owner', () => {
+  const close = vi.fn();
+  const view = render(<ModalSuspensionContext.Provider value={false}><Modal open label="Draft" onClose={close}><button>Keep draft</button></Modal></ModalSuspensionContext.Provider>);
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  const control = screen.getByRole('button', { name: 'Keep draft' });
+  view.rerender(<ModalSuspensionContext.Provider value={true}><Modal open label="Draft" onClose={close}><button>Keep draft</button></Modal></ModalSuspensionContext.Provider>);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(close).not.toHaveBeenCalled();
+  expect(document.body.style.overflow).not.toBe('hidden');
+  view.rerender(<ModalSuspensionContext.Provider value={false}><Modal open label="Draft" onClose={close}><button>Keep draft</button></Modal></ModalSuspensionContext.Provider>);
+  expect(screen.getByRole('dialog', { name: 'Draft' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Keep draft' })).toBe(control);
 });
 it('closes only the topmost controlled dialog and preserves the outer scroll lock', () => {
   document.body.style.overflow = 'scroll';

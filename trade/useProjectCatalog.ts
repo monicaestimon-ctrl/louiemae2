@@ -9,10 +9,10 @@ export function useProjectCatalog(identities: readonly SavedProductIdentity[], c
     const product = catalog.get(identity.pid);
     // A visible numeric match is not evidence of an older saved row's source.
     // The verified legacy index must rule out a hash collision first.
-    return identity.lid === undefined || !product || product.lid !== identity.lid;
+    return !identity.lid || !product || product.lid !== identity.lid;
   });
   const resolution = useSavedProductResolution(missing);
-  const products = new Map(catalog);
+  const products = Object.assign(new Map(catalog), { blockedSavedIdentities: new Set<string>() });
   const states = new Map<string, SavedResolution>();
   for (const row of resolution.rows) {
     let state = row;
@@ -27,10 +27,10 @@ export function useProjectCatalog(identities: readonly SavedProductIdentity[], c
     }
     states.set(projectItemKey({ pid: row.identity.pid, lid: row.identity.lid, vid: row.identity.vid }), state);
   }
-  // Legacy rows have no source field for resolveProjectProduct to compare. Do
-  // not let a copied browse row bypass a pending/failed/ambiguous identity read.
+  // Block the exact saved selection, not a shared numeric product. A pending
+  // legacy row must not invalidate a separately verified source-bound row.
   for (const row of states.values()) {
-    if (row.identity.lid === undefined && row.status !== 'resolved') products.delete(row.identity.pid);
+    if (row.status !== 'resolved') products.blockedSavedIdentities.add(projectItemKey({ pid: row.identity.pid, lid: row.identity.lid, vid: row.identity.vid }));
   }
   return { products, states, pending: resolution.pending, preparing: resolution.preparing, failed: resolution.failed };
 }

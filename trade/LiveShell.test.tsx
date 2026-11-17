@@ -17,6 +17,21 @@ beforeEach(() => {
   const shell = document.createElement('div'); shell.id = 'holm-shell'; shell.textContent = 'Startup hero'; document.body.append(shell);
 });
 afterEach(() => { cleanup(); document.getElementById('holm-shell')?.remove(); vi.useRealTimers(); vi.restoreAllMocks(); });
+it('keeps an existing draft mounted but inaccessible during an empty same-viewer refresh', () => {
+  mocks.me = { signedIn: false }; mocks.status = 'Exhausted'; mocks.rows = [{ id: 'one' }];
+  const view = render(<LiveShell />);
+  const input = screen.getByLabelText('Unsaved project name');
+  fireEvent.change(input, { target: { value: 'Unfinished project' } });
+  mocks.rows = []; view.rerender(<LiveShell />);
+  expect(input.closest('[hidden]')).not.toBeNull();
+  expect(input.closest('[inert]')).not.toBeNull();
+  expect(screen.getByRole('status')).toHaveTextContent('No products are available');
+  mocks.status = 'LoadingMore'; view.rerender(<LiveShell />);
+  expect(input.closest('[hidden]')).not.toBeNull();
+  mocks.status = 'Exhausted'; mocks.rows = [{ id: 'two' }]; view.rerender(<LiveShell />);
+  expect(screen.getByLabelText('Unsaved project name')).toBe(input);
+  expect(input).toHaveValue('Unfinished project');
+});
 
 it('replaces an indefinite startup hero with recovery links after ten seconds and recovers on data arrival', () => {
   const view = render(<LiveShell />);

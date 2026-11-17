@@ -9,19 +9,30 @@ vi.mock('convex/react', () => ({ useQueries: () => responses.value }));
 const source = 'saved-source'; const pid = holmLegacyId(source);
 const item = { id: source, name: 'Saved Chair', description: '', category: 'Chairs', images: [], facts: '', inStock: true, variants: [{ id: 'oak', name: 'Oak', minimum: 2, increment: 2, retail: 10000, trade: 9000 }] };
 beforeEach(() => { responses.value = {}; });
+it.each([undefined, ''])('isolates legacy verification from a verified source sharing its numeric id (%s)', lid => {
+  const [product] = liveProducts([item]);
+  const verified = { pid, lid: source, vid: 'oak', qty: 2 };
+  const legacy = { pid, lid, vid: 'oak', qty: 2, zone: 'Main room' };
+  const view = renderHook(() => useProjectCatalog([verified, legacy], new Map([[pid, product]])));
+  for (const response of [undefined, { ready: true, items: [{ legacyId: pid, status: 'conflict', item: null }] }]) {
+    responses.value = { 'legacy:0': response }; view.rerender();
+    expect(projectLines([verified], view.result.current.products).lines).toHaveLength(1);
+    expect(projectLines([legacy], view.result.current.products).lines).toEqual([]);
+  }
+});
 it('requires independent verification for legacy rows even when their numeric ID is in browse', () => {
   const [product] = liveProducts([item]);
   const catalog = new Map([[pid, product]]);
   const identity = { pid, vid: 'oak', qty: 2 };
   const view = renderHook(() => useProjectCatalog([identity], catalog));
-  expect(view.result.current.products.has(pid)).toBe(false);
+  expect(projectLines([identity], view.result.current.products).lines).toEqual([]);
   expect(projectLines([identity], view.result.current.products).lines).toEqual([]);
   responses.value = { 'legacy:0': { ready: false, items: [] } }; view.rerender();
-  expect(view.result.current.products.has(pid)).toBe(false);
+  expect(projectLines([identity], view.result.current.products).lines).toEqual([]);
   responses.value = { 'legacy:0': { ready: true, items: [{ legacyId: pid, status: 'resolved', item }] } }; view.rerender();
   expect(projectLines([identity], view.result.current.products).lines).toHaveLength(1);
   responses.value = { 'legacy:0': { ready: true, items: [{ legacyId: pid, status: 'conflict', item: null }] } }; view.rerender();
-  expect(view.result.current.products.has(pid)).toBe(false);
+  expect(projectLines([identity], view.result.current.products).lines).toEqual([]);
   expect(catalog.get(pid)).toBe(product);
 });
 it('resolves an unloaded project item without adding it to the browse catalog', () => {

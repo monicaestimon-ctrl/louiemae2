@@ -144,6 +144,20 @@ try {
       postal: '95206',
     }))
       await page.type('#tv-' + key, value);
+    await clickText('Back');
+    await page.click('.tv-line .tv-th');
+    await page.waitForSelector('.pp');
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('.tv-line');
+    await page.waitForSelector('dialog[open][aria-label="Project tray"]');
+    await page.evaluate(async () => {
+      await Promise.all(document.querySelector('dialog[open]').getAnimations({ subtree: true })
+        .filter(animation => animation.effect?.getComputedTiming().iterations !== Infinity)
+        .map(animation => animation.finished.catch(() => {})));
+    });
+    await clickText('Continue to delivery');
+    assert.equal(await page.$eval('#tv-name', node => node.value), 'Fixture contact');
+    assert.equal(await page.$eval('#tv-line1', node => node.value), '123 Fixture St');
     await clickText('Review request');
     await page.waitForFunction(
       () => document.activeElement?.textContent === 'Project tray · Review'
@@ -326,6 +340,10 @@ try {
   await page.addScriptTag({content:bundle.outputFiles.find(file=>file.path.endsWith('.js')).text});
   await page.waitForFunction(()=>document.querySelector('main h1')?.textContent==='Verified saved board');
   await page.evaluate(()=>[...document.querySelectorAll('main button')].find(button=>button.textContent==='Shop').click());
+  await page.click('main button.th');
+  await page.waitForSelector('.pp-price');
+  assert.match(await page.$eval('.pp-price', node => node.textContent), /80/);
+  await page.keyboard.press('Escape');
   await page.waitForFunction(()=>[...document.querySelectorAll('main button')].some(button=>button.textContent==='Add all to tray'&&!button.disabled));
   assert.match(await page.$eval('main',node=>node.textContent),/Offpage/);
   await page.evaluate(()=>[...document.querySelectorAll('main button')].find(button=>button.textContent==='Add all to tray').click());

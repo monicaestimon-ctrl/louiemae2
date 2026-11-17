@@ -5,6 +5,7 @@ import { api } from '../convex/_generated/api';
 import { usePendingTimeout } from '../contexts/usePendingTimeout';
 import { liveProducts, type LiveItem } from './catalog';
 import { App, setProducts } from './app';
+import { ModalSuspensionContext } from '../components/Modal';
 
 /** Replace the decorative startup shell with an honest, navigable recovery state. */
 function Recovery({ retry, empty = false }: { retry: () => void; empty?: boolean }) {
@@ -34,6 +35,8 @@ function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
   useEffect(() => { if (status === 'CanLoadMore') loadMore(50); }, [status, loadMore]);
   const mapped = useMemo(() => status === 'Exhausted' ? liveProducts(results as LiveItem[]) : null, [results, status]);
   const [installed, setInstalled] = useState(false);
+  const [hasContent, setHasContent] = useState(false);
+  const [empty, setEmpty] = useState(false);
   // The legacy app reads a module-level catalog. Install only committed data,
   // Clear on viewer teardown; refreshing the same viewer must not remount project state.
   useLayoutEffect(() => () => setProducts([]), []);
@@ -41,6 +44,8 @@ function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
     if (mapped === null) return;
     setProducts(mapped);
     setInstalled(true);
+    setEmpty(mapped.length === 0);
+    if (mapped.length) setHasContent(true);
   }, [mapped]);
   const ready = installed;
   const timedOut = usePendingTimeout(!ready);
@@ -50,8 +55,8 @@ function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
     if (timedOut) return <Recovery retry={() => window.location.reload()} />;
     return shell ? null : <main className="holm-boot" aria-busy="true"><p role="status">Opening House of Louie Mae…</p></main>;
   }
-  if (mapped?.length === 0) return <Recovery empty retry={() => window.location.reload()} />;
-  return <App key={me?.signedIn && me.verified ? 'trade' : 'retail'} />;
+  return <>{empty && <Recovery empty retry={() => window.location.reload()} />}
+    <div hidden={empty} inert={empty}><ModalSuspensionContext.Provider value={empty}>{hasContent && <App key={me?.signedIn && me.verified ? 'trade' : 'retail'} />}</ModalSuspensionContext.Provider></div></>;
 }
 
 /** Resolve account access before starting a viewer-specific catalog subscription. */

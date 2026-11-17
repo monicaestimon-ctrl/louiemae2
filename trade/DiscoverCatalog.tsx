@@ -36,6 +36,13 @@ export function DiscoverCatalog(props: Props) {
   const [type, setType] = useState('all');
   const [materials, setMaterials] = useState<string[]>([]);
   const [tones, setTones] = useState<string[]>([]);
+  const photoKey = JSON.stringify(props.imageQuery);
+  const [toneSource, setToneSource] = useState(photoKey);
+  if (toneSource !== photoKey) {
+    setToneSource(photoKey);
+    const available = new Set([...PALETTE.map(([, color]) => color), ...(props.imageQuery?.pal ?? [])]);
+    setTones(previous => previous.filter(color => available.has(color)));
+  }
   const [maximum, setMaximum] = useState<number | null>(null);
   const [inStock, setInStock] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -47,7 +54,7 @@ export function DiscoverCatalog(props: Props) {
   let products = query.trim() ? props.matchQuery(query) : [...props.products];
   if (query.trim() && !products.length) products = props.products.filter(product => `${product.name} ${product.line}`.toLowerCase().includes(query.toLowerCase()));
   const palette = props.imageQuery?.pal ?? [];
-  if (palette.length) products = [...props.products].sort((a, b) => Math.min(...palette.map(color => distance(color, a.tone))) - Math.min(...palette.map(color => distance(color, b.tone))));
+  if (palette.length) products = [...products].sort((a, b) => Math.min(...palette.map(color => distance(color, a.tone))) - Math.min(...palette.map(color => distance(color, b.tone))));
   products = products.filter(product => (type === 'all' || product.type === type) && (!materials.length || materials.includes(product.mat)) && (!tones.length || tones.some(tone => distance(tone, product.tone) < 48)) && (maximum === null || priceOf(product) <= maximum) && (!inStock || !product.oos));
   if (sort !== 'rel') products = [...products].sort((a, b) => sort === 'lo' ? priceOf(a) - priceOf(b) : priceOf(b) - priceOf(a));
   const searching = Boolean(query.trim() || props.imageQuery);

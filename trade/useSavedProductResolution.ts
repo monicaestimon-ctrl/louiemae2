@@ -19,8 +19,8 @@ export function savedIdentityRequests(identities: readonly SavedProductIdentity[
   const requests: Record<string, { query: typeof api.holm.catalogItems; args: { productIds: string[] } } | { query: typeof api.holm.catalogLegacyItems; args: { legacyIds: number[] } }> = {};
   if (!enabled || identities.length > 2000) return requests;
   const valid = identities.filter(identity => validNumber(identity.pid));
-  const sources = [...new Set(valid.filter(identity => typeof identity.lid === 'string' && identity.lid.length <= 128).map(identity => identity.lid!))].sort();
-  const legacy = [...new Set(valid.filter(identity => identity.lid === undefined).map(identity => identity.pid))].sort((a, b) => a - b);
+  const sources = [...new Set(valid.filter(identity => typeof identity.lid === 'string' && identity.lid.length > 0 && identity.lid.length <= 128).map(identity => identity.lid!))].sort();
+  const legacy = [...new Set(valid.filter(identity => !identity.lid).map(identity => identity.pid))].sort((a, b) => a - b);
   batches(sources).forEach((productIds, index) => { requests[`source:${index}`] = { query: api.holm.catalogItems, args: { productIds } }; });
   batches(legacy).forEach((legacyIds, index) => { requests[`legacy:${index}`] = { query: api.holm.catalogLegacyItems, args: { legacyIds } }; });
   return requests;
@@ -56,9 +56,9 @@ export function useSavedProductResolution(identities: readonly SavedProductIdent
     if (!enabled) return { identity, status: 'pending', item: null };
     if (identities.length > 2000) return { identity, status: 'error', item: null };
     if (!validNumber(identity.pid)) return { identity, status: 'conflict', item: null };
-    const result = identity.lid !== undefined ? sources.get(identity.lid) : legacy.get(identity.pid);
+    const result = identity.lid ? sources.get(identity.lid) : legacy.get(identity.pid);
     if (!result) return { identity, status: 'conflict', item: null };
-    if (result.item && ((identity.lid !== undefined && result.item.id !== identity.lid) || holmLegacyId(result.item.id) !== identity.pid)) return { identity, status: 'conflict', item: null };
+    if (result.item && ((identity.lid && result.item.id !== identity.lid) || holmLegacyId(result.item.id) !== identity.pid)) return { identity, status: 'conflict', item: null };
     return { identity, ...result };
   });
   // Two explicit source identities can share an old hash. Never install either under that key.

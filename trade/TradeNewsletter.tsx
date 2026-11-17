@@ -52,7 +52,7 @@ export function TradeNewsletter() {
   return <form onSubmit={submit} noValidate style={{ marginTop: 16, maxWidth: 360 }} aria-busy={pending}>
     <label htmlFor={id} style={{ display: 'block', marginBottom: 6 }}>Email for new arrivals</label>
     <div className="row">
-      <input ref={input} id={id} className="field" style={{ height: 44, minWidth: 0 }} type="email" autoComplete="email" maxLength={254} value={email} readOnly={pending} aria-invalid={invalid || undefined} aria-describedby={`${id}-status`} onChange={event => { setEmail(event.target.value); setInvalid(false); setMessage(''); }} />
+      <input ref={input} id={id} className="field" style={{ height: 44, minWidth: 0 }} type="email" autoComplete="email" maxLength={254} value={email} readOnly={pending} aria-required="true" aria-invalid={invalid || undefined} aria-describedby={`${id}-status`} onChange={event => { setEmail(event.target.value); setInvalid(false); setMessage(''); }} />
       <button type="submit" className="btn btn-ink btn-sm" style={{ minHeight: 44 }} disabled={pending}>{pending ? 'Saving…' : 'Subscribe'}</button>
     </div>
     <p id={`${id}-status`} role="status" style={{ fontSize: 14, marginTop: 8 }}>{message}</p>
