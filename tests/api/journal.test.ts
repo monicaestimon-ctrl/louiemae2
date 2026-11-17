@@ -10,7 +10,28 @@ vi.mock('node:fs/promises', async (original) => {
   return { ...actual, readFile, default: { ...actual, readFile } };
 });
 import handler from '../../api/journal';
+import editorialManifest from '../../lib/editorialImageManifest.json';
 const fetchMock = vi.fn();
+
+it('serves source-bound editorial renditions and leaves replacement uploads untouched', async () => {
+  const [source, rendition] = Object.entries(editorialManifest)[0];
+  for (const image of [source, `${source}-replacement`]) {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'success', value: { ...article, image } }),
+    });
+    const result = await request('story1');
+    expect(result.status).toBe(200);
+    if (image === source) {
+      expect(result.body).toContain(`${rendition.windows.articleMobile.base}-640.webp 640w`);
+      expect(result.body).toContain('aspect-[16/9]');
+      expect(result.body.indexOf('aspect-[16/9]')).toBeLessThan(result.body.indexOf('<h1'));
+    } else {
+      expect(result.body).toContain(`src="${image}"`);
+      expect(result.body).not.toContain(rendition.base);
+    }
+  }
+});
 
 const article = {
   _id: 'story1',
@@ -86,10 +107,21 @@ it('renders index links and a genuine empty archive distinctly from source failu
   const empty = await request();
   expect(empty.status).toBe(200);
   expect(empty.body).toContain('New stories are coming soon.');
+  expect(empty.body).toContain('class="min-h-screen bg-cream flex items-center justify-center"');
+  expect(empty.body).not.toContain('pt-32');
   fetchMock.mockRejectedValueOnce(new Error('offline'));
   const failed = await request();
   expect(failed.status).toBe(503);
   expect(failed.headers['X-Robots-Tag']).toBe('noindex');
+});
+it('keeps archive metadata and image geometry in the initial public document', async () => {
+  fetchMock.mockResolvedValue({ok:true,json:async()=>({status:'success',value:[article,{...article,_id:'story2',title:'Second story',category:'Second category',date:'November 18, 2026'}]})});
+  const result = await request();
+  expect(result.status).toBe(200);
+  expect(result.body).toContain('href="/blog/story2"');
+  expect(result.body).toContain('Second category');
+  expect(result.body).toContain('November 18, 2026');
+  expect(result.body).toContain('aspect-[3/4]');
 });
 it('never publishes missing, draft, mismatched or malformed article records', async () => {
   fetchMock.mockResolvedValueOnce({

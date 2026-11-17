@@ -7,6 +7,19 @@ import { Buffer } from 'node:buffer';
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 const css = (await readdir('dist/assets')).find((file) => /^main-.*\.css$/.test(file));
 assert.ok(css, 'Build before the journal fixture.');
+const editorialManifest = JSON.parse(await readFile('lib/editorialImageManifest.json', 'utf8'));
+const heroEntry = Object.values(editorialManifest)[0];
+const heroSource = Object.keys(editorialManifest)[0];
+const allowedImages = new Set(
+  [heroEntry, ...Object.values(heroEntry.windows)].flatMap((entry) =>
+    entry.widths.map((width) => `${entry.base}-${width}.webp`)
+  )
+);
+const allowedFonts = new Set(
+  (await readdir('public/fonts'))
+    .filter((name) => name.endsWith('.woff2'))
+    .map((name) => '/fonts/' + name)
+);
 const post = {
   _id: 'journal-fixture',
   id: 'journal-fixture',
@@ -14,10 +27,18 @@ const post = {
   excerpt: 'A public journal story.',
   category: 'Home',
   date: 'November 17, 2026',
-  image: '',
+  image: heroSource,
   status: 'published',
   content:
     '<h2>Make room for everyday life</h2><p>A readable story with <strong>meaningful details</strong> and a <a href="/shop">shop link</a>.</p><script>window.fixtureAttack=true</script><img src="javascript:bad" onerror="window.fixtureAttack=true">',
+};
+const secondPost = {
+  ...post,
+  _id: 'journal-second',
+  id: 'journal-second',
+  title: 'Another thoughtful story',
+  category: 'Design',
+  date: 'November 18, 2026',
 };
 const sanitizer = await build({
   entryPoints: ['lib/journalContent.ts'],
@@ -32,7 +53,7 @@ const { journalHtml } = await import(
 const publicDetail = { ...post, contentHtml: journalHtml(post.content) };
 delete publicDetail.content;
 const stubs = {
-  site: `export const useSite=()=>({posts:[${JSON.stringify(post)}],editorialStatus:'ready'});`,
+  site: `export const useSite=()=>({posts:location.search.includes('empty')?[]:location.search.includes('single')?[${JSON.stringify(post)}]:${JSON.stringify([post, secondPost])},editorialStatus:location.search.includes('empty')?'empty':'ready'});`,
   newsletter: `export const useNewsletter=()=>({addSubscriber:async()=>{window.fixtureCommands++;throw Error('No commands permitted')}});`,
   convex: `import{useEffect,useState}from'react';const post=${JSON.stringify(publicDetail)};export function useQueries(queries){const[,change]=useState(0);useEffect(()=>{const update=()=>change(x=>x+1);window.addEventListener('fixturechange',update);return()=>window.removeEventListener('fixturechange',update)},[]);return Object.fromEntries(Object.keys(queries).map(key=>[key,window.fixtureState==='missing'?null:window.fixtureState==='failed'?new Error('Fixture unavailable'):window.fixtureState==='pending'?undefined:post]));}`,
 };
@@ -71,7 +92,20 @@ const bundle = await build({
     },
   ],
 });
-const html = `<!doctype html><html lang="en"><head><title>Journal fixture</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="canonical" href="https://www.louiemae.com/blog"><meta name="description" content="Journal fixture"><style>${await readFile('dist/assets/' + css, 'utf8')}</style></head><body><div id="root"></div><script>${bundle.outputFiles[0].text.replaceAll('</script', '<\\/script')}</script></body></html>`;
+const html = `<!doctype html><html lang="en"><head><title>Journal fixture</title><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="canonical" href="https://www.louiemae.com/blog"><meta name="description" content="Journal fixture"><style>${await readFile('dist/assets/' + css, 'utf8')}</style></head><body><!--product-document--><div id="root"></div><script>${bundle.outputFiles[0].text.replaceAll('</script', '<\\/script')}</script></body></html>`;
+await build({
+  entryPoints: ['lib/serverJournalDocument.ts'],
+  bundle: true,
+  packages: 'external',
+  platform: 'node',
+  format: 'esm',
+  outfile: 'artifacts/lighthouse/journal-document-fixture.mjs',
+});
+const { journalDocument } = await import('../../artifacts/lighthouse/journal-document-fixture.mjs');
+const initialIndex = journalDocument(html, [post, secondPost]);
+const singleIndex = journalDocument(html, [post]);
+const emptyIndex = journalDocument(html, []);
+const initialArticle = journalDocument(html, [], { ...post, content: publicDetail.contentHtml });
 const browser = await puppeteer.launch({
   ...(process.env.CHROME_PATH
     ? { executablePath: process.env.CHROME_PATH }
@@ -90,14 +124,74 @@ try {
     page.on('pageerror', (error) => errors.push(error.message));
     await page.setViewport({ width, height });
     await page.setRequestInterception(true);
+    let holdFonts = true;
+    const pendingFonts = [];
+    const serveFont = async (request) =>
+      request.respond({
+        status: 200,
+        contentType: 'font/woff2',
+        body: await readFile('public' + new URL(request.url()).pathname),
+      });
     page.on('request', (request) => {
       if (
         request.isNavigationRequest() &&
         new URL(request.url()).origin === 'http://fixture.invalid'
       )
-        void request.respond({ status: 200, contentType: 'text/html', body: html });
-      else void request.abort();
+        void request.respond({
+          status: 200,
+          contentType: 'text/html',
+          body:
+            new URL(request.url()).pathname === '/blog'
+              ? new URL(request.url()).searchParams.has('empty')
+                ? emptyIndex
+                : new URL(request.url()).searchParams.has('single')
+                  ? singleIndex
+                  : initialIndex
+              : initialArticle,
+        });
+      else if (allowedImages.has(new URL(request.url()).pathname)) {
+        void readFile('public' + new URL(request.url()).pathname).then((body) =>
+          request.respond({ status: 200, contentType: 'image/webp', body })
+        );
+      } else if (allowedFonts.has(new URL(request.url()).pathname)) {
+        if (holdFonts) pendingFonts.push(request);
+        else void serveFont(request);
+      } else void request.abort();
     });
+    const geometry = () =>
+      page.evaluate(() =>
+        ['main h1', 'main img', 'main a[href="/blog/journal-second"]'].map((selector) => {
+          const element = document.querySelector(selector);
+          if (!element) return null;
+          const rect = element.getBoundingClientRect();
+          return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        })
+      );
+    await page.goto('http://fixture.invalid/blog?single=1', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('[data-lm-journal-ready="index"]');
+    await page.waitForFunction(() => document.fonts.status === 'loading');
+    const beforeFonts = await geometry();
+    assert.ok(pendingFonts.length > 0, 'Fixture must actually delay custom font requests');
+    holdFonts = false;
+    await Promise.all(pendingFonts.splice(0).map(serveFont));
+    await page.evaluate(() => document.fonts.ready);
+    const afterFonts = await geometry();
+    assert.deepEqual(afterFonts, beforeFonts, 'Delayed fonts must preserve index lead geometry');
+    const fontLoading = { before: beforeFonts, after: afterFonts };
+    const parity = [];
+    for (const route of ['/blog?single=1', '/blog', '/blog?empty=1', '/blog/journal-fixture']) {
+      await page.setJavaScriptEnabled(false);
+      await page.goto('http://fixture.invalid' + route);
+      await page.evaluate(() => document.fonts.ready);
+      const before = await geometry();
+      await page.setJavaScriptEnabled(true);
+      await page.goto('http://fixture.invalid' + route);
+      await page.waitForFunction(() => !document.getElementById('lm-journal-document'));
+      await page.evaluate(() => document.fonts.ready);
+      const after = await geometry();
+      assert.deepEqual(after, before, 'Initial and interactive journal geometry must agree');
+      parity.push({ route, before, after });
+    }
     await page.goto('http://fixture.invalid/blog');
     await page.waitForSelector('[data-lm-journal-ready="index"]');
     await page.addScriptTag({ content: axe.source });
@@ -173,6 +267,8 @@ try {
       overflow,
       errors,
       keyboardNavigation: true,
+      parity,
+      fontLoading,
       withdrawal: true,
       recovery: true,
       history: true,

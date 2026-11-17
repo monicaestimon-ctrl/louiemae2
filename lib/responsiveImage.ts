@@ -1,9 +1,11 @@
 import manifest from './imageManifest.json' with { type: 'json' };
 import productManifest from './productImageManifest.json' with { type: 'json' };
+import editorialManifest from './editorialImageManifest.json' with { type: 'json' };
 
 type Entry = { base: string; widths: number[]; ratio: number };
 const ENTRIES = manifest as Record<string, Entry>;
 const PRODUCTS = productManifest as Record<string, Entry>;
+const EDITORIAL = editorialManifest as Record<string, Entry>;
 
 export type ResponsiveImage = { src: string; srcSet?: string; sizes?: string };
 
@@ -11,6 +13,7 @@ export type ResponsiveImage = { src: string; srcSet?: string; sizes?: string };
 export function imageEntry(src?: string | null): Entry | undefined {
   if (!src) return undefined;
   if (Object.prototype.hasOwnProperty.call(PRODUCTS, src)) return PRODUCTS[src];
+  if (Object.prototype.hasOwnProperty.call(EDITORIAL, src)) return EDITORIAL[src];
   const key = src.startsWith('https://louiemae.com/') ? src.slice('https://louiemae.com'.length) : src;
   if (Object.prototype.hasOwnProperty.call(ENTRIES, key)) return ENTRIES[key];
   const decoded = safeDecode(key);
