@@ -19,6 +19,8 @@ import { address } from './commerceTables';
 import { clientShow, holmBusinessType } from './holmTables';
 import { assetIndex, assetsFor, publicAssets } from './holmAssets';
 import { catalogPageOptions } from '../lib/catalogPagination';
+import { holmIdentityState } from './holmIdentityMaintenance';
+import { holmLegacyId } from '../lib/holmProductIdentity';
 import { checkQuantity, totalLines } from '../lib/commerce';
 import { reserveCredit } from './holmCredit';
 import { deliveryCents, freightFor } from '../lib/holmDelivery';
@@ -255,8 +257,32 @@ export const catalogPage = query({
 });
 
 /** Resolve explicit saved identities independently of the loaded page, without exposing private prices. */
+export const catalogLegacyItems = query({
+  args: { legacyIds: v.array(v.number()) },
+  handler: async (ctx, args) => {
+    if (args.legacyIds.length > 24 || args.legacyIds.some(id => !Number.isSafeInteger(id) || id < 1)) throw new CommerceError('INVALID_INPUT');
+    const state = await holmIdentityState(ctx);
+    if (!state?.enabled || state.phase !== 'verified') return { ready: false, items: [] };
+    const me = await viewer(ctx);
+    const trade = !!me && isVerified(me.profile);
+    const items = [];
+    const now = Date.now();
+    for (const legacyId of new Set(args.legacyIds)) {
+      const matches = await ctx.db.query('holmCatalogIdentities').withIndex('by_legacy', query => query.eq('legacyId', legacyId)).take(2);
+      if (matches.length > 1) { items.push({ legacyId, status: 'conflict' as const, item: null }); continue; }
+      const match = matches[0];
+      const listing = match ? await ctx.db.get(match.listingId) : null;
+      const valid = match && listing?.productId === match.productId && holmLegacyId(match.productId) === legacyId;
+      const item = valid ? await catalogItem(ctx, listing, trade, now) : null;
+      items.push({ legacyId, status: item ? 'resolved' as const : 'unavailable' as const, item });
+    }
+    return { ready: true, items };
+  },
+});
+
+/** Resolve explicit saved source identities using the same current eligibility boundary. */
 export const catalogItems = query({
-  args: { productIds: v.array(v.id('commerceProducts')) },
+  args: { productIds: v.array(v.string()) },
   handler: async (ctx, args) => {
     if (args.productIds.length > 24) throw new CommerceError('INVALID_INPUT');
     const me = await viewer(ctx);
@@ -264,9 +290,10 @@ export const catalogItems = query({
     const now = Date.now();
     const results = [];
     for (const productId of new Set(args.productIds)) {
-      const listing = await ctx.db.query('commerceListings')
-        .withIndex('by_product_channel', q => q.eq('productId', productId).eq('channel', 'house'))
-        .unique();
+      const normalized = productId.length <= 128 ? ctx.db.normalizeId('commerceProducts', productId) : null;
+      const listing = normalized ? await ctx.db.query('commerceListings')
+        .withIndex('by_product_channel', q => q.eq('productId', normalized).eq('channel', 'house'))
+        .unique() : null;
       const item = listing ? await catalogItem(ctx, listing, trade, now) : null;
       results.push({ productId, item });
     }

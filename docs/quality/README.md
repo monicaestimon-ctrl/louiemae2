@@ -193,3 +193,20 @@ PR #295 is merged and deployed: main `7a9c9144e6f520a7dbada9b41ce13090bc0cd817`,
 The account screen is now a typed module using the generated server membership DTO. Anonymous visitors skip private application reads; pending members retain retail pricing and do not see a duplicate application invitation. Account navigation and sign-out behavior are covered by focused tests.
 
 The homepage delivery calculator has an explicit expandable control; hiding it retains inputs after the first open. The actual local production build was checked with live anonymous catalog reads: no optional screen requests on initial home, account/sign-in chunks load on navigation, and a blocked account chunk produces local recovery. No business command or sign-in submission was made. CI now runs the bundle guard and HOLM, delivery-request and application fixtures and retains their JSON evidence.
+
+## Saved HOLM identity lookup prerequisite
+
+The legacy numeric ID calculation is shared by the renderer and a new source-bound identity index. House listing writes maintain that index transactionally. It contains listing/product IDs and the legacy number only, not prices, supplier costs or account data. The preparation process backfills sources, removes orphans, verifies sources and verifies index rows before a separate enable step. Expected phase/cursor inputs make batch replays idempotent. A mismatch prevents cutover.
+
+The bounded legacy resolver returns no results until that verified index is enabled. It rejects ambiguous numeric matches and then passes each candidate through the existing current catalog eligibility and viewer-pricing checks. Explicit source-ID resolution treats a malformed saved ID as an unresolved row without blocking valid rows in the same request. Neither path substitutes an unrelated default product or exposes authenticated trade prices to anonymous visitors.
+
+This is a prerequisite, not progressive loading completion. Frontend independent saved-item hydration, server filtering/sorting, first-page cutover and migration execution remain outstanding. The index is disabled by default, and no production backfill or cutover was run during implementation. In-memory tests cover preparation, replay, corruption, collisions, malformed saved IDs, transactional maintenance, anonymous pricing and withdrawal of a previously eligible listing.
+
+Deploy and verify this backend prerequisite before releasing the independent saved-project frontend:
+
+1. Read internal `holmIdentityMigration:status`. A null result means no preparation has started. This read never changes the migration.
+2. Start a new pass with internal `holmIdentityMigration:begin` only when preparation is absent or a failed pass has been repaired. Beginning disables the reader and resets preparation; do not restart a healthy interrupted pass.
+3. Call `step` sequentially with the returned `phase` and `cursor` as `expectedPhase` and `expectedCursor`, retaining each response. The phases are `listings`, `orphans`, `verifyListings`, `verifyIndex`, then `verified`. Each source/index batch contains at most 20 rows and has a source pagination byte budget; linked reads are additional.
+4. Resume an interruption from `status`. A stale batch replay returns `advanced:false`; a mismatch changes the phase to `failed`. Do not enable a partial or failed migration.
+5. After `verified`, call `setEnabled` with `enabled:true` and read back `status`. Verify an eligible source, its legacy ID, a withdrawn source and anonymous pricing before frontend cutover. Do not submit a purchase to test lookup.
+6. Retain deployment and migration receipts. Roll back the reader with `setEnabled` using `enabled:false`; preserve the index, saved records and order history. This changes identity lookup only, not product publication, prices, inventory or checkout gates.

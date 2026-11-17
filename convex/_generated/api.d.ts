@@ -96,6 +96,8 @@ import type * as holmAssets from "../holmAssets.js";
 import type * as holmConnect from "../holmConnect.js";
 import type * as holmCredit from "../holmCredit.js";
 import type * as holmEmail from "../holmEmail.js";
+import type * as holmIdentityMaintenance from "../holmIdentityMaintenance.js";
+import type * as holmIdentityMigration from "../holmIdentityMigration.js";
 import type * as holmPartners from "../holmPartners.js";
 import type * as holmPayouts from "../holmPayouts.js";
 import type * as holmPins from "../holmPins.js";
@@ -278,6 +280,8 @@ declare const fullApi: ApiFromModules<{
   holmConnect: typeof holmConnect;
   holmCredit: typeof holmCredit;
   holmEmail: typeof holmEmail;
+  holmIdentityMaintenance: typeof holmIdentityMaintenance;
+  holmIdentityMigration: typeof holmIdentityMigration;
   holmPartners: typeof holmPartners;
   holmPayouts: typeof holmPayouts;
   holmPins: typeof holmPins;
