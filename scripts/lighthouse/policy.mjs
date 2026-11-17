@@ -32,3 +32,25 @@ export function assessBatch(runs) {
   }
   return { passed: errors.length === 0, errors, runs };
 }
+
+/** A partly written manifest or passing route subset is never a complete release. */
+export function assessRelease(manifest) {
+  const errors = [];
+  if (manifest.deploymentVerificationRequired && (manifest.deploymentError ||
+      !manifest.deploymentCommit || manifest.deploymentBefore?.commit !== manifest.deploymentCommit ||
+      manifest.deploymentAfter?.commit !== manifest.deploymentCommit)) errors.push('Production identity was not verified before and after the audit');
+  const routes = manifest.selectedRoutes ?? [];
+  if (!routes.length || new Set(routes).size !== routes.length) errors.push('Expected unique selected routes');
+  if (manifest.fullRegistryRun !== true || !Array.isArray(manifest.omittedRoutes) || manifest.omittedRoutes.length) errors.push('Registered route coverage is incomplete');
+  if (!Array.isArray(manifest.pendingCoverage) || manifest.pendingCoverage.length) errors.push('Specification coverage is incomplete');
+  const expected = new Set(routes.flatMap(route => ['mobile', 'desktop'].map(device => `${route}:${device}`)));
+  const seen = new Set();
+  for (const batch of manifest.batches ?? []) {
+    const key = `${batch.route}:${batch.device}`;
+    if (!expected.has(key) || seen.has(key)) errors.push(`Unexpected or duplicate batch: ${key}`);
+    seen.add(key);
+    if (!assessBatch(batch.runs ?? []).passed) errors.push(`Batch has not passed: ${key}`);
+  }
+  for (const key of expected) if (!seen.has(key)) errors.push(`Missing batch: ${key}`);
+  return { passed: errors.length === 0, errors };
+}
