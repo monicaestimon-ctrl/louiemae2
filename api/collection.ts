@@ -65,7 +65,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       cards.push({ id: row._id, name: row.name.slice(0, 200), price: row.price, image: typeof row.images[0] === 'string' ? row.images[0] : '' });
       if (cards.length === 12) break;
     }
+    const categories = collection.subcategories.map(record).filter((value): value is Record<string, unknown> => value !== null);
+    const primaryCategory = categories.find(value => value.isMainCategory) || categories[0];
     const document: PublicCollectionDocument = { id, title: collection.title.slice(0, 200), subtitle: collection.subtitle.slice(0, 1000),
+      primaryCategoryImage: !filter && typeof primaryCategory?.image === 'string' ? primaryCategory.image : undefined,
       heroImage: typeof collection.heroImage === 'string' ? collection.heroImage : undefined,
       categories: collection.subcategories.map(record).flatMap(category => category && typeof category.id === 'string' && typeof category.title === 'string'
         ? [{ id: category.id.slice(0, 200), title: category.title.slice(0, 200) }] : []).slice(0, 100), cards };

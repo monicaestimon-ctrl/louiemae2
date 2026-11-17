@@ -5,7 +5,7 @@ vi.mock('node:fs/promises', async original => ({ ...await original<typeof import
 }));
 import handler from '../../api/collection';
 const fetchMock = vi.fn();
-const site = { collections: [{ id: 'furniture', title: 'Furniture & objects', subtitle: 'Thoughtful <pieces>', heroImage: '/images/brand/DINNERTABLE.png', subcategories: [{ id: 'chairs', title: 'Chairs' }] }] };
+const site = { collections: [{ id: 'furniture', title: 'Furniture & objects', subtitle: 'Thoughtful <pieces>', heroImage: '/images/brand/DINNERTABLE.png', subcategories: [{ id: 'chairs', title: 'Chairs', image: '/images/brand/furniture-chair.png' }] }] };
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock); vi.stubEnv('VITE_CONVEX_URL', 'https://public-fixture.convex.cloud');
   vi.stubEnv('VITE_PRELAUNCH_MODE', 'false'); fetchMock.mockReset();
@@ -37,6 +37,7 @@ it('renders escaped public collection content and bounded matching product previ
   expect(result.body).not.toContain('Home hero'); expect(result.body).not.toContain('http-equiv="refresh"');
   expect(result.body).toContain('href="https://louiemae.com/collection/furniture"');
   expect(result.body).toContain('data-collection-id="furniture"'); expect(fetchMock).toHaveBeenCalledTimes(3);
+  expect(result.body).toContain('rel="preload" as="image"');
 });
 it.each([{ id: ['furniture'] }, { id: '<script>' }, { id: '' }])('rejects malformed identities before querying: %j', async query => {
   expect((await request(query)).code).toBe(404); expect(fetchMock).not.toHaveBeenCalled();
@@ -62,6 +63,7 @@ it('supports HEAD and rejects business methods without querying', async () => {
 it('applies the same category identity filter to both product sources', async () => {
   const matching = await request({ id: 'furniture', cat: 'chairs' });
   expect(matching.body).toContain('/products/chair');
+  expect(matching.body).not.toContain('rel="preload" as="image"');
   const unmatched = await request({ id: 'furniture', cat: 'tables' });
   expect(unmatched.code).toBe(200); expect(unmatched.body).not.toContain('/products/chair');
   expect(unmatched.body).not.toContain('No products');

@@ -541,7 +541,8 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                             >
                               <img
                                 {...responsiveImage(cat.image, '(min-width: 768px) 33vw, 70vw')}
-                                loading="lazy"
+                                loading={idx === 0 ? 'eager' : 'lazy'}
+                                fetchPriority={idx === 0 ? 'high' : undefined}
                                 decoding="async"
                                 alt={cat.title}
                                 className="absolute inset-0 w-full h-full object-cover transition-all duration-700 group-hover:scale-110"
@@ -605,7 +606,8 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                             >
                               <img
                                 {...responsiveImage(cat.image, '(min-width: 768px) 33vw, 70vw')}
-                                loading="lazy"
+                                loading={idx === 0 ? 'eager' : 'lazy'}
+                                fetchPriority={idx === 0 ? 'high' : undefined}
                                 decoding="async"
                                 alt={cat.title}
                                 className="absolute inset-0 w-full h-full object-cover transition-all duration-700 group-hover:scale-110"
@@ -684,7 +686,8 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                         >
                           <img
                             {...responsiveImage(cat.image, '(min-width: 768px) 33vw, 70vw')}
-                            loading="lazy"
+                            loading={idx === 0 ? 'eager' : 'lazy'}
+                            fetchPriority={idx === 0 ? 'high' : undefined}
                             decoding="async"
                             alt={cat.title}
                             className="absolute inset-0 w-full h-full object-cover transition-all duration-700 group-hover:scale-110"

@@ -2,7 +2,7 @@ import { publicProductImage } from './productMetadata.js';
 import { responsiveImage } from './responsiveImage.js';
 
 export type PublicCollectionDocument = {
-  id: string; title: string; subtitle: string; heroImage?: string;
+  id: string; title: string; subtitle: string; heroImage?: string; primaryCategoryImage?: string;
   categories: { id: string; title: string }[];
   cards: { id: string; name: string; image: string; price: number }[];
 };
@@ -17,6 +17,8 @@ export function collectionDocument(template: string, collection: PublicCollectio
   const description = collection.subtitle.slice(0, 160);
   const socialSource = publicProductImage(collection.heroImage || collection.cards[0]?.image || '');
   const socialImage = socialSource ? new URL(socialSource, 'https://louiemae.com').href : '';
+  const primaryImage = responsiveImage(publicProductImage(collection.primaryCategoryImage || ''), '(min-width: 768px) 33vw, 70vw');
+  const preload = primaryImage.src ? `<link rel="preload" as="image" href="${escape(primaryImage.src)}" ${primaryImage.srcSet ? `imagesrcset="${escape(primaryImage.srcSet)}" imagesizes="(min-width: 768px) 33vw, 70vw"` : ''} fetchpriority="high"/>` : '';
   const cards = collection.cards.map((card, index) => {
     const image = responsiveImage(publicProductImage(card.image), '(min-width: 1024px) 25vw, 50vw');
     const url = `/products/${encodeURIComponent(card.id)}`;
@@ -33,6 +35,7 @@ export function collectionDocument(template: string, collection: PublicCollectio
     () => `<meta ${name.startsWith('og:') ? 'property' : 'name'}="${name}" content="${escape(value)}"/>`);
   html = html.replace(/<link rel="canonical"[^>]*>/, `<link rel="canonical" href="${canonical}"/>`);
   html = html.replace(/<meta property="og:image:(?:width|height)"[^>]*>/g, '');
+  html = html.replace('</head>', () => `${preload}</head>`);
   const structured = JSON.stringify({ '@context': 'https://schema.org', '@type': 'CollectionPage',
     name: collection.title, description, url: canonical,
     mainEntity: { '@type': 'ItemList', itemListElement: collection.cards.map((card, index) => ({
