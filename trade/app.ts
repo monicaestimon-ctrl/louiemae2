@@ -12,6 +12,7 @@ import htm from 'htm';
 import type { HolmProduct } from './catalog';
 import { displayProduct } from './catalogLookup';
 import { unresolvedPlannerItems } from './plannerDraft';
+import { plannerGeometry, rugExtents as rugExt, clampRug as rugClamp } from './plannerGeometry';
 import { useProjectCatalog, projectResolutionMessage } from './useProjectCatalog';
 import { useSavedBoardShelf } from './useSavedBoardShelf';
 import { PlannerReview } from './PlannerReview';
@@ -2532,30 +2533,12 @@ const PL_WALLS=['#F1E9DC','#E9DCC8','#ECE4D1','#D8B4A6','#C9BFA9','#6C6948','#3B
 
 // Pieces outside the curated 24 have no measured cutout: width comes from the listing's facts, the rest from their type.
 // Every piece is placed from its catalog W × D × H; one without dimensions can't be placed.
-const plCm=pid=>byId(pid).dimsCm?.w
 const PL_TEMPLATES={blank:{label:'Blank room',W:8,D:6,H:3.2,wall:'#F1E9DC',floor:'oak',openings:[{wall:'back',t:'win',x:0,w:2.4,h:1.8,y:.8}],items:[]}};
 SPACE_KEYS.forEach(k=>{const s=STUDY[k];PL_TEMPLATES[k]={label:SPACES[k].label+' study',W:s.W,D:s.D,H:s.H,wall:s.dark?'#3B2A1E':ROOMS[k].wall,floor:ROOMS[k].floor,openings:s.openings.map(o=>({...o,wall:'back'})),items:s.items.map(i=>({pid:i.id,x:i.x,z:i.z,rot:0,hang:!!i.hang}))}});
-const plDims=pid=>{const p=byId(pid);const D=p.dimsCm||{w:100,d:100,h:80};const w=D.w/100;return {p,w,d:D.d/100,hp:D.h/100,hb:D.h/100}};
-const plReady=pid=>has(pid)&&!!byId(pid).dimsCm;
-// Physical footprint: axis-aligned extents of the rotated piece, used for walls and collisions.
-const plExt=it=>{const {w,d}=plDims(it.pid);const r=(it.rot||0)*Math.PI/180,c=Math.abs(Math.cos(r)),sn=Math.abs(Math.sin(r));return [c*w/2+sn*d/2,sn*w/2+c*d/2]};
-const PL_GAP=.02,PL_SNAP=.12;
-// Keep the piece inside the room; side and back walls pull it flush when it comes within 12 cm.
-const plClamp=(doc,it,x,z)=>{const [ex,ez]=plExt(it);const lx=doc.W/2-ex,lz=doc.D/2-ez;x=Math.max(-lx,Math.min(lx,x));z=Math.max(-lz,Math.min(lz,z));
-  if(lx-Math.abs(x)<PL_SNAP)x=(x<0?-1:1)*lx;if(z<0&&lz+z<PL_SNAP)z=-lz;return [x,z]};
-// Floor pieces are solid: no two footprints may overlap (hanging lights are in the air and skip this).
-// A drawn floor plan: every corner of a piece's footprint must sit inside one of the plan's rooms,
-// clear of its columns and fixed blocks.
-const outsidePlan=(doc,x,z,ex,ez)=>{if(!doc.zones?.length)return false;const zs=doc.zones.map(zn=>zn.poly);const pts=[[x-ex,z-ez],[x+ex,z-ez],[x+ex,z+ez],[x-ex,z+ez],[x,z]];
-  return !pts.every(p=>zs.some(pl=>inPoly(p,pl)))||(doc.blocks||[]).some(b=>Math.abs(b.x-x)<b.w/2+ex+PL_GAP&&Math.abs(b.z-z)<b.d/2+ez+PL_GAP)};
-const plHit=(doc,it,x,z)=>{if(it.hang)return false;const [ex,ez]=plExt(it);if(outsidePlan(doc,x,z,ex,ez))return true;return doc.items.some(o=>{if(o.uid===it.uid||o.hang)return false;const [ox,oz]=plExt(o);return Math.abs(o.x-x)<ex+ox+PL_GAP-1e-6&&Math.abs(o.z-z)<ez+oz+PL_GAP-1e-6})};
+const { widthCm:plCm, dimensions:plDims, ready:plReady, extents:plExt, clamp:plClamp, collides:plHit, place:plPlace, reflow:plReflow }=plannerGeometry(BY_ID);
 // Every room as polygons: a drawn plan's rooms, or the rectangle W × D.
 const roomZones=doc=>doc.zones?.length?doc.zones:[{id:'room',name:'Room',poly:[[-doc.W/2,-doc.D/2],[doc.W/2,-doc.D/2],[doc.W/2,doc.D/2],[-doc.W/2,doc.D/2]],floor:doc.floor,wall:doc.wall}];
 const zoneOf=(doc,x,z)=>roomZones(doc).find(zn=>inPoly([x,z],zn.poly))||null;
-// Nearest free, in-bounds spot to (x, z), searched outward in 5 cm rings.
-const plPlace=(doc,it,x,z)=>{const [cx,cz]=plClamp(doc,it,x,z);if(!plHit(doc,it,cx,cz))return [cx,cz];
-  for(let r=.05;r<5;r+=.05){const n=Math.max(8,Math.round(r*40));for(let k=0;k<n;k++){const a=k/n*Math.PI*2;const [px,pz]=plClamp(doc,it,x+Math.cos(a)*r,z+Math.sin(a)*r);if(!plHit(doc,it,px,pz))return [px,pz]}}
-  return [cx,cz]};
 const r2=v=>Math.round(v*100)/100;
 // Lengths read in metres or in feet and inches, to the centimetre or half inch.
 const fmtLen=(m,u)=>{if(u!=='ft')return `${m.toFixed(2)} m`;const inch=Math.round(m/.0254*2)/2;const ft=Math.floor(inch/12);const r=inch-ft*12;return `${ft}′ ${String(r).replace('.5','½')}″`};
@@ -2564,10 +2547,6 @@ const fmtCm=(cm,u)=>u==='ft'?`${String(Math.round(cm/2.54*2)/2).replace('.5','½
 const RUG_SIZES=[['5 × 8 ft',1.52,2.44],['6 × 9 ft',1.83,2.74],['8 × 10 ft',2.44,3.05],['9 × 12 ft',2.74,3.66],['10 × 14 ft',3.05,4.27],['2.5 × 8 ft runner',.76,2.44],['6 ft round',1.83,1.83,1],['8 ft round',2.44,2.44,1]];
 const RUG_MATS=[['jute','Jute'],['wool','Wool']];
 const RUG_COLORS=[['','Natural'],['#F1EADC','Ivory'],['#D9C8A9','Oatmeal'],['#B4683F','Rust'],['#8E9A7C','Sage'],['#6E7787','Slate'],['#4A4440','Charcoal']];
-const rugExt=r=>{if(r.round)return [r.w/2,r.w/2];const a=(r.rot||0)*Math.PI/180,c=Math.abs(Math.cos(a)),sn=Math.abs(Math.sin(a));return [c*r.w/2+sn*r.d/2,sn*r.w/2+c*r.d/2]};
-const rugClamp=(doc,r,x,z)=>{const [ex,ez]=rugExt(r);const lx=Math.max(0,doc.W/2-ex),lz=Math.max(0,doc.D/2-ez);return [r2(Math.max(-lx,Math.min(lx,x))),r2(Math.max(-lz,Math.min(lz,z)))]};
-// Re-seat every piece in order so nothing overlaps or pokes through a wall (after loading or resizing the room).
-const plReflow=doc=>{const placed=[];for(const it of doc.items){const d={...doc,items:placed};const [x,z]=plPlace(d,it,it.x,it.z);placed.push({...it,x:r2(x),z:r2(z)})}return {...doc,items:placed,rugs:(doc.rugs||[]).map(r=>{const [x,z]=rugClamp(doc,r,r.x,r.z);return {...r,x,z}})}};
 // Fit a back-wall preset to the room: openings never overlap, cross the wall's ends or rise past the ceiling.
 const plFit=(W,H,ops)=>ops.map((o,i)=>{const near=Math.min(Infinity,...ops.filter((_,j)=>j!==i).map(p=>Math.abs(p.x-o.x)))-.15;let w=Math.max(.3,Math.min(o.w,near,2*(W/2-.1-Math.abs(o.x))));const y=Math.min(o.y,Math.max(.05,H-.5));const h=Math.max(.3,Math.min(o.h,H-y-.1));if(o.t==='arch')w=Math.min(w,2*(h-.05));return {...o,w:r2(w),y:r2(y),h:r2(h)}});
 const plWord=(it,doc)=>`${it.x<-doc.W/6?'left':it.x>doc.W/6?'right':'centre'}${it.z<-doc.D/6?' back':it.z>doc.D/6?' front':''}`;
