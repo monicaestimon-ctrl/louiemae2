@@ -7,6 +7,8 @@ import { Buffer } from 'node:buffer';
 import { URL } from 'node:url';
 import path from 'node:path';
 import sharp from 'sharp';
+import { PRODUCT_IMAGE_RECIPE, productImageBase } from './product-image-key.mjs';
+import { orientProductSource } from './product-image-orientation.mjs';
 
 const input = process.argv[2];
 if (!input) throw new Error('Provide an explicit public retail catalog JSON snapshot');
@@ -43,12 +45,12 @@ for (const source of sources) {
   }
   const metadata = await sharp(original, { limitInputPixels: 50_000_000 }).metadata();
   if ((metadata.pages ?? 1) > 1) throw new Error('Animated or multipage sources require separate review');
-  const rotated = await sharp(original).rotate().toBuffer({ resolveWithObject: true });
+  const rotated = await orientProductSource(original);
   const { width, height } = rotated.info;
   const widths = [...new Set([320, 480, 640, 960, 1280, 1600].filter(w => w < width).concat(Math.min(width, 1600)))];
   const digest = hash(original);
   // Include encoding recipe in the key so changed recipes never overwrite cached URLs.
-  const base = `/images/opt/products/${hash(`${digest}:webp85-effort6-v1`).slice(0, 24)}`;
+  const base = productImageBase(digest, PRODUCT_IMAGE_RECIPE);
   const renditions = [];
   for (const target of widths) {
     const bytes = await sharp(rotated.data).resize({ width: target, withoutEnlargement: true }).webp({ quality: 85, effort: 6 }).toBuffer();
@@ -62,5 +64,5 @@ for (const source of sources) {
 }
 await writeFile('lib/productImageManifest.json', JSON.stringify(manifest, null, 2) + '\n');
 await writeFile('docs/quality/product-image-provenance.json', JSON.stringify({
-  generatedAt: new Date().toISOString(), catalogSha256: hash(sourceBytes), recipe: 'webp85-effort6-v1', records,
+  generatedAt: new Date().toISOString(), catalogSha256: hash(sourceBytes), recipe: PRODUCT_IMAGE_RECIPE, records,
 }, null, 2) + '\n');

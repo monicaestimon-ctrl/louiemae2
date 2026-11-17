@@ -13,3 +13,5 @@ All 95 original/rendition pairs were inspected in five contact sheets, with no v
 Run `node scripts/verify-product-images.mjs` to verify every file hash, format, width, aspect ratio and source mapping. CI performs this check. The full rendition set is 32,456,544 bytes across all sizes; browsers select a candidate rather than downloading every size. Existing optimized-image CDN cache headers apply, with content-versioned product filenames preventing stale replacement collisions.
 
 Remaining work: other gallery/variant images, newly published products, initial server-rendered discovery and the full-route repeated Lighthouse acceptance. This phase does not claim those are complete.
+
+Review correction: orientation now uses a lossless PNG intermediate, with recipe `webp85-effort6-lossless-orientation-v2`. All 95 sources were regenerated under new immutable keys and the five comparison sheets were reviewed again. The verifier recomputes each key from the original hash and recorded recipe, and rejects a recipe mismatch. A JPEG/EXIF regression test compares every decoded pixel before the intended WebP encoding. Byte totals above remain unchanged for this source set.

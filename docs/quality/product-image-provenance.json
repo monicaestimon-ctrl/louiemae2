@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-11-17T01:21:19.511Z",
+  "generatedAt": "2026-11-17T04:05:52.692Z",
   "catalogSha256": "6ef4d5f2f3508b6919c765b930b3cd476d5b165beb402943dc0002b557aa926c",
-  "recipe": "webp85-effort6-v1",
+  "recipe": "webp85-effort6-lossless-orientation-v2",
   "records": [
     {
       "source": "https://diligent-jay-261.convex.cloud/api/storage/00794403-0bc3-4ed7-9580-8aaf61fa89a8",

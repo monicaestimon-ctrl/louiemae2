@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
+import { PRODUCT_IMAGE_RECIPE, productImageBase } from './product-image-key.mjs';
 
 const manifest = JSON.parse(await readFile('lib/productImageManifest.json', 'utf8'));
 const evidence = JSON.parse(await readFile('docs/quality/product-image-provenance.json', 'utf8'));
+assert.equal(evidence.recipe, PRODUCT_IMAGE_RECIPE, 'Provenance must use the current encoding recipe');
 assert.ok(evidence.records.length > 0, 'Missing source evidence');
 assert.equal(new Set(evidence.records.map(r => r.source)).size, evidence.records.length);
 assert.equal(Object.keys(manifest).length, evidence.records.length);
@@ -13,6 +15,7 @@ for (const record of evidence.records) {
   const entry = manifest[record.source];
   assert.ok(entry, 'Every source needs an exact manifest mapping');
   assert.match(entry.base, /^\/images\/opt\/products\/[a-f0-9]{24}$/);
+  assert.equal(entry.base, productImageBase(record.sha256, evidence.recipe), 'Image key must match its source hash and recipe');
   assert.deepEqual(entry.widths, record.renditions.map(r => r.width));
   assert.equal(new Set(entry.widths).size, entry.widths.length);
   assert.deepEqual(entry.widths, [...entry.widths].sort((a,b) => a-b));
