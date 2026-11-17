@@ -8,6 +8,8 @@ The public `build-info.json` artifact contains only its schema version and sourc
 
 All reports, health checks, screenshots and failures are retained for 30 days as workflow artifacts. Copy accepted release evidence to the release record before expiry. A failed preflight retains its reason. A score failure does not cancel later route batches. Pending specification coverage, omitted routes, incomplete batches or failed deployment verification prevent an acceptance label. Do not remove pending coverage merely to make this workflow green.
 
+Normal Git deployments obtain their identity from `VERCEL_GIT_COMMIT_SHA`. For an explicitly verified clean CLI source upload without Git metadata in its remote build, supply `BUILD_SOURCE_COMMIT` as a build environment value from the checked-out reviewed commit. Conflicting values or a malformed SHA stop the build. This identity is a release-tracking assertion, not cryptographic proof of deployed bytes; retain the independent Vercel/CI deployment verification too. Local builds use `git rev-parse HEAD` when neither variable is supplied.
+
 After this increment is merged and its build identity is live:
 
 1. Verify the production Vercel deployment and successful backend deployment separately.
