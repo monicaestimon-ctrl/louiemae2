@@ -13,6 +13,7 @@ export type LiveVariant = {
   trade: number | null;
 };
 import type { ProductImageMedia } from '../types';
+import { CURATED_SOURCES } from './curatedSources';
 import { parseDims, type DimsCm } from '../lib/holmDims';
 
 export type LiveAssets = {
@@ -149,7 +150,6 @@ const TONES: [RegExp, string][] = [
   [/blue|navy/i, '#33445E'],
 ];
 
-const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9& ]+/g, ' ').split(/\s+/).filter(Boolean);
 const cleanName = (s: string) => s.split('|')[0].trim();
 
 function materialOf(text: string) {
@@ -178,24 +178,18 @@ function stableId(id: string) {
 }
 
 export function liveProducts(items: LiveItem[]): HolmProduct[] {
-  const used = new Set<number>();
+  const used = new Map<number, string>();
   const out: HolmProduct[] = [];
   for (const item of items) {
     const full = cleanName(item.name);
-    const w = words(full);
-    // Curated match: same first name, and the most words in common with the curated line.
-    let best: (typeof CURATED)[number] | null = null;
-    let bestScore = 0;
-    for (const c of CURATED) {
-      if (used.has(c[0]) || w[0] !== c[1].toLowerCase()) continue;
-      const score = 1 + words(c[2]).filter((x) => w.includes(x)).length;
-      if (score > bestScore) [best, bestScore] = [c, score];
-    }
+    // Identity must not depend on page order, availability or a marketing rename.
+    const best = CURATED.find(c => c[0] === CURATED_SOURCES[item.id]);
     const v0 = item.variants[0];
     if (!v0) continue;
     const typeGuess = TYPE_BY_CATEGORY[item.category.toLowerCase()] ?? (/sofa/i.test(full) ? 'sofa' : /light|lamp|pendant/i.test(full) ? 'lighting' : /bench/i.test(full) ? 'bench' : /ottoman/i.test(full) ? 'ottoman' : 'chair');
     const id = best ? best[0] : stableId(item.id);
-    if (best) used.add(best[0]);
+    if (used.has(id)) throw new Error('Catalog product identities require review.');
+    used.set(id, item.id);
     const text = `${full} ${item.facts}`;
     const type = best ? best[3] : typeGuess;
     const a = item.assets;

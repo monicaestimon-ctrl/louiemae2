@@ -6,6 +6,7 @@ import lighthouse, { desktopConfig } from 'lighthouse';
 import { launch } from 'chrome-launcher';
 import puppeteer from 'puppeteer-core';
 import { assessRun, assessBatch } from './policy.mjs';
+import { captureRouteReadiness, inspectRouteHealth } from './health.mjs';
 
 // Public read-only navigation only. No login, cart mutation or payment action.
 const base = new URL(process.env.AUDIT_BASE_URL || 'https://www.louiemae.com');
@@ -47,16 +48,13 @@ for (const route of registry.routes) {
         const result = await lighthouse(url, { port: chrome.port, output: ['json', 'html'],
           logLevel: 'error', onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
           }, device === 'desktop' ? desktopConfig : undefined, page);
+        const readiness = await captureRouteReadiness(page, route);
         if (!result) throw new Error('Lighthouse returned no report');
         await writeFile(resolve(directory, `${name}.json`), result.report[0]);
         await writeFile(resolve(directory, `${name}.html`), result.report[1]);
         // Inspect the actual audited tab, not a second successful navigation.
-        const body = await page.$eval('body', element => element.innerText);
-        const markers = await page.$$(route.readySelector);
-        const markerVisible = markers.length === 1 && await markers[0].isVisible();
         const health = { url: page.url(), browserVersion, checkedAt: new Date().toISOString(),
-          ok: markerVisible && body.includes(route.requiredText)
-            && !/Something went wrong|temporarily unavailable|Opening House of Louie Mae|restocked\. Please/i.test(body) };
+          ...await inspectRouteHealth(page, route, readiness) };
         await page.screenshot({ path: resolve(directory, `${name}.png`), fullPage: false });
         await writeFile(resolve(directory, `${name}.health.json`), JSON.stringify(health, null, 2));
         runs.push(assessRun(result.lhr, health, { url, device }));
