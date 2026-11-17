@@ -1,0 +1,1120 @@
+{
+  "https://diligent-jay-261.convex.cloud/api/storage/00794403-0bc3-4ed7-9580-8aaf61fa89a8": {
+    "base": "/images/opt/products/6223cfcd986fd9c2cad07d07",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/05d76b43-0d9d-499b-aed2-ab7a4ec919c8": {
+    "base": "/images/opt/products/37749532fe764225d6a9b536",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/066fb4ed-d9d8-48a5-a167-b44fd6d9f878": {
+    "base": "/images/opt/products/ddd86167773f7706d97df319",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/0cc48261-e0eb-4b4f-ab88-0de201cdbb22": {
+    "base": "/images/opt/products/622de2e590f51b8561a0a766",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/1038cc33-12d6-45b7-af32-8ab7b5dd94dc": {
+    "base": "/images/opt/products/0b6e80e72fd0ec6228c5c5a7",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/11eed291-6568-4f48-bfd1-4cb8878601c6": {
+    "base": "/images/opt/products/7f59bc5c72eba1debd46fc66",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/15c2006d-75a8-4227-a719-72f5965d04dd": {
+    "base": "/images/opt/products/19bc65e18865749645d9d9de",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/1b613835-b429-4160-8d3b-cd27572e20a9": {
+    "base": "/images/opt/products/b45ab1b69e8c7b87f6c76ab8",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/1b677938-3271-4d2d-bf99-77b64edcfd23": {
+    "base": "/images/opt/products/16be6b3630034300ca69c592",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/23c7ef3e-616d-4c26-b86f-7041bef769e9": {
+    "base": "/images/opt/products/2990b0c1ca081ee5a6df17ee",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/254167bb-420c-4fb6-bec8-d040ae7749f3": {
+    "base": "/images/opt/products/03091a4fc4409f4c77d12043",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/29d74ea4-8eb1-4694-a63b-7e4e7834564c": {
+    "base": "/images/opt/products/f4b959b96a49dfa4a83e7c12",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/2cfa8cb6-ad7f-4def-858d-27c53dd3bb07": {
+    "base": "/images/opt/products/b76d1f8d2b4612c260577eb3",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/30d28ee4-7164-440b-9ceb-7a6b3381f200": {
+    "base": "/images/opt/products/e1c595f58f8099cf883a7caf",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/3702e5be-210d-466f-91f0-f6898b61d144": {
+    "base": "/images/opt/products/02d41e5cc7fff1c5d51031ad",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/37a887c4-d634-427e-b1f3-d0779850cb32": {
+    "base": "/images/opt/products/1054ca3aeab906cfa59cdfc2",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/3aad848d-18ea-410a-97a7-fec64fd5ea50": {
+    "base": "/images/opt/products/336cfa692d569f8637af8b52",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/3c26431c-5ac7-427a-b1a6-ec40c602387d": {
+    "base": "/images/opt/products/94c9b67ded75ca610779c669",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/434beae6-aac1-40ef-bdd5-06f6134e119d": {
+    "base": "/images/opt/products/865adda6c6a89c1bd0f37f42",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/47c83c47-9bef-4f7f-a438-d2cb5d1abd8d": {
+    "base": "/images/opt/products/058f73f0bb1b1eebadfc6a01",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/480b12c1-7d9f-4312-b0a8-eaa1150a3968": {
+    "base": "/images/opt/products/d4a2f787c20be6315fc16936",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/48644a40-1298-4dad-83ac-0e07f7bf4692": {
+    "base": "/images/opt/products/4973f965f037a23e755a25cd",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/48fcefdd-b7ba-4980-871c-7dd809b1cdf9": {
+    "base": "/images/opt/products/404f2df5ecfd0290d5d03c5b",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/4a544783-33e0-4f5b-b64d-f7cefb9732b5": {
+    "base": "/images/opt/products/83f36fd1c390ca89c2e75472",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/4b902619-9181-4ad4-a933-23f506356d6b": {
+    "base": "/images/opt/products/7552a564fb4a86b0ca44b3df",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/525c340c-4af8-4429-bb81-df6cb19b4ec5": {
+    "base": "/images/opt/products/f31c4786fad936a449152a37",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/52cb19c9-3002-4e10-acd8-11b8bb87e29d": {
+    "base": "/images/opt/products/a3a72508a14fd6b1fd292273",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/531314b9-0617-490e-be72-6e0c58fc099f": {
+    "base": "/images/opt/products/533431f508b88a32d1797361",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/59814786-2539-4f58-ab30-eb37fff3bebe": {
+    "base": "/images/opt/products/30581f0f01d1455911fa5717",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/5a23bcc4-981b-4263-9a84-25f2cc8fa5b7": {
+    "base": "/images/opt/products/3150de33169a20be060050c4",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/5bd5405d-127d-442b-a465-c52e4f540b47": {
+    "base": "/images/opt/products/c120e3ad48a030399b5cfa85",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/62362973-c258-4ed4-a325-7873a847fdf6": {
+    "base": "/images/opt/products/35061eedab945a26dc670ff2",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/623f0aeb-96ed-4991-bfef-9a854c94344e": {
+    "base": "/images/opt/products/3ec1fe497e24fca577c9425d",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/629c8400-d05f-4d17-a5c4-f268328622ce": {
+    "base": "/images/opt/products/dc1163b0d5b5824807b736e1",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/632bdc54-b09c-4052-ab83-1adaabc5f3c5": {
+    "base": "/images/opt/products/761350c81c2617e01e99723c",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/6368e20a-1554-4c16-bdbd-d0d37b7e014a": {
+    "base": "/images/opt/products/63632b52fb6942881be4fc14",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/678403f0-b199-466b-b253-5ab35c9d8d9c": {
+    "base": "/images/opt/products/5d4ea516d921a39aa2efd57e",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/68900871-9d10-454b-bad2-33377e93c700": {
+    "base": "/images/opt/products/151b4eca84797561d0876c4a",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/69fde3ec-012e-4564-9060-9f1c8f54ec96": {
+    "base": "/images/opt/products/10d67d1695f25116dae6a2bd",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/6cc5737c-2976-43b1-a4c7-cf8537db2410": {
+    "base": "/images/opt/products/5c898af7fc41310bc45bce83",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/736643af-f475-4712-97ee-31b272c571cb": {
+    "base": "/images/opt/products/fd19f4ea3d3b3e2137ae97bf",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/745d43db-b92e-4665-aa73-ecaa47f740af": {
+    "base": "/images/opt/products/29292dc7552528e942edc7dd",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/7564d3d1-1233-4db3-b553-fee086a12621": {
+    "base": "/images/opt/products/b51a44ac78a2cdadfb3ad6e8",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/75700c61-5976-48aa-85b7-fbbbf5217847": {
+    "base": "/images/opt/products/0c937ef83ce6e3e9c8bbb74d",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/75d42a4a-3cdf-4586-952a-4300bbf54a97": {
+    "base": "/images/opt/products/774df6e0f585e23d8e5de3ce",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/763eaa3f-e3c6-41a1-abf8-77a6e65c296b": {
+    "base": "/images/opt/products/f2d70310cabd2c210d0fc31f",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/7b442a5c-c827-45f5-bad0-1cb63a8d2a54": {
+    "base": "/images/opt/products/5a9190c0b8713beb7872466a",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/810e5cf5-b033-41f6-af88-3f1452b7b7a5": {
+    "base": "/images/opt/products/af21cc668336374bd479e32a",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/817ff63d-ee72-46c7-a68e-06178f79f4de": {
+    "base": "/images/opt/products/1ee36bfc2c23e728fb2ed67d",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/82e5b100-1ea6-49c1-83c8-93cdfa418f96": {
+    "base": "/images/opt/products/078c44cee83f187645d0d7e0",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/88e0d4a1-e9c6-414c-9577-6ea5e1a7ce42": {
+    "base": "/images/opt/products/002b69a68b3337c0e6858881",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/8d595610-a1a8-461d-9e1f-f2e56ba25d4e": {
+    "base": "/images/opt/products/ae30b2a928963f84afc1106f",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/903907ea-3467-423f-bb9a-cd593494142d": {
+    "base": "/images/opt/products/6676d144fdb3f47bc7c7d1ea",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/916f6e7e-b888-4e75-9fe4-e0c8d8695ba0": {
+    "base": "/images/opt/products/1f616ca7d49ff1a1d4bb9a98",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/94f34d65-3f4f-46af-95d7-544ee1ba5884": {
+    "base": "/images/opt/products/76efeafba1169a8c60bb6f33",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/9db60f6f-2963-4947-a20d-5a33d0f16c71": {
+    "base": "/images/opt/products/5e874c0592fc6824cef10302",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/9dc346f3-1198-4b40-8494-fa029038b51a": {
+    "base": "/images/opt/products/cbd554a2f3a42152e977c2eb",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/a1222b4d-fc7e-469e-967a-b83523a53e98": {
+    "base": "/images/opt/products/b1d0868b507c286249efe737",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/a9490e3b-86fa-4192-a4ac-f318c459d71a": {
+    "base": "/images/opt/products/ae2bc3f7f4a17717364b1554",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/aa74d305-2277-4b15-ab1e-f075eaa4b582": {
+    "base": "/images/opt/products/489696d0d73e5b2f4165656b",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/ad2bdf4d-ed58-4ad1-90d7-ed7e0b25d60a": {
+    "base": "/images/opt/products/8734a6bf69417895255ddac8",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/ae19588f-70cb-4dd5-aae5-357b38ddca53": {
+    "base": "/images/opt/products/5e540c3d9e0ef1d792c86c75",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/ae516ec0-31b3-4b42-8d00-129fb5d6ed98": {
+    "base": "/images/opt/products/c731a53b1359c7b5b8a0f30e",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/afd252c1-7bd3-40fb-b250-e802c20f1c36": {
+    "base": "/images/opt/products/126ff493e581b893565acc92",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/b135bd51-eccb-4e49-a7eb-0531f55b6e56": {
+    "base": "/images/opt/products/af591c2fd32939ba6ab67c2e",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/b2b9bcb1-9241-4572-a42d-6fd5323a78a7": {
+    "base": "/images/opt/products/c2e896e53bc1041e3ec76c17",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/b35aced0-68be-498b-b0e6-403bb22e9714": {
+    "base": "/images/opt/products/1b1aca5e65de4b7a742cd89b",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/b84aee24-0584-4eeb-8b0a-625870417e4b": {
+    "base": "/images/opt/products/15448519106d2156c21e95d9",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/bd11716b-9f2a-4434-b8f3-3c9599010588": {
+    "base": "/images/opt/products/c892f3d1a7c0a7baaa94ff93",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/bf6b2b03-9e0b-4a4d-9c9a-860353cc5be6": {
+    "base": "/images/opt/products/0f071a3537264d7348e884d3",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/bf913e7e-0c89-4423-9532-ede3701dbfef": {
+    "base": "/images/opt/products/ade0b95d234bc16abbd93dc6",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/bfff5448-b338-44b3-95ae-a7fd5f1da75a": {
+    "base": "/images/opt/products/fc5e1d2eaedfae5dba83cf17",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/c1beb4d0-3d71-44d1-b102-75e22fbea969": {
+    "base": "/images/opt/products/d93441320c649c7256362bc3",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/c27c3b55-eb2a-485e-b568-cc058eda7d27": {
+    "base": "/images/opt/products/d4c5e48d9a8a6e520af7de0a",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/c6dcc993-5135-468a-926f-a692a8e25d74": {
+    "base": "/images/opt/products/6357345fbf7e14a4ca815dc8",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/c763ef8f-b4d3-4b0b-be5f-40d397c707c8": {
+    "base": "/images/opt/products/09d0a41b052992a1d94c6fe4",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/c7e34ca7-f909-4d8b-bc22-9d7ebfa4635e": {
+    "base": "/images/opt/products/e1aa25d13f79fc428e19f6e7",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/cbd12955-4179-4257-8c6b-0b4bdb387c32": {
+    "base": "/images/opt/products/a831fa258fff97155da88aa3",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/d03946b1-c27b-4747-8207-17f9f9e443d8": {
+    "base": "/images/opt/products/dd8dc80146be31d4f1704ceb",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/d217f266-04eb-4e7a-a1d8-04b31f46ff06": {
+    "base": "/images/opt/products/924d52e727da839c1bfcc5f2",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/d8832208-58b4-4cf4-9308-84631e70e9af": {
+    "base": "/images/opt/products/1afb427964e68f754f48087f",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/dc901916-ffce-4341-b687-cf1fb40d8eb2": {
+    "base": "/images/opt/products/ff0bdea60fa0c2b864902a9d",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/e71e1192-0e20-4135-b908-5adbc235d193": {
+    "base": "/images/opt/products/ccc87d1361140c1b4151266c",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/e725603d-1116-43f4-b4b1-07cd05277807": {
+    "base": "/images/opt/products/fbebee37403c61d3c04a3362",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/e90b24a0-13d9-460e-8a96-e18192f62ccb": {
+    "base": "/images/opt/products/439e510b18f2568302d536e6",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/ea02acfa-9d10-4029-8d35-0a0f90c8f784": {
+    "base": "/images/opt/products/08fdefc479effdf01fffdfe7",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/f1994473-6538-499a-bfbb-6d5c61542ac7": {
+    "base": "/images/opt/products/285925e78193a83b915be9de",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/f34af097-6e7c-489b-ad9e-bdda5806881f": {
+    "base": "/images/opt/products/eb8f91406ef3dda7b39a9ded",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/f5ce588d-7612-4897-b086-bc6bc5f01e54": {
+    "base": "/images/opt/products/b3f7c5af992c7ea6a9884d0e",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/f93007d0-5973-45d6-888d-07de97d37cc4": {
+    "base": "/images/opt/products/87e5de1bc1ecea0403db31f8",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1254
+    ],
+    "ratio": 1
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/f9f9e9b7-f26f-4513-b207-edaf4aea1b25": {
+    "base": "/images/opt/products/dfa788441941281e4c481246",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/fb6cefb4-0ae8-4f8a-aa2f-febf45bbf40f": {
+    "base": "/images/opt/products/3fb7370796d37431b01c09a1",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/fb74b2ad-f631-441d-86cd-21d504cf1ff8": {
+    "base": "/images/opt/products/42320515d03f81689181bc27",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/fbdec870-7cd2-4ec3-bbdf-8c716838e850": {
+    "base": "/images/opt/products/c2f656a93829513abb1b846b",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  },
+  "https://diligent-jay-261.convex.cloud/api/storage/fd60c2c1-4e6f-46d8-9f6f-e46108a33703": {
+    "base": "/images/opt/products/5617872e4a00ea9b86bf143f",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1280,
+      1536
+    ],
+    "ratio": 0.6666666666666666
+  }
+}

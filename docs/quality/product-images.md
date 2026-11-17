@@ -1,0 +1,15 @@
+# Product hero renditions
+
+The November 16 public retail catalog snapshot contains 95 unique lead-image sources. Their originals total 223,655,762 bytes. The prepared 960-pixel renditions (or largest available for smaller sources) total 6,599,462 bytes, a 97.0% reduction. This is an image-byte comparison, not a page performance score.
+
+`scripts/optimize-product-images.mjs <public-catalog.json>` downloads only explicit immutable storage URLs from the existing public catalog. It preserves originals outside the tracked asset tree, applies EXIF orientation, never upscales, and creates WebP quality-85 renditions at widths up to 1600. No crop, generative edit, product rename, inventory change or supplier-photo reassignment occurs. Recipe and original hashes identify the filenames. Replacements with different source URLs do not match the old manifest.
+
+`lib/productImageManifest.json` contains only public image URLs and responsive metadata. `docs/quality/product-image-provenance.json` records original and rendition hashes, dimensions, byte sizes and the catalog snapshot hash. The source snapshot is not an inventory refresh and does not authorize checkout eligibility. No private prices or costs enter the browser manifest.
+
+The shared image helper serves these renditions in existing SafeImage consumers, including retail product detail and HOLM catalog cards. Existing approved per-image rendition metadata takes precedence. Unrecognized images retain their original behavior. A failed prepared image clears the responsive candidates and follows the existing original-source proxy/fallback path. The product-detail lead image loads eagerly at high priority with sizes matching the content grid; offscreen cards retain lazy loading.
+
+All 95 original/rendition pairs were inspected in five contact sheets, with no visible composition or color changes at contact-sheet scale. The Bramwell sample was also inspected individually. This confirms rendition fidelity, not an independent supplier SKU/photo matching audit. Existing source photography is retained.
+
+Run `node scripts/verify-product-images.mjs` to verify every file hash, format, width, aspect ratio and source mapping. CI performs this check. The full rendition set is 32,456,544 bytes across all sizes; browsers select a candidate rather than downloading every size. Existing optimized-image CDN cache headers apply, with content-versioned product filenames preventing stale replacement collisions.
+
+Remaining work: other gallery/variant images, newly published products, initial server-rendered discovery and the full-route repeated Lighthouse acceptance. This phase does not claim those are complete.

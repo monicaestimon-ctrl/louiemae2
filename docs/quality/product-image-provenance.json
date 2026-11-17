@@ -1,0 +1,3602 @@
+{
+  "generatedAt": "2026-11-17T01:21:19.511Z",
+  "catalogSha256": "6ef4d5f2f3508b6919c765b930b3cd476d5b165beb402943dc0002b557aa926c",
+  "recipe": "webp85-effort6-v1",
+  "records": [
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/00794403-0bc3-4ed7-9580-8aaf61fa89a8",
+      "sha256": "79175ee8271efc45a56bc561fefcaa8f4229fc9b0ed06caf7fd15bfd40cb809d",
+      "bytes": 2175782,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 8678,
+          "sha256": "9bbece0d6a25402dcd2c6cb46329fe7a26fffb0bf72af00f0f9622d1f7a45ac1"
+        },
+        {
+          "width": 480,
+          "bytes": 18044,
+          "sha256": "6de450cd97892fabfc11378ae62c128e1aeb6cd0c99bf5f1d992dd165dfd70df"
+        },
+        {
+          "width": 640,
+          "bytes": 30232,
+          "sha256": "e259af85604761ca4af36acb287044e47b8ef4371c8d9e8117324a26a476c1c2"
+        },
+        {
+          "width": 960,
+          "bytes": 62016,
+          "sha256": "35207baf56358ba32efc9d900aabaa1110a00f3952fd7b372a7b6a024f4c7439"
+        },
+        {
+          "width": 1280,
+          "bytes": 100152,
+          "sha256": "95db7146dfca64a56d67aeab0aefd88d3759593b8fb108de338b69d9dbd60c4c"
+        },
+        {
+          "width": 1536,
+          "bytes": 132942,
+          "sha256": "e21879f6e47491cd48ab9e12db650348d54583146c28c2f01d5b516498c96bb4"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/05d76b43-0d9d-499b-aed2-ab7a4ec919c8",
+      "sha256": "1e75c09d5d8cfcc42492daa39649db587b736e3ca2677ac2b57b4d09f367b990",
+      "bytes": 1897263,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 4492,
+          "sha256": "21538ed3588d05e94e1a926e4160a9d7fcf71641858bd460c6dc7e982d18b947"
+        },
+        {
+          "width": 480,
+          "bytes": 8166,
+          "sha256": "cd14e66b67981175c00a2cb9bbb29ae6514607ed587c2f245d62601d73cbbc7e"
+        },
+        {
+          "width": 640,
+          "bytes": 13030,
+          "sha256": "55098f44a7ab927b0b39db249dd259875601890a223fba15e57ebe3122dbd624"
+        },
+        {
+          "width": 960,
+          "bytes": 24952,
+          "sha256": "52dd7f975d3f806a3fc70e2b601345c62c3ad0a445f5369912fbd32932a4bca2"
+        },
+        {
+          "width": 1280,
+          "bytes": 43700,
+          "sha256": "585c82dd987ec354b3401aeca49da7fe00bfdb2e7d1c9de782830d699fa7247f"
+        },
+        {
+          "width": 1536,
+          "bytes": 64116,
+          "sha256": "bbad1b2c725b199bfb29316b07f2436932c63b109c629584754730ba09e7d316"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/066fb4ed-d9d8-48a5-a167-b44fd6d9f878",
+      "sha256": "fb1fc902f7a2910d2772e0d61c46361c6c2d8a34c48e831607edee40b0429912",
+      "bytes": 2482372,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 8464,
+          "sha256": "8c10e9fa5a1312c1532170af0682be9ad932e2da9dd2221245fd7b959e455335"
+        },
+        {
+          "width": 480,
+          "bytes": 18746,
+          "sha256": "2c4368e045bfb7ffe255e617d4edc84d3c45938b436c2c69251775ad6818460f"
+        },
+        {
+          "width": 640,
+          "bytes": 33398,
+          "sha256": "518ba56394215802faa7b38f98620ab4dafdbefb9f1a1aaf2490a9993c3d943d"
+        },
+        {
+          "width": 960,
+          "bytes": 76340,
+          "sha256": "fc40258fada646848e356c5087c6cfd27161dcbd44dd20ca9eb0f779fa36babc"
+        },
+        {
+          "width": 1280,
+          "bytes": 134932,
+          "sha256": "407ad2161af2f9f64f9ce9ddbff231d3af97276f6cb894cb4b61a96c9ef9ad00"
+        },
+        {
+          "width": 1536,
+          "bytes": 190402,
+          "sha256": "3361b79b7f9fafcc485f41e87537295876981a059f8f5533472722fbf9bef415"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/0cc48261-e0eb-4b4f-ab88-0de201cdbb22",
+      "sha256": "bff83792c2d829cd9ebbf0f430ebb7c44485cd5fa9710c674f84d63c1ba333f3",
+      "bytes": 2384790,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 7514,
+          "sha256": "8a56b684cf932ebdfce3d8e868d6a8edf4a6a92f5953bb56832ef281d28ca37c"
+        },
+        {
+          "width": 480,
+          "bytes": 14700,
+          "sha256": "d2d6b63410c0af62ff9b741c42cf3e5ad8d1b480a48c6940837124ba4a723c4b"
+        },
+        {
+          "width": 640,
+          "bytes": 24628,
+          "sha256": "8334efbd2020568e6f30110525d8a21a26189c40dbb2ab35ec0a2d73888d5268"
+        },
+        {
+          "width": 960,
+          "bytes": 55492,
+          "sha256": "8956f5673f688d32cc1936c7a3499cfa3e6b10726ce6ca34a68d982625051f24"
+        },
+        {
+          "width": 1280,
+          "bytes": 93432,
+          "sha256": "d2312119d8c6c1c8592e9e18122dd0f1d2b87b31517cfd6f4b42f8c237f1288b"
+        },
+        {
+          "width": 1536,
+          "bytes": 136170,
+          "sha256": "1113e539048d38957096eec687a293f1d113a5082d5800290c8f24e763257524"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/1038cc33-12d6-45b7-af32-8ab7b5dd94dc",
+      "sha256": "529c45a4a7428bcc63379526c16171a6786c0a1846c94e2d217b4257ff3b97b5",
+      "bytes": 2340200,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 7198,
+          "sha256": "0e705f6997341a151dbfade413e19e2fd96ff205c49f6cd4da9fc5399d744870"
+        },
+        {
+          "width": 480,
+          "bytes": 13138,
+          "sha256": "2a56e4cff241c50cdcc8ad52f106c4101473ad83a1f849b3f88f72a6013b277a"
+        },
+        {
+          "width": 640,
+          "bytes": 21276,
+          "sha256": "3ef787831e184885a819f24ceec4dffaa7c0ea4b669fd6e0b264ecb33369dfee"
+        },
+        {
+          "width": 960,
+          "bytes": 50378,
+          "sha256": "1b6b99a761d977bc9abf33ac1b119d485890bb11a1446ccbcfd4a5a15e1fc26d"
+        },
+        {
+          "width": 1280,
+          "bytes": 94596,
+          "sha256": "551cab781517d51c5157ab4b67b879efc691b59d9bed8b46a7d1364a1acc9b8c"
+        },
+        {
+          "width": 1536,
+          "bytes": 134828,
+          "sha256": "fe6fd94ee1128e0d8e027cfa537010d9b70ca892102c6fbcc463fd040f36c7c1"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/11eed291-6568-4f48-bfd1-4cb8878601c6",
+      "sha256": "14790b35739f5acb5fe0816874634afdee01b18daa8018013b3c26eceb45bdfc",
+      "bytes": 1979886,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 4260,
+          "sha256": "99df03d1983b3ea160b9cf4906393f21a151d1fd3aae3a1d6ebe718d179f37c7"
+        },
+        {
+          "width": 480,
+          "bytes": 7762,
+          "sha256": "a2556bef00e493070c04901ae1ed857ffd8ecffc57712b7372615dc67a4e350f"
+        },
+        {
+          "width": 640,
+          "bytes": 12716,
+          "sha256": "fe07340e3f7f6f859b7d03ca6d1367d8efaa6a5105349f4831a3979efb0e75a8"
+        },
+        {
+          "width": 960,
+          "bytes": 26208,
+          "sha256": "682a24b6fff1f2c7e7cbfa3c6dced82befeff0189621c43aa07b051878f02ad2"
+        },
+        {
+          "width": 1280,
+          "bytes": 43810,
+          "sha256": "4db74375895bf3b1eda3d6ad20d67a6aa2fba8859b35be810ede4d7c12ac4a83"
+        },
+        {
+          "width": 1536,
+          "bytes": 60942,
+          "sha256": "953979bf766bd363d5927206b0000f01dbc647e6b3324002a58785b0a035271b"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/15c2006d-75a8-4227-a719-72f5965d04dd",
+      "sha256": "3dc222c1c4c3954f60b81d7fbf5d43724bd9dbdc7ebca6db7816748fe4a14e28",
+      "bytes": 3079694,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 16480,
+          "sha256": "45d24b4d0ab5417a7bc982c349156077136bcb35da8ff03f9fbaa0b0e169c6a1"
+        },
+        {
+          "width": 480,
+          "bytes": 36560,
+          "sha256": "9306aa38bb037615cd41149208a4d4a4ab960948a279fcc86f5624a7b649303e"
+        },
+        {
+          "width": 640,
+          "bytes": 64180,
+          "sha256": "1d71501a90a0d7fc9f14d582f68655ccaec8f21177541d5bed8b4ffd606001c4"
+        },
+        {
+          "width": 960,
+          "bytes": 135148,
+          "sha256": "642cbd98948441cec9cfe076a947b307c6dc9a5e46b22fded5bf3578960a84c3"
+        },
+        {
+          "width": 1280,
+          "bytes": 217452,
+          "sha256": "31e3fce9585cd2857bdce1018e4d0f5ee0cb722407e75c747005882b1eb70ae9"
+        },
+        {
+          "width": 1536,
+          "bytes": 303748,
+          "sha256": "8143594bf3d310bc1db691ccd3146392fbdf510d0b735fb6954388621c326f06"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/1b613835-b429-4160-8d3b-cd27572e20a9",
+      "sha256": "f102a0031179d96897132e3cd9c70047937f41548ff2e729f02fb1aff8fcdbcf",
+      "bytes": 2224021,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 4800,
+          "sha256": "c30c77ddd1ce3418a9dfa41cf2d74a1d91da8c25704aab70681651c7b8e3ce21"
+        },
+        {
+          "width": 480,
+          "bytes": 8972,
+          "sha256": "d35320e37d3c28182fffba592bbd9ddeb512e8e471e55dd5327bf5c27f2b4260"
+        },
+        {
+          "width": 640,
+          "bytes": 15508,
+          "sha256": "46097e8a72e904c3a7078f8f3b382aebc9183b80039dc8676769716e01603372"
+        },
+        {
+          "width": 960,
+          "bytes": 35450,
+          "sha256": "4cfe39b687d039ad8f3b6f8d4a30f31ace187bfc522e5db3e30ddd9463d2dde8"
+        },
+        {
+          "width": 1280,
+          "bytes": 64794,
+          "sha256": "ffb3a3c5358ce2542fbfea5f465ed5796a55d77b9b45cfc79378627209702f08"
+        },
+        {
+          "width": 1536,
+          "bytes": 96216,
+          "sha256": "eeea596710ad335cceaf5a100f45fd53149a6904396a82380217d6c447025484"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/1b677938-3271-4d2d-bf99-77b64edcfd23",
+      "sha256": "c78b06e84a3d0c69932a99957c03e1517e20bb19e144a358eb6e4e5042e97a8e",
+      "bytes": 2165020,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 9102,
+          "sha256": "ab93b8872bc847e44b7966e60a6202baa6bc25c45d59c0f3befbfea884d0a953"
+        },
+        {
+          "width": 480,
+          "bytes": 16418,
+          "sha256": "a7b828ec59a5503b7993e91b47236faed4fd5cd147b70624084e74fa1e1180a3"
+        },
+        {
+          "width": 640,
+          "bytes": 25788,
+          "sha256": "87097f73d9a233045fe1dffb761c12252dc5af15b2ccd89ccde4a8eefe3d6b6b"
+        },
+        {
+          "width": 960,
+          "bytes": 50390,
+          "sha256": "001783beffb13f4ddba82600bed68e20da018196dafaf57138b546b0f9b22187"
+        },
+        {
+          "width": 1280,
+          "bytes": 85962,
+          "sha256": "2df6230bd701fbd8a98536b2f4196ec84ce9100fd255e91e929d4a96a670e3e9"
+        },
+        {
+          "width": 1536,
+          "bytes": 116208,
+          "sha256": "f22a81bb6c793a8c164b49f90f6bd7d4fc4518ef24c570a002577c7cb99d45e6"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/23c7ef3e-616d-4c26-b86f-7041bef769e9",
+      "sha256": "9d101359807285fd7ac02f93cd384930d4628faafca1171d3ca49a749a993325",
+      "bytes": 2223270,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 6096,
+          "sha256": "71c9d48baea0b7162d621132803a492afaa66c809d9d2bf914d9ca0dc7fd1c63"
+        },
+        {
+          "width": 480,
+          "bytes": 11130,
+          "sha256": "0c85f38113dc64ead39cd5bc8b12d3b4cafa8eb3e2bf80ed18958bce8ad2ef6a"
+        },
+        {
+          "width": 640,
+          "bytes": 17520,
+          "sha256": "35d47b05fc6844ad35e5088734a5a1df2b31f05bfda1d41ae271a2e914da6082"
+        },
+        {
+          "width": 960,
+          "bytes": 35134,
+          "sha256": "d4dcdcaa93d41432fa860383e214fc7d39dc222f039c6fef9787845db984c012"
+        },
+        {
+          "width": 1280,
+          "bytes": 68914,
+          "sha256": "985bef2206feb55ab2693ee097dbeb5af33ef4dab247f020f3db6ba3bdffba77"
+        },
+        {
+          "width": 1536,
+          "bytes": 110332,
+          "sha256": "2052bca32039b1cf6a8bc0f861da3e548c944900b630c0e727558472b11ad0ec"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/254167bb-420c-4fb6-bec8-d040ae7749f3",
+      "sha256": "1c986944123d1f6396810eff76b6725d4bd16000dd3bc6a4951bfad94215be8e",
+      "bytes": 1926549,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5816,
+          "sha256": "91f994d61f954ad97b725807a028e5b5888be961f1281f76ee6304cc88268f6e"
+        },
+        {
+          "width": 480,
+          "bytes": 10798,
+          "sha256": "7ff249848d23ec2d49de4ad9a1688e0f35737c85d51613a44200b064c8c9ecb4"
+        },
+        {
+          "width": 640,
+          "bytes": 16884,
+          "sha256": "56b038d0f7139dd93d0fcef2dd9b7a297776b331ed48f30d0d7f73599e3d111c"
+        },
+        {
+          "width": 960,
+          "bytes": 33698,
+          "sha256": "18a785a010aa7b93807ba0fde88bd4d5e9fb70ff83489d8e0c214041506c49be"
+        },
+        {
+          "width": 1280,
+          "bytes": 57090,
+          "sha256": "c7374fc681b06cff097bf88e4115a5a3e60558cf017bc456990cf3bdea38614b"
+        },
+        {
+          "width": 1536,
+          "bytes": 77102,
+          "sha256": "f213fb6d27d56f690259a94b15afc36e1cadbb878144aee25c309b7efba1df36"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/29d74ea4-8eb1-4694-a63b-7e4e7834564c",
+      "sha256": "32b0546bb736dfdd05d731615d97a365271f1084f62691fdfb79b7053ff37ba7",
+      "bytes": 2645092,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 7442,
+          "sha256": "57a1b5f4600585f37c0026f39578047d17e36a0b5efd8900637ea017db04ee4a"
+        },
+        {
+          "width": 480,
+          "bytes": 12938,
+          "sha256": "2f3ef5b4f117f42577292d0347c8e9bfc21eda7187dbcae9382e1f01050c6834"
+        },
+        {
+          "width": 640,
+          "bytes": 20578,
+          "sha256": "6df32ec801bc2d1693c9b8a725eeb3cf8c6864884a6e357d4c397814cfa168d1"
+        },
+        {
+          "width": 960,
+          "bytes": 50200,
+          "sha256": "5c3cada930b1634d9c5f81b095b198080b353cf3ae6c0883ebb5455791c1ceb9"
+        },
+        {
+          "width": 1280,
+          "bytes": 119832,
+          "sha256": "86eb7fe49d89243d3692b2aa7b481ad83f3f9410bc53dd0ec75d09c6bedc14d3"
+        },
+        {
+          "width": 1536,
+          "bytes": 189846,
+          "sha256": "50a16d6edf5d1e0aeb73fccae297e0e66785090129afc6ee5819fb49de028207"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/2cfa8cb6-ad7f-4def-858d-27c53dd3bb07",
+      "sha256": "7bd0a63300b8ee1cd3673ba6d86f9062c74474905a4a72d5ddabd9c6c40ae759",
+      "bytes": 2983139,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 23340,
+          "sha256": "1480e169a7d11ab48f24ab985452382947ef6d36698a1a83001625cf4d6eb89a"
+        },
+        {
+          "width": 480,
+          "bytes": 51746,
+          "sha256": "0359b2146b65b2d1001dd8e41a5397e3e6ceae37bbe0f4ebba82dc5d79a3320f"
+        },
+        {
+          "width": 640,
+          "bytes": 90794,
+          "sha256": "d53c9509cd0ce7de90423d175d24897f40499d26102b0ff6fb7c625a9146780d"
+        },
+        {
+          "width": 960,
+          "bytes": 177944,
+          "sha256": "87f9335d2f739f64ebb2173e91eddd467536fe7341a80cc7ba08721496d842c1"
+        },
+        {
+          "width": 1254,
+          "bytes": 271154,
+          "sha256": "71de7a87608fc2921484d80f8c04505203bdd6cb3468aed70c587fc3143a6716"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/30d28ee4-7164-440b-9ceb-7a6b3381f200",
+      "sha256": "3869a05470f5240bd7bc34ca9e2e9b1479da24ab997d57b3c7681ae6f52eea12",
+      "bytes": 2704320,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 7608,
+          "sha256": "d73a05df98f55df05f28c8606cbbd3be08506d333765559799f0b3d5f4108d04"
+        },
+        {
+          "width": 480,
+          "bytes": 17746,
+          "sha256": "8fc36416c642a352b4debc70238ac165cc69a6682277966e3d1ec6ba3f2bdc77"
+        },
+        {
+          "width": 640,
+          "bytes": 32338,
+          "sha256": "6bee715873899e14bf41da327e0af408e5d5348643cd16c0c5d48c045a02f304"
+        },
+        {
+          "width": 960,
+          "bytes": 80170,
+          "sha256": "668e1038a0fdb2d1dad11c3df88bfd58ebd01af9bd806c268972830db9a0d6b6"
+        },
+        {
+          "width": 1280,
+          "bytes": 146642,
+          "sha256": "0be4940c01e5bb944020aa48eb55ae7783883c01d64bd78946bcdf8dd71748e4"
+        },
+        {
+          "width": 1536,
+          "bytes": 212332,
+          "sha256": "5c2ddbdc4db1e41f2a47a22e0af91f011b4f8ae1ecdab9fd79492084fc59e54b"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/3702e5be-210d-466f-91f0-f6898b61d144",
+      "sha256": "2439e6da023307afe2643c47e1e459d780245b173fd5591ef4921e3701a17ebe",
+      "bytes": 2115473,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5636,
+          "sha256": "ffa30a8961236fbc51a387972e1ec52d471c9c65bf9eb4903ecd8d5481f7e512"
+        },
+        {
+          "width": 480,
+          "bytes": 10692,
+          "sha256": "70f40009326b0bb0c9dbf84279fec6438757951f696fbe3544271c50f4fdc30f"
+        },
+        {
+          "width": 640,
+          "bytes": 17374,
+          "sha256": "6b6e2402aed2c061248fcde50e480f072454f11dbba8ce81a7ff3d7ff1c34ffe"
+        },
+        {
+          "width": 960,
+          "bytes": 35012,
+          "sha256": "d539199ec184572b6f413849160dc37730c62594dbd6fc614812512d072f623c"
+        },
+        {
+          "width": 1280,
+          "bytes": 58894,
+          "sha256": "d02fa89168d5dcb81cc54255bb13d36df956c326ef96c0128f5ea44aa9f4df94"
+        },
+        {
+          "width": 1536,
+          "bytes": 87242,
+          "sha256": "cc6348595f12662fb44c743c57b943cd86a5eb93a40f5a52d693f4b06a25183b"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/37a887c4-d634-427e-b1f3-d0779850cb32",
+      "sha256": "b4e69b4f289d57078719c6b9c7552d8a5bb6cac6e49738ea607916b2e0389d06",
+      "bytes": 2238874,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5442,
+          "sha256": "ac7aef275174ac6c7d72157330b74dba195f1191fa966ff12899267be7ad3b03"
+        },
+        {
+          "width": 480,
+          "bytes": 10158,
+          "sha256": "9e0cbe3d1c64eeb111b7f6eb354fc8897b942c81f552810e0e3d95abe4bedc39"
+        },
+        {
+          "width": 640,
+          "bytes": 17448,
+          "sha256": "499ad5e528876b7c17dd0c3be3e90312a8472a4e6148f3251115246482b53834"
+        },
+        {
+          "width": 960,
+          "bytes": 39354,
+          "sha256": "41597c7784d88b206e0112e0bed939ddfcf344394d6db53c122ca8ea8d252d0c"
+        },
+        {
+          "width": 1280,
+          "bytes": 70228,
+          "sha256": "82f7a3406d603b7512e14072af51fff028a0d1e59750b6b97d0cb161de43734b"
+        },
+        {
+          "width": 1536,
+          "bytes": 108304,
+          "sha256": "f94e4b5f02b2efca172df8d18e7e447c2ae946dafd07ed558c1651045a556042"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/3aad848d-18ea-410a-97a7-fec64fd5ea50",
+      "sha256": "3d040e1ca3f31d280297da0b5558bfc34b7ecb643f0758c07ddd6c1471c9db00",
+      "bytes": 2051465,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 4786,
+          "sha256": "e80da8d0c6f3538096168fe860ab2e3ce6d5c14b0fa8e2043ba0693542a5af87"
+        },
+        {
+          "width": 480,
+          "bytes": 9008,
+          "sha256": "fad3bca79ef96fc0ef25bc1ff93af9dd342002b1232c446dc8b4e8bf14c8a970"
+        },
+        {
+          "width": 640,
+          "bytes": 14298,
+          "sha256": "611daf87af7504327e5d8ee532409169f2e747b0d221a70bd5813dd2524e2fc6"
+        },
+        {
+          "width": 960,
+          "bytes": 30502,
+          "sha256": "48dcefefc6344df3e25873f85430139e5e53c59ff84517165f6ae7085553bc7f"
+        },
+        {
+          "width": 1280,
+          "bytes": 51348,
+          "sha256": "fd2bea64b81e750bf41103250d616b88eb3d0cbb3431c27d99b47c2578ed51cb"
+        },
+        {
+          "width": 1536,
+          "bytes": 71902,
+          "sha256": "9dda715bb55f4f6bb4d5f781fb85a7f51b32184ecc373a42d35254c0687edd46"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/3c26431c-5ac7-427a-b1a6-ec40c602387d",
+      "sha256": "fa8112b3883b0d512ba54569ac6d7b90cfa302264c87225264cebb10a76f7da9",
+      "bytes": 2693302,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 6232,
+          "sha256": "d2f044ae0ded26cef5c00e28c41d08ba5cd82a057414e7b675184a9fba051079"
+        },
+        {
+          "width": 480,
+          "bytes": 15640,
+          "sha256": "1e1afd396adb0b6b53d973d4cc52cc8a76319adb57a74618eab31e600c28c827"
+        },
+        {
+          "width": 640,
+          "bytes": 31134,
+          "sha256": "fa53c833bba9e68eb7cdba4cebe2ff6381ccd0bdbb27bb52cb4a7206ac660286"
+        },
+        {
+          "width": 960,
+          "bytes": 77754,
+          "sha256": "3e638a35ced1b607c568b56b4590ec35ffe2e58e7093be9270b107d4a8635f03"
+        },
+        {
+          "width": 1280,
+          "bytes": 140132,
+          "sha256": "aa6fe38abf2040837b1d888fa59e226f346ca48966abba6e79f57897eb5827d2"
+        },
+        {
+          "width": 1536,
+          "bytes": 197564,
+          "sha256": "db73d8c086a92e79488a72544f177c3464ecf05ee3f7036ba9c097cd3a7a9f27"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/434beae6-aac1-40ef-bdd5-06f6134e119d",
+      "sha256": "44a8a81e676e9f817e248bd869654bf5b03b29e15448cffcbb0685a9814cb348",
+      "bytes": 2498247,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5528,
+          "sha256": "055ad7f999d3d90452ef24e77abe5a0c1eac48be563c17045b4d78330f733962"
+        },
+        {
+          "width": 480,
+          "bytes": 10912,
+          "sha256": "96b56e4e559aa547ee5b2bed1b513a05ffecd5f25299f1bf0286b4d4a0f92b47"
+        },
+        {
+          "width": 640,
+          "bytes": 18972,
+          "sha256": "48f43d63382ec1aea62c3d113bd0f2557e1a8a195e7d3b519d38d2851f7523ba"
+        },
+        {
+          "width": 960,
+          "bytes": 46500,
+          "sha256": "81d822c07751ac2ce469f316b245890546816fb3634030d992384a4ee786f69b"
+        },
+        {
+          "width": 1280,
+          "bytes": 91180,
+          "sha256": "bf8efec233920a9a3a92c6bf0600f85d9709c57658919f7d2b47a73940068a1b"
+        },
+        {
+          "width": 1536,
+          "bytes": 143496,
+          "sha256": "c006e90ccb73c16b38022f402dda6897c69c08068458744ea788b85efc906b05"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/47c83c47-9bef-4f7f-a438-d2cb5d1abd8d",
+      "sha256": "df026769be264b800d43249283621a0a98b326b6fbe8e61d5226924e31bc180a",
+      "bytes": 2487067,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 19616,
+          "sha256": "405ae9031dd240f4c9f9e7afb6ea073bcea14380939879f5db153e87220c6729"
+        },
+        {
+          "width": 480,
+          "bytes": 41184,
+          "sha256": "e76218f12059a18d312feef11313c25e49ec8edf317420d1f7faa969f93d0292"
+        },
+        {
+          "width": 640,
+          "bytes": 70362,
+          "sha256": "4ca694841ca752b375b3df432f9fd3ea8816576e0dc0460bb2996f759bc302bd"
+        },
+        {
+          "width": 960,
+          "bytes": 143740,
+          "sha256": "c5777c42f16c17ba9b801cec35a88c97a8c070104457fc34b13adca5aad11298"
+        },
+        {
+          "width": 1254,
+          "bytes": 221352,
+          "sha256": "8aca6522945d6911de55e936dae08bbcd45284767d34d76e1631bb109cb2cbea"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/480b12c1-7d9f-4312-b0a8-eaa1150a3968",
+      "sha256": "2538479f5f5fb37bddbe3f96402a485271d3d00bb4ef1f46ba3d9edbef596a90",
+      "bytes": 2494071,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 7272,
+          "sha256": "fa84461889da2b744a7c8539a41f306c0c64215313dc4c0eec5c56a288642bc6"
+        },
+        {
+          "width": 480,
+          "bytes": 15840,
+          "sha256": "1f6b356d59dd20824a5565b41b57aef3eb926df237ee4f465d8931b30c3c068b"
+        },
+        {
+          "width": 640,
+          "bytes": 28502,
+          "sha256": "70ec25d02a07499487c551a71fb6e95d64796ef9405999c0a9d45339a0b9fbdd"
+        },
+        {
+          "width": 960,
+          "bytes": 67816,
+          "sha256": "6f796d25a97c1ecc4659612bf0647be2a679617363646c81a150c667aea63ed8"
+        },
+        {
+          "width": 1280,
+          "bytes": 120488,
+          "sha256": "f5a1fe95152346a07413e1f5425fa8d98df615eb18cd4db00b2e273f8a7d792a"
+        },
+        {
+          "width": 1536,
+          "bytes": 172122,
+          "sha256": "69037b44ae23891a79f333f46c53bff690c478beac43137b67c3b68ee7906799"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/48644a40-1298-4dad-83ac-0e07f7bf4692",
+      "sha256": "b1beb0a44cf921ae2e99ec26e917e663acde37a02357b8edbf93cf25bf91d973",
+      "bytes": 2696331,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 13884,
+          "sha256": "e882149db67d25004dc3ba3d82736cb8f40b5b1fedee827703a24876b8e1158f"
+        },
+        {
+          "width": 480,
+          "bytes": 28134,
+          "sha256": "36a990a2e02d90606636160e34306f78739f51852e32b09616e53200e771a39c"
+        },
+        {
+          "width": 640,
+          "bytes": 48146,
+          "sha256": "8e07fbac797ea49f7d18488359d3a074a469e6745cc11a3ea373c4c38e6106b9"
+        },
+        {
+          "width": 960,
+          "bytes": 98228,
+          "sha256": "71a9f85cd3fa651b49df575031383d8d75cbabfdb5eeac1a88ec3de043410a52"
+        },
+        {
+          "width": 1280,
+          "bytes": 167382,
+          "sha256": "9156bc86111e17f200cda1b366bd4f2bd818919095e3ba03c88f7f32ee73ab19"
+        },
+        {
+          "width": 1536,
+          "bytes": 232764,
+          "sha256": "ce062afc185e6b6c9e655e3e47a1720ee2b715cab7e4824d790b31ec3a89b019"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/48fcefdd-b7ba-4980-871c-7dd809b1cdf9",
+      "sha256": "d38cb2be944848cb954579de450ca06f298b23c7bf162a774b168b52c40febe2",
+      "bytes": 2507331,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 3758,
+          "sha256": "bc92feb8105c4d699233205fc8010344afa761a4db604e9edc020a19fb548997"
+        },
+        {
+          "width": 480,
+          "bytes": 7822,
+          "sha256": "1548d12222f5f195002576815e0f48ac1b9413b3c7647e20a7b44c4b167e1094"
+        },
+        {
+          "width": 640,
+          "bytes": 15940,
+          "sha256": "6b102a1ad82a2cdc59ef69c9127ec1ab61e81d5000d8ebf1dcebbc92d6286a43"
+        },
+        {
+          "width": 960,
+          "bytes": 50402,
+          "sha256": "513d2abc118231f70f5849312c10d9f3ed8db6a648524e6e63f46a53c28243dc"
+        },
+        {
+          "width": 1280,
+          "bytes": 109900,
+          "sha256": "7d195474b4b5cf776fbb801eb370700b49e86056d29b6786edec52464717edab"
+        },
+        {
+          "width": 1536,
+          "bytes": 173608,
+          "sha256": "b8dbff035bc6b2610b64a2b0cf01998078279b4b8deabb8fbacfb311d0e88f24"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/4a544783-33e0-4f5b-b64d-f7cefb9732b5",
+      "sha256": "6f6d5b0b74fe1851dfa9afca2d918addd2fb427e441810f8febae27050d68ed7",
+      "bytes": 2047067,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 2266,
+          "sha256": "a766ef79262bb9b7ff6bb535752b1b336b577756ffee1d500f52e30c043f8250"
+        },
+        {
+          "width": 480,
+          "bytes": 4230,
+          "sha256": "0bd9b8725f3083955ab582fecaf14e983f79633ae1c1d4c62dcad022646c5577"
+        },
+        {
+          "width": 640,
+          "bytes": 7186,
+          "sha256": "d864bab883136246b9c8294e779d90b4a6e5e750e4c0b7da70a3f510745d2fbe"
+        },
+        {
+          "width": 960,
+          "bytes": 15692,
+          "sha256": "c437d4af782bf31eb2ed616c0cfa2bd6c38e536ddc404a91d0a32fc8c9f2324d"
+        },
+        {
+          "width": 1280,
+          "bytes": 28686,
+          "sha256": "ec3ed2745a95def6ef735ebd74bbf69b3b6f63cdb05cdaaf8f309da8d5f09113"
+        },
+        {
+          "width": 1536,
+          "bytes": 41728,
+          "sha256": "276c1391b55a683b1ac447769348750060f2c84b017a79e469e892599d6c5c8b"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/4b902619-9181-4ad4-a933-23f506356d6b",
+      "sha256": "544156a42c1ce5246823b03335d141bf76076067cce776d68414bb08c63264da",
+      "bytes": 2382706,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 6626,
+          "sha256": "ca7379c2f38e4747874e70dd318aeb2ca30a10da716fdf94c9e296059ac3af79"
+        },
+        {
+          "width": 480,
+          "bytes": 13496,
+          "sha256": "6cc6c0009c331c1868ecf328d18d3d195492ff69b2aa3a376a23f33910c41587"
+        },
+        {
+          "width": 640,
+          "bytes": 22084,
+          "sha256": "89fe1751e7e6d21d1343ada38533b8071cadfa05c33f90c6e779432265034db7"
+        },
+        {
+          "width": 960,
+          "bytes": 51756,
+          "sha256": "3c6b75a2e1d65d011a78cf556d50b2309bae2726423fe657e6e8a866ce9260a0"
+        },
+        {
+          "width": 1280,
+          "bytes": 93630,
+          "sha256": "50cf1c85dada6eb38f6636c6de62e7528e119103221c80c17e71a51a7741f30b"
+        },
+        {
+          "width": 1536,
+          "bytes": 134514,
+          "sha256": "0571be6227586a7486627fe3079560f07d3cc65c897f1db2000efdab0ba48023"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/525c340c-4af8-4429-bb81-df6cb19b4ec5",
+      "sha256": "6ee1d008a6bfad289e81b8617b3504fe93fddffb007c6c17e9bd6b494ebc47a5",
+      "bytes": 2677468,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 4548,
+          "sha256": "d8fb6bef41b0a1e0a69fe97c867fea0d4ae663c85b59ddc84f758a1a66a6d950"
+        },
+        {
+          "width": 480,
+          "bytes": 9208,
+          "sha256": "43d678542d1d83049a39c7032a4301ada8ed8cec8842c952eb32b1e75b42af9e"
+        },
+        {
+          "width": 640,
+          "bytes": 17778,
+          "sha256": "74d4c7598aa51afcd4509863a4ac6101875ea4ce546227b19ff4491484dacce1"
+        },
+        {
+          "width": 960,
+          "bytes": 59630,
+          "sha256": "bd1a23f7c48d21a2136e069464dc8b6dee7ca0e9f1bc66e6e7beb25961da8ebb"
+        },
+        {
+          "width": 1280,
+          "bytes": 132178,
+          "sha256": "97133aeec8904975cb447f87e62fde0392341e56d9a50a5367b6df6408c99ad2"
+        },
+        {
+          "width": 1536,
+          "bytes": 207842,
+          "sha256": "e5024dc43ee80265f1d908cb39c24cfd9c287fe32f47855a0c9ac44a30f9528b"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/52cb19c9-3002-4e10-acd8-11b8bb87e29d",
+      "sha256": "74609a558593d78b4bebffda23a22f74d281a5b91970b3cf1f30c9ead6c2d48e",
+      "bytes": 2426378,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5362,
+          "sha256": "3fb07f6c68679713fa805b72939a64b6177808cee9ba1c79ff306fb1de22542a"
+        },
+        {
+          "width": 480,
+          "bytes": 12406,
+          "sha256": "442edc01cdc8ea44f44db33d97daff076f57b5fc22ca32bcc412b18a72f4b75a"
+        },
+        {
+          "width": 640,
+          "bytes": 23466,
+          "sha256": "0201b71b41603f4a292b4cb920d857ce0ec22a7aa08acba8b0530663c63aceb4"
+        },
+        {
+          "width": 960,
+          "bytes": 59204,
+          "sha256": "9cd976b8a13384d7ddce77386e37cb0fab540d4e6461dae0884d6f772549ea1e"
+        },
+        {
+          "width": 1280,
+          "bytes": 108528,
+          "sha256": "5eafd53295837bf79c08a6928bffade8b48e994b1fc8aaaabf538f0d2460f084"
+        },
+        {
+          "width": 1536,
+          "bytes": 160998,
+          "sha256": "0127801dd7b7f354fa1f4051cf4afe5a1074e2fefe00a44f05f5ca170b34952f"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/531314b9-0617-490e-be72-6e0c58fc099f",
+      "sha256": "8c685d20e2457efe89b9d26530eb3cc79a0900b51f2ea45a65732070111889f9",
+      "bytes": 2131697,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5720,
+          "sha256": "bb1f50d557b72c778b333a4669d36cb6db11290f6bc2aef2d5862ea8f27ab889"
+        },
+        {
+          "width": 480,
+          "bytes": 10446,
+          "sha256": "8e67f4da9eb466128d9c84b05d81e4d235b1b75c5842455b4749e8438cbaa41d"
+        },
+        {
+          "width": 640,
+          "bytes": 17158,
+          "sha256": "ac9174f18180009ac575cb85c70a302603eb90903829dc77e7290fc55f56edd1"
+        },
+        {
+          "width": 960,
+          "bytes": 36982,
+          "sha256": "4d306e539ecd14e42079a97948bb6f25205ba8d7971553255eada3030caf47ae"
+        },
+        {
+          "width": 1280,
+          "bytes": 63334,
+          "sha256": "16feb433f306640bc5962ec234ada4e58b2e716d79fee25650cc0a06b5835eef"
+        },
+        {
+          "width": 1536,
+          "bytes": 91070,
+          "sha256": "39ace04bfa27f993e1dc61c9059dddfaa5e36278182473b9816ff610c1be7431"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/59814786-2539-4f58-ab30-eb37fff3bebe",
+      "sha256": "07dd6ccfb7bc6c452d6f0d36a80c1327fc95e6a53ad05c26bb509c15108f0337",
+      "bytes": 2378344,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5910,
+          "sha256": "de6247057b18076d8fcb0cc26cbb27c6cb1c0e254ac3840ed16ad532bfa182eb"
+        },
+        {
+          "width": 480,
+          "bytes": 11602,
+          "sha256": "40843e4f438ea640b3c8041b58d71528700872f3bb26a742e8716d8969932aa2"
+        },
+        {
+          "width": 640,
+          "bytes": 20512,
+          "sha256": "b0f236737060e0d7e0d4e53ddb8cea1e3fa46ac839b3872dceefb6db1b9505e9"
+        },
+        {
+          "width": 960,
+          "bytes": 54772,
+          "sha256": "c56e09c02b1460b38ef470db7b2e4b9b2b2a59797b30e1b53e5282a126771e40"
+        },
+        {
+          "width": 1280,
+          "bytes": 98264,
+          "sha256": "732462d3bbcc6b4e4dde38f2968541a2c3530a8463e29f18f00e8e131e0939df"
+        },
+        {
+          "width": 1536,
+          "bytes": 146636,
+          "sha256": "adf5461d2a5351cc271ff95ab21b1ec0d2a2ffd66056cfdd53a222a0c3a7cd04"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/5a23bcc4-981b-4263-9a84-25f2cc8fa5b7",
+      "sha256": "fabca7d3c12496b192caae2e78618929bca94b8fc2a2eec57f959e3676f8bf77",
+      "bytes": 2362070,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 9978,
+          "sha256": "ff061e3ca111e3d8ea89c86bd7dcb7bfe8b3b375cef44004f07856d1c7ae1016"
+        },
+        {
+          "width": 480,
+          "bytes": 20132,
+          "sha256": "58df814a9709b6b592df93477cfb33c288b1ef9e99031ee5bec7815b7ff6a67e"
+        },
+        {
+          "width": 640,
+          "bytes": 34110,
+          "sha256": "af2ada08659a63dee1f9d8128e4b9a4f8e08adfbdb5d9e80e0db459ff7aa461c"
+        },
+        {
+          "width": 960,
+          "bytes": 73732,
+          "sha256": "d595c0df1b9f1c0b0f49dacbccbdfe1955f77881483fb443131654063585acb0"
+        },
+        {
+          "width": 1280,
+          "bytes": 125034,
+          "sha256": "9993fbbcc001915b082afd5b1949912aa1fbb2bb833ba7669aa0e7957a4aa051"
+        },
+        {
+          "width": 1536,
+          "bytes": 170728,
+          "sha256": "21dcfc6580bad0c33e2a2a44d05e1e830bc79777afe3d90d46248777690f8732"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/5bd5405d-127d-442b-a465-c52e4f540b47",
+      "sha256": "b8f79c9e6b21ee7d4283eabea667e84204ad80695e8e3af867ede0b02bed82fc",
+      "bytes": 2183548,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 4118,
+          "sha256": "7617a91ab08952688e0e8e49f92ba9bc4df37697988b6b0b0be9e694d124e49f"
+        },
+        {
+          "width": 480,
+          "bytes": 8060,
+          "sha256": "e2b26a4cee92ae5339e578208e730431c42712404f9ce2ad1764d1e22e902d21"
+        },
+        {
+          "width": 640,
+          "bytes": 13070,
+          "sha256": "3905dc21a2e3399d10804096a3fab6573af3d1fbecd4d57a2b64f6c84eb5317b"
+        },
+        {
+          "width": 960,
+          "bytes": 27342,
+          "sha256": "eb03651f9674abde65e6c769f67df7b460067f9f0b5006ed1ff1aba29536f6da"
+        },
+        {
+          "width": 1280,
+          "bytes": 47650,
+          "sha256": "786a69cd289f8229405a91a554f870c10db8987d6df9c7dd978d9ce08044d0d4"
+        },
+        {
+          "width": 1536,
+          "bytes": 69338,
+          "sha256": "e8cab4bdf7c8c73c45c6ebc154a54ed4af3c07065832f92128b72178cfdfc396"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/62362973-c258-4ed4-a325-7873a847fdf6",
+      "sha256": "1233d4dcd2d6e58bd4e49bff2404285576038458e14e3b3257ea043f748fa3e8",
+      "bytes": 2301963,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 16592,
+          "sha256": "1563fe318343fc25921b77048e4c1731f6f45cffd32ea7cf30b346ce290879c3"
+        },
+        {
+          "width": 480,
+          "bytes": 34532,
+          "sha256": "3a5ee15012d90e8e0af6dbb5c27c980122d81a0a81d6a2f96f557777c73cfbdb"
+        },
+        {
+          "width": 640,
+          "bytes": 58958,
+          "sha256": "cd89093d437490b417e84117f1fd4e935d287d9b18c2d4888169f3f22f26499f"
+        },
+        {
+          "width": 960,
+          "bytes": 120338,
+          "sha256": "0d404f347bd40a48234c6004957f81095a3c5470e22b37eaec2ecbf52b5ff423"
+        },
+        {
+          "width": 1254,
+          "bytes": 183250,
+          "sha256": "40baf6a7e707eca5910915f352380698f6f047b3acd095beb02d557cda0a6674"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/623f0aeb-96ed-4991-bfef-9a854c94344e",
+      "sha256": "59e5b22a643696a6b7e6148873c4cad377823d35bf8334f8a2d37ca57bca784b",
+      "bytes": 2380106,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 4032,
+          "sha256": "043a59c22377efe73fe380b5b5dd6a0ade793ea08ee9f081f39b72b9c6bacbb4"
+        },
+        {
+          "width": 480,
+          "bytes": 8194,
+          "sha256": "1089fa2834e7c9e90501d31f34a926a1470d1325d3849fed792356a2a7edb82a"
+        },
+        {
+          "width": 640,
+          "bytes": 14186,
+          "sha256": "db0758957ac61265f88089b889ac0699f1f829749947a47c6de8dfdf7c5b0e8c"
+        },
+        {
+          "width": 960,
+          "bytes": 42862,
+          "sha256": "49218410692a77652228c33e523b72b70effadbb1609126b9864ad8de0ca9103"
+        },
+        {
+          "width": 1280,
+          "bytes": 89420,
+          "sha256": "1e87c152f10c218449711f10c03abc09078aa8b8c218d57c416ad9475db42576"
+        },
+        {
+          "width": 1536,
+          "bytes": 143586,
+          "sha256": "b9e575c1499a10638b5e5a9ed6285f636e663a989cc1d811b9d879f0853f1947"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/629c8400-d05f-4d17-a5c4-f268328622ce",
+      "sha256": "05824216466ba2761a7db8302a4c96beaed785c4d4a0a99a7a138b4c327d1255",
+      "bytes": 2214468,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5546,
+          "sha256": "51022b20be0e56b93aecd03ee977d2134177d81ea093ff4fe0ba8b8370633ad9"
+        },
+        {
+          "width": 480,
+          "bytes": 10392,
+          "sha256": "415b3058adf09687bb1af6bccd394c3c786127ce35def53b723f3a3ef4d5c9b4"
+        },
+        {
+          "width": 640,
+          "bytes": 16208,
+          "sha256": "28f48af23635b0068a9b91fd28ff91408314cbf1957e6ca7c692397c4012e8e1"
+        },
+        {
+          "width": 960,
+          "bytes": 34612,
+          "sha256": "5d6b5adc4c56c3e8563f23467042beb605d40ac0eb82c103aca4f9e5e07f3f68"
+        },
+        {
+          "width": 1280,
+          "bytes": 63188,
+          "sha256": "d4b4cbe077d466d22a2f948801ea6a55742ffc9a27c2f7da0253a3404b3ac559"
+        },
+        {
+          "width": 1536,
+          "bytes": 91142,
+          "sha256": "4336f3fc9936a6bcf29abc6e0eb6008802310923888d7f562537144988cdb8c5"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/632bdc54-b09c-4052-ab83-1adaabc5f3c5",
+      "sha256": "7956e64f6d125bb8917ec22eceeca577ac383c8bb21bf6b3de9222848de6f4ce",
+      "bytes": 2475708,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 22772,
+          "sha256": "5e02313f7ba1222985890bbcb2bcce7049d5e4dd0887f4d62f4ddc6da0601842"
+        },
+        {
+          "width": 480,
+          "bytes": 46144,
+          "sha256": "94bf7f97c59c564f10db425051e290838799505e695ac39cf3a6c3ef2aac71b4"
+        },
+        {
+          "width": 640,
+          "bytes": 74460,
+          "sha256": "faf4cc95090be94e3bb81a99ced6bfb4f5eec6f4253f963b030c0fe70c9370b4"
+        },
+        {
+          "width": 960,
+          "bytes": 141614,
+          "sha256": "3aa01cbfd5599d20b9d931c140dac8729d3755b885e3e6681c66f3d9dd87b61f"
+        },
+        {
+          "width": 1254,
+          "bytes": 221390,
+          "sha256": "8e4c16c192895e9c50097aa299acbcf94cd7ae5fd4cc81d78ad5000f1a4ba768"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/6368e20a-1554-4c16-bdbd-d0d37b7e014a",
+      "sha256": "b7d72d8cd44422e0e70988082dc84586b43b2aeff1d5defa6e689f9b39d416a0",
+      "bytes": 2172344,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5294,
+          "sha256": "dafd820a27fc18e15a78423665c7a75fd55cb0d28053cd66f0cc5b50a36a4e26"
+        },
+        {
+          "width": 480,
+          "bytes": 10068,
+          "sha256": "c1670ec973137f4bfe6cbd90d96fa162526174f96ddc69c08afaa1f7ceb089ba"
+        },
+        {
+          "width": 640,
+          "bytes": 17158,
+          "sha256": "153e97a3b03e901299bacc46e0f4c44daa62dbae72a5e110e51d050ccaa5e062"
+        },
+        {
+          "width": 960,
+          "bytes": 34858,
+          "sha256": "1b06db1977b624b8e70eb06b48c8100c92c99d918b6355d23329e51dd0630fda"
+        },
+        {
+          "width": 1280,
+          "bytes": 63102,
+          "sha256": "7a1951285223c1bd74b2d2c6a167c1df899d8f697cf85d95f3bb3c82f361214f"
+        },
+        {
+          "width": 1536,
+          "bytes": 95972,
+          "sha256": "6885348f13000227aa0de8ca4b1a9ec3659f05d759d543ca6a230364886f6c88"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/678403f0-b199-466b-b253-5ab35c9d8d9c",
+      "sha256": "91496959e8b807a4a171539a21705e0fa3cbe1977fbb2cbe0d61fe815d16b280",
+      "bytes": 2023301,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 4060,
+          "sha256": "a5b78466105134fb93f7142e389a8574a460062d4039c9beae8e9f7ff4248cee"
+        },
+        {
+          "width": 480,
+          "bytes": 8024,
+          "sha256": "ad040adc934934888c4a9cac45c27e8468a5a6b4bd8756d46290ff418d303649"
+        },
+        {
+          "width": 640,
+          "bytes": 13170,
+          "sha256": "eeaceea0d898b217237b027a3bc3bb756c25ff02910446dffacb19f58fc3f7ef"
+        },
+        {
+          "width": 960,
+          "bytes": 29858,
+          "sha256": "919a4bd94c8d2ee8b19b78b01871c1fee9b783e60a93385b99c4731734dc2ab3"
+        },
+        {
+          "width": 1280,
+          "bytes": 53094,
+          "sha256": "2bdb115e011bedcaf833f53bb5db30b06c21c3d427def96abfc3d00977f9f31f"
+        },
+        {
+          "width": 1536,
+          "bytes": 78274,
+          "sha256": "50635c9553fa75e501f18430727bebccbcbcb2a1906f9448a7e863b7dbbce276"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/68900871-9d10-454b-bad2-33377e93c700",
+      "sha256": "8acb83927408944edfa0367e7370b7412fffc14838f1fce3b1d8f06cf2241f3c",
+      "bytes": 2340871,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 24408,
+          "sha256": "5c66a52b27a06f42876e3af83ef743fde902d34da2b4e2b52c21ecf110231237"
+        },
+        {
+          "width": 480,
+          "bytes": 47478,
+          "sha256": "17de8ceaae25fd57379c6275422c83fcf7165ebea03274ee6d23f1b0a1ff9ef6"
+        },
+        {
+          "width": 640,
+          "bytes": 75750,
+          "sha256": "7c44d25689a8a938517ef80f6767d1c42b834bd42056ec66e45462743045fb4b"
+        },
+        {
+          "width": 960,
+          "bytes": 136414,
+          "sha256": "581a998b86432b2552c0080dd4bc187cacb9a77a85009651e4d3c59c68ab0d8b"
+        },
+        {
+          "width": 1254,
+          "bytes": 200376,
+          "sha256": "a22dfdc842d3c84038cb72181cf9b4f82bbfec8113b21e6957b19647099cb748"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/69fde3ec-012e-4564-9060-9f1c8f54ec96",
+      "sha256": "c4994d38faadb7311d065b7de6a01edb646a68963066c418a2db72a60a216e5c",
+      "bytes": 2973036,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 23458,
+          "sha256": "50bc6f75447d7f5bbc6c428af7c486618b1025f58f7d20265560f99a0fce0e7c"
+        },
+        {
+          "width": 480,
+          "bytes": 50238,
+          "sha256": "1abc2369c8910a87be4e034b744a38c4a65b2883ec0ee20e0aa4327e1fb10673"
+        },
+        {
+          "width": 640,
+          "bytes": 88206,
+          "sha256": "4489a7ec375f0337f022c30a27488e84e39ad46158eb337f8cc209b9aa37c0da"
+        },
+        {
+          "width": 960,
+          "bytes": 191628,
+          "sha256": "c46c0494ba08b6d525a7b5be35b2c1f8368d19037c463f979383d1987defc41d"
+        },
+        {
+          "width": 1254,
+          "bytes": 299602,
+          "sha256": "4c122fa607d33648c0cb2a458fbee1f9dddc343a8b40558fac5c744e27ff7760"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/6cc5737c-2976-43b1-a4c7-cf8537db2410",
+      "sha256": "b1995ad1ae57f599348cd0c284e35ebb2350028d0ed236b6694dc8caf0bc7077",
+      "bytes": 2260293,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 7852,
+          "sha256": "4144fe1982baa60bda258521d08c2de0b4cead757a1eec1683e6404de8c244ed"
+        },
+        {
+          "width": 480,
+          "bytes": 15196,
+          "sha256": "0c84754a08059d0c5e86751f3c79010505d5bfa0d26522a4cca8d0a3d3f85791"
+        },
+        {
+          "width": 640,
+          "bytes": 24160,
+          "sha256": "55dc8155865e578b2cb8e6a417a8a1ccaeabf3ee8cccfcfc436e788dacd45adb"
+        },
+        {
+          "width": 960,
+          "bytes": 47646,
+          "sha256": "c4c6f69670183e8671c8fdb578cb9524456401b75911613ad7271cf11ea59e89"
+        },
+        {
+          "width": 1280,
+          "bytes": 83236,
+          "sha256": "7026f6fcbb3921dd3c0a5b2f7edc6c5e8dbe1ee79c291d28ab0ad673a4179afd"
+        },
+        {
+          "width": 1536,
+          "bytes": 119950,
+          "sha256": "f8223f4bd79eaade318551fd2630f59a1c21c70db14f541a3bd666e424d660dc"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/736643af-f475-4712-97ee-31b272c571cb",
+      "sha256": "8829a8237f85ad5a14ec66ad1b3cb0fe66539e5c6ce95df1d88112a9d499fdfc",
+      "bytes": 2274650,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 4942,
+          "sha256": "63cf19a6e54ffeab968cdf6fa6ff46d6c9ce71ba0f7bef7d963f9b29699e054e"
+        },
+        {
+          "width": 480,
+          "bytes": 9262,
+          "sha256": "69e3be3052e0cc51114a47b1720373515eb9b34fff154084da1fff608ce0a159"
+        },
+        {
+          "width": 640,
+          "bytes": 14784,
+          "sha256": "41937229eedbb55cedabd4f10943f02446c73c5e17846575ba48425e0e9cfa06"
+        },
+        {
+          "width": 960,
+          "bytes": 32102,
+          "sha256": "7de0191a2d60e85817f559b2fcdcf974a6864f3b73090d667bccdc012786915c"
+        },
+        {
+          "width": 1280,
+          "bytes": 56532,
+          "sha256": "327d282fa398403f25187f9d47d38bfdb785d06432549ef64cd9153526916a37"
+        },
+        {
+          "width": 1536,
+          "bytes": 85956,
+          "sha256": "979f551a75fd819ec376019e0e278213b1647d21bc9bd96bc3b0212293a14f4e"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/745d43db-b92e-4665-aa73-ecaa47f740af",
+      "sha256": "94dc47bda9617ea3f107d8dac7d11b42b99ee76a5ad303472b45604294014cfc",
+      "bytes": 2314630,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5948,
+          "sha256": "f1d2505c602b81f9b4a990ea041701c24e9791a3ab507cef6b0c87aa2355483f"
+        },
+        {
+          "width": 480,
+          "bytes": 11328,
+          "sha256": "4b283f111031958317568b74e208ca598055b3e50622880115e2e31dfe32b88d"
+        },
+        {
+          "width": 640,
+          "bytes": 17798,
+          "sha256": "49a7c0775c15a44b4b5d3ae94379b96a7d5beaf94dd729325966ea5119b626ea"
+        },
+        {
+          "width": 960,
+          "bytes": 44446,
+          "sha256": "efbcc64dba6952ce85ef8880c7bbc2e566d29901f3b530979ef25732bb2bb2a6"
+        },
+        {
+          "width": 1280,
+          "bytes": 88660,
+          "sha256": "6bb46f98a96f0cdedde2b560a7adb72d4d365e9f29a79b9e6de1d7d805fe5f52"
+        },
+        {
+          "width": 1536,
+          "bytes": 128798,
+          "sha256": "76ad1474874a56dc2efe9809a3c7e6d2edb3b2b16a4390cccfab30746c160716"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/7564d3d1-1233-4db3-b553-fee086a12621",
+      "sha256": "64e47cd0a523fb59886d663b97f5357f9d6e07dd9dfb42c85057eb1f53d6c65f",
+      "bytes": 2955994,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 17508,
+          "sha256": "36daf48c21aadc77d2bad7ed440bd5d2d3457e283469600337a587a7f4183c55"
+        },
+        {
+          "width": 480,
+          "bytes": 38366,
+          "sha256": "539b0e37c9444c37bf6081d3d9686a0bdc21c011d4e30394fda9d8c051cd2900"
+        },
+        {
+          "width": 640,
+          "bytes": 69128,
+          "sha256": "54edb0f9a426eedfbdf62a67d441089648e2a33b19a978540153271adca2bd31"
+        },
+        {
+          "width": 960,
+          "bytes": 158942,
+          "sha256": "1ea08b8064d8e3615a5473a5a54785c449837419d13a02321b52e5a73cfd6ee4"
+        },
+        {
+          "width": 1254,
+          "bytes": 269638,
+          "sha256": "71b07e13b20d7bb0f869b2b5adcbd03a3ae42a491eb0011beba6f1eb0135b00e"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/75700c61-5976-48aa-85b7-fbbbf5217847",
+      "sha256": "d9b3cdac40dc3df258c028bfa48199f5fd257f74a362507f80414e2f2b0f0d37",
+      "bytes": 2171113,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 9082,
+          "sha256": "f1e0c39861c568b9fa7f3a74a91e7664d433b2f37c19bb4d2d625a6bd50c8e35"
+        },
+        {
+          "width": 480,
+          "bytes": 15730,
+          "sha256": "78bda06620275d27b841845d1396c24f63c3e73b6040b271127da9aab18215fc"
+        },
+        {
+          "width": 640,
+          "bytes": 24050,
+          "sha256": "7e4d2e145f877c439c9cf43e4ad012d1f92048a06dc42f206b02c2a00a8a0fb5"
+        },
+        {
+          "width": 960,
+          "bytes": 45462,
+          "sha256": "a7e305cc8f9f7b65830048acf4a970adaf6763d59fa96a87ccb0eda2f7613485"
+        },
+        {
+          "width": 1280,
+          "bytes": 72788,
+          "sha256": "e069ea222015bc4d858feeb1329f91498a8d0462baef408b3890b7bc5fad63f5"
+        },
+        {
+          "width": 1536,
+          "bytes": 104144,
+          "sha256": "21e240023ea6ebf5421640a37f4244c498078d586053d034e1b3fd589f8f0661"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/75d42a4a-3cdf-4586-952a-4300bbf54a97",
+      "sha256": "216a6613f0ceed253483804e795f1eb4a4ad3ec5c15d42b999e4368e72752192",
+      "bytes": 1947372,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 7434,
+          "sha256": "64b64e12a8421fa5d255a1fc3a116f277746bc1c92ce4e83000ba0bcb6b39d43"
+        },
+        {
+          "width": 480,
+          "bytes": 14608,
+          "sha256": "390c6cf7a754c2c6daa083a2478a1b1107723b3c16e54d061e1ee4017f3cbe90"
+        },
+        {
+          "width": 640,
+          "bytes": 22992,
+          "sha256": "b410259ab8a752c54663b1431a439b7624934361fe14ebd3ddd1351ed4aa4cd0"
+        },
+        {
+          "width": 960,
+          "bytes": 46006,
+          "sha256": "f7de67e8f4f0e4bab44d99c7ff909f3c57c2654814ce6e29352ecf5a01b0684e"
+        },
+        {
+          "width": 1280,
+          "bytes": 72590,
+          "sha256": "a2de2ec6ce6eddc26dde631aa2ec74ea2ccf030d16b98b053bc976a9014c9aaa"
+        },
+        {
+          "width": 1536,
+          "bytes": 99152,
+          "sha256": "cf658d6dfefcd225d3f6014461bae6c90672ad413a3230f694cc9cf038d1c473"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/763eaa3f-e3c6-41a1-abf8-77a6e65c296b",
+      "sha256": "790f880c3c7ba9c66332624c235cb3e0b5fa7c596e6c593825e3d0de1d3357f5",
+      "bytes": 2374089,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 7724,
+          "sha256": "2e831d4b185e47c78b38d9aafbbce8387912a0d24f8f6431e4e561b4744dea2f"
+        },
+        {
+          "width": 480,
+          "bytes": 14098,
+          "sha256": "f83ed525a638e146cb25684c2a0e27405286baf146fe62a20872556c0c0d9e07"
+        },
+        {
+          "width": 640,
+          "bytes": 22620,
+          "sha256": "69638539ad04aa10eb9160cce340a25012f25465c9cfcf78bbd2f5af22997f15"
+        },
+        {
+          "width": 960,
+          "bytes": 53252,
+          "sha256": "5bbf90efe058b880c5672d85aea6ac2ee5d02af07f7e83f4fcf3328b4d6fdc5a"
+        },
+        {
+          "width": 1280,
+          "bytes": 105118,
+          "sha256": "40933104308276f606eb3a732b2a269c6feae3f87dff885fe3476949b1666a33"
+        },
+        {
+          "width": 1536,
+          "bytes": 157544,
+          "sha256": "75d3a278c4d44deec002145e0c277eb9c2d8eb0d2b54920a831b0476204a4a74"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/7b442a5c-c827-45f5-bad0-1cb63a8d2a54",
+      "sha256": "ac528fcc2856076bbee2423a36c2a9f6ac64a72412ab43327ecf178a3c52f8a6",
+      "bytes": 2479895,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 7176,
+          "sha256": "c4ab73d4ad929bb184c75115f10de219da196dc6595a470fbe79c641ee2adc69"
+        },
+        {
+          "width": 480,
+          "bytes": 14494,
+          "sha256": "72eb7206049b9e2980228d62cfa930c4bc92a54a024554a8f00ec353f7e484fb"
+        },
+        {
+          "width": 640,
+          "bytes": 24614,
+          "sha256": "7dd980f07683dc055a47e279b6f11e61623244632364f22222d1c2a5a5e4258e"
+        },
+        {
+          "width": 960,
+          "bytes": 55660,
+          "sha256": "b5d42331966c088ad2ab96a6c47fa162ebc35083d5fd0feb1cf17098a2a01f0c"
+        },
+        {
+          "width": 1280,
+          "bytes": 93932,
+          "sha256": "0a8696740e570223f080f20b69971babfb5de5aee97570799460bfe45bd4a0f7"
+        },
+        {
+          "width": 1536,
+          "bytes": 132136,
+          "sha256": "259a3f37daf297b6be8461402c65dfdedd265ca9069f69f6800b8b93bda77a4a"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/810e5cf5-b033-41f6-af88-3f1452b7b7a5",
+      "sha256": "e1dad9f8a2e4fbf5bb6261c821898e91aa9da79df6e7ee9d66ed5c567b4fcaf2",
+      "bytes": 2687121,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5342,
+          "sha256": "6711c4e12160a929f3e5ce92e0fcf1847243e4e5c1d808983a3f262e146fa698"
+        },
+        {
+          "width": 480,
+          "bytes": 11952,
+          "sha256": "e827eac84f7588ae82f78ece461efaeb486124356b86ad383acc61da113c4ce6"
+        },
+        {
+          "width": 640,
+          "bytes": 23848,
+          "sha256": "3b2a9202693d87e425ee798598e1023f317b4dcf6d2a90c41fe5990189db0e69"
+        },
+        {
+          "width": 960,
+          "bytes": 65452,
+          "sha256": "508f29966096b2b1d2790546410764c54478f3f00417fc9d571a5876fd3a878e"
+        },
+        {
+          "width": 1280,
+          "bytes": 132160,
+          "sha256": "7c2e9fdfb12a24c00a64deb4834a81a3fa4e0010321cab722a1b13e612803c51"
+        },
+        {
+          "width": 1536,
+          "bytes": 200238,
+          "sha256": "bd10c740f90ed0f0950366b80a36ccfa71fcd8bd909c58dcb7a8c17dbebde18b"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/817ff63d-ee72-46c7-a68e-06178f79f4de",
+      "sha256": "af6cac631a04b9320217d40085605f711471b035cd5cfd51d4a3bad353787d00",
+      "bytes": 2700345,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 20854,
+          "sha256": "1e4c3acd30bad0ae7017fbdf4f0c2501e6e3c79e51f653d00e096b43dc33c064"
+        },
+        {
+          "width": 480,
+          "bytes": 44476,
+          "sha256": "f4e699b2289ba39a710ba01477812fda0c88f8ffad49135dc32bd94d803c4c5c"
+        },
+        {
+          "width": 640,
+          "bytes": 75576,
+          "sha256": "262a58dd58f30c60690e18c8c65ac12be7f33e262e5711e3e7a86a0f230dc8ff"
+        },
+        {
+          "width": 960,
+          "bytes": 156258,
+          "sha256": "dfec421d359da806aed9189fe28b260d858b9b57965aff69941a2d50ef8d36be"
+        },
+        {
+          "width": 1254,
+          "bytes": 239512,
+          "sha256": "7359b03d83351da54479749bbab5cd1785ecbe1143331be15a0d13b3e0fb2f34"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/82e5b100-1ea6-49c1-83c8-93cdfa418f96",
+      "sha256": "9ab735be63cd3c8a45a0f26f1a0fe3db2d5ebb061db1f5741a75c54adac369ab",
+      "bytes": 2272895,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 6786,
+          "sha256": "6a964a371ff8721835849bc42b9446acaf4050dfde241b4de1b4bbe265e7ee61"
+        },
+        {
+          "width": 480,
+          "bytes": 12766,
+          "sha256": "4640a58899e8431ad5115498c835a3fdb50a16938d78f455a16810cea3184ab3"
+        },
+        {
+          "width": 640,
+          "bytes": 22130,
+          "sha256": "2ba8373aa32639cb9ce590dbfbb9dcb14ad4a369ad117fa2f0bd238d2ca7e7b4"
+        },
+        {
+          "width": 960,
+          "bytes": 45850,
+          "sha256": "a4952572c334fa2573c0a4fe8e1213b1ebeb8cfea504e579c68079e2beeffabd"
+        },
+        {
+          "width": 1280,
+          "bytes": 80904,
+          "sha256": "37ab931785d9202be6a012a099f8b797c5e7ea8ad0927633aeca9bccca1fd029"
+        },
+        {
+          "width": 1536,
+          "bytes": 113682,
+          "sha256": "f424bc58a391c2d19a8a8ba93653e4e895b0c819ea1a01b1a98ae275b964be74"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/88e0d4a1-e9c6-414c-9577-6ea5e1a7ce42",
+      "sha256": "2fb4411d70fc7db9c7d53845f78167a2cb7e9feb065e1101181fd3076fe220ec",
+      "bytes": 1936901,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 4846,
+          "sha256": "7cbbe73adfc8e6a4734633a377f58f3cd633f47d413a61fa1fa1d8a8be2add06"
+        },
+        {
+          "width": 480,
+          "bytes": 8240,
+          "sha256": "ae47ef8c4c80163a08e1cef444ee00f51266ba8294d53cbfaaf69946ee69ed2c"
+        },
+        {
+          "width": 640,
+          "bytes": 13266,
+          "sha256": "1ef869d80823687946cdc1befcf4dccab515ffbb8b2dc5303b3f20dd13e74ff3"
+        },
+        {
+          "width": 960,
+          "bytes": 25612,
+          "sha256": "d2f3daa56ba140928871641909fbac32929bf52f5fa271bf3fea3a37745d2787"
+        },
+        {
+          "width": 1280,
+          "bytes": 43086,
+          "sha256": "b1c5bb34a70d292a5564f310a582c16ce28155972988b9ecaa09d599631c7200"
+        },
+        {
+          "width": 1536,
+          "bytes": 60786,
+          "sha256": "735112df47797104c4145a0569dc7346c9981d1298b43e7a3a8dc6f15170b05e"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/8d595610-a1a8-461d-9e1f-f2e56ba25d4e",
+      "sha256": "4f3a0a7a802a18e7e883a4bc00a83c79bec6aa618479da272d4a380735f1c157",
+      "bytes": 2500550,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 4714,
+          "sha256": "bb8f5be55d0caedc9d111d52e2004bc562b66c97ec92248c368c651bc3abb1ed"
+        },
+        {
+          "width": 480,
+          "bytes": 9256,
+          "sha256": "1a3b02f0e480c56af5cc221005a220a0e06bad5989236d4b37093632e102ae5b"
+        },
+        {
+          "width": 640,
+          "bytes": 15828,
+          "sha256": "6dbfd2336db064053f0b2fa87da7876739d9bde55f9e548aa677121248bfeb03"
+        },
+        {
+          "width": 960,
+          "bytes": 40660,
+          "sha256": "1c059ef9109e07feb3ae700f8a2eab1b5bbed67c45d7fc244030f415f1af2250"
+        },
+        {
+          "width": 1280,
+          "bytes": 85402,
+          "sha256": "22a8afea61c2288573be48666ce925bf860c57b21c49ce8e829f6db8a42a2b98"
+        },
+        {
+          "width": 1536,
+          "bytes": 137860,
+          "sha256": "278a20dca72048ad3683f7f8934c525845a4cdbe491a8c567c9eec4a80e4d93f"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/903907ea-3467-423f-bb9a-cd593494142d",
+      "sha256": "abfc8377d9dd67688577a400d80d000eb51d44024cd19f41cbeb901fbdcc7e72",
+      "bytes": 1992477,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5284,
+          "sha256": "7a30e09fe1d240ab167b6ac3a5c1c88053e958a7b28d5dbc8860964db61edc3f"
+        },
+        {
+          "width": 480,
+          "bytes": 9666,
+          "sha256": "365e7a321a9965ab911203918aa759136df46136eb83a740b4b615cc3ef1ce30"
+        },
+        {
+          "width": 640,
+          "bytes": 16014,
+          "sha256": "5cd1b52f42e777d1c9942935ca37fd1bdf85b664af96be99434f041a82dad001"
+        },
+        {
+          "width": 960,
+          "bytes": 31648,
+          "sha256": "c315a11f6e772b06b136364e4b1f122e9dbe3dc8b3148cf38556e9cd0e3727ff"
+        },
+        {
+          "width": 1280,
+          "bytes": 54964,
+          "sha256": "4dea32db43d484bbe309505e19ca41d8944aa7c987b870efaad18ec4caa4f77e"
+        },
+        {
+          "width": 1536,
+          "bytes": 78424,
+          "sha256": "f9480a854dc07d153a54809bdeaf41683fd86fdc982c9ff65c35ad656935437e"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/916f6e7e-b888-4e75-9fe4-e0c8d8695ba0",
+      "sha256": "a4da2f778d4e4d9c95844daef7e47692caab1df00c6df0a209ccb398473863a6",
+      "bytes": 2173836,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5338,
+          "sha256": "9730e9f43927f81a83a3b1838a5e03e5affdad46d888757ab859ea01418042d0"
+        },
+        {
+          "width": 480,
+          "bytes": 10366,
+          "sha256": "2bc77aac19347596abad8378ff04f698b8be9270213193842da7d3ce5bf5b91c"
+        },
+        {
+          "width": 640,
+          "bytes": 16640,
+          "sha256": "82aae8de68f1156808233c37475de75749eca268f5ad0dfe09531ebdc9c9031f"
+        },
+        {
+          "width": 960,
+          "bytes": 35928,
+          "sha256": "d1dd6864c00c5fe326bed33fbc310abb382101ff189d16ea873b99802aad9905"
+        },
+        {
+          "width": 1280,
+          "bytes": 62942,
+          "sha256": "8bb9cfc48674a45bfbb89c2693ee5c989634f56342c1076da261061c9ebd38ff"
+        },
+        {
+          "width": 1536,
+          "bytes": 91144,
+          "sha256": "2b18610571337aa23014353176549ffd36908fbde77a0f23e7714cddc45ec4b6"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/94f34d65-3f4f-46af-95d7-544ee1ba5884",
+      "sha256": "02e2088766a23f809b848bcddcc84dffd7c0fe8e1d8ed8000a9d4885acac96d1",
+      "bytes": 2265626,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 7294,
+          "sha256": "bae1180bb252f5e35a936e985ddb616e096ebf376e957e673f0dfab4ffe7a2d6"
+        },
+        {
+          "width": 480,
+          "bytes": 13260,
+          "sha256": "73fd967939ff77c9ca719edba6d521671026307045dcffbf338e5aa5dad7d11f"
+        },
+        {
+          "width": 640,
+          "bytes": 20586,
+          "sha256": "e0f59cf3482efc12a86fd0215b9b0670c4bb13f72b86c5385a035e8917b71b98"
+        },
+        {
+          "width": 960,
+          "bytes": 39214,
+          "sha256": "68103253385a28b7b4cd34d38fd6901db149de84a407d213760b9eb4ea7fd7c0"
+        },
+        {
+          "width": 1280,
+          "bytes": 66996,
+          "sha256": "ed89a76dc3dd691bdd317d623856dca032dfdad7d3f834bef8666ad9af3086d5"
+        },
+        {
+          "width": 1536,
+          "bytes": 93316,
+          "sha256": "8733e3bc5278c0c986ef223313221cc152f3e6f1a6936946bb29bc9f48f57bca"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/9db60f6f-2963-4947-a20d-5a33d0f16c71",
+      "sha256": "2cc9f60ebe12189c15f7a87d97cccee779c577f0e849d57958f3235600de9723",
+      "bytes": 2654448,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 8518,
+          "sha256": "78781aa8e811a02f61b85a63bc35d176fe98acdf6ff74df0d9787092f0012817"
+        },
+        {
+          "width": 480,
+          "bytes": 16828,
+          "sha256": "f709fbbb1b3feff6a0da752dd5a404e66e9ccd67efe77b3979c84ef8353e6f16"
+        },
+        {
+          "width": 640,
+          "bytes": 28710,
+          "sha256": "c04bf7bcf9153cee6918b2c47ec50a5230284ad600ed895a6a8d6417ca35c027"
+        },
+        {
+          "width": 960,
+          "bytes": 67328,
+          "sha256": "8a2f58e203709f1a9d08481379a4b842b155e2efdefa3aa449bfa9adf8558b4b"
+        },
+        {
+          "width": 1280,
+          "bytes": 121362,
+          "sha256": "cb66a71401ffa08180c5bb01c3864e4c68d015b64617f35a7132a956f7cd1e2a"
+        },
+        {
+          "width": 1536,
+          "bytes": 175078,
+          "sha256": "88d08aaede9003682c12a6fad58bb30cfd524a75d7f0f1b99929786da5ae0f14"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/9dc346f3-1198-4b40-8494-fa029038b51a",
+      "sha256": "037b2cec5c2821c3badfe2d014c72f13a1ffaa9fd1e3135277542f60cbe70153",
+      "bytes": 2467595,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 13118,
+          "sha256": "3e88806b9d61fd621652b4e38fa85149df3bdd9b930ba6208a7df25ad10741e8"
+        },
+        {
+          "width": 480,
+          "bytes": 29096,
+          "sha256": "923f52ea6429fc69b9692f386685bc263344e41b0f8c5ac34829f457db34fb4d"
+        },
+        {
+          "width": 640,
+          "bytes": 51388,
+          "sha256": "e30daf0e3c6b9ebe67151bae8481b8f59a716dec28dfc16672097cbf77ac29b4"
+        },
+        {
+          "width": 960,
+          "bytes": 113556,
+          "sha256": "29307c54d2d7863d06780f402ca60a00391fcfe9e665f9b6052b2116e3ac8d27"
+        },
+        {
+          "width": 1254,
+          "bytes": 183894,
+          "sha256": "b4d8348ef0984075b0625d5f2f9d8b14001ebe0d2d40b3865110513b07b89ee2"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/a1222b4d-fc7e-469e-967a-b83523a53e98",
+      "sha256": "5f7dc9bb5144808d6a7a8081e5a6e476231bc292e096b337450d953832ab4811",
+      "bytes": 2562580,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 14158,
+          "sha256": "8577cc1e7b537c265ddc56fdbd92e3da0d3453947a75fcf2ce8e23ec78735797"
+        },
+        {
+          "width": 480,
+          "bytes": 29004,
+          "sha256": "48c8f5cb8bf2755ee51f2561249d9a60848ba24cece7ba853c684d7f56d7502b"
+        },
+        {
+          "width": 640,
+          "bytes": 49700,
+          "sha256": "48a64589ddb72f1a37fa42cb48e548703d619a3ff869e94b0dc015f97ba8c157"
+        },
+        {
+          "width": 960,
+          "bytes": 110774,
+          "sha256": "ba7774b670532911c6d0c6220d680a43ca1f5f1cc196fe221100003fa93f5bde"
+        },
+        {
+          "width": 1254,
+          "bytes": 179984,
+          "sha256": "35e77d3d9d86b59195abf43de3a116b3911eda2dc0662ba25c31f146191f211e"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/a9490e3b-86fa-4192-a4ac-f318c459d71a",
+      "sha256": "45849176cda59c53ff07030dbf5a67b261710e3134f4f11d003b6cc087ecf5e5",
+      "bytes": 2178011,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 6922,
+          "sha256": "41ef68966e06df2dd934d6fc21da48f1e640f857f97d16556f5e5375a4750131"
+        },
+        {
+          "width": 480,
+          "bytes": 13262,
+          "sha256": "e7c4c4da967d109adcd99875d19c360a5b9a6918a2dea640b969bc9206fedb24"
+        },
+        {
+          "width": 640,
+          "bytes": 22068,
+          "sha256": "d2df195445e49d7e0e282a54a9d151836c0c7b779df697894ca644f6886d581b"
+        },
+        {
+          "width": 960,
+          "bytes": 45470,
+          "sha256": "a1fe61745da181fdde71f58149d240388ca6427d68f38b9888a7455cca61b47d"
+        },
+        {
+          "width": 1280,
+          "bytes": 78646,
+          "sha256": "c41ea5179edaefb823de3420bce62322c2eabaa0e65764551ca84690617f46c0"
+        },
+        {
+          "width": 1536,
+          "bytes": 109234,
+          "sha256": "cb11cdbe9493596eed972dc634d34dc002dd9d91c5070e5ebfdd5925a7320b5e"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/aa74d305-2277-4b15-ab1e-f075eaa4b582",
+      "sha256": "61cacef2e0539ad22e5f6a41c6ff2121c3616fac55ec6e18e738ec65bd915ab7",
+      "bytes": 2154302,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 14842,
+          "sha256": "5aadaf72dc1044bde1176306c07ee70c58bfecbc354af139125fd5f58817b356"
+        },
+        {
+          "width": 480,
+          "bytes": 28058,
+          "sha256": "e8e939f2d9a1f82f60b35770e3cdaf47b5e4de2c3dfee3a334f66fcf36f0e873"
+        },
+        {
+          "width": 640,
+          "bytes": 45044,
+          "sha256": "c07f9591a201f89255d91238554ea8152fa997ba3cbee255acda6d9157c006ef"
+        },
+        {
+          "width": 960,
+          "bytes": 91426,
+          "sha256": "46746c00c299fab6213963dd32b8b301d55709821bee09307c98a1808cdd7bee"
+        },
+        {
+          "width": 1254,
+          "bytes": 142848,
+          "sha256": "5fc9656c45f672c890512d94bce34ec2e41466441fba1f8f63d05385fa80d118"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/ad2bdf4d-ed58-4ad1-90d7-ed7e0b25d60a",
+      "sha256": "d47730679a5b825de96bac2d097b8bf047a6019652c7ef6296725033cd7e51ea",
+      "bytes": 2181012,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 4868,
+          "sha256": "f85d9bfb9837fd237c84059b9b619f7d432b61bd27b77deedecb6e6be4404db4"
+        },
+        {
+          "width": 480,
+          "bytes": 9188,
+          "sha256": "a11104a6e3e927b0e21a6ac4c5a4b0bd619a503a529bcd2c9f595fb3162133f4"
+        },
+        {
+          "width": 640,
+          "bytes": 15056,
+          "sha256": "a026e91918ebc9f38049e94ed34efd6b4b33cb96b8cfcb3aa00a605d091472b6"
+        },
+        {
+          "width": 960,
+          "bytes": 33656,
+          "sha256": "723df14651beaf3893fc2cfe62746b0b00f4d1ce6913625e39d28da6ec9aa173"
+        },
+        {
+          "width": 1280,
+          "bytes": 67246,
+          "sha256": "8ef29aa71a4389d2c62dea7f5ea868e025cd5265caa39e4eb7aae7c9ea7e0e26"
+        },
+        {
+          "width": 1536,
+          "bytes": 104980,
+          "sha256": "fbeb9a361cebd612b93438d0a97902f4337628c69c2039a214756150df4acc95"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/ae19588f-70cb-4dd5-aae5-357b38ddca53",
+      "sha256": "c26c6d8df483d5d019bc9acd7b464f335cdf00151dd1a009bdb0ed00af0984b2",
+      "bytes": 2168688,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 9080,
+          "sha256": "57b296c1809df6dac80243631864764d15024df546cf5d12b29bf30f0c74518f"
+        },
+        {
+          "width": 480,
+          "bytes": 16584,
+          "sha256": "a9b320ed659ec13408d8d50e2f369dfad1eba74b5ac9b7d9785f5202bdf69f69"
+        },
+        {
+          "width": 640,
+          "bytes": 26112,
+          "sha256": "63c703aee214b628eaa0860033da5373c14e4242945f9ccd36e00e7f5ab01065"
+        },
+        {
+          "width": 960,
+          "bytes": 52876,
+          "sha256": "da6aef466531d3787211930502492cf88e2d9ba50f6021ee9feab09eda2e0b39"
+        },
+        {
+          "width": 1280,
+          "bytes": 88680,
+          "sha256": "e29607e8842202f336714e06b4f4c401d4d5b90d4b65c4b2b4a969d876accc88"
+        },
+        {
+          "width": 1536,
+          "bytes": 123278,
+          "sha256": "c10b61d0b5bf622994c6419bb55c7457d5ec0158616cee8f06cee0f463ec6d7a"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/ae516ec0-31b3-4b42-8d00-129fb5d6ed98",
+      "sha256": "fe72250e1896040891a4d6672482c6626c5074e971c35db3e7109f0b1500b983",
+      "bytes": 2424843,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 6086,
+          "sha256": "e13ef5229a0eedec05122dd116232b28de60aa0b8f6beec94e14bc203d15ab0a"
+        },
+        {
+          "width": 480,
+          "bytes": 12662,
+          "sha256": "dbbd3ceb36056deada69533c42827d46208eacb3145c7c18661a761ab67d523c"
+        },
+        {
+          "width": 640,
+          "bytes": 21922,
+          "sha256": "dd98f2a5ed6a2daf7da3ca2843eedd2a7cd81cc1af098ffffddc3620625c447a"
+        },
+        {
+          "width": 960,
+          "bytes": 55740,
+          "sha256": "8cee3ea141f88b78f162a59d45e1ce043a4a85d92827679d394f2edd07f11ce1"
+        },
+        {
+          "width": 1280,
+          "bytes": 105970,
+          "sha256": "d606c3892ecc00c35f58beaaf7cb67adc2222d1b583a80220c542f032970838b"
+        },
+        {
+          "width": 1536,
+          "bytes": 161342,
+          "sha256": "7399dd8dd3c0a82b914d06af2042aa2be5f2650c8715000757938a6f5c1a6e14"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/afd252c1-7bd3-40fb-b250-e802c20f1c36",
+      "sha256": "c6e3d3020718dfb03051233502a414b7d6a7aa7c402d6c5648bbf0a104d49564",
+      "bytes": 2061950,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5506,
+          "sha256": "14ef9f4cac5b8dfd5ac78aa96ed912b4708402e7bdc482f98314944cc582acba"
+        },
+        {
+          "width": 480,
+          "bytes": 9918,
+          "sha256": "7e8f3e41e3694d1663b24cd7a5796256995fd0cdfa0e9d5cb6904a8f3893e487"
+        },
+        {
+          "width": 640,
+          "bytes": 14924,
+          "sha256": "87ac5dfe6894e8ceb4d98916972c0e82e2e6dd63c616edc26b05f0bfeba4ee3c"
+        },
+        {
+          "width": 960,
+          "bytes": 28730,
+          "sha256": "b12be333cfebc78bd78cdd0d054ce75eb9b12fbbef44b0d5b2f54b6d3c5712a0"
+        },
+        {
+          "width": 1280,
+          "bytes": 45590,
+          "sha256": "d6aa357682a5cfca8311ca9fb471efd6baaaa620576db139bffe6da754dc6e7b"
+        },
+        {
+          "width": 1536,
+          "bytes": 63512,
+          "sha256": "4dc71cc92f9f94f1408542fc3979f3682aed7f9c348ea5660361af42f58e86a2"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/b135bd51-eccb-4e49-a7eb-0531f55b6e56",
+      "sha256": "6732081db325238dfdfafc15feb873128bccfadacacc9f30ceaabc3c88d44704",
+      "bytes": 1751981,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 3798,
+          "sha256": "4c812e0c1662463840f83fa8a605323547b3343ceedbd9aa52394c5ec387f73e"
+        },
+        {
+          "width": 480,
+          "bytes": 7444,
+          "sha256": "8a52f125bd29d4732e5d44c034ba16c7b00a6c28383edb556d4bc9bf3506b47f"
+        },
+        {
+          "width": 640,
+          "bytes": 12216,
+          "sha256": "021fe4f88d4fe5557bae3f88f7410f9c61ec1aedbe22d519694b0ee7c1818dfa"
+        },
+        {
+          "width": 960,
+          "bytes": 25386,
+          "sha256": "41ba77caa93d3fc1f084ab026cfb2c83fd7de2419195aa8cb68896ea46b34ad6"
+        },
+        {
+          "width": 1280,
+          "bytes": 41684,
+          "sha256": "cf801949f07adc0515ae2392c796d14028f7a7dd4e7250ba4fa21f6ea5035776"
+        },
+        {
+          "width": 1536,
+          "bytes": 57006,
+          "sha256": "e675da85d4fae3eb927d2bb75cb4e9020f34fcf9f745ebe580beb3739607c1b6"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/b2b9bcb1-9241-4572-a42d-6fd5323a78a7",
+      "sha256": "2f0d59802bb9db5770f8e6989a69fcd048072b8ef9a645f22c74d208a9d6ef95",
+      "bytes": 2316096,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 8906,
+          "sha256": "faa779f8805896b1630b569b950ea1264338f81903628783c7731b86a0ea8f52"
+        },
+        {
+          "width": 480,
+          "bytes": 19294,
+          "sha256": "718a5e25b23652dea3013016a7004cbc748997d16f357efc20f8ede21f7e0f2a"
+        },
+        {
+          "width": 640,
+          "bytes": 33826,
+          "sha256": "ec9046f7b77213ba8d0528f13a1ff9b54bd21bd367071e0bace60538aab7a7bb"
+        },
+        {
+          "width": 960,
+          "bytes": 73478,
+          "sha256": "48d5a735953ea298114fd7ee57ed9d11c56edd839c79362022bebc391388a304"
+        },
+        {
+          "width": 1254,
+          "bytes": 117338,
+          "sha256": "09724e1a4af35089cc0f67576e97657635753e562ed8e6dd442f1184da1e89aa"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/b35aced0-68be-498b-b0e6-403bb22e9714",
+      "sha256": "0826715260bef1b80b6100cf59987a1148207e0f69bcc290400c8e121178f5ba",
+      "bytes": 2084897,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5566,
+          "sha256": "93aa011e2a738bda9e7f56c6ff0adef51e78edf11ff0ebb97a006370b0a760c6"
+        },
+        {
+          "width": 480,
+          "bytes": 10246,
+          "sha256": "0cd2d00d640bb3543bafc29e3f868c3e0eba80c7805c701bcfd478663171c2be"
+        },
+        {
+          "width": 640,
+          "bytes": 15888,
+          "sha256": "56be2e70ce73f727fd4a4403515f355a8b51d1d50b4174240f8d430f900ff569"
+        },
+        {
+          "width": 960,
+          "bytes": 31284,
+          "sha256": "91452a258222780f85ee9d916d841fc1aca5b2a2d4c637f4da82c847fef71393"
+        },
+        {
+          "width": 1280,
+          "bytes": 53398,
+          "sha256": "6ec45cbdff277615f4b408a194c1fad8955c238ce4477c67f1ec0146e27eaa1a"
+        },
+        {
+          "width": 1536,
+          "bytes": 73280,
+          "sha256": "9693a8cfdd42e341db2c6963758adef370e09324fd2b8464ea74940a9b63202b"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/b84aee24-0584-4eeb-8b0a-625870417e4b",
+      "sha256": "18c06cd801e58173f6a8c7fe6a2538c9f26c09b1cc5da3d452878e1608fa3723",
+      "bytes": 2431407,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5108,
+          "sha256": "450f1a3306fc541c5ea16bd729dbf0f7afd7e1f77d571ac6b579a7f0a2ff622e"
+        },
+        {
+          "width": 480,
+          "bytes": 12214,
+          "sha256": "30a6df783f4fa7f288d096a3e22307e2fb06b1f54999d58b0534ba832025851a"
+        },
+        {
+          "width": 640,
+          "bytes": 22766,
+          "sha256": "65f1250ed9ab5847f71cba75f8900e8717db6102340263c499885ff69b1aee75"
+        },
+        {
+          "width": 960,
+          "bytes": 60578,
+          "sha256": "a25a5825e77cc2ce282cb175225d9a085d7f59862daaec3f718735367fb33a0c"
+        },
+        {
+          "width": 1280,
+          "bytes": 113430,
+          "sha256": "01efe79deb41c26ed24c4f4c00daa8eb5e460598e2a26113f67339d6a968d995"
+        },
+        {
+          "width": 1536,
+          "bytes": 167154,
+          "sha256": "c5ac42f8dac256d3faffea525a429e293dbca1597819485103cb483bafbb8957"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/bd11716b-9f2a-4434-b8f3-3c9599010588",
+      "sha256": "0ce303c47e117f645cf1b269eac32f9cd6068cc0fdcf2f800c7a4b5565227638",
+      "bytes": 2366730,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 10056,
+          "sha256": "d251505e343aa20d55ef1d7c1930b783cba030d3670ac6622cade7d22eb02f02"
+        },
+        {
+          "width": 480,
+          "bytes": 22450,
+          "sha256": "0234f86fb6a87a5478df37f7034e15552249741777225313d7c1c273bae28fe8"
+        },
+        {
+          "width": 640,
+          "bytes": 40418,
+          "sha256": "4ec9cfa4fd23599c45fcfd33337ac7e6299119b3b80925f976486a77aa847572"
+        },
+        {
+          "width": 960,
+          "bytes": 85846,
+          "sha256": "b5b9875da56605c4444a5c4cb9f7762bd21927a7acc9d353063f21b54aa5660e"
+        },
+        {
+          "width": 1254,
+          "bytes": 133864,
+          "sha256": "5fd361f4b8f1629f91512b8fdb630a8a8f9827804077d77922a5e71a2bd75687"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/bf6b2b03-9e0b-4a4d-9c9a-860353cc5be6",
+      "sha256": "173a464ad602caf807e5cb5e40e9afad2d3263382646d907061573baab451ca4",
+      "bytes": 2048253,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5082,
+          "sha256": "d913a1493104453fc18cadeac271303577350c477a5875779e9b87f570677388"
+        },
+        {
+          "width": 480,
+          "bytes": 9496,
+          "sha256": "4dfdba2aed7076824a0c11f19cf52b8a7d6fec3c96ac676a4c0a8fc6c6fe3b7e"
+        },
+        {
+          "width": 640,
+          "bytes": 15004,
+          "sha256": "56bb74cb98dcdd1bdb42d7635e26992c2122dd8d8a340ca71f38d7aef4d1498d"
+        },
+        {
+          "width": 960,
+          "bytes": 28674,
+          "sha256": "6af96053038b3b0f2465082b04c25268d20bee55ff8ff575d8249b10e7fdaee3"
+        },
+        {
+          "width": 1280,
+          "bytes": 46582,
+          "sha256": "368ba83ac7ecf855d3b7b778ffa2870aa0d61930fff64585058b7e83b474ad81"
+        },
+        {
+          "width": 1536,
+          "bytes": 67428,
+          "sha256": "bce634e7097e644ea9484d07d52b48daefcd4e1f9884cf35e559849f915b9a37"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/bf913e7e-0c89-4423-9532-ede3701dbfef",
+      "sha256": "47bfc00a89ea0167637c1a2e9c6f5ca9a05163e396d56518b04d81d4139514a3",
+      "bytes": 2024222,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5386,
+          "sha256": "00461204d8f7db0e4c92ee4871102021f7aaf9a6c50a29e2d6508abc7962a017"
+        },
+        {
+          "width": 480,
+          "bytes": 9634,
+          "sha256": "e9e2ae9eb42582840e544c5cfefaf9e217c59bf782f26fe31d41f3558b9bf98b"
+        },
+        {
+          "width": 640,
+          "bytes": 15482,
+          "sha256": "4b1e6f0d0584faba17a531312b043d7092e14d304cbff9d93586cd6bafb8519b"
+        },
+        {
+          "width": 960,
+          "bytes": 29372,
+          "sha256": "c4bcc00c635e6fe918d25eeccee367546aae1e42dfeef5fe3079eab44acaf06a"
+        },
+        {
+          "width": 1280,
+          "bytes": 50608,
+          "sha256": "975739858c4516dfd8dce623b3d60933629c4757cdf76e00121fe1e55260c50c"
+        },
+        {
+          "width": 1536,
+          "bytes": 69970,
+          "sha256": "96be74b519286e18c7c8414733d0ae21282cacd0967658b13446a516f402c95e"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/bfff5448-b338-44b3-95ae-a7fd5f1da75a",
+      "sha256": "c7de101eeb07a4f9b43ef4ac3f0ec6ed2336dc2f2980940d1986357ede966d33",
+      "bytes": 2037245,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5154,
+          "sha256": "b663ff4d5da1a8056582c47bbc143de23908b71d6e9b6b1f92261bbdf83e80a4"
+        },
+        {
+          "width": 480,
+          "bytes": 9282,
+          "sha256": "2e883cdae75b858a03d0dd6e949e036235d7eeaafc592cc2d92a0029e39d4834"
+        },
+        {
+          "width": 640,
+          "bytes": 15206,
+          "sha256": "e408cd077bf1ef06b5146006255511f37d8d6a8e08c660312d27d07f4b8435a4"
+        },
+        {
+          "width": 960,
+          "bytes": 28978,
+          "sha256": "c277cd3d6e1a14132a0d3c4822d76e292319e9eff173ebb87929a357e0b4063c"
+        },
+        {
+          "width": 1280,
+          "bytes": 48588,
+          "sha256": "32864fe130b2c88ce9476938b4de5a83f8c2412ead777289c4b434d3e770bba2"
+        },
+        {
+          "width": 1536,
+          "bytes": 69498,
+          "sha256": "2b886a7420ed7f6ce6753ef3bec76fa6b5249d2e4c06f5c5fbb0d3697f7418c9"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/c1beb4d0-3d71-44d1-b102-75e22fbea969",
+      "sha256": "417d5707af11da119bd4d1f77c25ffabcb242dc28cfc1d1215ebb23012ac3a72",
+      "bytes": 2170787,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5456,
+          "sha256": "843d993f44ceb93754e1879cd7911c4ba233f1538bfd2cdc2b56c4e1aa1b6ee1"
+        },
+        {
+          "width": 480,
+          "bytes": 10752,
+          "sha256": "94139a403b4bd090baabcd57fed1351bc44013462b7c7f4f17d98e00817fa1fc"
+        },
+        {
+          "width": 640,
+          "bytes": 17514,
+          "sha256": "b62f03b703652165756a3cbd0595a7494b6824c6cde66df5d049d95cf1e0b4fb"
+        },
+        {
+          "width": 960,
+          "bytes": 39094,
+          "sha256": "27720b435e1bf91bfc09a44d2fa8201d89f50d228236454408e3dfc326577c6f"
+        },
+        {
+          "width": 1280,
+          "bytes": 66562,
+          "sha256": "560d1025ddc3a27219cc068363ee3c722f6ea76a6b7533862fd27436339b3772"
+        },
+        {
+          "width": 1536,
+          "bytes": 101148,
+          "sha256": "e3c2bc8160a0620e759b1258ccab8da03fc35bbb9720e65dba58d4dffaa0f576"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/c27c3b55-eb2a-485e-b568-cc058eda7d27",
+      "sha256": "da531bb21e09e195f7fa93404f1ac5c846901131ba11437785477a762bc13098",
+      "bytes": 2554712,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5848,
+          "sha256": "cf7f91fb4b8f5f71c2c642cfa3e48495211c497ac3adf268cd7593bad4a1ef06"
+        },
+        {
+          "width": 480,
+          "bytes": 13754,
+          "sha256": "6a986934921baa6f3d120519abe9f338ef957d4b6e0de70e9bb8d82450d3e1e3"
+        },
+        {
+          "width": 640,
+          "bytes": 26900,
+          "sha256": "c5153c9c95eb0e2871d54e53e00a0ac3d83d343c405b8168472ed1df0fd8c1f2"
+        },
+        {
+          "width": 960,
+          "bytes": 72544,
+          "sha256": "9041e9d8886783f54358f74ed5acd1f3499b43d6cb67da19fb0ae787de3bfb80"
+        },
+        {
+          "width": 1280,
+          "bytes": 134600,
+          "sha256": "9c994503b920d6e07585290b11fa026f0298dc1cf31bfa183ae40dfa1631c820"
+        },
+        {
+          "width": 1536,
+          "bytes": 193246,
+          "sha256": "ce5849e749f99bda10d173bb1e4235f85d639eb70af5c2d5d3014db41b62d4be"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/c6dcc993-5135-468a-926f-a692a8e25d74",
+      "sha256": "b5c8c0be07bb240509a309ec459a4e557019b6e4a68582934136fbe305bc1369",
+      "bytes": 2676658,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 22444,
+          "sha256": "d5ec73ae98b58e41b3fbb07641f19ff957c2d9ed7c754190d2383fd927f29fa9"
+        },
+        {
+          "width": 480,
+          "bytes": 45672,
+          "sha256": "c9cc2fd113928f73235d9529f4d8a1c8c5f5f7d929572acd5ec6d8bbc65ef6d6"
+        },
+        {
+          "width": 640,
+          "bytes": 80488,
+          "sha256": "05e35b8607ee2a8f6e0868e544d7faa3a0a578dec5c8cd6f3ff00e8cd5cc1123"
+        },
+        {
+          "width": 960,
+          "bytes": 168876,
+          "sha256": "c7a525b9ec3b05bd8096f48f7c23789c44de4c20f268d21862f4cc953b0a4c1b"
+        },
+        {
+          "width": 1254,
+          "bytes": 268790,
+          "sha256": "4e6a71899e7bc68016f6d21972399beac38cb37f11eaefde810e4ca04e94a2a8"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/c763ef8f-b4d3-4b0b-be5f-40d397c707c8",
+      "sha256": "c2149b2a9f001501dce5f0949b7f664e9b285ba4641a87324cfed0fe31eb7fa9",
+      "bytes": 2746208,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 15362,
+          "sha256": "e037215f60dfaaf5a3b2fea067002908bdae08a6f7e170e9e1fc0c68b9483649"
+        },
+        {
+          "width": 480,
+          "bytes": 32848,
+          "sha256": "a37f0a93caab414756d4aa99302263c0228ac5485671f1ec5ebbe9ee16f33ea7"
+        },
+        {
+          "width": 640,
+          "bytes": 59970,
+          "sha256": "dc8b04651e654660e512b8839ae10314042280725aade351291ceb57ef9460ec"
+        },
+        {
+          "width": 960,
+          "bytes": 138122,
+          "sha256": "93bfb15d78f1fdfd8d3e58a8b33e155180eb179845348920a45a38acc51e0b4e"
+        },
+        {
+          "width": 1254,
+          "bytes": 228362,
+          "sha256": "db16ade16f301d42d2b64aeb44e828c238faadc2ddc8324b676ad5abae348aeb"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/c7e34ca7-f909-4d8b-bc22-9d7ebfa4635e",
+      "sha256": "f68a4940fc273c15f6d5dbc6ed9a8b74a4796de23a9a507e3fc4110e1a27a9e3",
+      "bytes": 2353568,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 9362,
+          "sha256": "2563c91b7494e228f4b65c0fb49d5e8ca92cb97ea16d02052fe16633ea879f19"
+        },
+        {
+          "width": 480,
+          "bytes": 19598,
+          "sha256": "f6e9e1a60d4e3a655d0b526d9fb5f4f3b1e3f8423141e918872b8e24bd8dbc04"
+        },
+        {
+          "width": 640,
+          "bytes": 32548,
+          "sha256": "27c6989437fa66331a86bd1e583edbe5d9fc1f39c5073f69eef10e90236a3154"
+        },
+        {
+          "width": 960,
+          "bytes": 68492,
+          "sha256": "321bbc81637207216a938a8993fb1ca4dbfb239417a9318186faebf877cde133"
+        },
+        {
+          "width": 1280,
+          "bytes": 116556,
+          "sha256": "cd2723b5f17904882ecf95869880759e3f25d0e3cab7a949bcc054a4d9370b59"
+        },
+        {
+          "width": 1536,
+          "bytes": 165770,
+          "sha256": "71a484036053785781b8bbc5f162f5010d23740fdfca88a9c624120ececa5417"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/cbd12955-4179-4257-8c6b-0b4bdb387c32",
+      "sha256": "1f3411c8aad97a8dcdd4e2bfbd4154398f01fcf781f2851c9bc763959f3fd18d",
+      "bytes": 2766100,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 25618,
+          "sha256": "990babcec6c20bb0adfce4346d6357740ed0c31f452ce3e1d681441dfe695894"
+        },
+        {
+          "width": 480,
+          "bytes": 54384,
+          "sha256": "bfbec6e39b06e2ed4ea7fd3e08336a422f9fbd093b246e30d0ff831cadc0c3f3"
+        },
+        {
+          "width": 640,
+          "bytes": 92278,
+          "sha256": "a9b42f2838af47f53583281d4fded5e3430e6ae8419b6b378579c45f5fed5d63"
+        },
+        {
+          "width": 960,
+          "bytes": 179922,
+          "sha256": "f10115ba374d4e29373fb0f93d76d0aa6223f1e760c4e03c3f0d10a012dc1c53"
+        },
+        {
+          "width": 1254,
+          "bytes": 257674,
+          "sha256": "b450b93ac189a8f67fa4201cfc66ac6209ace99c90d674ea70c5a3857ca85394"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/d03946b1-c27b-4747-8207-17f9f9e443d8",
+      "sha256": "21533aa4d86451bc76557f5d971cef6760e5d90e1fc949276eb88ac11cb799c9",
+      "bytes": 2203154,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 6956,
+          "sha256": "0184894499f31a9cf542c87c73a45f10e341f17590052bcb4e8ad7d6c47cc9e8"
+        },
+        {
+          "width": 480,
+          "bytes": 12994,
+          "sha256": "938ef98d0efd8ddc7bfca725f1006a2fa64733a1354bcea8f37d64607fa60241"
+        },
+        {
+          "width": 640,
+          "bytes": 20948,
+          "sha256": "784fa4451b9748c1fe4a2ebba031b34d7b513f3ca3ce6423998e611dfce484e3"
+        },
+        {
+          "width": 960,
+          "bytes": 42846,
+          "sha256": "d8c845ff32bfd638ff2def27b5e67eab5b0aff9c136104b818553fb17da2d891"
+        },
+        {
+          "width": 1280,
+          "bytes": 72480,
+          "sha256": "548916606c31245965977a017db0b8fabdc86698a63ceca66f38e26b6a67aa1e"
+        },
+        {
+          "width": 1536,
+          "bytes": 104148,
+          "sha256": "0927d2093ac9f6b630710bf3faa21ab82a8947d922a76abc0ca76ae0602bb21f"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/d217f266-04eb-4e7a-a1d8-04b31f46ff06",
+      "sha256": "f876c2f2480ce4a418a4cd1ddde1af64e8301a76361854f028dd336f6bbac2ff",
+      "bytes": 2143905,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5744,
+          "sha256": "bae80af14328416d815b5630b933f1d2f327d214d52114a806c8578d0deb1127"
+        },
+        {
+          "width": 480,
+          "bytes": 11092,
+          "sha256": "139d2623f4fd7e0f6db517b4993f6515f0103a0ce2adc9736a303bac9037f85e"
+        },
+        {
+          "width": 640,
+          "bytes": 18168,
+          "sha256": "33c86e2b48ac2221130ce69470233de3691cd4cb188e189af8e1a29b1a85dfe3"
+        },
+        {
+          "width": 960,
+          "bytes": 37070,
+          "sha256": "c3ded9191156d2efbc1bc9281e310b6775d04a5e75aacbd456cdb2c56d9072b2"
+        },
+        {
+          "width": 1280,
+          "bytes": 64440,
+          "sha256": "ba155bb6e9ceca94544694567b4209efcc38cf1ca99990bc7d19108f9760b02a"
+        },
+        {
+          "width": 1536,
+          "bytes": 89036,
+          "sha256": "a548ad7cc7b6a575b8e816c7d980e619a7de08dbd18b474e12d34aa1cdc4b47f"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/d8832208-58b4-4cf4-9308-84631e70e9af",
+      "sha256": "339dc68608fa3149f313b6ab94b5c5aa31c6fb6bbc43fb38e9f01d7d7bce1729",
+      "bytes": 2457079,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 22320,
+          "sha256": "2518eeb368d34c9fe28269c5df3dcb3e88252df2bd83548af0f4047c00b3979a"
+        },
+        {
+          "width": 480,
+          "bytes": 45956,
+          "sha256": "3e2d0fb12ecea783ed97a21db30e56b8dcac8244f1b5148f66b854fe26a45be0"
+        },
+        {
+          "width": 640,
+          "bytes": 76514,
+          "sha256": "39fbcae36856a9c0aa49357e8d66a2fe395cdc8eb8e435206c148af35ec234b5"
+        },
+        {
+          "width": 960,
+          "bytes": 148486,
+          "sha256": "5af60db3deabdc3517ba5d2b0e1d584defbc6ad592c110fcc78821bae769e4c5"
+        },
+        {
+          "width": 1254,
+          "bytes": 219112,
+          "sha256": "3dc6ebb710a46a4fe115f4cb0a33399c4b2c7c8f3845d0d790329ae50eddd638"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/dc901916-ffce-4341-b687-cf1fb40d8eb2",
+      "sha256": "d4744a1cab17a1614492d740e7f0fbc78810cce06d7efe3afcac601e0a5a52bc",
+      "bytes": 2701061,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 21048,
+          "sha256": "9441a0cfdd8d84f83c71f832a230ac4bbdda92ae1e1c0d2f40147c45dfed04e0"
+        },
+        {
+          "width": 480,
+          "bytes": 45794,
+          "sha256": "d82921a377faa799988c288e92740ca349287d320cba6713b8c721f1dfa5bc7f"
+        },
+        {
+          "width": 640,
+          "bytes": 78788,
+          "sha256": "1f23bc196b1497cf47e3d2ac48c30dbcd7d45a1203e12be19fe44e755ded1a2c"
+        },
+        {
+          "width": 960,
+          "bytes": 162374,
+          "sha256": "902f644258d4e10607e43108f4895c4a570133bb6b326f9aa202a0f3dc1a1637"
+        },
+        {
+          "width": 1254,
+          "bytes": 246432,
+          "sha256": "71a13b6a14b593eea2864f5012d42454bb6f1c6b63bbdc754f35aecb715b105b"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/e71e1192-0e20-4135-b908-5adbc235d193",
+      "sha256": "71563f1e93a9baf0c015ab0854a6dc261837b925fa457b3627bb715e009789d4",
+      "bytes": 2462639,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5252,
+          "sha256": "b98ac1b62b68e34ed0fa78dbd478f0a24d6160cf75530ac2962c3852cbfca2ac"
+        },
+        {
+          "width": 480,
+          "bytes": 10858,
+          "sha256": "f63ab2024a316bcc47819dbd29a00b633f9a6afa44101bd9193c98b43789b857"
+        },
+        {
+          "width": 640,
+          "bytes": 19054,
+          "sha256": "bdf75a777edadca8742f18edf5d88dabc72a8583caee65af91ef0be12c036a15"
+        },
+        {
+          "width": 960,
+          "bytes": 45372,
+          "sha256": "27bb7d884f872c2acef623aa0347c439762f8e9b7244e59c9ecf35a62a77df42"
+        },
+        {
+          "width": 1280,
+          "bytes": 90896,
+          "sha256": "accee19ccbb88ce347e0b84da7a704955a8fd74114417eae172e807c4d76a1ca"
+        },
+        {
+          "width": 1536,
+          "bytes": 143730,
+          "sha256": "cbae56eb7e73d4f34fb151a72c6783309949e36f7e3a50650f409eb6a23b7266"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/e725603d-1116-43f4-b4b1-07cd05277807",
+      "sha256": "85228afa40629b6b8b6408430e90d25154d8df1b68ba69fbaf02840a141abd5c",
+      "bytes": 2766544,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 27600,
+          "sha256": "1c7b9cf1593edb8416130e7e6627b355342771cc14116c650b315cc852da9ecb"
+        },
+        {
+          "width": 480,
+          "bytes": 57242,
+          "sha256": "f21f66b6f9262b1f3904ac38c2227f65dcaef22a72077d7eaf4247d38fa4c0ad"
+        },
+        {
+          "width": 640,
+          "bytes": 93832,
+          "sha256": "1125111240821f65d2746d6f7d10870fd9bb4eae0fc675b154f946a495857010"
+        },
+        {
+          "width": 960,
+          "bytes": 193614,
+          "sha256": "a60b8015bd590b54d968f867a13a5a652ad7ce111cd68894ea08f9c3e33a8cfa"
+        },
+        {
+          "width": 1254,
+          "bytes": 301070,
+          "sha256": "d42557e1ac310929f9f481c3dd8545fa15a0bfbe538f5ae91b7fdeffa9a60243"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/e90b24a0-13d9-460e-8a96-e18192f62ccb",
+      "sha256": "d7fd0c87acc9da18781de3b97662954188336c695719ff9f926ef53e1459b4f0",
+      "bytes": 2168049,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5418,
+          "sha256": "48ffbed053507c3483d51f029d61a8c4dbbd6c939df7f80bc0b37eb8f36c06f0"
+        },
+        {
+          "width": 480,
+          "bytes": 9682,
+          "sha256": "bd685a329e1bcf1c966475c30e85fa0f80e8491bfe1ffaaa79616104980ec9cb"
+        },
+        {
+          "width": 640,
+          "bytes": 14944,
+          "sha256": "745627e69d1070562fa1d91cb378272f426ab65fcf8437ceaf3a39b1123f5939"
+        },
+        {
+          "width": 960,
+          "bytes": 28612,
+          "sha256": "4476b954b95340c18e09855edb40f72d14417941b6e9299d17ea9bc327036330"
+        },
+        {
+          "width": 1280,
+          "bytes": 52776,
+          "sha256": "c44131a99900eead12867100900faef8c057d524fcae04dc9f47b9f16d3c932a"
+        },
+        {
+          "width": 1536,
+          "bytes": 87340,
+          "sha256": "eada206627acdb503d0cea81df97aed287f673a587b828adf68d863b5f72bd71"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/ea02acfa-9d10-4029-8d35-0a0f90c8f784",
+      "sha256": "144d1006849989d9a8f546b40b562d60fce04f55c4c4d4fc34ea282e1bc5100c",
+      "bytes": 2130492,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 6434,
+          "sha256": "4fb3699cac5f13c452b249b27c13faaa0f95ceeb4b9bccb6ac9c3116a753ab6d"
+        },
+        {
+          "width": 480,
+          "bytes": 12658,
+          "sha256": "14c3687c150d897a692a77a05263c5f6a815f7a24e674c4ee92320f481847990"
+        },
+        {
+          "width": 640,
+          "bytes": 20368,
+          "sha256": "2e4735ce33e3f96b8960992c3e94576615e0464d6dc2cf98dcab38e0dc793616"
+        },
+        {
+          "width": 960,
+          "bytes": 42130,
+          "sha256": "4900b14572ca5772e03dcb40c62f2f0fb64ce91fa211a2aba86a7f4d219fcd9d"
+        },
+        {
+          "width": 1280,
+          "bytes": 73368,
+          "sha256": "8a792ac96e038689ad7850672dfc1d8ca71565e46e525b0d655bdaf0bea87625"
+        },
+        {
+          "width": 1536,
+          "bytes": 98264,
+          "sha256": "9aaf615df3605e218c0994bb01568c0edb70abd2edb72561968ca7320fe1fc33"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/f1994473-6538-499a-bfbb-6d5c61542ac7",
+      "sha256": "fa69a4ec45ef676de63e7430b82bc2da86e1fd29e770d78807aaf1ef0e62bd39",
+      "bytes": 2593252,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 7618,
+          "sha256": "324be6cc4f077d8c9a1859eb766bb212b392cfbbe1023717ccb0c95e89a21c93"
+        },
+        {
+          "width": 480,
+          "bytes": 14600,
+          "sha256": "57ec326d5950e735b91b2b9a7e175c19b87f003abd7b6804cee81056bf4b7c63"
+        },
+        {
+          "width": 640,
+          "bytes": 24936,
+          "sha256": "bdca1052f095955ba77f01ad851976535d47a1f5899d486da8708a19f75f4cb3"
+        },
+        {
+          "width": 960,
+          "bytes": 63538,
+          "sha256": "5554db97b73bb2efd5cff6863e80b0e0189ac6dbbf6a44e5e74d588fc840c884"
+        },
+        {
+          "width": 1280,
+          "bytes": 126160,
+          "sha256": "a940f27997c265d229b02139ac6af57f278ffa551ccfdb083ac50ea934dd050f"
+        },
+        {
+          "width": 1536,
+          "bytes": 194706,
+          "sha256": "bd54b0160f45bd5101ab2b2904d38e656b7add1c4564c3c7ec5649d63697a6e9"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/f34af097-6e7c-489b-ad9e-bdda5806881f",
+      "sha256": "728a3559ddeefe74604f94a743740d660526779a479745b9b3dc62775bca586c",
+      "bytes": 2819428,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 23518,
+          "sha256": "0cbfa3515e3636f4f0b7d08da5979d58c6eda7401adcc2405be0e5941a61fa13"
+        },
+        {
+          "width": 480,
+          "bytes": 50564,
+          "sha256": "2a8347515d686bb34c3497c3ac10c11b6b7bb551296febc9f895104d64ecc888"
+        },
+        {
+          "width": 640,
+          "bytes": 84724,
+          "sha256": "d69c6323849181d5d30f9d2d47a9202063865bfee8e546a08bf2191b003c80fb"
+        },
+        {
+          "width": 960,
+          "bytes": 171060,
+          "sha256": "81c2bb57cf1c00dd8f2a413ae0e4f67af5d5dd7029a131159af5a6b93dcb2bfd"
+        },
+        {
+          "width": 1254,
+          "bytes": 257806,
+          "sha256": "9efb4c3d95109aab994180548a6acdb14eae53695cf9ed64071df81a11b09f30"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/f5ce588d-7612-4897-b086-bc6bc5f01e54",
+      "sha256": "e0c3fa457d94cceebbac79cc21afaccba5a952a7d53ec6f4e15c16c2f710bbfb",
+      "bytes": 2585256,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 26264,
+          "sha256": "ca41b32e6eeb66e6a56f55b074b421695a08cfcefffc0d2158fbf8d5b1145113"
+        },
+        {
+          "width": 480,
+          "bytes": 54972,
+          "sha256": "fcd5ea2ed0cdcec1f10ca0254a59e03ca59420185123939e6bb45792a0b8db4d"
+        },
+        {
+          "width": 640,
+          "bytes": 92200,
+          "sha256": "d8e0e90e05675106dd0499cfd37fb2e6f3787d77c7980c18fc23b19afbf830d9"
+        },
+        {
+          "width": 960,
+          "bytes": 176558,
+          "sha256": "efe937be53ae65f65c76984e9941910184c9a11dcc2e267edf24987d0b25c0b9"
+        },
+        {
+          "width": 1254,
+          "bytes": 256168,
+          "sha256": "e34ae34ba65364aa59711e90140f412eafabdd8c9e5f51783f039ff36951da4e"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/f93007d0-5973-45d6-888d-07de97d37cc4",
+      "sha256": "48cb69429eea60eadd90d523178e3dd352f8f7750788f8b54a1b994b4ad2b7b5",
+      "bytes": 2453862,
+      "width": 1254,
+      "height": 1254,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 16502,
+          "sha256": "6ead4546844be11f9fe21107bb158e322d011cfce29f7d4b2579421ff90c5699"
+        },
+        {
+          "width": 480,
+          "bytes": 33618,
+          "sha256": "2d2544f347d518f20f887b7a35a9eab1525b85fa49907119d7bed69bd77506c1"
+        },
+        {
+          "width": 640,
+          "bytes": 58982,
+          "sha256": "f710418b8f31b23bb9e0c9b0f3f065fd7a70e650ea2643f657df74061e492937"
+        },
+        {
+          "width": 960,
+          "bytes": 132202,
+          "sha256": "de3fb774878bd18ab72e4ff7c552935a3f0ba3a2f73f9d0ca8ce105f9da1fea1"
+        },
+        {
+          "width": 1254,
+          "bytes": 216054,
+          "sha256": "1a3326dbafec78b6e6afee08c1c57650d60a720d0c293504573083b88776450e"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/f9f9e9b7-f26f-4513-b207-edaf4aea1b25",
+      "sha256": "369976c8bc573d9c1564c0fca27ec0b3449a21f30f8163744b370438c9305f08",
+      "bytes": 2073532,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 4988,
+          "sha256": "bd713d99a3316363a1d256cc1f110a285f7a6b03912a198f301d287a29f7876a"
+        },
+        {
+          "width": 480,
+          "bytes": 9054,
+          "sha256": "41bf6c6cb06fc07527518b62108aa8b6254be31ca23365f60e4f32dee9f3eccd"
+        },
+        {
+          "width": 640,
+          "bytes": 14232,
+          "sha256": "681420627733914e76457dc3e7f42b71c3ec84c8dcc8eb4b7a678fddab47ea9b"
+        },
+        {
+          "width": 960,
+          "bytes": 27362,
+          "sha256": "5e25ef94f0692a108d8aa0bfada6f5e36b9534d04f3ed5d3910e5cb4b1866716"
+        },
+        {
+          "width": 1280,
+          "bytes": 47968,
+          "sha256": "484dac8de4ab42a8eb35648e871fc71960d6c09a028bd557fb7c222bb020195a"
+        },
+        {
+          "width": 1536,
+          "bytes": 66914,
+          "sha256": "531afad0c2cc4c918d3093b701e9c622b7208b9cb00ea001f0e6a002c7beac93"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/fb6cefb4-0ae8-4f8a-aa2f-febf45bbf40f",
+      "sha256": "6b92e20569392d2a147cfad98a757099926a9db6b55b10831b87bcb773053e4f",
+      "bytes": 2411660,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5770,
+          "sha256": "86d7936b6304dbd58e8c66dc6ef5e889958e94b772f6debce61e07ad3e8f76af"
+        },
+        {
+          "width": 480,
+          "bytes": 14508,
+          "sha256": "274226067653a0bf63aa75fc94d3f81a07e2e0f3fc0f844f438c4ac09efa0170"
+        },
+        {
+          "width": 640,
+          "bytes": 29124,
+          "sha256": "e2fb41514a2d790dd03a70b491edd2de4e59f2230ad236976e9c889493456c32"
+        },
+        {
+          "width": 960,
+          "bytes": 67188,
+          "sha256": "61c5cd2a580596c7e599effbfea2caa0652057d2e4053e53f4c7f43838cabb6e"
+        },
+        {
+          "width": 1280,
+          "bytes": 113474,
+          "sha256": "cd6dc4a8206414e4eaa2ab95f90284d4f81161ac16a3b3bc92e270e2454f9750"
+        },
+        {
+          "width": 1536,
+          "bytes": 159830,
+          "sha256": "d3000c40d58afa4990ef48a3938d8a082d0390aae94b8e36407ff7de232fccae"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/fb74b2ad-f631-441d-86cd-21d504cf1ff8",
+      "sha256": "ee10b7d42d561125752c31d3becc52467aa7b30cd06f8516cbaf461ee73aadba",
+      "bytes": 2228207,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 5548,
+          "sha256": "65e189bf0cd8cfbad8ad88f862ce863ef0ed801f8b6293b04b518967b355a15b"
+        },
+        {
+          "width": 480,
+          "bytes": 10362,
+          "sha256": "e19aeb7b4cc00f324b9e9fe0cdf9f16a5aa2115a9143538c91cb0a7b50c321b9"
+        },
+        {
+          "width": 640,
+          "bytes": 16232,
+          "sha256": "c161d09c3518f4c9ebfc7d91207159aa697ba20423058854198e7671c0cd15d5"
+        },
+        {
+          "width": 960,
+          "bytes": 35778,
+          "sha256": "51025aa0c29a489deed6bcd7c9a673b75b05c35db087fd37ee7bcc590571b949"
+        },
+        {
+          "width": 1280,
+          "bytes": 65192,
+          "sha256": "b7d1e0855518b481680e17b0dddfcfd9f9ac508fe1aa9f35d09dbfcf94761473"
+        },
+        {
+          "width": 1536,
+          "bytes": 94490,
+          "sha256": "0b6ac5bd4ec1e3fbacbcfdc73045f4a6de05dab88b4e4b6e571ec4faa4d686ab"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/fbdec870-7cd2-4ec3-bbdf-8c716838e850",
+      "sha256": "5d569673c4df6ae0d1be8caf38a302335cc6a26d9883885b180e025d6f0145eb",
+      "bytes": 2198625,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 4504,
+          "sha256": "38177a015258d10d3430a3d7d204177e7dbaf9e12cd7df7004e5c1196deafb0d"
+        },
+        {
+          "width": 480,
+          "bytes": 8256,
+          "sha256": "5e2850918346b78403982ff70ff642e0299d798904995b394a3ddbcdd8546c69"
+        },
+        {
+          "width": 640,
+          "bytes": 13672,
+          "sha256": "79554a461d9c079405e08fb084e829820611c4c022d1d3ebfd912f189c4df12e"
+        },
+        {
+          "width": 960,
+          "bytes": 27132,
+          "sha256": "2dc7f579a7097bee326c4db4e65af84988b0787ae1a34b46c35ea2cab4bddcef"
+        },
+        {
+          "width": 1280,
+          "bytes": 49666,
+          "sha256": "40b6f29f1081fed9f5116ecaddf0406bfc0841ff479b52f735fa942f20e6a3d8"
+        },
+        {
+          "width": 1536,
+          "bytes": 79932,
+          "sha256": "dcc5bfb77e6a7704082fdb0182d7bb9cbc26383d131a1ff77e4056df94b829c5"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/fd60c2c1-4e6f-46d8-9f6f-e46108a33703",
+      "sha256": "dc5071ea1cd2507beccbc0504b136c4437615e863b5dc471f95a8ce984b08e62",
+      "bytes": 2304303,
+      "width": 1536,
+      "height": 1024,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 8008,
+          "sha256": "48b8486aed152860b66b38d9c2ef92c55fba61d714d3563b99fcbdd4f4944e5d"
+        },
+        {
+          "width": 480,
+          "bytes": 14636,
+          "sha256": "555915e1760cb7ec79a66efe4d0b2855e7f8503d87071f51ab3be0363d26b3ec"
+        },
+        {
+          "width": 640,
+          "bytes": 23608,
+          "sha256": "fb8919cf178e5d686f691a0f5a0164ec301ea325715bce5e2d14abf25740e440"
+        },
+        {
+          "width": 960,
+          "bytes": 49678,
+          "sha256": "7d04ac36de8c783ed548f063a0e1ec81458de3744a223182b3e09967ae6442c3"
+        },
+        {
+          "width": 1280,
+          "bytes": 86750,
+          "sha256": "88cdcccaba74e5f1454f8ad79e3024c452518cb043ec0e65f137779bd1280323"
+        },
+        {
+          "width": 1536,
+          "bytes": 126234,
+          "sha256": "d3274daa9ba3027caf99c7a656f339050eb83552bc16d6e6ce2284fe2438faf1"
+        }
+      ]
+    }
+  ]
+}

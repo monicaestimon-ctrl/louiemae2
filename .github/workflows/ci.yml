@@ -62,6 +62,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Verify source-bound product image renditions
+        run: node scripts/verify-product-images.mjs
+
       - name: Verify deferred HOLM bundle boundaries
         run: npm run verify:deferred-bundles
 

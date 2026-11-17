@@ -106,8 +106,9 @@ export function ProductPage({ id, variantId }: { id: string; variantId?: string 
               }
               alt={product.name}
               media={product.imageMedia}
-              sizes="(min-width: 768px) 50vw, 100vw"
+              sizes="(min-width: 1200px) 560px, (min-width: 768px) calc((100vw - 80px) / 2), calc(100vw - 48px)"
               loading="eager"
+              fetchPriority="high"
               className="w-full aspect-square object-contain bg-white"
             />
             <section className="min-w-0">
