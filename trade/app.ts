@@ -3139,21 +3139,12 @@ function Boards({ctx}){
 function BoardDetail({ctx}){
   const b=ctx.boards.find(x=>x.id===ctx.board)||ctx.boards[0];
   const savedCatalog=useProjectCatalog(b?.pins||[],BY_ID);
-  const byId=id=>{
-    const identity=b?.pins.find(pin=>pin.pid===id);
-    const product=identity?resolveProjectProduct(identity,savedCatalog.products):savedCatalog.products.get(id);
-    return product||displayProduct(new Map(),id);
-  };
-  const has=id=>Boolean(byId(id).lid);
-  const originalCtx=ctx;
-  ctx={...ctx,savedProducts:savedCatalog.products,addToTray:(pid,qty,element,quiet)=>{
-    const product=byId(pid);
-    if(product.lid)originalCtx.addToTray(pid,qty,element,quiet,product);
-  }};
+  const productFor=identity=>resolveProjectProduct(identity,savedCatalog.products)||displayProduct(new Map(),identity.pid);
+  ctx={...ctx,savedProducts:savedCatalog.products};
   const [tab,setTab]=useState('pins');const [secF,setSecF]=useState('all');const [org,setOrg]=useState(false);const [picked,setPicked]=useState([]);const [ns,setNs]=useState('');const [adding,setAdding]=useState(false);const [mat,setMat]=useState('all');const [share,setShare]=useState(false);
   if(!b)return html`<main className="wrap"><h1>Board unavailable</h1><p>This board no longer exists.</p><button className="btn btn-line" onClick=${()=>ctx.go('boards')}>Back to boards</button></main>`;
-  const pins=b.pins.filter(p=>secF==='all'||p.sec===secF).map(p=>byId(p.pid)).filter(p=>mat==='all'||p.mat===mat);
-  const total=b.pins.reduce((s,x)=>s+byId(x.pid).price,0);
+  const pins=b.pins.filter(p=>secF==='all'||p.sec===secF).map(identity=>({identity,key:projectItemKey(identity),p:productFor(identity)})).filter(row=>mat==='all'||row.p.mat===mat);
+  const unavailable=b.pins.some(identity=>!productFor(identity).lid);
   return html`<main className="wrap">
     <div className="ph-head" style=${{alignItems:'flex-start'}}><div><button className="btn btn-line btn-sm" onClick=${()=>ctx.go('boards')}>${I('back',{width:15})} Boards</button>
       <h1 style=${{marginTop:18}}>${b.title}</h1><p className="mute" style=${{marginTop:8}}>${b.pins.length} pins · ${b.sections.length} sections${b.secret?' · Secret board':''}</p></div>
@@ -3170,12 +3161,12 @@ function BoardDetail({ctx}){
       ${[['all','Any material'],...Object.entries(MAT)].map(([k,l])=>html`<button key=${k} className=${'chip'+(mat===k?' on':'')} onClick=${()=>setMat(k)}>${l}</button>`)}
     </div>`}
     ${org&&html`<div className="note" style=${{marginBottom:18,alignItems:'center',flexWrap:'wrap'}}><b style=${{fontWeight:500}}>${picked.length} selected</b><span className="mute">Tap pins to select, then move them into a section.</span><span style=${{flex:1}}></span>
-      ${b.sections.map(s=>html`<button key=${s} className="btn btn-line btn-sm" disabled=${!picked.length} onClick=${()=>{ctx.updateBoard(b.id,x=>({...x,pins:x.pins.map(p=>picked.includes(p.pid)?{...p,sec:s}:p)}));ctx.toast(`Moved ${picked.length} to ${s}`);setPicked([])}}>Move to ${s}</button>`)}
-      <button className="btn btn-line btn-sm" style=${{color:'var(--bad)'}} disabled=${!picked.length} onClick=${()=>{ctx.updateBoard(b.id,x=>({...x,pins:x.pins.filter(p=>!picked.includes(p.pid))}));setPicked([])}}>Remove</button></div>`}
+      ${b.sections.map(s=>html`<button key=${s} className="btn btn-line btn-sm" disabled=${!picked.length} onClick=${()=>{ctx.updateBoard(b.id,x=>({...x,pins:x.pins.map(p=>picked.includes(projectItemKey(p))?{...p,sec:s}:p)}));ctx.toast(`Moved ${picked.length} to ${s}`);setPicked([])}}>Move to ${s}</button>`)}
+      <button className="btn btn-line btn-sm" style=${{color:'var(--bad)'}} disabled=${!picked.length} onClick=${()=>{ctx.updateBoard(b.id,x=>({...x,pins:x.pins.filter(p=>!picked.includes(projectItemKey(p)))}));setPicked([])}}>Remove</button></div>`}
     ${tab==='shop'?html`<div className="g2" style=${{marginTop:22}}>
-      <div>${b.pins.map(x=>{const p=byId(x.pid);return html`<div key=${p.id} className="line" style=${{gridTemplateColumns:'88px minmax(0,1fr) auto'}}><button className="th" style=${{backgroundImage:`url(${p.img})`}} onClick=${()=>ctx.openPin(p.id,{pid:x.pid,lid:x.lid,vid:x.vid})} aria-label=${'View '+p.name}></button><div><b>${p.name} <span className="mute" style=${{fontWeight:400}}>${p.line}</span></b><div className="meta">${x.sec||'No section'} · <span className="mono">${p.sku}</span></div></div><div className="row"><span className="mono">${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span><button className="ib" disabled=${!has(p.id)} aria-label=${'Add '+p.name+' to tray'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.line').querySelector('.th'))}>${I('plus')}</button></div></div>`})}</div>
-      <div className="panel" style=${{alignSelf:'start',display:'grid',gap:12}}><h3>Shop the board</h3><div className="sumrow"><span>${b.pins.length} pieces</span><span>${fmt(b.pins.reduce((s,x)=>s+pr(byId(x.pid),ctx.mode),0))}</span></div><button className="btn btn-ink" disabled=${b.pins.some(x=>!has(x.pid))} onClick=${()=>{if(b.pins.some(x=>!has(x.pid)))return;b.pins.forEach(x=>ctx.addToTray(x.pid,1,null,true));ctx.toast(`${b.pins.length} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Add all to tray</button><p className="help">Shared in shoppable mode, this tab is what your client sees, with your partner link attached.</p></div>
-    </div>`:html`<div className=${org?'wall organize':'wall'}>${pins.map(p=>org?html`<button key=${p.id} className="pin" onClick=${()=>setPicked(picked.includes(p.id)?picked.filter(x=>x!==p.id):[...picked,p.id])} aria-pressed=${picked.includes(p.id)}><div className="pin-img" style=${{outline:picked.includes(p.id)?'3px solid var(--cognac)':'none',outlineOffset:2}}><img src=${p.img} alt=${p.name} style=${{aspectRatio:p.ar,opacity:picked.includes(p.id)?.75:1}}/>${picked.includes(p.id)&&html`<span className="oos" style=${{left:'auto',right:10,top:10,bottom:'auto',background:'var(--cognac)',color:'#fff'}}>Selected</span>`}</div><div className="pin-meta"><b>${p.name}</b></div></button>`:html`<${PinCard} key=${p.id} p=${p} ctx=${ctx}/>`)}</div>`}
+      <div>${b.pins.map(x=>{const p=productFor(x);return html`<div key=${projectItemKey(x)} className="line" style=${{gridTemplateColumns:'88px minmax(0,1fr) auto'}}><button className="th" style=${{backgroundImage:`url(${p.img})`}} onClick=${()=>ctx.openPin(p.id,{pid:x.pid,lid:x.lid,vid:x.vid})} aria-label=${'View '+p.name}></button><div><b>${p.name} <span className="mute" style=${{fontWeight:400}}>${p.line}</span></b><div className="meta">${x.sec||'No section'} · <span className="mono">${p.sku}</span></div></div><div className="row"><span className="mono">${fmt(pr(p,ctx.mode)*p.minimum)}${p.minimum>1?` / ${p.minimum} units`:""}</span><button className="ib" disabled=${!p.lid} aria-label=${'Add '+p.name+' to tray'} onClick=${e=>ctx.addToTray(p.id,p.minimum,e.currentTarget.closest('.line').querySelector('.th'),false,p)}>${I('plus')}</button></div></div>`})}</div>
+      <div className="panel" style=${{alignSelf:'start',display:'grid',gap:12}}><h3>Shop the board</h3><div className="sumrow"><span>${b.pins.length} pieces</span><span>${unavailable?'Review saved items':fmt(b.pins.reduce((s,x)=>{const p=productFor(x);return s+pr(p,ctx.mode)*p.minimum},0))}</span></div><button className="btn btn-ink" disabled=${unavailable} onClick=${()=>{if(unavailable)return;b.pins.forEach(x=>{const p=productFor(x);ctx.addToTray(x.pid,p.minimum,null,true,p)});ctx.toast(`${b.pins.length} pieces added to ${ctx.activeProject.name}`,{label:'Open tray',fn:()=>ctx.setTray(true)})}}>Add all to tray</button><p className="help">Shared in shoppable mode, this tab is what your client sees, with your partner link attached.</p></div>
+    </div>`:html`<div className=${org?'wall organize':'wall'}>${pins.map(({p,key})=>org?html`<button key=${key} className="pin" onClick=${()=>setPicked(picked.includes(key)?picked.filter(x=>x!==key):[...picked,key])} aria-pressed=${picked.includes(key)}><div className="pin-img" style=${{outline:picked.includes(key)?'3px solid var(--cognac)':'none',outlineOffset:2}}><img src=${p.img} alt=${p.name} style=${{aspectRatio:p.ar,opacity:picked.includes(key)?.75:1}}/>${picked.includes(key)&&html`<span className="oos" style=${{left:'auto',right:10,top:10,bottom:'auto',background:'var(--cognac)',color:'#fff'}}>Selected</span>`}</div><div className="pin-meta"><b>${p.name}</b></div></button>`:html`<${PinCard} key=${key} p=${p} ctx=${ctx}/>`)}</div>`}
     ${share&&html`<${ShareSheet} ctx=${ctx} title=${b.title} doc=${pinsDoc(b.title,b.pins.map(x=>x.pid))} ids=${b.pins.map(x=>x.pid)} boardKey=${'pins-'+b.id} onClose=${()=>setShare(false)}/>`}
   </main>`;
 }
