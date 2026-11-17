@@ -37,7 +37,29 @@ beforeEach(() => {
   vi.clearAllMocks();
   window.history.replaceState(null, '', '/products/stable-id');
 });
-afterEach(cleanup);
+afterEach(() => { cleanup(); document.querySelectorAll('[data-test-product-meta]').forEach(node => node.remove()); });
+
+it('keeps canonical metadata stable across origins and replaces schema when options or eligibility change', () => {
+  const canonical = document.createElement('link'); canonical.rel = 'canonical'; canonical.dataset.testProductMeta = '';
+  const social = document.createElement('meta'); social.setAttribute('property', 'og:url'); social.dataset.testProductMeta = '';
+  document.head.append(canonical, social);
+  const view = render(<ProductPage id="stable-id" variantId="two" />);
+  const url = 'https://louiemae.com/products/stable-id';
+  expect(canonical.href).toBe(url);
+  expect(social.content).toBe(url);
+  const read = () => JSON.parse(document.getElementById('lm-live-product-structured-data')!.textContent!);
+  expect(read()).toMatchObject({ url, offers: { price: 120, url, availability: 'https://schema.org/InStock' } });
+  view.rerender(<ProductPage id="stable-id" variantId="sold" />);
+  expect(document.querySelectorAll('#lm-live-product-structured-data')).toHaveLength(1);
+  expect(read().offers).toMatchObject({ price: 130, availability: 'https://schema.org/OutOfStock' });
+  view.rerender(<ProductPage id="stable-id" variantId="missing" />);
+  expect(document.getElementById('lm-live-product-structured-data')).toBeNull();
+  view.rerender(<ProductPage id="stable-id" />);
+  expect(read().offers).toBeUndefined();
+  state.product = null; state.failed = true;
+  view.rerender(<ProductPage id="stable-id" />);
+  expect(document.getElementById('lm-live-product-structured-data')).toBeNull();
+});
 
 it('retains the matching read-only server document only while the live detail is pending', () => {
   const initial = document.createElement('main');

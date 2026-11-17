@@ -6,6 +6,7 @@ import { AddToCartButton } from './cart/AddToCartButton';
 import ProductDeliveryEstimate from './delivery/ProductDeliveryEstimate';
 import { navigatePlainLink } from '../lib/navigation';
 import { navigateStorefront, productUrl } from '../lib/storefrontNavigation';
+import { canonicalProductUrl, publicProductImage, productStructuredData } from '../lib/productMetadata';
 
 /** Public detail reads current approved data; URL-selected options never substitute another variant. */
 export function ProductPage({ id, variantId }: { id: string; variantId?: string }) {
@@ -52,7 +53,7 @@ export function ProductPage({ id, variantId }: { id: string; variantId?: string 
         : failed
           ? 'Product temporarily unavailable | Louie Mae'
           : 'Product unavailable | Louie Mae';
-    const canonical = new URL(productUrl(id), window.location.origin).href;
+    const canonical = canonicalProductUrl(id);
     document.title = title;
     for (const selector of ['meta[property="og:title"]', 'meta[name="twitter:title"]'])
       document.querySelector(selector)?.setAttribute('content', title);
@@ -70,8 +71,19 @@ export function ProductPage({ id, variantId }: { id: string; variantId?: string 
     document.querySelector('link[rel="canonical"]')?.setAttribute('href', canonical);
     document.querySelector('meta[property="og:url"]')?.setAttribute('content', canonical);
     for (const selector of ['meta[property="og:image"]', 'meta[name="twitter:image"]'])
-      document.querySelector(selector)?.setAttribute('content', product?.images[0] ?? '');
-  }, [id, product, loading, failed]);
+      document.querySelector(selector)?.setAttribute('content', publicProductImage(selected?.image || product?.images[0] || ''));
+  }, [id, product, loading, failed, selected?.image]);
+  useEffect(() => {
+    if (!product || loading || failed) return;
+    const data = productStructuredData(id, product, variantId);
+    if (!data) return;
+    const schema = document.createElement('script');
+    schema.id = 'lm-live-product-structured-data';
+    schema.type = 'application/ld+json';
+    schema.textContent = JSON.stringify(data).replace(/</g, '\\u003c');
+    document.head.append(schema);
+    return () => schema.remove();
+  }, [id, product, variantId, loading, failed]);
   const browse = '#shop';
   if (loading && initialMatches) return null;
   return (
