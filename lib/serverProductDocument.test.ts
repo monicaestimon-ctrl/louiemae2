@@ -33,6 +33,7 @@ describe('initial public product document', () => {
     );
     expect(doc.querySelector('img')?.getAttribute('fetchpriority')).toBe('high');
     expect(doc.querySelector('link[as="image"]')?.getAttribute('href')).toBe(doc.querySelector('img')?.getAttribute('src'));
+    expect(html.indexOf('name="viewport"')).toBeLessThan(html.indexOf('rel="preload" as="image"'));
     const schema = JSON.parse(
       doc.querySelector('script[type="application/ld+json"]')!.textContent!
     );

@@ -61,7 +61,8 @@ export function productDocument(
   );
   html = html.replace(/<!--home-document-start-->[\s\S]*?<!--home-document-end-->/, '');
   if (source) {
-    html = html.replace('<head>', () => `<head><link rel="preload" as="image" href="${escapeHtml(image.src)}" ${image.srcSet ? `imagesrcset="${escapeHtml(image.srcSet)}" imagesizes="${PRODUCT_IMAGE_SIZES}"` : ''} fetchpriority="high"/>`);
+    // Evaluate responsive candidates after the viewport metadata, including on mobile.
+    html = html.replace('</head>', () => `<link rel="preload" as="image" href="${escapeHtml(image.src)}" ${image.srcSet ? `imagesrcset="${escapeHtml(image.srcSet)}" imagesizes="${PRODUCT_IMAGE_SIZES}"` : ''} fetchpriority="high"/></head>`);
   }
   const tags: Record<string, string> = {
     description,
