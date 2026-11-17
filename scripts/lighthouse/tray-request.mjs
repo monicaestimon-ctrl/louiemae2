@@ -465,8 +465,9 @@ try {
   results.push({twoBoardVariantsKeepIndependentPricesAndPackMinimums:true,organizeRemovesOnlySelectedVariant:true,businessCommands:0});
   await page.click('[aria-label="Open project tray"]');
   await page.waitForSelector('.tv-line .tv-th',{visible:true});
-  await page.$eval('.tv-line .tv-th',node=>node.scrollIntoView({block:'center'}));
-  await page.click('.tv-line .tv-th');
+  await page.focus('.tv-line .tv-th');
+  assert.equal(await page.evaluate(()=>document.activeElement?.matches('.tv-line .tv-th')),true);
+  await page.keyboard.press('Enter');
   await page.waitForSelector('.pp-price');
   assert.match(await page.$eval('.pp-price',node=>node.textContent),/80/);
   await page.evaluate(()=>[...document.querySelectorAll('dialog button')].find(button=>button.textContent.trim()==='Save').click());

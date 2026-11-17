@@ -7,6 +7,7 @@ import { liveProducts, type LiveItem } from './catalog';
 import { App, setProducts } from './app';
 import { CURATED_SOURCES } from './curatedSources';
 const CURATED_IDS = Object.keys(CURATED_SOURCES);
+const CatalogApp = React.memo(App);
 import { ModalSuspensionContext } from '../components/Modal';
 
 /** Replace the decorative startup shell with an honest, navigable recovery state. */
@@ -37,8 +38,8 @@ function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
   const curatedRows = useQuery(api.holm.catalogItems, { productIds: CURATED_IDS });
   const references = useMemo(() => curatedRows === undefined ? null : liveProducts(curatedRows.flatMap(row => row.item ? [row.item] : []) as LiveItem[]), [curatedRows]);
   useEffect(() => { if (status === 'CanLoadMore') loadMore(24); }, [status, loadMore]);
-  const mapped = useMemo(() => status !== 'LoadingFirstPage' && (results.length > 0 || status === 'Exhausted') ? liveProducts(results as LiveItem[]) : null, [results, status]);
   const [installed, setInstalled] = useState(false);
+  const mapped = useMemo(() => status === 'Exhausted' || (!installed && status !== 'LoadingFirstPage' && results.length > 0) ? liveProducts(results as LiveItem[]) : null, [results, status, installed]);
   const [hasContent, setHasContent] = useState(false);
   const [empty, setEmpty] = useState(false);
   // The legacy app reads a module-level catalog. Install only committed data,
@@ -60,7 +61,7 @@ function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
     return shell ? null : <main className="holm-boot" aria-busy="true"><p role="status">Opening House of Louie Mae…</p></main>;
   }
   return <>{empty && <Recovery empty retry={() => window.location.reload()} />}
-    <div hidden={empty} inert={empty}><ModalSuspensionContext.Provider value={empty}>{hasContent && <App key={me?.signedIn && me.verified ? 'trade' : 'retail'} catalogComplete={status === 'Exhausted'} />}</ModalSuspensionContext.Provider></div></>;
+    <div hidden={empty} inert={empty}><ModalSuspensionContext.Provider value={empty}>{hasContent && <CatalogApp key={me?.signedIn && me.verified ? 'trade' : 'retail'} catalogComplete={status === 'Exhausted'} />}</ModalSuspensionContext.Provider></div></>;
 }
 
 /** Resolve account access before starting a viewer-specific catalog subscription. */

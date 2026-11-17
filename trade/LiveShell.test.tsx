@@ -131,3 +131,13 @@ it('continues past empty candidate pages without claiming an empty catalog', () 
   expect(mocks.install).not.toHaveBeenCalled();
   expect(screen.queryByText(/No products are available/)).toBeNull();
 });
+
+it('installs first and complete datasets without reinstalling every intermediate page', () => {
+  mocks.me={signedIn:false};mocks.status='CanLoadMore';const first=[{id:'first'}];mocks.rows=first;
+  const view=render(<LiveShell/>);expect(mocks.install).toHaveBeenLastCalledWith(first);
+  const count=mocks.install.mock.calls.length;
+  mocks.rows=[...first,{id:'intermediate'}];view.rerender(<LiveShell/>);
+  expect(mocks.install.mock.calls.length).toBe(count);
+  mocks.status='Exhausted';view.rerender(<LiveShell/>);
+  expect(mocks.install).toHaveBeenLastCalledWith(mocks.rows);
+});
