@@ -14,6 +14,7 @@ export type LiveVariant = {
 };
 import type { ProductImageMedia } from '../types';
 import { CURATED_SOURCES } from './curatedSources';
+import { holmLegacyId } from '../lib/holmProductIdentity';
 import { parseDims, type DimsCm } from '../lib/holmDims';
 
 export type LiveAssets = {
@@ -171,11 +172,6 @@ function widthOf(facts: string) {
   const n = parseFloat(m[1]);
   return Math.round(m[2].toLowerCase() === 'cm' ? n : n * 2.54);
 }
-function stableId(id: string) {
-  let h = 2166136261;
-  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
-  return 1000 + ((h >>> 0) % 9_000_000);
-}
 
 export function liveProducts(items: LiveItem[]): HolmProduct[] {
   const used = new Map<number, string>();
@@ -187,7 +183,7 @@ export function liveProducts(items: LiveItem[]): HolmProduct[] {
     const v0 = item.variants[0];
     if (!v0) continue;
     const typeGuess = TYPE_BY_CATEGORY[item.category.toLowerCase()] ?? (/sofa/i.test(full) ? 'sofa' : /light|lamp|pendant/i.test(full) ? 'lighting' : /bench/i.test(full) ? 'bench' : /ottoman/i.test(full) ? 'ottoman' : 'chair');
-    const id = best ? best[0] : stableId(item.id);
+    const id = holmLegacyId(item.id);
     if (used.has(id)) throw new Error('Catalog product identities require review.');
     used.set(id, item.id);
     const text = `${full} ${item.facts}`;

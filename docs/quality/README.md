@@ -193,3 +193,11 @@ PR #295 is merged and deployed: main `7a9c9144e6f520a7dbada9b41ce13090bc0cd817`,
 The account screen is now a typed module using the generated server membership DTO. Anonymous visitors skip private application reads; pending members retain retail pricing and do not see a duplicate application invitation. Account navigation and sign-out behavior are covered by focused tests.
 
 The homepage delivery calculator has an explicit expandable control; hiding it retains inputs after the first open. The actual local production build was checked with live anonymous catalog reads: no optional screen requests on initial home, account/sign-in chunks load on navigation, and a blocked account chunk produces local recovery. No business command or sign-in submission was made. CI now runs the bundle guard and HOLM, delivery-request and application fixtures and retains their JSON evidence.
+
+## Saved HOLM identity lookup prerequisite
+
+The legacy numeric ID calculation is shared by the renderer and a new source-bound identity index. House listing writes maintain that index transactionally. It contains listing/product IDs and the legacy number only, not prices, supplier costs or account data. The preparation process backfills sources, removes orphans, verifies sources and verifies index rows before a separate enable step. Expected phase/cursor inputs make batch replays idempotent. A mismatch prevents cutover.
+
+The bounded legacy resolver returns no results until that verified index is enabled. It rejects ambiguous numeric matches and then passes each candidate through the existing current catalog eligibility and viewer-pricing checks. Explicit source-ID resolution treats a malformed saved ID as an unresolved row without blocking valid rows in the same request. Neither path substitutes an unrelated default product or exposes authenticated trade prices to anonymous visitors.
+
+This is a prerequisite, not progressive loading completion. Frontend independent saved-item hydration, server filtering/sorting, first-page cutover and migration execution remain outstanding. The index is disabled by default, and no production backfill or cutover was run during implementation. In-memory tests cover preparation, replay, corruption, collisions, malformed saved IDs, transactional maintenance, anonymous pricing and withdrawal of a previously eligible listing.
