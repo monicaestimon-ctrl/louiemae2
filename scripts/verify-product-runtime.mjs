@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 assert.ok(existsSync('dist/index.html'), 'Missing dist/index.html: run npm run build before the product runtime check.');
 
 const output = 'artifacts/lighthouse/product-runtime';
-await build({ entryPoints: ['components/JournalLead.ts', 'components/CollectionRootHero.ts', 'api/journal.ts', 'lib/serverJournalDocument.ts', 'lib/journalContent.ts', 'lib/journalUrl.ts', 'api/product.ts', 'api/collection.ts', 'api/page.ts', 'lib/serverPageDocument.ts', 'lib/serverCollectionDocument.ts', 'lib/collectionId.ts', 'lib/productCategories.ts', 'lib/serverProductDocument.ts', 'lib/publicProductBootstrap.ts', 'lib/responsiveImage.ts', 'lib/productMetadata.ts'],
+await build({ entryPoints: ['lib/serverPublicInitialData.ts', 'lib/publicInitialData.ts', 'components/JournalLead.ts', 'components/CollectionRootHero.ts', 'api/journal.ts', 'lib/serverJournalDocument.ts', 'lib/journalContent.ts', 'lib/journalUrl.ts', 'api/product.ts', 'api/collection.ts', 'api/page.ts', 'lib/serverPageDocument.ts', 'lib/serverCollectionDocument.ts', 'lib/collectionId.ts', 'lib/productCategories.ts', 'lib/serverProductDocument.ts', 'lib/publicProductBootstrap.ts', 'lib/responsiveImage.ts', 'lib/productMetadata.ts'],
   outbase: '.', outdir: output, bundle: false, platform: 'node', format: 'esm', target: 'node24' });
 await mkdir(`${output}/lib`, { recursive: true });
 for (const file of ['imageManifest.json', 'productImageManifest.json', 'editorialImageManifest.json']) {
@@ -19,6 +19,8 @@ const { default: handler } = await import('../artifacts/lighthouse/product-runti
 const { default: collectionHandler } = await import('../artifacts/lighthouse/product-runtime/api/collection.js');
 const { default: pageHandler } = await import('../artifacts/lighthouse/product-runtime/api/page.js');
 const { default: journalHandler } = await import('../artifacts/lighthouse/product-runtime/api/journal.js');
+const { parsePublicInitialData } = await import('../artifacts/lighthouse/product-runtime/lib/publicInitialData.js');
+const initialData = (body, path) => parsePublicInitialData(body.match(/<script id="lm-public-initial-data" type="application\/json">([\s\S]*?)<\/script>/)?.[1] || '', path);
 const originalFetch = globalThis.fetch;
 const results = [];
 try {
@@ -67,20 +69,25 @@ try {
   }
   for (const id of ['shop', 'story']) {
     globalThis.fetch = async () => ({ ok: true, json: async () => ({ status: 'success', value: {
+      navLinks: [], collections: [],
       home: { categoryImages: { furniture: '/public-fixture.png' } },
       story: { hero: { title: 'Runtime story' }, prologue: {}, chapters: {} },
     } }) });
     const response = { status(code) { this.code = code; return this; }, send(body) { this.body = body; }, setHeader() {} };
     await pageHandler({ method: 'GET', query: { id } }, response);
     assert.equal(response.code, 200); assert.ok(response.body.includes('id="lm-page-document"'));
-    assert.ok(response.body.includes('/assets/')); results.push({ name: id, status: response.code });
+    assert.ok(response.body.includes('/assets/'));
+    assert.equal(initialData(response.body, `/${id}`).site.story.hero.title, 'Runtime story');
+    results.push({ name: id, status: response.code });
   }
-  const article = { _id: 'fixture', title: 'Runtime story', excerpt: 'Public', contentHtml: '<p>Readable article</p><script>unsafe()</script>', image: '', category: 'Home', date: 'November 17, 2026', status: 'published' };
+  const article = { _id: 'fixture', _creationTime: 1, title: 'Runtime story', excerpt: 'Public', contentHtml: '<p>Readable article</p><script>unsafe()</script>', image: '', category: 'Home', date: 'November 17, 2026', status: 'published' };
   for (const id of [undefined, 'fixture']) {
     globalThis.fetch = async () => ({ ok: true, json: async () => ({ status: 'success', value: id ? article : [article] }) });
     const response = { status(code) { this.code = code; return this; }, send(body) { this.body = body; }, setHeader() {} };
     await journalHandler({ method: 'GET', query: { id } }, response);
     assert.equal(response.code, 200); assert.ok(response.body.includes('Runtime story')); assert.ok(!response.body.includes('unsafe()'));
+    const initial = initialData(response.body, id ? `/blog/${id}` : '/blog');
+    assert.equal(id ? initial.article.contentHtml : initial.posts[0].title, id ? '<p>Readable article</p>' : 'Runtime story');
     results.push({ name: id ? 'article' : 'journal', status: response.code });
   }
 } finally { globalThis.fetch = originalFetch; }

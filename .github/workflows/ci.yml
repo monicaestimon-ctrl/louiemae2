@@ -91,6 +91,7 @@ jobs:
           node scripts/lighthouse/lazy-cart.mjs
           node scripts/lighthouse/product-preview.mjs
           node scripts/lighthouse/product-navigation.mjs
+          node scripts/lighthouse/public-handoff.mjs
           node scripts/lighthouse/collection-signup.mjs
           node scripts/lighthouse/reveal.mjs
 

@@ -1,3 +1,6 @@
+import { withPublicInitialData } from '../lib/serverPublicInitialData.js';
+import { type PublicPosts, type PublicArticle } from '../lib/publicInitialData.js';
+import { journalHtml } from '../lib/journalContent.js';
 /* global AbortSignal */
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { readFile } from 'node:fs/promises';
@@ -84,13 +87,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       throw new Error('Journal unavailable');
     const posts = id ? [] : (result.value as unknown[]).map(post);
     if (posts.some((value) => !value)) throw new Error('Journal unavailable');
+    const initial = article
+      ? {
+          article: {
+            _id: article._id,
+            title: article.title,
+            excerpt: article.excerpt,
+            image: article.image,
+            category: article.category,
+            date: article.date,
+            status: 'published',
+            contentHtml: journalHtml(article.content || ''),
+          } as PublicArticle,
+        }
+      : {
+          posts: (result.value as Record<string, unknown>[]).map((row) => ({
+            _id: row._id,
+            _creationTime: row._creationTime,
+            title: row.title,
+            excerpt: row.excerpt,
+            image: row.image,
+            category: row.category,
+            date: row.date,
+            status: 'published',
+            content: '',
+          })) as PublicPosts,
+        };
     const template = await readFile(join(process.cwd(), 'dist', 'index.html'), 'utf8');
     return res
       .status(200)
       .send(
         req.method === 'HEAD'
           ? ''
-          : journalDocument(template, posts as JournalPost[], article || undefined)
+          : withPublicInitialData(
+              journalDocument(template, posts as JournalPost[], article || undefined),
+              id ? `/blog/${id}` : '/blog',
+              initial
+            )
       );
   } catch {
     return failure(res, 503);

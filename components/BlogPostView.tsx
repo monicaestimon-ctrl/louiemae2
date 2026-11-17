@@ -1,3 +1,5 @@
+import { readPublicInitialData } from '../lib/publicInitialData';
+import { useInitialPublicValue } from '../contexts/useInitialPublicValue';
 import { STOREFRONT_ORIGIN } from '../lib/productMetadata';
 import { JournalArticleHero, JournalArticleHeading } from './JournalLead';
 import React, { useState, useRef, useEffect } from 'react';
@@ -14,8 +16,17 @@ interface BlogPostViewProps {
 
 export const BlogPostView: React.FC<BlogPostViewProps> = ({ postId }) => {
     const request = useRecoverableQuery(api.blogPosts.publicDetail, { id: postId });
-    const post = request.data?._id === postId ? request.data : null;
-    const editorialStatus = request.status;
+    const initial = useInitialPublicValue(
+        request.status === 'unavailable' ? new Error('Journal unavailable') : request.data,
+        () => {
+            const article = readPublicInitialData()?.article;
+            return article?._id === postId ? article : undefined;
+        },
+        true,
+        postId,
+    );
+    const post = initial.value?._id === postId ? initial.value : null;
+    const editorialStatus = initial.unavailable ? 'unavailable' : initial.value === undefined ? 'loading' : 'ready';
     const safeContent = post?.contentHtml ?? '';
     useJournalMetadata(postId, editorialStatus === 'loading', editorialStatus === 'unavailable', post);
     const [showShareMenu, setShowShareMenu] = useState(false);

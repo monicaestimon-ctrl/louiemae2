@@ -115,7 +115,22 @@ it('renders index links and a genuine empty archive distinctly from source failu
   expect(failed.headers['X-Robots-Tag']).toBe('noindex');
 });
 it('keeps archive metadata and image geometry in the initial public document', async () => {
-  fetchMock.mockResolvedValue({ok:true,json:async()=>({status:'success',value:[article,{...article,_id:'story2',title:'Second story',category:'Second category',date:'November 18, 2026'}]})});
+  fetchMock.mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      status: 'success',
+      value: [
+        article,
+        {
+          ...article,
+          _id: 'story2',
+          title: 'Second story',
+          category: 'Second category',
+          date: 'November 18, 2026',
+        },
+      ],
+    }),
+  });
   const result = await request();
   expect(result.status).toBe(200);
   expect(result.body).toContain('href="/blog/story2"');
@@ -142,4 +157,18 @@ it('never publishes missing, draft, mismatched or malformed article records', as
   expect((await request('../private')).status).toBe(404);
   expect((await request('story1', 'POST')).status).toBe(405);
   expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it('binds the sanitized article snapshot to its direct route without extra source fields', async () => {
+  fetchMock.mockResolvedValue({
+    ok: true,
+    json: async () => ({ status: 'success', value: article }),
+  });
+  const result = await request('story1');
+  const dom = new globalThis.DOMParser().parseFromString(result.body, 'text/html');
+  const envelope = JSON.parse(dom.getElementById('lm-public-initial-data')!.textContent!);
+  expect(envelope.path).toBe('/blog/story1');
+  expect(envelope.data.article.contentHtml).toBe('<p>A real story</p>');
+  expect(envelope.data.article._id).toBe('story1');
+  expect(envelope.data.article.privateNote).toBeUndefined();
 });
