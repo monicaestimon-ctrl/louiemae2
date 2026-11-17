@@ -245,7 +245,7 @@ try {
     assert.deepEqual(roomAfter.items, [roomBefore.items[1]]);
     await page.evaluate(() => [...document.querySelectorAll('main button')].find(b => b.textContent === 'Remove saved item 99998').click());
     await page.waitForFunction(() => !document.querySelector('main h1')?.textContent?.includes('Review saved room items'));
-    await new Promise(resolve => setTimeout(resolve, 600));
+    await new Promise(resolve => globalThis.setTimeout(resolve, 600));
     const emptyRoom = await page.evaluate(() => JSON.parse(localStorage.getItem('hol:room')));
     assert.deepEqual(emptyRoom.items, []);
     assert.deepEqual([emptyRoom.W, emptyRoom.D, emptyRoom.H], [9, 7, 3]);
@@ -262,3 +262,4 @@ try {
 } finally {
   await browser.close();
 }
+
