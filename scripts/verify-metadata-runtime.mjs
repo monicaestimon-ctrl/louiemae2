@@ -2,7 +2,7 @@
 import { build } from 'esbuild';
 import assert from 'node:assert/strict';
 import { writeFile } from 'node:fs/promises';
-await build({ entryPoints: ['api/og.ts', 'lib/collectionId.ts', 'lib/productMetadata.ts'], outbase: '.',
+await build({ entryPoints: ['api/sitemap.ts', 'api/og.ts', 'lib/collectionId.ts', 'lib/productMetadata.ts'], outbase: '.',
   outdir: 'artifacts/lighthouse/metadata-runtime', bundle: false, platform: 'node', format: 'esm' });
 process.env.VITE_PRELAUNCH_MODE = 'false';
 const { default: handler } = await import('../artifacts/lighthouse/metadata-runtime/api/og.js');
@@ -17,3 +17,9 @@ for (const [path, expected] of [['collection/furniture', 200], ['constructor', 4
 }
 await writeFile('artifacts/lighthouse/metadata-runtime-check.json', JSON.stringify({ node: process.version, results }, null, 2));
 console.log('Unbundled Node metadata runtime verified.');
+
+const { default: sitemapHandler } = await import('../artifacts/lighthouse/metadata-runtime/api/sitemap.js');
+const sitemapResult = { status(code) { this.code = code; return this; }, send(body) { this.body = body; }, setHeader() {} };
+await sitemapHandler({method:'POST',query:{}},sitemapResult);
+assert.equal(sitemapResult.code,405);
+console.log('Unbundled sitemap imports and method boundary verified.');

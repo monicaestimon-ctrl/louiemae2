@@ -19,6 +19,9 @@ it('returns only published summaries and resolves article details independently'
     published: await ctx.db.insert('blogPosts', { ...fields, status: 'published' }),
     draft: await ctx.db.insert('blogPosts', { ...fields, status: 'draft' }),
   }));
+  const sitemap = await t.query(api.blogPosts.sitemapPage, { paginationOpts: {cursor:null,numItems:24} });
+  expect(sitemap.page).toEqual([`/blog/${encodeURIComponent(ids.published)}`]);
+  expect(JSON.stringify(sitemap)).not.toMatch(/Full article|Summary|unsafe/);
   const summaries = await t.query(api.blogPosts.publicSummaries, {});
   expect(summaries).toHaveLength(1);
   expect(summaries[0]._id).toBe(ids.published);
@@ -30,4 +33,5 @@ it('returns only published summaries and resolves article details independently'
   expect(await t.query(api.blogPosts.publicDetail, { id: 'invalid' })).toBeNull();
   await t.run((ctx) => ctx.db.patch(ids.published, { status: 'draft' }));
   expect(await t.query(api.blogPosts.publicDetail, { id: ids.published })).toBeNull();
+  expect((await t.query(api.blogPosts.sitemapPage, { paginationOpts: {cursor:null,numItems:24} })).page).toEqual([]);
 });

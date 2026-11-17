@@ -92,3 +92,14 @@ export const search = query({
     return { ...batch, page: cards.filter((card) => card !== null) };
   },
 });
+
+/** Enumerate the verified public index, rechecking current publication for every URL. */
+export const sitemapPage = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    if (!(await searchReady(ctx))) throw new CommerceError('TEMPORARILY_UNAVAILABLE', undefined, 'Public index is being updated.');
+    const batch = await ctx.db.query('publicSearch').order('asc').paginate(catalogPageOptions(args.paginationOpts, 24, 100_000));
+    const cards = await Promise.all(batch.page.map(row => publicSearchCard(ctx, row)));
+    return { page: cards.flatMap(card => card ? [card.url] : []), isDone: batch.isDone, continueCursor: batch.continueCursor };
+  },
+});
