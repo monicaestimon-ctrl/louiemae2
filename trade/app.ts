@@ -30,15 +30,15 @@ import { api } from '../convex/_generated/api';
 import { phoneCut } from './phoneCut.mjs';
 import {DeliveryQuoteAccess} from '../components/delivery/DeliveryQuoteStatus';
 import { projectLines } from './projectLines';
-import { resolveProjectItems, sameProjectSelection, sameSavedRow, restoreProjectItem, projectItemKey, mergeProjectItem } from './projectIdentity';
+import { resolveProjectProduct, resolveProjectItems, sameProjectSelection, sameSavedRow, restoreProjectItem, projectItemKey, mergeProjectItem } from './projectIdentity';
 import { SafeImage } from '../components/SafeImage';
 import DeliveryBoundary from '../components/delivery/DeliveryBoundary';
 import { area as polyArea, inside as inPoly, centroid as polyCentre, bounds as polyBounds, setWallLength } from '../lib/holmPlan';
 export const html = htm.bind(React.createElement);
 
 /* ================= data ================= */
-const MAT = {leather:'Leather',velvet:'Velvet',boucle:'Bouclé',rattan:'Rattan',brass:'Brass'};
-const TYPE = {sofa:'Sofas',sectional:'Sectionals',ottoman:'Ottomans',bench:'Benches',lighting:'Lighting'};
+const MAT = {leather:'Leather',velvet:'Velvet',boucle:'Bouclé',rattan:'Rattan',brass:'Brass',wood:'Wood'};
+const TYPE = {sofa:'Sofas',sectional:'Sectionals',ottoman:'Ottomans',bench:'Benches',lighting:'Lighting',chair:'Chairs',stool:'Stools',table:'Tables'};
 // The catalog comes from the live House listings (see catalog.ts). Curated pieces keep
 // their numeric ids so hero films, scenes and cutouts stay attached to the right product.
 const byId = (id: number): HolmProduct => displayProduct(BY_ID, id);
@@ -1167,7 +1167,7 @@ const CARE={
   rattan:['Dust with a soft brush.','Wipe with a damp cloth and let it dry fully.','Keep away from heaters and high humidity.'],
   brass:['Wipe with a soft dry cloth.','Avoid abrasive cleaners.','Buff fingerprints with microfiber.'],
 };
-const CAT_OF={sofa:'Seating',sectional:'Seating',bench:'Seating',ottoman:'Seating',lighting:'Lighting'};
+const CAT_OF={sofa:'Seating',sectional:'Seating',bench:'Seating',ottoman:'Seating',chair:'Seating',stool:'Seating',table:'Tables',lighting:'Décor'};
 // Project pricing on a project's trade subtotal: extra 3% over $10,000, extra 5% over $25,000. The server also holds every piece above its margin floor.
 // Legacy tray previews do not promise project discounts; the approved basket calculator resolves them.
 const PROJECT_TIERS=[];
@@ -1250,7 +1250,7 @@ function IndexMenu({ctx}){
 /* ================= PRODUCT PAGE v3 ================= */
 /** Keep product actions and image navigation inside the active modal; hidden sticky actions remain inert. */
 function PinDetail({ctx}){
-  const p=byId(ctx.pin);const idx=PRODUCTS.findIndex(x=>x.id===p.id);
+  const p=ctx.detailProduct;const idx=PRODUCTS.findIndex(x=>x.id===p.id);
   const [view,setView]=useState('studio');const [bd,setBd]=useState('#ECE3D5');const [scale,setScale]=useState(false);
   const [qty,setQty]=useState(p.minimum||1);const [proj,setProj]=useState(ctx.tray.active);const [zone,setZone]=useState('');
   const [save,setSave]=useState(false);const [open,setOpen]=useState('details');
@@ -1260,13 +1260,13 @@ function PinDetail({ctx}){
   const P=ctx.tray.projects.find(x=>x.id===proj)||ctx.tray.projects[0];const Z=zone||P.zones[0];
   const pairs=useMemo(()=>pairsFor(p,3),[p.id,catalogGeneration]);
   useEffect(()=>{setQty(p.minimum||1);setBundle(pairs.map(x=>x.id));setView('studio');setScale(false);scRef.current&&scRef.current.scrollTo(0,0)},[p.id]);
-  const productKeys=e=>{if(['INPUT','TEXTAREA','SELECT'].includes(e.target?.tagName))return;if(e.key==='ArrowRight')ctx.openPin(PRODUCTS[(idx+1)%PRODUCTS.length].id);if(e.key==='ArrowLeft')ctx.openPin(PRODUCTS[(idx-1+PRODUCTS.length)%PRODUCTS.length].id)};
+  const productKeys=e=>{if(idx<0||!PRODUCTS.length||['INPUT','TEXTAREA','SELECT'].includes(e.target?.tagName))return;if(e.key==='ArrowRight')ctx.openPin(PRODUCTS[(idx+1)%PRODUCTS.length].id);if(e.key==='ArrowLeft')ctx.openPin(PRODUCTS[(idx-1+PRODUCTS.length)%PRODUCTS.length].id)};
   useEffect(()=>{const el=addRef.current,root=scRef.current;if(!el||!root)return;const io=new IntersectionObserver(([e])=>setMini(!e.isIntersecting&&e.boundingClientRect.top<0),{root});io.observe(el);return()=>io.disconnect()},[p.id]);
   const liked=ctx.likes.includes(p.id);const unit=pr(p,ctx.mode);
   const sim=PRODUCTS.filter(x=>x.id!==p.id).filter(x=>simF==='mat'?x.mat===p.mat:simF==='type'?x.type===p.type:true).sort((a,b)=>simF==='tone'?cdist(a.tone,p.tone)-cdist(b.tone,p.tone):0).slice(0,8);
   const onBoards=[...ctx.boards.filter(b=>b.pins.some(x=>x.pid===p.id)).map(b=>({t:b.title,by:'You'})),...COMMUNITY.filter(b=>b.items.includes(p.id)).map(b=>({t:b.title,by:b.by}))];
   const room=ROOMS[ctx.space];const F=texture(room.floor);const L=texture('lime');
-  const cm=cmW(p.id),hcm=approxH(p.id);
+  const cm=p.dimsCm?.w??p.widthCm??100,hcm=Math.round(p.dimsCm?.h??cm/(p.cutAR||1));
   const projectSelection=resolveProjectItems(P.items,ctx.projectCatalog.products);const projTrade=projectSelection.missing.length?NaN:projectSelection.resolved.reduce((s,i)=>s+tp(i.p)*i.qty,0);const after=projTrade+tp(p)*qty;
   const add=(el)=>{ctx.addToProject(p.id,qty,P.id,Z,el||stageRef.current?.querySelector('.pp-cut'))};
   const bundleItems=bundle.map(byId);const bundleTot=bundleItems.reduce((s,x)=>s+pr(x,ctx.mode),0);
@@ -1284,19 +1284,19 @@ function PinDetail({ctx}){
       <button className="pp-back" aria-label="Back to the floor" onClick=${()=>ctx.openPin(null)}>${I('back',{width:16})} <span className="hide-sm">Back to the floor</span></button>
       <span className="pp-crumb mono hide-sm">${CAT_OF[p.type]} / ${TYPE[p.type]} / ${p.name}</span>
       <span className="row" style=${{gap:4}}>
-        <button className="ib" aria-label="Previous piece" title="Previous (←)" onClick=${()=>ctx.openPin(PRODUCTS[(idx-1+PRODUCTS.length)%PRODUCTS.length].id)}>${I('back')}</button>
-        <span className="mono ix-dim num">${String(idx+1).padStart(2,'0')} / ${PRODUCTS.length}</span>
-        <button className="ib" aria-label="Next piece" title="Next (→)" onClick=${()=>ctx.openPin(PRODUCTS[(idx+1)%PRODUCTS.length].id)}>${I('arrow')}</button>
+        <button className="ib" disabled=${idx<0||!PRODUCTS.length} aria-label="Previous piece" title="Previous (←)" onClick=${()=>ctx.openPin(PRODUCTS[(idx-1+PRODUCTS.length)%PRODUCTS.length].id)}>${I('back')}</button>
+        <span className="mono ix-dim num">${idx<0?'Saved product':String(idx+1).padStart(2,'0')+' / '+PRODUCTS.length}</span>
+        <button className="ib" disabled=${idx<0||!PRODUCTS.length} aria-label="Next piece" title="Next (→)" onClick=${()=>ctx.openPin(PRODUCTS[(idx+1)%PRODUCTS.length].id)}>${I('arrow')}</button>
         <button className="ib" aria-label="Close" onClick=${()=>ctx.openPin(null)}>${I('x')}</button>
       </span>
     </header>
     <div className="pp-grid">
       <section className="pp-stage" ref=${stageRef}>
-        <div className="pp-views" role="tablist">${[['studio','Studio'],['room','In a '+SPACES[ctx.space].label.toLowerCase()],['photo','Photo & detail']].map(([k,l])=>html`<button key=${k} role="tab" aria-selected=${view===k} className=${view===k?'on':''} onClick=${()=>setView(k)}>${l}</button>`)}</div>
+        <div className="pp-views" role="group" aria-label="Product image view">${[['studio','Studio'],['room','In a '+SPACES[ctx.space].label.toLowerCase()],['photo','Photo & detail']].map(([k,l])=>html`<button key=${k} aria-pressed=${view===k} className=${view===k?'on':''} onClick=${()=>setView(k)}>${l}</button>`)}</div>
         ${view==='studio'&&html`<div className="pp-set" style=${{background:`radial-gradient(ellipse 80% 70% at 50% 42%, color-mix(in srgb, ${bd} 70%, #fff), ${bd})`}} onPointerMove=${onTilt} onPointerLeave=${()=>setTilt([0,0])}>
           <div className="pp-floorline" style=${{background:`linear-gradient(180deg, transparent, color-mix(in srgb, ${bd} 80%, #000) )`}}></div>
           <div className="pp-obj" style=${{width:p.type==='lighting'?'34%':['sofa','sectional'].includes(p.type)?'78%':'56%',transform:`perspective(1200px) translateX(${scale&&cm>=120?-10:0}%) rotateY(${tilt[0]}deg) rotateX(${tilt[1]}deg)`}}>
-            <${SafeImage} className="pp-cut" src=${cut(p.id)} media=${p.imageMedia} sizes="(min-width: 768px) 50vw, 100vw" alt=${p.name+' '+p.line}/>
+            <${SafeImage} className="pp-cut" src=${p.cutout||p.img} media=${p.imageMedia} sizes="(min-width: 768px) 50vw, 100vw" alt=${p.name+' '+p.line}/>
             <span className="pp-contact"></span>
             ${scale&&html`<div className="pp-dim"><i></i><span>≈ ${cm} cm · ${inch(cm)} in</span><i></i></div>`}${scale&&cm>=120&&html`<div className="pp-human" style=${{width:(40/cm*100)+'%'}} title="1.75 m person for scale"><svg viewBox="0 0 40 175"><circle cx="20" cy="12" r="10"/><path d="M8 30h24l4 60h-8l-2 85h-8l-2-60-2 60h-8l-2-85H4z"/></svg><span>1.75 m</span></div>`}
           </div>
@@ -1309,7 +1309,7 @@ function PinDetail({ctx}){
         ${view==='room'&&html`<div className="pp-set roomset">
           <div className="pp-rwall" style=${{backgroundColor:room.wall,backgroundImage:room.arch==='bar'?'none':`url(${L.url})`,backgroundBlendMode:'multiply'}}></div>
           <div className="rh-floor" style=${{top:'62%'}}><div className="rh-plane" style=${{backgroundImage:`url(${F.url})`,backgroundSize:F.size}}></div><span className="rh-floorshade"></span></div>
-          <div className="pp-obj inroom" style=${{width:p.type==='lighting'?'26%':['sofa','sectional'].includes(p.type)?'64%':'40%',top:p.type==='lighting'?'0':'auto'}}><img className="pp-cut" src=${cut(p.id)} alt=${p.name}/>${p.type!=='lighting'&&html`<span className="pp-contact"></span>`}</div>
+          <div className="pp-obj inroom" style=${{width:p.type==='lighting'?'26%':['sofa','sectional'].includes(p.type)?'64%':'40%',top:p.type==='lighting'?'0':'auto'}}><img className="pp-cut" src=${p.cutout||p.img} alt=${p.name}/>${p.type!=='lighting'&&html`<span className="pp-contact"></span>`}</div>
           <span className="pp-roomcap mono">${SPACES[ctx.space].label} set · change the space from the header</span>
         </div>`}
         ${view==='photo'&&html`<div className="pp-set photo" onPointerMove=${onLoupe} onPointerLeave=${()=>setLoupe(null)}>
@@ -1356,8 +1356,8 @@ function PinDetail({ctx}){
           <div className="pp-tier"><div className="ix-meter"><i style=${{width:'0%'}}></i></div><span>${tierLine(after,P.name)}</span></div>
           <div className="row pp-acts">
             <span style=${{position:'relative'}}><button className="btn btn-line btn-sm" onClick=${()=>setSave(!save)}>${I('pin',{width:15})} Save</button>${save&&html`<${SaveMenu} ctx=${ctx} pid=${p.id} align="left" onDone=${()=>setSave(false)}/>`}</span>
-            <button className="btn btn-line btn-sm" onClick=${()=>ctx.toStudio([p.id])}>${I('brush',{width:15})} Studio</button>
-            <button className="btn btn-line btn-sm" onClick=${()=>{ctx.setRoomSeed([p.id]);ctx.openPin(null);ctx.go('room')}}>${I('cube',{width:15})} 3D</button>
+            <button className="btn btn-line btn-sm" disabled=${!has(p.id)} title=${!has(p.id)?"Studio is unavailable for this saved product":undefined} onClick=${()=>ctx.toStudio([p.id])}>${I('brush',{width:15})} Studio</button>
+            <button className="btn btn-line btn-sm" disabled=${!has(p.id)} title=${!has(p.id)?"3D planning is unavailable for this saved product":undefined} onClick=${()=>{ctx.setRoomSeed([p.id]);ctx.openPin(null);ctx.go('room')}}>${I('cube',{width:15})} 3D</button>
             <button className="ib" aria-pressed=${liked} aria-label="Like" onClick=${()=>ctx.toggleLike(p.id)} style=${{color:liked?'var(--cognac)':''}}>${I('heart',liked?{fill:'currentColor'}:{})}</button>
             <button className="ib" aria-label="Copy link" onClick=${()=>copyText(pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'link'),ctx.toast)}>${I('share')}</button>
             <a className="ib" aria-label="Save to Pinterest" href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'pin'))} target="_blank" rel="noopener">${I('pint')}</a>
@@ -1382,7 +1382,7 @@ function PinDetail({ctx}){
           <div className="pp-bitem main"><img src=${cut(p.id)} alt=${p.name}/><span>${p.name}</span></div>
           ${pairs.map(x=>html`<button key=${x.id} className=${'pp-bitem'+(bundle.includes(x.id)?' on':'')} onClick=${()=>setBundle(bundle.includes(x.id)?bundle.filter(y=>y!==x.id):[...bundle,x.id])} aria-pressed=${bundle.includes(x.id)}><img src=${cut(x.id)} alt=${x.name}/><span>${bundle.includes(x.id)?'✓ ':''}${x.name}</span><small className="mono">${ctx.mode==='trade'?fmt(tp(x)):fmt(x.price)}</small></button>`)}
         </div>
-        <div className="pp-bundle-sum"><span className="mono ix-dim">${bundle.length} pairing${bundle.length===1?'':'s'} selected</span><b className="num">${fmt(bundleTot)}</b><button className="btn btn-ink" disabled=${!bundle.length} onClick=${()=>{bundle.forEach(id=>ctx.addToProject(id,1,P.id,Z,null,true));ctx.toast(`${bundle.length} pairings added to ${P.name}`,{label:'Open tray',fn:()=>{ctx.openPin(null);ctx.setTray(true)}})}}>Add pairings to ${P.name}</button><button className="lnk" onClick=${()=>ctx.toStudio([p.id,...bundle],p.name+' look')}>Arrange them in Studio</button></div>
+        <div className="pp-bundle-sum"><span className="mono ix-dim">${bundle.length} pairing${bundle.length===1?'':'s'} selected</span><b className="num">${fmt(bundleTot)}</b><button className="btn btn-ink" disabled=${!bundle.length} onClick=${()=>{bundle.forEach(id=>ctx.addToProject(id,1,P.id,Z,null,true));ctx.toast(`${bundle.length} pairings added to ${P.name}`,{label:'Open tray',fn:()=>{ctx.openPin(null);ctx.setTray(true)}})}}>Add pairings to ${P.name}</button><button className="lnk" disabled=${!has(p.id)} onClick=${()=>ctx.toStudio([p.id,...bundle],p.name+' look')}>Arrange them in Studio</button></div>
       </div>
     </section>
 
@@ -1639,7 +1639,7 @@ function Tray({ctx}){
           ${proj.zones.map(z=>{const zi=items.filter(i=>i.zone===z);const sg=suggest(z);return html`<div key=${z} className=${'tv-zone'+(over===z?' over':'')} onDragOver=${e=>{e.preventDefault();setOver(z)}} onDragLeave=${()=>setOver(null)} onDrop=${()=>{if(drag)moveTo(drag,z);setDrag(null);setOver(null)}}>
             <div className="zone-h"><h3>${z}</h3><span className="mono mute">${zi.length} pieces · ${zi.reduce((s,i)=>s+i.p.seats*i.qty,0)} seats${zi.length?'':' · drop pieces here'}</span></div>
             ${zi.map(i=>html`<div key=${projectItemKey(i)} id=${'ln-'+i.pid+z.replace(/\W/g,'')} className="tv-line" draggable="true" onDragStart=${()=>setDrag(i)} onDragEnd=${()=>setDrag(null)}>
-              <button className="tv-th" style=${{backgroundImage:`url(${(i.p.cutout||i.p.img)})`}} disabled=${!has(i.pid)} aria-label=${'Open '+i.p.name} onClick=${()=>ctx.openPin(i.pid)}></button>
+              <button className="tv-th" style=${{backgroundImage:`url(${(i.p.cutout||i.p.img)})`}} aria-label=${'Open '+i.p.name} onClick=${()=>ctx.openPin(i.pid,{pid:i.pid,lid:i.p.lid,vid:i.p.vid})}></button>
               <div style=${{minWidth:0}}><b>${i.p.name}</b> <span className="mute">${i.p.line}</span>
                 <div className="meta"><span className="row" style=${{gap:5}}><span className="dot" style=${{background:i.p.tone}}></span>${MAT[i.p.mat]}</span><span className="mono">${i.p.sku}</span>${i.p.oos?html`<span className="tv-status warn">Restock check</span>`:html`<span className="tv-status">Ready to quote</span>`}</div>
                 <div className="meta"><button className="lnk" onClick=${()=>saveLater(i)}>Save for later</button><button className="lnk" onClick=${()=>remove(i)}>Remove</button><span className="mute hide-sm">Drag to another area</span></div></div>
@@ -3722,10 +3722,10 @@ export function App(){
   const [likes,setLikes]=useState([]);const [recent,setRecent]=useState([]);
   const [inspo,setInspo]=useState(()=>load('inspo',INSPO_SEED));const [roomWall,setRoomWall]=useState(null);
   useEffect(()=>store('inspo',inspo),[inspo]);
-  const [pin,setPin]=useState(null);const [trayOpen,setTray]=useState(false);const [menu,setMenu]=useState(false);const [toastS,setToastS]=useState(null);
+  const [pin,setPin]=useState(null);const [pinIdentity,setPinIdentity]=useState(null);const [pinReturnsToTray,setPinReturnsToTray]=useState(false);const [trayOpen,setTray]=useState(false);const [menu,setMenu]=useState(false);const [toastS,setToastS]=useState(null);
   const [query,setQuery]=useState('');const [imgQ,setImgQ]=useState(null);
   const [studioSeed,setStudioSeed]=useState(null);const [nonce,setNonce]=useState(0);const [roomSeed,setRoomSeed]=useState(null);const [board,setBoard]=useState('b1');const [trend,setTrend]=useState('t1');
-  useEffect(()=>{const h=()=>{const r=getRoute();if(r.startsWith('p/')){const id=+r.slice(2);if(has(id)){setPin(id);return}}setRoute(r);setPin(null);scrollTo(0,0)};h();addEventListener('hashchange',h);return()=>removeEventListener('hashchange',h)},[]);
+  useEffect(()=>{const h=()=>{const r=getRoute();setPinReturnsToTray(false);if(r.startsWith('p/')){const id=+r.slice(2);if(Number.isSafeInteger(id)&&id>0){setPinIdentity({pid:id});setPin(id);return}}setRoute(r);setPin(null);scrollTo(0,0)};h();addEventListener('hashchange',h);return()=>removeEventListener('hashchange',h)},[]);
   // a visit through a partner link (?ref=CODE&ch=channel)
   const recordClick=useMutation(api.holmPartners.recordClick);
   useEffect(()=>{if(!/^#?admin/.test(location.hash))captureRefFromUrl(recordClick,getRoute())},[]);
@@ -3748,10 +3748,13 @@ export function App(){
   },[me.signedIn,remote]);
   const syncSave=(key,value)=>{if(!me.signedIn||!synced.current)return;const t=setTimeout(()=>saveState({key,value}).catch(()=>{}),1500);return()=>clearTimeout(t)};
   useEffect(()=>store('space',space),[space]);useEffect(()=>syncSave('tray',tray),[tray,me.signedIn]);useEffect(()=>syncSave('boards',boards),[boards,me.signedIn]);useEffect(()=>syncSave('collages',collages.map(c=>({...c,bg:c.bg?.img?.startsWith('data:')?{color:'#EFE6D8'}:c.bg,els:c.els.filter(e=>!String(e.src||'').startsWith('data:'))}))),[collages,me.signedIn]);useEffect(()=>syncSave('inspo',inspo.filter(x=>/^https?:/.test(x.src))),[inspo,me.signedIn]);useEffect(()=>store('mode',modePref),[modePref]);useEffect(()=>store('boards',boards),[boards]);useEffect(()=>store('tray',tray),[tray]);useEffect(()=>store('collages',collages),[collages]);
-  const go=r=>{if(getRoute()===r){scrollTo({top:0,behavior:'smooth'});setPin(null)}else location.hash=r};
+  const go=r=>{setPinReturnsToTray(false);if(getRoute()===r){scrollTo({top:0,behavior:'smooth'});setPin(null)}else location.hash=r};
   const toast=(msg,action)=>setToastS({msg,action,k:Date.now()});
   const activeProject=tray.projects.find(p=>p.id===tray.active);
   const projectCatalog=useProjectCatalog([...(activeProject?.items||[]),...(tray.later||[])],BY_ID);
+  const detailIdentity=pinIdentity?.pid===pin?pinIdentity:{pid:pin};
+  const detailCatalog=useProjectCatalog(pin?[detailIdentity]:[],BY_ID);
+  const detailProduct=pin?resolveProjectProduct(detailIdentity,detailCatalog.products):null;
   const projectReview=projectCatalog.pending?'Checking saved items':projectCatalog.preparing?'Verification required':projectCatalog.failed?'Unable to verify items':'Review unavailable items';
   const trayCount=activeProject.items.reduce((s,i)=>s+i.qty,0);
   const fly=(fromEl)=>{try{const btn=document.getElementById('trayBtn');if(!fromEl||!btn)return;const a=fromEl.getBoundingClientRect(),b=btn.getBoundingClientRect();const im=document.createElement('img');im.src=fromEl.src||fromEl.style.backgroundImage.slice(5,-2);im.className='fly';const sz=Math.min(140,a.width);Object.assign(im.style,{left:a.left+a.width/2-sz/2+'px',top:a.top+a.height/2-sz/2+'px',width:sz+'px',height:sz+'px'});document.body.appendChild(im);
@@ -3764,13 +3767,13 @@ export function App(){
   const imageSearch=f=>{const r=new FileReader();r.onload=()=>{const img=new Image();img.onload=()=>{const c=document.createElement('canvas');c.width=c.height=48;const g=c.getContext('2d');g.drawImage(img,0,0,48,48);const d=g.getImageData(0,0,48,48).data;const buckets={};for(let i=0;i<d.length;i+=4){const k=[d[i]>>5,d[i+1]>>5,d[i+2]>>5].join();(buckets[k]=buckets[k]||{n:0,r:0,g:0,b:0});const B=buckets[k];B.n++;B.r+=d[i];B.g+=d[i+1];B.b+=d[i+2]}
     const pal=Object.values(buckets).sort((a,b)=>b.n-a.n).slice(0,5).map(B=>rgb2hex(B.r/B.n,B.g/B.n,B.b/B.n));setImgQ({src:r.result,pal});setQuery('');go('discover')};img.src=r.result};r.readAsDataURL(f)};
   const toStudio=(ids,title)=>{setStudioSeed({ids,title:title||'New collage'});setNonce(n=>n+1);setPin(null);go('studio')};
-  const openPin=id=>{if(id&&!has(id)){toast('This product is unavailable.');return}setPin(id);if(id)setRecent(r=>[id,...r.filter(x=>x!==id)].slice(0,8))};
-  const addToProject=(pid,qty,projId,zone,fromEl,quiet)=>{const selected=BY_ID.get(pid);if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==projId)return p;const z=zone||p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));fly(fromEl);if(!quiet){const pn=(tray.projects.find(p=>p.id===projId)||{}).name||'project';toast(byId(pid).name+' added to '+pn+(zone?' · '+zone:''),{label:'Open tray',fn:()=>{setPin(null);setTray(true)}})}};
+  const openPin=(id,identity)=>{if(id&&trayOpen){setPinReturnsToTray(true);setTray(false)}else if(!id&&pinReturnsToTray){setTray(true);setPinReturnsToTray(false)}const p=BY_ID.get(id);setPinIdentity(id?(identity||(p?{pid:id,lid:p.lid,vid:p.vid}:{pid:id})):null);setPin(id);if(id)setRecent(r=>[id,...r.filter(x=>x!==id)].slice(0,8))};
+  const addToProject=(pid,qty,projId,zone,fromEl,quiet)=>{const selected=detailProduct?.id===pid?detailProduct:BY_ID.get(pid);if(!selected)return;qty=Math.max(selected.minimum,selected.minimum+Math.ceil((qty-selected.minimum)/selected.increment)*selected.increment);setTrayState(t=>({...t,projects:t.projects.map(p=>{if(p.id!==projId)return p;const z=zone||p.zones[0];const ex=p.items.find(i=>sameProjectSelection(i,{pid,lid:selected.lid,vid:selected.vid})&&i.zone===z);return {...p,items:ex?p.items.map(i=>i===ex?{...i,qty:i.qty+qty}:i):[...p.items,{pid,lid:selected.lid,vid:selected.vid,qty,zone:z}]}})}));fly(fromEl);if(!quiet){const pn=(tray.projects.find(p=>p.id===projId)||{}).name||'project';toast(selected.name+' added to '+pn+(zone?' · '+zone:''),{label:'Open tray',fn:()=>{setPin(null);setTray(true)}})}};
   const createProject=name=>{const id=uid();setTrayState(t=>({...t,projects:[...t.projects,{id,name,target:20,zones:['Main room'],items:[]}]}));toast(`Project "${name}" created`);return id};
   const addZone=(pid,z)=>setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===pid&&!p.zones.includes(z)?{...p,zones:[...p.zones,z]}:p)}));
   const inspoCtx={inspo,addInspo:items=>setInspo(l=>[...items,...l]),removeInspo:id=>setInspo(l=>l.filter(x=>x.id!==id)),updateInspo:(id,o)=>setInspo(l=>l.map(x=>x.id===id?{...x,...o}:x)),roomWall,setRoomWall,inspoToStudio:(x,ids=[])=>{setStudioSeed({inspo:x,ids,title:x.title});setNonce(n=>n+1);go('studio')}};
   const signInThen=r=>{setAfterSignIn(r);go('welcome')};const signOut=async()=>{await authSignOut();synced.current=false;['tray','boards','collages','inspo'].forEach(k=>{try{localStorage.removeItem('hol:'+k)}catch(e){}});setTrayState(TRAY_SEED);setBoards(BOARD_SEED);setCollages([]);setInspo(INSPO_SEED);toast('Signed out');go('home')};
-  const ctx={...inspoCtx,projectCatalog,projectReview,me,afterSignIn,signInThen,signOut,route,go,space,setSpace,mode,setMode,boards,saveTo,createBoard,updateBoard,tray,setTrayState,activeProject,trayCount,addToTray,setTray,setMenu,pin,openPin,recent,createProject,addZone,addToProject,toggleLike:id=>setLikes(l=>l.includes(id)?l.filter(x=>x!==id):[...l,id]),likes,toast,query,setQuery,imgQ,setImgQ,imageSearch,studioSeed,setStudioSeed,roomSeed,setRoomSeed,toStudio,board,setBoard,trend,setTrend,collages,saveCollage:(c,quiet)=>{setCollages(cs=>[c,...cs.filter(x=>c.id?x.id!==c.id:x.title!==c.title)]);if(!quiet)toast('Collage saved',{label:'View',fn:()=>go('boards')})},setTarget:n=>{setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===t.active?{...p,target:n}:p)}));toast(`Seat target for ${activeProject.name} set to ${n}`,{label:'Open tray',fn:()=>setTray(true)})}};
+  const ctx={...inspoCtx,detailProduct,projectCatalog,projectReview,me,afterSignIn,signInThen,signOut,route,go,space,setSpace,mode,setMode,boards,saveTo,createBoard,updateBoard,tray,setTrayState,activeProject,trayCount,addToTray,setTray,setMenu,pin,openPin,recent,createProject,addZone,addToProject,toggleLike:id=>setLikes(l=>l.includes(id)?l.filter(x=>x!==id):[...l,id]),likes,toast,query,setQuery,imgQ,setImgQ,imageSearch,studioSeed,setStudioSeed,roomSeed,setRoomSeed,toStudio,board,setBoard,trend,setTrend,collages,saveCollage:(c,quiet)=>{setCollages(cs=>[c,...cs.filter(x=>c.id?x.id!==c.id:x.title!==c.title)]);if(!quiet)toast('Collage saved',{label:'View',fn:()=>go('boards')})},setTarget:n=>{setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===t.active?{...p,target:n}:p)}));toast(`Seat target for ${activeProject.name} set to ${n}`,{label:'Open tray',fn:()=>setTray(true)})}};
   const pages={inspo:Inspo,home:Home,discover:Discover,trend:Trend,studio:Studio,room:Room,boards:Boards,board:BoardDetail,profile:Profile,hub:Hub,trade:Trade,quiz:Quiz,account:Account,welcome:Welcome,admin:AdminPage,sourcing:Sourcing,'partner-terms':PartnerTerms};
   const Page=pages[route]||Home;
   if(route.startsWith('q/'))return html`<${React.Fragment}><${ClientQuote} ctx=${ctx} code=${route.slice(2)}/><${Toast} t=${toastS} onClose=${()=>setToastS(null)}/><//>`;
@@ -3779,7 +3782,7 @@ export function App(){
     <${DeliveryQuoteAccess}/>
     ${route.startsWith('b/')?html`<${SharedBoard} key=${route} ctx=${ctx} slug=${route.slice(2)}/>`:html`<${Page} key=${route+(route==='studio'?nonce:'')} ctx=${ctx}/>`}
     ${route!=='studio'&&route!=='room'&&html`<${TabBar} ctx=${ctx}/>`}
-    ${pin&&(has(pin)?html`<${PinDetail} ctx=${ctx}/>`:html`<${Modal} open=${true} label="Product unavailable" onClose=${()=>setPin(null)}><p>This product is no longer available. Your saved items are preserved.</p><button className="btn btn-line" onClick=${()=>setPin(null)}>Close</button><//>`)}
+    ${pin&&(detailProduct?html`<${PinDetail} key=${detailProduct.lid+':'+detailProduct.vid} ctx=${ctx}/>`:html`<${Modal} open=${true} label=${detailCatalog.pending||detailCatalog.preparing||detailCatalog.failed?"Product availability":"Product unavailable"} onClose=${()=>openPin(null)}><p role="status">${projectResolutionMessage(detailIdentity,detailCatalog.states)}</p><button className="btn btn-line" onClick=${()=>openPin(null)}>Close</button><//>`)}
     ${trayOpen&&html`<${Tray} ctx=${ctx}/>`}
     ${menu&&html`<${IndexMenu} ctx=${ctx}/>`}
     <${Toast} t=${toastS} onClose=${()=>setToastS(null)}/>

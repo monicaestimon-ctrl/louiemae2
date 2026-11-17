@@ -53,9 +53,9 @@ const browser = await puppeteer.launch({
     : { channel: 'chrome' }),
   headless: true,
 });
+const page = await browser.newPage();
+const pageErrors = [];
 try {
-  const page = await browser.newPage();
-  const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.setViewport({ width: 390, height: 844 });
   const markup =
@@ -263,7 +263,35 @@ try {
   await page.click('#trayBtn');
   await page.waitForFunction(()=>document.querySelector('.tv-main')?.textContent.includes('Offpage'));
   assert.equal(await page.$eval('.tv-sum .btn-ink',node=>node.disabled),false);
-  assert.equal(await page.$eval('.tv-line .tv-th',node=>node.disabled),true);
+  assert.equal(await page.$eval('.tv-line .tv-th',node=>node.disabled),false);
+  await page.click('.tv-line .tv-th');
+  await page.waitForFunction(()=>document.querySelector('.pp h1')?.textContent==='Offpage');
+  assert.equal(await page.$eval('button[aria-label="Next piece"]',node=>node.disabled),true);
+  assert.equal(await page.$eval('button[aria-label="Previous piece"]',node=>node.disabled),true);
+  assert.match(await page.$eval('.pp-price',node=>node.textContent),/80/);
+  await page.addScriptTag({content:axe.source});
+  const detailChecks=[];
+  for (const width of [320,844,1440]) {
+    await page.setViewport({width,height:width===844?390:900});
+    const violations=await page.evaluate(async()=>(await axe.run(document.querySelector('dialog'))).violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})));
+    assert.deepEqual(violations,[]);
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false);
+    const screenshot=`offpage-detail-${width}.png`;
+    await page.screenshot({path:`artifacts/lighthouse/${screenshot}`});
+    detailChecks.push({width,violations,overflow:false,screenshot});
+  }
+  await page.click('.pp-add');
+  const afterDetailAdd=await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:tray')).projects[0].items);
+  assert.equal(afterDetailAdd.length,1);
+  assert.equal(afterDetailAdd[0].qty,4);
+  assert.equal(afterDetailAdd[0].vid,'oak');
+  assert.equal(afterDetailAdd[0].lid,'saved-source');
+  await page.evaluate(()=>{window.fixtureLookupPending=true;window.fixtureRefresh();});
+  await page.waitForFunction(()=>document.querySelector('dialog[aria-label="Product availability"]')?.textContent.includes('being checked'));
+  assert.equal(await page.$('.pp-add'),null);
+  await page.keyboard.press('Escape');
+  await page.evaluate(()=>{window.fixtureLookupPending=false;window.fixtureRefresh();});
+  await page.waitForFunction(()=>document.querySelector('.tv-main')?.textContent.includes('Offpage'));
   await page.evaluate(()=>{window.fixtureLookupPending=true;window.fixtureRefresh();});
   await page.waitForFunction(()=>document.querySelector('.tv-main')?.textContent.includes('being checked'));
   assert.match(await page.$eval('.tv-sum .total',node=>node.textContent),/Checking saved items/);
@@ -272,10 +300,10 @@ try {
   await page.waitForFunction(()=>document.querySelector('.tv-main')?.textContent.includes('no longer available'));
   assert.equal(await page.$eval('.tv-sum .btn-ink',node=>node.disabled),true);
   const retainedOffpage=await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:tray')));
-  assert.equal(retainedOffpage.projects[0].items[0].qty,2);
+  assert.equal(retainedOffpage.projects[0].items[0].qty,4);
   assert.equal(retainedOffpage.projects[0].items[0].vid,'oak');
   assert.equal(await page.evaluate(()=>window.fixtureCommands||0),0);
-  results.push({offpageProjectHydrated:true,withdrawalBlocksCheckout:true,savedVariantAndQuantityRetained:true,businessCommands:0});
+  results.push({offpageProjectHydrated:true,offpageDetailsVerified:true,detailChecks,pendingDetailsBlockActions:true,withdrawalBlocksCheckout:true,savedVariantAndQuantityRetained:true,afterDetailAdd,businessCommands:0});
   assert.deepEqual(pageErrors, []);
   await writeFile(
     'artifacts/lighthouse/tray-request-browser.json',
@@ -283,6 +311,7 @@ try {
   );
   console.log(JSON.stringify(results));
 } finally {
+  await writeFile('artifacts/lighthouse/tray-request-last-state.json', JSON.stringify({ errors: pageErrors, body: await page.evaluate(()=>document.body.innerText).catch(()=>null) }, null, 2));
   await browser.close();
 }
 
