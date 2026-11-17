@@ -1018,7 +1018,7 @@ function Collection({ctx}){
           </div>
         </article>`)}
       </div>
-      <div className="lx-more" data-r style=${{'--i':5}}><button className="btn btn-line" onClick=${()=>{ctx.setQuery(cat==='all'?'':cat);ctx.setImgQ(null);ctx.go('discover')}}>See all ${cat==='all'?PRODUCTS.length+' pieces':TYPE[cat].toLowerCase()} ${I('arrow',{width:15})}</button></div>
+      <div className="lx-more" data-r style=${{'--i':5}}><button className="btn btn-line" onClick=${()=>{ctx.setQuery(cat==='all'?'':cat);ctx.setImgQ(null);ctx.go('discover')}}>See all ${cat==='all'?(ctx.catalogComplete?PRODUCTS.length+' pieces':'pieces'):TYPE[cat].toLowerCase()} ${I('arrow',{width:15})}</button></div>
     </div>
   </section>`;
 }
@@ -3721,7 +3721,7 @@ function Welcome({ctx}) {
 }
 
 /* ================= APP ================= */
-export function App(){
+export function App({catalogComplete=true}={}){
   useCatalogRevision();
   const me0=useQuery(api.holm.me);const me=me0||{signedIn:false,verified:false,admin:false,tradeStatus:'none'};
   const {signOut:authSignOut}=useAuthActions();const ensureProfile=useMutation(api.holm.ensureProfile);
@@ -3794,14 +3794,15 @@ export function App(){
   const addZone=(pid,z)=>setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===pid&&!p.zones.includes(z)?{...p,zones:[...p.zones,z]}:p)}));
   const inspoCtx={inspo,addInspo:items=>setInspo(l=>[...items,...l]),removeInspo:id=>setInspo(l=>l.filter(x=>x.id!==id)),updateInspo:(id,o)=>setInspo(l=>l.map(x=>x.id===id?{...x,...o}:x)),roomWall,setRoomWall,inspoToStudio:(x,ids=[])=>{setStudioSeed({inspo:x,ids,title:x.title});setNonce(n=>n+1);go('studio')}};
   const signInThen=r=>{setAfterSignIn(r);go('welcome')};const signOut=async()=>{await authSignOut();synced.current=false;['tray','boards','collages','inspo'].forEach(k=>{try{localStorage.removeItem('hol:'+k)}catch(e){}});setTrayState(TRAY_SEED);setBoards(BOARD_SEED);setCollages([]);setInspo(INSPO_SEED);toast('Signed out');go('home')};
-  const ctx={...inspoCtx,detailProduct,projectCatalog,projectReview,me,afterSignIn,signInThen,signOut,route,go,space,setSpace,mode,setMode,boards,saveTo,createBoard,updateBoard,tray,setTrayState,activeProject,trayCount,addToTray,setTray,setMenu,pin,openPin,recent,createProject,addZone,addToProject,toggleLike:id=>setLikes(l=>l.includes(id)?l.filter(x=>x!==id):[...l,id]),likes,toast,query,setQuery,imgQ,setImgQ,imageSearch,studioSeed,setStudioSeed,roomSeed,setRoomSeed,toStudio,board,setBoard,trend,setTrend,collages,saveCollage:(c,quiet)=>{setCollages(cs=>[c,...cs.filter(x=>c.id?x.id!==c.id:x.title!==c.title)]);if(!quiet)toast('Collage saved',{label:'View',fn:()=>go('boards')})},setTarget:n=>{setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===t.active?{...p,target:n}:p)}));toast(`Seat target for ${activeProject.name} set to ${n}`,{label:'Open tray',fn:()=>setTray(true)})}};
+  const ctx={...inspoCtx,catalogComplete,detailProduct,projectCatalog,projectReview,me,afterSignIn,signInThen,signOut,route,go,space,setSpace,mode,setMode,boards,saveTo,createBoard,updateBoard,tray,setTrayState,activeProject,trayCount,addToTray,setTray,setMenu,pin,openPin,recent,createProject,addZone,addToProject,toggleLike:id=>setLikes(l=>l.includes(id)?l.filter(x=>x!==id):[...l,id]),likes,toast,query,setQuery,imgQ,setImgQ,imageSearch,studioSeed,setStudioSeed,roomSeed,setRoomSeed,toStudio,board,setBoard,trend,setTrend,collages,saveCollage:(c,quiet)=>{setCollages(cs=>[c,...cs.filter(x=>c.id?x.id!==c.id:x.title!==c.title)]);if(!quiet)toast('Collage saved',{label:'View',fn:()=>go('boards')})},setTarget:n=>{setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===t.active?{...p,target:n}:p)}));toast(`Seat target for ${activeProject.name} set to ${n}`,{label:'Open tray',fn:()=>setTray(true)})}};
   const pages={inspo:Inspo,home:Home,discover:Discover,trend:Trend,studio:Studio,room:Room,boards:Boards,board:BoardDetail,profile:Profile,hub:Hub,trade:Trade,quiz:Quiz,account:Account,welcome:Welcome,admin:AdminPage,sourcing:Sourcing,'partner-terms':PartnerTerms};
   const Page=pages[route]||Home;
   if(route.startsWith('q/'))return html`<${React.Fragment}><${ClientQuote} ctx=${ctx} code=${route.slice(2)}/><${Toast} t=${toastS} onClose=${()=>setToastS(null)}/><//>`;
   return html`<${React.Fragment}>
     <${Header} ctx=${ctx}/>
     <${DeliveryQuoteAccess}/>
-    ${route.startsWith('b/')?html`<${SharedBoard} key=${route} ctx=${ctx} slug=${route.slice(2)}/>`:html`<${Page} key=${route+(route==='studio'?nonce:'')} ctx=${ctx}/>`}
+    ${!catalogComplete&&route!=='home'&&html`<p role="status" className="wrap help">Loading the full catalog. More pieces will appear; your saved projects remain available.</p>`}
+    ${!catalogComplete&&['discover','quiz'].includes(route)?html`<main className="wrap" aria-busy="true"><h1>Loading the catalog</h1><p>Search, filters and recommendations will be available when all current products are checked.</p></main>`:route.startsWith('b/')?html`<${SharedBoard} key=${route} ctx=${ctx} slug=${route.slice(2)}/>`:html`<${Page} key=${route+(route==='studio'?nonce:'')} ctx=${ctx}/>`}
     ${route!=='studio'&&route!=='room'&&html`<${TabBar} ctx=${ctx}/>`}
     ${pin&&(detailProduct?html`<${PinDetail} key=${detailProduct.lid+':'+detailProduct.vid} ctx=${ctx}/>`:html`<${Modal} open=${true} label=${detailCatalog.pending||detailCatalog.preparing||detailCatalog.failed?"Product availability":"Product unavailable"} onClose=${()=>openPin(null)}><p role="status">${projectResolutionMessage(detailIdentity,detailCatalog.states)}</p><button className="btn btn-line" onClick=${()=>openPin(null)}>Close</button><//>`)}
     ${(trayOpen||pinReturnsToTray)&&html`<${Tray} ctx=${ctx} open=${trayOpen}/>`}

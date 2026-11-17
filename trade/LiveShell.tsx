@@ -5,6 +5,8 @@ import { api } from '../convex/_generated/api';
 import { usePendingTimeout } from '../contexts/usePendingTimeout';
 import { liveProducts, type LiveItem } from './catalog';
 import { App, setProducts } from './app';
+import { CURATED_SOURCES } from './curatedSources';
+const CURATED_IDS = Object.keys(CURATED_SOURCES);
 import { ModalSuspensionContext } from '../components/Modal';
 
 /** Replace the decorative startup shell with an honest, navigable recovery state. */
@@ -31,9 +33,11 @@ export class TradeBoundary extends React.Component<{ children: React.ReactNode }
 
 /** Own a fresh pagination subscription for each verified viewer identity and pricing role. */
 function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
-  const { results, status, loadMore } = usePaginatedQuery(api.holm.catalogPage, {}, { initialNumItems: 50 });
-  useEffect(() => { if (status === 'CanLoadMore') loadMore(50); }, [status, loadMore]);
-  const mapped = useMemo(() => status === 'Exhausted' ? liveProducts(results as LiveItem[]) : null, [results, status]);
+  const { results, status, loadMore } = usePaginatedQuery(api.holm.catalogPage, {}, { initialNumItems: 24 });
+  const curatedRows = useQuery(api.holm.catalogItems, { productIds: CURATED_IDS });
+  const references = useMemo(() => curatedRows === undefined ? null : liveProducts(curatedRows.flatMap(row => row.item ? [row.item] : []) as LiveItem[]), [curatedRows]);
+  useEffect(() => { if (status === 'CanLoadMore') loadMore(24); }, [status, loadMore]);
+  const mapped = useMemo(() => status !== 'LoadingFirstPage' && (results.length > 0 || status === 'Exhausted') ? liveProducts(results as LiveItem[]) : null, [results, status]);
   const [installed, setInstalled] = useState(false);
   const [hasContent, setHasContent] = useState(false);
   const [empty, setEmpty] = useState(false);
@@ -41,12 +45,12 @@ function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
   // Clear on viewer teardown; refreshing the same viewer must not remount project state.
   useLayoutEffect(() => () => setProducts([]), []);
   useLayoutEffect(() => {
-    if (mapped === null) return;
-    setProducts(mapped);
+    if (mapped === null || references === null) return;
+    setProducts(mapped, references);
     setInstalled(true);
     setEmpty(mapped.length === 0);
     if (mapped.length) setHasContent(true);
-  }, [mapped]);
+  }, [mapped, references]);
   const ready = installed;
   const timedOut = usePendingTimeout(!ready);
   const shell = document.getElementById('holm-shell');
@@ -56,7 +60,7 @@ function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
     return shell ? null : <main className="holm-boot" aria-busy="true"><p role="status">Opening House of Louie Mae…</p></main>;
   }
   return <>{empty && <Recovery empty retry={() => window.location.reload()} />}
-    <div hidden={empty} inert={empty}><ModalSuspensionContext.Provider value={empty}>{hasContent && <App key={me?.signedIn && me.verified ? 'trade' : 'retail'} />}</ModalSuspensionContext.Provider></div></>;
+    <div hidden={empty} inert={empty}><ModalSuspensionContext.Provider value={empty}>{hasContent && <App key={me?.signedIn && me.verified ? 'trade' : 'retail'} catalogComplete={status === 'Exhausted'} />}</ModalSuspensionContext.Provider></div></>;
 }
 
 /** Resolve account access before starting a viewer-specific catalog subscription. */
