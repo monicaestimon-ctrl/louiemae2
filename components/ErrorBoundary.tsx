@@ -23,8 +23,11 @@ class ErrorBoundary extends Component<Props, State> {
         return { hasError: true, error };
     }
 
-    componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-        if (!this.props.fallback) document.getElementById('lm-product-document')?.remove();
+    componentDidCatch(_error: Error, _errorInfo: ErrorInfo): void {
+        if (!this.props.fallback) {
+            document.getElementById('lm-product-document')?.remove();
+            document.getElementById('lm-product-structured-data')?.remove();
+        }
         // Log error to an error reporting service in production
         if (process.env.NODE_ENV === 'production') {
             // Could send to Sentry, LogRocket, etc.

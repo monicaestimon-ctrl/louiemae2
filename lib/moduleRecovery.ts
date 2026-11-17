@@ -16,6 +16,7 @@ export function showStartupFailure(error: unknown) {
   console.error('Storefront startup failed', error);
   document.getElementById('lm-shell')?.remove();
   document.getElementById('lm-product-document')?.remove();
+  document.getElementById('lm-product-structured-data')?.remove();
   document.getElementById('holm-shell')?.remove();
   const root = document.getElementById('root');
   if (!root) return;

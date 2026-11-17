@@ -2,6 +2,9 @@
 import { build } from 'esbuild';
 import assert from 'node:assert/strict';
 import { copyFile, mkdir, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+
+assert.ok(existsSync('dist/index.html'), 'Missing dist/index.html: run npm run build before the product runtime check.');
 
 const output = 'artifacts/lighthouse/product-runtime';
 await build({ entryPoints: ['api/product.ts', 'lib/serverProductDocument.ts', 'lib/responsiveImage.ts'],

@@ -17,6 +17,19 @@ const product: PublicProductDocument = {
   ],
 };
 describe('initial public product document', () => {
+  it('rejects root-relative URLs that the browser resolves off origin', () => {
+    for (const image of ['/\\evil.example/x.png', '/\t/evil.example/x.png', '//evil.example/x.png', 'https://']) {
+      const doc = new DOMParser().parseFromString(productDocument(template, { ...product, images: [image] })!, 'text/html');
+      expect(doc.querySelector('img')).toBeNull();
+      expect(doc.querySelector('link[as="image"]')).toBeNull();
+      expect(doc.querySelector('meta[property="og:image"]')?.getAttribute('content')).toBe('');
+      expect(JSON.parse(doc.querySelector('#lm-product-structured-data')!.textContent!).image).toEqual([]);
+    }
+    for (const image of ['/images/chair.png', 'https://example.com/chair.png']) {
+      const doc = new DOMParser().parseFromString(productDocument(template, { ...product, images: [image] })!, 'text/html');
+      expect(doc.querySelector('img')?.getAttribute('src')).toBe(image);
+    }
+  });
   it('renders literal escaped content, current selected price and metadata with one heading', () => {
     const html = productDocument(template, product, 'oak')!;
     const doc = new DOMParser().parseFromString(html, 'text/html');

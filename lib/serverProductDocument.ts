@@ -23,8 +23,13 @@ const escapeHtml = (value: string) =>
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!
   );
-const safeImage = (value: string) =>
-  /^https:\/\//.test(value) || /^\/(?!\/)/.test(value) ? value : '';
+const safeImage = (value: string) => {
+  try {
+    if (/^https:\/\//.test(value)) return new URL(value).protocol === 'https:' ? value : '';
+    if (!/^\/(?!\/)/.test(value)) return '';
+    return new URL(value, 'https://louiemae.com').origin === 'https://louiemae.com' ? value : '';
+  } catch { return ''; }
+};
 
 /** Only public query fields enter the document; no private cost or account state. */
 export function productDocument(

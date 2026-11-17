@@ -1,7 +1,6 @@
 import React, {
   useState,
   useEffect,
-  useLayoutEffect,
   useCallback,
   lazy,
   Suspense,
@@ -13,6 +12,7 @@ import { AiConcierge } from './components/AiConcierge';
 import { SiteMenu } from './components/SiteMenu';
 import { DesktopNavigation } from './components/DesktopNavigation';
 import { navigatePlainLink } from './lib/navigation';
+import { useInitialProductDocument } from './components/useInitialProductDocument';
 import {
   navigateStorefront,
   productRoute,
@@ -62,7 +62,7 @@ const CheckoutSuccess = named(() => import('./components/checkout'), 'CheckoutSu
 const CheckoutCancel = named(() => import('./components/checkout'), 'CheckoutCancel');
 const SearchModal = named(() => import('./components/SearchModal'), 'SearchModal');
 
-const PageFallback = () => document.getElementById('lm-product-document') ? null : (
+const PageFallback = ({ hidden }: { hidden: boolean }) => hidden ? null : (
   <main className="min-h-[100svh] flex items-center justify-center text-earth" aria-busy="true">
     <p role="status">Loading page…</p>
   </main>
@@ -157,14 +157,7 @@ const AppContent = () => {
   const [mobileMenuBuilt, setMobileMenuBuilt] = useState(false);
   const wideNav = useSyncExternalStore(subscribeWideNav, isWideNav);
   const [activePage, setActivePage] = useState(() => storefrontRoute(window.location));
-  useLayoutEffect(() => {
-    const initial = document.getElementById('lm-product-document');
-    const route = productRoute(activePage);
-    if (initial && (initial.dataset.productId !== route?.id || initial.dataset.variantId !== (route?.variantId ?? ''))) {
-      initial.remove();
-      document.getElementById('lm-product-structured-data')?.remove();
-    }
-  }, [activePage]);
+  const initialDocumentPresent = useInitialProductDocument(activePage);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchInitialTerm, setSearchInitialTerm] = useState('');
   const closeSearch = () => {
@@ -482,7 +475,7 @@ const AppContent = () => {
       {/* Main Content Area */}
       <div id="main-content" tabIndex={-1}>
         <ErrorBoundary key={activePage} retryLocally>
-          <Suspense fallback={<PageFallback />}>
+          <Suspense fallback={<PageFallback hidden={initialDocumentPresent} />}>
             {activePage.startsWith('#support') ? (
               <SupportPage section={activePage.match(/#support\/(.+)/)?.[1]} />
             ) : (
