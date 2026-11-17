@@ -13,6 +13,7 @@ import { SiteMenu } from './components/SiteMenu';
 import { DesktopNavigation } from './components/DesktopNavigation';
 import { navigatePlainLink } from './lib/navigation';
 import { useInitialProductDocument } from './components/useInitialProductDocument';
+import { useInitialCollectionDocument } from './components/useInitialCollectionDocument';
 import {
   navigateStorefront,
   productRoute,
@@ -158,6 +159,8 @@ const AppContent = () => {
   const wideNav = useSyncExternalStore(subscribeWideNav, isWideNav);
   const [activePage, setActivePage] = useState(() => storefrontRoute(window.location));
   const initialDocumentPresent = useInitialProductDocument(activePage);
+  const initialCollectionPresent = useInitialCollectionDocument(activePage, siteContentStatus,
+    siteContent.collections.some(collection => activePage.split('?')[0] === `#collection/${collection.id}`));
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchInitialTerm, setSearchInitialTerm] = useState('');
   const closeSearch = () => {
@@ -326,7 +329,7 @@ const AppContent = () => {
         />
       );
     } else {
-      currentView = <HomePage />;
+      currentView = <ContentStatusPage status={siteContentStatus} />;
     }
   }
 
@@ -338,7 +341,7 @@ const AppContent = () => {
           href="#main-content"
           onClick={(event) => {
             event.preventDefault();
-            const target = document.getElementById('lm-product-document') ?? document.getElementById('main-content');
+            const target = document.getElementById('lm-product-document') ?? document.getElementById('lm-collection-document') ?? document.getElementById('main-content');
             target?.focus();
             target?.scrollIntoView();
           }}
@@ -475,7 +478,7 @@ const AppContent = () => {
       {/* Main Content Area */}
       <div id="main-content" tabIndex={-1}>
         <ErrorBoundary key={activePage} retryLocally>
-          <Suspense fallback={<PageFallback hidden={initialDocumentPresent} />}>
+          <Suspense fallback={<PageFallback hidden={initialDocumentPresent || initialCollectionPresent} />}>
             {activePage.startsWith('#support') ? (
               <SupportPage section={activePage.match(/#support\/(.+)/)?.[1]} />
             ) : (

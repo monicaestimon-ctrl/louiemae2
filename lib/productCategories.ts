@@ -1,5 +1,5 @@
 import type { Category, CollectionConfig, Product } from '../types';
-import { isCollectionId } from './collectionId';
+import { isCollectionId } from './collectionId.js';
 
 export const MAX_PRODUCT_SUBCATEGORIES = 8;
 

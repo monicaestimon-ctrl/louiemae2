@@ -11,6 +11,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe('public product navigation', () => {
+  it('opens direct collection paths with their filters and referral query intact', () => {
+    expect(storefrontRoute({ pathname: '/collection/furniture', search: '?cat=chairs&view=products&ref=PARTNER', hash: '' }))
+      .toBe('#collection/furniture?cat=chairs&view=products&ref=PARTNER');
+    expect(storefrontRoute({ pathname: '/collection/furniture', search: '', hash: '#shop' })).toBe('shop');
+  });
   it('keeps immutable identity and encodes variant values', () => {
     expect(productUrl('stable-id', 'color blue')).toBe('/products/stable-id?variant=color%20blue');
     expect(productRoute('/products/stable-id?variant=color%20blue&ref=partner')).toEqual({
