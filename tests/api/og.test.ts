@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import handler from './og';
+import handler from '../../api/og';
 function request(path: unknown, extra: Record<string, unknown> = {}) {
   const headers: Record<string, string> = {};
   const response = { status: vi.fn().mockReturnThis(), send: vi.fn(), redirect: vi.fn(), setHeader: (key: string, value: string) => { headers[key] = value; } };
@@ -35,4 +35,5 @@ describe('metadata route boundary', () => {
     expect(result.send).not.toHaveBeenCalled();
   });
 });
+
 
