@@ -830,8 +830,9 @@ function PhoneFilm({ctx,fk,setFk}){
   // End at the opening frame; replay stays under the visitor's control.
   const ended=()=>{setPaused(true);setFading(true);clearTimeout(loopTimer.current);loopTimer.current=setTimeout(()=>{const v=vidRef.current;if(!v)return;v.currentTime=0;tick();setFading(false)},700)};
   const seek=()=>{const v=vidRef.current;if(v&&v.readyState>=1&&pendingSeek.current!==null){v.currentTime=pendingSeek.current;pendingSeek.current=null;tick()}};
-  const toChap=i=>{clearTimeout(loopTimer.current);setFading(false);pendingSeek.current=P.ch[i]+0.05;setStarted(true);setPaused(false);seek()};
-  const togglePlay=()=>{clearTimeout(loopTimer.current);setFading(false);setStarted(true);setPaused(value=>!value)};
+  const reloadFailed=()=>{const v=vidRef.current;if(v?.error){setShown(false);v.load()}};
+  const toChap=i=>{clearTimeout(loopTimer.current);setFading(false);pendingSeek.current=P.ch[i]+0.05;setStarted(true);reloadFailed();setPaused(false);seek()};
+  const togglePlay=()=>{clearTimeout(loopTimer.current);setFading(false);setStarted(true);reloadFailed();setPaused(value=>!value)};
   const toTop=()=>{const sec=secRef.current;if(sec&&sec.getBoundingClientRect().top<0)scrollTo({top:sec.getBoundingClientRect().top+scrollY,behavior:'smooth'})};
   const ch=F.ch[chi];const ids=[...new Set(F.hot.map(h=>h.id))];
   return html`<section className="rh hf pf" ref=${secRef} aria-label=${F.name+' film'}>
