@@ -120,8 +120,13 @@ try {
     );
     assert.equal(
       await page.$eval('link[rel=canonical]', (n) => n.getAttribute('href')),
-      'http://fixture.invalid/products/zuo-fixture'
+      'https://louiemae.com/products/zuo-fixture'
     );
+    await page.waitForSelector('#lm-live-product-structured-data');
+    const structured = await page.$eval('#lm-live-product-structured-data', node => JSON.parse(node.textContent));
+    assert.equal(structured.url, 'https://louiemae.com/products/zuo-fixture');
+    assert.equal(structured.offers.price, 120);
+    assert.equal(structured.offers.availability, 'https://schema.org/InStock');
     await page.addScriptTag({ content: axe.source });
     const violations = await page.evaluate(async () =>
       (await axe.run(document)).violations.map((v) => ({
@@ -156,6 +161,7 @@ try {
     );
     await page.click('main a[href="/#shop"]');
     await page.waitForFunction(() => location.pathname === '/' && location.hash === '#shop');
+    await page.waitForFunction(() => !document.getElementById('lm-live-product-structured-data'));
     await page.goto(
       'http://fixture.invalid/#collection/furniture?product=zuo-fixture&variant=zuo-walnut'
     );
@@ -172,6 +178,7 @@ try {
       violations,
       keyboardSelection: true,
       reloadVariant: true,
+      canonicalAndSchema: true,
       restoredSearch: true,
       legacyReferral: true,
       businessCommands: 0,

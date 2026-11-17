@@ -1,4 +1,5 @@
 import { responsiveImage } from './responsiveImage.js';
+import { canonicalProductUrl, publicProductImage, productStructuredData } from './productMetadata.js';
 
 export type PublicProductDocument = {
   _id: string;
@@ -23,13 +24,6 @@ const escapeHtml = (value: string) =>
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!
   );
-const safeImage = (value: string) => {
-  try {
-    if (/^https:\/\//.test(value)) return new URL(value).protocol === 'https:' ? value : '';
-    if (!/^\/(?!\/)/.test(value)) return '';
-    return new URL(value, 'https://louiemae.com').origin === 'https://louiemae.com' ? value : '';
-  } catch { return ''; }
-};
 
 /** Only public query fields enter the document; no private cost or account state. */
 export function productDocument(
@@ -44,9 +38,9 @@ export function productDocument(
       : undefined;
   if (variantId && !selected) return null;
   const title = `${product.name} | Louie Mae`;
-  const canonical = `https://louiemae.com/products/${encodeURIComponent(product._id)}`;
+  const canonical = canonicalProductUrl(product._id);
   const description = product.description.slice(0, 160);
-  const source = safeImage(selected?.image || product.images[0] || '');
+  const source = publicProductImage(selected?.image || product.images[0] || '');
   const image = responsiveImage(source, PRODUCT_IMAGE_SIZES);
   const price = product.price + (selected?.priceAdjustment ?? 0);
   if (!Number.isFinite(price) || price < 0) throw new Error('Invalid public product price');
@@ -90,25 +84,7 @@ export function productDocument(
   }
   html = html.replace(/<meta property="og:image:(?:width|height)"[^>]*>/g, '');
   html = html.replace(/<link rel="canonical"[^>]*>/, `<link rel="canonical" href="${canonical}"/>`);
-  const structured = JSON.stringify({
-    '@context': 'https://schema.org',
-    '@type': 'Product',
-    name: product.name,
-    description: product.description,
-    image: source ? [source] : [],
-    url: canonical,
-    ...(!product.variants?.length || selected
-      ? {
-          offers: {
-            '@type': 'Offer',
-            priceCurrency: 'USD',
-            price,
-            availability: stock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-            url: canonical,
-          },
-        }
-      : {}),
-  }).replace(/</g, '\\u003c');
+  const structured = JSON.stringify(productStructuredData(product._id, product, variantId)).replace(/</g, '\\u003c');
   html = html.replace(
     '</head>',
     () =>
