@@ -7,6 +7,8 @@ export function useInitialProductDocument(activePage: string) {
   useLayoutEffect(() => {
     const initial = document.getElementById('lm-product-document');
     const route = productRoute(activePage);
+    const bootstrap = document.getElementById('lm-product-bootstrap');
+    if (bootstrap && bootstrap.dataset.productId !== route?.id) bootstrap.remove();
     if (initial && (initial.dataset.productId !== route?.id || initial.dataset.variantId !== (route?.variantId ?? ''))) {
       initial.remove();
       document.getElementById('lm-product-structured-data')?.remove();

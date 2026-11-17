@@ -1,6 +1,6 @@
 {
   "ignoreCommand": "node scripts/vercel-ignore-build.mjs",
-  "functions": { "api/product.ts": { "includeFiles": "dist/index.html" }, "api/collection.ts": { "includeFiles": "dist/index.html" } },
+  "functions": { "api/page.ts": { "includeFiles": "dist/index.html" }, "api/product.ts": { "includeFiles": "dist/index.html" }, "api/collection.ts": { "includeFiles": "dist/index.html" } },
   "headers": [
     { "source": "/build-info.json", "headers": [{ "key": "Cache-Control", "value": "no-store" }, { "key": "X-Robots-Tag", "value": "noindex" }] },
     { "source": "/(.*)", "headers": [
@@ -32,7 +32,7 @@
     { "source": "/b/:slug", "destination": "/api/board?slug=:slug" },
     {
       "source": "/story",
-      "destination": "/api/og?path=story"
+      "destination": "/api/page?id=story"
     },
     {
       "source": "/blog",
@@ -40,7 +40,7 @@
     },
     {
       "source": "/shop",
-      "destination": "/api/og?path=shop"
+      "destination": "/api/page?id=shop"
     },
     {
       "source": "/collection/:type",

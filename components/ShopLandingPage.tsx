@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useLayoutEffect } from 'react';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
 import { ArrowUpRight } from 'lucide-react';
@@ -8,6 +8,7 @@ import { responsiveImage } from '../lib/responsiveImage';
 export const ShopLandingPage: React.FC = () => {
    const { siteContent } = useSite();
    const { home } = siteContent;
+   useLayoutEffect(() => { document.getElementById('lm-page-document')?.remove(); }, []);
 
    const categories = [
       { id: 'furniture', title: 'Furniture', image: home.categoryImages.furniture, link: '#collection/furniture', subtitle: 'Timeless Pieces' },
@@ -18,7 +19,7 @@ export const ShopLandingPage: React.FC = () => {
    ];
 
    return (
-      <div className="bg-cream min-h-screen pt-32 pb-20">
+      <main className="bg-cream min-h-screen pt-32 pb-20" data-public-page="shop">
          {/* Header - Cloned from Home Brand Feature */}
          <section className="px-6 md:px-12 mb-20">
             <div className="container mx-auto flex flex-col items-center">
@@ -28,7 +29,7 @@ export const ShopLandingPage: React.FC = () => {
                </FadeIn>
 
                <FadeIn delay={200} className="w-full relative overflow-hidden rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-earth/5">
-                  <img loading="lazy"
+                  <img loading="eager"
                      {...responsiveImage(home.shop?.headerImage || "/images/brand/DINNERTABLE.png", '100vw')}
                      alt="Louie Mae Signature"
                      fetchPriority="high"
@@ -57,16 +58,16 @@ export const ShopLandingPage: React.FC = () => {
                         className={`group cursor-pointer relative overflow-hidden rounded-[2.5rem] shadow-lg hover:shadow-[0_30px_60px_rgba(0,0,0,0.2)] hover:-translate-y-2 transition-all duration-700 border border-white/20 ${idx === 0 ? 'md:row-span-2 h-[600px] md:h-auto' : 'h-[300px] md:h-[400px]'
                            }`}
                      >
-                        <div
-                           onClick={() => { window.location.hash = cat.link; window.scrollTo(0, 0); }}
-                           className="w-full h-full relative"
+                        <a
+                           href={cat.id === 'journal' ? '/blog' : `/collection/${cat.id}`}
+                           className="block w-full h-full relative"
                         >
                            <img
                               loading="lazy"
                               decoding="async"
                               {...responsiveImage(cat.image, '(min-width: 1024px) 50vw, 100vw')}
                               alt={cat.title}
-                              className={`w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-110 ${(cat as any).objectPosition || ''}`}
+                              className={`w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-110 ${cat.objectPosition || ''}`}
                            />
 
                            {/* Inner Glow Highlight */}
@@ -85,12 +86,12 @@ export const ShopLandingPage: React.FC = () => {
                                  </div>
                               </div>
                            </div>
-                        </div>
+                        </a>
                      </FadeIn>
                   ))}
                </div>
             </div>
          </section>
-      </div>
+      </main>
    );
 };

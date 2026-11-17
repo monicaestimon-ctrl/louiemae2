@@ -1,11 +1,36 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useStorefrontProductDetail } from '../useStorefrontProductDetail';
+import { serializeProductBootstrap } from '../../lib/publicProductBootstrap';
 const mocks = vi.hoisted(() => ({ result: undefined as unknown, query: vi.fn() }));
 vi.mock('convex/react', () => ({ useQueries: (queries: unknown) => { mocks.query(queries); return { result: mocks.result }; } }));
 beforeEach(() => { vi.clearAllMocks(); mocks.result = undefined; vi.useFakeTimers(); });
-afterEach(() => { cleanup(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); document.getElementById('lm-product-bootstrap')?.remove(); vi.useRealTimers(); });
 describe('selected storefront detail', () => {
+  it('rejects expired bootstrap data on rerender even before a delayed timer runs', () => {
+    const element = document.createElement('script'); element.id = 'lm-product-bootstrap'; element.type = 'application/json'; element.dataset.productId = 'selected';
+    element.textContent = serializeProductBootstrap({ _id: 'selected', name: 'Fresh chair', description: '', category: 'Chairs', collection: 'furniture', price: 100, images: [], inStock: true });
+    document.head.append(element);
+    const view = renderHook(() => useStorefrontProductDetail('selected'));
+    expect(view.result.current.product?.name).toBe('Fresh chair');
+    vi.setSystemTime(Date.now() + 31_000); // Move wall-clock time without executing scheduled callbacks.
+    view.rerender();
+    expect(view.result.current.product).toBeNull();
+  });
+  it('hands off fresh public HTML immediately, then honors live withdrawal and transport failure', () => {
+    const element = document.createElement('script'); element.id = 'lm-product-bootstrap'; element.type = 'application/json'; element.dataset.productId = 'selected';
+    element.textContent = serializeProductBootstrap({ _id: 'selected', name: 'Fresh chair', description: '', category: 'Chairs', collection: 'furniture', price: 100, images: [], inStock: true });
+    document.head.append(element);
+    const view = renderHook(() => useStorefrontProductDetail('selected'));
+    expect(view.result.current).toMatchObject({ loading: false, product: { name: 'Fresh chair', price: 100 } });
+    mocks.result = null; view.rerender(); expect(view.result.current.product).toBeNull(); expect(view.result.current.unavailable).toBe(true);
+    mocks.result = new Error('Unavailable'); view.rerender(); expect(view.result.current.product).toBeNull(); expect(view.result.current.failed).toBe(true);
+    mocks.result = undefined; view.rerender();
+    expect(view.result.current.product).toBeNull();
+    expect(document.getElementById('lm-product-bootstrap')).toBeNull();
+    act(() => vi.advanceTimersByTime(31_000));
+    expect(view.result.current.product).toBeNull();
+  });
   it('distinguishes transport failure from a missing product and recovers without a stale purchase button', () => {
     mocks.result = new Error('private supplier diagnostic');
     const view = renderHook(() => useStorefrontProductDetail('selected'));
