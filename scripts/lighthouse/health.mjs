@@ -1,6 +1,12 @@
+/** Capture immediately after Lighthouse returns, before report I/O. Browser protocol
+ * latency remains between the return and this observation; this is not an atomic
+ * snapshot of Lighthouse's internal measurement endpoint. */
+export async function captureRouteReadiness(page, route) {
+  return page.$$(route.readySelector);
+}
+
 /** Inspect the audited tab without reloading it or accepting a late ready marker. */
-export async function inspectRouteHealth(page, route) {
-  const markers = await page.$$(route.readySelector);
+export async function inspectRouteHealth(page, route, markers) {
   const readyAtAuditEnd = markers.length === 1;
   // content-visibility:auto excludes off-screen sections from innerText. Reveal
   // the existing ready section after measurement, then inspect rendered content.

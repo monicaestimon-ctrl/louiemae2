@@ -233,7 +233,7 @@ try {
     await page.keyboard.press('Escape');
     await page.waitForFunction(() => !document.querySelector('dialog'));
     await page.evaluate(() => {
-      localStorage.setItem('hol:room', JSON.stringify({ W: 8, D: 6, H: 3, items: [{ uid: 'first', pid: 99999, x: -2, z: 3, rot: 45 }, { uid: 'second', pid: 99998, x: 4, z: -1, rot: 10 }] }));
+      localStorage.setItem('hol:room', JSON.stringify({ W: 9, D: 7, H: 3, wall: '#F1E9DC', floor: 'oak', rugs: [], openings: [{wall:'back',t:'win',x:0,w:2,h:1,y:1}], items: [{ uid: 'first', pid: 99999, x: -2, z: 3, rot: 45 }, { uid: 'second', pid: 99998, x: 4, z: -1, rot: 10 }] }));
       location.hash = 'room';
     });
     await page.waitForFunction(() => document.querySelector('main h1')?.textContent === 'Review saved room items');
@@ -243,6 +243,13 @@ try {
     await page.evaluate(() => [...document.querySelectorAll('main button')].find(b => b.textContent === 'Remove saved item 99999').click());
     const roomAfter = await page.evaluate(() => JSON.parse(localStorage.getItem('hol:room')));
     assert.deepEqual(roomAfter.items, [roomBefore.items[1]]);
+    await page.evaluate(() => [...document.querySelectorAll('main button')].find(b => b.textContent === 'Remove saved item 99998').click());
+    await page.waitForFunction(() => !document.querySelector('main h1')?.textContent?.includes('Review saved room items'));
+    await new Promise(resolve => setTimeout(resolve, 600));
+    const emptyRoom = await page.evaluate(() => JSON.parse(localStorage.getItem('hol:room')));
+    assert.deepEqual(emptyRoom.items, []);
+    assert.deepEqual([emptyRoom.W, emptyRoom.D, emptyRoom.H], [9, 7, 3]);
+    assert.deepEqual(emptyRoom.openings, roomBefore.openings);
     assert.equal(await page.evaluate(() => window.fixtureCommands || 0), 0);
     results.push({ source, missingDraftRetained: true, boardsAndCollagesRetained: true, unavailableBoardPurchaseBlocked: true, unavailableSharingBlocked: true, plannerRetainedUntilExplicitRemoval: true, checkoutBlocked: true, businessCommands: 0 });
   }

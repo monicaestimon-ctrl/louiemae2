@@ -1,11 +1,13 @@
 /* eslint-disable */
 // @ts-nocheck
+import { catalogOperationGuard } from './catalogOperation';
 import React, { useState, useEffect, useLayoutEffect, useRef, useId, useMemo, startTransition } from 'react';
 import htm from 'htm';
 import type { HolmProduct } from './catalog';
 import { displayProduct } from './catalogLookup';
 import { unresolvedPlannerItems } from './plannerDraft';
 import { PlannerReview } from './PlannerReview';
+import { usePlannerPersistence } from './usePlannerPersistence';
 import { TradeWelcome } from './TradeWelcome';
 import { TradeApplication } from './TradeApplication';
 import { BUSINESS_TYPES as BTYPES } from './application';
@@ -39,8 +41,9 @@ const TYPE = {sofa:'Sofas',sectional:'Sectionals',ottoman:'Ottomans',bench:'Benc
 // The catalog comes from the live House listings (see catalog.ts). Curated pieces keep
 // their numeric ids so hero films, scenes and cutouts stay attached to the right product.
 let PRODUCTS: HolmProduct[] = [];
+let catalogGeneration = 0;
 const BY_ID = new Map<number, HolmProduct>();
-export function setProducts(list: HolmProduct[]) { PRODUCTS = list; BY_ID.clear(); list.forEach(p => BY_ID.set(p.id, p)); }
+export function setProducts(list: HolmProduct[]) { catalogGeneration++; PRODUCTS = list; BY_ID.clear(); list.forEach(p => BY_ID.set(p.id, p)); }
 const byId = (id: number): HolmProduct => displayProduct(BY_ID, id);
 const has = (id: number) => BY_ID.has(id);
 const tp = (p: HolmProduct) => p.trade ?? p.price;
@@ -2398,24 +2401,27 @@ function ShareSheet({ctx,title,doc,image,ids,boardKey,room,units,onClose}){
   const share=useMutation(api.holmSync.shareBoard);const uploadCover=useAction(api.holmSync.uploadCover);
   if((ids||[]).some(id=>!has(id)))return html`<${Modal} open label="Review unavailable items" onClose=${onClose}><h2>Review unavailable items before sharing</h2><p>Your saved composition is preserved. Remove or replace unavailable pieces before creating a link or export.</p><button className="btn btn-line" onClick=${onClose}>Close</button><//>`;
   const counts={};(ids||[]).forEach(id=>{if(has(id))counts[id]=(counts[id]||0)+1});const pieces=Object.keys(counts).map(Number);
+  const generation=catalogGeneration;
+  const check=catalogOperationGuard(generation,()=>catalogGeneration,pieces,has);
+  const download=(blob,name)=>{check();saveBlob(blob,name)};
   const shop=m==='shop';const prices=shop;
   const boardCanvas=async w=>{if(doc)return renderBoard(doc,w);const im=await loadImg(image);const c=document.createElement('canvas');c.width=w;c.height=Math.round(w*im.height/im.width);c.getContext('2d').drawImage(im,0,0,c.width,c.height);return c};
   // The link is made once per mode (with the rendered board as its cover) and reused by every route.
-  const ensure=async()=>{if(links[m])return links[m];if(!ctx.me.signedIn){onClose();ctx.toast('Sign in to share a link');ctx.signInThen(ctx.route);return null}
-    let coverId;try{const c=await boardCanvas(1200);const b=await canvasBlob(c,'image/jpeg',.88);coverId=await uploadCover({bytes:await b.arrayBuffer(),type:'image/jpeg'})}catch(e){coverId=undefined}
-    const r=await share({title,mode:shop?'shop':'presentation',items:pieces.map(id=>({productId:byId(id).lid,variantId:byId(id).vid,qty:counts[id]})),boardKey:boardKey||undefined,doc:doc?shareableDoc(doc):undefined,coverId});
-    setLinks(l=>({...l,[m]:r}));return r};
-  const run=async(k,fn)=>{setBusy(k);setErr('');try{await fn()}catch(e){setErr(errText(e))}finally{setBusy('')}};
+  const ensure=async()=>{check();if(links[m]?.catalogGeneration===generation)return links[m];if(!ctx.me.signedIn){onClose();ctx.toast('Sign in to share a link');ctx.signInThen(ctx.route);return null}
+    let coverId;try{const c=await boardCanvas(1200);const b=await canvasBlob(c,'image/jpeg',.88);const bytes=await b.arrayBuffer();check();coverId=await uploadCover({bytes,type:'image/jpeg'});check()}catch(e){coverId=undefined}
+    check();const r=await share({title,mode:shop?'shop':'presentation',items:pieces.map(id=>({productId:byId(id).lid,variantId:byId(id).vid,qty:counts[id]})),boardKey:boardKey||undefined,doc:doc?shareableDoc(doc):undefined,coverId});
+    check();setLinks(l=>({...l,[m]:{...r,catalogGeneration:generation}}));return r};
+  const run=async(k,fn)=>{setBusy(k);setErr('');try{check();await fn()}catch(e){setErr(errText(e))}finally{setBusy('')}};
   const go=k=>{
-    if(k==='image')return run(k,async()=>{if(!doc&&image){saveBlob(await (await fetch(image)).blob(),fileName(title,'jpg'));return}
+    if(k==='image')return run(k,async()=>{if(!doc&&image){download(await (await fetch(image)).blob(),fileName(title,'jpg'));return}
       const c=await renderBoard(doc,2160);if(qr){const l=await ensure();if(!l)return;await drawQR(c.getContext('2d'),bundleUrl(l.slug,'qr'),c.width-c.width*.15,c.height-c.width*.15,c.width*.12)}
-      saveBlob(await canvasBlob(c),fileName(title,'png'));ctx.toast('Image downloaded')});
+      download(await canvasBlob(c),fileName(title,'png'));ctx.toast('Image downloaded')});
     if(k==='pdf')return run(k,async()=>{const l=ctx.me.signedIn?await ensure():null;
       const blob=await boardPdf(doc,{title,board:doc?null:await boardCanvas(1600),counts,link:l?bundleUrl(l.slug,'pdf'):null,pieceLink:pid=>l||!ctx.me.signedIn?pieceUrl(pid,l?.refCode,'pdf'):null,prices,mode:m});
-      if(blob.size>8e6)ctx.toast('This PDF is large. Fewer uploaded photos make it smaller.');saveBlob(blob,fileName(title,'pdf'));ctx.toast(l?'PDF downloaded, with live links':'PDF downloaded. Sign in to add live links.')});
-    if(k==='link')return run(k,async()=>{const l=await ensure();if(l)copyText(bundleUrl(l.slug,'link'),ctx.toast)});
-    if(k==='plan')return run(k,async()=>{const l=ctx.me.signedIn?await ensure():null;saveBlob(await planPdf(room,{title,units,link:l?bundleUrl(l.slug,'pdf'):null}),fileName(title+'-plan','pdf'));ctx.toast(l?'Plan PDF downloaded, with the bundle link':'Plan PDF downloaded. Sign in to add the bundle link.')});
-    if(k==='share')return run(k,async()=>{const l=await ensure();if(!l)return;const url=bundleUrl(l.slug,'share');
+      if(blob.size>8e6)ctx.toast('This PDF is large. Fewer uploaded photos make it smaller.');download(blob,fileName(title,'pdf'));ctx.toast(l?'PDF downloaded, with live links':'PDF downloaded. Sign in to add live links.')});
+    if(k==='link')return run(k,async()=>{const l=await ensure();check();if(l)copyText(bundleUrl(l.slug,'link'),ctx.toast)});
+    if(k==='plan')return run(k,async()=>{const l=ctx.me.signedIn?await ensure():null;download(await planPdf(room,{title,units,link:l?bundleUrl(l.slug,'pdf'):null}),fileName(title+'-plan','pdf'));ctx.toast(l?'Plan PDF downloaded, with the bundle link':'Plan PDF downloaded. Sign in to add the bundle link.')});
+    if(k==='share')return run(k,async()=>{const l=await ensure();if(!l)return;check();const url=bundleUrl(l.slug,'share');
       if(navigator.share&&isPhone()){try{await navigator.share({title,text:title,url})}catch(e){}}else location.href=`mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(`${title}\n\n${url}`)}`});
     setView(k)};
   return html`<${Modal} open label="Share" onClose=${onClose}><div className="scrim sx-scrim" onClick=${e=>e.target===e.currentTarget&&onClose()}>
@@ -2428,8 +2434,8 @@ function ShareSheet({ctx,title,doc,image,ids,boardKey,room,units,onClose}){
       ${view==='routes'&&html`<${React.Fragment}><div className="sx-routes">${(room?[...ROUTES.slice(0,2),['plan','Plan PDF','The floor plan to scale, every room, piece and seat count','board'],...ROUTES.slice(2)]:ROUTES).map(([k,l,hint,ic])=>html`<button key=${k} className="sx-route" disabled=${!!busy||!pieces.length&&k!=='image'} onClick=${()=>go(k)}>
           <span className="sx-route-i">${I(ic,{width:18})}</span><span><b>${busy===k?'One moment…':l}</b><small>${hint}</small></span></button>`)}</div>
         ${doc&&html`<label className="toggle"><span>Add a QR code to the image's corner</span><input type="checkbox" className="sr" checked=${qr} onChange=${e=>setQr(e.target.checked)}/><span className=${'sw'+(qr?' on':'')}></span></label>`}
-        ${links[m]&&html`<div className="linkbox"><code>${bundleUrl(links[m].slug,'link')}</code><button className="btn btn-ink btn-sm" onClick=${()=>copyText(bundleUrl(links[m].slug,'link'),ctx.toast)}>${I('link',{width:15})} Copy</button></div>`}<//>`}
-      ${(view==='story'||view==='pin')&&html`<${StoryBuilder} ctx=${ctx} doc=${doc} boardCanvas=${doc?null:boardCanvas} pieces=${pieces} title=${title} pin=${view==='pin'} prices=${prices} ensure=${ensure} onQR=${setQrFor} busy=${busy} run=${run}/>`}
+        ${links[m]?.catalogGeneration===generation&&html`<div className="linkbox"><code>${bundleUrl(links[m].slug,'link')}</code><button className="btn btn-ink btn-sm" onClick=${()=>run('link',async()=>{check();await copyText(bundleUrl(links[m].slug,'link'),ctx.toast)})}>${I('link',{width:15})} Copy</button></div>`}<//>`}
+      ${(view==='story'||view==='pin')&&html`<${StoryBuilder} ctx=${ctx} doc=${doc} boardCanvas=${doc?null:boardCanvas} pieces=${pieces} title=${title} pin=${view==='pin'} prices=${prices} ensure=${ensure} onQR=${setQrFor} busy=${busy} run=${run} check=${check} download=${download}/>`}
       ${qrFor&&html`<div className="sx-qr"><canvas ref=${c=>{if(c&&c.dataset.u!==qrFor){c.dataset.u=qrFor;c.width=c.height=220;drawQR(c.getContext('2d'),qrFor,0,0,220)}}} width="220" height="220" aria-label="QR code for the board link"></canvas>
         <p className="sx-note">Scan with your phone to open the board there, then post the image from your camera roll with a Link sticker.</p></div>`}
       ${err&&html`<p className="sx-note" style=${{color:'var(--bad)'}}>${err}</p>`}
@@ -2438,16 +2444,16 @@ function ShareSheet({ctx,title,doc,image,ids,boardKey,room,units,onClose}){
     </div></div><//>`;
 }
 // Story and Pin/post templates: flip between looks with the arrows, then share or download.
-function StoryBuilder({ctx,doc,boardCanvas,pieces,title,pin,prices,ensure,onQR,busy,run}){
+function StoryBuilder({ctx,doc,boardCanvas,pieces,title,pin,prices,ensure,onQR,busy,run,check,download}){
   const [kind,setKind]=useState(pin||!pieces.length?'board':'single');const [ti,setTi]=useState(pin?1:0);const [pid,setPid]=useState(pieces[0]);
   const [ground,setGround]=useState('#EFE6D8');const [caption,setCaption]=useState('');const [showP,setShowP]=useState(prices);const [size,setSize]=useState('pin');const [url,setUrl]=useState(null);
   const list=kind==='single'?STORY_SINGLE:STORY_BOARD.filter(([k])=>k!=='before'||doc?.bg?.img);const t=list[((ti%list.length)+list.length)%list.length];
   const SIZES={pin:{w:1000,h:1500},feed:{w:1080,h:1350}};const dims=pin?SIZES[size]:STORY;
   useEffect(()=>{let live=true;const tm=setTimeout(async()=>{try{const c=await renderStory(doc,{title,kind,t:t[0],pid,ground,caption,prices:prices&&showP,size:dims,board:boardCanvas?await boardCanvas(2160):null,ids:boardCanvas?pieces:null});if(live)setUrl(c.toDataURL('image/jpeg',.8))}catch(e){}},150);return()=>{live=false;clearTimeout(tm)}},[kind,t[0],pid,ground,caption,showP,size,pin]);
   const out=()=>run('story',async()=>{const c=await renderStory(doc,{title,kind,t:t[0],pid,ground,caption,prices:prices&&showP,size:dims,board:boardCanvas?await boardCanvas(2160):null,ids:boardCanvas?pieces:null});const blob=await canvasBlob(c);
-    const l=await ensure();if(!l)return;const ch=pin?(size==='pin'?'pin':'post'):'story';const link=bundleUrl(l.slug,ch);const file=new File([blob],fileName(title,'png'),{type:'image/png'});
-    if(isPhone()&&navigator.canShare?.({files:[file]})){await copyText(link,()=>{});ctx.toast(pin?'Link copied. Paste it as the post\'s link.':'Link copied. Add a Link sticker and paste.');try{await navigator.share({files:[file],title})}catch(e){}return}
-    saveBlob(blob,file.name);await copyText(link,()=>{});ctx.toast(pin?'Image downloaded and link copied':'Image downloaded and link copied for the Link sticker');if(!pin)onQR(bundleUrl(l.slug,'qr'))});
+    check();const l=await ensure();if(!l)return;check();const ch=pin?(size==='pin'?'pin':'post'):'story';const link=bundleUrl(l.slug,ch);const file=new File([blob],fileName(title,'png'),{type:'image/png'});
+    if(isPhone()&&navigator.canShare?.({files:[file]})){await copyText(link,()=>{});ctx.toast(pin?'Link copied. Paste it as the post\'s link.':'Link copied. Add a Link sticker and paste.');try{check();await navigator.share({files:[file],title})}catch(e){}return}
+    download(blob,file.name);await copyText(link,()=>{});ctx.toast(pin?'Image downloaded and link copied':'Image downloaded and link copied for the Link sticker');if(!pin)onQR(bundleUrl(l.slug,'qr'))});
   return html`<div className="sx-story">
     <div className="sx-story-pre">
       <button className="ib" aria-label="Previous template" onClick=${()=>setTi(i=>i-1)}>${I('back')}</button>
@@ -2612,11 +2618,12 @@ function Room({ctx}){
   if(missing.length)return html`<${PlannerReview} missing=${missing} remove=${index=>{const next={...saved,items:saved.items.filter((_,i)=>i!==index)};store('room',next);setSaved(next)}} back=${()=>ctx.go('discover')}/>`;
   return html`<${ReadyRoom} ctx=${ctx} onDraftChange=${setSaved}/>`;
 }
+const persistPlannerRoom=doc=>store('room',doc);
 function ReadyRoom({ctx,onDraftChange}){
   // Pieces sent here join the saved room. From the Studio's 3D switch (sync) the room follows the board
   // instead: its new pieces arrive and the ones it dropped leave.
   const init=()=>{const saved=load('room',null);const raw=ctx.roomSeed;const sync=!!raw?.sync;const seed=(Array.isArray(raw)?raw:raw?.ids)||[];
-    if(saved&&saved.items&&saved.items.length){const kept=saved.items.filter(i=>has(i.pid));const place=(pids,z)=>pids.map((pid,i)=>({uid:uid(),pid,x:(i-(pids.length-1)/2)*1.4,z,rot:0,hang:byId(pid).hangs}));
+    if(saved&&Array.isArray(saved.items)){const kept=saved.items.filter(i=>has(i.pid));const place=(pids,z)=>pids.map((pid,i)=>({uid:uid(),pid,x:(i-(pids.length-1)/2)*1.4,z,rot:0,hang:byId(pid).hangs}));
       if(sync){const {keep,add}=reconcile(kept.map(i=>i.pid),seed.filter(plReady));return plReflow({...saved,items:[...kept.filter((_,i)=>keep.has(i)),...place(add,0)],wallImg:ctx.roomWall||saved.wallImg||null})}
       // Only pieces the room doesn't already hold are added, so nothing is duplicated.
       const have={};kept.forEach(i=>have[i.pid]=(have[i.pid]||0)+1);const fresh=seed.filter(pid=>plReady(pid)&&!(have[pid]-->0));
@@ -2649,7 +2656,7 @@ function ReadyRoom({ctx,onDraftChange}){
     const it=docRef.current.items.find(i=>i.uid===id);if(!it)return;const d=docRef.current;const n={...it,uid:uid()};const [px,pz]=plPlace(d,n,it.x+.6,it.z+.3);n.x=r2(px);n.z=r2(pz);commit({...d,items:[...d.items,n]});setSel(n.uid)};
   useEffect(()=>{if(ctx.roomSeed)ctx.setRoomSeed(null);if(ctx.roomWall)ctx.setRoomWall(null)},[]);
   // The room autosaves on this device; a photo on the wall is too large to keep, so it is left out.
-  useEffect(()=>{const t=setTimeout(()=>store('room',{...doc,wallImg:doc.wallImg&&doc.wallImg.startsWith('data:')?null:doc.wallImg}),400);return()=>clearTimeout(t)},[doc]);
+  usePlannerPersistence(doc,persistPlannerRoom);
   useEffect(()=>setPop(null),[sel]);
   useEffect(()=>{if(view==='product'&&!doc.items.some(i=>i.uid===sel))setView('orbit')},[sel,view]);
 
