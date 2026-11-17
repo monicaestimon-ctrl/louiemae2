@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { isCollectionId } from '../lib/collectionId';
 
 // Per-page metadata for social sharing previews
 const PAGE_META: Record<string, { title: string; description: string; image: string }> = {
@@ -67,7 +68,7 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     const path = req.query.path ?? '';
     // Only source-owned routes and bounded collection slugs enter metadata or scripts.
     // Collections are managed dynamically; preserve their existing safe redirect path.
-    if (typeof path !== 'string' || (path !== '' && !Object.prototype.hasOwnProperty.call(PAGE_META, path) && !/^collection\/[a-z0-9][a-z0-9_-]{0,79}$/.test(path))) {
+    if (typeof path !== 'string' || (path !== '' && !Object.prototype.hasOwnProperty.call(PAGE_META, path) && !(path.startsWith('collection/') && isCollectionId(path.slice('collection/'.length))))) {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.setHeader('Cache-Control', 'no-store');
         res.setHeader('X-Content-Type-Options', 'nosniff');

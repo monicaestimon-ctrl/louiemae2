@@ -14,6 +14,16 @@ const kids: CollectionConfig = {
 };
 
 describe('product category assignments', () => {
+  it('only saves collection IDs that the public route can serve without renaming them', () => {
+    for (const id of ['Seasonal', 'a'.repeat(81), 'bad/path', '-prefix', ' spaced']) {
+      expect(validateCollectionTaxonomy([{ ...kids, id }]).join(' ')).toContain('collection ID must');
+    }
+    for (const id of ['seasonal-pieces', 'a'.repeat(80), '1_room']) {
+      const collection = { ...kids, id };
+      expect(validateCollectionTaxonomy([collection])).toEqual([]);
+      expect(collection.id).toBe(id);
+    }
+  });
   it('keeps the shipped Louie Mae taxonomy structurally valid', () => {
     expect(validateCollectionTaxonomy(INITIAL_SITE_CONTENT.collections)).toEqual([]);
   });

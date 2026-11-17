@@ -24,6 +24,7 @@ it('preserves password identity across sign-in and refresh and invalidates the s
   const refreshed = await t.action(api.auth.signIn, { refreshToken: signin.tokens!.refreshToken });
   expect(refreshed.tokens?.token).toBeTruthy();
   const currentSubject = decodeJwt(refreshed.tokens!.token).sub!;
+  expect(currentSubject.split('|')[0]).toBe(userId);
   const viewer = t.withIdentity({ subject: currentSubject });
   expect(await viewer.query(api.auth.isAuthenticated, {})).toBe(true);
   await viewer.action(api.auth.signOut, {});
