@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { useConvexAuth, usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { api } from '../convex/_generated/api';
+import { useCatalogDemand } from './useCatalogDemand';
 import { usePendingTimeout } from '../contexts/usePendingTimeout';
 import { liveProducts, type LiveItem } from './catalog';
 import { App, setProducts } from './app';
@@ -37,7 +38,12 @@ function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
   const { results, status, loadMore } = usePaginatedQuery(api.holm.catalogPage, {}, { initialNumItems: 24 });
   const curatedRows = useQuery(api.holm.catalogItems, { productIds: CURATED_IDS });
   const references = useMemo(() => curatedRows === undefined ? null : liveProducts(curatedRows.flatMap(row => row.item ? [row.item] : []) as LiveItem[]), [curatedRows]);
-  useEffect(() => { if (status === 'CanLoadMore') loadMore(24); }, [status, loadMore]);
+  const catalogDemand = useCatalogDemand();
+  // Fill empty candidate pages to find a real first selection. Beyond that,
+  // discovery/compose intent requests the full legacy dataset until server discovery replaces it.
+  useEffect(() => {
+    if (status === 'CanLoadMore' && (catalogDemand.requested || results.length === 0)) loadMore(24);
+  }, [status, loadMore, catalogDemand.requested, results.length]);
   const [installed, setInstalled] = useState(false);
   const [visibleIds, setVisibleIds] = useState<readonly string[] | null>(null);
   const previousInstallation = useRef('');
@@ -71,7 +77,7 @@ function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
     return shell ? null : <main className="holm-boot" aria-busy="true"><p role="status">Opening House of Louie Mae…</p></main>;
   }
   return <>{empty && <Recovery empty retry={() => window.location.reload()} />}
-    <div hidden={empty} inert={empty}><ModalSuspensionContext.Provider value={empty}>{hasContent && <CatalogApp key={me?.signedIn && me.verified ? 'trade' : 'retail'} catalogComplete={status === 'Exhausted'} />}</ModalSuspensionContext.Provider></div></>;
+    <div hidden={empty} inert={empty}><ModalSuspensionContext.Provider value={empty}>{hasContent && <CatalogApp key={me?.signedIn && me.verified ? 'trade' : 'retail'} catalogComplete={status === 'Exhausted'} onCatalogIntent={catalogDemand.request} />}</ModalSuspensionContext.Provider></div></>;
 }
 
 /** Resolve account access before starting a viewer-specific catalog subscription. */
