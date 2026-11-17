@@ -10,7 +10,7 @@ const work = 'tmp/public-handoff-fixture';
 await mkdir(work, { recursive: true });
 await build({
   stdin: {
-    contents: `export { INITIAL_SITE_CONTENT } from './constants';export { pageDocument } from './lib/serverPageDocument';export { journalDocument } from './lib/serverJournalDocument';export { withPublicInitialData } from './lib/serverPublicInitialData';`,
+    contents: `export { INITIAL_SITE_CONTENT } from './constants';export { pageDocument } from './lib/serverPageDocument';export { collectionDocument } from './lib/serverCollectionDocument';export { journalDocument } from './lib/serverJournalDocument';export { withPublicInitialData } from './lib/serverPublicInitialData';`,
     resolveDir: process.cwd(),
     loader: 'ts',
   },
@@ -20,7 +20,7 @@ await build({
   format: 'esm',
   outfile: work + '/documents.mjs',
 });
-const { INITIAL_SITE_CONTENT, pageDocument, journalDocument, withPublicInitialData } = await import(
+const { INITIAL_SITE_CONTENT, pageDocument, journalDocument, collectionDocument, withPublicInitialData } = await import(
   '../../' + work + '/documents.mjs?at=' + Date.now()
 );
 const site = JSON.parse(JSON.stringify(INITIAL_SITE_CONTENT));
@@ -28,6 +28,8 @@ site.story.hero.title = 'Source story';
 site.story.hero.subtitle = 'Our journey';
 site.story.hero.image = '/fixture.svg';
 site.home.shop = { ...site.home.shop, headerImage: '/fixture.svg' };
+site.collections = ['furniture','decor','fashion'].map(id => ({ id, title: 'Source '+id, subtitle: 'Verified collection navigation', heroImage: '/fixture.svg', subcategories: [{id:'chairs',title:'Chairs',image:'/fixture.svg'},{id:'tables',title:'Tables',image:'/fixture.svg'}] }));
+const collectionPaths = site.collections.map(item => '/collection/'+item.id);
 const post = {
   _id: 'story1',
   _creationTime: 1,
@@ -42,7 +44,7 @@ const post = {
 const article = { ...post, contentHtml: '<p>Verified article body from the initial response.</p>' };
 const stubs = {
   auth: `export const useAuthActions=()=>({signIn:async()=>{throw Error('No auth permitted')},signOut:async()=>{throw Error('No auth permitted')}});export const useAuthToken=()=>null;`,
-  convex: `import {getFunctionName} from 'convex/server';import{useSyncExternalStore}from'react';const subscribe=fn=>{window.addEventListener('fixture-update',fn);return()=>window.removeEventListener('fixture-update',fn)};const version=()=>window.fixtureVersion||0;function result(ref,args){const name=getFunctionName(ref);if(window.fixtureOffline)return new Error('Synthetic offline');if(name==='customPages:list')return[];if(name==='siteContent:get')return window.fixtureLive?window.fixtureSite:undefined;if(name==='blogPosts:publicSummaries')return window.fixtureLive?[]:undefined;if(name==='blogPosts:publicDetail')return window.fixtureLive?null:undefined;return undefined;}export function useQueries(queries){useSyncExternalStore(subscribe,version);return Object.fromEntries(Object.entries(queries).map(([key,q])=>[key,result(q.query,q.args)]))}export function useQuery(ref,args){useSyncExternalStore(subscribe,version);return args==='skip'?undefined:result(ref,args)}export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});export const useMutation=()=>async()=>{window.fixtureCommands=(window.fixtureCommands||0)+1;throw Error('No commands permitted')};export const useAction=useMutation;export const useConvex=()=>({query:async()=>{throw Error('No direct query')}});export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});`,
+  convex: `import {getFunctionName} from 'convex/server';import{useSyncExternalStore}from'react';const subscribe=fn=>{window.addEventListener('fixture-update',fn);return()=>window.removeEventListener('fixture-update',fn)};const version=()=>window.fixtureVersion||0;function result(ref,args){const name=getFunctionName(ref);if(window.fixtureOffline)return new Error('Synthetic offline');if(name==='catalogReadiness:status'){window.fixtureReadinessCalls=(window.fixtureReadinessCalls||0)+1;return window.fixtureCatalogDisabled?{ready:false,version:1}:undefined;}if(name==='customPages:list')return[];if(name==='siteContent:get')return window.fixtureLive?window.fixtureSite:undefined;if(name==='blogPosts:publicSummaries')return window.fixtureLive?[]:undefined;if(name==='blogPosts:publicDetail')return window.fixtureLive?null:undefined;return undefined;}export function useQueries(queries){useSyncExternalStore(subscribe,version);return Object.fromEntries(Object.entries(queries).map(([key,q])=>[key,result(q.query,q.args)]))}export function useQuery(ref,args){useSyncExternalStore(subscribe,version);return args==='skip'?undefined:result(ref,args)}export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});export const useMutation=()=>async()=>{window.fixtureCommands=(window.fixtureCommands||0)+1;throw Error('No commands permitted')};export const useAction=useMutation;export const useConvex=()=>({query:async()=>{throw Error('No direct query')}});export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});`,
 };
 const bundle = await build({
   stdin: {
@@ -91,6 +93,10 @@ const styles =
 const js = bundle.outputFiles.find((f) => f.path.endsWith('.js')).text;
 const template = `<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Public fixture</title><link rel="canonical" href="https://www.louiemae.com/"><meta name="description" content="Fixture"><style>${styles}</style></head><body><div id="skip-navigation"></div><!--product-document--><div id="root"></div><script>${js.replaceAll('</script', '<\\/script')}</script></body></html>`;
 function html(path) {
+  if(collectionPaths.includes(path)) {
+    const config=site.collections.find(item=>path==='/collection/'+item.id);
+    return withPublicInitialData(collectionDocument(template,{...config,categories:config.subcategories,rootCategories:config.subcategories,cards:[]}),path,{site});
+  }
   if (path === '/blog')
     return withPublicInitialData(journalDocument(template, [post]), path, { posts: [post] });
   if (path === '/blog/story1')
@@ -118,7 +124,7 @@ function html(path) {
 const server = createServer(async (req, res) => {
   try {
     const path = new URL(req.url, 'http://fixture').pathname;
-    if (['/shop', '/story', '/blog', '/blog/story1'].includes(path)) {
+    if (['/shop', '/story', '/blog', '/blog/story1', ...collectionPaths].includes(path)) {
       res.setHeader('Content-Type', 'text/html');
       return res.end(html(path));
     }
@@ -150,7 +156,7 @@ try {
     [844, 390],
     [1440, 900],
   ])
-    for (const path of ['/shop', '/story', '/blog', '/blog/story1']) {
+    for (const path of ['/shop', '/story', '/blog', '/blog/story1', ...collectionPaths]) {
       const page = await browser.newPage();
       await page.setViewport({ width, height });
       const errors = [];
@@ -161,14 +167,23 @@ try {
       }, site);
       await page.goto(origin + path, { waitUntil: 'domcontentloaded' });
       const selector =
-        path === '/shop' || path === '/story'
+        path.startsWith('/collection/') ? `main[data-lm-collection-ready="${path.slice(12)}"]` : path === '/shop' || path === '/story'
           ? `main[data-public-page="${path.slice(1)}"]`
           : `main[data-lm-journal-ready="${path === '/blog' ? 'index' : 'story1'}"]`;
       await page.waitForSelector(selector, { visible: true, timeout: 8000 });
       assert.equal(await page.evaluate(() => Boolean(window.fixtureLive)), false);
-      assert.equal(await page.$('#lm-page-document,#lm-journal-document'), null);
+      assert.equal(await page.$('#lm-page-document,#lm-journal-document,#lm-collection-document'), null);
       await page.addScriptTag({ content: axe.source });
       assert.deepEqual(await page.evaluate(async () => (await window.axe.run()).violations), []);
+      if(collectionPaths.includes(path)) {
+        assert.equal(await page.evaluate(()=>window.fixtureReadinessCalls||0),0);
+        await page.evaluate(path=>{window.location.hash='#collection/'+path.slice(12)+'?cat=All&view=products'},path);
+        await page.waitForFunction(()=>!document.querySelector('[data-lm-collection-ready]'));
+        await page.evaluate(()=>{window.fixtureCatalogDisabled=true;window.fixtureVersion++;window.dispatchEvent(new Event('fixture-update'))});
+        await page.waitForFunction(()=>document.querySelector('main')?.textContent.includes('Products are temporarily unavailable'));
+        await page.evaluate(path=>{window.location.hash='#collection/'+path.slice(12)},path);
+        await page.waitForSelector(selector,{visible:true});
+      }
       await page.evaluate(() => {
         window.fixtureLive = true;
         window.fixtureSite.story.hero.title = 'Updated story';

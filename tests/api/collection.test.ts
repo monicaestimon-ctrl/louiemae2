@@ -8,7 +8,7 @@ vi.mock('node:fs/promises', async original => {
 import { readFile } from 'node:fs/promises';
 import handler from '../../api/collection';
 const fetchMock = vi.fn();
-const site = { collections: [{ id: 'furniture', title: 'Furniture & objects', subtitle: 'Thoughtful <pieces>', heroImage: '/images/brand/DINNERTABLE.png', subcategories: [{ id: 'chairs', title: 'Chairs', image: '/images/brand/furniture-chair.png' }] }] };
+const site = { navLinks: [], home: {}, story: {}, privateCost: 98765, collections: [{ id: 'furniture', title: 'Furniture & objects', subtitle: 'Thoughtful <pieces>', heroImage: '/images/brand/DINNERTABLE.png', subcategories: [{ id: 'chairs', title: 'Chairs', image: '/images/brand/furniture-chair.png' }] }] };
 beforeEach(() => {
   vi.stubGlobal('fetch', fetchMock); vi.stubEnv('VITE_CONVEX_URL', 'https://public-fixture.convex.cloud');
   vi.stubEnv('VITE_PRELAUNCH_MODE', 'false'); fetchMock.mockReset();
@@ -41,6 +41,12 @@ it('renders escaped public collection content and bounded matching product previ
   expect(result.body).toContain('href="https://www.louiemae.com/collection/furniture"');
   expect(result.body).toContain('data-collection-id="furniture"'); expect(fetchMock).toHaveBeenCalledTimes(3);
   expect(result.body).toContain('rel="preload" as="image"');
+  const payload = JSON.parse(new globalThis.DOMParser().parseFromString(result.body, 'text/html').getElementById('lm-public-initial-data')!.textContent!);
+  expect(payload.path).toBe('/collection/furniture');
+  expect(payload.data.site.collections[0].id).toBe('furniture');
+  expect(result.body).not.toContain('privateCost');
+  expect(payload.data).not.toHaveProperty('products');
+  expect(payload.data).not.toHaveProperty('ready');
   expect(vi.mocked(readFile)).toHaveBeenCalled();
 });
 it.each([{ id: ['furniture'] }, { id: '<script>' }, { id: '' }])('rejects malformed identities before querying: %j', async query => {

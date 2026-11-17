@@ -151,3 +151,11 @@ it('projects nested display fields without private objects or unexpected primiti
     )?.site
   ).toEqual(data);
 });
+
+it('binds collection configuration to its exact valid route without seeding product pages', () => {
+  const { text } = encoded('/collection/furniture');
+  expect(parsePublicInitialData(text, '/collection/furniture', 1000)?.site).toBeDefined();
+  expect(parsePublicInitialData(text, '/collection/decor', 1000)).toBeUndefined();
+  expect(parsePublicInitialData(text, '/collection/furniture', 31_001)).toBeUndefined();
+  expect(parsePublicInitialData(encoded('/collection/INVALID').text, '/collection/INVALID', 1000)).toEqual({});
+});

@@ -3,9 +3,9 @@ import { fireEvent, render, screen, cleanup, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StorePage } from '../StorePage';
 import type { Product } from '../../types';
-const mocks = vi.hoisted(() => ({ detailProduct: null as Product | null, detailFailed: false, addToCart: vi.fn(), ready: true, complete: false, products: [] as unknown[], load: vi.fn(), detail: vi.fn(), query: vi.fn() }));
-vi.mock('convex/react', () => ({ useQuery: (...args: unknown[]) => { mocks.query(...args); return { ready: mocks.ready }; } }));
-vi.mock('../../contexts/BlogContext', () => ({ useSite: () => ({ isLoading: false, siteContent: { collections: ['kids', 'furniture', 'decor', 'fashion'].map(id => ({
+const mocks = vi.hoisted(() => ({ detailProduct: null as Product | null, detailFailed: false, addToCart: vi.fn(), ready: true as boolean | undefined, complete: false, products: [] as unknown[], load: vi.fn(), detail: vi.fn(), query: vi.fn() }));
+vi.mock('../../contexts/useRecoverableQuery', () => ({ useRecoverableQuery: (...args: unknown[]) => { mocks.query(...args); return args[1] === 'skip' ? { status: 'idle', data: undefined } : { status: mocks.ready === undefined ? 'loading' : 'ready', data: mocks.ready === undefined ? undefined : { ready: mocks.ready } }; } }));
+vi.mock('../../contexts/BlogContext', () => ({ useSite: () => ({ isLoading: false, siteContentStatus: 'ready', siteContent: { collections: ['kids', 'furniture', 'decor', 'fashion'].map(id => ({
   id, title: id === 'kids' ? 'Kids' : id, subtitle: '', heroImage: '', subcategories: [{ id: 'dresses', title: 'Dresses', image: '' }],
 })) } }) }));
 vi.mock('../../contexts/NewsletterContext', () => ({ useNewsletter: () => ({ addSubscriberWithTags: vi.fn() }) }));
@@ -21,14 +21,21 @@ vi.mock('../useStoreCatalog', () => ({
 beforeEach(() => { vi.clearAllMocks(); mocks.detailProduct = null; mocks.detailFailed = false; mocks.ready = true; mocks.complete = false; mocks.products = []; });
 afterEach(cleanup);
 describe('store catalog integration', () => {
-  it.each(['furniture', 'decor', 'fashion'] as const)('shows reload feedback after the %s root loses readiness', (collection) => {
+  it.each(['furniture', 'decor', 'fashion'] as const)('renders verified %s navigation without querying inventory', (collection) => {
     const initial = document.createElement('main'); initial.id = 'lm-collection-document'; document.body.append(initial);
-    mocks.ready = false;
-    render(<StorePage collection={collection} />);
+    mocks.ready = undefined;
+    const view = render(<StorePage collection={collection} />);
     expect(document.getElementById('lm-collection-document')).toBeNull();
+    expect(document.querySelector(`[data-lm-collection-ready="${collection}"]`)).not.toBeNull();
+    expect(mocks.query).toHaveBeenLastCalledWith(expect.anything(), 'skip');
+    expect(screen.queryByText(/Products are temporarily unavailable/)).toBeNull();
+    view.rerender(<StorePage collection={collection} forceProductView />);
+    expect(mocks.query).toHaveBeenLastCalledWith(expect.anything(), {});
+    expect(document.querySelector('[data-lm-collection-ready]')).toBeNull();
+    mocks.ready = false;
+    view.rerender(<StorePage collection={collection} forceProductView />);
     expect(screen.getByText(/Products are temporarily unavailable/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reload products' })).toBeEnabled();
-    expect(document.querySelector('[data-lm-collection-ready]')).toBeNull();
   });
   it('preserves an already-decoded percent sign and supplies a filtered-page heading', async () => {
     render(<StorePage collection="kids" initialCategory="100% cotton" forceProductView />);
@@ -50,8 +57,9 @@ describe('store catalog integration', () => {
     render(<StorePage collection="kids" initialCategory="All" forceProductView />);
     expect(screen.getByText('Multiple Options')).toBeTruthy();
     fireEvent.click(screen.getByAltText('Late product'));
-    await waitFor(() => expect(mocks.detail).toHaveBeenLastCalledWith('late-product'));
-    expect(await screen.findByText('Loading product details…')).toBeTruthy();
+    // Wait for the actual lazy module to mount before inspecting its hook call.
+    expect(await screen.findByText('Loading product details…', {}, { timeout: 5000 })).toBeTruthy();
+    expect(mocks.detail).toHaveBeenLastCalledWith('late-product');
     fireEvent.click(screen.getByRole('button', { name: 'Close' })); expect(screen.queryByRole('dialog')).toBeNull();
   });
   it('keeps transport failures distinct from missing referral-linked products', async () => {
