@@ -40,3 +40,15 @@ it('offers retry for a stalled module request', async () => {
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Try loading again' })));
   expect(screen.getByText('Recovered tool')).toBeTruthy();
 });
+
+it('starts a fresh waiting period when retrying a stalled import', async () => {
+  vi.useFakeTimers();
+  const Tool = deferredFeature(() => new Promise<{ default: React.ComponentType }>(() => {}), 'Account');
+  render(<Tool />);
+  act(() => vi.advanceTimersByTime(10_000));
+  fireEvent.click(screen.getByRole('button', { name: 'Try loading again' }));
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(screen.getByRole('status')).toHaveTextContent('Loading account');
+  act(() => vi.advanceTimersByTime(10_000));
+  expect(screen.getByRole('alert')).toHaveTextContent('taking longer than expected');
+});

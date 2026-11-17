@@ -3,13 +3,13 @@ import { LoadingFeature } from './LoadingFeature';
 
 /** Defer optional tools until opened, with a local recovery boundary. */
 export function deferredFeature<P extends object>(load: () => Promise<{ default: ComponentType<P> }>, label: string) {
-  return class DeferredFeature extends React.Component<P, { failed: boolean }> {
-    state = { failed: false };
+  return class DeferredFeature extends React.Component<P, { failed: boolean; attempt: number }> {
+    state = { failed: false, attempt: 0 };
     private Feature = lazy(load);
     static getDerivedStateFromError() { return { failed: true }; }
     private retry = () => {
       this.Feature = lazy(load);
-      this.setState({ failed: false });
+      this.setState(previous => ({ failed: false, attempt: previous.attempt + 1 }));
     };
     render() {
       if (this.state.failed) return <section role="alert" aria-label={label}>
@@ -18,7 +18,7 @@ export function deferredFeature<P extends object>(load: () => Promise<{ default:
         <p>If this continues, reload the page to get the latest version.</p>
       </section>;
       const Feature = this.Feature;
-      return <Suspense fallback={<LoadingFeature label={label} retry={this.retry} />}>
+      return <Suspense fallback={<LoadingFeature key={this.state.attempt} label={label} retry={this.retry} />}>
         <Feature {...this.props} />
       </Suspense>;
     }
