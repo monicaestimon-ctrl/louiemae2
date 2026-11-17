@@ -1,4 +1,4 @@
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { JournalIndexLead, JournalArticleHero } from '../JournalLead';
@@ -65,4 +65,22 @@ it('does not substitute reviewed crops for a replacement upload', () => {
   expect(container.querySelector('picture')).toBeNull();
   expect(container.querySelector('img')?.getAttribute('src')).toBe(replacement.image);
   expect(container.innerHTML).not.toContain('/images/opt/editorial/');
+});
+
+it('falls back from failed AVIF to WebP, bounds failures, and resets for a replacement source', () => {
+  const view = render(<JournalArticleHero post={post} />);
+  fireEvent.error(view.container.querySelector('picture img')!);
+  expect(view.container.querySelector('source[type="image/avif"]')).toBeNull();
+  expect(view.container.querySelector('picture img')?.getAttribute('src')).toContain(
+    entry.windows.articleMobile.base
+  );
+  fireEvent.error(view.container.querySelector('picture img')!);
+  expect(view.container.querySelector('img')).toBeNull();
+  expect(screen.getByRole('img', { name: `${post.title}: image unavailable` })).toHaveTextContent(
+    'Image unavailable'
+  );
+  view.rerender(<JournalArticleHero post={{ ...post, image: `${source}-new` }} />);
+  expect(view.container.querySelector('img')?.getAttribute('src')).toBe(`${source}-new`);
+  fireEvent.error(view.container.querySelector('img')!);
+  expect(view.container.querySelector('img')).toBeNull();
 });

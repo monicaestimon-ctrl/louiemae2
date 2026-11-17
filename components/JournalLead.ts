@@ -272,12 +272,34 @@ function JournalImage({
 }) {
   const entries = editorialManifest as Record<string, EditorialImage>;
   const entry = Object.hasOwn(entries, src) ? entries[src] : undefined;
+  const sourceKey = `${kind}:${src}`;
+  const [failure, setFailure] = React.useState({ sourceKey, attempt: 0 });
+  const attempt = failure.sourceKey === sourceKey ? failure.attempt : 0;
+  const hasAvif = Boolean(
+    entry?.windows[`${kind}Mobile`].avifBase || entry?.windows[`${kind}Desktop`].avifBase
+  );
+  if (attempt > 0 && (!hasAvif || attempt >= 2)) {
+    return React.createElement(
+      'span',
+      {
+        role: 'img',
+        'aria-label': alt ? `${alt}: image unavailable` : 'Editorial image unavailable',
+        className: 'flex h-full w-full items-center justify-center bg-cream text-earth text-sm',
+      },
+      'Image unavailable'
+    );
+  }
   const attrs = {
     loading: 'eager' as const,
     fetchPriority: 'high' as const,
     decoding: 'async' as const,
     alt,
     className,
+    onError: () =>
+      setFailure((previous) => ({
+        sourceKey,
+        attempt: Math.min(previous.sourceKey === sourceKey ? previous.attempt + 1 : 1, 2),
+      })),
   };
   if (!entry)
     return React.createElement('img', {
@@ -300,7 +322,8 @@ function JournalImage({
   return React.createElement(
     'picture',
     { className: 'block w-full h-full' },
-    desktop.avifBase &&
+    attempt === 0 &&
+      desktop.avifBase &&
       React.createElement('source', {
         type: 'image/avif',
         media: '(min-width: 768px)',
@@ -313,7 +336,8 @@ function JournalImage({
       srcSet: set(desktop),
       sizes,
     }),
-    mobile.avifBase &&
+    attempt === 0 &&
+      mobile.avifBase &&
       React.createElement('source', {
         type: 'image/avif',
         srcSet: set(mobile, 'avif'),
