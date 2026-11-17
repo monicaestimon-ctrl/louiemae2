@@ -343,7 +343,7 @@ const AppContent = () => {
           href="#main-content"
           onClick={(event) => {
             event.preventDefault();
-            const target = document.getElementById('lm-product-document') ?? document.getElementById('lm-collection-document') ?? document.getElementById('main-content');
+            const target = document.getElementById('lm-product-document') ?? document.getElementById('lm-collection-document') ?? document.getElementById('lm-page-document') ?? document.getElementById('main-content');
             target?.focus();
             target?.scrollIntoView();
           }}
