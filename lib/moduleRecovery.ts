@@ -16,7 +16,12 @@ export function showStartupFailure(error: unknown) {
   console.error('Storefront startup failed', error);
   document.getElementById('lm-shell')?.remove();
   document.getElementById('lm-product-document')?.remove();
+  document.getElementById('lm-product-bootstrap')?.remove();
   document.getElementById('lm-product-structured-data')?.remove();
+  for (const type of ['collection', 'page', 'journal']) {
+    document.getElementById(`lm-${type}-document`)?.remove();
+    document.getElementById(`lm-${type}-structured-data`)?.remove();
+  }
   document.getElementById('holm-shell')?.remove();
   const root = document.getElementById('root');
   if (!root) return;

@@ -1,3 +1,4 @@
+import type {CheckoutDraftRef} from '../../lib/delivery/checkoutDraft';
 import React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
@@ -92,4 +93,20 @@ it('reports all missing quote details without sending a request', () => {
   expect(within(summary).getAllByRole('link')).toHaveLength(3);
   expect(within(summary).getByText('Enter a valid destination ZIP above.')).toBeInTheDocument();
   expect(mocks.quote).not.toHaveBeenCalled();
+});
+
+it('keeps contact inputs in memory across reopening but requires a fresh total review',async()=>{
+ const draft:CheckoutDraftRef={owner:'fixture',current:undefined};
+ mocks.estimate.mockResolvedValue({estimateId:'fixture',expiresAt:Date.now()+60000,status:'ok',merchandiseMinor:10000,deliveryChargeMinor:5999,taxMinor:0,totalMinor:15999,serviceName:'Curbside delivery',serviceDetails:[],timingCaveat:'Timing to be confirmed.'});
+ const lines=[{productId:'fixture',variantId:'fixture',packs:1}];
+ const view=render(<DeliveryCheckout lines={lines} draftState={draft}/>);
+ for(const [label,value] of Object.entries({'Recipient name':'Test recipient','Delivery contact phone':'5555550100','Street address':'123 Test St',City:'Stockton','ZIP code':'95206',Email:'test@example.com'}))fireEvent.change(screen.getByLabelText(label),{target:{value}});
+ fireEvent.click(screen.getByRole('button',{name:'Review delivery and total'}));
+ await screen.findByRole('button',{name:'Pay $159.99'});
+ view.rerender(<></>);view.rerender(<DeliveryCheckout lines={lines} draftState={draft}/>);
+ expect(screen.getByLabelText('Street address')).toHaveValue('123 Test St');
+ expect(screen.getByLabelText('Email')).toHaveValue('test@example.com');
+ expect(screen.queryByRole('button',{name:'Pay $159.99'})).toBeNull();
+ expect(mocks.estimate).toHaveBeenCalledTimes(1);
+ expect(Object.keys(draft.current!).sort()).toEqual(['access','address','email','useCredit']);
 });

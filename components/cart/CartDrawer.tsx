@@ -1,6 +1,6 @@
 import { Modal } from '../Modal';
 import { rememberCheckout, cartLines } from '../../lib/delivery/checkoutReturn';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { X, ShoppingBag, Loader2 } from 'lucide-react';
 import { useQueries } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
@@ -12,6 +12,7 @@ import { activeRef, visitorId } from '../../lib/partnerLink';
 import CheckoutV2 from '../delivery/CheckoutV2';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { usePendingTimeout } from '../../contexts/usePendingTimeout';
+import { checkoutDraftOwner, type CheckoutDraftRef } from '../../lib/delivery/checkoutDraft';
 const CREDIT_QUERY = { credit: { query: api.holmCredit.myCredit, args: {} } };
 const NO_QUERIES = {};
 
@@ -24,6 +25,9 @@ export const CartDrawer: React.FC = () => {
     const [isCheckingOut, setIsCheckingOut] = useState(false);
     // Store credit (signed-in members): pre-set from their Hub setting, changeable per order.
     const authToken = useAuthToken();
+    const draftOwner = checkoutDraftOwner(authToken);
+    const checkoutDraft = useMemo<CheckoutDraftRef>(() => ({ owner: draftOwner, current: undefined }), [draftOwner]);
+    useEffect(() => { if (!items.length) checkoutDraft.current = undefined; }, [items.length, checkoutDraft]);
     const needsCredit = isOpen && !hasV2 && Boolean(authToken);
     const creditResults = useQueries(needsCredit ? CREDIT_QUERY : NO_QUERIES);
     const creditResult = creditResults.credit as FunctionReturnType<typeof api.holmCredit.myCredit> | Error | undefined;
@@ -219,7 +223,7 @@ export const CartDrawer: React.FC = () => {
                             </label>
                         )}
 
-                        {hasV2 ? <ErrorBoundary fallback={<p role="alert" className="text-earth">Checkout is temporarily unavailable. Close and reopen your cart to try again. Your items are saved.</p>}><CheckoutV2 /></ErrorBoundary> : (<>
+                        {hasV2 ? <ErrorBoundary fallback={<p role="alert" className="text-earth">Checkout is temporarily unavailable. Close and reopen your cart to try again. Your items are saved.</p>}><CheckoutV2 key={draftOwner} draftState={checkoutDraft} /></ErrorBoundary> : (<>
                         {creditBlocked && <p role="status" className="text-earth mb-4">
                             {creditPending && !creditTimedOut ? 'Checking your store credit…' : 'Store credit could not be verified. Close and reopen your cart to try again. Your items are saved.'}
                         </p>}

@@ -148,7 +148,10 @@ try {
     }))
       await page.type('#tv-' + key, value);
     await clickText('Back');
-    await page.click('.tv-line .tv-th');
+    await page.waitForSelector('.tv-line .tv-th', {visible:true});
+    await page.focus('.tv-line .tv-th');
+    assert.equal(await page.evaluate(()=>document.activeElement?.matches('.tv-line .tv-th')),true);
+    await page.keyboard.press('Enter');
     await page.waitForSelector('.pp');
     await page.keyboard.press('Escape');
     await page.waitForSelector('.tv-line');
@@ -281,7 +284,10 @@ try {
   await page.waitForFunction(()=>document.querySelector('.tv-main')?.textContent.includes('Offpage'));
   assert.equal(await page.$eval('.tv-sum .btn-ink',node=>node.disabled),false);
   assert.equal(await page.$eval('.tv-line .tv-th',node=>node.disabled),false);
-  await page.click('.tv-line .tv-th');
+  await page.waitForSelector('.tv-line .tv-th', {visible:true});
+    await page.focus('.tv-line .tv-th');
+    assert.equal(await page.evaluate(()=>document.activeElement?.matches('.tv-line .tv-th')),true);
+    await page.keyboard.press('Enter');
   await page.waitForFunction(()=>document.querySelector('.pp h1')?.textContent==='Offpage');
   assert.equal(await page.$eval('button[aria-label="Next piece"]',node=>node.disabled),true);
   assert.equal(await page.$eval('button[aria-label="Previous piece"]',node=>node.disabled),true);

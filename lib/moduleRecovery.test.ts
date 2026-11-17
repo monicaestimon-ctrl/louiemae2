@@ -30,3 +30,15 @@ it('provides non-React recovery without exposing diagnostics or clearing saved c
   expect(localStorage.getItem('saved-cart')).toBe('retained');
   expect(log).toHaveBeenCalledOnce();
 });
+
+it.each(['collection','page','journal'])('removes the %s initial document that would hide recovery',type=>{
+ vi.spyOn(console,'error').mockImplementation(()=>undefined);
+ document.body.innerHTML=`<style>#lm-${type}-document~#root{visibility:hidden}</style><main id="lm-${type}-document">Initial content</main><script id="lm-${type}-structured-data" type="application/ld+json">{}</script><script id="lm-product-bootstrap" type="application/json">{}</script><div id="root"></div>`;
+ localStorage.setItem('saved-cart','retained');
+ expect(getComputedStyle(document.getElementById('root')!).visibility).toBe('hidden');
+ showStartupFailure(new Error('Synthetic module failure'));
+ expect(getComputedStyle(document.getElementById('root')!).visibility).toBe('visible');
+ expect(document.querySelectorAll('main')).toHaveLength(1);
+ expect(document.querySelectorAll('[id$="structured-data"],#lm-product-bootstrap')).toHaveLength(0);
+ expect(localStorage.getItem('saved-cart')).toBe('retained');
+});

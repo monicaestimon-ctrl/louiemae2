@@ -29,7 +29,8 @@ import { NewsletterPopup } from './components/NewsletterPopup';
 import { SiteProvider, useSite } from './contexts/BlogContext';
 import { NewsletterProvider } from './contexts/NewsletterContext';
 import { CartProvider } from './contexts/CartContext';
-import { CartIcon, CartDrawer } from './components/cart';
+import { CartIcon } from './components/cart/CartIcon';
+import { LazyCartDrawer } from './components/cart/LazyCartDrawer';
 import { useConvex, useMutation } from 'convex/react';
 import { api } from './convex/_generated/api';
 import { captureRefFromUrl, visitorId } from './lib/partnerLink';
@@ -40,14 +41,21 @@ import { ContentStatusPage } from './components/ContentStatusPage';
 import { Modal } from './components/Modal';
 import { SearchLoadState } from './components/SearchLoadState';
 import { loadModule } from './lib/moduleRecovery';
+import { createModuleResource } from './lib/moduleResource';
 
-// Everything past the home page loads on demand so the first visit only downloads
-// what it shows. Each page keeps its named export; lazy() needs a default.
+// Requested public pages preload alongside data; other pages load on navigation.
 /** Load a named page export with a bounded import while preserving its prop type. */
 const named = <K extends string, T extends Record<K, React.ComponentType<never>>>(
   load: () => Promise<T>,
   key: K
-) => lazy(() => loadModule(load).then((m) => ({ default: m[key] })));
+) => {
+  const resource = createModuleResource(load);
+  function PreloadedPage(props: React.ComponentProps<T[K]>) {
+    const Page = resource.read()[key] as React.ComponentType<typeof props>;
+    return React.createElement(Page, props);
+  }
+  return Object.assign(PreloadedPage, { preload: resource.preload });
+};
 const StoryPage = named(() => import('./components/StoryPage'), 'StoryPage');
 const BlogPage = named(() => import('./components/BlogPage'), 'BlogPage');
 const BlogPostView = named(() => import('./components/BlogPostView'), 'BlogPostView');
@@ -65,6 +73,18 @@ const ShopLandingPage = named(() => import('./components/ShopLandingPage'), 'Sho
 const CheckoutSuccess = named(() => import('./components/checkout'), 'CheckoutSuccess');
 const CheckoutCancel = named(() => import('./components/checkout'), 'CheckoutCancel');
 const SearchModal = named(() => import('./components/SearchModal'), 'SearchModal');
+
+// Start only the requested public page, alongside its data subscriptions. Private pages
+// remain demand-loaded. A preload failure stays owned by the existing route boundary.
+if (typeof window !== 'undefined') {
+  const route = storefrontRoute(window.location);
+  if (route === 'shop') ShopLandingPage.preload();
+  else if (route === 'story') StoryPage.preload();
+  else if (route === 'blog') BlogPage.preload();
+  else if (route.startsWith('#blog/')) BlogPostView.preload();
+  else if (route.startsWith('/products/')) ProductPage.preload();
+  else if (route.startsWith('#collection/')) StorePage.preload();
+}
 
 const PageFallback = ({ hidden }: { hidden: boolean }) => hidden ? null : (
   <main className="min-h-[100svh] flex items-center justify-center text-earth" aria-busy="true">
@@ -453,7 +473,7 @@ const AppContent = () => {
       )}
 
       {/* Cart Drawer */}
-      <CartDrawer />
+      <LazyCartDrawer />
       <DeliveryQuoteAccess />
 
       {/* Search Modal */}

@@ -15,6 +15,7 @@ import { STANDARD_ACCESS } from '../../lib/delivery/destination';
 import { rememberCheckout } from '../../lib/delivery/checkoutReturn';
 import DeliveryAccessFields from './DeliveryAccessFields';
 import DeliveryQuoteRequest from './DeliveryQuoteRequest';
+import type { CheckoutDraftRef } from '../../lib/delivery/checkoutDraft';
 
 const money = (minor: number) => `$${(minor / 100).toFixed(2)}`;
 const STATES =
@@ -44,7 +45,7 @@ type Est = {
  * estimate; a changed total must be accepted before paying.
  */
 type CheckoutLine = { productId: string; variantId: string; packs: number };
-export default function CheckoutV2() {
+export default function CheckoutV2({ draftState }: { draftState?: CheckoutDraftRef } = {}) {
   const { items } = useCart();
   const lines = useMemo(
     () =>
@@ -55,14 +56,16 @@ export default function CheckoutV2() {
       })),
     [items]
   );
-  return <DeliveryCheckout lines={lines} />;
+  return <DeliveryCheckout lines={lines} draftState={draftState} />;
 }
 export function DeliveryCheckout({
   lines,
   channel = 'retail',
+  draftState,
 }: {
   lines: CheckoutLine[];
   channel?: 'retail' | 'trade';
+  draftState?: CheckoutDraftRef;
 }) {
   const authToken = useAuthToken();
   const formId = useId();
@@ -86,7 +89,7 @@ export function DeliveryCheckout({
     return () => clearInterval(timer);
   }, []);
   const estimate = useDeliveryRequest('estimate');
-  const [address, setAddress] = useState({
+  const [address, setAddress] = useState(() => draftState?.current?.address ?? ({
     recipientName: '',
     phone: '',
     line1: '',
@@ -95,12 +98,15 @@ export function DeliveryCheckout({
     state: 'CA',
     postalCode: '',
     country: 'US',
-  });
-  const [access, setAccess] = useState(STANDARD_ACCESS);
-  const [email, setEmail] = useState('');
+  }));
+  const [access, setAccess] = useState(() => draftState?.current?.access ?? STANDARD_ACCESS);
+  const [email, setEmail] = useState(() => draftState?.current?.email ?? '');
   // Store credit (v2): comes off merchandise only, never delivery or tax.
   const credit = useQuery(api.ldgCredits.myCreditV2);
-  const [useCredit, setUseCredit] = useState(false);
+  const [useCredit, setUseCredit] = useState(() => draftState?.current?.useCredit ?? false);
+  useEffect(() => {
+    if (draftState) draftState.current = { address, access, email, useCredit };
+  }, [draftState, address, access, email, useCredit]);
   const [est, setEst] = useState<Est | null>(null);
   const [accepted, setAccepted] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
