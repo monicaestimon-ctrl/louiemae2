@@ -56,6 +56,28 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Verify deferred HOLM bundle boundaries
+        run: npm run verify:deferred-bundles
+
+      - name: Verify HOLM interaction fixtures
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: |
+          npm run test:holm:browser
+          npm run test:tray-request:browser
+          npm run test:application:browser
+
+      - name: Retain HOLM quality evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: holm-quality-${{ github.sha }}
+          path: |
+            artifacts/lighthouse/deferred-bundles.json
+            artifacts/lighthouse/*browser.json
+          if-no-files-found: ignore
+          retention-days: 14
+
   deploy-convex:
     # Only deploy to Convex on pushes to main (not on PRs)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
