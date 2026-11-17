@@ -105,7 +105,7 @@ export function journalHtml(content: string) {
     if (id) attrs += ` id="${id}"`;
     if (tag === 'a') {
       const href = link(attributes.get('href') || '');
-      if (!href) return children;
+      if (!href) return id ? `<span id="${id}">${children}</span>` : children;
       attrs += ` href="${escapeJournalText(href)}" rel="noopener noreferrer"`;
     }
     if (tag === 'img') {

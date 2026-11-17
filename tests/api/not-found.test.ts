@@ -24,6 +24,7 @@ it('returns an independent noindex 404 with working recovery links and no reflec
 it('preserves the known application entry points before the unknown-path fallback', () => {
   expect(config.rewrites.at(-1)).toEqual({ source: '/((?!api).*)', destination: '/api/not-found' });
   expect(config.rewrites).toContainEqual({ source: '/admin', destination: '/index.html' });
+  expect(config.rewrites).toContainEqual({ source: '/products', destination: '/index.html' });
   expect(config.rewrites).toContainEqual({ source: '/r/:linkId([a-z0-9]{8,24})', destination: '/index.html' });
   expect(config.rewrites).toContainEqual({ source: '/trade', destination: '/trade/index.html' });
 });

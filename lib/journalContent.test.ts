@@ -34,3 +34,13 @@ it('rejects encoded protocols, foreign content and oversized input without chang
     'href="#lm-journal-fragment-section"'
   );
 });
+
+it('preserves safe fragment targets when removing missing or unsafe anchor destinations', () => {
+  const result = journalHtml('<a id="section"></a><a href="#section">Read</a><a id="other" href="javascript:bad()"><strong>Other</strong></a><a id="bad id">Plain</a>');
+  expect(result).toContain('<span id="lm-journal-fragment-section"></span>');
+  expect(result).toContain('href="#lm-journal-fragment-section"');
+  expect(result).toContain('<span id="lm-journal-fragment-other"><strong>Other</strong></span>');
+  expect(result).not.toMatch(/javascript:|bad id|<a id=/);
+  expect(result).toContain('Plain');
+  expect(journalHtml(result)).toBe(result);
+});

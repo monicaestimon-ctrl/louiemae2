@@ -35,6 +35,7 @@ try {
     const violations = await page.evaluate(async () => (await window.axe.run()).violations.map(row => row.id));
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
     await page.evaluate(() => { window.fixtureSuccess = true; });
+    await page.focus('button');
     await page.keyboard.press('Enter');
     await page.waitForFunction(() => document.querySelector('[role=status]').textContent.includes('on the list'));
     assert.equal(await page.evaluate(() => window.fixtureCalls), 2);

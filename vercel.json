@@ -48,6 +48,7 @@
       "destination": "/api/collection?id=:type"
     },
     { "source": "/admin", "destination": "/index.html" },
+    { "source": "/products", "destination": "/index.html" },
     { "source": "/r/:linkId([a-z0-9]{8,24})", "destination": "/index.html" },
     {
       "source": "/((?!api).*)",
