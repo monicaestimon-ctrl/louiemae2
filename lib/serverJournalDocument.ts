@@ -2,13 +2,14 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   JournalIndexLead,
+  JournalArchive,
+  JournalEmptyContent,
   JournalArticleHero,
   JournalArticleHeading,
 } from '../components/JournalLead.js';
 import { escapeJournalText as escape, journalHtml } from './journalContent.js';
 import { journalUrl } from './journalUrl.js';
 import { publicProductImage, STOREFRONT_ORIGIN } from './productMetadata.js';
-import { responsiveImage } from './responsiveImage.js';
 
 export type JournalPost = {
   _id: string;
@@ -29,15 +30,6 @@ export function journalDocument(template: string, posts: JournalPost[], article?
     article?.excerpt ||
     'On faith, family, design, and finding beauty in the everyday rhythms of life.'
   ).slice(0, 160);
-  const image = (post: JournalPost, eager = false, decorative = false) => {
-    const source = responsiveImage(
-      publicProductImage(post.image),
-      '(min-width: 1024px) 800px, 100vw'
-    );
-    return source.src
-      ? `<img src="${escape(source.src)}" ${source.srcSet ? `srcset="${escape(source.srcSet)}" sizes="(min-width: 1024px) 800px, 100vw"` : ''} alt="${decorative ? '' : escape(post.title)}" loading="${eager ? 'eager' : 'lazy'}" ${eager ? 'fetchpriority="high"' : ''} decoding="async"/>`
-      : '';
-  };
   const leadPost = (post: JournalPost) => ({
     ...post,
     id: post._id,
@@ -64,15 +56,15 @@ export function journalDocument(template: string, posts: JournalPost[], article?
       ? renderToStaticMarkup(
           React.createElement(JournalIndexLead, { featuredPost: leadPost(posts[0]) })
         ) +
-        `<section class="px-6 md:px-12 pb-24"><div class="container mx-auto"><h2 class="font-serif text-3xl text-earth mb-12">More stories</h2><div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">${posts
-          .slice(1)
-          .map(
-            (post) =>
-              `<article><a href="${journalUrl(post._id)}">${image(post, false, true)}<h3>${escape(post.title)}</h3></a><p>${escape(post.excerpt)}</p></article>`
-          )
-          .join('')}</div></div></section>`
-      : '<h1>Simply Mae</h1><p>New stories are coming soon.</p>';
-  const content = `<main id="lm-journal-document" data-post-id="${escape(id)}" tabindex="-1" class="bg-cream min-h-screen ${article ? '' : 'pt-32 '}pb-20 w-full overflow-hidden">${lead}<a href="/shop" class="block px-6 underline">Explore the shop</a></main>`;
+        renderToStaticMarkup(
+          React.createElement(JournalArchive, { recentPosts: posts.slice(1).map(leadPost) })
+        )
+      : renderToStaticMarkup(React.createElement(JournalEmptyContent));
+  const empty = !article && !posts.length;
+  const mainClass = empty
+    ? 'min-h-screen bg-cream flex items-center justify-center'
+    : `bg-cream min-h-screen ${article ? '' : 'pt-32 '}pb-20 w-full overflow-hidden`;
+  const content = `<main id="lm-journal-document" data-post-id="${escape(id)}" tabindex="-1" class="${mainClass}">${lead}${empty ? '' : '<a href="/shop" class="block px-6 underline">Explore the shop</a>'}</main>`;
   let html = template
     .replace(/<!--home-document-start-->[\s\S]*?<!--home-document-end-->/, '')
     .replace(/<title>[\s\S]*?<\/title>/, () => `<title>${escape(title)} | Louie Mae</title>`);

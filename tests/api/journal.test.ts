@@ -107,10 +107,21 @@ it('renders index links and a genuine empty archive distinctly from source failu
   const empty = await request();
   expect(empty.status).toBe(200);
   expect(empty.body).toContain('New stories are coming soon.');
+  expect(empty.body).toContain('class="min-h-screen bg-cream flex items-center justify-center"');
+  expect(empty.body).not.toContain('pt-32');
   fetchMock.mockRejectedValueOnce(new Error('offline'));
   const failed = await request();
   expect(failed.status).toBe(503);
   expect(failed.headers['X-Robots-Tag']).toBe('noindex');
+});
+it('keeps archive metadata and image geometry in the initial public document', async () => {
+  fetchMock.mockResolvedValue({ok:true,json:async()=>({status:'success',value:[article,{...article,_id:'story2',title:'Second story',category:'Second category',date:'November 18, 2026'}]})});
+  const result = await request();
+  expect(result.status).toBe(200);
+  expect(result.body).toContain('href="/blog/story2"');
+  expect(result.body).toContain('Second category');
+  expect(result.body).toContain('November 18, 2026');
+  expect(result.body).toContain('aspect-[3/4]');
 });
 it('never publishes missing, draft, mismatched or malformed article records', async () => {
   fetchMock.mockResolvedValueOnce({

@@ -60,7 +60,7 @@ export function JournalIndexLead({
           'p',
           {
             className:
-              'font-sans text-muted-earth max-w-lg mx-auto leading-relaxed text-sm tracking-wide min-h-[3.25em]',
+              'font-sans text-muted-earth max-w-lg mx-auto leading-relaxed text-sm tracking-wide min-h-[4.875em] min-[400px]:min-h-[3.25em]',
           },
           'On faith, family, design, and finding beauty in the everyday rhythms of life.'
         )
@@ -303,5 +303,150 @@ function JournalImage({
       srcSet: set(mobile),
       sizes: '100vw',
     })
+  );
+}
+
+export function JournalArchive({
+  recentPosts,
+  onNavigate,
+}: {
+  recentPosts: JournalLeadPost[];
+  onNavigate?: React.MouseEventHandler<HTMLAnchorElement>;
+}) {
+  return React.createElement(
+    React.Fragment,
+    null,
+    '         ',
+    React.createElement(
+      'section',
+      { className: 'px-6 md:px-12 pb-24' },
+      React.createElement(
+        'div',
+        { className: 'container mx-auto' },
+        React.createElement(
+          'div',
+          { className: 'mb-12 flex items-baseline justify-between border-b border-earth/10 pb-4' },
+          React.createElement(
+            'h2',
+            { className: 'font-serif text-3xl text-earth' },
+            'More stories'
+          ),
+          React.createElement(
+            'span',
+            {
+              className:
+                'text-[10px] uppercase tracking-widest text-muted-earth hidden md:inline-block',
+            },
+            'Archive'
+          )
+        ),
+        React.createElement(
+          'div',
+          { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16' },
+          recentPosts.map((post) =>
+            React.createElement(
+              'div',
+              { key: post.id, className: 'group cursor-pointer flex flex-col h-full' },
+              React.createElement(
+                'a',
+                {
+                  className: 'flex flex-col h-full',
+                  href: journalUrl(post.id),
+                  onClick: onNavigate,
+                },
+                React.createElement(
+                  'div',
+                  {
+                    className:
+                      'aspect-[3/4] overflow-hidden rounded-sm mb-6 relative shadow-[0_2px_10px_rgba(0,0,0,0.03)]',
+                  },
+                  React.createElement('img', {
+                    loading: 'lazy',
+                    decoding: 'async',
+                    ...responsiveImage(
+                      post.image,
+                      '(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw'
+                    ),
+                    alt: '',
+                    className:
+                      'w-full h-full object-cover transition-transform duration-700 group-hover:scale-105',
+                  }),
+                  React.createElement(
+                    'div',
+                    {
+                      className:
+                        'absolute top-4 left-4 bg-cream/95 backdrop-blur-sm px-3 py-1.5 text-[9px] uppercase tracking-widest text-earth shadow-sm',
+                    },
+                    post.category
+                  )
+                ),
+                React.createElement(
+                  'div',
+                  { className: 'flex flex-col flex-1 items-start pr-4' },
+                  React.createElement(
+                    'div',
+                    {
+                      className:
+                        'flex items-center gap-2 mb-3 text-[9px] uppercase tracking-widest text-muted-earth',
+                    },
+                    React.createElement(Calendar, { className: 'w-3 h-3' }),
+                    React.createElement('span', null, post.date)
+                  ),
+                  React.createElement(
+                    'h3',
+                    {
+                      className:
+                        'font-serif text-2xl md:text-3xl text-earth mb-4 leading-tight group-hover:text-bronze transition-colors duration-300',
+                    },
+                    post.title
+                  ),
+                  React.createElement(
+                    'p',
+                    {
+                      className:
+                        'font-sans text-muted-earth text-sm leading-relaxed mb-6 line-clamp-3',
+                    },
+                    post.excerpt
+                  ),
+                  React.createElement(
+                    'div',
+                    {
+                      className:
+                        'mt-auto pt-4 w-full border-t border-earth/5 flex justify-between items-center ',
+                    },
+                    React.createElement(
+                      'span',
+                      { className: 'text-[9px] uppercase tracking-widest text-earth' },
+                      'Read Article'
+                    ),
+                    React.createElement(ArrowRight, {
+                      className:
+                        'w-3 h-3 text-bronze -translate-x-2 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300',
+                    })
+                  )
+                )
+              )
+            )
+          )
+        )
+      )
+    )
+  );
+}
+export function JournalEmptyContent({
+  message = 'New stories are coming soon.',
+}: {
+  message?: string;
+}) {
+  return React.createElement(
+    'div',
+    null,
+    React.createElement('h1', { className: 'font-serif text-4xl text-earth' }, 'Simply Mae'),
+    React.createElement('p', { role: 'status', className: 'mt-6 text-earth' }, message),
+    React.createElement(
+      'a',
+      { href: '/shop', className: 'mt-6 inline-block underline text-earth' },
+      'Continue shopping'
+    )
   );
 }

@@ -1,11 +1,10 @@
 
-import { JournalIndexLead } from './JournalLead';
+import { JournalIndexLead, JournalArchive, JournalEmptyContent } from './JournalLead';
 import React, { useState } from 'react';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
 import { useNewsletter } from '../contexts/NewsletterContext';
-import { ArrowRight, Calendar, Check } from 'lucide-react';
-import { responsiveImage } from '../lib/responsiveImage';
+import { Check } from 'lucide-react';
 import { journalUrl } from '../lib/journalUrl';
 import { navigatePlainLink } from '../lib/navigation';
 import { navigateStorefront } from '../lib/storefrontNavigation';
@@ -50,15 +49,7 @@ export const BlogPage: React.FC = () => {
    if (!featuredPost) {
       return (
          <main className="min-h-screen bg-cream flex items-center justify-center" data-lm-journal-ready={editorialStatus === 'empty' ? 'index' : undefined}>
-            <FadeIn>
-               <h1 className="font-serif text-4xl text-earth">Simply Mae</h1>
-               <p role="status" className="mt-6 text-earth">
-                  {editorialStatus === 'loading' ? 'Loading stories…'
-                     : editorialStatus === 'unavailable' ? 'Stories are temporarily unavailable. Please try again later.'
-                     : 'New stories are coming soon.'}
-               </p>
-               <a href="#shop" className="mt-6 inline-block underline text-earth">Continue shopping</a>
-            </FadeIn>
+            <JournalEmptyContent message={editorialStatus === 'loading' ? 'Loading stories…' : editorialStatus === 'unavailable' ? 'Stories are temporarily unavailable. Please try again later.' : 'New stories are coming soon.'} />
          </main>
       );
    }
@@ -67,53 +58,7 @@ export const BlogPage: React.FC = () => {
       <main className="bg-cream min-h-screen pt-32 pb-20 w-full overflow-hidden" data-lm-journal-ready={editorialStatus === 'ready' || editorialStatus === 'empty' ? 'index' : undefined}>
          <JournalIndexLead featuredPost={featuredPost} onNavigate={event => navigatePlainLink(event, journalUrl(featuredPost.id), navigateStorefront)} />
 
-         {/* Recent Posts Grid */}
-         <section className="px-6 md:px-12 pb-24">
-            <div className="container mx-auto">
-               <FadeIn className="mb-12 flex items-baseline justify-between border-b border-earth/10 pb-4">
-                  <h2 className="font-serif text-3xl text-earth">More stories</h2>
-                  <span className="text-[10px] uppercase tracking-widest text-muted-earth hidden md:inline-block">Archive</span>
-               </FadeIn>
-
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">
-                  {recentPosts.map((post, idx) => (
-                     <FadeIn key={post.id} delay={300 + idx * 100} className="group cursor-pointer flex flex-col h-full">
-                        <a className="flex flex-col h-full" href={journalUrl(post.id)} onClick={event => navigatePlainLink(event, journalUrl(post.id), navigateStorefront)}>
-                           <div className="aspect-[3/4] overflow-hidden rounded-sm mb-6 relative shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
-                              <img
-                                 loading="lazy"
-                                 decoding="async"
-                                 {...responsiveImage(post.image, '(min-width: 1024px) 50vw, 100vw')}
-                                 alt=""
-                                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                              />
-                              <div className="absolute top-4 left-4 bg-cream/95 backdrop-blur-sm px-3 py-1.5 text-[9px] uppercase tracking-widest text-earth shadow-sm">
-                                 {post.category}
-                              </div>
-                           </div>
-
-                           <div className="flex flex-col flex-1 items-start pr-4">
-                              <div className="flex items-center gap-2 mb-3 text-[9px] uppercase tracking-widest text-muted-earth">
-                                 <Calendar className="w-3 h-3" />
-                                 <span>{post.date}</span>
-                              </div>
-                              <h3 className="font-serif text-2xl md:text-3xl text-earth mb-4 leading-tight group-hover:text-bronze transition-colors duration-300">
-                                 {post.title}
-                              </h3>
-                              <p className="font-sans text-muted-earth text-sm leading-relaxed mb-6 line-clamp-3">
-                                 {post.excerpt}
-                              </p>
-                              <div className="mt-auto pt-4 w-full border-t border-earth/5 flex justify-between items-center opacity-60 group-hover:opacity-100 transition-opacity duration-300">
-                                 <span className="text-[9px] uppercase tracking-widest text-earth">Read Article</span>
-                                 <ArrowRight className="w-3 h-3 text-bronze -translate-x-2 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300" />
-                              </div>
-                           </div>
-                        </a>
-                     </FadeIn>
-                  ))}
-               </div>
-            </div>
-         </section>
+         <JournalArchive recentPosts={recentPosts} onNavigate={event => navigatePlainLink(event, event.currentTarget.getAttribute('href') || '/blog', navigateStorefront)} />
 
          {/* Newsletter / Quote */}
          <section className="px-6 md:px-12 py-24 bg-white/50 border-t border-earth/5">
