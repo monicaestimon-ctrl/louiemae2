@@ -55,8 +55,14 @@ export function resolveProjectProduct(
     minimum: variant.minimum,
     increment: variant.increment,
     img: variant.image ?? product.img,
+    imgs: variant.image ? [variant.image] : product.imgs,
+    imageMedia: variant.image ? undefined : product.imageMedia,
+    ar: variant.image ? 1 : product.ar,
     line: `${product.line} · ${variant.name}`,
     cutout: variant.image ? null : product.cutout,
+    cutAR: variant.image ? null : product.cutAR,
+    model: null,
+    modelLow: null,
   };
 }
 

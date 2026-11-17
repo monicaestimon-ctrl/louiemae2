@@ -1,8 +1,8 @@
 import { inside, type Pt } from '../lib/holmPlan';
-import type { HolmProduct } from './catalog';
-import { displayProduct } from './catalogLookup';
+import { studioGeometry } from './studioGeometry';
+import type { SavedProductIdentity, SavedProductMap } from './projectIdentity';
 
-export type PlannerPiece = { uid: string; pid: number; x: number; z: number; rot?: number; hang?: boolean };
+export type PlannerPiece = { uid: string; pid: number; lid?: string; vid?: string; x: number; z: number; rot?: number; hang?: boolean };
 export type PlannerRug = { uid: string; x: number; z: number; w: number; d: number; rot?: number; round?: boolean };
 export type PlannerLayout = {
   W: number; D: number; items: PlannerPiece[]; rugs?: PlannerRug[];
@@ -24,18 +24,19 @@ export function clampRug(doc: Pick<PlannerLayout, 'W' | 'D'>, rug: PlannerRug, x
 }
 
 /** Each planner/export can own its verified product map without changing browse results. */
-export function plannerGeometry(products: ReadonlyMap<number, HolmProduct>) {
-  const widthCm = (id: number) => products.get(id)?.dimsCm?.w;
-  const ready = (id: number) => products.has(id) && !!products.get(id)?.dimsCm;
-  const dimensions = (id: number) => {
-    const p = displayProduct(products, id);
+export function plannerGeometry(products: SavedProductMap) {
+  const product = studioGeometry(products).product;
+  const widthCm = (reference: number | SavedProductIdentity) => product(reference).dimsCm?.w;
+  const ready = (reference: number | SavedProductIdentity) => !!product(reference).dimsCm;
+  const dimensions = (reference: number | SavedProductIdentity) => {
+    const p = product(reference);
     // Preserve the existing renderer's placeholder size. `ready` still prevents placement
     // without measurements; callers must review unresolved saved items before rendering.
     const dims = p.dimsCm || { w: 100, d: 100, h: 80 };
     return { p, w: dims.w / 100, d: dims.d / 100, hp: dims.h / 100, hb: dims.h / 100 };
   };
   const extents = (item: PlannerPiece): Pt => {
-    const { w, d } = dimensions(item.pid);
+    const { w, d } = dimensions(item);
     const angle = (item.rot || 0) * Math.PI / 180;
     const c = Math.abs(Math.cos(angle)), s = Math.abs(Math.sin(angle));
     return [c * w / 2 + s * d / 2, s * w / 2 + c * d / 2];

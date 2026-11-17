@@ -17,3 +17,14 @@ The actual Studio Share dialog fixture selects a canvas item, sends Delete, Arro
 `studioGeometry(products)` now owns cutout availability, image/frame aspect ratios, measured room-photo scaling and manual width fallback. Its explicit read-only map keeps the editor and future export scopes independent from browse pagination. The current legacy caller still binds it to the browse map; this preparation does not yet enable independent Studio hydration or pagination.
 
 Tests verify independent catalog scopes, refreshed measurements, missing scale/catalog fallback, uploaded-photo frames and product-cutout geometry. Shared global render/export helpers still need explicit verified identity and variant scopes before the all-catalog startup dependency can be removed.
+
+
+## Independent editor and export connection
+
+Studio, planner, saved boards and shared-board recipients now resolve exact source/variant selections outside the browse page. Layouts and saved pins retain unresolved references. Pending, conflicted, withdrawn and measurement-incomplete planner rows require review; they are not silently removed or replaced by a default option.
+
+New editor selections persist source and variant IDs. Copies are grouped by exact identity and visibility. Studio/3D synchronization retains matching placements and treats two options as separate pieces. Geometry, asset rendering, piece lists and project additions use the same verified map. Variant-specific images cannot inherit a default option's responsive-image metadata, cutout or 3D model. Shared/PDF/story exports use selection keys, and asynchronous export/download guards reject catalog changes and unmounted share dialogs. A pending independent lookup removes sharing controls while preserving the composition.
+
+The actual-component synthetic fixture covers two off-page options, their prices/minimums, board organization, Studio additions, local PNG export, shared-board additions, pending guards and Studio → 3D → Studio continuity. It submits no production commands. Earlier failed fixture attempts are retained: a toast obstructed a click and a test used the wrong image-button capitalization; corrected interaction/label checks passed. Three editor test families plus the planner dialog fixture cover geometry, exact selection grouping, unavailable options and keyboard behavior.
+
+This is not the first-page cutover: server-wide browse filtering/sorting, controlled repeated performance acceptance and the remaining full-spec release evidence are still outstanding. Local fixture success is not production commerce qualification.

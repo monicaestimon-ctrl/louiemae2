@@ -30,3 +30,14 @@ it('uses uploaded-photo and framed shapes independently of product cutout aspect
   expect(frameAspect('circle', 3)).toBe(1);
   expect(studioStyle({ room: true })).toBe('room');
 });
+
+it('uses the selected option image and clears assets that belong to the default option', () => {
+  const base = { ...item(120, 2), lid: 'source', vid: 'default', imgs: ['/default.jpg'], imageMedia: { sourceUrl: '/default.jpg' }, model: '/default.glb', modelLow: '/default-low.glb', variants: [{ id: 'alternate', name: 'Alternate', image: '/alternate.jpg', retail: 10000, trade: null, minimum: 1, increment: 1 }] } as unknown as HolmProduct;
+  const geometry = studioGeometry(new Map([[7, base]]));
+  const piece = { kind: 'img', pid: 7, lid: 'source', vid: 'alternate', w: 20 };
+  expect(geometry.product(piece)).toMatchObject({ img: '/alternate.jpg', imgs: ['/alternate.jpg'], cutout: null, cutAR: null, model: null, modelLow: null });
+  expect(geometry.product(piece).imageMedia).toBeUndefined();
+  expect(geometry.hasCutout(piece)).toBe(false);
+  expect(geometry.elementAspect(piece)).toBe(1);
+  expect(geometry.product({ ...piece, vid: 'withdrawn' }).lid).toBe('');
+});

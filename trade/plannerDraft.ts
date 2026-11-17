@@ -1,10 +1,10 @@
-import type { HolmProduct } from './catalog';
-export type PlannerIdentity = { pid: number; lid?: string };
+import { resolveProjectProduct, type SavedProductMap } from './projectIdentity';
+export type PlannerIdentity = { pid: number; lid?: string; vid?: string };
 
 /** Preserve the document until the owner explicitly repairs unresolved saved pieces. */
-export function unresolvedPlannerItems<T extends PlannerIdentity>(items: readonly T[], products: ReadonlyMap<number, HolmProduct>) {
+export function unresolvedPlannerItems<T extends PlannerIdentity>(items: readonly T[], products: SavedProductMap) {
   return items.flatMap((item, index) => {
-    const product = products.get(item.pid);
+    const product = resolveProjectProduct(item, products);
     return !product || (item.lid && item.lid !== product.lid) ? [{ item, index }] : [];
   });
 }

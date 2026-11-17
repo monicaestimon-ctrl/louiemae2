@@ -8,3 +8,9 @@ it('requires review for missing or conflicting sources without changing layout d
   expect(unresolvedPlannerItems(items, products).map(row => row.index)).toEqual([0, 1]);
   expect(items).toEqual(before);
 });
+
+it('rejects a withdrawn saved option even when the product still has a default option', () => {
+  const items = [{ pid: 1, lid: 'current', vid: 'withdrawn' }, { pid: 1, lid: 'current', vid: 'current-option' }];
+  const products = new Map([[1, { id: 1, lid: 'current', vid: 'current-option', variants: [] } as unknown as HolmProduct]]);
+  expect(unresolvedPlannerItems(items, products).map(row=>row.index)).toEqual([0]);
+});
