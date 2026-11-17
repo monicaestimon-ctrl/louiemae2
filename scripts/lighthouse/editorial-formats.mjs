@@ -159,41 +159,52 @@ try {
         results.push({ kind, width, fallback, actual, requests, errors, screenshot });
         await page.close();
       }
-  for (const kind of ['index', 'article'])
-    for (const failure of ['avif', 'all']) {
-      const page = await browser.newPage();
-      await page.setViewport({ width: 390, height: 900 });
-      // Failure injection must reach the server, not an immutable image cached by prior cases.
-      await page.setCacheEnabled(false);
-      const errors = [];
-      const requests = [];
-      page.on('pageerror', (error) => errors.push(error.message));
-      page.on('request', (req) => {
-        if (req.resourceType() === 'image') requests.push(new URL(req.url()).pathname);
-      });
-      await page.goto(`http://127.0.0.1:${server.address().port}/${kind}?failure=${failure}`, {
-        waitUntil: 'networkidle0',
-      });
-      if (failure === 'avif')
-        await page.waitForFunction(() => {
-          const img = document.querySelector('picture img');
-          return img?.complete && img.naturalWidth > 0 && img.currentSrc.endsWith('.webp');
+  for (const width of [390, 1440])
+    for (const kind of ['index', 'article'])
+      for (const failure of ['avif', 'all', 'webp-only']) {
+        const page = await browser.newPage();
+        await page.setViewport({ width, height: 900 });
+        // Failure injection must reach the server, not an immutable image cached by prior cases.
+        await page.setCacheEnabled(false);
+        if (failure === 'webp-only') {
+          const client = await page.createCDPSession();
+          await client.send('Emulation.setDisabledImageTypes', { imageTypes: ['avif'] });
+        }
+        const errors = [];
+        const requests = [];
+        page.on('pageerror', (error) => errors.push(error.message));
+        page.on('request', (req) => {
+          if (req.resourceType() === 'image') requests.push(new URL(req.url()).pathname);
         });
-      else await page.waitForSelector('[role="img"][aria-label$="unavailable"]');
-      assert.deepEqual(errors, []);
-      assert.ok(requests.length <= 4, 'Image failures must not create a retry loop');
-      assert.ok(requests.some((url) => url.endsWith('.avif')));
-      assert.ok(requests.some((url) => url.endsWith('.webp')));
-      results.push({
-        kind,
-        width: 390,
-        failure,
-        recoveredTo: failure === 'avif' ? 'webp' : 'placeholder',
-        requests,
-        errors,
-      });
-      await page.close();
-    }
+        await page.goto(
+          `http://127.0.0.1:${server.address().port}/${kind}?failure=${failure === 'webp-only' ? 'all' : failure}`,
+          {
+            waitUntil: 'networkidle0',
+          }
+        );
+        if (failure === 'avif')
+          await page.waitForFunction(() => {
+            const img = document.querySelector('picture img');
+            return img?.complete && img.naturalWidth > 0 && img.currentSrc.endsWith('.webp');
+          });
+        else await page.waitForSelector('[role="img"][aria-label$="unavailable"]');
+        assert.deepEqual(errors, []);
+        assert.ok(requests.length <= 4, 'Image failures must not create a retry loop');
+        assert.equal(
+          requests.some((url) => url.endsWith('.avif')),
+          failure !== 'webp-only'
+        );
+        assert.ok(requests.some((url) => url.endsWith('.webp')));
+        results.push({
+          kind,
+          width,
+          failure,
+          recoveredTo: failure === 'avif' ? 'webp' : 'placeholder',
+          requests,
+          errors,
+        });
+        await page.close();
+      }
   await writeFile(
     'artifacts/lighthouse/editorial-formats-browser.json',
     JSON.stringify(

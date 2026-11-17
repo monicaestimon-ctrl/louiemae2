@@ -393,3 +393,6 @@ Editorial failure recovery is bounded: a failed AVIF source switches to the reta
 
 
 The deployed PR317 preview exposed a visual contrast problem not reported by axe: article navigation was drawn over the photograph. Article routes now use an opaque linen header at both top and scrolled positions. The actual-App handoff fixture checks its computed background at both positions in all three viewports; all21 route/viewport cases passed. The preview check will be repeated on the corrected head.
+
+
+The format failure suite now covers24 cases:12 normal/unsupported-format selections and12 injected HTTP failures across mobile and desktop. Browsers selecting WebP directly reach the placeholder on its failure; they do not wait for an ignored AVIF source to trigger another event. Five focused renderer tests pass, including direct WebP failure.

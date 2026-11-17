@@ -295,11 +295,18 @@ function JournalImage({
     decoding: 'async' as const,
     alt,
     className,
-    onError: () =>
+    onError: (event: React.SyntheticEvent<HTMLImageElement>) => {
+      const selected = event.currentTarget.currentSrc;
+      // A browser without AVIF support can fail directly on the final WebP source.
+      // Removing ignored AVIF sources would not cause another image error/retry.
       setFailure((previous) => ({
         sourceKey,
-        attempt: Math.min(previous.sourceKey === sourceKey ? previous.attempt + 1 : 1, 2),
-      })),
+        attempt:
+          selected && !selected.endsWith('.avif')
+            ? 2
+            : Math.min(previous.sourceKey === sourceKey ? previous.attempt + 1 : 1, 2),
+      }));
+    },
   };
   if (!entry)
     return React.createElement('img', {

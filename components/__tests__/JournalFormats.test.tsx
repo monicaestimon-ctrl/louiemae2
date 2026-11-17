@@ -84,3 +84,12 @@ it('falls back from failed AVIF to WebP, bounds failures, and resets for a repla
   fireEvent.error(view.container.querySelector('img')!);
   expect(view.container.querySelector('img')).toBeNull();
 });
+
+it('shows a placeholder when a browser-selected WebP fails without trying ignored AVIF sources', () => {
+  const view = render(<JournalArticleHero post={post} />);
+  const image = view.container.querySelector('picture img')!;
+  Object.defineProperty(image, 'currentSrc', { value: `https://example.test${entry.windows.articleMobile.base}-480.webp` });
+  fireEvent.error(image);
+  expect(view.container.querySelector('picture')).toBeNull();
+  expect(screen.getByRole('img', { name: `${post.title}: image unavailable` })).toBeVisible();
+});
