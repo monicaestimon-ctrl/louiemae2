@@ -491,6 +491,8 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
               </FadeIn>
             </div>
 
+            {collection !== 'kids' && catalogUnavailable && <CatalogUnavailable />}
+
             {/* Category Cards */}
             <div className="pb-16 md:pb-24">
               {mainCategories.length <= 5 ? (

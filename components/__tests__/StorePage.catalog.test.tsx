@@ -5,9 +5,9 @@ import { StorePage } from '../StorePage';
 import type { Product } from '../../types';
 const mocks = vi.hoisted(() => ({ detailProduct: null as Product | null, detailFailed: false, addToCart: vi.fn(), ready: true, complete: false, products: [] as unknown[], load: vi.fn(), detail: vi.fn(), query: vi.fn() }));
 vi.mock('convex/react', () => ({ useQuery: (...args: unknown[]) => { mocks.query(...args); return { ready: mocks.ready }; } }));
-vi.mock('../../contexts/BlogContext', () => ({ useSite: () => ({ isLoading: false, siteContent: { collections: [{
-  id: 'kids', title: 'Kids', subtitle: '', heroImage: '', subcategories: [{ id: 'dresses', title: 'Dresses', image: '' }],
-}] } }) }));
+vi.mock('../../contexts/BlogContext', () => ({ useSite: () => ({ isLoading: false, siteContent: { collections: ['kids', 'furniture', 'decor', 'fashion'].map(id => ({
+  id, title: id === 'kids' ? 'Kids' : id, subtitle: '', heroImage: '', subcategories: [{ id: 'dresses', title: 'Dresses', image: '' }],
+})) } }) }));
 vi.mock('../../contexts/NewsletterContext', () => ({ useNewsletter: () => ({ addSubscriberWithTags: vi.fn() }) }));
 vi.mock('../FadeIn', () => ({ FadeIn: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 vi.mock('../SafeImage', () => ({ SafeImage: ({ src, alt }: { src: string; alt: string }) => <img src={src} alt={alt} /> }));
@@ -21,6 +21,15 @@ vi.mock('../useStoreCatalog', () => ({
 beforeEach(() => { vi.clearAllMocks(); mocks.detailProduct = null; mocks.detailFailed = false; mocks.ready = true; mocks.complete = false; mocks.products = []; });
 afterEach(cleanup);
 describe('store catalog integration', () => {
+  it.each(['furniture', 'decor', 'fashion'] as const)('shows reload feedback after the %s root loses readiness', (collection) => {
+    const initial = document.createElement('main'); initial.id = 'lm-collection-document'; document.body.append(initial);
+    mocks.ready = false;
+    render(<StorePage collection={collection} />);
+    expect(document.getElementById('lm-collection-document')).toBeNull();
+    expect(screen.getByText(/Products are temporarily unavailable/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reload products' })).toBeEnabled();
+    expect(document.querySelector('[data-lm-collection-ready]')).toBeNull();
+  });
   it('preserves an already-decoded percent sign and supplies a filtered-page heading', () => {
     render(<StorePage collection="kids" initialCategory="100% cotton" forceProductView />);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('100% cotton — Kids');
