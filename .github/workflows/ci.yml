@@ -86,6 +86,7 @@ jobs:
           node scripts/lighthouse/newsletter.mjs
           node scripts/lighthouse/security-headers.mjs
           node scripts/lighthouse/journal.mjs
+          node scripts/lighthouse/collection-signup.mjs
 
       - name: Retain HOLM quality evidence
         if: always()

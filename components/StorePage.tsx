@@ -7,9 +7,9 @@ import { api } from '../convex/_generated/api';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
 import { Product, CollectionType, ProductVariant, Category, CollectionConfig } from '../types';
-import { ArrowLeft, X, ArrowUpRight, Check } from 'lucide-react';
+import { ArrowLeft, X, ArrowUpRight } from 'lucide-react';
 import { AddToCartButton } from './cart';
-import { useNewsletter } from '../contexts/NewsletterContext';
+import { CollectionSignup } from './CollectionSignup';
 import { SafeImage } from './SafeImage';
 import { getCategoryParentId } from '../lib/productCategories';
 import { useStorefrontProductDetail } from './useStorefrontProductDetail';
@@ -90,72 +90,10 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
     </div>
   );
 
-  // Reusable Coming Soon newsletter signup for empty product views
-  const ComingSoonSignup: React.FC<{ selectedCategory: string }> = ({ selectedCategory }) => {
-    const { addSubscriberWithTags } = useNewsletter();
-    const [csEmail, setCsEmail] = useState('');
-    const [csStatus, setCsStatus] = useState<'idle' | 'loading' | 'success'>('idle');
-
-    const handleCsSubscribe = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!csEmail) return;
-      setCsStatus('loading');
-
-      const categoryTag = `category:${selectedCategory.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`;
-      await addSubscriberWithTags(csEmail, 'Guest', ['vip', 'early-access', categoryTag]);
-
-      setCsStatus('success');
-      setCsEmail('');
-    };
-
-    return (
-      <form onSubmit={handleCsSubscribe} className="w-full max-w-sm mx-auto flex flex-col gap-6 mt-6">
-        <div className="relative group w-full">
-          <input
-            type="email"
-            value={csEmail}
-            onChange={(e) => setCsEmail(e.target.value)}
-            placeholder="Email Address"
-            required
-            className="w-full bg-transparent border-b border-white/20 pb-3 text-sm md:text-base text-white placeholder:text-white/30 focus:outline-none focus:border-white transition-colors"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={csStatus === 'loading' || csStatus === 'success'}
-          className="w-full bg-white text-stone-900 py-4 text-[10px] uppercase tracking-[0.25em] hover:bg-stone-200 transition-colors disabled:opacity-70 flex items-center justify-center gap-3 rounded-full font-medium mt-2 shadow-lg"
-        >
-          {csStatus === 'loading' ? 'Requesting Access...' : csStatus === 'success' ? <><Check className="w-4 h-4" /> Secured</> : 'Request Early Access'}
-        </button>
-      </form>
-    );
-  };
-
   // Subcategory box with product previews
   const SubcategoryWithPreviews: React.FC<PreviewProps & { category: Category; index: number }> = ({ category, index, config, ready, checking, handleCategoryChange, onSelect }) => {
     const preview = useStoreCatalog(config, category.title, ready, undefined, 4);
     const previewProducts = preview.products;
-    const { addSubscriberWithTags } = useNewsletter();
-    const [email, setEmail] = useState('');
-    const [subStatus, setSubStatus] = useState<'idle' | 'loading' | 'success'>('idle');
-
-    const handleSubscribe = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!email) return;
-      setSubStatus('loading');
-
-      const categoryTag = `category:${category.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`;
-      const success = await addSubscriberWithTags(email, 'Guest', ['vip', 'early-access', categoryTag]);
-
-      if (success) {
-        setSubStatus('success');
-        setEmail('');
-      } else {
-        setSubStatus('idle');
-        alert('Already subscribed!');
-      }
-    };
-
     return (
       <FadeIn delay={index * 100} className="mb-16">
         {/* Clean Section Header */}
@@ -210,25 +148,7 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
                 Join the inner circle. Receive 24-hour early access to {category.title} drops before they open to the public.
               </p>
 
-              <form onSubmit={handleSubscribe} className="w-full max-w-sm flex flex-col gap-6">
-                <div className="relative group w-full">
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Email Address"
-                    required
-                    className="w-full bg-transparent border-b border-white/20 pb-3 text-sm md:text-base text-white placeholder:text-white/30 focus:outline-none focus:border-white transition-colors"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={subStatus === 'loading' || subStatus === 'success'}
-                  className="w-full bg-white text-stone-900 py-4 text-[10px] uppercase tracking-[0.25em] hover:bg-stone-200 transition-colors disabled:opacity-70 flex items-center justify-center gap-3 font-medium mt-2 rounded-full shadow-lg"
-                >
-                  {subStatus === 'loading' ? 'Requesting Access...' : subStatus === 'success' ? <><Check className="w-4 h-4" /> Secured</> : 'Request Early Access'}
-                </button>
-              </form>
+              <CollectionSignup key={category.id} category={category.title} />
             </div>
           </div>
         )}
@@ -874,7 +794,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                         Join the inner circle. Receive 24-hour early access to {selectedCategory} drops before they open to the public.
                       </p>
 
-                      <ComingSoonSignup selectedCategory={selectedCategory} />
+                      <CollectionSignup key={selectedCategory} category={selectedCategory} />
 
                       <button onClick={() => handleCategoryChange(getBackDestination())} className="mt-16 text-[9px] uppercase tracking-[0.2em] text-white/50 border-b border-white/30 pb-1 hover:text-white hover:border-white transition-colors z-20 relative">
                         Return to Collections
