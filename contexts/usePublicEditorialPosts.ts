@@ -4,8 +4,8 @@ import { api } from '../convex/_generated/api';
 import { usePendingTimeout } from './usePendingTimeout';
 
 export type EditorialStatus = 'loading' | 'ready' | 'empty' | 'unavailable';
-type Posts = FunctionReturnType<typeof api.blogPosts.list>;
-const PUBLIC_POSTS = { posts: { query: api.blogPosts.list, args: {} } };
+type Posts = FunctionReturnType<typeof api.blogPosts.publicSummaries>;
+const PUBLIC_POSTS = { posts: { query: api.blogPosts.publicSummaries, args: {} } };
 const NO_QUERIES = {};
 
 /** Optional public editorial data must never throw through the shopping shell. */

@@ -235,3 +235,14 @@ Production #302: main `d4e350064087495ba0822a0d5cc328a00c973306`, frontend `dpl_
 The subsequent integrated HOLM candidate passed 1,377 tests with one existing skip, types, lint (zero errors; existing warnings remain), production build/client-secret validation, the deferred-bundle guard and the unbundled product runtime check. These local results do not establish production deployment or completion of progressive pagination.
 
 The conditional Zuo parity case was then run separately with the local private production-staging manifest: all 803 rows passed the in-memory migration comparison for names, prices, images and pack settings. Its other 42 cases were excluded by that targeted command and had already passed in the full run. The private manifest remains outside Git. This proves historical import parity, not current stock, MAP, cost or freight qualification, and it did not mutate production.
+
+
+## Verified releases and retained acceptance gaps (November 17)
+
+PR #303 deployed and its identity preparation completed 380 source/index checks without mismatches before enabling the reader. PR #304 deployed the independent saved-project/board connections, recovery fixes, baseline security headers and controlled audit workflow. Its CodeRabbit findings were corrected and all threads resolved.
+
+PR #305 is merged and live at main `31449b6860201f8a5d03b64645d9bd83791b4fa3`, frontend `dpl_6c7AqeJvu4t6EHtsTmXoMFqU39Bt`, with successful main/backend workflow `44053550552`. CodeRabbit's root-outage feedback and skip-link findings were corrected. All four live collection routes passed mobile/desktop checks with and without JavaScript, with no accessibility violations, overflow or page errors; missing collection and filtered navigation checks passed too.
+
+The retained controlled run `44046790703`, on prior source `8907840`, contained all 40 requested reports. Retail home scored 100 in every category in all ten runs; HOLM desktop did likewise in all five runs. HOLM mobile performance was 100/99/99/98/98, and product runs failed interactive readiness at the audit boundary. These results do not pass the overall acceptance contract. Local collection diagnostics also remain below target. Keep every failed result; do not treat prepared fixes or a single 100 diagnostic as production acceptance.
+
+Public shop/story HTML and the product initial-data handoff are reviewed as a subsequent phase. The journal candidate is documented in [public-journal-html.md](public-journal-html.md). Remaining work still includes progressive HOLM pagination, Studio/planner/export hydration, the rest of the route/state registry, commerce and accessibility manual checks, remaining metadata coverage and repeated controlled performance acceptance.

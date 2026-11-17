@@ -11,6 +11,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 describe('public product navigation', () => {
+  it('resolves direct journal routes and preserves existing hash article links', () => {
+    expect(storefrontRoute({ pathname: '/blog', search: '?ref=PARTNER', hash: '' })).toBe('blog');
+    expect(storefrontRoute({ pathname: '/blog/story1', search: '', hash: '' })).toBe('#blog/story1');
+    expect(storefrontRoute({ pathname: '/', search: '', hash: '#blog/story1' })).toBe('#blog/story1');
+  });
   it.each(['shop', 'story'])('opens the direct %s path without losing native history', page => {
     expect(storefrontRoute({ pathname: `/${page}`, search: '?ref=PARTNER', hash: '' })).toBe(page);
     expect(storefrontRoute({ pathname: `/${page}`, search: '', hash: '#collection/decor' })).toBe('#collection/decor');

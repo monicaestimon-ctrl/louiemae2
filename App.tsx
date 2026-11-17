@@ -15,6 +15,7 @@ import { navigatePlainLink } from './lib/navigation';
 import { useInitialProductDocument } from './components/useInitialProductDocument';
 import { useInitialCollectionDocument } from './components/useInitialCollectionDocument';
 import { useInitialPageDocument } from './components/useInitialPageDocument';
+import { useInitialJournalDocument } from './components/useInitialJournalDocument';
 import {
   navigateStorefront,
   productRoute,
@@ -161,6 +162,7 @@ const AppContent = () => {
   const [activePage, setActivePage] = useState(() => storefrontRoute(window.location));
   const initialDocumentPresent = useInitialProductDocument(activePage);
   const initialPagePresent = useInitialPageDocument(activePage, siteContentStatus);
+  const initialJournalPresent = useInitialJournalDocument(activePage);
   const initialCollectionPresent = useInitialCollectionDocument(activePage, siteContentStatus,
     siteContent.collections.some(collection => activePage.split('?')[0] === `#collection/${collection.id}`));
   const [searchOpen, setSearchOpen] = useState(false);
@@ -219,7 +221,7 @@ const AppContent = () => {
 
   // Dynamic meta tags per page
   useEffect(() => {
-    if (productRoute(activePage)) return; // Product metadata belongs to its current detail query.
+    if (productRoute(activePage) || activePage === 'blog' || activePage.startsWith('#blog/')) return; // Detail metadata belongs to its current public query.
     const BASE_URL = 'https://louiemae.com';
     const setMeta = (selector: string, content: string) => {
       const el = document.querySelector(selector);
@@ -343,7 +345,7 @@ const AppContent = () => {
           href="#main-content"
           onClick={(event) => {
             event.preventDefault();
-            const target = document.getElementById('lm-product-document') ?? document.getElementById('lm-collection-document') ?? document.getElementById('lm-page-document') ?? document.getElementById('main-content');
+            const target = document.getElementById('lm-product-document') ?? document.getElementById('lm-collection-document') ?? document.getElementById('lm-page-document') ?? document.getElementById('lm-journal-document') ?? document.getElementById('main-content');
             target?.focus();
             target?.scrollIntoView();
           }}
@@ -480,7 +482,7 @@ const AppContent = () => {
       {/* Main Content Area */}
       <div id="main-content" tabIndex={-1}>
         <ErrorBoundary key={activePage} retryLocally>
-          <Suspense fallback={<PageFallback hidden={initialDocumentPresent || initialCollectionPresent || initialPagePresent} />}>
+          <Suspense fallback={<PageFallback hidden={initialDocumentPresent || initialCollectionPresent || initialPagePresent || initialJournalPresent} />}>
             {activePage.startsWith('#support') ? (
               <SupportPage section={activePage.match(/#support\/(.+)/)?.[1]} />
             ) : (

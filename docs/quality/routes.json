@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "scope": "Public landing, shop/story, four collection roots and two Ashcroft product examples; not full-spec acceptance",
+  "scope": "Public landing, shop/story/journal, four collection roots and two Ashcroft product examples; not full-spec acceptance",
   "routes": [
     {
       "id": "retail-home",
@@ -61,6 +61,18 @@
       "path": "/story",
       "readySelector": "main[data-public-page=\"story\"]",
       "requiredText": "The Origins"
+    },
+    {
+      "id": "public-journal",
+      "path": "/blog",
+      "readySelector": "main[data-lm-journal-ready=\"index\"]",
+      "requiredText": "Simply Mae"
+    },
+    {
+      "id": "public-journal-article",
+      "path": "/blog/jd7dxb8yd0x1zfnrspr89gvxr980052x",
+      "readySelector": "main[data-lm-journal-ready=\"jd7dxb8yd0x1zfnrspr89gvxr980052x\"]",
+      "requiredText": "The Bread of Idleness"
     }
   ],
   "pendingCoverage": [

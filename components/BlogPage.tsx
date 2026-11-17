@@ -5,11 +5,16 @@ import { useSite } from '../contexts/BlogContext';
 import { useNewsletter } from '../contexts/NewsletterContext';
 import { ArrowRight, Calendar, Check } from 'lucide-react';
 import { responsiveImage } from '../lib/responsiveImage';
+import { journalUrl } from '../lib/journalUrl';
+import { navigatePlainLink } from '../lib/navigation';
+import { navigateStorefront } from '../lib/storefrontNavigation';
+import { useJournalMetadata } from './useJournalMetadata';
 
 export const BlogPage: React.FC = () => {
    // Use the hook to get dynamic posts
    const { posts, editorialStatus } = useSite();
    const { addSubscriber } = useNewsletter();
+   useJournalMetadata('index', editorialStatus === 'loading', editorialStatus === 'unavailable', undefined, posts.find(post => post.status === 'published' || !post.status)?.image);
 
    // Newsletter Form State
    const [email, setEmail] = useState('');
@@ -43,7 +48,7 @@ export const BlogPage: React.FC = () => {
 
    if (!featuredPost) {
       return (
-         <main className="min-h-screen bg-cream flex items-center justify-center">
+         <main className="min-h-screen bg-cream flex items-center justify-center" data-lm-journal-ready={editorialStatus === 'empty' ? 'index' : undefined}>
             <FadeIn>
                <h1 className="font-serif text-4xl text-earth">Simply Mae</h1>
                <p role="status" className="mt-6 text-earth">
@@ -58,12 +63,12 @@ export const BlogPage: React.FC = () => {
    }
 
    return (
-      <main className="bg-cream min-h-screen pt-32 pb-20 w-full overflow-hidden">
+      <main className="bg-cream min-h-screen pt-32 pb-20 w-full overflow-hidden" data-lm-journal-ready={editorialStatus === 'ready' || editorialStatus === 'empty' ? 'index' : undefined}>
          {/* Header */}
          <section className="px-6 md:px-12 mb-20 text-center relative">
             <div aria-hidden="true" className="mx-auto mb-6 h-10 w-px bg-gradient-to-b from-transparent to-bronze/40" />
             <FadeIn>
-               <span className="text-bronze text-xs tracking-[0.4em] uppercase mb-4 block font-sans">Blog</span>
+               <span className="text-muted-earth text-xs tracking-[0.4em] uppercase mb-4 block font-sans">Blog</span>
                <h1 className="font-serif text-5xl sm:text-6xl md:text-8xl text-earth mb-6 leading-tight tracking-tight">Simply Mae</h1>
                <div className="flex items-center justify-center gap-4 mb-6">
                   <div className="h-px w-8 bg-earth/20"></div>
@@ -80,14 +85,14 @@ export const BlogPage: React.FC = () => {
          <section className="px-6 md:px-12 mb-28">
             <div className="container mx-auto">
                <FadeIn delay={200} className="group cursor-pointer relative">
-                  <div onClick={() => { window.location.hash = `#blog/${featuredPost.id}`; window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+                  <a className="block" href={journalUrl(featuredPost.id)} onClick={event => navigatePlainLink(event, journalUrl(featuredPost.id), navigateStorefront)}>
                      <div className="relative aspect-[4/5] md:aspect-[21/9] overflow-hidden rounded-sm mb-10 shadow-sm">
                         <div className="absolute inset-0 bg-black/10 group-hover:bg-black/5 transition-colors z-10"></div>
                         <img
-                           loading="lazy"
+                           loading="eager" fetchPriority="high"
                            decoding="async"
                            {...responsiveImage(featuredPost.image, '(min-width: 1024px) 50vw, 100vw')}
-                           alt={featuredPost.title}
+                           alt=""
                            className="w-full h-full object-cover transition-transform duration-[1.5s] ease-out group-hover:scale-105"
                         />
                         <div className="absolute top-6 left-6 md:top-10 md:left-10 z-20">
@@ -98,7 +103,7 @@ export const BlogPage: React.FC = () => {
                      </div>
 
                      <div className="text-center max-w-4xl mx-auto px-4">
-                        <div className="flex items-center justify-center gap-4 mb-4 text-bronze/80 text-[10px] uppercase tracking-widest font-sans">
+                        <div className="flex items-center justify-center gap-4 mb-4 text-muted-earth text-[10px] uppercase tracking-widest font-sans">
                            <span>{featuredPost.category}</span>
                            <span className="w-1 h-1 rounded-full bg-bronze/40"></span>
                            <span>{featuredPost.date}</span>
@@ -109,14 +114,13 @@ export const BlogPage: React.FC = () => {
                         <p className="font-sans text-muted-earth leading-loose mb-8 text-sm md:text-base max-w-2xl mx-auto">
                            {featuredPost.excerpt}
                         </p>
-                        <button
-                           onClick={() => { window.location.hash = `#blog/${featuredPost.id}`; window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                        <span
                            className="inline-flex items-center gap-3 text-xs uppercase tracking-[0.2em] text-earth border-b border-earth/20 pb-2 hover:text-bronze hover:border-bronze hover:gap-4 transition-all duration-300"
                         >
                            Read The Story <ArrowRight className="w-3 h-3" />
-                        </button>
+                        </span>
                      </div>
-                  </div>
+                  </a>
                </FadeIn>
             </div>
          </section>
@@ -125,20 +129,20 @@ export const BlogPage: React.FC = () => {
          <section className="px-6 md:px-12 pb-24">
             <div className="container mx-auto">
                <FadeIn className="mb-12 flex items-baseline justify-between border-b border-earth/10 pb-4">
-                  <h3 className="font-serif text-3xl text-earth">Blog</h3>
+                  <h2 className="font-serif text-3xl text-earth">More stories</h2>
                   <span className="text-[10px] uppercase tracking-widest text-muted-earth hidden md:inline-block">Archive</span>
                </FadeIn>
 
                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-16">
                   {recentPosts.map((post, idx) => (
                      <FadeIn key={post.id} delay={300 + idx * 100} className="group cursor-pointer flex flex-col h-full">
-                        <div className="flex flex-col h-full" onClick={() => { window.location.hash = `#blog/${post.id}`; window.scrollTo({ top: 0, behavior: 'smooth' }); }}>
+                        <a className="flex flex-col h-full" href={journalUrl(post.id)} onClick={event => navigatePlainLink(event, journalUrl(post.id), navigateStorefront)}>
                            <div className="aspect-[3/4] overflow-hidden rounded-sm mb-6 relative shadow-[0_2px_10px_rgba(0,0,0,0.03)]">
                               <img
                                  loading="lazy"
                                  decoding="async"
                                  {...responsiveImage(post.image, '(min-width: 1024px) 50vw, 100vw')}
-                                 alt={post.title}
+                                 alt=""
                                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                               />
                               <div className="absolute top-4 left-4 bg-cream/95 backdrop-blur-sm px-3 py-1.5 text-[9px] uppercase tracking-widest text-earth shadow-sm">
@@ -162,7 +166,7 @@ export const BlogPage: React.FC = () => {
                                  <ArrowRight className="w-3 h-3 text-bronze -translate-x-2 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300" />
                               </div>
                            </div>
-                        </div>
+                        </a>
                      </FadeIn>
                   ))}
                </div>
@@ -188,7 +192,7 @@ export const BlogPage: React.FC = () => {
                      value={email}
                      onChange={(e) => setEmail(e.target.value)}
                      placeholder="Your email address" required aria-label="Email address" autoComplete="email"
-                     className="w-full bg-transparent border-b border-earth/20 py-2 text-center md:text-left text-earth placeholder:text-earth/30 focus:outline-none focus:border-bronze transition-colors font-sans"
+                     className="w-full bg-transparent border-b border-earth/20 py-2 text-center md:text-left text-earth placeholder:text-muted-earth focus:outline-none focus:border-bronze transition-colors font-sans"
                   />
                   <button
                      type="submit"
