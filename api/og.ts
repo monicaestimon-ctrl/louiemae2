@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { isCollectionId } from '../lib/collectionId';
+import { isCollectionId } from '../lib/collectionId.js';
 
 // Per-page metadata for social sharing previews
 const PAGE_META: Record<string, { title: string; description: string; image: string }> = {
@@ -121,3 +121,4 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.status(200).send(html);
 }
+
