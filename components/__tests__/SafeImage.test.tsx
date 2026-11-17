@@ -2,12 +2,25 @@ import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { SafeImage } from '../SafeImage';
+import productImages from '../../lib/productImageManifest.json';
 
 const media = [{ url: 'https://example.com/large.webp', altText: 'Oak dining chair, pair', variantIds: ['chair'], renditions: [
   { url: 'https://example.com/small.webp', width: 640 },
   { url: 'https://example.com/large.webp', width: 1280 },
 ] }];
 describe('reviewed catalog photography', () => {
+  it('falls back to the original source proxy when a prepared product rendition fails', () => {
+    const source = Object.keys(productImages)[0];
+    const view = render(<SafeImage src={source} alt="Prepared hero" />);
+    const img = screen.getByRole('img');
+    expect(img).toHaveAttribute('srcset');
+    fireEvent.error(img);
+    expect(img).not.toHaveAttribute('srcset');
+    expect(img.getAttribute('src')).toContain(encodeURIComponent(source));
+    view.rerender(<SafeImage src="https://example.com/new-source.png" alt="New source" />);
+    expect(img).toHaveAttribute('src', 'https://example.com/new-source.png');
+    expect(img).not.toHaveAttribute('srcset');
+  });
   it('uses matching approved descriptions and responsive candidates, and clears them on fallback', () => {
     render(<SafeImage src={media[0].url} alt="Chair" media={media} sizes="50vw" />);
     const img = screen.getByRole('img');
