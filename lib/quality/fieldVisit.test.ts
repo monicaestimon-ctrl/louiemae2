@@ -55,3 +55,12 @@ it('rejects private extra fields in metadata instead of transmitting them', () =
     createFieldVisit({ ...identity, url: '/account/private' } as typeof identity)
   ).toThrow('Invalid field visit');
 });
+
+it('rejects a conflicting runtime version before creating an undeliverable visit', () => {
+  const invalid = { ...identity, version: 2 };
+  expect(() => createFieldVisit(invalid)).toThrow('Invalid field visit');
+  const valid = { ...identity, version: 1 };
+  const visit = createFieldVisit(valid);
+  visit.observe({ name: 'LCP', id: 'metric', value: 2100 });
+  expect(visit.snapshot()?.version).toBe(1);
+});

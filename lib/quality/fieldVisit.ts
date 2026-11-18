@@ -10,7 +10,7 @@ type Observation = { id: string; name: FieldMetric; value: number };
 /** Memory-only accumulator for one hard navigation or bfcache visit, never an account/session ID. */
 export function createFieldVisit(identity: FieldVisitIdentity) {
   if (
-    !parseFieldBatch({ ...identity, version: 1, samples: [{ name: 'LCP', value: 0, revision: 1 }] })
+    !parseFieldBatch({ version: 1, ...identity, samples: [{ name: 'LCP', value: 0, revision: 1 }] })
   )
     throw new Error('Invalid field visit');
   const fixed = { ...identity };

@@ -20,6 +20,6 @@ An hourly purge removes up to 500 expired visit records and 50 old budget rows p
 
 ## Validation and remaining rollout
 
-Forty-eight focused tests cover payload privacy, route exclusions, byte/time limits, cancellation, duplicate/reordered metrics, immutable visit identity, consent revocation, transport behavior, server disablement and budgets, staff authorization, missing metrics, bounded summaries and retention. Run strict backend and application types, generated bindings, lint, build and CI before merging.
+Forty-nine focused tests cover payload privacy, route exclusions, byte/time limits, cancellation, duplicate/reordered metrics, immutable visit identity, consent revocation, transport behavior, server disablement and budgets, staff authorization, missing metrics, bounded summaries and retention. Run strict backend and application types, generated bindings, lint, build and CI before merging.
 
 Before activation: implement and verify the explicit shared preference UI; a lazy collector with document/bfcache identity and SPA-navigation rules; the HTTP boundary; authorized reporting and admin alert presentation; monitoring ownership and response process; and production verification. Do not silently repurpose existing email alerts or send test messages. No source-cost, pricing, inventory, ledger, checkout, payout or supplier dispatch authority changes in this phase.
