@@ -86,6 +86,7 @@ try {
         content: bundle.outputFiles.find((f) => f.path.endsWith('.js')).text,
       });
       await page.waitForSelector('table');
+      assert.match(await page.$eval('meta[name=robots]', n => n.content), /noindex/);
       await page.addScriptTag({ content: axe.source });
       await page.evaluate(() => {
         Object.defineProperty(navigator, 'clipboard', {
