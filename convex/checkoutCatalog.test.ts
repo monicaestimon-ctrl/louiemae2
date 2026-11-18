@@ -3,6 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { convexTest } from 'convex-test';
 import schema from './schema';
+import { cartReview } from './retailLaunch';
+import type { QueryCtx } from './_generated/server';
 import { blankCommerceDraft, listingSnapshot } from '../lib/commerce';
 import { api, internal } from './_generated/api';
 const stripe = vi.hoisted(() => ({ create: vi.fn(), event: vi.fn() }));
@@ -322,6 +324,32 @@ describe('current cart review contract', () => {
     expect(await t.query(api.retailLaunch.cartReview, { ...args, variantId: 'retired' })).toMatchObject({ maximum: 0 });
     await expect(t.query(api.retailLaunch.cartReview, { ...args, attempt: -1 })).rejects.toThrow();
   });
+  it('reads the source feed once for projection and selected-option quantity', async () => {
+    const t = convexTest(schema, modules); const { id } = await fixture(t);
+    await t.run(async ctx => {
+      const read = vi.spyOn(ctx.db, 'query');
+      const handler = (cartReview as unknown as { _handler: (ctx: QueryCtx, args: {id: string; variantId: string; quantity: number; attempt: number}) => Promise<unknown> })._handler;
+      try {
+        expect(await handler(ctx, { id, variantId: 'tan', quantity: 1, attempt: 0 })).toMatchObject({ maximum: 0, expiresAt: null });
+        expect(read.mock.calls.filter(([table]) => table === 'ashcroftInventoryFeeds')).toHaveLength(1);
+      } finally { read.mockRestore(); }
+    });
+  });
+  it('keeps fresh inventory usable until its exact expiry and returns the review deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const now = Date.now();
+      const t = convexTest(schema, modules); const { id } = await fixture(t);
+      const observedAt = now - 72 * 3600000 + 1000;
+      await t.mutation(internal.ashcroftInventory.reconcile, { source: 'Synthetic expiry', sha256: 'f'.repeat(64), observedAt, rows: [{ sku: 'SOF00401401', quantity: 3 }] });
+      const args = { id, variantId: 'tan', quantity: 1, attempt: 0 };
+      expect(await t.query(api.retailLaunch.cartReview, args)).toMatchObject({ maximum: 3, expiresAt: now + 1000 });
+      vi.setSystemTime(now + 999);
+      expect(await t.query(api.retailLaunch.cartReview, { ...args, attempt: 1 })).toMatchObject({ maximum: 3 });
+      vi.setSystemTime(now + 1000);
+      expect(await t.query(api.retailLaunch.cartReview, { ...args, attempt: 2 })).toMatchObject({ maximum: 0 });
+    } finally { vi.useRealTimers(); }
+  });
   it.each([{ merchandiseMinor: 254899, deliveryMinor: 7900 }, { merchandiseMinor: 254900, deliveryMinor: 7899 }])('rejects changed reviewed amounts before creating a snapshot or Stripe session', async reviewed => {
     const t = convexTest(schema, modules); const { id } = await fixture(t);
     const r = await t.fetch('/stripe/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reviewVersion: 1, items: [{ productId: id, variantId: 'tan', quantity: 1, reviewed }] }) });
@@ -331,7 +359,7 @@ describe('current cart review contract', () => {
   });
   it('uses matching reviewed amounts but still computes all totals on the server', async () => {
     const t = convexTest(schema, modules); const { id } = await fixture(t);
-    const r = await t.fetch('/stripe/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reviewVersion: 1, items: [{ productId: id, variantId: 'tan', quantity: 2, price: 1, reviewed: { merchandiseMinor: 254900, deliveryMinor: 7900 } }] }) });
+    const r = await t.fetch('/stripe/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reviewVersion: 1, items: [{ productId: id, variantId: 'tan', quantity: 2, price: 1, reviewed: { merchandiseMinor: 254900, deliveryMinor: 7900, currency: 'USD', ignored: 'not forwarded' } }] }) });
     expect(r.status).toBe(200);
     expect(stripe.create.mock.calls[0][0].line_items[0].price_data.unit_amount).toBe(254900);
     expect(stripe.create.mock.calls[0][0].shipping_options[0].shipping_rate_data.fixed_amount.amount).toBe(15800);

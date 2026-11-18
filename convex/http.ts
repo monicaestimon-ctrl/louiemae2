@@ -124,7 +124,7 @@ http.route({
                 let snapshot;
                 try {
                     snapshot = await ctx.runMutation(internal.retailLaunch.createSnapshot, {
-                        items: items.map((i: any) => ({ productId: String(i.productId || ''), variantId: String(i.variantId || ''), quantity: i.quantity, ...(body.reviewVersion === 1 ? { reviewed: i.reviewed } : {}) })),
+                        items: items.map((i: any) => ({ productId: String(i.productId || ''), variantId: String(i.variantId || ''), quantity: i.quantity, ...(body.reviewVersion === 1 ? { reviewed: { merchandiseMinor: i.reviewed.merchandiseMinor, deliveryMinor: i.reviewed.deliveryMinor } } : {}) })),
                         ...(typeof body.refCode === 'string' && typeof body.visitorId === 'string' ? { refCode: body.refCode.slice(0, 32), visitorId: body.visitorId.slice(0, 64) } : {}),
                         ...(body.useCredit === true ? { useCredit: true } : {}),
                     });

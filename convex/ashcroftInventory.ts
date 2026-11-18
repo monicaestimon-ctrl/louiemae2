@@ -1,7 +1,7 @@
 import { v } from 'convex/values';
 import { internalMutation, internalQuery } from './_generated/server';
 import type { QueryCtx } from './_generated/server';
-import { ashcroftQuantity } from '../lib/ashcroftInventory';
+import { ashcroftQuantity, type AshcroftFeed } from '../lib/ashcroftInventory';
 import { supplierAvailable } from '../lib/retailLaunch';
 import { audit } from './sysCore';
 
@@ -9,10 +9,13 @@ export const latestFeed = (ctx: Pick<QueryCtx, 'db'>) => ctx.db.query('ashcroftI
   .withIndex('by_observed').order('desc').first();
 
 export async function ashcroftAvailable(ctx: Pick<QueryCtx, 'db'>, sku: string | undefined, description = '', quantity = 1) {
-  const feed = await latestFeed(ctx);
+  return ashcroftAvailableFromFeed(await latestFeed(ctx), sku, description, quantity);
+}
+
+export function ashcroftAvailableFromFeed(feed: AshcroftFeed | null, sku: string | undefined, description = '', quantity = 1, now = Date.now()) {
   // Preserve the legacy route only until the first reconciled feed is installed.
   if (!feed) return supplierAvailable(sku, description);
-  const available = ashcroftQuantity(feed, sku, Date.now());
+  const available = ashcroftQuantity(feed, sku, now);
   return Number.isSafeInteger(quantity) && quantity > 0 && available !== null && available >= quantity;
 }
 
