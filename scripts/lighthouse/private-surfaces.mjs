@@ -1,4 +1,4 @@
-/* global document, window, URL, Storage, DOMException */
+/* global document, window, URL, Storage, DOMException, requestAnimationFrame */
 import { build } from 'esbuild';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
@@ -107,6 +107,22 @@ try {
   assert.equal(await failed.$('meta[name=robots]'), null);
   assert.equal(await failed.evaluate(() => document.activeElement?.getAttribute('aria-label')), 'Ask the Louie Mae concierge');
   results.push({ moduleFailureRecoverable: true, closeAndFocusPreserved: true }); await failed.close();
+  for (const outcome of ['success', 'failure']) {
+    const page = await browser.newPage(); let held;
+    await page.setRequestInterception(true);
+    page.on('request', request => request.url().includes('/ConciergePanel-') ? held = request : request.continue());
+    await page.goto(origin, {waitUntil:'networkidle0'});
+    await page.click('button[aria-label="Ask the Louie Mae concierge"]');
+    await page.waitForFunction(() => document.activeElement?.textContent === 'Close concierge');
+    await page.keyboard.down('Shift'); await page.keyboard.press('Tab'); await page.keyboard.up('Shift');
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Public home');
+    if (outcome === 'success') await held.continue(); else await held.abort('failed');
+    if (outcome === 'success') await page.waitForSelector('input[aria-label="Ask the concierge"]');
+    else await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent.includes('could not be opened'));
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), 'Public home');
+    results.push({deferredOutcome:outcome,nonmodalFocusNavigationPreserved:true});await page.close();
+  }
   await writeFile('artifacts/lighthouse/private-surfaces-browser.json', JSON.stringify({ scope: 'Local actual-component fixture; synthetic chat transport; no production commands', results }, null, 2));
   console.log(JSON.stringify(results));
 } finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }

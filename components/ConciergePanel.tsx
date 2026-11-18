@@ -4,9 +4,10 @@ import { useAction } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import { ChatMessage } from '../types';
 
-export const ConciergePanel: React.FC<{ open: boolean; onClose: () => void }> = ({
+export const ConciergePanel: React.FC<{ open: boolean; onClose: () => void; canFocus: () => boolean }> = ({
   open: isOpen,
   onClose,
+  canFocus,
 }) => {
   const generateConciergeResponse = useAction(api.ai.generateConciergeResponse);
   const [clientToken] = useState(() => {
@@ -38,8 +39,8 @@ export const ConciergePanel: React.FC<{ open: boolean; onClose: () => void }> = 
   const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    if (isOpen) inputRef.current?.focus();
-  }, [isOpen]);
+    if (isOpen && canFocus()) inputRef.current?.focus();
+  }, [isOpen, canFocus]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

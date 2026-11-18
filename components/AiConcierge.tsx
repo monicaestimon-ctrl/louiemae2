@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { MessageSquare, X } from 'lucide-react';
 import { loadModule } from '../lib/moduleRecovery';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -8,11 +8,11 @@ const Panel = lazy(() =>
     default: module.ConciergePanel,
   }))
 );
-function LoadState({ failed = false, onClose }: { failed?: boolean; onClose: () => void }) {
+function LoadState({ failed = false, onClose, canFocus }: { failed?: boolean; onClose: () => void; canFocus: () => boolean }) {
   const close = useRef<HTMLButtonElement>(null);
   useEffect(() => {
-    close.current?.focus();
-  }, []);
+    if (canFocus()) close.current?.focus();
+  }, [canFocus]);
   return (
     <section
       role="dialog"
@@ -47,6 +47,8 @@ export function AiConcierge() {
   const [opened, setOpened] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const previous = useRef(false);
+  const focusOwned = useRef(false);
+  const canFocus = useCallback(() => focusOwned.current, []);
   usePrivateIndexing(open);
   useEffect(() => {
     if (!open && previous.current) trigger.current?.focus();
@@ -54,17 +56,26 @@ export function AiConcierge() {
   }, [open]);
   const close = () => setOpen(false);
   return (
-    <>
+    <div
+      onFocusCapture={() => { focusOwned.current = true; }}
+      onBlurCapture={(event) => {
+        // A removed loading control has no next target. Retain ownership for
+        // that handoff, but never take focus back from another page control.
+        if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget))
+          focusOwned.current = false;
+      }}
+    >
       {opened && (
-        <ErrorBoundary fallback={open ? <LoadState failed onClose={close} /> : <></>}>
-          <Suspense fallback={open ? <LoadState onClose={close} /> : null}>
-            <Panel open={open} onClose={close} />
+        <ErrorBoundary fallback={open ? <LoadState failed onClose={close} canFocus={canFocus} /> : <></>}>
+          <Suspense fallback={open ? <LoadState onClose={close} canFocus={canFocus} /> : null}>
+            <Panel open={open} onClose={close} canFocus={canFocus} />
           </Suspense>
         </ErrorBoundary>
       )}
       <button
         ref={trigger}
         onClick={() => {
+          if (!open) focusOwned.current = true;
           setOpened(true);
           setOpen((value) => !value);
         }}
@@ -74,6 +85,6 @@ export function AiConcierge() {
       >
         {open ? <X className="w-6 h-6" /> : <MessageSquare className="w-6 h-6" />}
       </button>
-    </>
+    </div>
   );
 }
