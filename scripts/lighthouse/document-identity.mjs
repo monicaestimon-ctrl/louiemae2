@@ -15,15 +15,32 @@ export function documentCommit(html, expected) {
   return values[0];
 }
 /** Capture all main-document responses, including a transient deployment between endpoint checks. */
-export function captureDocuments(page, expectedUrl, expectedCommit) {
+export function captureDocuments(
+  page,
+  expectedUrl,
+  expectedCommit,
+  { allowLighthouseReset = false } = {}
+) {
+  // Lighthouse's pinned bf-cache gatherer navigates through this browser-owned page.
+  // Never permit ordinary off-route web navigation, even when it later returns.
+  const runnerReset = (url) => allowLighthouseReset && url === 'chrome://terms/';
   const pending = [];
   let navigatedAway = false;
   const navigation = (frame) => {
-    if (frame === page.mainFrame() && frame.url() !== expectedUrl && frame.url() !== 'about:blank')
+    if (
+      frame === page.mainFrame() &&
+      frame.url() !== expectedUrl &&
+      frame.url() !== 'about:blank' &&
+      !runnerReset(frame.url())
+    )
       navigatedAway = true;
   };
   const response = (r) => {
-    if (r.request().isNavigationRequest() && r.frame() === page.mainFrame())
+    if (
+      r.request().isNavigationRequest() &&
+      r.frame() === page.mainFrame() &&
+      !runnerReset(r.url())
+    )
       pending.push(
         (async () => ({
           url: r.url(),

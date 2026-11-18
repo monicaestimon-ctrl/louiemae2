@@ -69,7 +69,7 @@ for (const route of routes) {
         const browserVersion = (await browser.version()).split('/').at(-1);
         if (browserVersion !== process.env.AUDIT_CHROME_VERSION) throw new Error(`Browser version mismatch: ${browserVersion}`);
         const page = await browser.newPage();
-        const documents = verifyProduction ? captureDocuments(page, url, manifest.deploymentCommit) : null;
+        const documents = verifyProduction ? captureDocuments(page, url, manifest.deploymentCommit, { allowLighthouseReset: true }) : null;
         const result = await lighthouse(url, { port: chrome.port, output: ['json', 'html'],
           logLevel: 'error', onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
           }, device === 'desktop' ? desktopConfig : undefined, page);

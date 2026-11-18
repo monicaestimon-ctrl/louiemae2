@@ -1,8 +1,10 @@
 /* global history */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { URL } from 'node:url';
 import { mkdir, writeFile } from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
+import lighthouse, { desktopConfig } from 'lighthouse';
 import { captureDocuments } from './document-identity.mjs';
 const a = 'a'.repeat(40),
   b = 'b'.repeat(40);
@@ -46,6 +48,23 @@ try {
     capture.dispose();
     await page.close();
   }
+  const page = await browser.newPage();
+  commit = a;
+  const capture = captureDocuments(page, url, a, { allowLighthouseReset: true });
+  await lighthouse(
+    url,
+    {
+      port: Number(new URL(browser.wsEndpoint()).port),
+      onlyCategories: ['performance'],
+      logLevel: 'error',
+    },
+    desktopConfig,
+    page
+  );
+  assert.equal((await capture.verify()).commit, a);
+  capture.dispose();
+  await page.close();
+  results.push({ mode: 'lighthouse-bf-cache-probe', passed: true });
 } finally {
   if (browser) await browser.close();
   server.closeAllConnections();
@@ -53,7 +72,7 @@ try {
   await mkdir('artifacts/lighthouse', { recursive: true });
   await writeFile(
     'artifacts/lighthouse/document-identity-browser.json',
-    JSON.stringify({ results, passed: results.length === 3 }, null, 2)
+    JSON.stringify({ results, passed: results.length === 4 }, null, 2)
   );
 }
 console.log(JSON.stringify(results));

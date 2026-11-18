@@ -84,3 +84,19 @@ test('scheduled identity follows successful deployment records rather than a doc
     })
   );
 });
+
+test('only the Lighthouse runner can exempt its browser-owned bf-cache probe', async () => {
+  for (const allowLighthouseReset of [false, true]) {
+    const c = browser(),
+      capture = captureDocuments(c.page, url, a, { allowLighthouseReset });
+    c.document(a);
+    c.document(b, 'chrome://terms/');
+    c.document(a);
+    if (allowLighthouseReset) assert.equal((await capture.verify()).commit, a);
+    else await assert.rejects(capture.verify());
+    c.navigate(url + 'other');
+    c.navigate(url);
+    await assert.rejects(capture.verify());
+    capture.dispose();
+  }
+});

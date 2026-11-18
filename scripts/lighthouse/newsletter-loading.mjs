@@ -186,6 +186,25 @@ try {
         );
         assert.equal(await page.$eval('input', (i) => i.value), 'reader@example.com');
       }
+      if (scenario === 'failed' || scenario === 'timeout') {
+        assert.equal(
+          await page.evaluate(() => {
+            const close = document
+              .querySelector('[aria-label="Close newsletter popup"]')
+              .getBoundingClientRect();
+            const message = document
+              .querySelector('[data-newsletter-panel] [role="alert"]')
+              .getBoundingClientRect();
+            return (
+              message.top >= close.bottom ||
+              message.right <= close.left ||
+              message.left >= close.right
+            );
+          }),
+          true,
+          'Close button must not overlap the failure message'
+        );
+      }
       assert.equal(requests, 1, 'Request the form exactly once when it opens');
       assert.equal(
         await page.$eval('[data-newsletter-panel]', (e) => e.scrollWidth > e.clientWidth),
