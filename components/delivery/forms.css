@@ -62,7 +62,8 @@
   padding: 10px 16px;
   font: inherit;
 }
-.delivery-ui button:disabled {
+.delivery-ui button:disabled,
+.delivery-ui button[aria-disabled='true'] {
   opacity: 0.65;
   cursor: not-allowed;
 }

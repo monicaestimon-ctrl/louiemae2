@@ -202,7 +202,8 @@
       960,
       1254
     ],
-    "ratio": 1
+    "ratio": 1,
+    "avifBase": "/images/opt/product-formats/b4a9f0f9de0302fd114aa7b5"
   },
   "https://diligent-jay-261.convex.cloud/api/storage/30d28ee4-7164-440b-9ceb-7a6b3381f200": {
     "base": "/images/opt/products/6e6b9430e880fba255f263b2",

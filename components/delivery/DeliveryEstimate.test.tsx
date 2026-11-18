@@ -223,3 +223,72 @@ it('gives simultaneous product estimators distinct field IDs', () => {
   const fields = screen.getAllByLabelText('ZIP code');
   expect(fields[0].id).not.toBe(fields[1].id);
 });
+
+it('retains focus and rejects duplicate submits while the estimate is pending', async () => {
+  let resolve!: (value: unknown) => void;
+  mock.estimate.mockImplementation(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      })
+  );
+  render(<ProductDeliveryEstimate productId="p" variantId="v" />);
+  fireEvent.change(screen.getByLabelText('ZIP code'), { target: { value: '95206' } });
+  const button = screen.getByRole('button', { name: 'Estimate delivery' });
+  button.focus();
+  const form = screen.getByRole('form', { name: 'Estimate delivery' });
+  fireEvent.submit(form);
+  fireEvent.submit(form);
+  expect(mock.estimate).toHaveBeenCalledTimes(1);
+  expect(button).toHaveAttribute('aria-disabled', 'true');
+  expect(button).not.toBeDisabled();
+  expect(button).toHaveFocus();
+  await act(async () => resolve(response(5999)));
+  expect(button).toHaveFocus();
+  expect(button).toHaveAttribute('aria-disabled', 'false');
+});
+
+it('an older settled request cannot unlock the newer pending request', async () => {
+  let oldResolve!: (value: unknown) => void;
+  let newResolve!: (value: unknown) => void;
+  mock.estimate
+    .mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          oldResolve = r;
+        })
+    )
+    .mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          newResolve = r;
+        })
+    );
+  render(<ProductDeliveryEstimate productId="p" variantId="v" />);
+  const zip = screen.getByLabelText('ZIP code');
+  const form = screen.getByRole('form', { name: 'Estimate delivery' });
+  fireEvent.change(zip, { target: { value: '95206' } });
+  fireEvent.submit(form);
+  fireEvent.change(zip, { target: { value: '10001' } });
+  fireEvent.submit(form);
+  await act(async () => oldResolve(response(5999)));
+  fireEvent.submit(form);
+  expect(mock.estimate).toHaveBeenCalledTimes(2);
+  expect(screen.queryByText('Curbside delivery: $59.99')).not.toBeInTheDocument();
+  await act(async () => newResolve(response(19999)));
+  expect(screen.getByText('Curbside delivery: $199.99')).toBeInTheDocument();
+});
+
+it('allows retry after a failed estimate without retaining a stale submission lock', async () => {
+  mock.estimate
+    .mockRejectedValueOnce(new Error('Unavailable'))
+    .mockResolvedValueOnce(response(5999));
+  render(<ProductDeliveryEstimate productId="p" variantId="v" />);
+  fireEvent.change(screen.getByLabelText('ZIP code'), { target: { value: '95206' } });
+  const form = screen.getByRole('form', { name: 'Estimate delivery' });
+  fireEvent.submit(form);
+  await screen.findByRole('alert');
+  fireEvent.submit(form);
+  await screen.findByText('Curbside delivery: $59.99');
+  expect(mock.estimate).toHaveBeenCalledTimes(2);
+});
