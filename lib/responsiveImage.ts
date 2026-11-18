@@ -2,7 +2,7 @@ import manifest from './imageManifest.json' with { type: 'json' };
 import productManifest from './productImageManifest.json' with { type: 'json' };
 import editorialManifest from './editorialImageManifest.json' with { type: 'json' };
 
-type Entry = { base: string; widths: number[]; ratio: number };
+type Entry = { base: string; widths: number[]; ratio: number; avifBase?: string };
 const ENTRIES = manifest as Record<string, Entry>;
 const PRODUCTS = productManifest as Record<string, Entry>;
 const EDITORIAL = editorialManifest as Record<string, Entry>;
@@ -38,4 +38,14 @@ function safeDecode(value: string) {
   } catch {
     return value;
   }
+}
+
+/** Optional prepared AVIF source; callers retain the ordinary image as fallback. */
+export function responsiveAvifSource(src: string | null | undefined, sizes: string) {
+  const entry = imageEntry(src);
+  return entry?.avifBase ? {
+    type: 'image/avif',
+    srcSet: entry.widths.map(w => `${entry.avifBase}-${w}.avif ${w}w`).join(', '),
+    sizes,
+  } : undefined;
 }

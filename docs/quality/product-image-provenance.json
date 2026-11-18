@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-11-17T08:04:35.417Z",
-  "catalogSha256": "d55b785835c6603e59654bfd10503ffeeb4c740fb9d447fe4a4a1829c1c8ac32",
+  "generatedAt": "2026-11-18T12:06:32.168Z",
+  "catalogSha256": "354d1d93862448e242ee6ca002be644d7f3f2a49d8af15fc6b2c7644848a03a1",
   "recipe": "webp85-effort6-lossless-orientation-v2",
   "records": [
     {
@@ -807,6 +807,25 @@
       ]
     },
     {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/3b0a69ac-4629-4e58-bb8b-418d2be411b9",
+      "sha256": "4f9bbe3b46cbcc5f0cdd558fd980d67924c8220daab8c42c1261f5b02cff8317",
+      "bytes": 109178,
+      "width": 450,
+      "height": 600,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 23716,
+          "sha256": "1b9c160a71fb372291d5c4c788bac5dba841bcae9a05a78ee61f4307c1852d8c"
+        },
+        {
+          "width": 450,
+          "bytes": 40508,
+          "sha256": "1c1e835ce84b283cf56c3bfa73064947b221314f3a076109e625c72024e640b7"
+        }
+      ]
+    },
+    {
       "source": "https://diligent-jay-261.convex.cloud/api/storage/3c26431c-5ac7-427a-b1a6-ec40c602387d",
       "sha256": "fa8112b3883b0d512ba54569ac6d7b90cfa302264c87225264cebb10a76f7da9",
       "bytes": 2693302,
@@ -1261,6 +1280,25 @@
           "width": 1536,
           "bytes": 91070,
           "sha256": "39ace04bfa27f993e1dc61c9059dddfaa5e36278182473b9816ff610c1be7431"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/5702b3e0-22e2-457f-8b50-86d69b753edc",
+      "sha256": "477cc261f788f3ce3fb184a084c06c2a2416c948f58b632955352a3937931ba7",
+      "bytes": 139241,
+      "width": 450,
+      "height": 600,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 35060,
+          "sha256": "d0ebd0b157c94e1772f02b2ccc09a6ce7f743a70bd45883e7baa900f77bb784d"
+        },
+        {
+          "width": 450,
+          "bytes": 67266,
+          "sha256": "3fc4f376e553cbd9e8e7570e19ba0227dc767bd2bb3bd10817707796fe97b539"
         }
       ]
     },
@@ -1769,6 +1807,45 @@
       ]
     },
     {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/6a5a7a3d-2a13-48f8-98b8-b1694f2d5e04",
+      "sha256": "4c4b7a163ad34e7e9062257ec5f06360a17dbf12e7167d30119cda4a45b76ec2",
+      "bytes": 719070,
+      "width": 2048,
+      "height": 2048,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 18622,
+          "sha256": "30d0dd0e20bf3d0f2ec035dbf8b07fa3268b9963e2256605188be3cf63143977"
+        },
+        {
+          "width": 480,
+          "bytes": 40040,
+          "sha256": "d022a9503a7319891bc061a1c89b9685d9e5f38c4556e18cdc6d5d936536cc09"
+        },
+        {
+          "width": 640,
+          "bytes": 70414,
+          "sha256": "cf452d3ef5ed50e045a41fb40402f17c52f4a0b0e82253a05f10dda65dd2b01e"
+        },
+        {
+          "width": 960,
+          "bytes": 151836,
+          "sha256": "44eca144cc4f2a510cf0c3d7a70204202afc84ff255888fa58900c10e4724b76"
+        },
+        {
+          "width": 1280,
+          "bytes": 258836,
+          "sha256": "cc7994e24e2f42d4cb2426016b0776aedadac259110f3e168ec5b4b7bf4d0915"
+        },
+        {
+          "width": 1600,
+          "bytes": 379662,
+          "sha256": "6069a76ea295b054ae3b59268ec5355908c7561343504a00e05489c423188b14"
+        }
+      ]
+    },
+    {
       "source": "https://diligent-jay-261.convex.cloud/api/storage/6cc5737c-2976-43b1-a4c7-cf8537db2410",
       "sha256": "b1995ad1ae57f599348cd0c284e35ebb2350028d0ed236b6694dc8caf0bc7077",
       "bytes": 2260293,
@@ -1804,6 +1881,40 @@
           "width": 1536,
           "bytes": 119950,
           "sha256": "f8223f4bd79eaade318551fd2630f59a1c21c70db14f541a3bd666e424d660dc"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/6fc3c0a4-a57f-4237-bdc7-e41002336dae",
+      "sha256": "f33bca12a19616f29173ea9c06a722112e6320bc92c836d12baa9e7a91e69611",
+      "bytes": 31218,
+      "width": 1000,
+      "height": 1000,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 9018,
+          "sha256": "1d08a8f222e0aef3c0263379dffb3e8433bc970832a73613e156aa0af4aa2870"
+        },
+        {
+          "width": 480,
+          "bytes": 16256,
+          "sha256": "cc3b9213a62a48a435e5df73e848c869b73246c3e7c5e98e7068a4b66f4d2ff3"
+        },
+        {
+          "width": 640,
+          "bytes": 24674,
+          "sha256": "bd768c5ed999d53a1d84d7b5f1f80a1e89e91bfc25dc18ac7a2e5574ebce38db"
+        },
+        {
+          "width": 960,
+          "bytes": 44254,
+          "sha256": "f89003d35fd622821a65fc05fbf56ea2405a6c660c607f0bd6caba534f292f22"
+        },
+        {
+          "width": 1000,
+          "bytes": 47206,
+          "sha256": "f12c113fb1b601bf76eb3eebabdfdc6bc186f25ad46954361c5357b50d3b2166"
         }
       ]
     },
@@ -2565,6 +2676,25 @@
       ]
     },
     {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/9737afc9-0970-46d6-b4da-f2c9c5eb2fa1",
+      "sha256": "5de3f25e091fcf71021dfac3b41d9cfec9bf39e018cb92cb7765db0dc03ad8d6",
+      "bytes": 107358,
+      "width": 450,
+      "height": 600,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 26184,
+          "sha256": "3a031411896ae965e9bfc769ede708507ad9ab6f1714f73b706f258a1f7cf2c0"
+        },
+        {
+          "width": 450,
+          "bytes": 48016,
+          "sha256": "be8b82ef5cb6f38b437e3f7add500dfe80eb1d47f012e74967b30bf8feae9834"
+        }
+      ]
+    },
+    {
       "source": "https://diligent-jay-261.convex.cloud/api/storage/9db60f6f-2963-4947-a20d-5a33d0f16c71",
       "sha256": "2cc9f60ebe12189c15f7a87d97cccee779c577f0e849d57958f3235600de9723",
       "bytes": 2654448,
@@ -2634,6 +2764,25 @@
           "width": 1254,
           "bytes": 183894,
           "sha256": "b4d8348ef0984075b0625d5f2f9d8b14001ebe0d2d40b3865110513b07b89ee2"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/a0cebe94-609f-4048-8ebf-2e31aaf5fbc1",
+      "sha256": "c5d17df142ad69864cb4d03d76d2fb333e2c49e9933acfd3f06c144a9fbcf9fc",
+      "bytes": 97373,
+      "width": 450,
+      "height": 600,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 19280,
+          "sha256": "ba4d1f33d28604bdcd23fbfb5d30b516efebc210fd518f5641862e72474795c2"
+        },
+        {
+          "width": 450,
+          "bytes": 36226,
+          "sha256": "04cffd8a7d3b8a100f336a71bf68fef3eb48eba36b70cc113874fb8d3cdd9b2a"
         }
       ]
     },
@@ -3857,6 +4006,25 @@
       ]
     },
     {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/e5787b22-4781-45b5-aaf5-16a8d9ece136",
+      "sha256": "479a8fb757e27ae92cdb45d3e3ec71954047ffaa158254aef2b135b2b8fe7180",
+      "bytes": 90592,
+      "width": 450,
+      "height": 600,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 18318,
+          "sha256": "4cb4832dfe39fc41a6f55e815f9fbce64fa2aaa561371c434ee028b5e4ac0dea"
+        },
+        {
+          "width": 450,
+          "bytes": 32610,
+          "sha256": "056a6b9ad12e30d8b7c4fd15229cc1c1459b6a3788c6cae4b066611bd2b9def1"
+        }
+      ]
+    },
+    {
       "source": "https://diligent-jay-261.convex.cloud/api/storage/e71e1192-0e20-4135-b908-5adbc235d193",
       "sha256": "71563f1e93a9baf0c015ab0854a6dc261837b925fa457b3627bb715e009789d4",
       "bytes": 2462639,
@@ -4096,6 +4264,30 @@
           "width": 1536,
           "bytes": 194706,
           "sha256": "bd54b0160f45bd5101ab2b2904d38e656b7add1c4564c3c7ec5649d63697a6e9"
+        }
+      ]
+    },
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/f273772a-6d50-4c58-b1ed-566d31a2e4ce",
+      "sha256": "c564bfd42545802b3bfe6f30402ca2dbda4cdfa23c5375804b2ebcce4e319068",
+      "bytes": 83826,
+      "width": 600,
+      "height": 600,
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 9850,
+          "sha256": "1359e7fd938e4a7810f799a360ecd5e28dadd7df33ee216a3a7bb6303fdc7066"
+        },
+        {
+          "width": 480,
+          "bytes": 19010,
+          "sha256": "ef42e098b71efa964c591e23bbdc6c72df74a1feae143cc6b661c9c3b1662333"
+        },
+        {
+          "width": 600,
+          "bytes": 27494,
+          "sha256": "cfa82c6f52dab41941c6f1eac3cd24abb74a07dc5baddb76e748dd19f5a64441"
         }
       ]
     },

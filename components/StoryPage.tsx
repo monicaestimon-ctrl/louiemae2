@@ -1,9 +1,45 @@
 
-import React, { useLayoutEffect } from 'react';
+import React, { useLayoutEffect, useState } from 'react';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
 import { DynamicSectionRenderer } from './DynamicPage';
-import { imageEntry, responsiveImage } from '../lib/responsiveImage';
+import { imageEntry, responsiveImage, responsiveAvifSource } from '../lib/responsiveImage';
+
+const StoryHeroImage: React.FC<{ src: string }> = ({ src }) => {
+  const heroSizes = '(min-width: 432px) 384px, calc(100vw - 48px)';
+  const [failedAvif, setFailedAvif] = useState(false);
+  const [failedWebp, setFailedWebp] = useState(false);
+  const avif = failedAvif ? undefined : responsiveAvifSource(src, heroSizes);
+  return !src || failedWebp ? (
+    <div
+      role="img"
+      aria-label="Our Journey image unavailable"
+      className="w-full flex items-center justify-center bg-cream text-muted-earth text-sm p-6"
+      style={{ aspectRatio: 1 / (imageEntry(src)?.ratio || 1.5) }}
+    >
+      Image temporarily unavailable
+    </div>
+  ) : (
+    <picture>
+      {avif && <source {...avif} />}
+      <img
+        onError={(event) =>
+          /\.avif(?:[?#]|$)/i.test(event.currentTarget.currentSrc)
+            ? setFailedAvif(true)
+            : setFailedWebp(true)
+        }
+        loading="eager"
+        fetchPriority="high"
+        decoding="async"
+        {...responsiveImage(src, heroSizes)}
+        alt="Our Journey"
+        width={imageEntry(src) ? 1000 : undefined}
+        height={imageEntry(src) ? Math.round(1000 * imageEntry(src)!.ratio) : undefined}
+        className="w-full h-auto object-contain rounded-2xl grayscale-[20%] hover:scale-[1.02] transition-transform duration-[3s] ease-out"
+      />
+    </picture>
+  );
+};
 
 export const StoryPage: React.FC = () => {
    const { siteContent } = useSite();
@@ -24,16 +60,7 @@ export const StoryPage: React.FC = () => {
                </div>
 
                <div className="relative w-full overflow-hidden rounded-2xl mb-16 shadow-sm mx-auto max-w-sm">
-                  <img
-                     loading="eager"
-                     fetchPriority="high"
-                     decoding="async"
-                     {...responsiveImage(story.hero.image, '(min-width: 432px) 384px, calc(100vw - 48px)')}
-                     alt="Our Journey"
-                     width={imageEntry(story.hero.image) ? 1000 : undefined}
-                     height={imageEntry(story.hero.image) ? Math.round(1000 * imageEntry(story.hero.image)!.ratio) : undefined}
-                     className="w-full h-auto object-contain rounded-2xl grayscale-[20%] hover:scale-[1.02] transition-transform duration-[3s] ease-out"
-                  />
+                  <StoryHeroImage key={story.hero.image} src={story.hero.image} />
                </div>
             </div>
          </section>
