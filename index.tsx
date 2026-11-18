@@ -1,5 +1,8 @@
+import { installPrivateLocationPolicy } from './lib/privateIndexing';
 import './index.css';
 import { loadModule, showStartupFailure } from './lib/moduleRecovery';
+
+installPrivateLocationPolicy(window);
 
 // index.html paints the home hero on its own. Start the app once that first paint has
 // happened so the bundle never stands between the visitor and the hero. Other entry

@@ -7,6 +7,7 @@ import { ProgressiveSections } from './ProgressiveSections';
 import { DiscoverCatalog } from './DiscoverCatalog';
 import { products as PRODUCTS, productsById as BY_ID, catalogGeneration, useCatalogRevision } from './catalogStore';
 export { setProducts } from './catalogStore';
+import { usePrivateIndexing } from '../components/usePrivateIndexing';
 import React, { useState, useEffect, useLayoutEffect, useRef, useId, useMemo, startTransition } from 'react';
 import htm from 'htm';
 import type { HolmProduct } from './catalog';
@@ -3750,7 +3751,9 @@ export function App({catalogComplete=true,onCatalogIntent=()=>{}}={}){
   const [likes,setLikes]=useState([]);const [recent,setRecent]=useState([]);
   const [inspo,setInspo]=useState(()=>load('inspo',INSPO_SEED));const [roomWall,setRoomWall]=useState(null);
   useEffect(()=>store('inspo',inspo),[inspo]);
-  const [pin,setPin]=useState(null);const [pinIdentity,setPinIdentity]=useState(null);const [pinReturnsToTray,setPinReturnsToTray]=useState(false);const [trayOpen,setTray]=useState(false);const [menu,setMenu]=useState(false);const [toastS,setToastS]=useState(null);
+  const [pin,setPin]=useState(null);const [pinIdentity,setPinIdentity]=useState(null);const [pinReturnsToTray,setPinReturnsToTray]=useState(false);const [trayOpen,setTray]=useState(false);
+  usePrivateIndexing(!!me.signedIn || trayOpen);
+  const [menu,setMenu]=useState(false);const [toastS,setToastS]=useState(null);
   const [query,setQuery]=useState('');const [imgQ,setImgQ]=useState(null);
   const [studioSeed,setStudioSeed]=useState(null);const [nonce,setNonce]=useState(0);const [roomSeed,setRoomSeed]=useState(null);const [board,setBoard]=useState('b1');const [trend,setTrend]=useState('t1');
   useEffect(()=>{const h=()=>{const r=getRoute();setPinReturnsToTray(false);if(r.startsWith('p/')){const id=+r.slice(2);if(Number.isSafeInteger(id)&&id>0){setPinIdentity({pid:id});setPin(id);return}}setRoute(r);setPin(null);scrollTo(0,0)};h();addEventListener('hashchange',h);return()=>removeEventListener('hashchange',h)},[]);

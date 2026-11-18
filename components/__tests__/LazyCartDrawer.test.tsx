@@ -37,8 +37,10 @@ it('loads the drawer only on intent and retains its owner after closing', async 
   expect(calls.imports).toBe(0);
   fireEvent.click(screen.getByRole('button', { name: 'Open cart' }));
   const field = await screen.findByLabelText('Owned draft');
+  expect(document.querySelector('meta[name=robots]')?.getAttribute('content')).toContain('noindex');
   fireEvent.change(field, { target: { value: 'Retained' } });
   fireEvent.click(screen.getByRole('button', { name: 'Close fixture' }));
+  expect(document.querySelector('meta[name=robots]')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Open cart' }));
   expect(await screen.findByLabelText('Owned draft')).toHaveValue('Retained');
   expect(calls.imports).toBe(1);

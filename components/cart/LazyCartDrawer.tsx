@@ -1,3 +1,4 @@
+import { usePrivateIndexing } from '../usePrivateIndexing';
 import React, { lazy, Suspense, useState } from 'react';
 import { useCart } from '../../contexts/CartContext';
 import { loadModule } from '../../lib/moduleRecovery';
@@ -34,6 +35,7 @@ function CartLoadState({ failed = false }: { failed?: boolean }) {
 export function LazyCartDrawer() {
   const { isOpen } = useCart();
   const [opened, setOpened] = useState(false);
+  usePrivateIndexing(isOpen);
   // Adjust this component only on the first open, before committing its children.
   if (isOpen && !opened) setOpened(true);
   if (!isOpen && !opened) return null;

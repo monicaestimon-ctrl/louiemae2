@@ -2,6 +2,8 @@
   "ignoreCommand": "node scripts/vercel-ignore-build.mjs",
   "functions": { "api/journal.ts": { "includeFiles": "dist/index.html" }, "api/page.ts": { "includeFiles": "dist/index.html" }, "api/product.ts": { "includeFiles": "dist/index.html" }, "api/collection.ts": { "includeFiles": "dist/index.html" } },
   "headers": [
+    { "source": "/(admin|furniture/admin|furniture/index.html)", "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }, { "key": "Cache-Control", "value": "private, no-store" }] },
+    { "source": "/(.*)", "has": [{ "type": "query", "key": "deliveryQuote" }], "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow" }, { "key": "Cache-Control", "value": "private, no-store" }] },
     { "source": "/build-info.json", "headers": [{ "key": "Cache-Control", "value": "no-store" }, { "key": "X-Robots-Tag", "value": "noindex" }] },
     { "source": "/(.*)", "headers": [
       { "key": "X-Content-Type-Options", "value": "nosniff" },

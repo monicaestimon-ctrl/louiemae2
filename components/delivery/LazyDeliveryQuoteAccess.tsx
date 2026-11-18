@@ -1,3 +1,4 @@
+import { usePrivateIndexing } from '../usePrivateIndexing';
 import React, { lazy, Suspense, useState } from 'react';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { loadModule } from '../../lib/moduleRecovery';
@@ -27,6 +28,7 @@ function LoadState({ failed = false, recover }: { failed?: boolean; recover?: ()
 export function LazyDeliveryQuoteAccess() {
   const [originalUrl] = useState(() => new URL(window.location.href));
   const [request] = useState(() => quoteAccessFromUrl(originalUrl));
+  usePrivateIndexing(!!request);
   const recover = () => {
     if (window.location.href !== originalUrl.href)
       window.history.replaceState(window.history.state, '', originalUrl.href);

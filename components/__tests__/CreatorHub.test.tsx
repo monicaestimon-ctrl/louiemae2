@@ -117,3 +117,16 @@ it('retains accepted terms and focuses a safe enrollment failure without duplica
   expect(screen.getByRole('checkbox')).toBeChecked();
   expect(screen.queryByText('Private supplier details')).not.toBeInTheDocument();
 });
+
+it('protects authenticated hub states and restores the public program page on logout', () => {
+  answers.set('holm.me', { signedIn: false });
+  const view = render(<CreatorHub />);
+  expect(document.querySelector('meta[name=robots]')).toBeNull();
+  answers.set('holm.me', { signedIn: true });
+  answers.set('holmPartners.hub', hub);
+  view.rerender(<CreatorHub />);
+  expect(document.querySelector('meta[name=robots]')?.getAttribute('content')).toContain('noindex');
+  answers.set('holm.me', { signedIn: false });
+  view.rerender(<CreatorHub />);
+  expect(document.querySelector('meta[name=robots]')).toBeNull();
+});
