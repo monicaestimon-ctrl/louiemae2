@@ -20,7 +20,7 @@ import{Modal}from'./components/Modal';
 const product={id:42,lid:'source',vid:'walnut',name:'Chair',line:'Walnut',price:199,trade:179,img:'/images/product-unavailable.svg',ar:1};
 const boards=[{id:'b1',title:'Living room',pins:[{pid:42,lid:'source',vid:'walnut'}]},{id:'b2',title:'Private study',secret:true,pins:[]}];
 const save=(p,b)=>window.saves.push({p,b});const create=(title,p)=>{window.creates.push({title,p});return 'new'};
-function Card(){return <div style={{width:180,marginLeft:'auto'}}><CatalogProductCard product={product} boards={boards} mode='trade' available pinterestUrl='https://www.pinterest.com/' icons={{down:null,pinterest:null,studio:null,add:null}} onOpen={()=>{}} onSave={save} onStudio={()=>{}} onAdd={()=>{}} renderSaveMenu={(close,trigger)=><SaveBoardMenu returnFocus={trigger} align='left' product={product} catalog={new Map()} boards={boards} onSave={save} onCreate={create} onClose={close}/>}/><button id='after' style={{position:'fixed',bottom:12,left:12}}>After picker</button></div>}
+function Card(){return <div style={{width:180,marginLeft:'auto',marginTop:440}}><CatalogProductCard product={product} boards={boards} mode='trade' available pinterestUrl='https://www.pinterest.com/' icons={{down:null,pinterest:null,studio:null,add:null}} onOpen={()=>{}} onSave={save} onStudio={()=>{}} onAdd={()=>{}} renderSaveMenu={(close,trigger)=><SaveBoardMenu returnFocus={trigger} align='left' product={product} catalog={new Map()} boards={boards} onSave={save} onCreate={create} onClose={close}/>}/><button id='after' style={{position:'fixed',bottom:12,left:12}}>After picker</button></div>}
 function Content(){const[open,setOpen]=useState(false);return <><button id="before">Before picker</button><div className="pin" style={{width:90,marginLeft:'auto'}}><button id="trigger" onClick={()=>setOpen(true)}>Save piece</button>{open&&<SaveBoardMenu align="left" product={product} catalog={new Map()} boards={[{id:'b1',title:'Living room',pins:[]},{id:'b2',title:'Private study',secret:true,pins:[]}]} onSave={(p,b)=>window.saves.push({p,b})} onCreate={(title,p)=>{window.creates.push({title,p});return 'new'}} onClose={()=>setOpen(false)}/>}</div><button id="after" style={{position:"fixed",bottom:12,left:12}}>After picker</button></>}
 function Fixture(){const[modal,setModal]=useState(window.nested);return <main style={{padding:24}}><h1>Save a piece</h1>{window.nested?<Modal open={modal} label="Product details" onClose={()=>{window.parentClosed++;setModal(false)}}><div style={{padding:24,width:'min(600px,100vw)'}}><h2>Chair</h2><Content/></div></Modal>:(window.card?<Card/>:<Content/>)}</main>}
 createRoot(document.getElementById('root')).render(<Fixture/>);`,
@@ -127,6 +127,12 @@ try {
         JSON.stringify({ width, nested, bounds })
       );
       assert(bounds.top >= 11 && bounds.bottom <= 689);
+      const reachable = await page.$eval('#trigger', (el) => {
+        const r = el.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return hit === el || el.contains(hit);
+      });
+      assert.equal(reachable, true, 'Picker must leave its trigger reachable');
       assert.equal(
         await page.evaluate(() => document.activeElement?.getAttribute('aria-label')),
         'Search your boards'

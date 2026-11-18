@@ -47,6 +47,9 @@ export function SaveBoardMenu({
   const matches = boards.filter((board) => board.title.toLowerCase().includes(query.toLowerCase()));
   useLayoutEffect(() => {
     if (returnFocus) opener.current = returnFocus;
+    else if (!opener.current)
+      opener.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
   }, [returnFocus]);
 
   useLayoutEffect(() => {
@@ -69,7 +72,21 @@ export function SaveBoardMenu({
         leftEdge,
         Math.min(rect.left, leftEdge + width - 24 - rect.width)
       );
-      const targetTop = Math.max(topEdge, Math.min(rect.top, topEdge + height - 24 - rect.height));
+      let targetTop = Math.max(topEdge, Math.min(rect.top, topEdge + height - 24 - rect.height));
+      const trigger = opener.current?.getBoundingClientRect();
+      if (
+        trigger?.height &&
+        targetLeft < trigger.right &&
+        targetLeft + rect.width > trigger.left &&
+        targetTop < trigger.bottom &&
+        targetTop + rect.height > trigger.top
+      ) {
+        // Prefer the other side of the trigger when clamping near a viewport edge.
+        // The trigger remains clickable instead of being covered by the picker.
+        if (trigger.top - rect.height - 8 >= topEdge) targetTop = trigger.top - rect.height - 8;
+        else if (trigger.bottom + 8 + rect.height <= topEdge + height - 24)
+          targetTop = trigger.bottom + 8;
+      }
       element.style.left = `${element.offsetLeft + targetLeft - rect.left}px`;
       element.style.right = 'auto';
       element.style.top = `${element.offsetTop + targetTop - rect.top}px`;
@@ -93,12 +110,9 @@ export function SaveBoardMenu({
       window.visualViewport?.removeEventListener('resize', place);
       window.visualViewport?.removeEventListener('scroll', place);
     };
-  }, [align, creating, matches.length, error]);
+  }, [align, creating, matches.length, error, returnFocus]);
 
   useEffect(() => {
-    if (!opener.current)
-      opener.current =
-        document.activeElement instanceof HTMLElement ? document.activeElement : null;
     search.current?.focus();
   }, []);
   useEffect(() => {

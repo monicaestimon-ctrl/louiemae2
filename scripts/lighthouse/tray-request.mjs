@@ -104,9 +104,10 @@ try {
   assert.equal(await page.$eval('[data-owner-save]', el => el.getAttribute('aria-haspopup')), 'dialog');
   assert.equal(await page.$eval('[data-owner-save]', el => el.getAttribute('aria-expanded')), 'true');
   await page.focus('.boardpick button');
-  await page.keyboard.press('ArrowRight');
-  await page.keyboard.press('ArrowLeft');
-  assert.equal(await page.$eval('dialog[open]', el => el.getAttribute('aria-label')), initialProductLabel);
+  for (const key of ['ArrowRight', 'ArrowLeft']) {
+    await page.keyboard.press(key);
+    assert.equal(await page.$eval('dialog[open]', el => el.getAttribute('aria-label')), initialProductLabel);
+  }
   await page.focus('.boardpick input');
   const composingPrevented = await page.$eval('.boardpick input', el => {
     const event = new window.KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true });
