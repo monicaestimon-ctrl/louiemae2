@@ -1,3 +1,4 @@
+import { usePrivateIndexing } from './usePrivateIndexing';
 import React, { useEffect, useRef, useState } from 'react';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { CredentialsForm } from './account/CredentialsForm';
@@ -307,6 +308,7 @@ export default function CreatorHub() {
   const me = useQuery(api.holm.me);
   const ensureProfile = useMutation(api.holm.ensureProfile);
   const signedIn = !!me?.signedIn;
+  usePrivateIndexing(signedIn);
   const hub = useHub(signedIn);
   useEffect(() => {
     if (signedIn) ensureProfile({ ref: activeRef()?.code }).catch(() => {});

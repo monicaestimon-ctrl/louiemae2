@@ -86,6 +86,8 @@ jobs:
           npm run test:tray-request:browser
           npm run test:application:browser
           node scripts/lighthouse/newsletter.mjs
+          node scripts/lighthouse/private-surfaces.mjs
+          node scripts/lighthouse/legacy-creator.mjs
           node scripts/lighthouse/security-headers.mjs
           node scripts/lighthouse/journal.mjs
           node scripts/lighthouse/editorial-formats.mjs

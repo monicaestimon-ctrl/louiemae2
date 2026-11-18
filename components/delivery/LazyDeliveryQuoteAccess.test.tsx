@@ -36,6 +36,8 @@ it('does not load quote controls on ordinary visits and captures a private link 
   window.history.replaceState({}, '', '/?deliveryQuote=later#delivery-access=later-token');
   await act(async () => fixture.release());
   expect(await screen.findByText('Private quote fixture')).toBeTruthy();
+  window.history.replaceState({}, '', '/');
+  expect(document.querySelector('meta[name=robots]')?.getAttribute('content')).toContain('noindex');
   expect(fixture.props).toHaveBeenLastCalledWith({
     initialRequest: { id: 'original', guestCapability: 'original-token' },
   });

@@ -25,6 +25,7 @@ for (const route of routes) {
   for (const key of ['index.html', ...boot, route]) visit(key);
   for (const deferred of [
     'components/cart/CartDrawer.tsx',
+    'components/ConciergePanel.tsx',
     'components/HomeProductPreview.tsx',
     'components/CollectionProductPreview.tsx',
   ]) {

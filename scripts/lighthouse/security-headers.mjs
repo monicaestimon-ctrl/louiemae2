@@ -5,7 +5,7 @@ import { once } from 'node:events';
 import assert from 'node:assert/strict';
 import puppeteer from 'puppeteer-core';
 const config = JSON.parse(await readFile('vercel.json', 'utf8'));
-const headers = Object.fromEntries(config.headers.find(rule => rule.source === '/(.*)').headers.map(header => [header.key, header.value]));
+const headers = Object.fromEntries(config.headers.find(rule => rule.source === '/(.*)' && !rule.has && !rule.missing).headers.map(header => [header.key, header.value]));
 const server = createServer((request, response) => {
   response.writeHead(200, { ...headers, 'Content-Type': 'text/html; charset=utf-8' });
   response.end('<!doctype html><html lang="en"><head><title>Header fixture</title></head><body><h1>Header fixture</h1><script>window.inlineScriptRan=true;document.addEventListener("securitypolicyviolation",event=>{window.violations=(window.violations||[]).concat(event.effectiveDirective)});</script></body></html>');

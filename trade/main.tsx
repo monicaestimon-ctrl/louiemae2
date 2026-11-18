@@ -1,3 +1,4 @@
+import { installPrivateLocationPolicy } from '../lib/privateIndexing';
 import './style.css';
 import { loadModule, showStartupFailure } from '../lib/moduleRecovery';
 
@@ -8,6 +9,8 @@ const arrived = (e: Event) => {
 };
 document.addEventListener('load', arrived, true);
 document.addEventListener('error', arrived, true);
+
+installPrivateLocationPolicy(window);
 
 // index.html paints the hero on its own. Start the app once that first paint has happened
 // so the bundle never stands between the visitor and the hero. Without the shell (other

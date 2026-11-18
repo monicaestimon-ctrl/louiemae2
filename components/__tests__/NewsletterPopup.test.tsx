@@ -1,3 +1,4 @@
+/* global Storage, DOMException */
 import { act, fireEvent, render, screen, cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NewsletterPopup } from '../NewsletterPopup';
@@ -10,7 +11,7 @@ beforeEach(() => {
   window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   window.HTMLDialogElement.prototype.close = function () { this.open = false; };
 });
-afterEach(() => { cleanup(); vi.useRealTimers(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 async function openPopup() {
   render(<NewsletterPopup />);
   await act(async () => { vi.advanceTimersByTime(10000); });
@@ -60,4 +61,32 @@ describe('Newsletter popup', () => {
     await act(async () => { fireEvent.submit(screen.getByRole('button', { name: 'Join the List' }).closest('form')!); });
     expect(screen.getByRole('alert')).toHaveTextContent('already on the list');
   });
+});
+
+it('does not interrupt a nested concierge dialog and resumes after it closes', async () => {
+  const wrapper = document.createElement('section');
+  const chat = document.createElement('div'); chat.setAttribute('role', 'dialog'); wrapper.append(chat); document.body.append(wrapper);
+  render(<NewsletterPopup />);
+  await act(async () => { vi.advanceTimersByTime(10000); });
+  expect(screen.queryByLabelText('The Mae Letter newsletter')).toBeNull();
+  await act(async () => { chat.remove(); });
+  expect(screen.getByLabelText('The Mae Letter newsletter')).toBeInTheDocument();
+  wrapper.remove();
+});
+it('survives denied storage and dismisses for the mounted visit', async () => {
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new DOMException('Blocked', 'SecurityError'); });
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Full', 'QuotaExceededError'); });
+  await openPopup();
+  fireEvent.click(screen.getByRole('button', { name: 'Close newsletter popup' }));
+  await act(async () => { vi.advanceTimersByTime(30000); });
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+it('does not turn a successful subscription into an error when storage writes fail', async () => {
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('Full', 'QuotaExceededError'); });
+  subscribe.mockResolvedValue(true);
+  await openPopup();
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'reader@example.com' } });
+  await act(async () => { fireEvent.submit(screen.getByRole('button', { name: 'Join the List' }).closest('form')!); });
+  expect(screen.getByText("You're In.")).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).toBeNull();
 });

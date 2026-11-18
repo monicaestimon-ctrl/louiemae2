@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from './Modal';
 import { X, Mail, Check } from 'lucide-react';
 import { useNewsletter } from '../contexts/NewsletterContext';
@@ -7,6 +7,11 @@ import { responsiveImage } from '../lib/responsiveImage';
 
 export const NewsletterPopup: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
+  const dismissedThisVisit = useRef(false);
+  const rememberDismissal = () => {
+    dismissedThisVisit.current = true;
+    try { localStorage.setItem('lm_newsletter_dismissed', 'true'); } catch { /* Keep current-visit dismissal when storage is blocked. */ }
+  };
   const [email, setEmail] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle');
   const [error, setError] = useState('');
@@ -14,20 +19,23 @@ export const NewsletterPopup: React.FC = () => {
 
   useEffect(() => {
     // Check if already dismissed
-    const dismissed = localStorage.getItem('lm_newsletter_dismissed');
-    if (dismissed) return;
+    const dismissed = () => {
+      if (dismissedThisVisit.current) return true;
+      try { return !!localStorage.getItem('lm_newsletter_dismissed'); } catch { return false; }
+    };
+    if (dismissed()) return;
 
     // Do not interrupt another dialog after the initial delay.
     const observer = new MutationObserver(() => showWhenFree());
     const showWhenFree = () => {
-      if (localStorage.getItem('lm_newsletter_dismissed') || document.querySelector('dialog[open]')) return;
+      if (dismissed() || document.querySelector('dialog[open], [role="dialog"]:not([hidden])')) return;
       observer.disconnect();
       document.removeEventListener('close', showWhenFree, true);
       setIsVisible(true);
     };
     const timer = setTimeout(() => {
       // Shared modals are direct body portals. Native close covers mounted dialogs.
-      observer.observe(document.body, { childList: true });
+      observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['open', 'hidden'] });
       document.addEventListener('close', showWhenFree, true);
       showWhenFree();
     }, 10000);
@@ -36,7 +44,7 @@ export const NewsletterPopup: React.FC = () => {
 
   const handleDismiss = () => {
     setIsVisible(false);
-    localStorage.setItem('lm_newsletter_dismissed', 'true');
+    rememberDismissal();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -50,7 +58,7 @@ export const NewsletterPopup: React.FC = () => {
 
       if (success) {
         setStatus('success');
-        localStorage.setItem('lm_newsletter_dismissed', 'true');
+        rememberDismissal();
       } else {
         setStatus('idle'); // Existing subscriber
         setError("You're already on the list!");
