@@ -12,7 +12,7 @@ const [source, candidate, license, css, html] = await Promise.all([
 ]);
 assert.equal(hash(source), recipe.sourceSha256, 'The reviewed source font changed');
 assert.equal(hash(candidate), recipe.candidateSha256, 'Regenerate and review the headline font');
-assert.equal(hash(license), recipe.licenseSha256, 'Keep the source font license');
+assert.equal(hash(license.toString('utf8').replace(/\r\n/g, '\n')), recipe.licenseSha256, 'Keep the source font license');
 assert.equal(candidate.toString('ascii', 0, 4), 'wOF2');
 assert.equal(candidate.readUInt32BE(8), candidate.length);
 assert.equal(candidate.length, recipe.bytes);

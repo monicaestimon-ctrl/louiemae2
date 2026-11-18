@@ -18,5 +18,6 @@
   "license": "public/fonts/OFL-newsreader.txt",
   "mappedCharacters": 219,
   "validation": "Compared every glyph outline at optical sizes40/48/60/72; maximum coordinate deviation below one font unit, advance deviation at most one font unit. All glyph counts match. Browser source-substitution diagnostic is not release acceptance.",
-  "licenseSha256": "8fbd537281798f723f20c4022187367639e1472bc521a3512938709daa0ec64b"
+  "licenseSha256": "26028ec4e13b650065fa525a09532176f8a668b76ff849ea01c564a7480f91e7",
+  "licenseHashEncoding": "UTF-8 with CRLF normalized to LF"
 }

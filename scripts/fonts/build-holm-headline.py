@@ -24,7 +24,7 @@ assert version('fonttools') == recipe['fontTools'], 'Install the pinned font req
 assert version('brotli') == recipe['brotli'], 'Install the pinned font requirements'
 source = args.root / recipe['source']
 assert digest(source.read_bytes()) == recipe['sourceSha256'], 'Source font changed; review the recipe'
-assert digest((args.root / recipe['license']).read_bytes()) == recipe['licenseSha256'], 'License changed'
+assert digest((args.root / recipe['license']).read_bytes().replace(b'\r\n', b'\n')) == recipe['licenseSha256'], 'License changed'
 original = TTFont(source, recalcTimestamp=False)
 candidate = instantiateVariableFont(original, {'wght': 400, 'opsz': (40, 40, 72)}, inplace=False)
 assert candidate.getBestCmap() == original.getBestCmap(), 'Character coverage changed'
