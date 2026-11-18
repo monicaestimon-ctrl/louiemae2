@@ -10,6 +10,7 @@ export const StoryPage: React.FC = () => {
    const { story } = siteContent;
    const heroSizes = '(min-width: 432px) 384px, calc(100vw - 48px)';
    const [failedAvif, setFailedAvif] = useState<string | null>(null);
+   const [failedWebp, setFailedWebp] = useState<string | null>(null);
    const avif = failedAvif === story.hero.image ? undefined : responsiveAvifSource(story.hero.image, heroSizes);
    useLayoutEffect(() => { document.getElementById('lm-page-document')?.remove(); }, []);
 
@@ -27,10 +28,16 @@ export const StoryPage: React.FC = () => {
                </div>
 
                <div className="relative w-full overflow-hidden rounded-2xl mb-16 shadow-sm mx-auto max-w-sm">
-                  <picture>
+                  {!story.hero.image || failedWebp === story.hero.image ? (
+                     <div role="img" aria-label="Our Journey image unavailable"
+                        className="w-full flex items-center justify-center bg-cream text-muted-earth text-sm p-6"
+                        style={{ aspectRatio: 1 / (imageEntry(story.hero.image)?.ratio || 1.5) }}>
+                        Image temporarily unavailable
+                     </div>
+                  ) : <picture>
                      {avif && <source {...avif} />}
                      <img
-                        onError={avif ? () => setFailedAvif(story.hero.image) : undefined}
+                        onError={() => avif ? setFailedAvif(story.hero.image) : setFailedWebp(story.hero.image)}
                         loading="eager"
                         fetchPriority="high"
                         decoding="async"
@@ -40,7 +47,7 @@ export const StoryPage: React.FC = () => {
                         height={imageEntry(story.hero.image) ? Math.round(1000 * imageEntry(story.hero.image)!.ratio) : undefined}
                         className="w-full h-auto object-contain rounded-2xl grayscale-[20%] hover:scale-[1.02] transition-transform duration-[3s] ease-out"
                      />
-                  </picture>
+                  </picture>}
                </div>
             </div>
          </section>

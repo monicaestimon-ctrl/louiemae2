@@ -82,10 +82,10 @@ const server = createServer(async (req, res) => {
       return;
     }
     if (assets.has(u.pathname)) {
-      const fail = new URL(req.headers.referer || '/', 'http://fixture.invalid').searchParams.has(
+      const fail = new URL(req.headers.referer || '/', 'http://fixture.invalid').searchParams.get(
         'failure'
       );
-      if (fail && u.pathname.endsWith('.avif')) {
+      if (fail === 'all' || (fail === 'avif' && u.pathname.endsWith('.avif'))) {
         res.writeHead(404);
         res.end();
         return;
@@ -118,7 +118,7 @@ try {
     headless: true,
   });
   for (const width of [390, 844, 1440])
-    for (const mode of ['avif', 'disabled', 'failure']) {
+    for (const mode of ['avif', 'disabled', 'failure', 'all-failed']) {
       const context = await browser.createBrowserContext(),
         page = await context.newPage();
       await page.setViewport({ width, height: 900, deviceScaleFactor: 1.75 });
@@ -134,9 +134,30 @@ try {
         await session.send('Emulation.setDisabledImageTypes', { imageTypes: ['avif'] });
       }
       await page.goto(
-        `http://127.0.0.1:${server.address().port}/story${mode === 'failure' ? '?failure=1' : ''}`,
+        `http://127.0.0.1:${server.address().port}/story${mode === 'failure' ? '?failure=avif' : mode === 'all-failed' ? '?failure=all' : ''}`,
         { waitUntil: 'networkidle0' }
       );
+      if (mode === 'all-failed') {
+        await page.waitForSelector('[role="img"][aria-label="Our Journey image unavailable"]');
+        const box = await page.$eval(
+          '[role="img"][aria-label="Our Journey image unavailable"]',
+          (e) => ({
+            width: e.getBoundingClientRect().width,
+            height: e.getBoundingClientRect().height,
+          })
+        );
+        assert.ok(
+          Math.abs(box.height / box.width - entry.ratio) < 0.01,
+          'Failure reserves the photo geometry'
+        );
+        assert.ok(requests.length <= 3, 'All-media failure cannot loop');
+        assert.equal(requests.filter((r) => r.endsWith('.webp')).length, 1);
+        assert.deepEqual(errors, []);
+        results.push({ width, mode, box, requests, errors });
+        await page.screenshot({ path: `${directory}/${width}-${mode}.png` });
+        await context.close();
+        continue;
+      }
       await page.waitForFunction(() => {
         const img = document.querySelector('main[data-public-page="story"] picture img');
         return img?.complete && img.naturalWidth > 0;
@@ -168,8 +189,8 @@ try {
       'artifacts/lighthouse/story-formats-browser.json',
       JSON.stringify(
         {
-          expectedCases: 9,
-          passed: results.length === 9,
+          expectedCases: 12,
+          passed: results.length === 12,
           scope: 'Local actual StoryPage and initial server document; no commerce commands',
           results,
         },
