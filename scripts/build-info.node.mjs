@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, URL } from 'node:url';
@@ -10,7 +10,8 @@ const script = fileURLToPath(new URL('./write-build-info.mjs', import.meta.url))
 test('release identity accepts verified sources and rejects conflicting or malformed sources', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'louiemae-build-identity-'));
   try {
-    await mkdir(join(directory, 'dist'));
+    await mkdir(join(directory, 'dist/trade'), { recursive: true });
+    for (const file of ['dist/index.html','dist/trade/index.html']) await writeFile(join(directory,file), '<html><head></head><body>Public document</body></html>');
     const environment = { ...process.env };
     delete environment.VERCEL_GIT_COMMIT_SHA;
     delete environment.BUILD_SOURCE_COMMIT;
@@ -20,6 +21,7 @@ test('release identity accepts verified sources and rejects conflicting or malfo
       const result = spawnSync(process.execPath, [script], { cwd: directory, env: { ...environment, ...source }, encoding: 'utf8' });
       assert.equal(result.status, 0, result.stderr);
       assert.deepEqual(JSON.parse(await readFile(join(directory, 'dist/build-info.json'), 'utf8')), { schemaVersion: 1, commit });
+      for (const file of ['dist/index.html','dist/trade/index.html']) { const html=await readFile(join(directory,file),'utf8');assert.equal((html.match(/name="lm-build-commit"/g)||[]).length,1);assert.ok(html.includes(`content="${commit}"`)); }
     }
     for (const source of [{ BUILD_SOURCE_COMMIT: 'main' },
       { VERCEL_GIT_COMMIT_SHA: commit, BUILD_SOURCE_COMMIT: 'b'.repeat(40) }]) {

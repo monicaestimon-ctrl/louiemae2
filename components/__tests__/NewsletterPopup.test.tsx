@@ -1,9 +1,10 @@
 /* global Storage, DOMException */
 import { act, fireEvent, render, screen, cleanup } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NewsletterPopup } from '../NewsletterPopup';
 const subscribe = vi.hoisted(() => vi.fn());
 vi.mock('../../contexts/NewsletterContext', () => ({ useNewsletter: () => ({ addSubscriber: subscribe }) }));
+beforeAll(async () => { await import('../NewsletterPopupContent'); });
 beforeEach(() => {
   vi.useFakeTimers();
   localStorage.clear();

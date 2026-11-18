@@ -19,7 +19,7 @@ export function collectionDocument(template: string, collection: PublicCollectio
   const canonical = `${STOREFRONT_ORIGIN}/collection/${encodeURIComponent(collection.id)}`;
   const title = `${collection.title} | Louie Mae`;
   const description = collection.subtitle.slice(0, 160);
-  const socialSource = publicProductImage(collection.heroImage || collection.cards[0]?.image || '');
+  const socialSource = publicProductImage(collection.heroImage || (collection.rootCategories && collection.id !== 'kids' ? collection.primaryCategoryImage : collection.cards[0]?.image) || '');
   const socialImage = socialSource ? new URL(socialSource, STOREFRONT_ORIGIN).href : '';
   const primaryImage = responsiveImage(publicProductImage(collection.primaryCategoryImage || ''), '(min-width: 768px) 33vw, 200px');
   const preload = primaryImage.src ? `<link rel="preload" as="image" href="${escape(primaryImage.src)}" ${primaryImage.srcSet ? `imagesrcset="${escape(primaryImage.srcSet)}" imagesizes="(min-width: 768px) 33vw, 200px"` : ''} fetchpriority="high"/>` : '';
