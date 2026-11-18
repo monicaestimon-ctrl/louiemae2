@@ -1,7 +1,7 @@
 import { withPublicInitialData } from '../lib/serverPublicInitialData.js';
 import { publicSiteData } from '../lib/publicInitialData.js';
 /* global AbortSignal */
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../lib/serverHttp.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pageDocument, type PublicPageDocument } from '../lib/serverPageDocument.js';

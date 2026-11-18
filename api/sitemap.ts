@@ -1,5 +1,5 @@
 /* global AbortSignal */
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../lib/serverHttp.js';
 import { STOREFRONT_ORIGIN } from '../lib/productMetadata.js';
 import { isCollectionId } from '../lib/collectionId.js';
 

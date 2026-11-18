@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../../lib/serverHttp.js';
 import handler from '../../api/og';
 function request(path: unknown, extra: Record<string, unknown> = {}) {
   const headers: Record<string, string> = {};

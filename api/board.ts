@@ -1,5 +1,5 @@
 import { STOREFRONT_ORIGIN } from '../lib/productMetadata.js';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../lib/serverHttp.js';
 
 // A shared board's link, louiemae.com/b/<slug>?c=<channel>. Link previews (Messages, Slack,
 // Pinterest) read the Open Graph tags; people go straight on to the board's shoppable page,

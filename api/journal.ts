@@ -2,7 +2,7 @@ import { withPublicInitialData } from '../lib/serverPublicInitialData.js';
 import { type PublicPosts, type PublicArticle } from '../lib/publicInitialData.js';
 import { journalHtml } from '../lib/journalContent.js';
 /* global AbortSignal */
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../lib/serverHttp.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { journalDocument, type JournalPost } from '../lib/serverJournalDocument.js';

@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../lib/serverHttp.js';
 import { createHmac, randomBytes } from 'node:crypto';
 import { isIP } from 'node:net';
 import { ConvexHttpClient } from 'convex/browser';
@@ -27,13 +27,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       (Array.isArray(length) || !/^\d+$/.test(length) || Number(length) > DELIVERY_BODY_BYTES)
     )
       throw new CommerceError('INVALID_INPUT');
-    const body = req.body;
+    const value = req.body;
+    const body =
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : null;
     if (
       !body ||
-      typeof body !== 'object' ||
-      Array.isArray(body) ||
       Buffer.byteLength(JSON.stringify(body), 'utf8') > DELIVERY_BODY_BYTES ||
-      !['estimate', 'quote'].includes(body.operation) ||
+      (body.operation !== 'estimate' && body.operation !== 'quote') ||
       !body.input ||
       typeof body.input !== 'object' ||
       Array.isArray(body.input) ||

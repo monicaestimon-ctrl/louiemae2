@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../lib/serverHttp.js';
 
 /** Deliberately independent of catalog, authentication and application JavaScript. */
 export default function handler(req: VercelRequest, res: VercelResponse) {

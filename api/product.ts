@@ -1,5 +1,5 @@
 /* global AbortSignal */
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../lib/serverHttp.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { productDocument, type PublicProductDocument } from '../lib/serverProductDocument.js';
