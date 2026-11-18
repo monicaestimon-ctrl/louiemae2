@@ -63,7 +63,10 @@ try {
     if (expected === 200) {
       assert.ok(response.body.includes('Runtime furniture'));
       assert.ok(response.body.includes('id="lm-collection-document"'));
-      assert.ok(response.body.includes('href="/products/fixture"'));
+      assert.ok(!response.body.includes('href="/products/fixture"'));
+      const grid={status(code){this.code=code;return this;},send(body){this.body=body;},setHeader(){}};
+      await collectionHandler({method:'GET',query:{id:'furniture',view:'products'}},grid);
+      assert.equal(grid.code,200);assert.ok(grid.body.includes('href="/products/fixture"'));
     }
     results.push({ name, status: response.code });
   }

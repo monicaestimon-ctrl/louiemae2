@@ -1,0 +1,42 @@
+name: Public storefront health
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-lighthouse
+  cancel-in-progress: false
+
+jobs:
+  health:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.14.1'
+          cache: npm
+      - run: npm ci
+      - name: Check monitoring acceptance policy
+        run: node --test scripts/lighthouse/smoke-policy.node.mjs
+      - name: Install pinned browser
+        run: node scripts/lighthouse/install-browser.mjs
+      - name: Verify current production public journeys
+        run: node scripts/lighthouse/smoke.mjs
+        env:
+          AUDIT_DEPLOYMENT_COMMIT: ${{ github.sha }}
+      - name: Retain successful and failed health evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: storefront-health-${{ github.run_id }}
+          path: artifacts/lighthouse/smoke-*/
+          retention-days: 30
+          if-no-files-found: warn

@@ -1,0 +1,22 @@
+{
+  "source": "public/fonts/newsreader-latin-normal.woff2",
+  "sourceSha256": "fe0346aff58e3aff4f1b1e2fa015d7f74304cf129d9eb65c0b34574d629fd0f9",
+  "candidate": "public/fonts/newsreader-headline-400-optical.woff2",
+  "candidateSha256": "bd527e2acaa5be8d5adf91ff175587f6f6635e62cc1b26196a4ab994404cb809",
+  "bytes": 37848,
+  "fontTools": "4.68.0",
+  "brotli": "1.2.1",
+  "axisLimits": {
+    "wght": 400,
+    "opsz": [
+      40,
+      40,
+      72
+    ]
+  },
+  "recalcTimestamp": false,
+  "license": "public/fonts/OFL-newsreader.txt",
+  "mappedCharacters": 219,
+  "validation": "Compared every glyph outline at optical sizes40/48/60/72; maximum coordinate deviation below one font unit, advance deviation at most one font unit. All glyph counts match. Browser source-substitution diagnostic is not release acceptance.",
+  "licenseSha256": "8fbd537281798f723f20c4022187367639e1472bc521a3512938709daa0ec64b"
+}

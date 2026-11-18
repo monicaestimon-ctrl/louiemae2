@@ -53,6 +53,12 @@ jobs:
       - name: Run tests
         run: npm run test:run
 
+      - name: Verify licensed HOLM headline font
+        run: node scripts/verify-holm-headline-font.mjs
+
+      - name: Verify public health monitoring policy
+        run: node --test scripts/lighthouse/smoke-policy.node.mjs
+
       - name: Verify Lighthouse acceptance policy
         run: npm run test:lighthouse-policy
 
@@ -86,6 +92,7 @@ jobs:
           npm run test:tray-request:browser
           npm run test:application:browser
           node scripts/lighthouse/newsletter.mjs
+          node scripts/lighthouse/newsletter-loading.mjs
           node scripts/lighthouse/private-surfaces.mjs
           node scripts/lighthouse/legacy-creator.mjs
           node scripts/lighthouse/security-headers.mjs

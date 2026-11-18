@@ -32,7 +32,7 @@ async function request(query: Record<string, unknown>, method = 'GET') {
   return result;
 }
 it('renders escaped public collection content and bounded matching product previews', async () => {
-  const result = await request({ id: 'furniture', ref: 'PARTNER' });
+  const result = await request({ id: 'furniture', ref: 'PARTNER', view: 'products' });
   expect(result.code).toBe(200); expect(result.headers['Cache-Control']).toBe('no-store');
   expect(new globalThis.DOMParser().parseFromString(result.body, 'text/html').querySelector('h1')?.textContent).toBe('Furniture & objects');
   expect(result.body).toContain('/products/chair'); expect(result.body).not.toContain('/products/lamp');
@@ -40,7 +40,7 @@ it('renders escaped public collection content and bounded matching product previ
   expect(result.body).not.toContain('Home hero'); expect(result.body).not.toContain('http-equiv="refresh"');
   expect(result.body).toContain('href="https://www.louiemae.com/collection/furniture"');
   expect(result.body).toContain('data-collection-id="furniture"'); expect(fetchMock).toHaveBeenCalledTimes(3);
-  expect(result.body).toContain('rel="preload" as="image"');
+  expect(result.body).not.toContain('rel="preload" as="image"');
   const payload = JSON.parse(new globalThis.DOMParser().parseFromString(result.body, 'text/html').getElementById('lm-public-initial-data')!.textContent!);
   expect(payload.path).toBe('/collection/furniture');
   expect(payload.data.site.collections[0].id).toBe('furniture');
@@ -62,7 +62,7 @@ it('distinguishes a confirmed missing collection from unavailable configuration'
 it('does not turn a product-source failure into a successful empty collection', async () => {
   fetchMock.mockImplementation(async (_url, options) => ({ ok: true, json: async () => JSON.parse(options.body).path === 'siteContent:get'
     ? { status: 'success', value: site } : { status: 'error', errorMessage: 'private diagnostic' } }));
-  const result = await request({ id: 'furniture' });
+  const result = await request({ id: 'furniture', view: 'products' });
   expect(result.code).toBe(503); expect(result.body).not.toContain('private diagnostic');
 });
 it('supports HEAD and rejects business methods without querying', async () => {
@@ -134,4 +134,19 @@ it.each(['', 'http://untrusted.invalid/image', '//untrusted.invalid/image', 'jav
  const snapshot=JSON.parse(document.getElementById('lm-public-initial-data')!.textContent!);
  expect(snapshot.data.kids.products[0].images).toEqual([]);
  expect(document.querySelector('.lm-collection-card img')).toBeNull();
+});
+
+it.each(['furniture','decor','fashion'])('renders the %s category root without unused inventory queries or product images',async id=>{
+ fetchMock.mockImplementation(async (_url,options)=>{
+  expect(JSON.parse(options.body).path).toBe('siteContent:get');
+  return{ok:true,json:async()=>({status:'success',value:{...site,collections:[{...site.collections[0],id}]}})};
+ });
+ const result=await request({id});expect(result.code).toBe(200);expect(fetchMock).toHaveBeenCalledTimes(1);
+ const html=new globalThis.DOMParser().parseFromString(result.body,'text/html');
+ expect(html.querySelectorAll('.lm-collection-card')).toHaveLength(0);
+ expect(html.querySelector('h1')?.textContent).toBe('Furniture & objects');
+ expect(result.body).toContain(`/collection/${id}?cat=chairs`);
+ expect(result.body).toContain('rel="preload" as="image"');
+ expect(html.querySelectorAll('img').length).toBeGreaterThan(0);
+ expect(result.body).not.toContain('No products');
 });
