@@ -116,6 +116,7 @@ function DeliveryForm({
   const [zip, setZip] = useState('');
   const [qty, setQty] = useState(selectedPacks ?? minimumPacks);
   const sequence = useRef(0);
+  const pendingRequest = useRef<number | null>(null);
   const [state, setState] = useState<{
     status: 'idle' | 'loading' | 'done' | 'error';
     text?: string;
@@ -134,6 +135,7 @@ function DeliveryForm({
   }, [state.expiresAt]);
   const run = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (pendingRequest.current === sequence.current) return;
     const errors: { zip?: string; qty?: string } = {};
     if (!/^\d{5}$/.test(zip)) errors.zip = 'Enter a 5-digit ZIP code.';
     if (
@@ -149,6 +151,7 @@ function DeliveryForm({
     feedback.reset();
     setState({ status: 'loading' });
     const requestId = ++sequence.current;
+    pendingRequest.current = requestId;
     try {
       const r = await estimate({
         lines: [{ productId, variantId, packs: qty }],
@@ -172,6 +175,8 @@ function DeliveryForm({
       if (requestId !== sequence.current) return;
       setState({ status: 'idle' });
       feedback.report({ _form: customerMessage(err) });
+    } finally {
+      if (pendingRequest.current === requestId) pendingRequest.current = null;
     }
   };
   return (
@@ -245,7 +250,12 @@ function DeliveryForm({
               </p>
             )}
           </div>
-          <button type="submit" disabled={state.status === 'loading'} className="delivery-action">
+          <button
+            type="submit"
+            aria-disabled={state.status === 'loading'}
+            aria-busy={state.status === 'loading'}
+            className="delivery-action"
+          >
             {state.status === 'loading' ? 'Estimating…' : 'Estimate delivery'}
           </button>
         </div>

@@ -76,6 +76,7 @@ jobs:
           node --test scripts/product-images.node.mjs
           node scripts/verify-product-images.mjs
           node scripts/verify-story-images.mjs
+          node scripts/verify-product-formats.mjs
           node scripts/verify-editorial-images.mjs
 
       - name: Verify deferred HOLM bundle boundaries
@@ -100,6 +101,8 @@ jobs:
           node scripts/lighthouse/story-formats.mjs
           node scripts/lighthouse/startup-recovery.mjs
           node scripts/lighthouse/visible-startup.mjs
+          node scripts/lighthouse/product-formats.mjs
+          node scripts/lighthouse/delivery-estimator.mjs
           node scripts/lighthouse/lazy-cart.mjs
           node scripts/lighthouse/product-preview.mjs
           node scripts/lighthouse/product-navigation.mjs
@@ -122,6 +125,7 @@ jobs:
             artifacts/lighthouse/*.png
             artifacts/lighthouse/editorial-format-fixture/*.png
             artifacts/lighthouse/story-formats/*.png
+            artifacts/lighthouse/product-formats/*.png
           if-no-files-found: ignore
           retention-days: 14
 
