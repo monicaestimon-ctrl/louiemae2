@@ -3,11 +3,14 @@ import type { QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { launchPrice, retailDelivery, retailDescription } from '../lib/retailLaunch';
 import { assertSellable, isCurrentPrice } from './catCore';
-import { ashcroftAvailable } from './ashcroftInventory';
+import { ashcroftAvailableFromFeed, latestFeed } from './ashcroftInventory';
+import type { AshcroftFeed } from '../lib/ashcroftInventory';
+export type AshcroftReviewEvidence = { feed: AshcroftFeed | null; now: number };
 import { isCommerceError } from '../lib/errors';
 
 // Adapt the retail listing into LouieMae's existing product modal and cards.
-export async function storefrontListing(ctx: QueryCtx, listing: Doc<'commerceListings'>) {
+export async function storefrontListing(ctx: QueryCtx, listing: Doc<'commerceListings'>, evidence?: AshcroftReviewEvidence) {
+  const current = evidence ?? { feed: await latestFeed(ctx), now: Date.now() };
   const s = listing.snapshot;
   const rate = retailDelivery(s.category, s.name);
   const variants = await Promise.all(s.variants.map(async v => {
@@ -15,7 +18,7 @@ export async function storefrontListing(ctx: QueryCtx, listing: Doc<'commerceLis
     return {
       id: v.id, name: v.name, image: v.image, quantityRules,
       price: rate ? launchPrice(v.price, rate.freight, rate.delivery) / 100 : v.price / 100,
-      inStock: !!quantityRules && !!rate && await ashcroftAvailable(ctx, listing.fulfillment?.find(f => f.id === v.id)?.sku, s.description, v.minimum),
+      inStock: !!quantityRules && !!rate && ashcroftAvailableFromFeed(current.feed, listing.fulfillment?.find(f => f.id === v.id)?.sku, s.description, v.minimum, current.now),
     };
   }));
   const price = Math.min(...variants.map(v => v.price));
@@ -72,7 +75,7 @@ export async function currentZuoStorefrontListing(ctx: QueryCtx, listing: Doc<'c
   return zuoStorefrontListing({ ...listing, snapshot: { ...listing.snapshot, variants } }, collection, quantityRules);
 }
 
-export async function retailDetail(ctx: QueryCtx, id: Id<'commerceProducts'>) {
+export async function retailDetail(ctx: QueryCtx, id: Id<'commerceProducts'>, evidence?: AshcroftReviewEvidence) {
   const product = await ctx.db.get(id);
   if (product?.provider !== 'ashcroft' && !(product?.provider === 'zuo' && zuoRetailEnabled())) return null;
   const listing = await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', id).eq('channel', 'retail')).unique();
@@ -81,5 +84,5 @@ export async function retailDetail(ctx: QueryCtx, id: Id<'commerceProducts'>) {
     const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', id)).first();
     return currentZuoStorefrontListing(ctx, listing, meta?.commissionCategory === 'decor' ? 'decor' : 'furniture');
   }
-  return storefrontListing(ctx, listing);
+  return storefrontListing(ctx, listing, evidence);
 }

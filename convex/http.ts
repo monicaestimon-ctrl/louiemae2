@@ -18,7 +18,7 @@ import { cjJsonResponse } from "../lib/cjWebhookHttp";
 import { parseCjWebhookPayload, type ParsedCjWebhookPayload } from "../lib/cjWebhookRequest";
 import { parseCjSourcingWebhookEvidence } from "../lib/cjSourcingWebhook";
 import { getStripeWebhookVerificationError, shouldAllowUnsignedStripeWebhook } from "../lib/stripeWebhook";
-import { customerMessage } from "../lib/errors";
+import { customerMessage, isCommerceError } from "../lib/errors";
 import { acceptsPlatformPayment } from '../lib/paymentMode';
 
 const http = httpRouter();
@@ -118,14 +118,18 @@ http.route({
                 if (!Array.isArray(items) || !items.length || items.length > 30 || items.some((i: any) => !i || !Number.isSafeInteger(i.quantity) || i.quantity < 1)) {
                     return new Response(JSON.stringify({ error: 'Check your cart quantities.' }), { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
                 }
+                if (body.reviewVersion !== undefined && (body.reviewVersion !== 1 || items.some((i: any) => !Number.isSafeInteger(i.reviewed?.merchandiseMinor) || i.reviewed.merchandiseMinor < 0 || !Number.isSafeInteger(i.reviewed?.deliveryMinor) || i.reviewed.deliveryMinor < 0))) {
+                    return new Response(JSON.stringify({ code: 'PRICE_CHANGED', error: 'Refresh your cart and review the current prices before checkout.' }), { status: 409, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+                }
                 let snapshot;
                 try {
                     snapshot = await ctx.runMutation(internal.retailLaunch.createSnapshot, {
-                        items: items.map((i: any) => ({ productId: String(i.productId || ''), variantId: String(i.variantId || ''), quantity: i.quantity })),
+                        items: items.map((i: any) => ({ productId: String(i.productId || ''), variantId: String(i.variantId || ''), quantity: i.quantity, ...(body.reviewVersion === 1 ? { reviewed: { merchandiseMinor: i.reviewed.merchandiseMinor, deliveryMinor: i.reviewed.deliveryMinor } } : {}) })),
                         ...(typeof body.refCode === 'string' && typeof body.visitorId === 'string' ? { refCode: body.refCode.slice(0, 32), visitorId: body.visitorId.slice(0, 64) } : {}),
                         ...(body.useCredit === true ? { useCredit: true } : {}),
                     });
-                } catch {
+                } catch (error) {
+                    if (isCommerceError(error, 'PRICE_CHANGED')) return new Response(JSON.stringify({ code: 'PRICE_CHANGED', error: customerMessage(error) }), { status: 409, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
                     return new Response(JSON.stringify({ code: 'OUT_OF_STOCK', error: 'This item is Coming Soon or no longer available. Please remove it from your cart.' }), { status: 409, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
                 }
                 // Store credit: a one-time discount on the items (Stripe never applies it to delivery).
