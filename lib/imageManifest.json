@@ -28,7 +28,7 @@
   "/images/brand/furniture-table.png": {"base":"/images/opt/brand/furniture-table","widths":[480,640],"ratio":1},
   "/images/brand/girl-knit-bunny.png": {"base":"/images/opt/brand/girl-knit-bunny","widths":[480,640],"ratio":1},
   "/images/brand/girl-pink-overalls.png": {"base":"/images/opt/brand/girl-pink-overalls","widths":[480,640],"ratio":1},
-  "/images/brand/girls-dress.png": {"base":"/images/opt/brand/girls-dress","widths":[480,533],"ratio":1.5009},
+  "/images/brand/girls-dress.png": {"base":"/images/opt/brand/girls-dress","widths":[360,480,533],"ratio":1.5009},
   "/images/brand/girls-dress1.png": {"base":"/images/opt/brand/girls-dress1","widths":[480,960,1600],"ratio":0.5581},
   "/images/brand/hero-dining-wide.png": {"base":"/images/opt/brand/hero-dining-wide","widths":[480,640],"ratio":1},
   "/images/brand/hero-dining.png": {"base":"/images/opt/brand/hero-dining","widths":[480,640],"ratio":1},

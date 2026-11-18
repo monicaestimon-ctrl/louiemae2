@@ -79,6 +79,8 @@ jobs:
           node scripts/verify-product-formats.mjs
           node --test scripts/product-formats-staging.node.mjs
           node scripts/verify-editorial-images.mjs
+          node --test scripts/brand-image-widths.node.mjs
+          node scripts/verify-collection-images.mjs
 
       - name: Verify deferred HOLM bundle boundaries
         run: npm run verify:deferred-bundles
@@ -90,6 +92,7 @@ jobs:
           npm run test:holm:browser
           node scripts/lighthouse/holm-catalog-intent.mjs
           node scripts/lighthouse/board-controls.mjs
+          node scripts/lighthouse/collection-assets.mjs
           npm run test:tray-request:browser
           npm run test:application:browser
           node scripts/lighthouse/newsletter.mjs
