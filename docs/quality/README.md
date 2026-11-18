@@ -396,3 +396,16 @@ The deployed PR317 preview exposed a visual contrast problem not reported by axe
 
 
 The format failure suite now covers24 cases:12 normal/unsupported-format selections and12 injected HTTP failures across mobile and desktop. Browsers selecting WebP directly reach the placeholder on its failure; they do not wait for an ignored AVIF source to trigger another event. Five focused renderer tests pass, including direct WebP failure.
+
+
+### Atomic Kids preview: backend-first preparation
+
+PR317 merged as `563ce9eeca9983643a003c923cab46b59f55c180` after CI `44196579484` passed. CodeRabbit's source A → B → A recovery finding was fixed with source-keyed image state; seven renderer tests pass and the review thread is resolved. Production `dpl_9ixSV5VzRBbKMmy9yNsXWiw5omoi` serves that merge. Twelve anonymous surfaces and four journal route/viewport checks passed with no page errors; the journal checks found zero axe violations and verified AVIF delivery and the opaque article header. The desktop article screenshot was visually reviewed. Main backend deployment and repeated performance acceptance are tracked separately.
+
+PR316 controlled audit `44190471714` is retained as failed acceptance:115/120 runs were healthy, and only13/24 performance batches passed. All120 reported Accessibility/Best Practices/SEO100, but five Kids runs lacked readiness at audit end and remain invalid. Those results are not replaced by later smoke checks.
+
+The additive `catalog.kidsRootPreview` query checks the current verified/enabled projection and retrieves the first eight visible Kids cards in the same transaction. It preserves the previous default ordering, bounds the indexed read to eight records, and returns only identity, name, first image, price, category, new-item flag and total variant count. Missing/disabled/unverified readiness returns an explicit unavailable result; verified emptiness is distinct. A mismatched projection row throws rather than serving stale cards. This response grants no purchase authority.
+
+Deploy this backend endpoint before introducing its frontend consumer: Vercel frontend deployment can finish before the main Convex job. This phase leaves the existing page subscriptions and commerce behavior unchanged. The following consumer phase must remove the serial readiness round trip only for the Kids root, preserve loading/error/retry/live withdrawal behavior and verify the actual App under delayed responses. Full catalog grids and authoritative product detail lookup keep their existing contracts.
+
+Validation: six endpoint/readiness tests, application TypeScript and focused ESLint pass. Tests cover missing/old/unverified/disabled gates, live gate withdrawal, verified emptiness, collection/visibility filtering, eight-card bounds and order, compact field allowlisting, total variant count, price changes and stale-row rejection. Repeated production measurement and the complete route/persona/commerce matrix remain outstanding.
