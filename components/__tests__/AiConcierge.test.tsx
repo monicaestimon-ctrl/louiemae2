@@ -71,7 +71,19 @@ it('keeps expected service failures within the conversation', async () => {
   fireEvent.change(input, { target: { value: 'Synthetic failure' } });
   fireEvent.click(screen.getByRole('button', { name: 'Send' }));
   await waitFor(() =>
-    expect(screen.getByText(/currently assisting other clients/)).toBeInTheDocument()
+    expect(screen.getByText(/could not load a response/)).toBeInTheDocument()
   );
   expect(screen.getByRole('dialog')).toBeInTheDocument();
+  expect(screen.getByRole('textbox')).toHaveValue('Synthetic failure');
+});
+
+it('preserves a newer draft when an earlier question fails', async () => {
+  let reject!: (error: Error) => void;
+  mocks.action.mockImplementation(() => new Promise((_, fail) => { reject = fail; }));
+  render(<AiConcierge />);fireEvent.click(screen.getByRole('button', {name:'Ask the Louie Mae concierge'}));
+  const input = await screen.findByRole('textbox');
+  fireEvent.change(input,{target:{value:'First question'}});fireEvent.click(screen.getByRole('button',{name:'Send'}));
+  fireEvent.change(input,{target:{value:'New draft'}});
+  await act(async()=>reject(new Error('Synthetic unavailable')));
+  expect(input).toHaveValue('New draft');
 });

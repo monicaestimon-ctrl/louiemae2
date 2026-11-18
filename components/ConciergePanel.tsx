@@ -64,11 +64,13 @@ export const ConciergePanel: React.FC<{ open: boolean; onClose: () => void }> = 
       });
       setMessages((prev) => [...prev, { role: 'model', text: reply }]);
     } catch {
+      // Keep a failed question available for retry without replacing a newer draft.
+      setInput((current) => current || userText);
       setMessages((prev) => [
         ...prev,
         {
           role: 'model',
-          text: 'I am currently assisting other clients. Please try again in a moment.',
+          text: 'We could not load a response. Please try again.',
         },
       ]);
     } finally {

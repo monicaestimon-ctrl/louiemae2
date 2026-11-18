@@ -84,7 +84,8 @@ try {
     await page.click('button[aria-label="Ask the Louie Mae concierge"]');
     await page.evaluate(() => { window.syntheticFailure = true; });
     await page.type('input', 'Synthetic failure'); await page.keyboard.press('Enter');
-    await page.waitForFunction(() => document.querySelector('[role="log"]')?.textContent.includes('currently assisting'));
+    await page.waitForFunction(() => document.querySelector('[role="log"]')?.textContent.includes('could not load a response'));
+    assert.equal(await page.$eval('input', n => n.value), 'Synthetic failure');
     assert.equal(await page.evaluate(() => window.syntheticCalls), 2); assert.deepEqual(errors, []);
     await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))); });
     const screenshot = `artifacts/lighthouse/private-surfaces-${viewport.width}.png`; await page.screenshot({ path: screenshot });
