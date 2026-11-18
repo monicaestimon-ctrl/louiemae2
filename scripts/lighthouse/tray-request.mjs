@@ -317,8 +317,15 @@ try {
   assert.equal(afterDetailAdd[0].lid,'saved-source');
   await page.evaluate(()=>[...document.querySelectorAll('dialog button')].find(button=>button.textContent.trim()==='Save').click());
   await page.waitForSelector('.boardpick');
+  assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Search your boards');
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(()=>!document.querySelector('.boardpick'));
+  assert.ok(await page.$('dialog[open]'));
+  assert.equal(await page.evaluate(()=>document.activeElement?.textContent.trim()),'Save');
+  await page.evaluate(()=>[...document.querySelectorAll('dialog button')].find(button=>button.textContent.trim()==='Save').click());
+  await page.waitForSelector('.boardpick');
   await page.evaluate(()=>[...document.querySelectorAll('.boardpick button')].find(button=>button.textContent.includes('Create board')).click());
-  await page.type('#nb-name','Saved Oak selection');
+  await page.type('.boardpick form input','Saved Oak selection');
   await page.evaluate(()=>[...document.querySelectorAll('.boardpick button')].find(button=>button.textContent==='Create and save').click());
   await page.waitForFunction(()=>JSON.parse(localStorage.getItem('hol:boards')).some(board=>board.title==='Saved Oak selection'));
   const savedSelection=await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:boards')).find(board=>board.title==='Saved Oak selection').pins[0]);

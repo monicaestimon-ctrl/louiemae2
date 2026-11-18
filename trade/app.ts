@@ -5,6 +5,10 @@ import { DeliveryCalculatorDisclosure } from './DeliveryCalculatorDisclosure';
 import { TradeNewsletter } from './TradeNewsletter';
 import { ProgressiveSections } from './ProgressiveSections';
 import { DiscoverCatalog } from './DiscoverCatalog';
+import { SaveBoardMenu } from './SaveBoardMenu';
+import { CatalogProductCard } from './CatalogProductCard';
+import { ProductPrice as Price } from './ProductPrice';
+import { formatHolmPrice as fmt } from './formatHolmPrice';
 import { products as PRODUCTS, productsById as BY_ID, catalogGeneration, useCatalogRevision } from './catalogStore';
 export { setProducts } from './catalogStore';
 import { usePrivateIndexing } from '../components/usePrivateIndexing';
@@ -91,7 +95,6 @@ const TRAY_SEED = {active:'p1',taxExempt:false,projects:[{id:'p1',name:'My first
 // The header and hero read their ink from these root variables. Changing anything on the root
 // restyles the whole page, so write only when the value really changes.
 const setHeroInk=(fg,inv)=>{const r=document.documentElement.style;if(r.getPropertyValue('--hero-fg')!==fg)r.setProperty('--hero-fg',fg);if(r.getPropertyValue('--hero-inv')!==inv)r.setProperty('--hero-inv',inv)};
-const fmt = (n,dec=false)=>!Number.isFinite(n)?'Review unavailable items':'$'+n.toLocaleString('en-US',{minimumFractionDigits:dec?2:0,maximumFractionDigits:dec?2:0});
 const load=(k,d)=>{try{const v=localStorage.getItem('hol:'+k);return v?JSON.parse(v):d}catch(e){return d}};
 const store=(k,v)=>{try{localStorage.setItem('hol:'+k,JSON.stringify(v))}catch(e){}};
 const hex2rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
@@ -176,11 +179,6 @@ const ICONS={
 const I=(n,extra={})=>html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" ...${extra} dangerouslySetInnerHTML=${{__html:ICONS[n]}}></svg>`;
 
 /* ================= shared bits ================= */
-function Price({p,mode,qty=1,big}){
-  const r=p.price*qty, t=tp(p)*qty;
-  if(mode==='trade') return html`<span className="num">${fmt(t,!big&&qty===1)}${big?null:html` <s className="mute" style=${{fontSize:'11px'}}>${fmt(r)}</s>`}</span>`;
-  return html`<span className="num">${fmt(r,!big&&qty===1)}</span>`;
-}
 function Toast({t,onClose}){
   useEffect(()=>{if(!t)return;const id=setTimeout(onClose,3200);return()=>clearTimeout(id)},[t]);
   if(!t)return null;
@@ -188,58 +186,24 @@ function Toast({t,onClose}){
 }
 function useOutside(ref,fn){useEffect(()=>{const h=e=>{if(ref.current&&!ref.current.contains(e.target))fn()};document.addEventListener('pointerdown',h);return()=>document.removeEventListener('pointerdown',h)},[fn])}
 
-function SaveMenu({ctx,pid,product,onDone,align='right'}){
-  const ref=useRef();const [q,setQ]=useState('');const [making,setMaking]=useState(false);const [name,setName]=useState('');
-  useOutside(ref,onDone);
-  const list=ctx.boards.filter(b=>b.title.toLowerCase().includes(q.toLowerCase()));
-  const {productFor}=useSavedBoardShelf(ctx.boards,[],BY_ID);
-  return html`<div className="pop boardpick" ref=${ref} style=${align==='left'?{left:0,right:'auto',top:52}:{}} onClick=${e=>e.stopPropagation()}>
-    ${making?html`<form onSubmit=${e=>{e.preventDefault();if(!name.trim())return;const id=ctx.createBoard(name.trim(),pid,false,product);onDone();}} style=${{display:'grid',gap:10,padding:6}}>
-        <label className="lbl" htmlFor="nb-name">Board name</label>
-        <input id="nb-name" className="field" autoFocus value=${name} onInput=${e=>setName(e.target.value)} placeholder="e.g. Fernwood Café, patio"/>
-        <div className="row"><button type="button" className="btn btn-line btn-sm" onClick=${()=>setMaking(false)}>Back</button><button className="btn btn-ink btn-sm">Create and save</button></div>
-      </form>`:html`
-      <div style=${{padding:'4px 6px 8px'}}><input className="field" style=${{height:38}} placeholder="Search your boards" value=${q} onInput=${e=>setQ(e.target.value)} aria-label="Search your boards"/></div>
-      <div className="st-h" style=${{padding:'2px 8px 6px'}}>Save to board</div>
-      ${list.map(b=>html`<button key=${b.id} className="bp" onClick=${()=>{ctx.saveTo(pid,b.id,false,product);onDone()}}>
-        <span className="th" style=${{backgroundImage:b.pins[0]&&productFor(b.pins[0])?`url(${productFor(b.pins[0]).img})`:'none'}}></span>
-        <span><b style=${{fontWeight:500,fontSize:14}}>${b.title}</b><br/><small className="mute">${b.pins.length} pins${b.secret?' · Secret':''}</small></span>
-        <span className="go btn btn-cog btn-sm">Save</span></button>`)}
-      <button className="bp" onClick=${()=>setMaking(true)}><span className="th" style=${{display:'grid',placeItems:'center',background:'var(--plaster)'}}>${I('plus',{width:18})}</span><b style=${{fontWeight:500}}>Create board</b></button>`}
-  </div>`;
+function SaveMenu({ctx,product,onDone,returnFocus,align='right'}){
+  return html`<${SaveBoardMenu} boards=${ctx.boards} catalog=${BY_ID} product=${product}
+    onSave=${(selected,boardId)=>ctx.saveTo(selected.id,boardId,false,selected)}
+    onCreate=${(title,selected)=>ctx.createBoard(title,selected.id,false,selected)}
+    onClose=${onDone} returnFocus=${returnFocus} align=${align}/>`;
 }
 
-/** Expose product opening as a native button while keeping save/project actions independent. */
+/** Typed controls delegate to the existing source/variant-aware owner operations. */
 function PinCard({p,ctx}){
-  const [menu,setMenu]=useState(false);
-  const saved=ctx.boards.some(b=>b.pins.some(x=>sameProjectSelection(x,{pid:p.id,lid:p.lid,vid:p.vid})));
-  const lastBoard=ctx.boards[0];
   const available=ctx.savedProducts?ctx.savedProducts.get(p.id)?.lid===p.lid:has(p.id);
-  if(!available)return html`<div className="pin"><div className="pin-img"><img src=${p.img} alt="Unavailable saved product" style=${{aspectRatio:1}}/></div><div className="pin-meta"><b>${p.name}</b><p>${p.line}. Use Organize to remove this saved item.</p></div></div>`;
-  return html`<div className="pin">
-    <div className="pin-img">
-      <button type="button" className="pin-open" aria-label=${'View '+p.name+' '+p.line} onClick=${()=>ctx.openPin(p.id,{pid:p.id,lid:p.lid,vid:p.vid})}>
-      <${SafeImage} src=${p.img} media=${p.imageMedia} sizes="(min-width: 1024px) 25vw, 50vw" alt=${p.name+' '+p.line} loading="lazy" style=${{aspectRatio:p.ar}}/>
-      </button>
-      ${p.oos&&html`<span className="oos">Restock on request</span>`}
-      <div className="pin-ov">
-        <div className="r1" onClick=${e=>e.stopPropagation()}>
-          <button className="pin-board" onClick=${()=>setMenu(!menu)} aria-label=${'Choose board for '+p.name}><span>${lastBoard?.title||'Boards'}</span>${I('down',{width:14})}</button>
-          <button className=${'pin-save'+(saved?' saved':'')} aria-label=${(saved?'Saved ':'Save ')+p.name+' to board'} onClick=${()=>saved||!lastBoard?setMenu(true):ctx.saveTo(p.id,lastBoard.id,false,p)}>${saved?'Saved':'Save'}</button>
-        </div>
-        <div className="r2" onClick=${e=>e.stopPropagation()}>
-          <span className="pin-board" style=${{fontFamily:'var(--mono)',fontSize:11.5}}>${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span>
-          <span className="row" style=${{gap:6}}>
-            <a className="pin-act" title="Save to Pinterest" aria-label=${'Save '+p.name+' to Pinterest'} href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'pin'))} target="_blank" rel="noopener">${I('pint')}</a>
-            <button className="pin-act" disabled=${!available} title="Place in Studio" aria-label=${'Place '+p.name+' in Studio'} onClick=${()=>ctx.toStudio([{pid:p.id,lid:p.lid,vid:p.vid}])}>${I('brush')}</button>
-            <button className="pin-act" title="Add to project tray" aria-label=${'Add '+p.name+' to project tray'} onClick=${e=>ctx.addToTray(p.id,1,e.currentTarget.closest('.pin').querySelector('img'),false,p)}>${I('plus')}</button>
-          </span>
-        </div>
-      </div>
-    </div>
-    ${menu&&html`<${SaveMenu} ctx=${ctx} pid=${p.id} product=${p} align="left" onDone=${()=>setMenu(false)}/>`}
-    <div className="pin-meta"><b>${p.name} <span className="mute" style=${{fontWeight:400}}>${p.line}</span></b></div>
-  </div>`;
+  return html`<${CatalogProductCard} product=${p} boards=${ctx.boards} mode=${ctx.mode} available=${available}
+    pinterestUrl=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'pin'))}
+    icons=${{down:I('down',{width:14}),pinterest:I('pint'),studio:I('brush'),add:I('plus')}}
+    onOpen=${identity=>ctx.openPin(identity.pid,identity)}
+    onSave=${(selected,boardId)=>ctx.saveTo(selected.id,boardId,false,selected)}
+    onStudio=${identity=>ctx.toStudio([identity])}
+    onAdd=${(selected,image)=>ctx.addToTray(selected.id,1,image,false,selected)}
+    renderSaveMenu=${(close,trigger)=>html`<${SaveMenu} ctx=${ctx} product=${p} align="left" onDone=${close} returnFocus=${trigger}/>`}/>`;
 }
 function BoardPin({b,ctx}){
   const imgs=b.items.slice(0,3).map(id=>byId(id).img);
@@ -1267,7 +1231,7 @@ function PinDetail({ctx}){
   const p=ctx.detailProduct;const idx=PRODUCTS.findIndex(x=>x.id===p.id);
   const [view,setView]=useState('studio');const [bd,setBd]=useState('#ECE3D5');const [scale,setScale]=useState(false);
   const [qty,setQty]=useState(p.minimum||1);const [proj,setProj]=useState(ctx.tray.active);const [zone,setZone]=useState('');
-  const [save,setSave]=useState(false);const [open,setOpen]=useState('details');
+  const [save,setSave]=useState(null);const [open,setOpen]=useState('details');
   const [simF,setSimF]=useState('tone');const [bundle,setBundle]=useState([]);const [mini,setMini]=useState(false);const [loupe,setLoupe]=useState(null);const [tilt,setTilt]=useState([0,0]);
   
   const scRef=useRef(),addRef=useRef(),stageRef=useRef();
@@ -1369,7 +1333,7 @@ function PinDetail({ctx}){
           <button ref=${addRef} className="btn btn-ink btn-lg pp-add" onClick=${e=>add()}>${I('tray',{width:18})} Add ${qty>1?qty+' ':''}to ${P.name}</button>
           <div className="pp-tier"><div className="ix-meter"><i style=${{width:'0%'}}></i></div><span>${tierLine(after,P.name)}</span></div>
           <div className="row pp-acts">
-            <span style=${{position:'relative'}}><button className="btn btn-line btn-sm" onClick=${()=>setSave(!save)}>${I('pin',{width:15})} Save</button>${save&&html`<${SaveMenu} ctx=${ctx} pid=${p.id} product=${p} align="left" onDone=${()=>setSave(false)}/>`}</span>
+            <span style=${{position:'relative'}}><button className="btn btn-line btn-sm" onClick=${event=>setSave(save?null:event.currentTarget)}>${I('pin',{width:15})} Save</button>${save&&html`<${SaveMenu} ctx=${ctx} pid=${p.id} product=${p} align="left" onDone=${()=>setSave(null)} returnFocus=${save}/>`}</span>
             <button className="btn btn-line btn-sm" disabled=${!has(p.id)} title=${!has(p.id)?"Studio is unavailable for this saved product":undefined} onClick=${()=>ctx.toStudio([{pid:p.id,lid:p.lid,vid:p.vid}])}>${I('brush',{width:15})} Studio</button>
             <button className="btn btn-line btn-sm" disabled=${!p.dimsCm} title=${!p.dimsCm?"Measurements are needed for 3D planning":undefined} onClick=${()=>{ctx.setRoomSeed([{pid:p.id,lid:p.lid,vid:p.vid}]);ctx.openPin(null);ctx.go('room')}}>${I('cube',{width:15})} 3D</button>
             <button className="ib" aria-pressed=${liked} aria-label="Like" onClick=${()=>ctx.toggleLike(p.id)} style=${{color:liked?'var(--cognac)':''}}>${I('heart',liked?{fill:'currentColor'}:{})}</button>
