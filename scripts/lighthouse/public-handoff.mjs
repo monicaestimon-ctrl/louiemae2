@@ -212,6 +212,15 @@ try {
         assert.equal(await page.$$eval('main h3', nodes => nodes.filter(n => n.textContent.startsWith('Preview dress')).length), 0);
         await page.evaluate(() => { window.fixtureKidsDisabled = false; window.fixtureVersion++; window.dispatchEvent(new Event('fixture-update')); });
         await page.waitForSelector(selector, { visible: true });
+        // Returning to Kids creates a fresh page owner, but not a fresh document snapshot.
+        await page.evaluate(() => { window.fixtureKidsReleased = false; window.location.hash = '#shop'; });
+        await page.waitForSelector('main[data-public-page="shop"]', { visible: true });
+        await page.evaluate(() => { window.location.hash = '#collection/kids'; });
+        await page.waitForFunction(() => document.querySelector('main h1')?.textContent === 'Source kids');
+        assert.equal(await page.$(selector), null);
+        assert.equal(await page.$$eval('main h3', nodes => nodes.filter(n => n.textContent.startsWith('Preview dress')).length), 0);
+        await page.evaluate(() => { window.fixtureKidsReleased = true; window.fixtureVersion++; window.dispatchEvent(new Event('fixture-update')); });
+        await page.waitForSelector(selector, { visible: true });
       }
       if(collectionPaths.includes(path)) {
         assert.equal(await page.evaluate(()=>window.fixtureReadinessCalls||0),0);

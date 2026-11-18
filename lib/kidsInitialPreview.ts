@@ -46,7 +46,7 @@ export function kidsInitialPreview(value: unknown): KidsInitialPreview | undefin
       (row.isNew !== undefined && typeof row.isNew !== 'boolean') ||
       !Array.isArray(row.images) ||
       row.images.length > 1 ||
-      !row.images.every((src: unknown) => bounded(src, 2048) && publicProductImage(src) === src)
+      !row.images.every((src: unknown) => typeof src === 'string' && src.length <= 2048)
     )
       return;
     ids.add(row._id);
@@ -54,7 +54,7 @@ export function kidsInitialPreview(value: unknown): KidsInitialPreview | undefin
       _id: row._id,
       name: row.name,
       price: row.price,
-      images: [...row.images],
+      images: row.images.filter((src: string) => src.length > 0 && publicProductImage(src) === src),
       category: row.category,
       variantCount: row.variantCount,
       ...(typeof row.isNew === 'boolean' ? { isNew: row.isNew } : {}),

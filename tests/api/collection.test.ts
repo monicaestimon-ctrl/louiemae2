@@ -126,3 +126,12 @@ it.each([{ id: 'kids', view: 'products' }, { id: 'kids', cat: 'chairs' }])('does
   const document = new globalThis.DOMParser().parseFromString(result.body, 'text/html');
   expect(JSON.parse(document.getElementById('lm-public-initial-data')!.textContent!).data.kids).toBeUndefined();
 });
+
+it.each(['', 'http://untrusted.invalid/image', '//untrusted.invalid/image', 'javascript:bad()'])('keeps the verified Kids page available with an unusable first image %s', async image=>{
+ kidsSource(kidsPayload([{...kidsProduct,images:[image]}]));const result=await request({id:'kids'});expect(result.code).toBe(200);
+ const document=new globalThis.DOMParser().parseFromString(result.body,'text/html');
+ expect(document.querySelector('.lm-collection-card')?.getAttribute('href')).toBe('/products/dress');
+ const snapshot=JSON.parse(document.getElementById('lm-public-initial-data')!.textContent!);
+ expect(snapshot.data.kids.products[0].images).toEqual([]);
+ expect(document.querySelector('.lm-collection-card img')).toBeNull();
+});

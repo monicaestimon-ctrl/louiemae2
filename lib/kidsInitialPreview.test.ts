@@ -41,11 +41,9 @@ it.each([
   { variantCount: 1.2 },
   { _id: '../private' },
   { name: 'x'.repeat(301) },
-  { images: ['javascript:alert(1)'] },
-  { images: ['//untrusted.invalid/x'] },
-  { images: ['http://untrusted.invalid/x'] },
-  { images: ['https://'] },
   { images: ['/a', '/b'] },
+  { images: [42] },
+  { images: ['x'.repeat(2049)] },
   { isNew: 'true' },
 ])('rejects invalid public row fields', (update) =>
   expect(kidsInitialPreview(payload([{ ...product, ...update }]))).toBeUndefined()
@@ -58,4 +56,10 @@ it('accepts exactly eight cards in source order without mutating the source', ()
   );
   result.products[0].images.push('/other');
   expect((input.products[0] as typeof product).images).toEqual(['/images/dress.webp']);
+});
+
+it.each(['', 'javascript:alert(1)', '//untrusted.invalid/x', 'http://untrusted.invalid/x', 'https://'])('keeps cards while dropping an unusable first image %s', image => {
+ const input=payload([{...product,images:[image]}]);
+ expect(kidsInitialPreview(input)?.products).toEqual([{...product,images:[]}]);
+ expect((input.products[0] as typeof product).images).toEqual([image]);
 });
