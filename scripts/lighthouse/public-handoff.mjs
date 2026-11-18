@@ -195,6 +195,12 @@ try {
       assert.deepEqual(await page.evaluate(async () => (await window.axe.run()).violations), []);
       if (path === '/collection/kids') {
         assert.equal(await page.$$eval('main h3', nodes => nodes.filter(n => n.textContent.startsWith('Preview dress')).length), 8);
+        const headingGap = await page.evaluate(() => {
+          const shop = [...document.querySelectorAll('main button')].find(node => node.textContent.startsWith('Shop all '));
+          const heading = [...document.querySelectorAll('main h2')].find(node => node.textContent === 'New Arrivals');
+          return heading && shop ? heading.getBoundingClientRect().top - shop.getBoundingClientRect().bottom : null;
+        });
+        assert.ok(headingGap !== null && headingGap >= 16, 'Kids navigation must not overlap the arrivals heading');
         await page.evaluate(() => { window.fixtureKidsEmpty = true; window.fixtureVersion++; window.dispatchEvent(new Event('fixture-update')); });
         await page.waitForFunction(() => [...document.querySelectorAll('main h3')].filter(n => n.textContent.startsWith('Preview dress')).length === 0);
         assert.notEqual(await page.$(selector), null);

@@ -454,3 +454,5 @@ Validation:52 focused tests, application and strict backend types, lint, seven s
 
 
 PR321 CI44245567904 caught an outdated StorePage fixture that omitted the live projection version and an assertion that treated a React re-render as another subscription. The fixture now supplies the current version, explicitly rejects an obsolete live version, and asserts the active query identities rather than render count. Production readiness and query gates are unchanged; the failed run is retained.
+
+The mobile screenshot review also found the root Shop all control touching the New Arrivals heading. Removing the obsolete negative section margin restores separation; the actual-App fixture now requires at least16px between those controls at all three viewport sizes. All25 browser cases and unchanged JS/CSS budgets pass.
