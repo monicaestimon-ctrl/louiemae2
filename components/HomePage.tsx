@@ -11,7 +11,7 @@ import { useNewsletter } from '../contexts/NewsletterContext';
 import type { CollectionConfig } from '../types';
 import { HomeRecommendations } from './HomeRecommendations';
 import { ArrowUpRight, Check } from 'lucide-react';
-import { DynamicSectionRenderer } from './DynamicPage';
+import { HomeCustomSections } from './HomeCustomSections';
 import { responsiveImage } from '../lib/responsiveImage';
 
 const DEFAULT_HERO_IMAGE = INITIAL_SITE_CONTENT.home.hero.image;
@@ -384,13 +384,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* DYNAMIC SECTIONS (Added via Admin) */}
-      {home.sections && home.sections.length > 0 && (
-        <div className="pb-24">
-          {home.sections.map((section, idx) => (
-            <DynamicSectionRenderer key={section.id} section={section} index={idx} />
-          ))}
-        </div>
-      )}
+      <HomeCustomSections sections={home.sections} />
 
       {/* 5. Newsletter - Atelier Gradient & Glowing Inputs */}
       <section className="below-fold relative py-32 text-center px-6 overflow-hidden">

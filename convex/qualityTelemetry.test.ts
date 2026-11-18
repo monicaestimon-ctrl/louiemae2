@@ -113,6 +113,11 @@ it('purges bounded expired visits without deleting live records, even when disab
       samples: [],
     });
   });
+  expect(await t.query(api.qualityTelemetry.summary, segment)).toMatchObject({
+    visits: 1,
+    retentionBacklog: true,
+    oldestExpiredAt: expired,
+  });
   vi.stubEnv('FIELD_QUALITY_ENABLED', '');
   expect(await t.mutation(internal.qualityTelemetry.purge, {})).toMatchObject({
     visits: 500,
@@ -126,6 +131,11 @@ it('purges bounded expired visits without deleting live records, even when disab
   const rows = await t.run((ctx) => ctx.db.query('qualityVisits').collect());
   expect(rows).toHaveLength(1);
   expect(rows[0].createdAt).toBe(now);
+  expect(await t.query(api.qualityTelemetry.summary, segment)).toMatchObject({
+    visits: 1,
+    retentionBacklog: false,
+    oldestExpiredAt: null,
+  });
 });
 it('marks bounded summaries as truncated rather than claiming a passing population', async () => {
   const t = convexTest(schema, modules);

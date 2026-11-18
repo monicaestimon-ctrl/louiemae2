@@ -16,7 +16,7 @@ export function useRecoverableQuery<Query extends FunctionReference<'query'>>(qu
   const encoded = JSON.stringify(convexToJson(skip ? {} : args));
   // Match the installed SDK useQuery identity contract: fresh argument objects
   // with equal Convex values must not restart useQueries during every render.
-  const queries = useMemo(() => skip || retrying ? {} : { result: { query, args } },
+  const queries = useMemo<Parameters<typeof useQueries>[0]>(() => skip || retrying ? {} : { result: { query, args } },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [queryName, encoded, skip, retrying, attempt]);
   const values = useQueries(queries);

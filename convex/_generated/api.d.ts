@@ -152,6 +152,7 @@ import type * as publicSearch from "../publicSearch.js";
 import type * as publicSearchMaintenance from "../publicSearchMaintenance.js";
 import type * as publicSearchMigration from "../publicSearchMigration.js";
 import type * as publicSearchTables from "../publicSearchTables.js";
+import type * as qualityHttp from "../qualityHttp.js";
 import type * as qualityTables from "../qualityTables.js";
 import type * as qualityTelemetry from "../qualityTelemetry.js";
 import type * as retailLaunch from "../retailLaunch.js";
@@ -339,6 +340,7 @@ declare const fullApi: ApiFromModules<{
   publicSearchMaintenance: typeof publicSearchMaintenance;
   publicSearchMigration: typeof publicSearchMigration;
   publicSearchTables: typeof publicSearchTables;
+  qualityHttp: typeof qualityHttp;
   qualityTables: typeof qualityTables;
   qualityTelemetry: typeof qualityTelemetry;
   retailLaunch: typeof retailLaunch;

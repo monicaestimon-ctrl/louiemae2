@@ -102,6 +102,8 @@ jobs:
           node scripts/lighthouse/legacy-creator.mjs
           node scripts/lighthouse/security-headers.mjs
           node scripts/lighthouse/journal.mjs
+          npm run test:field:browser
+          node scripts/lighthouse/field-admin.mjs
           node scripts/lighthouse/editorial-formats.mjs
           node scripts/lighthouse/story-formats.mjs
           node scripts/lighthouse/startup-recovery.mjs

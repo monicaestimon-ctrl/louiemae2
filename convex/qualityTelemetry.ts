@@ -98,6 +98,8 @@ export const summary = query({
       )
       .order('desc')
       .take(5001);
+    const oldest = await ctx.db.query('qualityVisits').withIndex('by_created').order('asc').first();
+    const oldestExpiredAt = oldest && oldest.createdAt <= since ? oldest.createdAt : null;
     const truncated = rows.length > 5000;
     const observations = rows.slice(0, 5000);
     const budget = await ctx.db
@@ -120,6 +122,8 @@ export const summary = query({
       device: args.device,
       release: args.release,
       truncated,
+      retentionBacklog: oldestExpiredAt !== null,
+      oldestExpiredAt,
       collectionLimited: limitedDays > 0,
       limitedDays,
       visits: observations.length,

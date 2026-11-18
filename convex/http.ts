@@ -1,3 +1,4 @@
+import { qualityConfig, qualityOptions, qualityRecord } from './qualityHttp';
 import { readDeliveryJson } from '../lib/delivery/requestBounds';
 import { publicDeliveryError } from '../lib/delivery/publicErrors';
 import { httpRouter } from "convex/server";
@@ -22,6 +23,10 @@ import { customerMessage, isCommerceError } from "../lib/errors";
 import { acceptsPlatformPayment } from '../lib/paymentMode';
 
 const http = httpRouter();
+http.route({ path: '/quality/config', method: 'GET', handler: qualityConfig });
+http.route({ path: '/quality/config', method: 'OPTIONS', handler: qualityOptions });
+http.route({ path: '/quality', method: 'POST', handler: qualityRecord });
+http.route({ path: '/quality', method: 'OPTIONS', handler: qualityOptions });
 
 // Add Convex Auth routes
 auth.addHttpRoutes(http);

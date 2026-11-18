@@ -1,3 +1,4 @@
+import { PerformancePreferences } from '../components/PerformancePreferences';
 import React from 'react';
 import { useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
@@ -25,6 +26,7 @@ export function TradeAccount({ me, onNavigate, onSignOut }: Props) {
     </nav>
     <section className="acct-sec">
       <h1>Your account</h1>
+      <PerformancePreferences className="btn btn-line" />
       <dl className="specs">
         <div><dt>Email</dt><dd>{me.email}</dd></div>
         <div><dt>Business</dt><dd>{me.businessName || application?.businessName || 'Not added yet'}</dd></div>
