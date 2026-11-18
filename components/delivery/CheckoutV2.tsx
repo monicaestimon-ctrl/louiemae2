@@ -45,7 +45,8 @@ type Est = {
  * estimate; a changed total must be accepted before paying.
  */
 type CheckoutLine = { productId: string; variantId: string; packs: number };
-export default function CheckoutV2({ draftRef }: { draftRef?: CheckoutDraftRef } = {}) {
+type CartReviewGate = { reviewBlocked?: boolean; reviewFingerprint?: string };
+export default function CheckoutV2({ draftRef, reviewBlocked = false, reviewFingerprint = '' }: { draftRef?: CheckoutDraftRef } & CartReviewGate = {}) {
   const { items } = useCart();
   const lines = useMemo(
     () =>
@@ -56,17 +57,19 @@ export default function CheckoutV2({ draftRef }: { draftRef?: CheckoutDraftRef }
       })),
     [items]
   );
-  return <DeliveryCheckout lines={lines} draftRef={draftRef} />;
+  return <DeliveryCheckout lines={lines} draftRef={draftRef} reviewBlocked={reviewBlocked} reviewFingerprint={reviewFingerprint} />;
 }
 export function DeliveryCheckout({
   lines,
   channel = 'retail',
   draftRef,
+  reviewBlocked = false,
+  reviewFingerprint = '',
 }: {
   lines: CheckoutLine[];
   channel?: 'retail' | 'trade';
   draftRef?: CheckoutDraftRef;
-}) {
+} & CartReviewGate) {
   const authToken = useAuthToken();
   const formId = useId();
   const feedback = useFormValidation<
@@ -125,18 +128,23 @@ export function DeliveryCheckout({
         useCredit,
         email,
         authenticated: !!authToken,
+        reviewBlocked,
+        reviewFingerprint,
       }),
-    [lines, channel, address, access, useCredit, email, authToken]
+    [lines, channel, address, access, useCredit, email, authToken, reviewBlocked, reviewFingerprint]
   );
   const [estKey, setEstKey] = useState('');
-  const stale = !!est && (estKey !== key || est.expiresAt <= now);
+  const stale = !!est && (reviewBlocked || estKey !== key || est.expiresAt <= now);
   useEffect(() => {
     requestSequence.current++;
     setBusy(false);
-  }, [key]);
+    // Do not resurrect a previously accepted estimate after a blocked review recovers.
+    if (reviewBlocked) { setEst(null); setAccepted(null); }
+  }, [key, reviewBlocked]);
 
   const review = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (reviewBlocked) return;
     const errors: Partial<
       Record<
         'recipientName' | 'phone' | 'line1' | 'city' | 'state' | 'postalCode' | 'email',
@@ -180,7 +188,8 @@ export function DeliveryCheckout({
   };
 
   const pay = async () => {
-    if (!est || stale || est.totalMinor === null) return;
+    if (reviewBlocked || !est || stale || est.status !== 'ok' || est.totalMinor === null) return;
+    const seq = ++requestSequence.current;
     setBusy(true);
     setMsg(null);
     try {
@@ -208,6 +217,7 @@ export function DeliveryCheckout({
         }),
       });
       const body = await res.json();
+      if (seq !== requestSequence.current) return;
       if (res.ok && body.url) {
         if (body.sessionId)
           rememberCheckout(
@@ -226,9 +236,9 @@ export function DeliveryCheckout({
         );
       } else setMsg(body.error || 'Checkout could not start.');
     } catch {
-      setMsg('Checkout could not start. Please try again.');
+      if (seq === requestSequence.current) setMsg('Checkout could not start. Please try again.');
     } finally {
-      setBusy(false);
+      if (seq === requestSequence.current) setBusy(false);
     }
   };
 
@@ -375,7 +385,7 @@ export function DeliveryCheckout({
             tax)
           </label>
         )}
-        <button type="submit" disabled={busy} className="delivery-span delivery-action">
+        <button type="submit" disabled={busy || reviewBlocked} className="delivery-span delivery-action">
           {busy && !est ? 'Checking delivery…' : 'Review delivery and total'}
         </button>
       </form>

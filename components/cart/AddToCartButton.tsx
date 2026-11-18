@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ShoppingBag, Check } from 'lucide-react';
 import { useCart } from '../../contexts/CartContext';
 import { Product, ProductVariant } from '../../types';
+import { publicQuantityRules } from '../../lib/orderQuantity';
 
 interface AddToCartButtonProps {
     product: Product;
@@ -23,13 +24,20 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({
 
     // Disabled if out of stock OR if variant is required but not selected
     const needsVariantSelection = variantRequired && !selectedVariant;
+    const option = selectedVariant ?? (!variantRequired ? product.variants?.[0] : undefined);
+    const suppliedRules = option?.quantityRules;
+    const rules = suppliedRules && publicQuantityRules(suppliedRules.minimum, suppliedRules.increment, suppliedRules.piecesPerPack);
+    const quantityUnavailable = !rules;
+    const addLabel = rules && (rules.minimum > 1 || rules.piecesPerPack)
+        ? `Add ${rules.minimum}${rules.piecesPerPack ? ` ${rules.minimum === 1 ? 'pack' : 'packs'} (${rules.piecesPerPack} pieces per pack)` : ''} to Cart · $${((product.price + (option?.priceAdjustment ?? 0)) * rules.minimum).toFixed(2)}`
+        : 'Add to Cart';
     const comingSoon = product.fulfillmentProvider !== 'ashcroft' && product.fulfillmentProvider !== 'zuo';
-    const isDisabled = comingSoon || !product.inStock || needsVariantSelection || selectedVariant?.inStock === false;
+    const isDisabled = comingSoon || !product.inStock || needsVariantSelection || option?.inStock !== true || quantityUnavailable;
 
     const handleClick = () => {
         if (isDisabled) return;
 
-        addToCart(product, 1, selectedVariant);
+        addToCart(product, rules!.minimum, option);
         setIsAdded(true);
 
         // Reset after animation
@@ -39,8 +47,9 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({
     // Determine button text based on state
     const getButtonText = () => {
         if (isAdded) return null; // Will show "Added!" with icon
-        if (!product.inStock || selectedVariant?.inStock === false) return 'Out of Stock';
+        if (!product.inStock || option?.inStock === false) return 'Out of Stock';
         if (needsVariantSelection) return 'Select Option First';
+        if (quantityUnavailable) return 'Refresh product details before adding';
         return null; // Will show "Add to Cart" with icon
     };
 
@@ -54,7 +63,7 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({
                 onClick={handleClick}
                 disabled={isDisabled}
                 className={`p-3 bg-earth text-cream hover:bg-bronze transition-all disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
-                aria-label={isDisabled ? (needsVariantSelection ? 'Select Option First' : 'Out of Stock') : 'Add to Cart'}
+                aria-label={buttonText ?? addLabel}
             >
                 {isAdded ? (
                     <Check className="w-4 h-4" />
@@ -82,7 +91,7 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({
                 ) : (
                     <>
                         <ShoppingBag className="w-4 h-4" />
-                        Add to Cart
+                        {addLabel}
                     </>
                 )}
             </button>
@@ -106,7 +115,7 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({
             ) : (
                 <>
                     <ShoppingBag className="w-4 h-4" />
-                    Add to Cart
+                    {addLabel}
                 </>
             )}
         </button>

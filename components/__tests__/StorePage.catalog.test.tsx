@@ -154,7 +154,7 @@ describe('quick view purchasing', () => {
     await waitFor(() => expect(screen.queryByText('Opening product details…')).toBeNull());
   };
   it('selects the only variant with its price adjustment and passes it to the cart', async () => {
-    const variant = { id: 'one', name: 'Default Title', inStock: true, priceAdjustment: 100.5 };
+    const variant = { id: 'one', name: 'Default Title', inStock: true, quantityRules: { minimum: 1, increment: 1 }, priceAdjustment: 100.5 };
     await open([variant]);
     expect(screen.queryByText('Default Title')).toBeNull();
     expect(screen.queryByText('Select Option')).toBeNull();
@@ -163,12 +163,12 @@ describe('quick view purchasing', () => {
     expect(mocks.addToCart).toHaveBeenCalledWith(mocks.detailProduct, 1, variant);
   });
   it('keeps the sole unavailable variant unpurchasable', async () => {
-    await open([{ id: 'one', name: 'Default Title', inStock: false, priceAdjustment: 0 }]);
+    await open([{ id: 'one', name: 'Default Title', inStock: false, quantityRules: { minimum: 1, increment: 1 }, priceAdjustment: 0 }]);
     expect(screen.getByRole('button', { name: 'Out of Stock' })).toBeDisabled();
     expect(mocks.addToCart).not.toHaveBeenCalled();
   });
   it('still requires a choice for multiple variants', async () => {
-    await open([{ id: 'a', name: 'Tan', inStock: true, priceAdjustment: 0 }, { id: 'b', name: 'Cream', inStock: true, priceAdjustment: 0 }]);
+    await open([{ id: 'a', name: 'Tan', inStock: true, quantityRules: { minimum: 1, increment: 1 }, priceAdjustment: 0 }, { id: 'b', name: 'Cream', inStock: true, quantityRules: { minimum: 1, increment: 1 }, priceAdjustment: 0 }]);
     expect(screen.getByRole('button', { name: 'Select Option First' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Cream' }));
     expect(screen.getByRole('button', { name: 'Add to Cart' })).toBeEnabled();

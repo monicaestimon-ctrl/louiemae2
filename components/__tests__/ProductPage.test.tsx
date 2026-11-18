@@ -25,8 +25,8 @@ const product: Product = {
   fulfillmentProvider: 'zuo',
   inStock: true,
   variants: [
-    { id: 'one', name: 'Ivory', inStock: true, priceAdjustment: 0 },
-    { id: 'two', name: 'Walnut', inStock: true, priceAdjustment: 20 },
+    { id: 'one', name: 'Ivory', inStock: true, quantityRules: { minimum: 1, increment: 1 }, priceAdjustment: 0 },
+    { id: 'two', name: 'Walnut', inStock: true, quantityRules: { minimum: 1, increment: 1 }, priceAdjustment: 20 },
     { id: 'sold', name: 'Slate', inStock: false, priceAdjustment: 30 },
   ],
 };

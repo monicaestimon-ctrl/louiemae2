@@ -1,6 +1,6 @@
 import type {CheckoutDraftRef} from '../../lib/delivery/checkoutDraft';
 import React from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { DeliveryCheckout } from './CheckoutV2';
 import DeliveryQuoteRequest from './DeliveryQuoteRequest';
@@ -109,4 +109,34 @@ it('keeps contact inputs in memory across reopening but requires a fresh total r
  expect(screen.queryByRole('button',{name:'Pay $159.99'})).toBeNull();
  expect(mocks.estimate).toHaveBeenCalledTimes(1);
  expect(Object.keys(draft.current!).sort()).toEqual(['access','address','email','useCredit']);
+});
+
+it('invalidates a previous total on current-product review without erasing address inputs',async()=>{
+ const lines=[{productId:'fixture',variantId:'fixture',packs:1}];
+ mocks.estimate.mockResolvedValue({estimateId:'fixture',expiresAt:Date.now()+60000,status:'ok',merchandiseMinor:10000,deliveryChargeMinor:5999,taxMinor:0,totalMinor:15999,serviceName:'Curbside delivery',serviceDetails:[],timingCaveat:''});
+ const view=render(<DeliveryCheckout lines={lines} reviewFingerprint="original"/>);
+ for(const [label,value] of Object.entries({'Recipient name':'Test recipient','Delivery contact phone':'5555550100','Street address':'123 Test St',City:'Stockton','ZIP code':'95206',Email:'test@example.com'}))fireEvent.change(screen.getByLabelText(label),{target:{value}});
+ fireEvent.click(screen.getByRole('button',{name:'Review delivery and total'}));
+ await screen.findByRole('button',{name:'Pay $159.99'});
+ view.rerender(<DeliveryCheckout lines={lines} reviewFingerprint="changed" reviewBlocked/>);
+ expect(screen.queryByRole('button',{name:'Pay $159.99'})).toBeNull();
+ expect(screen.getByRole('button',{name:'Review delivery and total'})).toBeDisabled();
+ expect(screen.getByLabelText('Street address')).toHaveValue('123 Test St');
+ view.rerender(<DeliveryCheckout lines={lines} reviewFingerprint="original"/>);
+ expect(screen.queryByRole('button',{name:'Pay $159.99'})).toBeNull();
+ expect(mocks.estimate).toHaveBeenCalledTimes(1);
+});
+
+it('ignores an in-flight estimate after the same cart identities receive new product evidence',async()=>{
+ let finish!: (value:unknown)=>void;
+ mocks.estimate.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve}));
+ const lines=[{productId:'fixture',variantId:'fixture',packs:1}];
+ const view=render(<DeliveryCheckout lines={lines} reviewFingerprint="original"/>);
+ for(const [label,value] of Object.entries({'Recipient name':'Test recipient','Delivery contact phone':'5555550100','Street address':'123 Test St',City:'Stockton','ZIP code':'95206',Email:'test@example.com'}))fireEvent.change(screen.getByLabelText(label),{target:{value}});
+ fireEvent.click(screen.getByRole('button',{name:'Review delivery and total'}));
+ view.rerender(<DeliveryCheckout lines={lines} reviewFingerprint="new-price"/>);
+ await act(async()=>finish({estimateId:'old',expiresAt:Date.now()+60000,status:'ok',merchandiseMinor:10000,deliveryChargeMinor:5999,taxMinor:0,totalMinor:15999,serviceName:'Curbside delivery',serviceDetails:[],timingCaveat:''}));
+ expect(screen.queryByRole('button',{name:'Pay $159.99'})).toBeNull();
+ expect(screen.getByLabelText('Email')).toHaveValue('test@example.com');
+ expect(screen.getByRole('button',{name:'Review delivery and total'})).toBeEnabled();
 });

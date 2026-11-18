@@ -1,6 +1,6 @@
 import { Modal } from '../Modal';
 import { rememberCheckout, cartLines } from '../../lib/delivery/checkoutReturn';
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { X, ShoppingBag, Loader2 } from 'lucide-react';
 import { useQueries } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
@@ -8,6 +8,7 @@ import { useAuthToken } from '@convex-dev/auth/react';
 import { api } from '../../convex/_generated/api';
 import { useCart } from '../../contexts/CartContext';
 import CartItem from './CartItem';
+import { useCurrentCartReview } from './useCurrentCartReview';
 import { activeRef, visitorId } from '../../lib/partnerLink';
 import CheckoutV2 from '../delivery/CheckoutV2';
 import { ErrorBoundary } from '../ErrorBoundary';
@@ -18,7 +19,8 @@ const NO_QUERIES = {};
 
 /** Preserve cart drafts while gating checkout on verified account credit and delivery data. */
 export const CartDrawer: React.FC = () => {
-    const { isOpen, closeCart, items, subtotal, itemCount, removeFromCart } = useCart();
+    const { isOpen, closeCart, items, subtotal, itemCount, removeFromCart, notice } = useCart();
+    const current = useCurrentCartReview(items, isOpen);
     // Zuo items (or a mixed cart) use the v2 checkout: full-address delivery and tax before payment.
     const hasV2 = items.some((item) => item.product.fulfillmentProvider === 'zuo');
     const delivery = items.reduce((sum, item) => sum + (item.product.deliveryFee ?? 0) * item.quantity, 0);
@@ -36,7 +38,8 @@ export const CartDrawer: React.FC = () => {
     const creditTimedOut = usePendingTimeout(creditPending);
     const creditBlocked = needsCredit && (creditPending || creditResult === null || creditResult instanceof Error);
     const [useCredit, setUseCredit] = useState(false);
-    useEffect(() => { if (credit) setUseCredit(credit.autoApply); }, [credit?.autoApply]);
+    const autoApply = credit?.autoApply;
+    useEffect(() => { if (autoApply !== undefined) setUseCredit(autoApply); }, [autoApply]);
     const creditOff = credit && useCredit ? Math.min(credit.balanceCents / 100, subtotal) : 0;
     const [error, setError] = useState<string | null>(null);
     const [checkoutBlock, setCheckoutBlock] = useState<{
@@ -48,9 +51,15 @@ export const CartDrawer: React.FC = () => {
             reason?: string;
         }>;
     } | null>(null);
+    const requestSequence = useRef(0);
+    useEffect(() => {
+        requestSequence.current++;
+        setIsCheckingOut(false);
+    }, [current.fingerprint, current.blocked, checkoutOwner, creditOff]);
 
     const handleCheckout = async () => {
-        if (items.length === 0 || creditBlocked) return;
+        if (items.length === 0 || creditBlocked || current.blocked) return;
+        const seq = ++requestSequence.current;
 
         setIsCheckingOut(true);
         setError(null);
@@ -69,19 +78,17 @@ export const CartDrawer: React.FC = () => {
 
             // Prepare cart items for Stripe
             const checkoutItems = items.map(item => {
-                const variantAdjustment = item.selectedVariant?.priceAdjustment || 0;
-                const itemName = item.selectedVariant
-                    ? `${item.product.name} - ${item.selectedVariant.name}`
+                const option = item.selectedVariant ?? item.product.variants?.[0];
+                const variantAdjustment = option?.priceAdjustment || 0;
+                const itemName = option
+                    ? `${item.product.name} - ${option.name}`
                     : item.product.name;
-                const itemImage = item.selectedVariant?.image || item.product.images[0];
+                const itemImage = option?.image || item.product.images[0];
 
                 return {
                     productId: item.product.id,
-                    variantId: item.selectedVariant?.id,
-                    variantName: item.selectedVariant?.name,
-                    // CJ fulfillment mapping - pass variant-level CJ IDs for correct fulfillment
-                    cjVariantId: item.selectedVariant?.cjVariantId,
-                    cjSku: item.selectedVariant?.cjSku,
+                    variantId: option?.id,
+                    variantName: option?.name,
                     name: itemName,
                     price: item.product.price + variantAdjustment,
                     quantity: item.quantity,
@@ -109,6 +116,7 @@ export const CartDrawer: React.FC = () => {
 
             if (!response.ok) {
                 const errorData = await response.json();
+                if (seq !== requestSequence.current) return;
                 if (errorData?.code === 'OUT_OF_STOCK' || Array.isArray(errorData?.unavailableItems)) {
                     setCheckoutBlock({
                         message: errorData?.error || "We're sorry, one or more items in your cart are no longer available. Please remove the unavailable item before checking out.",
@@ -121,6 +129,7 @@ export const CartDrawer: React.FC = () => {
             }
 
             const { url, sessionId } = await response.json();
+            if (seq !== requestSequence.current) return;
 
             // Redirect to Stripe Checkout
             if (url) {
@@ -129,9 +138,10 @@ export const CartDrawer: React.FC = () => {
             } else {
                 throw new Error('No checkout URL received');
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
+            if (seq !== requestSequence.current) return;
             console.error('Checkout error:', err);
-            setError(err.message || 'Something went wrong. Please try again.');
+            setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
             setIsCheckingOut(false);
         }
     };
@@ -164,7 +174,7 @@ export const CartDrawer: React.FC = () => {
                         <ShoppingBag className="w-5 h-5 text-earth" />
                         <h2 className="font-serif text-xl text-earth">Your Cart</h2>
                         <span className="text-[10px] uppercase tracking-widest text-muted-earth">
-                            ({itemCount} {itemCount === 1 ? 'item' : 'items'})
+                            (Quantity {itemCount})
                         </span>
                     </div>
                     <button
@@ -176,6 +186,7 @@ export const CartDrawer: React.FC = () => {
                     </button>
                 </div>
 
+                {notice && <p role="status" className="px-6 pt-4 text-sm text-earth">{notice}</p>}
                 {/* Cart Items */}
                 <div className="p-6">
                     {items.length === 0 ? (
@@ -194,11 +205,11 @@ export const CartDrawer: React.FC = () => {
                         </div>
                     ) : (
                         <div>
-                            {items.map(item => {
+                            {items.map((item, index) => {
                                 const key = item.selectedVariant
                                     ? `${item.product.id}:${item.selectedVariant.id}`
                                     : item.product.id;
-                                return <CartItem key={key} item={item} />;
+                                return <CartItem key={key} item={item} review={current.reviews[index]} />;
                             })}
                         </div>
                     )}
@@ -209,21 +220,23 @@ export const CartDrawer: React.FC = () => {
                     <div className="border-t border-earth/10 p-6 bg-cream/30">
                         {/* Subtotal */}
                         <div className="flex justify-between items-center mb-4">
-                            <span className="text-[10px] uppercase tracking-widest text-muted-earth">Subtotal</span>
+                            <span className="text-[10px] uppercase tracking-widest text-muted-earth">{current.blocked ? 'Saved subtotal · review required' : 'Subtotal'}</span>
                             <span className="font-serif text-xl text-earth">${subtotal.toFixed(2)}</span>
                         </div>
 
                         {!hasV2 && credit && credit.balanceCents > 0 && (
                             <label className="flex items-center justify-between gap-3 mb-3 text-xs text-earth">
                                 <span className="flex items-center gap-2">
-                                    <input type="checkbox" checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} />
+                                    <input type="checkbox" disabled={isCheckingOut} checked={useCredit} onChange={(e) => setUseCredit(e.target.checked)} />
                                     Use my ${(credit.balanceCents / 100).toFixed(2)} store credit
                                 </span>
                                 {creditOff > 0 && <span className="font-serif text-base">−${creditOff.toFixed(2)}</span>}
                             </label>
                         )}
 
-                        {hasV2 ? <ErrorBoundary fallback={<p role="alert" className="text-earth">Checkout is temporarily unavailable. Close and reopen your cart to try again. Your items are saved.</p>}><CheckoutV2 key={checkoutOwner} draftRef={checkoutDraftRef} /></ErrorBoundary> : (<>
+                        {current.blocked && <p role="status" className="text-earth mb-4">Review your cart items before checkout. Your items and delivery details are saved.</p>}
+                        {current.reviews.some(review => review.status === 'error') && <button type="button" className="min-h-11 underline" onClick={current.retry}>Retry current product details</button>}
+                        {hasV2 ? <ErrorBoundary fallback={<p role="alert" className="text-earth">Checkout is temporarily unavailable. Close and reopen your cart to try again. Your items are saved.</p>}><CheckoutV2 key={checkoutOwner} draftRef={checkoutDraftRef} reviewBlocked={current.blocked} reviewFingerprint={current.fingerprint} /></ErrorBoundary> : (<>
                         {creditBlocked && <p role="status" className="text-earth mb-4">
                             {creditPending && !creditTimedOut ? 'Checking your store credit…' : 'Store credit could not be verified. Close and reopen your cart to try again. Your items are saved.'}
                         </p>}
@@ -270,7 +283,7 @@ export const CartDrawer: React.FC = () => {
                         <button
                             className="w-full bg-earth text-cream py-4 text-[10px] uppercase tracking-[0.2em] hover:bg-bronze transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                             onClick={handleCheckout}
-                            disabled={isCheckingOut || creditBlocked}
+                            disabled={isCheckingOut || creditBlocked || current.blocked}
                         >
                             {isCheckingOut ? (
                                 <>

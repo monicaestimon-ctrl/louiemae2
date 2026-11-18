@@ -1,4 +1,4 @@
-/* global document, window, localStorage, innerHeight */
+/* global document, window, localStorage, innerHeight, Event */
 import { build } from 'esbuild';
 import puppeteer from 'puppeteer-core';
 import axe from 'axe-core';
@@ -9,11 +9,11 @@ import assert from 'node:assert/strict';
 const stubs = {
   auth: 'export function useAuthToken(){return null}',
   convex:
-    'export function useQuery(){return undefined} export function useQueries(){return {}} export function useMutation(){return()=>{throw Error("Unexpected fixture mutation")}}',
+    `import {useSyncExternalStore} from 'react';const base={_id:'fixture',name:'Fixture chair',description:'',category:'Furniture',collection:'furniture',price:100,images:[],inStock:true,fulfillmentProvider:'zuo',variants:[{id:'fixture-variant',name:'Standard',priceAdjustment:0,inStock:true,quantityRules:{minimum:1,increment:1}}]};const subscribe=callback=>{window.addEventListener('fixture-change',callback);return()=>window.removeEventListener('fixture-change',callback)};export function useQuery(){return undefined} export function useQueries(queries){useSyncExternalStore(subscribe,()=>window.fixtureVersion||0);return Object.fromEntries(Object.keys(queries).map(key=>[key,key==='fixture'?(window.fixtureProduct===undefined?base:window.fixtureProduct):undefined]))} export function useMutation(){return()=>{throw Error("Unexpected fixture mutation")}}`,
 };
 const fixture = await build({
   stdin: {
-    contents: `import React from'react';import{createRoot}from'react-dom/client';import{CartProvider,useCart}from'./contexts/CartContext';import{LazyCartDrawer}from'./components/cart/LazyCartDrawer';function Controls(){const cart=useCart();return <main><h1>Cart loading verification</h1><button id="open" onClick={cart.openCart}>Open cart</button><output id="count">{cart.itemCount}</output><LazyCartDrawer/></main>}createRoot(document.getElementById('root')).render(<CartProvider><Controls/></CartProvider>);`,
+    contents: `import React from'react';import{createRoot}from'react-dom/client';import{CartProvider,useCart}from'./contexts/CartContext';import{LazyCartDrawer}from'./components/cart/LazyCartDrawer';function Controls(){const cart=useCart();return <main><h1>Cart loading verification</h1><button id="open" onClick={cart.openCart}>Open cart</button><button id="add" onClick={()=>cart.addToCart({id:'saved-chair',name:'Saved chair',price:100,images:[],description:'',category:'Chairs',collection:'furniture',fulfillmentProvider:'ashcroft'},3)}>Add three chairs</button><output id="count">{cart.itemCount}</output><LazyCartDrawer/></main>}createRoot(document.getElementById('root')).render(<CartProvider><Controls/></CartProvider>);`,
     resolveDir: process.cwd(),
     loader: 'tsx',
   },
@@ -38,7 +38,7 @@ const fixture = await build({
         }));
         b.onLoad({ filter: /.*/, namespace: 'fixture' }, (a) => ({
           contents: stubs[a.path],
-          loader: 'js',
+          loader: 'js', resolveDir: process.cwd(),
         }));
         b.onLoad({ filter: /[\\/]cart[\\/]CartDrawer\.tsx$/ }, async (a) => ({
           contents:
@@ -143,7 +143,7 @@ try {
                   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
                 ],
                 fulfillmentProvider: 'zuo',
-                variants: [{ id: 'fixture-variant', name: 'Standard' }],
+                variants: [{ id: 'fixture-variant', name: 'Standard',priceAdjustment:0,inStock:true,quantityRules:{minimum:1,increment:1} }],
               },
               quantity: 2,
             },
@@ -225,6 +225,62 @@ try {
       await page.screenshot({ path: `artifacts/lighthouse/lazy-cart-${scenario}-${width}.png` });
       await page.close();
     }
+  for(const width of [320,844,1440])for(const scenario of ['denied','corrupt']){
+    mode='ready';const page=await browser.newPage();const errors=[];page.on('pageerror',error=>errors.push(error.message));await page.setViewport({width,height:900});
+    await page.evaluateOnNewDocument(scenario=>{localStorage.clear();if(scenario==='corrupt')localStorage.setItem('louiemae_ashcroft_cart_v1','{"invalid":true}');else window.Storage.prototype.setItem=function(){throw new Error('Synthetic denied storage')};},scenario);
+    await page.goto(origin,{waitUntil:'networkidle0'});await page.waitForSelector('#add');await page.focus('#add');await page.keyboard.press('Enter');await page.waitForSelector('[data-cart-panel]');
+    await page.waitForFunction(()=>document.querySelector('#count').textContent==='3');
+    const notice=await page.$eval('[data-cart-panel] [role=status]',node=>node.textContent);assert.match(notice,scenario==='denied'?/during this visit/:/could not be restored/);
+    await page.addScriptTag({content:axe.source});assert.deepEqual(await page.evaluate(async()=>(await window.axe.run()).violations),[]);
+    await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('dialog[open]'));assert.equal(await page.evaluate(()=>document.activeElement.id),'add');assert.deepEqual(errors,[]);assert.equal(commands,0);
+    results.push({scenario,width,cartRetained:true,keyboardRestore:true,axeViolations:0,commands,errors});await page.close();
+  }
+  for (const width of [320, 844, 1440]) {
+    mode = 'ready';
+    const page = await browser.newPage();
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await page.setViewport({ width, height: 900 });
+    await page.evaluateOnNewDocument(() => {
+      const option = { id: 'fixture-variant', name: 'Standard', priceAdjustment: 0, inStock: true, quantityRules: { minimum: 3, increment: 2 } };
+      const product = { id: 'fixture', name: 'Fixture chair', description: '', category: 'Furniture', collection: 'furniture', price: 100, images: [], inStock: true, fulfillmentProvider: 'zuo', variants: [option] };
+      localStorage.setItem('louiemae_ashcroft_cart_v1', JSON.stringify([{ product, selectedVariant: option, quantity: 6 }]));
+      window.fixtureProduct = { ...product, price: 125 };
+    });
+    await page.goto(origin, { waitUntil: 'networkidle0' });
+    await page.click('#open');
+    await page.waitForSelector('input[autocomplete=name]');
+    await page.type('input[autocomplete=name]', 'Retained customer');
+    const reviewSelector = 'form[aria-label="Delivery address"] button[type=submit]';
+    assert.equal(await page.$eval(reviewSelector, node => node.disabled), true);
+    const press = async text => {
+      const handle = await page.evaluateHandle(text => [...document.querySelectorAll('button')].find(button => button.textContent.includes(text)), text);
+      const button = handle.asElement();
+      assert.ok(button, text);
+      await button.scrollIntoView(); await button.focus(); await page.keyboard.press('Enter'); await handle.dispose();
+    };
+    await press('Accept updated details for Fixture chair');
+    await page.waitForFunction(() => document.body.textContent.includes('Choose 5'));
+    assert.equal(await page.$eval('#count', node => node.textContent), '6');
+    await press('Choose 5');
+    await page.waitForFunction(() => document.querySelector('#count').textContent === '5');
+    assert.equal(await page.$eval(reviewSelector, node => node.disabled), false);
+    assert.equal(await page.$eval('input[autocomplete=name]', node => node.value), 'Retained customer');
+    await page.evaluate(() => { window.fixtureProduct = { ...window.fixtureProduct, inStock: false }; window.fixtureVersion = (window.fixtureVersion || 0) + 1; window.dispatchEvent(new Event('fixture-change')); });
+    await page.waitForFunction(() => document.body.textContent.includes('cannot currently be purchased'));
+    assert.equal(await page.$eval(reviewSelector, node => node.disabled), true);
+    assert.equal(await page.$eval('#count', node => node.textContent), '5');
+    await page.addScriptTag({ content: axe.source });
+    assert.deepEqual(await page.evaluate(async () => (await window.axe.run()).violations), []);
+    await page.$eval('[data-cart-panel]', node => { node.scrollTop = 0; });
+    await page.screenshot({ path: `artifacts/lighthouse/cart-current-review-${width}.png` });
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('dialog[open]'));
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'open');
+    assert.deepEqual(errors, []); assert.equal(commands, 0);
+    results.push({ scenario: 'current-review', width, explicitPriceAcceptance: true, explicitQuantityCorrection: true, withdrawalBlocksCheckout: true, addressRetained: true, axeViolations: 0, commands, errors });
+    await page.close();
+  }
   await writeFile(
     'artifacts/lighthouse/lazy-cart-browser.json',
     JSON.stringify(

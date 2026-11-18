@@ -42,8 +42,8 @@ function product(): Product {
     inStock: true,
     fulfillmentProvider: 'zuo',
     variants: [
-      { id: 'ivory', name: 'Ivory', inStock: true, priceAdjustment: 0 },
-      { id: 'walnut', name: 'Walnut', inStock: true, priceAdjustment: 20 },
+      { id: 'ivory', name: 'Ivory', inStock: true, quantityRules: { minimum: 1, increment: 1 }, priceAdjustment: 0 },
+      { id: 'walnut', name: 'Walnut', inStock: true, quantityRules: { minimum: 1, increment: 1 }, priceAdjustment: 20 },
       { id: 'sold', name: 'Sold out', inStock: false, priceAdjustment: 30 },
     ],
   };

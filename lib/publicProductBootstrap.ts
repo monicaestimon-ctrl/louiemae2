@@ -1,3 +1,4 @@
+import { publicQuantityRules } from './orderQuantity.js';
 import type { Product, ProductVariant } from '../types';
 import { publicProductImage } from './productMetadata.js';
 
@@ -20,7 +21,9 @@ export function publicProductSnapshot(value: unknown): Product | null {
     for (const value of row.variants) {
       const variant = record(value);
       if (!variant || typeof variant.id !== 'string' || typeof variant.name !== 'string' || !money(variant.priceAdjustment) || row.price + variant.priceAdjustment < 0) return null;
-      variants.push({ id: variant.id, name: variant.name, priceAdjustment: variant.priceAdjustment, inStock: variant.inStock === true,
+      const rules = record(variant.quantityRules);
+      const quantityRules = rules ? publicQuantityRules(rules.minimum, rules.increment, rules.piecesPerPack) : undefined;
+      variants.push({ ...(quantityRules ? { quantityRules } : {}), id: variant.id, name: variant.name, priceAdjustment: variant.priceAdjustment, inStock: variant.inStock === true,
         ...(typeof variant.image === 'string' ? { image: publicProductImage(variant.image) } : {}) });
     }
   }

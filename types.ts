@@ -320,6 +320,7 @@ export interface EmailCampaign {
 // --- Product Sourcing API Types (OTAPI 1688) ---
 
 export interface ProductVariant {
+  quantityRules?: import('./lib/orderQuantity').OrderQuantityRules;
   id: string;
   name: string; // e.g., "Color: Cream" or "Size: M"
   image?: string;

@@ -24,6 +24,7 @@ it('distinguishes actions for two variants of the same product', () => {
       {['Cream', 'Black'].map((name) => (
         <CartItem
           key={name}
+          review={{status:'ready',choices:[1,3],fingerprint:'fixture'}}
           item={{
             product,
             quantity: 2,
