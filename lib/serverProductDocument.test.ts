@@ -20,7 +20,10 @@ describe('initial public product document', () => {
   it('rejects root-relative URLs that the browser resolves off origin', () => {
     for (const image of ['/\\evil.example/x.png', '/\t/evil.example/x.png', '//evil.example/x.png', 'https://']) {
       const doc = new DOMParser().parseFromString(productDocument(template, { ...product, images: [image] })!, 'text/html');
-      expect(doc.querySelector('img')).toBeNull();
+      expect(doc.querySelectorAll('img')).toHaveLength(1);
+      expect(doc.querySelector('img')?.getAttribute('src')).toBe('/images/product-unavailable.svg');
+      expect(doc.querySelector('img')?.getAttribute('alt')).toBe('Product image unavailable');
+      expect(doc.querySelector('source')).toBeNull();
       expect(doc.querySelector('link[as="image"]')).toBeNull();
       expect(doc.querySelector('meta[property="og:image"]')?.getAttribute('content')).toBe('');
       expect(JSON.parse(doc.querySelector('#lm-product-structured-data')!.textContent!).image).toEqual([]);
