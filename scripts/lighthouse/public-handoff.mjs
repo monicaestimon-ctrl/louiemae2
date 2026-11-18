@@ -28,7 +28,7 @@ site.story.hero.title = 'Source story';
 site.story.hero.subtitle = 'Our journey';
 site.story.hero.image = '/fixture.svg';
 site.home.shop = { ...site.home.shop, headerImage: '/fixture.svg' };
-site.collections = ['furniture','decor','fashion'].map(id => ({ id, title: 'Source '+id, subtitle: 'Verified collection navigation', heroImage: '/fixture.svg', subcategories: [{id:'chairs',title:'Chairs',image:'/fixture.svg'},{id:'tables',title:'Tables',image:'/fixture.svg'}] }));
+site.collections = ['furniture','decor','fashion','kids'].map(id => ({ id, title: 'Source '+id, subtitle: 'Verified collection navigation', heroImage: '/fixture.svg', subcategories: [{id:'chairs',title:'Chairs',image:'/fixture.svg'},{id:'tables',title:'Tables',image:'/fixture.svg'}] }));
 const collectionPaths = site.collections.map(item => '/collection/'+item.id);
 const post = {
   _id: 'story1',
@@ -44,7 +44,7 @@ const post = {
 const article = { ...post, contentHtml: '<p>Verified article body from the initial response.</p>' };
 const stubs = {
   auth: `export const useAuthActions=()=>({signIn:async()=>{throw Error('No auth permitted')},signOut:async()=>{throw Error('No auth permitted')}});export const useAuthToken=()=>null;`,
-  convex: `import {getFunctionName} from 'convex/server';import{useSyncExternalStore}from'react';const subscribe=fn=>{window.addEventListener('fixture-update',fn);return()=>window.removeEventListener('fixture-update',fn)};const version=()=>window.fixtureVersion||0;function result(ref,args){const name=getFunctionName(ref);if(window.fixtureOffline)return new Error('Synthetic offline');if(name==='catalogReadiness:status'){window.fixtureReadinessCalls=(window.fixtureReadinessCalls||0)+1;return window.fixtureCatalogDisabled?{ready:false,version:1}:undefined;}if(name==='customPages:list')return[];if(name==='siteContent:get')return window.fixtureLive?window.fixtureSite:undefined;if(name==='blogPosts:publicSummaries')return window.fixtureLive?[]:undefined;if(name==='blogPosts:publicDetail')return window.fixtureLive?null:undefined;return undefined;}export function useQueries(queries){useSyncExternalStore(subscribe,version);return Object.fromEntries(Object.entries(queries).map(([key,q])=>[key,result(q.query,q.args)]))}export function useQuery(ref,args){useSyncExternalStore(subscribe,version);return args==='skip'?undefined:result(ref,args)}export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});export const useMutation=()=>async()=>{window.fixtureCommands=(window.fixtureCommands||0)+1;throw Error('No commands permitted')};export const useAction=useMutation;export const useConvex=()=>({query:async()=>{throw Error('No direct query')}});export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});`,
+  convex: `import {getFunctionName} from 'convex/server';import{useSyncExternalStore}from'react';const subscribe=fn=>{window.addEventListener('fixture-update',fn);return()=>window.removeEventListener('fixture-update',fn)};const version=()=>window.fixtureVersion||0;function result(ref,args){const name=getFunctionName(ref);if(window.fixtureOffline)return new Error('Synthetic offline');if(name==='catalog:kidsRootPreview'){window.fixtureKidsCalls=(window.fixtureKidsCalls||0)+1;return window.fixtureKidsReleased?{ready:!window.fixtureKidsDisabled,version:5,products:window.fixtureKidsDisabled?[]:Array.from({length:8},(_,i)=>({_id:'kid'+i,name:'Preview dress '+i,images:['/fixture.svg'],price:32,category:'Dresses',variantCount:1}))}:undefined;}if(name==='catalogReadiness:status'){window.fixtureReadinessCalls=(window.fixtureReadinessCalls||0)+1;return window.fixtureCatalogDisabled?{ready:false,version:1}:undefined;}if(name==='customPages:list')return[];if(name==='siteContent:get')return window.fixtureLive?window.fixtureSite:undefined;if(name==='blogPosts:publicSummaries')return window.fixtureLive?[]:undefined;if(name==='blogPosts:publicDetail')return window.fixtureLive?null:undefined;return undefined;}export function useQueries(queries){useSyncExternalStore(subscribe,version);return Object.fromEntries(Object.entries(queries).map(([key,q])=>[key,result(q.query,q.args)]))}export function useQuery(ref,args){useSyncExternalStore(subscribe,version);return args==='skip'?undefined:result(ref,args)}export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});export const useMutation=()=>async()=>{window.fixtureCommands=(window.fixtureCommands||0)+1;throw Error('No commands permitted')};export const useAction=useMutation;export const useConvex=()=>({query:async()=>{throw Error('No direct query')}});export const usePaginatedQuery=(ref,args)=>{if(args!=='skip')window.fixturePageCalls=(window.fixturePageCalls||0)+1;return{results:[],status:'Exhausted',loadMore(){}}};`,
 };
 const bundle = await build({
   stdin: {
@@ -170,6 +170,14 @@ try {
         path.startsWith('/collection/') ? `main[data-lm-collection-ready="${path.slice(12)}"]` : path === '/shop' || path === '/story'
           ? `main[data-public-page="${path.slice(1)}"]`
           : `main[data-lm-journal-ready="${path === '/blog' ? 'index' : 'story1'}"]`;
+      if (path === '/collection/kids') {
+        await page.waitForFunction(() => window.fixtureKidsCalls > 0);
+        assert.notEqual(await page.$('#lm-collection-document'), null);
+        assert.equal(await page.$(selector), null);
+        assert.equal(await page.evaluate(() => window.fixtureReadinessCalls || 0), 0);
+        assert.equal(await page.evaluate(() => window.fixturePageCalls || 0), 0);
+        await page.evaluate(() => { window.fixtureKidsReleased = true; window.fixtureVersion++; window.dispatchEvent(new Event('fixture-update')); });
+      }
       await page.waitForSelector(selector, { visible: true, timeout: 8000 });
       assert.equal(await page.evaluate(() => Boolean(window.fixtureLive)), false);
       assert.equal(await page.$('#lm-page-document,#lm-journal-document,#lm-collection-document'), null);
@@ -183,6 +191,15 @@ try {
       }
       await page.addScriptTag({ content: axe.source });
       assert.deepEqual(await page.evaluate(async () => (await window.axe.run()).violations), []);
+      if (path === '/collection/kids') {
+        assert.equal(await page.$$eval('main h3', nodes => nodes.filter(n => n.textContent.startsWith('Preview dress')).length), 8);
+        await page.evaluate(() => { window.fixtureKidsDisabled = true; window.fixtureVersion++; window.dispatchEvent(new Event('fixture-update')); });
+        await page.waitForFunction(() => document.querySelector('main')?.textContent.includes('Products are temporarily unavailable'));
+        assert.equal(await page.$(selector), null);
+        assert.equal(await page.$$eval('main h3', nodes => nodes.filter(n => n.textContent.startsWith('Preview dress')).length), 0);
+        await page.evaluate(() => { window.fixtureKidsDisabled = false; window.fixtureVersion++; window.dispatchEvent(new Event('fixture-update')); });
+        await page.waitForSelector(selector, { visible: true });
+      }
       if(collectionPaths.includes(path)) {
         assert.equal(await page.evaluate(()=>window.fixtureReadinessCalls||0),0);
         await page.evaluate(path=>{window.location.hash='#collection/'+path.slice(12)+'?cat=All&view=products'},path);

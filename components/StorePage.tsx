@@ -11,6 +11,7 @@ import { CollectionSignup } from './CollectionSignup';
 import { SafeImage } from './SafeImage';
 import { getCategoryParentId } from '../lib/productCategories';
 import { useStoreCatalog, useStoreCategoryOptions, type StoreCardProduct } from './useStoreCatalog';
+import { useKidsRootPreview } from './useKidsRootPreview';
 
 import { useRecoverableQuery } from '../contexts/useRecoverableQuery';
 const navigateToStoreHash = (hash: string) => { window.location.hash = hash; };
@@ -330,14 +331,15 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
   }, [config, selectedCategory, viewLevel]);
 
   // Category-only roots need verified navigation settings, not inventory. Product
-  // grids, category previews and the kids root still require live catalog readiness.
-  const needsCatalog = viewLevel !== 'ROOT' || collection === 'kids';
+  // grids and category previews require readiness. Kids root receives readiness
+  // and its bounded cards together, avoiding a serial readiness/page waterfall.
+  const rootPreview = useKidsRootPreview(viewLevel === 'ROOT' && collection === 'kids');
+  const needsCatalog = viewLevel !== 'ROOT';
   const readinessRequest = useRecoverableQuery(api.catalogReadiness.status, needsCatalog ? {} : 'skip');
   const readiness = readinessRequest.data;
   const catalogReady = needsCatalog && readiness?.ready === true;
   const readinessUnavailable = needsCatalog && (readinessRequest.status === 'unavailable' || (readiness !== undefined && !catalogReady));
   const grid = useStoreCatalog(config, selectedCategory, catalogReady && viewLevel === 'PRODUCT', sortOption);
-  const rootPreview = useStoreCatalog(config, 'All', catalogReady && viewLevel === 'ROOT' && collection === 'kids', undefined, 8);
   const categoryOptions = useStoreCategoryOptions(config, selectedCategory, catalogReady && viewLevel === 'PRODUCT');
   const filteredProducts = grid.products;
   const categories = categoryOptions.categories;

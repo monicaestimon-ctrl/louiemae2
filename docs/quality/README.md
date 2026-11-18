@@ -409,3 +409,14 @@ The additive `catalog.kidsRootPreview` query checks the current verified/enabled
 Deploy this backend endpoint before introducing its frontend consumer: Vercel frontend deployment can finish before the main Convex job. This phase leaves the existing page subscriptions and commerce behavior unchanged. The following consumer phase must remove the serial readiness round trip only for the Kids root, preserve loading/error/retry/live withdrawal behavior and verify the actual App under delayed responses. Full catalog grids and authoritative product detail lookup keep their existing contracts.
 
 Validation: six endpoint/readiness tests, application TypeScript and focused ESLint pass. Tests cover missing/old/unverified/disabled gates, live gate withdrawal, verified emptiness, collection/visibility filtering, eight-card bounds and order, compact field allowlisting, total variant count, price changes and stale-row rejection. Repeated production measurement and the complete route/persona/commerce matrix remain outstanding.
+
+
+### Atomic Kids preview consumer
+
+PR318 merged as `c319ae31ba310a9bcd27fe5ce7e3e4337e879214` after CI `44198647598` passed and CodeRabbit completed with no actionable findings. Main CI `44205032367` passed, including the Convex deployment. A read-only production check against that exact frontend commit verified the endpoint returns eight cards in the same order as the existing catalog, with a 2,018-byte response and only approved public fields. The backend was verified before publishing its consumer.
+
+The Kids root now uses one recoverable `catalog.kidsRootPreview` subscription for readiness and at most eight compact cards. It does not subscribe to the readiness endpoint or paginated catalog until a category/grid is opened. Pending responses retain the initial document and withhold the ready marker; a ten-second timeout, transport failure, or withdrawn readiness shows the existing reload action. A verified empty preview is ready, and a live recovered response restores the preview. Leaving Kids removes the preview subscription and its cards. Compact cards remain non-purchasable previews; opening details still resolves the authoritative product by ID.
+
+Seventeen focused component/hook tests pass, including timeout, error, empty, live withdrawal/recovery, metadata preservation and route changes. The actual-App browser fixture adds Kids at three viewport sizes with delayed initial responses and eight-card withdrawal/recovery. Production score acceptance remains a separate gate.
+
+PR317 controlled run `44198727336` remains failed evidence:114/120 healthy runs and13/24 passing performance batches. All120 reported Accessibility/Best Practices/SEO100; six Kids readiness failures invalidate those runs. No score threshold or healthy-content assertion was weakened.
