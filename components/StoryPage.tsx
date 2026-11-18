@@ -1,13 +1,16 @@
 
-import React, { useLayoutEffect } from 'react';
+import React, { useLayoutEffect, useState } from 'react';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
 import { DynamicSectionRenderer } from './DynamicPage';
-import { imageEntry, responsiveImage } from '../lib/responsiveImage';
+import { imageEntry, responsiveImage, responsiveAvifSource } from '../lib/responsiveImage';
 
 export const StoryPage: React.FC = () => {
    const { siteContent } = useSite();
    const { story } = siteContent;
+   const heroSizes = '(min-width: 432px) 384px, calc(100vw - 48px)';
+   const [failedAvif, setFailedAvif] = useState<string | null>(null);
+   const avif = failedAvif === story.hero.image ? undefined : responsiveAvifSource(story.hero.image, heroSizes);
    useLayoutEffect(() => { document.getElementById('lm-page-document')?.remove(); }, []);
 
    return (
@@ -24,16 +27,20 @@ export const StoryPage: React.FC = () => {
                </div>
 
                <div className="relative w-full overflow-hidden rounded-2xl mb-16 shadow-sm mx-auto max-w-sm">
-                  <img
-                     loading="eager"
-                     fetchPriority="high"
-                     decoding="async"
-                     {...responsiveImage(story.hero.image, '(min-width: 432px) 384px, calc(100vw - 48px)')}
-                     alt="Our Journey"
-                     width={imageEntry(story.hero.image) ? 1000 : undefined}
-                     height={imageEntry(story.hero.image) ? Math.round(1000 * imageEntry(story.hero.image)!.ratio) : undefined}
-                     className="w-full h-auto object-contain rounded-2xl grayscale-[20%] hover:scale-[1.02] transition-transform duration-[3s] ease-out"
-                  />
+                  <picture>
+                     {avif && <source {...avif} />}
+                     <img
+                        onError={avif ? () => setFailedAvif(story.hero.image) : undefined}
+                        loading="eager"
+                        fetchPriority="high"
+                        decoding="async"
+                        {...responsiveImage(story.hero.image, heroSizes)}
+                        alt="Our Journey"
+                        width={imageEntry(story.hero.image) ? 1000 : undefined}
+                        height={imageEntry(story.hero.image) ? Math.round(1000 * imageEntry(story.hero.image)!.ratio) : undefined}
+                        className="w-full h-auto object-contain rounded-2xl grayscale-[20%] hover:scale-[1.02] transition-transform duration-[3s] ease-out"
+                     />
+                  </picture>
                </div>
             </div>
          </section>

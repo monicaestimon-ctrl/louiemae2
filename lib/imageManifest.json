@@ -20,7 +20,7 @@
   "/images/brand/dining chairs v2 copy.png": {"base":"/images/opt/brand/dining-chairs-v2-copy","widths":[480,800],"ratio":0.8562},
   "/images/brand/dining table copy.png": {"base":"/images/opt/brand/dining-table-copy","widths":[480,800],"ratio":0.925},
   "/images/brand/entry table copy.png": {"base":"/images/opt/brand/entry-table-copy","widths":[480,800],"ratio":0.9537},
-  "/images/brand/fam2.png": {"base":"/images/opt/brand/fam2","widths":[480,640,800,960,1024],"ratio":1.5},
+  "/images/brand/fam2.png": {"base":"/images/opt/brand/fam2","widths":[480,640,800,960,1024],"ratio":1.5,"avifBase":"/images/opt/brand-formats/d71681c1a03da2782eb1fe26"},
   "/images/brand/floorlamp copy.png": {"base":"/images/opt/brand/floorlamp-copy","widths":[480,787],"ratio":1.0165},
   "/images/brand/floorlamp v2 copy.png": {"base":"/images/opt/brand/floorlamp-v2-copy","widths":[480,605],"ratio":1.3223},
   "/images/brand/furniture-chair.png": {"base":"/images/opt/brand/furniture-chair","widths":[480,640],"ratio":1},

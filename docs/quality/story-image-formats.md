@@ -1,0 +1,9 @@
+# Story image formats
+
+The Story hero retains its original composition, dimensions, responsive sizes, alt text and WebP fallback. A source-hashed AVIF family is offered through matching initial-server and interactive picture markup. Supported browsers choose AVIF; unsupported browsers use the existing WebP candidates. An interactive AVIF failure removes the AVIF source and retries the WebP image once. A failed WebP retains ordinary image alt behavior; this phase does not claim an all-media-outage placeholder.
+
+The AVIF45/effort7 recipe operates on a losslessly oriented original, never a lossy intermediate. The source SHA256 and recipe determine immutable output names. `node scripts/prepare-story-avif.mjs` recreates the family; `node scripts/verify-story-images.mjs` checks the original hash, recipe-derived path, all rendition hashes, format, dimensions and smaller byte size than WebP at each matching width. Run the Story preparation after changing the original or rerunning the generic brand manifest generator. CI rejects a missing or stale AVIF mapping.
+
+The 640px candidate is55,052 bytes versus111,322 bytes for the existing WebP, a50.5% image-byte reduction. Source, WebP and AVIF were compared side by side at the displayed mobile size; composition and colors remain consistent. This is not a page-score claim.
+
+The local browser fixture renders the actual server page document and StoryPage, with local site data and actual built CSS. Nine cases cover390/844/1440px at1.75 device scale, normal AVIF, AVIF disabled through browser emulation, and a server-injected AVIF404. Healthy handoff fetches one hero asset; failure is bounded to one AVIF attempt from each server/client document and one WebP. No business requests are submitted. Initial failed fixture runs are retained: a missing chapter field and an overly strict two-request failure expectation. Final-head preview and production verification remain release requirements.

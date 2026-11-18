@@ -147,3 +147,17 @@ it('hands off only public site configuration from the exact initial response', a
   expect(envelope.data.site.story.hero.title).toBe(site.story.hero.title);
   expect(result.body).not.toContain('privateCost');
 });
+
+it('serves the Story AVIF source with a WebP fallback and identical responsive sizes', async () => {
+  fetchMock.mockResolvedValue({ok:true,json:async()=>({status:'success',value:{...site,story:{...site.story,hero:{title:'Our',subtitle:'Story',image:'/images/brand/fam2.png'}}}})});
+  const result = await request('story');
+  const dom = new globalThis.DOMParser().parseFromString(result.body, 'text/html');
+  const picture = dom.querySelector('main section picture');
+  const avif = picture?.querySelector('source[type="image/avif"]');
+  const fallback = picture?.querySelector('img');
+  expect(avif?.getAttribute('srcset')).toContain('.avif 640w');
+  expect(avif?.getAttribute('sizes')).toBe(fallback?.getAttribute('sizes'));
+  expect(fallback?.getAttribute('src')).toMatch(/\.webp$/);
+  expect(fallback?.getAttribute('fetchpriority')).toBe('high');
+  expect(fallback?.getAttribute('height')).toBe('1500');
+});
