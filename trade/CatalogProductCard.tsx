@@ -91,6 +91,9 @@ export function CatalogProductCard({
               type="button"
               className={`pin-save${saved ? ' saved' : ''}`}
               aria-label={`${saved ? 'Saved ' : 'Save '}${p.name} to board`}
+              aria-haspopup={saved || !lastBoard ? 'dialog' : undefined}
+              aria-expanded={saved || !lastBoard ? Boolean(menu) : undefined}
+              aria-controls={(saved || !lastBoard) && menu ? menuId : undefined}
               onClick={(event) =>
                 saved || !lastBoard ? setMenu(event.currentTarget) : onSave(p, lastBoard.id)
               }

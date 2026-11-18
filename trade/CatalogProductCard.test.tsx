@@ -63,7 +63,20 @@ describe('typed catalog product controls', () => {
   });
   it('opens the picker for an existing exact saved variant', () => {
     const props = setup({ boards: [{ id: 'b1', title: 'Project', pins: [identity] }] });
+    expect(screen.getByRole('button', { name: 'Saved Chair to board' })).toHaveAttribute(
+      'aria-haspopup',
+      'dialog'
+    );
+    expect(screen.getByRole('button', { name: 'Saved Chair to board' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Saved Chair to board' }));
+    const trigger = screen.getByRole('button', { name: 'Saved Chair to board' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(document.getElementById(trigger.getAttribute('aria-controls')!)).toContainElement(
+      screen.getByRole('dialog')
+    );
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(props.onSave).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Choose board for Chair' })).toHaveAttribute(
