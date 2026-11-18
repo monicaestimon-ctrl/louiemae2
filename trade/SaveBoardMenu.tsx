@@ -107,6 +107,9 @@ export function SaveBoardMenu({
   }, [creating]);
   useEffect(() => {
     const outside = (event: Event) => {
+      // The owning toggle closes this picker on click. Dismissing during its
+      // preceding pointer/focus events would make that click reopen it.
+      if (event.target instanceof Node && opener.current?.contains(event.target)) return;
       if (
         !closing.current &&
         event.target instanceof Node &&
@@ -118,6 +121,10 @@ export function SaveBoardMenu({
       }
     };
     const escape = (event: KeyboardEvent) => {
+      if (event.isComposing || event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.stopPropagation();
+        return;
+      }
       if (event.key !== 'Escape') return;
       event.preventDefault();
       event.stopPropagation();

@@ -4,8 +4,9 @@ import { URL } from 'node:url';
 import puppeteer from 'puppeteer-core';
 import axe from 'axe-core';
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 const directory = 'artifacts/lighthouse/board-controls';
+await rm('artifacts/lighthouse/board-controls-browser.json', { force: true });
 await mkdir(directory, { recursive: true });
 const bundle = await build({
   stdin: {
@@ -141,6 +142,17 @@ try {
         audit.violations.map((v) => ({ id: v.id, nodes: v.nodes.map((n) => n.target) })),
         []
       );
+      if (mode === 'card') {
+        await page.type('.boardpick input', 'Living');
+        await page.click('#trigger');
+        await page.waitForFunction(() => !document.querySelector('.boardpick'));
+        assert.equal(
+          await page.$eval('#trigger', (el) => el.getAttribute('aria-expanded')),
+          'false'
+        );
+        await page.click('#trigger');
+        await page.waitForSelector('.boardpick');
+      }
       await page.keyboard.press('Escape');
       await page.waitForFunction(() => !document.querySelector('.boardpick'));
       assert.equal(await page.evaluate(() => document.activeElement?.id), 'trigger');
@@ -180,7 +192,22 @@ try {
           ?.click()
       );
       await page.waitForFunction(() => !document.querySelector('.boardpick'));
-      assert.equal(await page.evaluate(() => window.saves[0].p.vid), 'walnut');
+      assert.deepEqual(await page.evaluate(() => window.saves), [
+        {
+          b: 'b1',
+          p: {
+            id: 42,
+            lid: 'source',
+            vid: 'walnut',
+            name: 'Chair',
+            line: 'Walnut',
+            price: 199,
+            trade: 179,
+            img: '/images/product-unavailable.svg',
+            ar: 1,
+          },
+        },
+      ]);
       await page.click('#trigger');
       await page.waitForSelector('.boardpick');
       await page.click('#after');

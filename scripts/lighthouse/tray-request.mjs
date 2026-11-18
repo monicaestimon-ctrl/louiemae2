@@ -94,6 +94,41 @@ try {
   await page.waitForSelector('.pin-open');
   await page.addScriptTag({ content: axe.source });
   const results = [];
+  // Use a browse-page product so the surrounding left/right shortcut is active.
+  await page.click('.pin-open');
+  await page.waitForSelector('.pp-add');
+  const initialProductLabel = await page.$eval('dialog[open]', el => el.getAttribute('aria-label'));
+  await page.evaluate(() => [...document.querySelectorAll('dialog button')].find(button => button.textContent.trim() === 'Save').setAttribute('data-owner-save', 'true'));
+  await page.click('[data-owner-save]');
+  await page.waitForSelector('.boardpick');
+  assert.equal(await page.$eval('[data-owner-save]', el => el.getAttribute('aria-haspopup')), 'dialog');
+  assert.equal(await page.$eval('[data-owner-save]', el => el.getAttribute('aria-expanded')), 'true');
+  await page.focus('.boardpick button');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await page.$eval('dialog[open]', el => el.getAttribute('aria-label')), initialProductLabel);
+  await page.focus('.boardpick input');
+  const composingPrevented = await page.$eval('.boardpick input', el => {
+    const event = new window.KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true });
+    el.dispatchEvent(event); return event.defaultPrevented;
+  });
+  assert.equal(composingPrevented, false);
+  assert.ok(await page.$('.boardpick'));
+  await page.type('.boardpick input', 'Living');
+  await page.click('[data-owner-save]');
+  await page.waitForFunction(() => !document.querySelector('.boardpick'));
+  assert.equal(await page.$eval('[data-owner-save]', el => el.getAttribute('aria-expanded')), 'false');
+  await page.click('[data-owner-save]');
+  await page.waitForSelector('.boardpick');
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('.boardpick'));
+  assert.equal(await page.$eval('[data-owner-save]', el => el === document.activeElement), true);
+  await page.keyboard.press('ArrowRight');
+  await page.waitForFunction(label => document.querySelector('dialog[open]')?.getAttribute('aria-label') !== label, {}, initialProductLabel);
+  assert.ok(await page.$('.pp-add'));
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('dialog'));
+  results.push({pickerTriggerToggles:true,expandedState:true,horizontalKeysStayInsidePicker:true,parentNavigationStillWorks:true,composingEscapeNotCancelled:true,businessCommands:0});
   for (const [width, height] of [
     [320, 900],
     [844, 390],

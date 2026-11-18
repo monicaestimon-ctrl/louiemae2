@@ -17,7 +17,10 @@ beforeEach(() => {
   document.body.append(opener);
   opener.focus();
 });
-afterEach(() => opener.remove());
+afterEach(() => {
+  opener.remove();
+  vi.restoreAllMocks();
+});
 function setup(options: Partial<Parameters<typeof SaveBoardMenu>[0]> = {}) {
   const props = {
     boards,
@@ -105,22 +108,70 @@ describe('typed board picker', () => {
   });
   it('dismisses on outside pointer without stealing destination focus', () => {
     const props = setup();
-    fireEvent.pointerDown(opener);
+    fireEvent.pointerDown(document.body);
     expect(props.onClose).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('textbox')).toHaveFocus();
   });
   it('dismisses on focus leaving without a focus trap', () => {
     const props = setup();
-    opener.focus();
+    const destination = document.createElement('button');
+    document.body.append(destination);
+    destination.focus();
     expect(props.onClose).toHaveBeenCalledTimes(1);
-    expect(opener).toHaveFocus();
+    expect(destination).toHaveFocus();
+    destination.remove();
   });
   it('removes document listeners when unmounted', () => {
+    const add = vi.spyOn(document, 'addEventListener');
+    const remove = vi.spyOn(document, 'removeEventListener');
     const props = setup();
+    const callbacks = ['pointerdown', 'focusin'].map((type) => ({
+      type,
+      callback: add.mock.calls.find(([name]) => name === type)?.[1],
+    }));
     props.unmount();
+    for (const { type, callback } of callbacks) {
+      expect(callback).toBeTypeOf('function');
+      expect(remove).toHaveBeenCalledWith(type, callback);
+    }
     fireEvent.pointerDown(opener);
     opener.focus();
     expect(props.onClose).not.toHaveBeenCalled();
+  });
+  it('leaves trigger presses to the owner toggle instead of dismissing before click', () => {
+    const props = setup({ returnFocus: opener });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Living' } });
+    fireEvent.pointerDown(opener);
+    opener.focus();
+    expect(props.onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox')).toHaveValue('Living');
+  });
+  it('keeps composition cancellation local without preventing the input default', () => {
+    const props = setup();
+    const event = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      isComposing: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    screen.getByRole('textbox').dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(props.onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox')).toHaveFocus();
+  });
+  it('contains horizontal arrow shortcuts but preserves Tab for the surrounding dialog', () => {
+    setup();
+    const listener = vi.fn();
+    document.addEventListener('keydown', listener);
+    for (const key of ['ArrowLeft', 'ArrowRight']) {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      screen.getByRole('button', { name: 'Create board' }).dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(listener).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Tab' });
+    expect(listener).toHaveBeenCalledTimes(1);
+    document.removeEventListener('keydown', listener);
   });
   it('preserves the opener through StrictMode effect replay', () => {
     const close = vi.fn();
