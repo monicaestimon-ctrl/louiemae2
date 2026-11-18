@@ -73,7 +73,10 @@ export const cartReview = query({
       throw new CommerceError('INVALID_INPUT');
     const id = ctx.db.normalizeId('commerceProducts', args.id);
     if (!id) return null;
-    const detail = await retailDetail(ctx, id);
+    const now = Date.now();
+    const product = await ctx.db.get(id);
+    const evidence = product?.provider === 'ashcroft' ? { feed: await latestFeed(ctx), now } : undefined;
+    const detail = await retailDetail(ctx, id, evidence);
     if (!detail) return null;
     const option = detail.variants.find(v => v.id === args.variantId);
     let maximum = 0;
@@ -82,7 +85,7 @@ export const cartReview = query({
         const listing = await ctx.db.query('commerceListings')
           .withIndex('by_product_channel', q => q.eq('productId', id).eq('channel', 'retail')).unique();
         const sku = listing?.fulfillment?.find(v => v.id === args.variantId)?.sku;
-        const available = ashcroftQuantity(await latestFeed(ctx), sku, Date.now());
+        const available = ashcroftQuantity(evidence?.feed ?? null, sku, now);
         maximum = available === null ? 0 : Math.min(20, available);
       } else {
         const variantId = ctx.db.normalizeId('catVariants', args.variantId);
@@ -96,7 +99,7 @@ export const cartReview = query({
       }
     }
     // Counts are in the existing selling basis. Supplier identity, costs and warehouse evidence stay private.
-    return { product: detail, variantId: args.variantId, quantity: args.quantity, maximum };
+    return { product: detail, variantId: args.variantId, quantity: args.quantity, maximum, expiresAt: evidence?.feed?.validUntil ?? null };
   },
 });
 
