@@ -1,9 +1,10 @@
+import { CATALOG_VERSION } from './catalogVersion';
 import type { Doc } from '../convex/_generated/dataModel';
 import { isCjProductStorefrontReady } from './cjFulfillmentReadiness';
 import { cjQueueSearchValues, getCjVariantMappingSummary, hasCjVariantQueueFootprint } from './cjVariantQueue';
 import { getCjProductStatus } from './cjProductStatus';
 
-export const CATALOG_VERSION = 5;
+export { CATALOG_VERSION } from './catalogVersion';
 export const MAX_INLINE_ADMIN_SEARCH_LENGTH = 16_000;
 
 export function adminCatalogSearchText(product: Doc<'products'>, status = getCjProductStatus(product)) {

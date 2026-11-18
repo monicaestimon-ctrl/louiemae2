@@ -4,8 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { StorePage } from '../StorePage';
 import { getFunctionName } from 'convex/server';
 import type { Product } from '../../types';
-const mocks = vi.hoisted(() => ({ detailProduct: null as Product | null, detailFailed: false, previewFailed: false, addToCart: vi.fn(), ready: true as boolean | undefined, complete: false, products: [] as unknown[], load: vi.fn(), detail: vi.fn(), query: vi.fn() }));
-vi.mock('../../contexts/useRecoverableQuery', () => ({ useRecoverableQuery: (...args: unknown[]) => { mocks.query(...args); const preview = getFunctionName(args[0] as Parameters<typeof getFunctionName>[0]) === 'catalog:kidsRootPreview'; return preview && mocks.previewFailed && args[1] !== 'skip' ? { status: 'unavailable', data: undefined } : args[1] === 'skip' ? { status: 'idle', data: undefined } : { status: mocks.ready === undefined ? 'loading' : 'ready', data: mocks.ready === undefined ? undefined : { ready: mocks.ready, products: mocks.products.map(p => { const { id, ...rest } = p as Product; return { ...rest, _id: id }; }) } }; } }));
+import { CATALOG_VERSION } from '../../lib/catalogVersion';
+const mocks = vi.hoisted(() => ({ detailProduct: null as Product | null, detailFailed: false, previewFailed: false, previewVersion: 0, addToCart: vi.fn(), ready: true as boolean | undefined, complete: false, products: [] as unknown[], load: vi.fn(), detail: vi.fn(), query: vi.fn() }));
+vi.mock('../../contexts/useRecoverableQuery', () => ({ useRecoverableQuery: (...args: unknown[]) => { mocks.query(...args); const preview = getFunctionName(args[0] as Parameters<typeof getFunctionName>[0]) === 'catalog:kidsRootPreview'; return preview && mocks.previewFailed && args[1] !== 'skip' ? { status: 'unavailable', data: undefined } : args[1] === 'skip' ? { status: 'idle', data: undefined } : { status: mocks.ready === undefined ? 'loading' : 'ready', data: mocks.ready === undefined ? undefined : { ready: mocks.ready, version: mocks.previewVersion, products: mocks.products.map(p => { const { id, ...rest } = p as Product; return { ...rest, _id: id }; }) } }; } }));
 vi.mock('../../contexts/BlogContext', () => ({ useSite: () => ({ isLoading: false, siteContentStatus: 'ready', siteContent: { collections: ['kids', 'furniture', 'decor', 'fashion'].map(id => ({
   id, title: id === 'kids' ? 'Kids' : id, subtitle: '', heroImage: '', subcategories: [{ id: 'dresses', title: 'Dresses', image: '' }],
 })) } }) }));
@@ -19,7 +20,7 @@ vi.mock('../useStoreCatalog', () => ({
     complete: ready && mocks.complete, canLoadMore: ready && !mocks.complete, loadingMore: false, loadMore: mocks.load }),
   useStoreCategoryOptions: () => ({ categories: ['All', 'Dresses', 'Legacy beyond first page'], canLoadMore: true, loading: false, loadMore: mocks.load }),
 }));
-beforeEach(() => { vi.clearAllMocks(); mocks.detailProduct = null; mocks.detailFailed = false; mocks.previewFailed = false; mocks.ready = true; mocks.complete = false; mocks.products = []; });
+beforeEach(() => { vi.clearAllMocks(); mocks.detailProduct = null; mocks.detailFailed = false; mocks.previewFailed = false; mocks.previewVersion = CATALOG_VERSION; mocks.ready = true; mocks.complete = false; mocks.products = []; });
 afterEach(cleanup);
 describe('store catalog integration', () => {
   it('keeps the Kids document until its atomic preview resolves, then handles withdrawal and recovery', () => {
@@ -69,6 +70,16 @@ describe('store catalog integration', () => {
     view.rerender(<StorePage collection={collection} forceProductView />);
     expect(screen.getByText(/Products are temporarily unavailable/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reload products' })).toBeEnabled();
+  });
+  it('rejects an obsolete live preview version without exposing stale cards', () => {
+    mocks.previewVersion = CATALOG_VERSION - 1;
+    mocks.products = [{ id: 'obsolete', name: 'Obsolete dress', images: ['image'], price: 32, category: 'Dresses', variantCount: 1 }];
+    render(<StorePage collection="kids" />);
+    expect(document.querySelector('[data-lm-collection-ready]')).toBeNull();
+    expect(screen.queryByRole('button', { name: /Obsolete dress/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Reload products' })).toBeEnabled();
+    const active = mocks.query.mock.calls.filter(call => call[1] !== 'skip');
+    expect([...new Set(active.map(call => getFunctionName(call[0])))]).toEqual(['catalog:kidsRootPreview']);
   });
   it('opens Kids preview detail by stable ID without enabling a preview purchase', async () => {
     mocks.products = [{ id: 'root-preview', name: 'Root dress', images: ['image'], price: 32, category: 'Dresses', variantCount: 150 }];
@@ -128,7 +139,9 @@ describe('store catalog integration', () => {
     expect(screen.getByText(/Products are temporarily unavailable/)).toBeTruthy();
     expect(screen.queryByText('Coming Soon')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Load more products' })).toBeNull();
-    expect(mocks.query.mock.calls.filter(call => call[1] !== 'skip')).toHaveLength(1);
+    const activeQueries = mocks.query.mock.calls.filter(call => call[1] !== 'skip');
+    expect(activeQueries.length).toBeGreaterThan(0);
+    expect([...new Set(activeQueries.map(call => getFunctionName(call[0])))]).toEqual(['catalogReadiness:status']);
   });
 });
 

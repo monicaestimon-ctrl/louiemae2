@@ -44,7 +44,7 @@ const post = {
 const article = { ...post, contentHtml: '<p>Verified article body from the initial response.</p>' };
 const stubs = {
   auth: `export const useAuthActions=()=>({signIn:async()=>{throw Error('No auth permitted')},signOut:async()=>{throw Error('No auth permitted')}});export const useAuthToken=()=>null;`,
-  convex: `import {getFunctionName} from 'convex/server';import{useSyncExternalStore}from'react';const subscribe=fn=>{window.addEventListener('fixture-update',fn);return()=>window.removeEventListener('fixture-update',fn)};const version=()=>window.fixtureVersion||0;function result(ref,args){const name=getFunctionName(ref);if(window.fixtureOffline)return new Error('Synthetic offline');if(name==='catalog:kidsRootPreview'){window.fixtureKidsCalls=(window.fixtureKidsCalls||0)+1;return window.fixtureKidsReleased?{ready:!window.fixtureKidsDisabled,version:5,products:window.fixtureKidsDisabled?[]:Array.from({length:8},(_,i)=>({_id:'kid'+i,name:'Preview dress '+i,images:['/fixture.svg'],price:32,category:'Dresses',variantCount:1}))}:undefined;}if(name==='catalogReadiness:status'){window.fixtureReadinessCalls=(window.fixtureReadinessCalls||0)+1;return window.fixtureCatalogDisabled?{ready:false,version:1}:undefined;}if(name==='customPages:list')return[];if(name==='siteContent:get')return window.fixtureLive?window.fixtureSite:undefined;if(name==='blogPosts:publicSummaries')return window.fixtureLive?[]:undefined;if(name==='blogPosts:publicDetail')return window.fixtureLive?null:undefined;return undefined;}export function useQueries(queries){useSyncExternalStore(subscribe,version);return Object.fromEntries(Object.entries(queries).map(([key,q])=>[key,result(q.query,q.args)]))}export function useQuery(ref,args){useSyncExternalStore(subscribe,version);return args==='skip'?undefined:result(ref,args)}export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});export const useMutation=()=>async()=>{window.fixtureCommands=(window.fixtureCommands||0)+1;throw Error('No commands permitted')};export const useAction=useMutation;export const useConvex=()=>({query:async()=>{throw Error('No direct query')}});export const usePaginatedQuery=(ref,args)=>{if(args!=='skip')window.fixturePageCalls=(window.fixturePageCalls||0)+1;return{results:[],status:'Exhausted',loadMore(){}}};`,
+  convex: `import {getFunctionName} from 'convex/server';import{useSyncExternalStore}from'react';const subscribe=fn=>{window.addEventListener('fixture-update',fn);return()=>window.removeEventListener('fixture-update',fn)};const version=()=>window.fixtureVersion||0;function result(ref,args){const name=getFunctionName(ref);if(window.fixtureOffline)return new Error('Synthetic offline');if(name==='catalog:kidsRootPreview'){window.fixtureKidsCalls=(window.fixtureKidsCalls||0)+1;return window.fixtureKidsReleased?{ready:!window.fixtureKidsDisabled,version:5,products:window.fixtureKidsDisabled||window.fixtureKidsEmpty?[]:Array.from({length:8},(_,i)=>({_id:'kid'+i,name:'Preview dress '+i,images:['/fixture.svg'],price:32,category:'Dresses',variantCount:1}))}:undefined;}if(name==='catalogReadiness:status'){window.fixtureReadinessCalls=(window.fixtureReadinessCalls||0)+1;return window.fixtureCatalogDisabled?{ready:false,version:1}:undefined;}if(name==='customPages:list')return[];if(name==='siteContent:get')return window.fixtureLive?window.fixtureSite:undefined;if(name==='blogPosts:publicSummaries')return window.fixtureLive?[]:undefined;if(name==='blogPosts:publicDetail')return window.fixtureLive?null:undefined;return undefined;}export function useQueries(queries){useSyncExternalStore(subscribe,version);return Object.fromEntries(Object.entries(queries).map(([key,q])=>[key,result(q.query,q.args)]))}export function useQuery(ref,args){useSyncExternalStore(subscribe,version);return args==='skip'?undefined:result(ref,args)}export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});export const useMutation=()=>async()=>{window.fixtureCommands=(window.fixtureCommands||0)+1;throw Error('No commands permitted')};export const useAction=useMutation;export const useConvex=()=>({query:async()=>{throw Error('No direct query')}});export const usePaginatedQuery=(ref,args)=>{if(args!=='skip')window.fixturePageCalls=(window.fixturePageCalls||0)+1;return{results:[],status:'Exhausted',loadMore(){}}};`,
 };
 const bundle = await build({
   stdin: {
@@ -95,7 +95,7 @@ const template = `<html lang="en"><head><meta charset="utf-8"><meta name="viewpo
 function html(path) {
   if(collectionPaths.includes(path)) {
     const config=site.collections.find(item=>path==='/collection/'+item.id);
-    return withPublicInitialData(collectionDocument(template,{...config,categories:config.subcategories,rootCategories:config.subcategories,cards:[]}),path,{site});
+    return withPublicInitialData(collectionDocument(template,{...config,categories:config.subcategories,rootCategories:config.subcategories,cards:[]}),path,{site,...(config.id==='kids'?{kids:{ready:true,version:5,products:Array.from({length:8},(_,i)=>({_id:'kid'+i,name:'Preview dress '+i,images:['/fixture.svg'],price:32,category:'Dresses',variantCount:1}))}}:{})});
   }
   if (path === '/blog')
     return withPublicInitialData(journalDocument(template, [post]), path, { posts: [post] });
@@ -172,8 +172,10 @@ try {
           : `main[data-lm-journal-ready="${path === '/blog' ? 'index' : 'story1'}"]`;
       if (path === '/collection/kids') {
         await page.waitForFunction(() => window.fixtureKidsCalls > 0);
-        assert.notEqual(await page.$('#lm-collection-document'), null);
-        assert.equal(await page.$(selector), null);
+        await page.waitForSelector(selector, {visible:true});
+        assert.equal(await page.$('#lm-collection-document'), null);
+        assert.equal(await page.$$eval('main h3', nodes => nodes.filter(n => n.textContent.startsWith('Preview dress')).length), 8);
+        assert.equal(await page.evaluate(() => Boolean(window.fixtureKidsReleased)), false);
         assert.equal(await page.evaluate(() => window.fixtureReadinessCalls || 0), 0);
         assert.equal(await page.evaluate(() => window.fixturePageCalls || 0), 0);
         await page.evaluate(() => { window.fixtureKidsReleased = true; window.fixtureVersion++; window.dispatchEvent(new Event('fixture-update')); });
@@ -193,11 +195,31 @@ try {
       assert.deepEqual(await page.evaluate(async () => (await window.axe.run()).violations), []);
       if (path === '/collection/kids') {
         assert.equal(await page.$$eval('main h3', nodes => nodes.filter(n => n.textContent.startsWith('Preview dress')).length), 8);
+        const headingGap = await page.evaluate(() => {
+          const shop = [...document.querySelectorAll('main button')].find(node => node.textContent.startsWith('Shop all '));
+          const heading = [...document.querySelectorAll('main h2')].find(node => node.textContent === 'New Arrivals');
+          return heading && shop ? heading.getBoundingClientRect().top - shop.getBoundingClientRect().bottom : null;
+        });
+        assert.ok(headingGap !== null && headingGap >= 16, 'Kids navigation must not overlap the arrivals heading');
+        await page.evaluate(() => { window.fixtureKidsEmpty = true; window.fixtureVersion++; window.dispatchEvent(new Event('fixture-update')); });
+        await page.waitForFunction(() => [...document.querySelectorAll('main h3')].filter(n => n.textContent.startsWith('Preview dress')).length === 0);
+        assert.notEqual(await page.$(selector), null);
+        await page.evaluate(() => { window.fixtureKidsEmpty = false; window.fixtureVersion++; window.dispatchEvent(new Event('fixture-update')); });
+        await page.waitForFunction(() => [...document.querySelectorAll('main h3')].filter(n => n.textContent.startsWith('Preview dress')).length === 8);
         await page.evaluate(() => { window.fixtureKidsDisabled = true; window.fixtureVersion++; window.dispatchEvent(new Event('fixture-update')); });
         await page.waitForFunction(() => document.querySelector('main')?.textContent.includes('Products are temporarily unavailable'));
         assert.equal(await page.$(selector), null);
         assert.equal(await page.$$eval('main h3', nodes => nodes.filter(n => n.textContent.startsWith('Preview dress')).length), 0);
         await page.evaluate(() => { window.fixtureKidsDisabled = false; window.fixtureVersion++; window.dispatchEvent(new Event('fixture-update')); });
+        await page.waitForSelector(selector, { visible: true });
+        // Returning to Kids creates a fresh page owner, but not a fresh document snapshot.
+        await page.evaluate(() => { window.fixtureKidsReleased = false; window.location.hash = '#shop'; });
+        await page.waitForSelector('main[data-public-page="shop"]', { visible: true });
+        await page.evaluate(() => { window.location.hash = '#collection/kids'; });
+        await page.waitForFunction(() => document.querySelector('main h1')?.textContent === 'Source kids');
+        assert.equal(await page.$(selector), null);
+        assert.equal(await page.$$eval('main h3', nodes => nodes.filter(n => n.textContent.startsWith('Preview dress')).length), 0);
+        await page.evaluate(() => { window.fixtureKidsReleased = true; window.fixtureVersion++; window.dispatchEvent(new Event('fixture-update')); });
         await page.waitForSelector(selector, { visible: true });
       }
       if(collectionPaths.includes(path)) {
@@ -249,6 +271,29 @@ try {
       });
       await page.close();
     }
+  // With initial site content already live, isolate the Kids first-connection
+  // timeout. The verified display must expire rather than remain indefinitely.
+  {
+    const page = await browser.newPage(); await page.setViewport({width:320,height:900});
+    const errors=[];page.on('pageerror',e=>errors.push(e.message));
+    await page.evaluateOnNewDocument(site=>{
+      window.fixtureSite=site;window.fixtureLive=true;window.fixtureVersion=0;
+      window.localStorage.setItem('lm_newsletter_dismissed','true');
+    },site);
+    await page.goto(origin+'/collection/kids',{waitUntil:'domcontentloaded'});
+    await page.waitForSelector('main[data-lm-collection-ready="kids"]',{visible:true});
+    assert.equal(await page.evaluate(()=>Boolean(window.fixtureKidsReleased)),false);
+    await page.waitForFunction(()=>document.querySelector('main')?.textContent.includes('Products are temporarily unavailable'),{timeout:13000});
+    assert.equal(await page.$('main[data-lm-collection-ready="kids"]'),null);
+    assert.equal(await page.$$eval('main h3',nodes=>nodes.filter(n=>n.textContent.startsWith('Preview dress')).length),0);
+    await page.evaluate(()=>{window.fixtureKidsReleased=true;window.fixtureVersion++;window.dispatchEvent(new Event('fixture-update'));});
+    await page.waitForSelector('main[data-lm-collection-ready="kids"]',{visible:true});
+    assert.equal(await page.$$eval('main h3',nodes=>nodes.filter(n=>n.textContent.startsWith('Preview dress')).length),8);
+    assert.equal(await page.evaluate(()=>window.fixtureCommands||0),0);assert.deepEqual(errors,[]);
+    results.push({path:'/collection/kids',width:320,initialTimeout:true,liveRecovery:true,commands:0,errors});
+    await page.close();
+  }
+
   await mkdir('artifacts/lighthouse', { recursive: true });
   await writeFile(
     'artifacts/lighthouse/public-handoff-browser.json',

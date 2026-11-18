@@ -396,8 +396,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
 
       {/* --- LEVEL 1: ROOT VIEW - New Arrivals Feed (Kids) --- */}
       {viewLevel === 'ROOT' && collection === 'kids' && (
-        <section className="px-4 md:px-8 pb-12 md:pb-16 -mt-8 relative z-30">
-          {/* Negative margin to pull it up into the concave scoop if needed, but let's keep it safe below */}
+        <section className="px-4 md:px-8 pb-12 md:pb-16 relative z-30">
           <div className="container mx-auto">
             {storefrontIsLoading ? (
               <ProductLoadingGrid />
