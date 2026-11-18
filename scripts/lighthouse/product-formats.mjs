@@ -4,6 +4,7 @@ import puppeteer from 'puppeteer-core';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
+import { setTimeout, clearTimeout } from 'node:timers';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { URL, pathToFileURL } from 'node:url';
@@ -11,6 +12,8 @@ const directory = 'artifacts/lighthouse/product-formats';
 await mkdir(directory, { recursive: true });
 const provenance = JSON.parse(await readFile('docs/quality/product-format-provenance.json', 'utf8'))
   .records[0];
+const imageManifest = JSON.parse(await readFile('lib/productImageManifest.json', 'utf8'));
+const imageEntry = imageManifest[provenance.source];
 const product = {
   _id: 'fixture-product',
   name: 'Bramwell Brown Leather Sofa',
@@ -99,16 +102,19 @@ const server = createServer(async (req, res) => {
       return res.end(client.outputFiles.find((f) => f.path.endsWith('.js')).text);
     }
     const image = /\.(avif|webp|svg)$/.test(url.pathname);
+    const failureMode = mode.replace('blocked-', '');
+    const proxy = url.pathname.startsWith('/api/download-image');
     const fail =
-      url.pathname.startsWith('/api/download-image') ||
-      (mode === 'allFailed' && /\.(avif|webp)$/.test(url.pathname)) ||
-      (mode === 'avif404' && url.pathname.endsWith('.avif'));
+      proxy ||
+      (failureMode === 'allFailed' && /\.(avif|webp)$/.test(url.pathname)) ||
+      (failureMode === 'avif404' && url.pathname.endsWith('.avif'));
     if (fail) {
-      if (image) trace.push({ path: url.pathname, phase, status: 404 });
+      if (image || proxy)
+        trace.push({ path: url.pathname, kind: proxy ? 'proxy' : 'static', phase, status: 404 });
       res.writeHead(404);
       return res.end();
     }
-    if (mode === 'corrupt' && url.pathname.endsWith('.avif')) {
+    if (failureMode === 'corrupt' && url.pathname.endsWith('.avif')) {
       trace.push({ path: url.pathname, phase, status: 200, corrupt: true });
       res.writeHead(200, { 'Content-Type': 'image/avif' });
       return res.end('invalid-avif');
@@ -148,18 +154,32 @@ const browser = await puppeteer.launch({
 const results = [];
 try {
   for (const width of [390, 844, 1440])
-    for (mode of ['normal', 'disabled', 'avif404', 'corrupt', 'allFailed', 'nojs', 'empty']) {
+    for (mode of [
+      'normal',
+      'disabled',
+      'avif404',
+      'corrupt',
+      'allFailed',
+      'nojs',
+      'empty',
+      'blocked-avif404',
+      'blocked-corrupt',
+      'blocked-allFailed',
+    ]) {
       trace = [];
       phase = 'server';
       const page = await browser.newPage();
       await page.setViewport({ width, height: 900, deviceScaleFactor: 1.75 });
       const errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
-      let held;
+      let captureClient;
+      const clientRequest = new Promise((resolve) => {
+        captureClient = resolve;
+      });
       await page.setRequestInterception(true);
       page.on('request', (r) => {
         if (new URL(r.url()).pathname === '/client.js') {
-          held = r;
+          captureClient(r);
           return;
         }
         void r.continue();
@@ -169,12 +189,28 @@ try {
       if (mode === 'disabled')
         await cdp.send('Emulation.setDisabledImageTypes', { imageTypes: ['avif'] });
       if (mode === 'nojs') await page.setJavaScriptEnabled(false);
-      const navigation = page.goto(`http://127.0.0.1:${server.address().port}/product`, {
-        waitUntil: 'networkidle0',
-      });
-      await page.waitForSelector('#lm-product-document img');
-      await page.waitForFunction(
-        () => document.querySelector('#lm-product-document img')?.complete
+      const navigation = page
+        .goto(`http://127.0.0.1:${server.address().port}/product`, {
+          waitUntil: 'networkidle0',
+        })
+        .then(
+          () => null,
+          (error) => error
+        );
+      const guard = (operation) =>
+        Promise.race([
+          operation,
+          navigation.then((error) => {
+            if (error) throw error;
+            return new Promise(() => {});
+          }),
+        ]);
+      await guard(page.waitForSelector('#lm-product-document img'));
+      await guard(
+        page.waitForFunction(() => {
+          const image = document.querySelector('#lm-product-document img');
+          return image?.complete && image.naturalWidth > 0;
+        })
       );
       const first = await page.$eval('#lm-product-document img', (i) => ({
         src: i.currentSrc,
@@ -183,13 +219,25 @@ try {
         sizes: i.sizes,
       }));
       if (mode !== 'nojs') {
-        await page.waitForFunction(() => !!document.querySelector('script[src="/client.js"]'));
-        assert.ok(held);
-        phase = 'client';
-        await held.continue();
+        let timer;
+        const held = await guard(
+          Promise.race([
+            clientRequest,
+            new Promise((_, reject) => {
+              timer = setTimeout(() => reject(Error('client.js request was not observed')), 30000);
+            }),
+          ])
+        ).finally(() => clearTimeout(timer));
+        if (mode.startsWith('blocked-')) await held.abort('blockedbyclient');
+        else {
+          phase = 'client';
+          await held.continue();
+        }
       }
-      await navigation;
-      const selector = mode === 'nojs' ? '#lm-product-document img' : '#root img';
+      const navigationError = await navigation;
+      if (navigationError) throw navigationError;
+      const selector =
+        mode === 'nojs' || mode.startsWith('blocked-') ? '#lm-product-document img' : '#root img';
       await page.waitForFunction(
         (selector) => {
           const i = document.querySelector(selector);
@@ -208,9 +256,34 @@ try {
         directory + '/handoff-last-state.json',
         JSON.stringify({ width, mode, first, last, trace, errors }, null, 2)
       );
-      const expected =
-        mode === 'normal' ? '.avif' : ['allFailed', 'empty'].includes(mode) ? '.svg' : '.webp';
-      assert.ok(last.src.endsWith(expected), JSON.stringify({ mode, last }));
+      const failureMode = mode.replace('blocked-', '');
+      const expectedPaths =
+        failureMode === 'normal'
+          ? imageEntry.widths.map((w) => `${provenance.base}-${w}.avif`)
+          : ['allFailed', 'empty'].includes(failureMode)
+            ? ['/images/product-unavailable.svg']
+            : imageEntry.widths.map((w) => `${imageEntry.base}-${w}.webp`);
+      const layoutWidth = await page.evaluate(() => document.body.getBoundingClientRect().width);
+      for (const image of [first, last]) {
+        assert.ok(
+          expectedPaths.includes(new URL(image.src).pathname),
+          JSON.stringify({ mode, image, expectedPaths })
+        );
+        const expectedWidth =
+          width >= 768 ? (Math.min(layoutWidth - 48, 1152) - 32) / 2 : layoutWidth - 48;
+        assert.ok(
+          image.width > 0 &&
+            image.height > 0 &&
+            Math.abs(image.width - image.height) <= 1 &&
+            Math.abs(image.width - expectedWidth) <= 1,
+          JSON.stringify({ mode, image, expectedWidth })
+        );
+      }
+      assert.equal(
+        trace.filter((item) => item.kind === 'proxy').length,
+        mode === 'allFailed' ? 1 : 0,
+        'Bounded image proxy recovery'
+      );
       assert.ok(
         Math.abs(first.width - last.width) <= 1 && Math.abs(first.height - last.height) <= 1,
         JSON.stringify({ width, mode, first, last })

@@ -69,6 +69,13 @@ export function productDocument(
   );
   html = html.replace(/<!--home-document-start-->[\s\S]*?<!--home-document-end-->/, '');
   if (source) {
+    // This parser-time recovery works even when the storefront entry cannot load.
+    // It is scoped to this initial document; client images keep their own retry policy.
+    html = html.replace(
+      '</head>',
+      () =>
+        `<script id="lm-product-image-recovery">document.addEventListener('error',function(event){var image=event.target;if(!(image instanceof HTMLImageElement)||!image.closest('#lm-product-document'))return;var source=image.parentElement&&image.parentElement.querySelector('source');if(source){source.remove();return;}if(image.getAttribute('src')==='/images/product-unavailable.svg')return;image.removeAttribute('srcset');image.removeAttribute('sizes');image.alt='Product image unavailable';image.src='/images/product-unavailable.svg';},true);</script></head>`
+    );
     // Evaluate responsive candidates after the viewport metadata, including on mobile.
     // The adaptive picture selects the format in the parser. A separate AVIF preload
     // can fetch an unused resource when image decoding support is disabled.

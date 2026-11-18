@@ -1,4 +1,4 @@
-/* global window, document, Event */
+/* global window, document, Event, requestAnimationFrame */
 import path from 'node:path';
 import { URL } from 'node:url';
 import { build } from 'esbuild';
@@ -35,7 +35,7 @@ const built = await build({
           resolveDir: process.cwd(),
           contents: {
             query: `import{getFunctionName}from'convex/server';export function useRecoverableQuery(ref,args){const name=getFunctionName(ref);return {data:name==='dlvEstimates:enabled'?true:window.fixtureProfile,status:window.fixtureUnavailable?'unavailable':'ready',retry(){window.fixtureRetries=(window.fixtureRetries||0)+1}}}`,
-            request: `export function useDeliveryRequest(operation){return async input=>{if(operation!=='estimate')throw Error('No business commands');window.fixtureCalls.push(input);if(window.fixtureHold)return new Promise(resolve=>window.fixtureResolve=resolve);if(window.fixtureError)throw Error('Synthetic unavailable service');return window.fixtureResponse}}`,
+            request: `export function useDeliveryRequest(operation){return async input=>{if(operation!=='estimate')throw Error('No business commands');const index=window.fixtureCalls.push(input)-1;if(window.fixtureHold)return new Promise(resolve=>window.fixtureResolvers[index]=resolve).then(value=>{window.fixtureSettled.push(index);return value});if(window.fixtureError)throw Error('Synthetic unavailable service');return window.fixtureResponse}}`,
             visitor: `export const visitorId=()=> 'fixture-visitor';`,
           }[a.path],
         }));
@@ -122,6 +122,15 @@ try {
         };
         window.fixtureError = s === 'error';
         window.fixtureHold = ['stale', 'pending-focus'].includes(s);
+        window.fixtureResolvers = [];
+        window.fixtureSettled = [];
+        window.fixtureResolve = async (index, value) => {
+          window.fixtureResolvers[index](value);
+          await Promise.resolve();
+          await new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve))
+          );
+        };
       }, scenario);
       await page.addStyleTag({ content: css });
       for (const f of built.outputFiles.filter((f) => f.path.endsWith('.css')))
@@ -154,18 +163,28 @@ try {
           await page.waitForFunction(() =>
             document.querySelector('button[type=submit]').textContent.includes('Estimating')
           );
-          const focus = await page.evaluate(() => document.activeElement.tagName);
+          const focus = await page.evaluate(
+            () => document.activeElement === document.querySelector('button[type=submit]')
+          );
           console.log(JSON.stringify({ width, scenario, pendingFocus: focus }));
           {
-            assert.equal(focus, 'BUTTON');
-            await page.click('button[type=submit]');
+            assert.equal(focus, true);
+            await page.$eval('button[type=submit]', (button) => button.click());
+            assert.equal(
+              await page.evaluate(
+                () => document.activeElement === document.querySelector('button[type=submit]')
+              ),
+              true
+            );
             assert.equal(await page.evaluate(() => window.fixtureCalls.length), 1);
           }
-          await page.evaluate(() => window.fixtureResolve(window.fixtureResponse));
+          await page.evaluate(() => window.fixtureResolve(0, window.fixtureResponse));
           await page.waitForFunction(() => document.body.textContent.includes('$59.99'));
-          const resolvedFocus = await page.evaluate(() => document.activeElement.tagName);
+          const resolvedFocus = await page.evaluate(
+            () => document.activeElement === document.querySelector('button[type=submit]')
+          );
           console.log(JSON.stringify({ width, scenario, resolvedFocus }));
-          assert.equal(resolvedFocus, 'BUTTON');
+          assert.equal(resolvedFocus, true);
         } else if (['invalid-zip', 'invalid-packs', 'error'].includes(scenario)) {
           await page.waitForSelector('[role=alert]');
           assert.equal(
@@ -180,8 +199,29 @@ try {
           await page.click('input[autocomplete="postal-code"]', { clickCount: 3 });
           await page.keyboard.press('Backspace');
           await page.type('input[autocomplete="postal-code"]', '10001');
-          await page.evaluate(() => window.fixtureResolve(window.fixtureResponse));
-          await page.waitForFunction(() => !document.body.textContent.includes('Estimating'));
+          await page.click('button[type=submit]');
+          await page.waitForFunction(() => window.fixtureCalls.length === 2);
+          await page.evaluate(() => window.fixtureResolve(0, window.fixtureResponse));
+          assert.deepEqual(await page.evaluate(() => window.fixtureSettled), [0]);
+          assert.equal(
+            await page.$eval('button[type=submit]', (button) => button.getAttribute('aria-busy')),
+            'true'
+          );
+          assert.ok(
+            await page.$eval('button[type=submit]', (button) =>
+              button.textContent.includes('Estimating')
+            )
+          );
+          await page.$eval('button[type=submit]', (button) => button.click());
+          assert.equal(await page.evaluate(() => window.fixtureCalls.length), 2);
+          assert.equal(
+            await page.evaluate(() => document.body.textContent.includes('$59.99')),
+            false
+          );
+          await page.evaluate(() =>
+            window.fixtureResolve(1, { ...window.fixtureResponse, deliveryChargeMinor: 19999 })
+          );
+          await page.waitForFunction(() => document.body.textContent.includes('$199.99'));
           assert.equal(
             await page.evaluate(() => document.body.textContent.includes('$59.99')),
             false
@@ -214,10 +254,12 @@ try {
           }
         }
       } else {
+        const expectedMessage =
+          scenario === 'unavailable' ? 'currently unavailable' : 'Add this item to your project';
         await page.waitForFunction(
-          () =>
-            document.body.textContent.includes('currently unavailable') ||
-            document.body.textContent.includes('Add this item to your project')
+          (message) => document.body.textContent.includes(message),
+          {},
+          expectedMessage
         );
         assert.equal(await page.evaluate(() => window.fixtureCalls.length), 0);
       }

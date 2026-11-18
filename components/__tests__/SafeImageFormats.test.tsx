@@ -63,9 +63,12 @@ it('keeps unknown remote uploads unchanged and preserves bounded proxy recovery'
     <SafeImage src="https://example.com/photo.png" alt="Selected product" onError={onError} />
   );
   expect(document.querySelector('source')).toBeNull();
+  expect(screen.getByRole('img')).toHaveAttribute('src', 'https://example.com/photo.png');
   error('https://example.com/photo.png');
+  expect(onError).not.toHaveBeenCalled();
   expect(screen.getByRole('img').getAttribute('src')).toContain('/api/download-image?');
   error('https://fixture.invalid/api/download-image');
+  expect(onError).not.toHaveBeenCalled();
   expect(screen.getByRole('img')).toHaveAttribute('src', PRODUCT_IMAGE_FALLBACK);
   error('https://fixture.invalid/images/product-unavailable.svg');
   expect(onError).toHaveBeenCalledTimes(1);

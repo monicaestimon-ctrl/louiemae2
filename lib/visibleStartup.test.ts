@@ -18,6 +18,7 @@ beforeEach(() => {
   vi.stubGlobal(
     'PerformanceObserver',
     class {
+      static supportedEntryTypes = ['paint'];
       constructor(callback: typeof notify) {
         notify = callback;
       }
@@ -85,6 +86,20 @@ describe('visible server document startup', () => {
     expect(start).toHaveBeenCalledTimes(1);
     expect(disconnect).toHaveBeenCalled();
   });
+  it('starts immediately when the observer exists without paint support', () => {
+    vi.stubGlobal(
+      'PerformanceObserver',
+      class {
+        static supportedEntryTypes = ['resource'];
+        observe = observe;
+      }
+    );
+    const start = vi.fn();
+    startAfterVisibleContent(start);
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(observe).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
   it('bounds waiting and ignores unrelated paint entries', () => {
     const start = vi.fn();
     startAfterVisibleContent(start);
@@ -96,7 +111,7 @@ describe('visible server document startup', () => {
     paint();
     expect(start).toHaveBeenCalledTimes(1);
   });
-  it.each(['pointerdown', 'keydown', 'hashchange', 'popstate'])(
+  it.each(['pointerdown', 'keydown', 'click', 'hashchange', 'popstate'])(
     'starts immediately on %s without consuming the event',
     (event) => {
       const start = vi.fn();
@@ -118,13 +133,32 @@ describe('visible server document startup', () => {
     expect(start).toHaveBeenCalledTimes(1);
   });
   it('cancels pending observation, intent listeners and timeout', () => {
+    const added = vi.spyOn(window, 'addEventListener');
+    const removed = vi.spyOn(window, 'removeEventListener');
+    const documentAdded = vi.spyOn(document, 'addEventListener');
+    const documentRemoved = vi.spyOn(document, 'removeEventListener');
     const start = vi.fn();
     const cancel = startAfterVisibleContent(start);
+    expect(vi.getTimerCount()).toBe(1);
     cancel();
+    expect(vi.getTimerCount()).toBe(0);
+    for (const [event, listener] of added.mock.calls)
+      expect(removed).toHaveBeenCalledWith(event, listener, true);
+    const visibility = documentAdded.mock.calls.find(([event]) => event === 'visibilitychange');
+    expect(documentRemoved).toHaveBeenCalledWith('visibilitychange', visibility?.[1]);
     paint();
     window.dispatchEvent(new Event('keydown'));
     vi.runAllTimers();
     expect(start).not.toHaveBeenCalled();
     expect(disconnect).toHaveBeenCalled();
+  });
+  it('captures click-only activation on a descendant without cancelling it', () => {
+    const start = vi.fn();
+    document.querySelector('main')!.innerHTML = '<button><span>Open</span></button>';
+    startAfterVisibleContent(start);
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    document.querySelector('span')!.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(start).toHaveBeenCalledTimes(1);
   });
 });

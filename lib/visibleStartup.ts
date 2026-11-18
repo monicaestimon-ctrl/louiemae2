@@ -9,7 +9,8 @@ export function startAfterVisibleContent(start: () => void, timeoutMs = 1500): (
   if (
     !content ||
     document.visibilityState !== 'visible' ||
-    typeof window.PerformanceObserver !== 'function'
+    typeof window.PerformanceObserver !== 'function' ||
+    !window.PerformanceObserver.supportedEntryTypes?.includes('paint')
   ) {
     start();
     return () => {};
@@ -17,7 +18,7 @@ export function startAfterVisibleContent(start: () => void, timeoutMs = 1500): (
   let stopped = false;
   let observer: PerformanceObserver | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const events = ['pointerdown', 'keydown', 'hashchange', 'popstate'] as const;
+  const events = ['pointerdown', 'keydown', 'click', 'hashchange', 'popstate'] as const;
   const clean = () => {
     observer?.disconnect();
     if (timer !== undefined) clearTimeout(timer);
