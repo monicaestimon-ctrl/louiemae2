@@ -32,6 +32,13 @@ export function reviewCartItem(item: CartItem, value: unknown): CurrentCartRevie
       ? (value as Record<string, unknown>)
       : null;
   const maximum = envelope?.maximum;
+  const expiresAt = envelope?.expiresAt;
+  if (
+    expiresAt !== undefined &&
+    expiresAt !== null &&
+    (typeof expiresAt !== 'number' || !Number.isSafeInteger(expiresAt) || expiresAt <= Date.now())
+  )
+    return blocked('error');
   if (
     !envelope ||
     !Number.isSafeInteger(maximum) ||

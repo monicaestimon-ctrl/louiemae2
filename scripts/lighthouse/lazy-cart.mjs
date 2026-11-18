@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 const stubs = {
   auth: 'export function useAuthToken(){return null}',
   convex:
-    `import {useSyncExternalStore} from 'react';const base={_id:'fixture',name:'Fixture chair',description:'',category:'Furniture',collection:'furniture',price:100,images:[],inStock:true,fulfillmentProvider:'zuo',variants:[{id:'fixture-variant',name:'Standard',priceAdjustment:0,inStock:true,quantityRules:{minimum:1,increment:1}}]};const subscribe=callback=>{window.addEventListener('fixture-change',callback);return()=>window.removeEventListener('fixture-change',callback)};export function useQuery(){return undefined} export function useQueries(queries){useSyncExternalStore(subscribe,()=>window.fixtureVersion||0);return Object.fromEntries(Object.entries(queries).map(([key,{args}])=>[key,args.id==='fixture'?{product:window.fixtureProduct===undefined?base:window.fixtureProduct,quantity:args.quantity,variantId:args.variantId,maximum:9999}:undefined]))} export function useMutation(){return()=>{throw Error("Unexpected fixture mutation")}}`,
+    `import {useSyncExternalStore} from 'react';const base={_id:'fixture',name:'Fixture chair',description:'',category:'Furniture',collection:'furniture',price:100,images:[],inStock:true,fulfillmentProvider:'zuo',variants:[{id:'fixture-variant',name:'Standard',priceAdjustment:0,inStock:true,quantityRules:{minimum:1,increment:1}}]};const subscribe=callback=>{window.addEventListener('fixture-change',callback);return()=>window.removeEventListener('fixture-change',callback)};export function useQuery(){return undefined} export function useQueries(queries){useSyncExternalStore(subscribe,()=>window.fixtureVersion||0);return Object.fromEntries(Object.entries(queries).map(([key,{args}])=>[key,args.id==='fixture'?{product:window.fixtureProduct===undefined?base:window.fixtureProduct,quantity:args.quantity,variantId:args.variantId,maximum:9999,expiresAt:window.fixtureExpiry??null}:undefined]))} export function useMutation(){return()=>{throw Error("Unexpected fixture mutation")}}`,
 };
 const fixture = await build({
   stdin: {
@@ -267,6 +267,11 @@ try {
     await page.waitForFunction(() => document.querySelector('#count').textContent === '5');
     assert.equal(await page.$eval(reviewSelector, node => node.disabled), false);
     assert.equal(await page.$eval('input[autocomplete=name]', node => node.value), 'Retained customer');
+    await page.evaluate(() => { window.fixtureExpiry = Date.now() + 1000; window.fixtureVersion = (window.fixtureVersion || 0) + 1; window.dispatchEvent(new Event('fixture-change')); });
+    await page.waitForFunction(() => document.querySelector('form[aria-label="Delivery address"] button[type=submit]').disabled);
+    assert.equal(await page.$eval('input[autocomplete=name]', node => node.value), 'Retained customer');
+    await page.evaluate(() => { window.fixtureExpiry = Date.now() + 60000; window.fixtureVersion = (window.fixtureVersion || 0) + 1; window.dispatchEvent(new Event('fixture-change')); });
+    await page.waitForFunction(() => !document.querySelector('form[aria-label="Delivery address"] button[type=submit]').disabled);
     await page.evaluate(() => { window.fixtureProduct = { ...window.fixtureProduct, inStock: false }; window.fixtureVersion = (window.fixtureVersion || 0) + 1; window.dispatchEvent(new Event('fixture-change')); });
     await page.waitForFunction(() => document.body.textContent.includes('cannot currently be purchased'));
     assert.equal(await page.$eval(reviewSelector, node => node.disabled), true);
@@ -279,7 +284,7 @@ try {
     await page.waitForFunction(() => !document.querySelector('dialog[open]'));
     assert.equal(await page.evaluate(() => document.activeElement.id), 'open');
     assert.deepEqual(errors, []); assert.equal(commands, 0);
-    results.push({ scenario: 'current-review', width, explicitPriceAcceptance: true, explicitQuantityCorrection: true, withdrawalBlocksCheckout: true, addressRetained: true, axeViolations: 0, commands, errors });
+    results.push({ scenario: 'current-review', width, explicitPriceAcceptance: true, explicitQuantityCorrection: true, expiryBlocksCheckout: true, withdrawalBlocksCheckout: true, addressRetained: true, axeViolations: 0, commands, errors });
     await page.close();
   }
   await writeFile(

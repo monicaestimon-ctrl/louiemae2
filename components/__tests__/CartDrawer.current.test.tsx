@@ -12,6 +12,7 @@ const source = vi.hoisted(() => ({
   token: null as string | null,
   credit: undefined as unknown,
   failAttemptZero: false,
+  expiresAt: null as number | null,
 }));
 vi.mock('../../lib/delivery/checkoutReturn', () => ({
   rememberCheckout: source.remember,
@@ -34,7 +35,13 @@ vi.mock('convex/react', () => ({
           key,
           product === undefined || product === null || product instanceof Error
             ? product
-            : { product, variantId: args.variantId, quantity: args.quantity, maximum: 20 },
+            : {
+                product,
+                variantId: args.variantId,
+                quantity: args.quantity,
+                maximum: 20,
+                expiresAt: source.expiresAt,
+              },
         ];
       })
     );
@@ -93,6 +100,7 @@ function seed(quantity = 3, provider = 'ashcroft') {
 beforeEach(() => {
   localStorage.clear();
   source.details = { chair: product };
+  source.expiresAt = null;
   source.token = null;
   source.credit = undefined;
   source.failAttemptZero = false;
@@ -267,4 +275,54 @@ it('preserves an oversized saved cart and gives removal guidance instead of an i
   expect(screen.getByText(/Retry cannot resolve this limit/)).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Retry current product details' })).toBeNull();
   expect(JSON.parse(localStorage.getItem('louiemae_ashcroft_cart_v1')!)).toHaveLength(31);
+});
+
+it('refreshes and blocks an open cart when its inventory deadline passes', async () => {
+  vi.useFakeTimers();
+  try {
+    source.expiresAt = Date.now() + 1000;
+    seed();
+    render(<App />);
+    fireEvent.click(screen.getByText('Open cart'));
+    expect(screen.getByRole('button', { name: 'Proceed to Checkout' })).toBeEnabled();
+    await act(async () => {
+      vi.advanceTimersByTime(999);
+    });
+    expect(screen.getByRole('button', { name: 'Proceed to Checkout' })).toBeEnabled();
+    await act(async () => {
+      vi.advanceTimersByTime(2);
+    });
+    expect(screen.getByRole('button', { name: 'Proceed to Checkout' })).toBeDisabled();
+    expect(
+      source.queries.mock.calls.some(([queries]) =>
+        Object.values(queries as Record<string, { args: { attempt?: number } }>).some(
+          (query) => query.args.attempt === 1
+        )
+      )
+    ).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+it('refreshes expired evidence when a suspended tab regains focus', () => {
+  vi.useFakeTimers();
+  try {
+    const now = Date.now();
+    source.expiresAt = now + 1000;
+    seed();
+    render(<App />);
+    fireEvent.click(screen.getByText('Open cart'));
+    vi.setSystemTime(now + 1001);
+    fireEvent.focus(window);
+    expect(screen.getByRole('button', { name: 'Proceed to Checkout' })).toBeDisabled();
+    expect(
+      source.queries.mock.calls.some(([queries]) =>
+        Object.values(queries as Record<string, { args: { attempt?: number } }>).some(
+          (query) => query.args.attempt === 1
+        )
+      )
+    ).toBe(true);
+  } finally {
+    vi.useRealTimers();
+  }
 });
