@@ -94,15 +94,13 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
       <FadeIn delay={index * 100} className="mb-16">
         {/* Clean Section Header */}
         <div className="flex items-center justify-between mb-6 border-b border-earth/10 pb-2">
-          <div
-            className="group cursor-pointer flex items-center gap-3"
-            onClick={() => handleCategoryChange(category.title)}
-          >
-            <h3 className="font-serif text-2xl md:text-3xl text-earth transition-colors group-hover:text-bronze">
+          <h3 className="font-serif text-2xl md:text-3xl text-earth">
+            <button type="button" className="group min-h-11 flex items-center gap-3 text-left transition-colors hover:text-bronze"
+              onClick={() => handleCategoryChange(category.title)}>
               {category.title}
-            </h3>
-            <ArrowUpRight className="w-5 h-5 text-muted-earth transition-all group-hover:text-bronze group-hover:translate-x-1 group-hover:-translate-y-1" />
-          </div>
+              <ArrowUpRight aria-hidden="true" className="w-5 h-5 text-muted-earth transition-all group-hover:text-bronze group-hover:translate-x-1 group-hover:-translate-y-1" />
+            </button>
+          </h3>
 
           <button
             onClick={() => handleCategoryChange(category.title)}
@@ -487,6 +485,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                 {categories.map(cat => (
                   <button
                     key={cat}
+                    aria-pressed={selectedCategory === cat}
                     onClick={() => handleCategoryChange(cat)}
                     className={`whitespace-nowrap text-[10px] uppercase tracking-widest transition-all duration-300 px-3 py-1.5 rounded-full ${selectedCategory === cat ? 'bg-white/10 text-cream border border-white/20 shadow-inner' : 'text-muted-cream hover:text-cream hover:bg-white/5 border border-transparent'}`}
                   >
@@ -501,7 +500,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                 <select
                   aria-label="Sort products" value={sortOption}
                   onChange={(e) => setSortOption(e.target.value as 'newest' | 'price-asc' | 'price-desc')}
-                  className="bg-transparent text-[10px] uppercase tracking-widest text-bronze focus:outline-none cursor-pointer appearance-none ml-1 font-medium"
+                  className="bg-transparent text-[10px] uppercase tracking-widest text-cream cursor-pointer appearance-none ml-1 font-medium"
                 >
                   <option value="newest" className="bg-stone-900 text-cream">Newest</option>
                   <option value="price-asc" className="bg-stone-900 text-cream">Price: Low to High</option>
@@ -534,7 +533,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                     <div className="relative z-10 w-full p-12 md:p-24 flex flex-col items-center justify-center text-center backdrop-blur-2xl bg-earth/15 border border-white/10 rounded-[2rem]">
                       {/* Subtle light effect inside the card */}
                       <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
-                      <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl opacity-50 -z-10 translate-x-1/3 -translate-y-1/3" />
+                      <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-[2rem] pointer-events-none"><div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl opacity-50 -z-10 translate-x-1/3 -translate-y-1/3" /></div>
 
                       <h2 className="font-serif text-4xl md:text-6xl text-white mb-6 tracking-tight">Coming Soon</h2>
                       <p className="text-sm md:text-xs text-white/60 uppercase tracking-[0.2em] mb-12 max-w-md mx-auto font-light leading-relaxed">
@@ -556,7 +555,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                       <button
                         className={`block w-full relative ${collection === 'furniture' || collection === 'decor' ? 'aspect-square' : 'aspect-[3/4]'} overflow-hidden bg-[#f3efe8] mb-4 rounded-sm`}
                         type="button"
-                        aria-label={`View ${product.name}`}
+                        aria-label={`Quick View ${product.name}`}
                         onClick={() => handleSelectProduct(product)}
                       >
                         {product.isNew && (
