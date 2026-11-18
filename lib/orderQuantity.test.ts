@@ -5,6 +5,12 @@ it('preserves selling quantities without guessing a physical pack basis', () => 
   expect(publicQuantityRules(3, 2)).toEqual({ minimum: 3, increment: 2 });
   expect(publicQuantityRules(1, 1, 2)).toEqual({ minimum: 1, increment: 1, piecesPerPack: 2 });
 });
+it('rejects a minimum that no checkout quantity can satisfy', () => {
+  expect(publicQuantityRules(9999, 1)).toEqual({ minimum: 9999, increment: 1 });
+  expect(publicQuantityRules(10000, 1)).toBeUndefined();
+  expect(() => checkQuantity(9999, { minimum: 9999, increment: 1 })).not.toThrow();
+  expect(() => checkQuantity(10000, { minimum: 10000, increment: 1 })).toThrow();
+});
 it.each([
   [0, 1],
   [-1, 1],

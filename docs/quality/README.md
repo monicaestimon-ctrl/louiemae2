@@ -462,7 +462,7 @@ CodeRabbit identified two valid edge cases in PR321. The decoder now drops unusa
 
 ### Current selling quantities: backend-first cart contract
 
-PR321 merged as `97749074daf399dfec944d7ddd14b3ef99ca2a7e` after CI44251206889 passed and both CodeRabbit findings were fixed and resolved. Its exact production commit passed three Kids viewport checks with eight cards, keyboard details, preview purchase controls disabled and zero axe violations/page errors; the mobile screenshot was reviewed. Main CI44252495145 and controlled audit44252659803 remain separate pending gates.
+PR321 merged as `97749074daf399dfec944d7ddd14b3ef99ca2a7e` after CI44251206889 passed and both CodeRabbit findings were fixed and resolved. Its exact production commit passed three Kids viewport checks with eight cards, keyboard details, preview purchase controls disabled and zero axe violations/page errors; the mobile screenshot was reviewed. Main CI44252495145 passed, including backend deployment. Controlled audit44252659803 failed the unchanged acceptance gate: all120 runs were healthy with Accessibility, Best Practices and SEO100, but only14 of24 route/device batches passed Performance. The failed reports are retained; full-spec acceptance remains open.
 
 The public retail detail and listing adapters now expose validated `quantityRules` for each variant: minimum and increment, plus physical pieces per pack only when the current Zuo catalog record supplies that basis. Ashcroft selling quantities do not imply a physical pack size. The existing approved prices and availability authorities remain unchanged.
 
@@ -471,3 +471,6 @@ Zuo rules come from the same current sellable variant used to validate the appro
 This additive backend phase precedes cart controls that consume the contract. It does not change supplier pricing, import evidence, publish draft products or grant checkout eligibility. A subsequent frontend phase must display pack/minimum/increment rules, explicitly correct invalid combined quantities, refresh current details and acknowledge changed totals before payment.
 
 Validation:97 quantity, commerce, catalog and checkout tests pass against the integrated sources with one pre-existing skipped test. Application and strict backend types and ESLint pass against the integrated sources. CI and deployed backend verification remain release gates. Tests include minimum3/increment2, malformed source rules, stale snapshot packing superseded by current Zuo data, omitted unknown Ashcroft physical-unit basis, and no Stripe session creation during invalid-quantity checks. Production checkout remains subject to its existing gates; no financial or supplier command was used for verification.
+
+
+PR322 review fixes: the public minimum cannot exceed the shared checkout maximum of9,999. Boundary tests cover9,999 and10,000. Malformed minimum0 and impossible minimum10,000 with otherwise sufficient synthetic stock now exercise the HTTP checkout handler as well as the snapshot mutation: both are rejected before the mocked Stripe session creator is called. All98 focused tests pass with one pre-existing skip; these are local synthetic checks, not real payments.

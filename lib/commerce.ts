@@ -1,3 +1,4 @@
+import { MAX_ORDER_QUANTITY } from './orderQuantity';
 export type Provider = 'cj' | 'ashcroft' | 'owner_managed' | 'zuo';
 export type Channel = 'retail' | 'house';
 export type CommerceVariant = {
@@ -134,7 +135,7 @@ export function checkQuantity(
     !Number.isSafeInteger(variant.minimum) || variant.minimum < 1 ||
     !Number.isSafeInteger(variant.increment) || variant.increment < 1 ||
     quantity < variant.minimum ||
-    quantity > 9999 ||
+    quantity > MAX_ORDER_QUANTITY ||
     (quantity - variant.minimum) % variant.increment !== 0
   )
     throw new Error('Check the quantity, minimum and order increment.');

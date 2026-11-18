@@ -106,7 +106,7 @@ describe('Ashcroft retail checkout', () => {
       source: 'Synthetic quantity contract',
       sha256: 'c'.repeat(64),
       observedAt: Date.now() - 1000,
-      rows: [{ sku: 'SOF00401401', quantity: 100 }],
+      rows: [{ sku: 'SOF00401401', quantity: 20000 }],
     });
     await t.run(async (ctx) => {
       const row = (await ctx.db.get(listing))!;
@@ -132,26 +132,30 @@ describe('Ashcroft retail checkout', () => {
       items: [{ productId: id, variantId: 'tan', quantity: 5 }],
     });
     expect(valid.items[0]).toMatchObject({ quantity: 5, price: detail!.price });
-    await t.run(async (ctx) => {
-      const row = (await ctx.db.get(listing))!;
-      await ctx.db.patch(listing, {
-        snapshot: {
-          ...row.snapshot,
-          variants: row.snapshot.variants.map((v) => ({ ...v, minimum: 0 })),
-        },
+    for (const minimum of [0, 10000]) {
+      await t.run(async (ctx) => {
+        const row = (await ctx.db.get(listing))!;
+        await ctx.db.patch(listing, {
+          snapshot: {
+            ...row.snapshot,
+            variants: row.snapshot.variants.map((v) => ({ ...v, minimum })),
+          },
+        });
       });
-    });
-    expect((await t.query(api.products.getStorefrontDetail, { id }))?.inStock).toBe(false);
-    expect(
-      (await t.query(api.retailLaunch.catalog, { paginationOpts: { cursor: null, numItems: 20 } }))
-        .page[0].variants[0].purchasable,
-    ).toBe(false);
-    await expect(
-      t.mutation(internal.retailLaunch.createSnapshot, {
-        items: [{ productId: id, variantId: 'tan', quantity: 1 }],
-      }),
-    ).rejects.toThrow(/quantity/);
-    expect(stripe.create).not.toHaveBeenCalled();
+      expect((await t.query(api.products.getStorefrontDetail, { id }))?.inStock).toBe(false);
+      expect(
+        (await t.query(api.retailLaunch.catalog, { paginationOpts: { cursor: null, numItems: 20 } }))
+          .page[0].variants[0].purchasable,
+      ).toBe(false);
+      await expect(
+        t.mutation(internal.retailLaunch.createSnapshot, {
+          items: [{ productId: id, variantId: 'tan', quantity: 1 }],
+        }),
+      ).rejects.toThrow(/quantity/);
+      const rejected = await checkout(t, [{ productId: id, variantId: 'tan', quantity: 1 }]);
+      expect(rejected.status).toBe(409);
+      expect(stripe.create).not.toHaveBeenCalled();
+    }
   });
   it('uses stored prices, per-unit delivery, and supplier mapping despite client manipulation', async () => {
     const t = convexTest(schema, modules);
