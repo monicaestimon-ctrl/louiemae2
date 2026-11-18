@@ -14,7 +14,7 @@ it('contains failed drawer imports and preserves saved items', async () => {
   const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
   localStorage.setItem(
     'louiemae_ashcroft_cart_v1',
-    JSON.stringify([{ product: { id: 'fixture', name: 'Saved chair', price: 100 }, quantity: 2 }])
+    JSON.stringify([{ product: { id: 'fixture', name: 'Saved chair', price: 100, fulfillmentProvider: 'ashcroft' }, quantity: 2 }])
   );
   render(
     <CartProvider>

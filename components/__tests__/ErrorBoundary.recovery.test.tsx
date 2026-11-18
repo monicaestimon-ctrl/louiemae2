@@ -13,7 +13,7 @@ function Shell({ route = 'home' }: { route?: string }) {
 }
 beforeEach(() => {
   failing = true;
-  localStorage.setItem('louiemae_ashcroft_cart_v1', JSON.stringify([{ product: { id: 'chair', price: 100 }, quantity: 2 }]));
+  localStorage.setItem('louiemae_ashcroft_cart_v1', JSON.stringify([{ product: { id: 'chair', name: 'Chair', price: 100, fulfillmentProvider: 'ashcroft' }, quantity: 2 }]));
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
 });
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); });

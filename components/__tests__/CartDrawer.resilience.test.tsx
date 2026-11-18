@@ -8,6 +8,7 @@ import { CartDrawer } from '../cart/CartDrawer';
 
 const mocks = vi.hoisted(() => ({
   credit: undefined as unknown,
+  product: undefined as unknown,
   queries: vi.fn(),
   token: 'signed-in',
   checkoutFails: false,
@@ -16,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('convex/react', () => ({
   useQueries: (queries: unknown) => {
     mocks.queries(queries);
-    return { credit: mocks.credit };
+    return Object.fromEntries(Object.entries(queries as Record<string,{args:{id?:string;variantId?:string;quantity?:number}}>).map(([key,{args}])=>[key,key==='credit'?mocks.credit:mocks.product===undefined || mocks.product===null || mocks.product instanceof Error?mocks.product:{product:mocks.product,variantId:args.variantId,quantity:args.quantity,maximum:20}]));
   },
 }));
 vi.mock('@convex-dev/auth/react', () => ({ useAuthToken: () => mocks.token }));
@@ -79,11 +80,12 @@ function App() {
   );
 }
 function seed(provider = 'ashcroft') {
+  mocks.product = {id:'chair',name:'Chair',description:'',images:[],category:'Chair',collection:'furniture',price:100,inStock:true,fulfillmentProvider:provider,variants:[{id:'standard',name:'Standard',inStock:true,priceAdjustment:0,quantityRules:{minimum:1,increment:1}}]};
   localStorage.setItem(
     'louiemae_ashcroft_cart_v1',
     JSON.stringify([
       {
-        product: { id: 'chair', name: 'Chair', price: 100, fulfillmentProvider: provider },
+        product: mocks.product,
         quantity: 2,
       },
     ])

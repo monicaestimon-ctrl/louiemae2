@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 assert.ok(existsSync('dist/index.html'), 'Missing dist/index.html: run npm run build before the product runtime check.');
 
 const output = 'artifacts/lighthouse/product-runtime';
-await build({ entryPoints: ['lib/catalogVersion.ts', 'lib/kidsInitialPreview.ts', 'lib/serverPublicInitialData.ts', 'lib/publicInitialData.ts', 'components/JournalLead.ts', 'components/CollectionRootHero.ts', 'api/journal.ts', 'lib/serverJournalDocument.ts', 'lib/journalContent.ts', 'lib/journalUrl.ts', 'api/product.ts', 'api/collection.ts', 'api/page.ts', 'lib/serverPageDocument.ts', 'lib/serverCollectionDocument.ts', 'lib/collectionId.ts', 'lib/productCategories.ts', 'lib/serverProductDocument.ts', 'lib/publicProductBootstrap.ts', 'lib/responsiveImage.ts', 'lib/productMetadata.ts'],
+await build({ entryPoints: ['lib/orderQuantity.ts', 'lib/catalogVersion.ts', 'lib/kidsInitialPreview.ts', 'lib/serverPublicInitialData.ts', 'lib/publicInitialData.ts', 'components/JournalLead.ts', 'components/CollectionRootHero.ts', 'api/journal.ts', 'lib/serverJournalDocument.ts', 'lib/journalContent.ts', 'lib/journalUrl.ts', 'api/product.ts', 'api/collection.ts', 'api/page.ts', 'lib/serverPageDocument.ts', 'lib/serverCollectionDocument.ts', 'lib/collectionId.ts', 'lib/productCategories.ts', 'lib/serverProductDocument.ts', 'lib/publicProductBootstrap.ts', 'lib/responsiveImage.ts', 'lib/productMetadata.ts'],
   outbase: '.', outdir: output, bundle: false, platform: 'node', format: 'esm', target: 'node24' });
 await mkdir(`${output}/lib`, { recursive: true });
 for (const file of ['imageManifest.json', 'productImageManifest.json', 'editorialImageManifest.json']) {

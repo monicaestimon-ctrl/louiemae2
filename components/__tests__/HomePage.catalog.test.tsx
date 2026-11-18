@@ -27,7 +27,7 @@ const open = async () => { fireEvent.click(screen.getByRole('button', { name: 'Q
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); mocks.ready = true; mocks.failed = false; mocks.loading = false; mocks.unavailable = false; mocks.detailFailed = false;
   mocks.product = { id: 'real-product', name: 'Authoritative chair', fulfillmentProvider: 'ashcroft', description: 'Real details', category: 'Chairs', price: 420, images: ['chair.jpg'], inStock: true,
-    variants: [{ id: 'linen', name: 'Linen', inStock: true, priceAdjustment: 20 }, { id: 'sold-out', name: 'Velvet', inStock: false, priceAdjustment: 30 }] } as Product;
+    variants: [{ id: 'linen', name: 'Linen', inStock: true, quantityRules: { minimum: 1, increment: 1 }, priceAdjustment: 20 }, { id: 'sold-out', name: 'Velvet', inStock: false, priceAdjustment: 30 }] } as Product;
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 describe('homepage real catalog purchase flow', () => {
@@ -93,10 +93,10 @@ describe('homepage real catalog purchase flow', () => {
     mocks.product = { ...mocks.product!, variants: mocks.product!.variants!.map(v => ({ ...v, inStock: false })) };
     view.rerender(<App />); expect(screen.getByRole('button', { name: 'Select Option First' })).toBeDisabled();
   });
-  it('adds a product without variants at its authoritative price', async () => {
+  it('requires current selling rules instead of guessing a quantity for a product without variants', async () => {
     mocks.product = { ...mocks.product!, variants: [] }; render(<App />); await open();
-    fireEvent.click(screen.getByRole('button', { name: 'Add to Cart' }));
-    expect(screen.getByLabelText('Cart proof').textContent).toBe(JSON.stringify({ count: 1, subtotal: 420, product: 'real-product' }));
+    expect(screen.getByRole('button', { name: 'Refresh product details before adding' })).toBeDisabled();
+    expect(screen.getByLabelText('Cart proof').textContent).toBe(JSON.stringify({ count: 0, subtotal: 0 }));
   });
   it('shows loading and deleted-product states without a purchase button', async () => {
     mocks.product = null; mocks.loading = true; const view = render(<App />); await open();
