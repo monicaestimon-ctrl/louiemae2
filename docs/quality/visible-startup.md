@@ -1,0 +1,11 @@
+# Startup after visible server content
+
+Louie Mae and HOLM share a small startup policy. Public product, collection, editorial and journal documents now render useful content before React loads. Previously only the retail home shell waited for its first paint, and HOLM's 300 ms fallback could begin competing application work before the headline painted.
+
+When a known server document exists in a visible tab, the entry observes buffered first contentful paint and then imports the application. Waiting is bounded at 1,500 ms. A pointer press, key press, history navigation or a transition to a hidden tab starts immediately. Blank client routes, hidden tabs and unavailable or throwing paint observers also start immediately. The policy is identical for visitors and measurement tools; it does not inspect user agents, defer work until an audit ends, hide content or suppress an input event.
+
+Observers, event listeners and fallback timers are removed after startup. The existing ten-second module-loading bound and accessible reload recovery remain. Private indexing is installed before waiting. HOLM's image load/error listeners remain installed before application loading.
+
+The browser fixture bundles the actual retail and HOLM entries, shared helper, private-indexing policy and recovery implementation. Only the application boundary is synthetic; CSS is omitted because this fixture checks startup behavior, not visual acceptance. It covers native and controlled paint, pointer/keyboard/history intent, timeout, blank routes, hidden tabs, unsupported/throwing observers, private indexing while waiting and application-load rejection. Unit tests additionally verify every server-document identifier, cancellation, unrelated paint entries and repeated callbacks. Existing recovery tests protect saved carts and recovery visibility.
+
+Run `node scripts/lighthouse/visible-startup.mjs` with local Chrome or `CHROME_PATH`; CI retains `artifacts/lighthouse/visible-startup-browser.json`. Deployment verification must separately check actual public content, private indexing, keyboard behavior and commit identity. A passing behavioral fixture does not establish a performance improvement. Retain the full fixed-release Lighthouse batch after deployment and compare all results against the existing acceptance contract.
