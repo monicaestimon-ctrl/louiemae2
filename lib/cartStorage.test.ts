@@ -91,3 +91,24 @@ it('keeps valid public selling rules as saved display metadata and omits malform
   expect(validCartQuantity(9999)).toBe(true);
   expect(validCartQuantity(10000)).toBe(false);
 });
+
+it('preserves more than 30 valid legacy rows for explicit removal', () => {
+  const rows = Array.from({ length: 31 }, (_, i) => ({
+    ...line,
+    product: { ...line.product, id: 'p' + i },
+  }));
+  const restored = restoreCart(JSON.stringify(rows));
+  expect(restored.items).toHaveLength(31);
+  expect(restored.recoveryNotice).toContain('30');
+});
+it('combines legacy and explicit rows by their effective option identity', () => {
+  const legacy = {
+    ...line,
+    product: { ...line.product, variants: [line.selectedVariant] },
+    selectedVariant: undefined,
+  };
+  const restored = restoreCart(JSON.stringify([legacy, line]));
+  expect(restored.items).toHaveLength(1);
+  expect(restored.items[0].quantity).toBe(4);
+  expect(restored.recoveryNotice).toBeTruthy();
+});

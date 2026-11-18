@@ -1,9 +1,11 @@
 import {
   CART_STORAGE_KEY,
+  cartItemKey,
   restoreCart,
   savedCartItem,
   validCartQuantity,
 } from '../lib/cartStorage';
+import { validOrderQuantity } from '../lib/orderQuantity';
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Product, ProductVariant } from '../types';
 
@@ -19,7 +21,12 @@ interface CartContextType {
   addToCart: (product: Product, quantity?: number, variant?: ProductVariant) => void;
   removeFromCart: (productId: string, variantId?: string) => void;
   updateQuantity: (productId: string, quantity: number, variantId?: string) => void;
-  acceptCurrentItem: (productId: string, variantId: string | undefined, product: Product, variant: ProductVariant) => void;
+  acceptCurrentItem: (
+    productId: string,
+    variantId: string | undefined,
+    product: Product,
+    variant: ProductVariant
+  ) => void;
   clearCart: () => void;
   isOpen: boolean;
   openCart: () => void;
@@ -62,31 +69,50 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (saved.length > 256_000) throw new Error('Cart storage limit');
       localStorage.setItem(CART_STORAGE_KEY, saved);
     } catch {
+      let invalidated = false;
+      try {
+        localStorage.removeItem(CART_STORAGE_KEY);
+        invalidated = true;
+      } catch {
+        /* Explain when the old snapshot cannot be invalidated. */
+      }
       setCart((previous) => ({
         ...previous,
         notice:
-          'Your browser cannot save this cart. Items will remain available during this visit.',
+          'Your browser cannot save this cart. Items will remain available during this visit.' +
+          (invalidated ? '' : ' Your previous saved cart may return after a reload.'),
       }));
     }
   }, [items]);
   const addToCart = (product: Product, quantity: number = 1, variant?: ProductVariant) => {
     setIsOpen(true);
-    if (!savedCartItem({ product, quantity, selectedVariant: variant })) {
-      setNotice('This item could not be added. Refresh its product page and check the quantity.');
+    const option = variant ?? product.variants?.[0];
+    const maximum = product.fulfillmentProvider === 'ashcroft' ? 20 : undefined;
+    if (
+      !savedCartItem({ product, quantity, selectedVariant: variant }) ||
+      (maximum !== undefined && quantity > maximum) ||
+      (option?.quantityRules && !validOrderQuantity(quantity, option.quantityRules, maximum))
+    ) {
+      setNotice(
+        'This item could not be added. Refresh its product page and check the quantity, or contact us for a project quote.'
+      );
       return;
     }
     setCart((previous) => {
       const index = previous.items.findIndex(
-        (item) =>
-          getCartItemKey(item.product.id, item.selectedVariant?.id) ===
-          getCartItemKey(product.id, variant?.id)
+        (item) => cartItemKey(item) === cartItemKey({ product, selectedVariant: variant, quantity })
       );
       if (index >= 0) {
         const combined = previous.items[index].quantity + quantity;
-        if (!validCartQuantity(combined))
+        if (
+          !validCartQuantity(combined) ||
+          (maximum !== undefined && combined > maximum) ||
+          (option?.quantityRules && !validOrderQuantity(combined, option.quantityRules, maximum))
+        )
           return {
             ...previous,
-            notice: 'This quantity exceeds the cart limit. Please contact us for a project quote.',
+            notice:
+              'This combined quantity does not meet the order limits or increments. Adjust it in your cart, or contact us for a project quote.',
           };
         const next = [...previous.items];
         next[index] = { ...next[index], quantity: combined };
@@ -135,18 +161,41 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setItems([]);
   };
 
-  const acceptCurrentItem = (productId: string, variantId: string | undefined, product: Product, variant: ProductVariant) => {
+  const acceptCurrentItem = (
+    productId: string,
+    variantId: string | undefined,
+    product: Product,
+    variant: ProductVariant
+  ) => {
     if (product.id !== productId) return;
-    setItems(previous => previous.map(item => {
-      if (getCartItemKey(item.product.id, item.selectedVariant?.id) !== getCartItemKey(productId, variantId)) return item;
-      const saved = item.selectedVariant ?? item.product.variants?.[0];
-      if (saved?.id !== variant.id || item.product.fulfillmentProvider !== product.fulfillmentProvider) return item;
-      // A legacy line without an explicit selection retains its original option and cart key.
-      const updated = item.selectedVariant ? { product, selectedVariant: variant } : {
-        product: { ...product, variants: [variant, ...(product.variants ?? []).filter(option => option.id !== variant.id)] },
-      };
-      return { ...item, ...updated };
-    }));
+    setItems((previous) =>
+      previous.map((item) => {
+        if (
+          getCartItemKey(item.product.id, item.selectedVariant?.id) !==
+          getCartItemKey(productId, variantId)
+        )
+          return item;
+        const saved = item.selectedVariant ?? item.product.variants?.[0];
+        if (
+          saved?.id !== variant.id ||
+          item.product.fulfillmentProvider !== product.fulfillmentProvider
+        )
+          return item;
+        // A legacy line without an explicit selection retains its original option and cart key.
+        const updated = item.selectedVariant
+          ? { product, selectedVariant: variant }
+          : {
+              product: {
+                ...product,
+                variants: [
+                  variant,
+                  ...(product.variants ?? []).filter((option) => option.id !== variant.id),
+                ],
+              },
+            };
+        return { ...item, ...updated };
+      })
+    );
   };
 
   const openCart = () => setIsOpen(true);

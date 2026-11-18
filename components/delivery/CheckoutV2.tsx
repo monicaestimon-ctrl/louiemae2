@@ -139,8 +139,11 @@ export function DeliveryCheckout({
     requestSequence.current++;
     setBusy(false);
     // Do not resurrect a previously accepted estimate after a blocked review recovers.
-    if (reviewBlocked) { setEst(null); setAccepted(null); }
-  }, [key, reviewBlocked]);
+    return () => { requestSequence.current++; };
+  }, [key]);
+  useEffect(() => {
+    setEst(null); setAccepted(null);
+  }, [reviewBlocked, reviewFingerprint]);
 
   const review = async (e: React.FormEvent) => {
     e.preventDefault();

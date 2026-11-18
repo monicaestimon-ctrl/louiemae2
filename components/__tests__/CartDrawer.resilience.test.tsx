@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('convex/react', () => ({
   useQueries: (queries: unknown) => {
     mocks.queries(queries);
-    return { credit: mocks.credit, ...((queries as Record<string, unknown>).chair ? {chair: mocks.product} : {}) };
+    return Object.fromEntries(Object.entries(queries as Record<string,{args:{id?:string;variantId?:string;quantity?:number}}>).map(([key,{args}])=>[key,key==='credit'?mocks.credit:mocks.product===undefined || mocks.product===null || mocks.product instanceof Error?mocks.product:{product:mocks.product,variantId:args.variantId,quantity:args.quantity,maximum:20}]));
   },
 }));
 vi.mock('@convex-dev/auth/react', () => ({ useAuthToken: () => mocks.token }));

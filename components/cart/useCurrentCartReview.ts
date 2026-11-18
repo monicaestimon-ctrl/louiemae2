@@ -1,46 +1,54 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQueries } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { usePendingTimeout } from '../../contexts/usePendingTimeout';
 import type { CartItem } from '../../contexts/CartContext';
-import { reviewCartItem } from '../../lib/cartCurrentReview';
+import { cartItemKey, effectiveVariantId } from '../../lib/cartStorage';
+import { reviewCartItem, type CurrentCartReview } from '../../lib/cartCurrentReview';
 
-/** Subscribe only while open. Never turn persisted display data into purchase authority. */
+/** A retry changes query identity even when another component retains its old subscription. */
 export function useCurrentCartReview(items: CartItem[], open: boolean) {
   const [attempt, setAttempt] = useState(0);
-  const [retrying, setRetrying] = useState(false);
-  // The SDK must commit an empty watch set before attaching the same query again.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (retrying) setRetrying(false);
-  }, [retrying]);
-  const idsKey = JSON.stringify([...new Set(items.map((item) => item.product.id))].sort());
+  const overLimit = items.length > 30;
+  const linesKey = JSON.stringify(
+    items.map((item) => ({
+      key: cartItemKey(item),
+      id: item.product.id,
+      variantId: effectiveVariantId(item) ?? '',
+      quantity: item.quantity,
+    }))
+  );
   const queries = useMemo(() => {
-    const ids: string[] = JSON.parse(idsKey);
-    return !open || retrying || ids.length > 30
+    const lines: { key: string; id: string; variantId: string; quantity: number }[] =
+      JSON.parse(linesKey);
+    return !open || overLimit
       ? {}
       : Object.fromEntries(
-          ids.map((id) => [id, { query: api.products.getStorefrontDetail, args: { id } }])
+          lines.map(({ key, ...line }) => [
+            key,
+            { query: api.retailLaunch.cartReview, args: { ...line, attempt } },
+          ])
         );
-  }, [idsKey, open, retrying]);
+  }, [linesKey, open, overLimit, attempt]);
   const values = useQueries(queries);
-  const pending = open && items.some((item) => values[item.product.id] === undefined);
-  const timedOut = usePendingTimeout(pending, `${idsKey}:${attempt}:${open}`);
-  const reviews = items.map((item) =>
-    reviewCartItem(
-      item,
-      timedOut && values[item.product.id] === undefined
-        ? new Error('Current details timed out')
-        : values[item.product.id]
-    )
+  const pending =
+    open && !overLimit && items.some((item) => values[cartItemKey(item)] === undefined);
+  const timedOut = usePendingTimeout(pending, `${linesKey}:${attempt}:${open}`);
+  const reviews: CurrentCartReview[] = items.map((item) =>
+    overLimit
+      ? { status: 'limit', choices: [], fingerprint: 'limit' }
+      : reviewCartItem(
+          item,
+          timedOut && values[cartItemKey(item)] === undefined
+            ? new Error('Current details timed out')
+            : values[cartItemKey(item)]
+        )
   );
   return {
     reviews,
+    overLimit,
     blocked: !open || !items.length || reviews.some((review) => review.status !== 'ready'),
     fingerprint: JSON.stringify(reviews.map((review) => [review.status, review.fingerprint])),
-    retry: () => {
-      setRetrying(true);
-      setAttempt((value) => value + 1);
-    },
+    retry: () => setAttempt((value) => Math.min(value + 1, 1_000_000)),
   };
 }

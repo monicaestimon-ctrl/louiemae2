@@ -2,9 +2,16 @@ import { MAX_ORDER_QUANTITY, publicQuantityRules } from './orderQuantity';
 import type { Product, ProductVariant } from '../types';
 import type { CartItem } from '../contexts/CartContext';
 
+export const effectiveVariantId = (item: CartItem) =>
+  item.selectedVariant?.id ?? item.product.variants?.[0]?.id;
+export const cartItemKey = (item: CartItem) =>
+  JSON.stringify([item.product.id, effectiveVariantId(item)]);
 export const CART_STORAGE_KEY = 'louiemae_ashcroft_cart_v1';
 export const validCartQuantity = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= MAX_ORDER_QUANTITY;
+  typeof value === 'number' &&
+  Number.isSafeInteger(value) &&
+  value > 0 &&
+  value <= MAX_ORDER_QUANTITY;
 const record = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -93,18 +100,32 @@ export function restoreCart(raw: string | null): { items: CartItem[]; recoveryNo
   try {
     if (raw.length > 256_000) throw new Error('Saved cart is too large');
     const rows: unknown = JSON.parse(raw);
-    if (!Array.isArray(rows) || rows.length > 30) throw new Error('Invalid saved cart');
+    if (!Array.isArray(rows)) throw new Error('Invalid saved cart');
     const items: CartItem[] = [],
-      seen = new Set<string>();
+      seen = new Map<string, number>();
     for (const row of rows) {
       const item = savedCartItem(row);
       if (!item) continue;
-      const key = JSON.stringify([item.product.id, item.selectedVariant?.id]);
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const key = cartItemKey(item);
+      const existing = seen.get(key);
+      if (existing !== undefined) {
+        const combined = items[existing].quantity + item.quantity;
+        if (validCartQuantity(combined))
+          items[existing] = { ...items[existing], quantity: combined };
+        continue;
+      }
+      seen.set(key, items.length);
       items.push(item);
     }
-    return { items, recoveryNotice: items.length === rows.length ? '' : invalid };
+    return {
+      items,
+      recoveryNotice:
+        items.length !== rows.length
+          ? invalid
+          : items.length > 30
+            ? 'Your saved cart has more than 30 product options. Remove options until 30 remain to review checkout.'
+            : '',
+    };
   } catch {
     return { items: [], recoveryNotice: invalid };
   }

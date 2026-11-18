@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { reviewCartItem } from './cartCurrentReview';
+import { reviewCartItem as reviewEnvelope } from './cartCurrentReview';
 import type { CartItem } from '../contexts/CartContext';
 const variant = {
   id: 'tan',
@@ -21,6 +21,18 @@ const product = {
   variants: [variant],
   deliveryFee: 20,
 };
+const reviewCartItem = (item: CartItem, value: unknown) =>
+  reviewEnvelope(
+    item,
+    value === undefined || value instanceof Error || value === null
+      ? value
+      : {
+          product: value,
+          quantity: item.quantity,
+          variantId: (item.selectedVariant ?? item.product.variants?.[0])?.id,
+          maximum: 20,
+        }
+  );
 const item: CartItem = { product, selectedVariant: variant, quantity: 3 };
 it('requires matching current product, supplier and saved option identities', () => {
   expect(reviewCartItem(item, product).status).toBe('ready');
@@ -67,4 +79,27 @@ it('does not restore missing rules or switch to the new first variant', () => {
   expect(
     reviewCartItem({ ...unselected, product: { ...product, variants: undefined } }, product).status
   ).toBe('unavailable');
+});
+
+it('offers a valid correction for the current source quantity and the Ashcroft limit', () => {
+  const one = { ...variant, quantityRules: { minimum: 1, increment: 1 } };
+  const p = { ...product, variants: [one] };
+  const review = (quantity: number, maximum: number) =>
+    reviewEnvelope(
+      { product: p, selectedVariant: one, quantity },
+      { product: p, variantId: one.id, quantity, maximum }
+    );
+  expect(review(5, 3)).toMatchObject({ status: 'quantity', choices: [3] });
+  expect(review(20, 20)).toMatchObject({ status: 'ready', choices: [19] });
+  expect(review(21, 20)).toMatchObject({ status: 'quantity', choices: [20] });
+  expect(review(1, 0).status).toBe('unavailable');
+});
+it.each(['', 'x'.repeat(301)])('rejects current names that cannot be saved', (name) => {
+  expect(reviewCartItem(item, { ...product, name }).status).toBe('unavailable');
+});
+it('rejects a quantity result belonging to a different request or absent envelope', () => {
+  expect(reviewEnvelope(item, product).status).toBe('unavailable');
+  expect(reviewEnvelope(item, { product, quantity: 5, variantId: 'tan', maximum: 20 }).status).toBe(
+    'unavailable'
+  );
 });

@@ -2,10 +2,11 @@ import type { Product, ProductVariant } from '../types';
 import type { CartItem } from '../contexts/CartContext';
 import { publicProductSnapshot } from './publicProductBootstrap';
 import { publicQuantityRules } from './orderQuantity';
+import { savedCartItem } from './cartStorage';
 import { reviewQuantity } from './cartQuantityReview';
 
 export type CurrentCartReview = {
-  status: 'pending' | 'error' | 'unavailable' | 'changed' | 'quantity' | 'ready';
+  status: 'limit' | 'pending' | 'error' | 'unavailable' | 'changed' | 'quantity' | 'ready';
   product?: Product;
   variant?: ProductVariant;
   choices: number[];
@@ -26,9 +27,25 @@ export function reviewCartItem(item: CartItem, value: unknown): CurrentCartRevie
   });
   if (value === undefined) return blocked('pending');
   if (value instanceof Error) return blocked('error');
-  const product = publicProductSnapshot(value);
+  const envelope =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  const maximum = envelope?.maximum;
+  if (
+    !envelope ||
+    !Number.isSafeInteger(maximum) ||
+    (maximum as number) < 0 ||
+    (maximum as number) > 9999 ||
+    envelope.quantity !== item.quantity ||
+    envelope.variantId !== (item.selectedVariant ?? item.product.variants?.[0])?.id
+  )
+    return blocked('unavailable');
+  const product = publicProductSnapshot(envelope.product);
   if (
     !product ||
+    !product.name ||
+    product.name.length > 300 ||
     product.id !== item.product.id ||
     product.fulfillmentProvider !== item.product.fulfillmentProvider
   )
@@ -37,9 +54,21 @@ export function reviewCartItem(item: CartItem, value: unknown): CurrentCartRevie
   const savedVariant = item.selectedVariant ?? item.product.variants?.[0];
   if (!savedVariant) return blocked('unavailable');
   const variant = product.variants?.find((option) => option.id === savedVariant.id);
-  if (!variant || !product.inStock || !variant.inStock || !rulesKey(variant))
+  if (
+    !variant ||
+    !product.inStock ||
+    !variant.inStock ||
+    !rulesKey(variant) ||
+    (maximum as number) < variant.quantityRules!.minimum
+  )
     return blocked('unavailable');
-  const quantity = reviewQuantity(item.quantity, variant.quantityRules);
+  if (!savedCartItem({ product, selectedVariant: variant, quantity: item.quantity }))
+    return blocked('unavailable');
+  const quantity = reviewQuantity(
+    item.quantity,
+    variant.quantityRules,
+    Math.min(maximum as number, product.fulfillmentProvider === 'ashcroft' ? 20 : 9999)
+  );
   const fingerprint = JSON.stringify([
     product.id,
     variant.id,
@@ -47,6 +76,7 @@ export function reviewCartItem(item: CartItem, value: unknown): CurrentCartRevie
     cents(product.deliveryFee ?? 0),
     rulesKey(variant),
     item.quantity,
+    maximum,
   ]);
   const changed =
     cents(product.price + variant.priceAdjustment) !==

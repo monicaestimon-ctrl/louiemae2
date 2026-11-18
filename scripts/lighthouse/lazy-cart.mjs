@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 const stubs = {
   auth: 'export function useAuthToken(){return null}',
   convex:
-    `import {useSyncExternalStore} from 'react';const base={_id:'fixture',name:'Fixture chair',description:'',category:'Furniture',collection:'furniture',price:100,images:[],inStock:true,fulfillmentProvider:'zuo',variants:[{id:'fixture-variant',name:'Standard',priceAdjustment:0,inStock:true,quantityRules:{minimum:1,increment:1}}]};const subscribe=callback=>{window.addEventListener('fixture-change',callback);return()=>window.removeEventListener('fixture-change',callback)};export function useQuery(){return undefined} export function useQueries(queries){useSyncExternalStore(subscribe,()=>window.fixtureVersion||0);return Object.fromEntries(Object.keys(queries).map(key=>[key,key==='fixture'?(window.fixtureProduct===undefined?base:window.fixtureProduct):undefined]))} export function useMutation(){return()=>{throw Error("Unexpected fixture mutation")}}`,
+    `import {useSyncExternalStore} from 'react';const base={_id:'fixture',name:'Fixture chair',description:'',category:'Furniture',collection:'furniture',price:100,images:[],inStock:true,fulfillmentProvider:'zuo',variants:[{id:'fixture-variant',name:'Standard',priceAdjustment:0,inStock:true,quantityRules:{minimum:1,increment:1}}]};const subscribe=callback=>{window.addEventListener('fixture-change',callback);return()=>window.removeEventListener('fixture-change',callback)};export function useQuery(){return undefined} export function useQueries(queries){useSyncExternalStore(subscribe,()=>window.fixtureVersion||0);return Object.fromEntries(Object.entries(queries).map(([key,{args}])=>[key,args.id==='fixture'?{product:window.fixtureProduct===undefined?base:window.fixtureProduct,quantity:args.quantity,variantId:args.variantId,maximum:9999}:undefined]))} export function useMutation(){return()=>{throw Error("Unexpected fixture mutation")}}`,
 };
 const fixture = await build({
   stdin: {
@@ -262,6 +262,7 @@ try {
     await press('Accept updated details for Fixture chair');
     await page.waitForFunction(() => document.body.textContent.includes('Choose 5'));
     assert.equal(await page.$eval('#count', node => node.textContent), '6');
+    assert.equal(await page.$eval(reviewSelector, button => button.disabled), true);
     await press('Choose 5');
     await page.waitForFunction(() => document.querySelector('#count').textContent === '5');
     assert.equal(await page.$eval(reviewSelector, node => node.disabled), false);

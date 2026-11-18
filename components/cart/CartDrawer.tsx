@@ -55,7 +55,8 @@ export const CartDrawer: React.FC = () => {
     useEffect(() => {
         requestSequence.current++;
         setIsCheckingOut(false);
-    }, [current.fingerprint, current.blocked, checkoutOwner, creditOff]);
+        return () => { requestSequence.current++; };
+    }, [current.fingerprint, current.blocked, checkoutOwner, useCredit]);
 
     const handleCheckout = async () => {
         if (items.length === 0 || creditBlocked || current.blocked) return;
@@ -92,6 +93,7 @@ export const CartDrawer: React.FC = () => {
                     name: itemName,
                     price: item.product.price + variantAdjustment,
                     quantity: item.quantity,
+                    reviewed: { merchandiseMinor: Math.round((item.product.price + variantAdjustment) * 100), deliveryMinor: Math.round((item.product.deliveryFee ?? 0) * 100) },
                     image: itemImage || undefined,
                 };
             });
@@ -106,6 +108,7 @@ export const CartDrawer: React.FC = () => {
                 },
                 body: JSON.stringify({
                     items: checkoutItems,
+                    reviewVersion: 1,
                     // the partner link this visitor arrived through, if any (checked on the server)
                     ...(activeRef() ? { refCode: activeRef()!.code, visitorId: visitorId() } : {}),
                     ...(creditOff > 0 ? { useCredit: true } : {}),
@@ -117,6 +120,10 @@ export const CartDrawer: React.FC = () => {
             if (!response.ok) {
                 const errorData = await response.json();
                 if (seq !== requestSequence.current) return;
+                if (errorData?.code === 'PRICE_CHANGED') {
+                    current.retry();
+                    throw new Error('Your prices or delivery charges changed. Review the updated cart before checkout.');
+                }
                 if (errorData?.code === 'OUT_OF_STOCK' || Array.isArray(errorData?.unavailableItems)) {
                     setCheckoutBlock({
                         message: errorData?.error || "We're sorry, one or more items in your cart are no longer available. Please remove the unavailable item before checking out.",
@@ -186,6 +193,7 @@ export const CartDrawer: React.FC = () => {
                     </button>
                 </div>
 
+                {current.overLimit && <p role="status" className="px-6 pt-4 text-sm text-earth">Your cart has more than 30 product options. Remove options until 30 remain, or contact us for a project quote. Retry cannot resolve this limit.</p>}
                 {notice && <p role="status" className="px-6 pt-4 text-sm text-earth">{notice}</p>}
                 {/* Cart Items */}
                 <div className="p-6">
@@ -235,7 +243,7 @@ export const CartDrawer: React.FC = () => {
                         )}
 
                         {current.blocked && <p role="status" className="text-earth mb-4">Review your cart items before checkout. Your items and delivery details are saved.</p>}
-                        {current.reviews.some(review => review.status === 'error') && <button type="button" className="min-h-11 underline" onClick={current.retry}>Retry current product details</button>}
+                        {!current.overLimit && current.reviews.some(review => review.status === 'error') && <button type="button" className="min-h-11 underline" onClick={current.retry}>Retry current product details</button>}
                         {hasV2 ? <ErrorBoundary fallback={<p role="alert" className="text-earth">Checkout is temporarily unavailable. Close and reopen your cart to try again. Your items are saved.</p>}><CheckoutV2 key={checkoutOwner} draftRef={checkoutDraftRef} reviewBlocked={current.blocked} reviewFingerprint={current.fingerprint} /></ErrorBoundary> : (<>
                         {creditBlocked && <p role="status" className="text-earth mb-4">
                             {creditPending && !creditTimedOut ? 'Checking your store credit…' : 'Store credit could not be verified. Close and reopen your cart to try again. Your items are saved.'}

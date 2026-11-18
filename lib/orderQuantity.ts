@@ -17,3 +17,22 @@ export function publicQuantityRules(
     return;
   return { minimum, increment, ...(typeof piecesPerPack === 'number' ? { piecesPerPack } : {}) };
 }
+
+/** The same min-relative rule is used for new additions and explicit cart corrections. */
+export function validOrderQuantity(
+  quantity: number,
+  rules: OrderQuantityRules,
+  maximum = MAX_ORDER_QUANTITY
+) {
+  const verified = publicQuantityRules(rules.minimum, rules.increment, rules.piecesPerPack);
+  return (
+    !!verified &&
+    Number.isSafeInteger(maximum) &&
+    maximum >= verified.minimum &&
+    maximum <= MAX_ORDER_QUANTITY &&
+    Number.isSafeInteger(quantity) &&
+    quantity >= verified.minimum &&
+    quantity <= maximum &&
+    (quantity - verified.minimum) % verified.increment === 0
+  );
+}
