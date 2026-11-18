@@ -1,3 +1,4 @@
+import { publicQuantityRules } from '../lib/orderQuantity';
 import { ashcroftAvailable } from './ashcroftInventory';
 import { v } from 'convex/values';
 import { viewer } from './holmAccess';
@@ -48,7 +49,7 @@ export const catalog = query({
             ...option,
             price: rate ? launchPrice(option.price, rate.freight, rate.delivery) : option.price,
             purchasable:
-              !!rate &&
+              !!publicQuantityRules(option.minimum, option.increment) && !!rate &&
               await ashcroftAvailable(ctx, listing.fulfillment?.find((x) => x.id === option.id)?.sku, listing.snapshot.description, option.minimum),
           }))),
         };

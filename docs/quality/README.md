@@ -458,3 +458,16 @@ PR321 CI44245567904 caught an outdated StorePage fixture that omitted the live p
 The mobile screenshot review also found the root Shop all control touching the New Arrivals heading. Removing the obsolete negative section margin restores separation; the actual-App fixture now requires at least16px between those controls at all three viewport sizes. All25 browser cases and unchanged JS/CSS budgets pass.
 
 CodeRabbit identified two valid edge cases in PR321. The decoder now drops unusable first-image URLs while retaining the verified card; malformed field shapes and bounds still fail closed. Initial Kids data is claimed by its first committed page owner, preventing a new mount from reusing the same document after navigation or supersession, including StrictMode and same-commit key replacement. Review regressions pass (55 focused tests); the 25-case actual-App browser suite now navigates away and back with the live response withheld. Unchanged bundle budgets and the emitted Node runtime also pass.
+
+
+### Current selling quantities: backend-first cart contract
+
+PR321 merged as `97749074daf399dfec944d7ddd14b3ef99ca2a7e` after CI44251206889 passed and both CodeRabbit findings were fixed and resolved. Its exact production commit passed three Kids viewport checks with eight cards, keyboard details, preview purchase controls disabled and zero axe violations/page errors; the mobile screenshot was reviewed. Main CI44252495145 and controlled audit44252659803 remain separate pending gates.
+
+The public retail detail and listing adapters now expose validated `quantityRules` for each variant: minimum and increment, plus physical pieces per pack only when the current Zuo catalog record supplies that basis. Ashcroft selling quantities do not imply a physical pack size. The existing approved prices and availability authorities remain unchanged.
+
+Zuo rules come from the same current sellable variant used to validate the approved retail price, not an older published snapshot. Malformed rules withhold the variant. Ashcroft malformed minimum/increment values withhold purchase availability in both public adapters and are rejected by the authoritative checkout quantity check. Missing, zero, negative, fractional and non-finite rules never become an implicit one-unit default.
+
+This additive backend phase precedes cart controls that consume the contract. It does not change supplier pricing, import evidence, publish draft products or grant checkout eligibility. A subsequent frontend phase must display pack/minimum/increment rules, explicitly correct invalid combined quantities, refresh current details and acknowledge changed totals before payment.
+
+Validation:97 quantity, commerce, catalog and checkout tests pass against the integrated sources with one pre-existing skipped test. Application and strict backend types and ESLint pass against the integrated sources. CI and deployed backend verification remain release gates. Tests include minimum3/increment2, malformed source rules, stale snapshot packing superseded by current Zuo data, omitted unknown Ashcroft physical-unit basis, and no Stripe session creation during invalid-quantity checks. Production checkout remains subject to its existing gates; no financial or supplier command was used for verification.

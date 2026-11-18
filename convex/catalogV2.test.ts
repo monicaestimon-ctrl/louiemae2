@@ -1007,6 +1007,10 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     const page = () => t.query(api.retailLaunch.storefrontPage, { paginationOpts: { cursor: null, numItems: 20 } });
     expect(await read()).toMatchObject({ inStock: true, price: 458.06 });
     expect(await read()).toMatchObject({ imageMedia: retail.snapshot.imageMedia });
+    expect(await read()).toMatchObject({variants:[{id:cv._id,quantityRules:{minimum:cv.orderMinimumPacks,increment:cv.orderIncrementPacks,piecesPerPack:cv.piecesPerPack}}]});
+    const stalePacking = {...retail,snapshot:{...retail.snapshot,variants:retail.snapshot.variants.map(option=>({...option,minimum:99,increment:99}))}};
+    expect(await t.run(ctx=>currentZuoStorefrontListing(ctx,stalePacking,'furniture'))).toMatchObject({variants:[{id:cv._id,quantityRules:{minimum:cv.orderMinimumPacks,increment:cv.orderIncrementPacks,piecesPerPack:cv.piecesPerPack}}]});
+
     expect((await page()).page).toHaveLength(1);
     const housePage = async () => {
       const page = await t.query(api.holm.catalogPage, { paginationOpts: { cursor: null, numItems: 50 } });

@@ -131,6 +131,8 @@ export function checkQuantity(
 ) {
   if (
     !Number.isSafeInteger(quantity) ||
+    !Number.isSafeInteger(variant.minimum) || variant.minimum < 1 ||
+    !Number.isSafeInteger(variant.increment) || variant.increment < 1 ||
     quantity < variant.minimum ||
     quantity > 9999 ||
     (quantity - variant.minimum) % variant.increment !== 0
