@@ -1,4 +1,4 @@
-/* global window,document,innerWidth,URLSearchParams,location,Event */
+/* global window,document,innerWidth,URLSearchParams,location,Event,requestAnimationFrame,getComputedStyle */
 import { build } from 'esbuild';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
@@ -12,11 +12,11 @@ const mocks = {
   '/useKidsRootPreview': `export const useKidsRootPreview=()=>({products:[],loading:false,unavailable:false});`,
   '/NewsletterContext': `export const useNewsletter=()=>({addSubscriberWithTags:()=>{throw Error('Subscription prohibited in this fixture')}});`,
   '/LazyProductPreview': `export const LazyProductPreview=()=>null;`,
-  '/useStoreCatalog': `export function useStoreCatalog(config,category,ready,sort){window.lastSort=sort;const s=window.catalogFixture;const rows=s.mode==='populated'||s.mode==='partial-error'?[{id:'sofa',name:'Fixture sofa',images:[],price:1000,category:'Sofas',variantCount:1,inStock:false}]:[];return{products:ready?rows:[],loading:s.mode==='loading',unavailable:s.mode==='failed',complete:s.mode==='empty'||s.mode==='populated',canLoadMore:s.mode==='incomplete',loadingMore:false,additionalLoadingFailed:s.mode==='partial-error',loadMore:()=>{window.catalogFixture={mode:'populated'};window.dispatchEvent(new Event('fixture'));}}}export const useStoreCategoryOptions=()=>({categories:['All','Sofas','Chairs'],canLoadMore:false,loading:false});`,
+  '/useStoreCatalog': `export function useStoreCatalog(config,category,ready,sort){window.lastSort=sort;const s=window.catalogFixture;const rows=s.mode==='populated'||s.mode==='partial-error'?[{id:'sofa',name:'Fixture sofa',images:[],price:1000,category:'Sofas',variantCount:2,isNew:true,inStock:false}]:[];return{products:ready?rows:[],loading:s.mode==='loading',unavailable:s.mode==='failed',complete:s.mode==='empty'||s.mode==='populated',canLoadMore:s.mode==='incomplete',loadingMore:false,additionalLoadingFailed:s.mode==='partial-error',loadMore:()=>{window.catalogFixture={mode:'populated'};window.dispatchEvent(new Event('fixture'));}}}export const useStoreCategoryOptions=()=>({categories:['All','Sofas','Chairs'],canLoadMore:false,loading:false});`,
 };
 const bundle = await build({
   stdin: {
-    contents: `import React,{useEffect,useState}from'react';import{createRoot}from'react-dom/client';import{StorePage}from'./components/StorePage';window.catalogFixture={mode:'populated'};function App(){const[,render]=useState(0);useEffect(()=>{const next=()=>render(n=>n+1);window.addEventListener('fixture',next);window.addEventListener('hashchange',next);return()=>{window.removeEventListener('fixture',next);window.removeEventListener('hashchange',next)}},[]);const q=new URLSearchParams(location.hash.split('?')[1]);return <StorePage collection="furniture" initialCategory={q.get('cat')||'Seating'} forceProductView={q.get('view')==='products'}/>};createRoot(document.getElementById('root')).render(<App/>);`,
+    contents: `import React,{useEffect,useState}from'react';import{createRoot}from'react-dom/client';import{StorePage}from'./components/StorePage';window.catalogFixture={mode:'populated'};function App(){const[,render]=useState(0);useEffect(()=>{const next=()=>render(n=>n+1);window.addEventListener('fixture',next);window.addEventListener('hashchange',next);return()=>{window.removeEventListener('fixture',next);window.removeEventListener('hashchange',next)}},[]);const q=new URLSearchParams(location.hash.split('?')[1]);return <StorePage key={location.hash} collection="furniture" initialCategory={q.get('cat')||'Seating'} forceProductView={q.get('view')==='products'}/>};createRoot(document.getElementById('root')).render(<App/>);`,
     resolveDir: process.cwd(),
     loader: 'tsx',
   },
@@ -100,6 +100,11 @@ try {
       'Sofas'
     );
     assert.equal(await page.$eval('button[aria-pressed=true]', (e) => e.textContent), 'Sofas');
+    assert.equal(
+      await page.evaluate(() => document.activeElement?.getAttribute('aria-pressed')),
+      'true',
+      'Category activation restores focus after route remount'
+    );
     await page.select('select', 'price-desc');
     assert.equal(await page.evaluate(() => window.lastSort), 'price-desc');
     await page.focus('select[aria-label="Sort products"]');
@@ -130,7 +135,15 @@ try {
         {},
         mode
       );
+      if (mode === 'populated' || mode === 'partial-error') {
+        await page.waitForSelector('button[aria-label="Quick View Fixture sofa"]', {
+          visible: true,
+        });
+      }
+      await page.waitForFunction(() => !document.querySelector('.lm-reveal.translate-y-16'));
       await page.evaluate(async () => {
+        await document.fonts.ready;
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         await Promise.all(
           document
             .getAnimations()
@@ -154,6 +167,57 @@ try {
         }))
       );
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
+      if (mode === 'empty' && width === 320) {
+        await page.focus('select[aria-label="Sort products"]');
+        for (const selector of ['form input[type="email"]', 'form button[type="submit"]']) {
+          let reached = false;
+          for (let step = 0; step < 20; step++) {
+            await page.keyboard.press('Tab');
+            reached = await page.evaluate(
+              (selector) => document.activeElement?.matches(selector),
+              selector
+            );
+            if (reached) break;
+          }
+          assert.ok(reached, `Keyboard reaches ${selector}`);
+          const focus = await page.evaluate(() => {
+            const element = document.activeElement;
+            const style = getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            const spread = Math.max(
+              0,
+              parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset)
+            );
+            const bounds = {
+              left: rect.left - spread,
+              right: rect.right + spread,
+              top: rect.top - spread,
+              bottom: rect.bottom + spread,
+            };
+            const clipped = [];
+            for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+              const css = getComputedStyle(parent),
+                box = parent.getBoundingClientRect();
+              if (
+                /(hidden|clip|auto|scroll)/.test(css.overflowX) &&
+                (bounds.left < box.left || bounds.right > box.right)
+              )
+                clipped.push(parent.tagName);
+              if (
+                /(hidden|clip|auto|scroll)/.test(css.overflowY) &&
+                (bounds.top < box.top || bounds.bottom > box.bottom)
+              )
+                clipped.push(parent.tagName);
+            }
+            return {
+              visible: style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 2,
+              clipped,
+            };
+          });
+          assert.ok(focus.visible, `${selector} has a visible focus outline`);
+          assert.deepEqual(focus.clipped, [], `${selector} outline is not clipped`);
+        }
+      }
       await page.screenshot({
         path: `artifacts/lighthouse/collection-coverage-${mode}-${width}.png`,
       });
@@ -187,6 +251,9 @@ try {
         await page.waitForFunction(() =>
           document.body.innerText.includes('All matching products shown')
         );
+        await page.waitForSelector('button[aria-label="Quick View Fixture sofa"]', {
+          visible: true,
+        });
       }
     }
     await page.close();
@@ -195,20 +262,23 @@ try {
   assert.equal(results.length, 15);
   assert.ok(results.every((r) => !r.violations.length && !r.overflow && !r.errors.length));
 } finally {
-  await writeFile(
-    'artifacts/lighthouse/collection-states-browser.json',
-    JSON.stringify(
-      {
-        scope: 'Isolated actual StorePage with local catalog; not production coverage',
-        expectedCases: 15,
-        passed:
-          results.length === 15 &&
-          results.every((r) => !r.violations.length && !r.overflow && !r.errors.length),
-        results,
-      },
-      null,
-      2
-    )
-  );
-  await browser.close();
+  try {
+    await writeFile(
+      'artifacts/lighthouse/collection-states-browser.json',
+      JSON.stringify(
+        {
+          scope: 'Isolated actual StorePage with local catalog; not production coverage',
+          expectedCases: 15,
+          passed:
+            results.length === 15 &&
+            results.every((r) => !r.violations.length && !r.overflow && !r.errors.length),
+          results,
+        },
+        null,
+        2
+      )
+    );
+  } finally {
+    await browser.close();
+  }
 }

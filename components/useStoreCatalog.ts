@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { usePaginatedQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
-import { buildCatalogCategoryFilter, matchesCatalogCategoryFilter } from '../lib/productCategories';
+import { buildCatalogCategoryFilter, matchesCatalogCategoryFilter, getCategoryLabel } from '../lib/productCategories';
 import type { CollectionConfig, Product } from '../types';
 import { usePendingTimeout } from '../contexts/usePendingTimeout';
 
@@ -47,7 +47,7 @@ export function useStoreCategoryOptions(config: CollectionConfig, selected: stri
   const page = usePaginatedQuery(api.catalog.categoryOptionsPage, ready ? { collection: config.id } : 'skip', { initialNumItems: 25 });
   const categories = Array.from(new Set([...config.subcategories.map(category => category.title),
     ...(config.id === 'furniture' ? ['Sofas', 'Sectionals', 'Benches', 'Accent Chairs', 'Dining Chairs', 'Dining Tables', 'Barstools', 'Counterstools', 'Stools', 'Ottomans'] : config.id === 'decor' ? ['Lighting'] : []),
-    ...(ready ? page.results : []), ...(selected === 'All' ? [] : [selected])])).filter(category => category && category !== 'All').sort();
+    ...(ready ? page.results : []), ...(selected === 'All' ? [] : [selected])].map(value => getCategoryLabel(config, value)))).filter(category => category && category !== 'All').sort();
   return { categories: ['All', ...categories], canLoadMore: ready && page.status === 'CanLoadMore',
     loading: ready && (page.status === 'LoadingFirstPage' || page.status === 'LoadingMore'), loadMore: () => page.loadMore(25) };
 }

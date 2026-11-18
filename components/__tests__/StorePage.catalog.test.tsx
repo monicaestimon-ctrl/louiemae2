@@ -150,7 +150,7 @@ describe('quick view purchasing', () => {
     mocks.detailProduct = { id: 'sofa', name: 'Test sofa', images: ['image'], price: 2139, category: 'Sofas', collection: 'furniture', description: 'A sofa', inStock: true, fulfillmentProvider: 'ashcroft', variants } as Product;
     mocks.products = [{ ...mocks.detailProduct, variantCount: variants?.length ?? 0 }];
     render(<StorePage collection="kids" initialCategory="All" forceProductView />);
-    fireEvent.click(screen.getByRole('button', { name: 'Quick View Test sofa' }));
+    fireEvent.click(screen.getByRole('button', { name: /Quick View Test sofa$/ }));
     await waitFor(() => expect(screen.queryByText('Opening product details…')).toBeNull());
   };
   it('selects the only variant with its price adjustment and passes it to the cart', async () => {
@@ -182,10 +182,35 @@ it('uses the configured category title for leaf signup copy while retaining the 
   expect(screen.getByRole('heading',{level:1})).toHaveTextContent('Dresses — Kids');
 });
 
-it('announces the selected product filter and includes the visible quick-view label', () => {
-  mocks.products = [{ id: 'test-card', name: 'Test card', images: [], price: 10, category: 'Dresses', variantCount: 1 }];
+it.each([
+  { isNew: false, variantCount: 1, label: 'Quick View Test card' },
+  { isNew: true, variantCount: 1, label: 'Quick View Test card' },
+  { isNew: false, variantCount: 2, label: 'Quick View Test card' },
+  { isNew: true, variantCount: 2, label: 'Quick View Test card' },
+])('announces the selected filter and visible label with New=$isNew and variants=$variantCount', ({isNew,variantCount,label}) => {
+  mocks.products = [{ id: 'test-card', name: 'Test card', images: [], price: 10, category: 'Dresses', variantCount, isNew }];
   render(<StorePage collection="kids" initialCategory="Dresses" forceProductView />);
   expect(screen.getByRole('button', { name: 'Dresses', pressed: true })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'All', pressed: false })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Quick View Test card' })).toBeInTheDocument();
+  const control = screen.getByRole('button', { name: label });
+  expect(control).not.toHaveTextContent('New');
+  expect(control).not.toHaveTextContent('Multiple Options');
+  if (isNew) expect(screen.getByText('New')).toBeVisible();
+  if (variantCount > 1) expect(screen.getByText('Multiple Options')).toBeVisible();
+});
+
+it('uses the canonical label for the single selected ID filter', () => {
+ render(<StorePage collection="kids" initialCategory="dresses" forceProductView />);
+ expect(screen.getByRole('button', {name:'Dresses',pressed:true})).toBeInTheDocument();
+ expect(screen.getAllByRole('button',{pressed:true})).toHaveLength(1);
+});
+it('hands category navigation focus to the destination filter across a route remount', () => {
+ window.history.replaceState({}, '', '/');
+ const first = render(<StorePage collection="kids" initialCategory="All" forceProductView />);
+ screen.getByRole('button',{name:'Dresses'}).focus();
+ fireEvent.click(screen.getByRole('button',{name:'Dresses'}));
+ first.unmount();
+ render(<StorePage collection="kids" initialCategory="Dresses" forceProductView />);
+ expect(screen.getByRole('button',{name:'Dresses',pressed:true})).toHaveFocus();
+ window.history.replaceState({}, '', '/');
 });
