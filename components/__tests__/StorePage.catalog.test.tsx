@@ -121,7 +121,7 @@ describe('store catalog integration', () => {
     mocks.detailFailed = true;
     mocks.products = [{ id: 'single', name: 'One sofa', images: ['image'], price: 2889, category: 'Sofas', variantCount: 1 }];
     render(<StorePage collection="kids" initialCategory="All" forceProductView />);
-    fireEvent.click(screen.getByRole('button', { name: 'View One sofa' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Quick View One sofa' }));
     expect(await screen.findByText('Product details could not be loaded. Please try again.')).toBeInTheDocument();
     expect(screen.queryByText('This product is no longer available.')).toBeNull();
   });
@@ -130,7 +130,7 @@ describe('store catalog integration', () => {
     render(<StorePage collection="kids" initialCategory="All" forceProductView />);
     expect(screen.queryByText('Multiple Options')).toBeNull();
     expect(screen.getByText('$2,889')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'View One sofa' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Quick View One sofa' }));
     await waitFor(() => expect(mocks.detail).toHaveBeenLastCalledWith('single'));
   });
   it('shows unavailable state without false Coming Soon or a legacy product subscription', async () => {
@@ -150,7 +150,7 @@ describe('quick view purchasing', () => {
     mocks.detailProduct = { id: 'sofa', name: 'Test sofa', images: ['image'], price: 2139, category: 'Sofas', collection: 'furniture', description: 'A sofa', inStock: true, fulfillmentProvider: 'ashcroft', variants } as Product;
     mocks.products = [{ ...mocks.detailProduct, variantCount: variants?.length ?? 0 }];
     render(<StorePage collection="kids" initialCategory="All" forceProductView />);
-    fireEvent.click(screen.getByRole('button', { name: 'View Test sofa' }));
+    fireEvent.click(screen.getByRole('button', { name: /Quick View Test sofa$/ }));
     await waitFor(() => expect(screen.queryByText('Opening product details…')).toBeNull());
   };
   it('selects the only variant with its price adjustment and passes it to the cart', async () => {
@@ -180,4 +180,37 @@ it('uses the configured category title for leaf signup copy while retaining the 
   render(<StorePage collection="kids" initialCategory="dresses" forceProductView />);
   expect(screen.getByText(/Receive 24-hour early access/)).toHaveTextContent('Dresses drops');
   expect(screen.getByRole('heading',{level:1})).toHaveTextContent('Dresses — Kids');
+});
+
+it.each([
+  { isNew: false, variantCount: 1, label: 'Quick View Test card' },
+  { isNew: true, variantCount: 1, label: 'Quick View Test card' },
+  { isNew: false, variantCount: 2, label: 'Quick View Test card' },
+  { isNew: true, variantCount: 2, label: 'Quick View Test card' },
+])('announces the selected filter and visible label with New=$isNew and variants=$variantCount', ({isNew,variantCount,label}) => {
+  mocks.products = [{ id: 'test-card', name: 'Test card', images: [], price: 10, category: 'Dresses', variantCount, isNew }];
+  render(<StorePage collection="kids" initialCategory="Dresses" forceProductView />);
+  expect(screen.getByRole('button', { name: 'Dresses', pressed: true })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'All', pressed: false })).toBeInTheDocument();
+  const control = screen.getByRole('button', { name: label });
+  expect(control).not.toHaveTextContent('New');
+  expect(control).not.toHaveTextContent('Multiple Options');
+  if (isNew) expect(screen.getByText('New')).toBeVisible();
+  if (variantCount > 1) expect(screen.getByText('Multiple Options')).toBeVisible();
+});
+
+it('uses the canonical label for the single selected ID filter', () => {
+ render(<StorePage collection="kids" initialCategory="dresses" forceProductView />);
+ expect(screen.getByRole('button', {name:'Dresses',pressed:true})).toBeInTheDocument();
+ expect(screen.getAllByRole('button',{pressed:true})).toHaveLength(1);
+});
+it('hands category navigation focus to the destination filter across a route remount', () => {
+ window.history.replaceState({}, '', '/');
+ const first = render(<StorePage collection="kids" initialCategory="All" forceProductView />);
+ screen.getByRole('button',{name:'Dresses'}).focus();
+ fireEvent.click(screen.getByRole('button',{name:'Dresses'}));
+ first.unmount();
+ render(<StorePage collection="kids" initialCategory="Dresses" forceProductView />);
+ expect(screen.getByRole('button',{name:'Dresses',pressed:true})).toHaveFocus();
+ window.history.replaceState({}, '', '/');
 });

@@ -22,6 +22,14 @@ export function getCategoryById(collection: CollectionConfig | undefined, id: st
   return collection.subcategories.find((category) => category.id === id);
 }
 
+/** Display configured IDs and titles once, preserving unmatched legacy labels. */
+export function getCategoryLabel(collection: CollectionConfig, value: string): string {
+  if (value === 'All') return value;
+  return collection.subcategories.find(category => category.id === value)?.title
+    ?? collection.subcategories.find(category => category.title === value)?.title
+    ?? value;
+}
+
 export function getCategoryParentId(category: Category, collection: CollectionConfig): string | undefined {
   if (category.parentCategoryId) return category.parentCategoryId;
   if (!category.parentCategory) return undefined;

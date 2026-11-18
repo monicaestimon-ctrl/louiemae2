@@ -102,6 +102,7 @@ jobs:
           node scripts/lighthouse/product-navigation.mjs
           node scripts/lighthouse/public-handoff.mjs
           node scripts/lighthouse/collection-signup.mjs
+          node scripts/lighthouse/collection-states.mjs
           node scripts/lighthouse/reveal.mjs
 
       - name: Retain HOLM quality evidence

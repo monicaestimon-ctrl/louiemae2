@@ -1,7 +1,7 @@
 import { LazyProductPreview } from './LazyProductPreview';
 import { CollectionRootHero } from './CollectionRootHero';
 
-import React, { useState, useMemo, useLayoutEffect } from 'react';
+import React, { useState, useMemo, useLayoutEffect, useRef } from 'react';
 import { api } from '../convex/_generated/api';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
@@ -9,12 +9,17 @@ import { Product, CollectionType, Category, CollectionConfig } from '../types';
 import { ArrowLeft, ArrowUpRight } from 'lucide-react';
 import { CollectionSignup } from './CollectionSignup';
 import { SafeImage } from './SafeImage';
-import { getCategoryParentId } from '../lib/productCategories';
+import { getCategoryParentId, getCategoryLabel } from '../lib/productCategories';
 import { useStoreCatalog, useStoreCategoryOptions, type StoreCardProduct } from './useStoreCatalog';
 import { useKidsRootPreview } from './useKidsRootPreview';
 
 import { useRecoverableQuery } from '../contexts/useRecoverableQuery';
-const navigateToStoreHash = (hash: string) => { window.location.hash = hash; };
+let pendingStoreFocus: { hash: string; at: number } | null = null;
+const navigateToStoreHash = (hash: string) => {
+  if (window.location.hash === hash) return;
+  pendingStoreFocus = hash.startsWith('#collection/') ? { hash, at: Date.now() } : null;
+  window.location.hash = hash;
+};
 
 interface StorePageProps {
   collection: CollectionType;
@@ -94,15 +99,13 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
       <FadeIn delay={index * 100} className="mb-16">
         {/* Clean Section Header */}
         <div className="flex items-center justify-between mb-6 border-b border-earth/10 pb-2">
-          <div
-            className="group cursor-pointer flex items-center gap-3"
-            onClick={() => handleCategoryChange(category.title)}
-          >
-            <h3 className="font-serif text-2xl md:text-3xl text-earth transition-colors group-hover:text-bronze">
+          <h3 className="font-serif text-2xl md:text-3xl text-earth">
+            <button type="button" className="group min-h-11 flex items-center gap-3 text-left transition-colors hover:text-bronze"
+              onClick={() => handleCategoryChange(category.title)}>
               {category.title}
-            </h3>
-            <ArrowUpRight className="w-5 h-5 text-muted-earth transition-all group-hover:text-bronze group-hover:translate-x-1 group-hover:-translate-y-1" />
-          </div>
+              <ArrowUpRight aria-hidden="true" className="w-5 h-5 text-muted-earth transition-all group-hover:text-bronze group-hover:translate-x-1 group-hover:-translate-y-1" />
+            </button>
+          </h3>
 
           <button
             onClick={() => handleCategoryChange(category.title)}
@@ -215,7 +218,7 @@ const CatalogUnavailable = () => <div role="status" className="py-8 text-center 
           <div className="min-w-[200px] md:min-w-[240px] snap-center flex items-center justify-center">
             <button
               onClick={() => {
-                window.location.hash = `#collection/${collection}?cat=${encodeURIComponent(categoryId)}&view=products`;
+                navigateToStoreHash(`#collection/${collection}?cat=${encodeURIComponent(categoryId)}&view=products`);
               }}
               className="group flex flex-col items-center gap-4 text-muted-earth hover:text-earth transition-colors"
             >
@@ -249,7 +252,8 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
   // The route parser already decoded URLSearchParams. Decoding again breaks
   // legitimate percent signs and can turn a filter into a page-level exception.
   const selectedCategory = initialCategory;
-  const selectedCategoryTitle = config.subcategories.find(category => category.id === selectedCategory || category.title === selectedCategory)?.title || selectedCategory;
+  const selectedCategoryTitle = getCategoryLabel(config, selectedCategory);
+  const mainRef = useRef<HTMLElement>(null);
   // A retail referral link lands on ?product=<id> (and ?variant=<id>): open that piece directly.
   const [selectedProductId, setSelectedProductId] = useState<string | null>(() => {
     const q = window.location.hash.split('?')[1];
@@ -349,8 +353,20 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
     if (!storefrontIsLoading) document.getElementById('lm-collection-document')?.remove();
   }, [storefrontIsLoading, collection]);
 
+  useLayoutEffect(() => {
+    if (!pendingStoreFocus) return;
+    const pending = pendingStoreFocus;
+    pendingStoreFocus = null;
+    if (pending.hash !== window.location.hash || Date.now() - pending.at > 10_000) return;
+    const target = mainRef.current?.querySelector<HTMLElement>('button[aria-pressed="true"]')
+      ?? mainRef.current?.querySelector<HTMLElement>('h1') ?? mainRef.current;
+    if (!target) return;
+    if (target.tagName !== 'BUTTON') target.tabIndex = -1;
+    target.focus();
+  }, [collection, selectedCategory, viewLevel]);
+
   const handleCategoryChange = (cat: string) => {
-    if (cat === selectedCategory) return;
+    if (getCategoryLabel(config, cat) === selectedCategoryTitle) return;
 
     const subConfig = config.subcategories.find(c => c.title === cat);
     if (subConfig && subConfig.redirect) {
@@ -379,7 +395,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
   };
 
   return (
-    <main className="bg-cream min-h-screen pt-20" data-lm-collection-ready={!storefrontIsLoading && !catalogUnavailable && siteContentStatus === 'ready' ? collection : undefined}>
+    <main ref={mainRef} className="bg-cream min-h-screen pt-20" data-lm-collection-ready={!storefrontIsLoading && !catalogUnavailable && siteContentStatus === 'ready' ? collection : undefined}>
       {viewLevel !== 'ROOT' && <h1 className="sr-only">{selectedCategory === 'All' ? config.title : `${config.subcategories.find(category => category.id === selectedCategory)?.title || selectedCategory} — ${config.title}`}</h1>}
 
       {/* Unified Header Section - Clean cream background with centered title for all collections */}
@@ -418,7 +434,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
 
                   <div className="min-w-[200px] md:min-w-[240px] snap-center flex items-center justify-center">
                     <button
-                      onClick={() => { window.location.hash = `#collection/${collection}?cat=All&view=products`; }}
+                      onClick={() => { navigateToStoreHash(`#collection/${collection}?cat=All&view=products`); }}
                       className="group flex flex-col items-center gap-4 text-muted-earth hover:text-earth transition-colors"
                     >
                       <div className="w-16 h-16 rounded-full border border-earth/20 flex items-center justify-center group-hover:border-earth transition-colors">
@@ -487,8 +503,9 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                 {categories.map(cat => (
                   <button
                     key={cat}
+                    aria-pressed={selectedCategoryTitle === cat}
                     onClick={() => handleCategoryChange(cat)}
-                    className={`whitespace-nowrap text-[10px] uppercase tracking-widest transition-all duration-300 px-3 py-1.5 rounded-full ${selectedCategory === cat ? 'bg-white/10 text-cream border border-white/20 shadow-inner' : 'text-muted-cream hover:text-cream hover:bg-white/5 border border-transparent'}`}
+                    className={`whitespace-nowrap text-[10px] uppercase tracking-widest transition-all duration-300 px-3 py-1.5 rounded-full ${selectedCategoryTitle === cat ? 'bg-white/10 text-cream border border-white/20 shadow-inner' : 'text-muted-cream hover:text-cream hover:bg-white/5 border border-transparent'}`}
                   >
                     {cat}
                   </button>
@@ -501,7 +518,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                 <select
                   aria-label="Sort products" value={sortOption}
                   onChange={(e) => setSortOption(e.target.value as 'newest' | 'price-asc' | 'price-desc')}
-                  className="bg-transparent text-[10px] uppercase tracking-widest text-bronze focus:outline-none cursor-pointer appearance-none ml-1 font-medium"
+                  className="bg-transparent text-[10px] uppercase tracking-widest text-cream cursor-pointer appearance-none ml-1 font-medium"
                 >
                   <option value="newest" className="bg-stone-900 text-cream">Newest</option>
                   <option value="price-asc" className="bg-stone-900 text-cream">Price: Low to High</option>
@@ -534,7 +551,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                     <div className="relative z-10 w-full p-12 md:p-24 flex flex-col items-center justify-center text-center backdrop-blur-2xl bg-earth/15 border border-white/10 rounded-[2rem]">
                       {/* Subtle light effect inside the card */}
                       <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
-                      <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl opacity-50 -z-10 translate-x-1/3 -translate-y-1/3" />
+                      <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-[2rem] pointer-events-none"><div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl opacity-50 -z-10 translate-x-1/3 -translate-y-1/3" /></div>
 
                       <h2 className="font-serif text-4xl md:text-6xl text-white mb-6 tracking-tight">Coming Soon</h2>
                       <p className="text-sm md:text-xs text-white/60 uppercase tracking-[0.2em] mb-12 max-w-md mx-auto font-light leading-relaxed">
@@ -553,35 +570,37 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-10">
                   {filteredProducts.map((product, idx) => (
                     <FadeIn key={product.id} delay={Math.min(idx, 5) * 50} className="group min-w-0">
-                      <button
-                        className={`block w-full relative ${collection === 'furniture' || collection === 'decor' ? 'aspect-square' : 'aspect-[3/4]'} overflow-hidden bg-[#f3efe8] mb-4 rounded-sm`}
-                        type="button"
-                        aria-label={`View ${product.name}`}
-                        onClick={() => handleSelectProduct(product)}
-                      >
+                      <div className="relative mb-4">
                         {product.isNew && (
-                          <span className="absolute top-3 left-3 bg-white/90 px-2 py-1 text-[9px] uppercase tracking-widest text-earth z-10 rounded-sm">
+                          <span className="pointer-events-none absolute top-3 left-3 bg-white/90 px-2 py-1 text-[9px] uppercase tracking-widest text-earth z-10 rounded-sm">
                             New
                           </span>
                         )}
                         {product.variantCount > 1 && (
-                          <span className="absolute top-3 right-3 bg-bronze/90 px-2 py-1 text-[9px] uppercase tracking-widest text-white z-10 rounded-sm">
+                          <span className="pointer-events-none absolute top-3 right-3 bg-bronze/90 px-2 py-1 text-[9px] uppercase tracking-widest text-white z-10 rounded-sm">
                             Multiple Options
                           </span>
                         )}
-                        <SafeImage
-                          src={product.images[0]}
-                          media={product.imageMedia} sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
-                          alt={product.name}
-                          className="w-full h-full object-contain"
-                        />
-                        <span className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors"></span>
-                        <span className="absolute bottom-0 left-0 right-0 p-3 opacity-100 md:opacity-0 md:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200">
-                          <span className="block text-center w-full bg-white/90 backdrop-blur-sm text-earth py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-earth hover:text-white transition-colors shadow-lg">
-                            Quick View
+                        <button
+                          className={`block w-full relative ${collection === 'furniture' || collection === 'decor' ? 'aspect-square' : 'aspect-[3/4]'} overflow-hidden bg-[#f3efe8] rounded-sm`}
+                          type="button"
+                          aria-label={`Quick View ${product.name}`}
+                          onClick={() => handleSelectProduct(product)}
+                        >
+                          <SafeImage
+                            src={product.images[0]}
+                            media={product.imageMedia} sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
+                            alt={product.name}
+                            className="w-full h-full object-contain"
+                          />
+                          <span className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors"></span>
+                          <span className="absolute bottom-0 left-0 right-0 p-3 opacity-100 md:opacity-0 md:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200">
+                            <span className="block text-center w-full bg-white/90 backdrop-blur-sm text-earth py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-earth hover:text-white transition-colors shadow-lg">
+                              Quick View
+                            </span>
                           </span>
-                        </span>
-                      </button>
+                        </button>
+                      </div>
 
                       <div className="flex flex-col gap-2">
                         <div className="min-w-0">

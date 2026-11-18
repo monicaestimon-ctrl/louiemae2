@@ -75,3 +75,9 @@ describe('bounded store readers', () => {
     expect(view.result.current.categories).toContain('Late legacy'); expect(view.result.current.canLoadMore).toBe(false);
   });
 });
+
+it.each(['dresses', 'Dresses'])('deduplicates configured category aliases for %s without changing legacy names', selected => {
+ mocks.rows = ['dresses', 'Dresses', 'Vintage', 'vintage']; mocks.status = 'Exhausted';
+ const view = renderHook(() => useStoreCategoryOptions(config, selected, true));
+ expect(view.result.current.categories).toEqual(['All', 'Dresses', 'Girls', 'Vintage', 'vintage']);
+});
