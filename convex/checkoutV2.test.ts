@@ -2676,3 +2676,14 @@ describe('delivery public error and input privacy', () => {
     expect(await s.t.run((ctx) => ctx.db.query('dlvEstimates').collect())).toHaveLength(0);
   });
 });
+
+it('reviews Zuo pack quantities from verified warehouse stock without guessing from on-hand counts',async()=>{
+ const s=await setup();vi.stubEnv('RETAIL_ZUO_CHECKOUT_ENABLED','true');
+ const args={id:s.productId,variantId:s.variantId,quantity:5,attempt:0};
+ expect(await s.t.query(api.retailLaunch.cartReview,args)).toMatchObject({maximum:1000,quantity:5});
+ await s.t.run(async ctx=>{const stock=(await ctx.db.query('catStockRevisions').first())!;await ctx.db.patch(stock._id,{quantity:'6',unitBasis:'piece'});});
+ const review=await s.t.query(api.retailLaunch.cartReview,{...args,attempt:1});
+ expect(review).toMatchObject({maximum:3,quantity:5});expect(JSON.stringify(review)).not.toContain('111182');
+ await s.t.run(async ctx=>{const stock=(await ctx.db.query('catStockRevisions').first())!;await ctx.db.patch(stock._id,{kind:'on_hand'});});
+ expect(await s.t.query(api.retailLaunch.cartReview,{...args,attempt:2})).toMatchObject({maximum:0});
+});

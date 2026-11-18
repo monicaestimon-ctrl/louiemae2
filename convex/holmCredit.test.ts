@@ -115,3 +115,11 @@ describe('store credit on a /trade quote', () => {
     void (projectId as Id<'commerceProjects'>);
   });
 });
+
+it('does not reserve credit or persist a checkout when reviewed prices changed', async () => {
+  const t=convexTest(schema,modules);const {productId,member}=await setup(t);
+  await expect(member.mutation(internal.retailLaunch.createSnapshot,{items:[{productId,variantId:'v1',quantity:1,reviewed:{merchandiseMinor:1,deliveryMinor:1}}],useCredit:true})).rejects.toThrow(/PRICE_CHANGED/);
+  expect(await balance(t,member)).toBe(15000);
+  expect(await t.run(ctx=>ctx.db.query('retailCheckouts').collect())).toHaveLength(0);
+  expect(await t.run(ctx=>ctx.db.query('holmCredits').withIndex('by_kind',q=>q.eq('kind','reserved')).collect())).toHaveLength(0);
+});

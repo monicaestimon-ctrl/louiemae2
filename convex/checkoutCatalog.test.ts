@@ -306,3 +306,39 @@ describe('Ashcroft retail checkout', () => {
     expect(await t.run((ctx) => ctx.db.query('orders').collect())).toHaveLength(0);
   });
 });
+
+
+describe('current cart review contract', () => {
+  it('returns the current quantity cap without private supplier mappings', async () => {
+    const t = convexTest(schema, modules); const { id } = await fixture(t);
+    const args = { id, variantId: 'tan', quantity: 5, attempt: 0 };
+    expect(await t.query(api.retailLaunch.cartReview, args)).toMatchObject({ maximum: 0 });
+    await t.mutation(internal.ashcroftInventory.reconcile, { source: 'Synthetic cart stock', sha256: 'd'.repeat(64), observedAt: Date.now()-2000, rows: [{ sku: 'SOF00401401', quantity: 3 }] });
+    const review = await t.query(api.retailLaunch.cartReview, args);
+    expect(review).toMatchObject({ maximum: 3, quantity: 5, variantId: 'tan', product: { inStock: true } });
+    expect(JSON.stringify(review)).not.toMatch(/SOF00401401|supplierSku|fulfillment"|cost"/);
+    await t.mutation(internal.ashcroftInventory.reconcile, { source: 'Synthetic refreshed stock', sha256: 'e'.repeat(64), observedAt: Date.now()-1000, rows: [{ sku: 'SOF00401401', quantity: 30 }] });
+    expect(await t.query(api.retailLaunch.cartReview, { ...args, attempt: 1 })).toMatchObject({ maximum: 20 });
+    expect(await t.query(api.retailLaunch.cartReview, { ...args, variantId: 'retired' })).toMatchObject({ maximum: 0 });
+    await expect(t.query(api.retailLaunch.cartReview, { ...args, attempt: -1 })).rejects.toThrow();
+  });
+  it.each([{ merchandiseMinor: 254899, deliveryMinor: 7900 }, { merchandiseMinor: 254900, deliveryMinor: 7899 }])('rejects changed reviewed amounts before creating a snapshot or Stripe session', async reviewed => {
+    const t = convexTest(schema, modules); const { id } = await fixture(t);
+    const r = await t.fetch('/stripe/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reviewVersion: 1, items: [{ productId: id, variantId: 'tan', quantity: 1, reviewed }] }) });
+    expect(r.status).toBe(409); expect(await r.json()).toMatchObject({ code: 'PRICE_CHANGED' });
+    expect(stripe.create).not.toHaveBeenCalled();
+    expect(await t.run(ctx => ctx.db.query('retailCheckouts').collect())).toHaveLength(0);
+  });
+  it('uses matching reviewed amounts but still computes all totals on the server', async () => {
+    const t = convexTest(schema, modules); const { id } = await fixture(t);
+    const r = await t.fetch('/stripe/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reviewVersion: 1, items: [{ productId: id, variantId: 'tan', quantity: 2, price: 1, reviewed: { merchandiseMinor: 254900, deliveryMinor: 7900 } }] }) });
+    expect(r.status).toBe(200);
+    expect(stripe.create.mock.calls[0][0].line_items[0].price_data.unit_amount).toBe(254900);
+    expect(stripe.create.mock.calls[0][0].shipping_options[0].shipping_rate_data.fixed_amount.amount).toBe(15800);
+  });
+  it('rejects a versioned request with missing reviewed amounts before side effects', async () => {
+    const t = convexTest(schema, modules); const { id } = await fixture(t);
+    const r = await t.fetch('/stripe/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reviewVersion: 1, items: [{ productId: id, variantId: 'tan', quantity: 1 }] }) });
+    expect(r.status).toBe(409); expect(stripe.create).not.toHaveBeenCalled();
+  });
+});
