@@ -55,11 +55,17 @@ const browser = await puppeteer.launch({
 });
 const results = [];
 try {
-  for (const width of [320, 390, 844, 1440])
+  for (const [width, height] of [
+    [320, 700],
+    [390, 700],
+    [844, 390],
+    [844, 700],
+    [1440, 700],
+  ])
     for (const mode of ['page', 'nested', 'card']) {
       const nested = mode === 'nested';
       const page = await browser.newPage();
-      await page.setViewport({ width, height: 700 });
+      await page.setViewport({ width, height });
       const errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
       await page.setRequestInterception(true);
@@ -126,7 +132,7 @@ try {
         bounds.left >= 11 && bounds.right <= width - 11,
         JSON.stringify({ width, nested, bounds })
       );
-      assert(bounds.top >= 11 && bounds.bottom <= 689);
+      assert(bounds.top >= 11 && bounds.bottom <= height - 11);
       const reachable = await page.$eval('#trigger', (el) => {
         const r = el.getBoundingClientRect();
         const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
@@ -137,7 +143,7 @@ try {
         await page.evaluate(() => document.activeElement?.getAttribute('aria-label')),
         'Search your boards'
       );
-      await page.screenshot({ path: `${directory}/${width}-${mode}-open.png` });
+      await page.screenshot({ path: `${directory}/${width}-${height}-${mode}-open.png` });
       await page.addScriptTag({ content: axe.source });
       const audit = await page.evaluate(() =>
         axe.run(document, {
@@ -220,8 +226,8 @@ try {
       await page.waitForFunction(() => !document.querySelector('.boardpick'));
       assert.equal(await page.evaluate(() => document.activeElement?.id), 'after');
       assert.deepEqual(errors, []);
-      await page.screenshot({ path: `${directory}/${width}-${mode}.png` });
-      results.push({ width, mode, bounds, axe: 0, errors: 0, passed: true });
+      await page.screenshot({ path: `${directory}/${width}-${height}-${mode}.png` });
+      results.push({ width, height, mode, bounds, axe: 0, errors: 0, passed: true });
       console.log(JSON.stringify({ width, mode, passed: true }));
       await page.close();
     }

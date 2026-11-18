@@ -67,7 +67,7 @@ export function SaveBoardMenu({
       element.style.left = align === 'left' ? '0px' : 'auto';
       element.style.right = align === 'left' ? 'auto' : '0px';
       element.style.top = align === 'left' ? '52px' : 'calc(100% + 8px)';
-      const rect = element.getBoundingClientRect();
+      let rect = element.getBoundingClientRect();
       const targetLeft = Math.max(
         leftEdge,
         Math.min(rect.left, leftEdge + width - 24 - rect.width)
@@ -86,6 +86,18 @@ export function SaveBoardMenu({
         if (trigger.top - rect.height - 8 >= topEdge) targetTop = trigger.top - rect.height - 8;
         else if (trigger.bottom + 8 + rect.height <= topEdge + height - 24)
           targetTop = trigger.bottom + 8;
+        else {
+          // In landscape or above a software keyboard, scroll within the larger
+          // remaining side instead of covering the control that closes us.
+          const above = Math.max(0, trigger.top - topEdge - 8);
+          const below = Math.max(0, topEdge + height - 24 - trigger.bottom - 8);
+          const available = Math.max(above, below);
+          if (available > 0) {
+            element.style.maxHeight = `${available}px`;
+            rect = element.getBoundingClientRect();
+            targetTop = above >= below ? trigger.top - rect.height - 8 : trigger.bottom + 8;
+          }
+        }
       }
       element.style.left = `${element.offsetLeft + targetLeft - rect.left}px`;
       element.style.right = 'auto';
