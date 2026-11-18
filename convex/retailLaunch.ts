@@ -1,4 +1,8 @@
-import { publicQuantityRules } from '../lib/orderQuantity';
+import { CommerceError, isCommerceError } from '../lib/errors';
+import { ashcroftQuantity } from '../lib/ashcroftInventory';
+import { latestFeed } from './ashcroftInventory';
+import { currentInventory } from './ordInventory';
+import { MAX_ORDER_QUANTITY, publicQuantityRules } from '../lib/orderQuantity';
 import { ashcroftAvailable } from './ashcroftInventory';
 import { v } from 'convex/values';
 import { viewer } from './holmAccess';
@@ -7,7 +11,7 @@ import { internalMutation, internalQuery, query } from './_generated/server';
 import { paginationOptsValidator } from 'convex/server';
 import { checkQuantity } from '../lib/commerce';
 import { launchPrice, retailDelivery, retailDescription } from '../lib/retailLaunch';
-import { storefrontListing, currentZuoStorefrontListing, zuoRetailEnabled } from './retailStorefront';
+import { retailDetail, storefrontListing, currentZuoStorefrontListing, zuoRetailEnabled } from './retailStorefront';
 import { resolveAttribution } from './holmPartners';
 
 export const storefrontPage = query({
@@ -59,10 +63,48 @@ export const catalog = query({
   },
 });
 
+/** Current source quantity and price for a saved option. This read does not reserve inventory. */
+export const cartReview = query({
+  args: { id: v.string(), variantId: v.string(), quantity: v.number(), attempt: v.number() },
+  handler: async (ctx, args) => {
+    if (args.id.length > 128 || args.variantId.length > 200 ||
+      !Number.isSafeInteger(args.quantity) || args.quantity < 1 || args.quantity > MAX_ORDER_QUANTITY ||
+      !Number.isSafeInteger(args.attempt) || args.attempt < 0 || args.attempt > 1_000_000)
+      throw new CommerceError('INVALID_INPUT');
+    const id = ctx.db.normalizeId('commerceProducts', args.id);
+    if (!id) return null;
+    const detail = await retailDetail(ctx, id);
+    if (!detail) return null;
+    const option = detail.variants.find(v => v.id === args.variantId);
+    let maximum = 0;
+    if (option?.inStock) {
+      if (detail.fulfillmentProvider === 'ashcroft') {
+        const listing = await ctx.db.query('commerceListings')
+          .withIndex('by_product_channel', q => q.eq('productId', id).eq('channel', 'retail')).unique();
+        const sku = listing?.fulfillment?.find(v => v.id === args.variantId)?.sku;
+        const available = ashcroftQuantity(await latestFeed(ctx), sku, Date.now());
+        maximum = available === null ? 0 : Math.min(20, available);
+      } else {
+        const variantId = ctx.db.normalizeId('catVariants', args.variantId);
+        const variant = variantId ? await ctx.db.get(variantId) : null;
+        if (variant?.productId === id) {
+          try {
+            const { view } = await currentInventory(ctx, variant, Date.now());
+            maximum = view.automatic && view.availablePacks !== null ? Math.min(MAX_ORDER_QUANTITY, view.availablePacks) : 0;
+          } catch (error) { if (!isCommerceError(error)) throw error; }
+        }
+      }
+    }
+    // Counts are in the existing selling basis. Supplier identity, costs and warehouse evidence stay private.
+    return { product: detail, variantId: args.variantId, quantity: args.quantity, maximum };
+  },
+});
+
 export const createSnapshot = internalMutation({
   args: {
     items: v.array(
-      v.object({ productId: v.string(), variantId: v.string(), quantity: v.number() })
+      v.object({ productId: v.string(), variantId: v.string(), quantity: v.number(),
+        reviewed: v.optional(v.object({ merchandiseMinor: v.number(), deliveryMinor: v.number() })) })
     ),
     refCode: v.optional(v.string()),
     visitorId: v.optional(v.string()),
@@ -97,6 +139,11 @@ export const createSnapshot = internalMutation({
         throw new Error('This item is Coming Soon.');
       checkQuantity(item.quantity, option);
       if (item.quantity > 20) throw new Error('Please contact us for orders above 20 units.');
+      const unitPrice = launchPrice(option.price, rate.freight, rate.delivery);
+      if (item.reviewed && (!Number.isSafeInteger(item.reviewed.merchandiseMinor) ||
+        !Number.isSafeInteger(item.reviewed.deliveryMinor) ||
+        item.reviewed.merchandiseMinor !== unitPrice || item.reviewed.deliveryMinor !== rate.delivery))
+        throw new CommerceError('PRICE_CHANGED');
       shipping += rate.delivery * item.quantity;
       lines.push({
         productId: product._id,
@@ -106,7 +153,7 @@ export const createSnapshot = internalMutation({
           option.name === 'Default Title'
             ? listing.snapshot.name
             : `${listing.snapshot.name} — ${option.name}`,
-        price: launchPrice(option.price, rate.freight, rate.delivery) / 100,
+        price: unitPrice / 100,
         quantity: item.quantity,
         image: option.image || listing.snapshot.images[0],
         supplierSku: supplier.sku,
