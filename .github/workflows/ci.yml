@@ -89,6 +89,7 @@ jobs:
         run: |
           npm run test:holm:browser
           node scripts/lighthouse/holm-catalog-intent.mjs
+          node scripts/lighthouse/board-controls.mjs
           npm run test:tray-request:browser
           npm run test:application:browser
           node scripts/lighthouse/newsletter.mjs
@@ -127,6 +128,7 @@ jobs:
             artifacts/lighthouse/editorial-format-fixture/*.png
             artifacts/lighthouse/story-formats/*.png
             artifacts/lighthouse/product-formats/*.png
+            artifacts/lighthouse/board-controls/*.png
           if-no-files-found: ignore
           retention-days: 14
 

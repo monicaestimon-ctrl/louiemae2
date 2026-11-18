@@ -94,6 +94,42 @@ try {
   await page.waitForSelector('.pin-open');
   await page.addScriptTag({ content: axe.source });
   const results = [];
+  // Use a browse-page product so the surrounding left/right shortcut is active.
+  await page.click('.pin-open');
+  await page.waitForSelector('.pp-add');
+  const initialProductLabel = await page.$eval('dialog[open]', el => el.getAttribute('aria-label'));
+  await page.evaluate(() => [...document.querySelectorAll('dialog button')].find(button => button.textContent.trim() === 'Save').setAttribute('data-owner-save', 'true'));
+  await page.click('[data-owner-save]');
+  await page.waitForSelector('.boardpick');
+  assert.equal(await page.$eval('[data-owner-save]', el => el.getAttribute('aria-haspopup')), 'dialog');
+  assert.equal(await page.$eval('[data-owner-save]', el => el.getAttribute('aria-expanded')), 'true');
+  await page.focus('.boardpick button');
+  for (const key of ['ArrowRight', 'ArrowLeft']) {
+    await page.keyboard.press(key);
+    assert.equal(await page.$eval('dialog[open]', el => el.getAttribute('aria-label')), initialProductLabel);
+  }
+  await page.focus('.boardpick input');
+  const composingPrevented = await page.$eval('.boardpick input', el => {
+    const event = new window.KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true });
+    el.dispatchEvent(event); return event.defaultPrevented;
+  });
+  assert.equal(composingPrevented, false);
+  assert.ok(await page.$('.boardpick'));
+  await page.type('.boardpick input', 'Living');
+  await page.click('[data-owner-save]');
+  await page.waitForFunction(() => !document.querySelector('.boardpick'));
+  assert.equal(await page.$eval('[data-owner-save]', el => el.getAttribute('aria-expanded')), 'false');
+  await page.click('[data-owner-save]');
+  await page.waitForSelector('.boardpick');
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('.boardpick'));
+  assert.equal(await page.$eval('[data-owner-save]', el => el === document.activeElement), true);
+  await page.keyboard.press('ArrowRight');
+  await page.waitForFunction(label => document.querySelector('dialog[open]')?.getAttribute('aria-label') !== label, {}, initialProductLabel);
+  assert.ok(await page.$('.pp-add'));
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('dialog'));
+  results.push({pickerTriggerToggles:true,expandedState:true,horizontalKeysStayInsidePicker:true,parentNavigationStillWorks:true,composingEscapeNotCancelled:true,businessCommands:0});
   for (const [width, height] of [
     [320, 900],
     [844, 390],
@@ -317,8 +353,15 @@ try {
   assert.equal(afterDetailAdd[0].lid,'saved-source');
   await page.evaluate(()=>[...document.querySelectorAll('dialog button')].find(button=>button.textContent.trim()==='Save').click());
   await page.waitForSelector('.boardpick');
+  assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('aria-label')),'Search your boards');
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(()=>!document.querySelector('.boardpick'));
+  assert.ok(await page.$('dialog[open]'));
+  assert.equal(await page.evaluate(()=>document.activeElement?.textContent.trim()),'Save');
+  await page.evaluate(()=>[...document.querySelectorAll('dialog button')].find(button=>button.textContent.trim()==='Save').click());
+  await page.waitForSelector('.boardpick');
   await page.evaluate(()=>[...document.querySelectorAll('.boardpick button')].find(button=>button.textContent.includes('Create board')).click());
-  await page.type('#nb-name','Saved Oak selection');
+  await page.type('.boardpick form input','Saved Oak selection');
   await page.evaluate(()=>[...document.querySelectorAll('.boardpick button')].find(button=>button.textContent==='Create and save').click());
   await page.waitForFunction(()=>JSON.parse(localStorage.getItem('hol:boards')).some(board=>board.title==='Saved Oak selection'));
   const savedSelection=await page.evaluate(()=>JSON.parse(localStorage.getItem('hol:boards')).find(board=>board.title==='Saved Oak selection').pins[0]);
