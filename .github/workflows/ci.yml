@@ -120,6 +120,7 @@ jobs:
             artifacts/lighthouse/*last-state.json
             artifacts/lighthouse/*.png
             artifacts/lighthouse/editorial-format-fixture/*.png
+            artifacts/lighthouse/story-formats/*.png
           if-no-files-found: ignore
           retention-days: 14
 

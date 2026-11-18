@@ -156,8 +156,20 @@ it('serves the Story AVIF source with a WebP fallback and identical responsive s
   const avif = picture?.querySelector('source[type="image/avif"]');
   const fallback = picture?.querySelector('img');
   expect(avif?.getAttribute('srcset')).toContain('.avif 640w');
+  expect(avif?.getAttribute('media')).toBe('(scripting: enabled)');
   expect(avif?.getAttribute('sizes')).toBe(fallback?.getAttribute('sizes'));
   expect(fallback?.getAttribute('src')).toMatch(/\.webp$/);
   expect(fallback?.getAttribute('fetchpriority')).toBe('high');
   expect(fallback?.getAttribute('height')).toBe('1500');
+});
+
+
+it('reserves the empty Story hero before the interactive handoff', async () => {
+  fetchMock.mockResolvedValue({ok:true,json:async()=>({status:'success',value:{...site,story:{...site.story,hero:{title:'Our',subtitle:'Story',image:''}}}})});
+  const result = await request('story');
+  const dom = new globalThis.DOMParser().parseFromString(result.body, 'text/html');
+  const placeholder = dom.querySelector('main section [role="img"]');
+  expect(placeholder?.getAttribute('aria-label')).toBe('Our Journey image unavailable');
+  expect(placeholder?.getAttribute('style')).toContain('aspect-ratio: 0.6666666666666666');
+  expect(dom.querySelector('main section img')).toBeNull();
 });

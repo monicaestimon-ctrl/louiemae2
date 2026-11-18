@@ -10,6 +10,7 @@ assert.equal(e.recipe, 'avif-quality45-effort7-lossless-orientation-v1');
 assert.equal(hash(await readFile('public' + e.source)), e.sha256);
 assert.equal(e.base, '/images/opt/brand-formats/' + hash(e.sha256 + '|' + e.recipe).slice(0, 24));
 assert.equal(m.avifBase, e.base);
+assert.ok(m.widths.length > 0, 'Story requires at least one rendition');
 assert.deepEqual(
   m.widths,
   e.renditions.map((r) => r.width)
