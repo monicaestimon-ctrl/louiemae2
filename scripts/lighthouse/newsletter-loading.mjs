@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 /* global document, window, localStorage */
 import { Buffer } from 'node:buffer';
 import { URL } from 'node:url';
@@ -6,7 +7,7 @@ import puppeteer from 'puppeteer-core';
 import axe from 'axe-core';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 const built = await build({
   stdin: {
@@ -64,7 +65,7 @@ const server = createServer(async (req, res) => {
         res.writeHead(503);
         return res.end();
       }
-      if (mode === 'held') await new Promise((r) => pending.push(r));
+      if (mode === 'held' || mode === 'timeout') await new Promise((r) => pending.push(r));
     }
     if (files.has(name)) {
       res.writeHead(200, { 'Content-Type': 'text/javascript' });
@@ -108,9 +109,10 @@ const browser = await puppeteer.launch({
     : { channel: 'chrome' }),
   headless: true,
 });
+await mkdir('artifacts/lighthouse', { recursive: true });
 const results = [];
 try {
-  for (const scenario of ['ready', 'held', 'failed'])
+  for (const scenario of ['ready', 'held', 'failed', 'timeout'])
     for (const width of [320, 844, 1440]) {
       mode = scenario;
       requests = 0;
@@ -123,20 +125,60 @@ try {
       await page.goto(origin, { waitUntil: 'networkidle2' });
       await page.focus('#before');
       assert.equal(requests, 0, 'Form must not load during initial startup');
+      await page.evaluate(() => {
+        const blocker = document.createElement('dialog');
+        blocker.id = 'fixture-blocker';
+        blocker.innerHTML = '<button>Other dialog</button>';
+        document.body.append(blocker);
+        blocker.showModal();
+      });
+      await delay(10500);
+      assert.equal(requests, 0, 'No form prefetch while another dialog prevents opening');
+      await page.evaluate(() => {
+        const blocker = document.getElementById('fixture-blocker');
+        blocker.close();
+        blocker.remove();
+        document.getElementById('before').focus();
+      });
       await page.waitForSelector('dialog[open]', { timeout: 15000 });
-      if (scenario === 'held') {
+      let loadingAxeViolations = null;
+      await page.focus('button[aria-label="Close newsletter popup"]');
+      await page.evaluate(() => {
+        window.loadingClose = document.activeElement;
+      });
+      if (scenario === 'held' || scenario === 'timeout') {
         await page.waitForFunction(() =>
           document.body.textContent.includes('Opening the newsletter form')
         );
+        const deadline = Date.now() + 5000;
+        while (requests === 0 && Date.now() < deadline) await delay(10);
         assert.equal(requests, 1);
-        for (const done of pending.splice(0)) done();
+        await page.addScriptTag({ content: axe.source });
+        loadingAxeViolations = await page.evaluate(async () =>
+          (await window.axe.run(document.querySelector('dialog'))).violations.map((v) => v.id)
+        );
+        assert.deepEqual(loadingAxeViolations, []);
+        assert.equal(
+          await page.$eval('[data-newsletter-panel]', (e) => e.scrollWidth > e.clientWidth),
+          false
+        );
+        if (scenario === 'held') for (const done of pending.splice(0)) done();
       }
-      if (scenario === 'failed')
+      if (scenario === 'failed' || scenario === 'timeout') {
         await page.waitForFunction(() =>
           document.body.textContent.includes('newsletter form could not be loaded')
         );
-      else {
+        assert.equal(
+          await page.evaluate(() => document.activeElement === window.loadingClose),
+          true
+        );
+        for (const done of pending.splice(0)) done();
+      } else {
         await page.waitForSelector('input[type="email"]');
+        assert.equal(
+          await page.evaluate(() => document.activeElement === window.loadingClose),
+          true
+        );
         await page.type('input[type="email"]', 'reader@example.com');
         await page.keyboard.press('Enter');
         await page.waitForFunction(() =>
@@ -145,6 +187,10 @@ try {
         assert.equal(await page.$eval('input', (i) => i.value), 'reader@example.com');
       }
       assert.equal(requests, 1, 'Request the form exactly once when it opens');
+      assert.equal(
+        await page.$eval('[data-newsletter-panel]', (e) => e.scrollWidth > e.clientWidth),
+        false
+      );
       assert.equal(
         await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
         false,
@@ -167,6 +213,8 @@ try {
         deferredUntilOpening: true,
         requests,
         axeViolations: 0,
+        loadingAxeViolations,
+        retainedCloseFocus: true,
         errors,
         dismissalRestoresFocus: true,
         noHorizontalOverflow: true,

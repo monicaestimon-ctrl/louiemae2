@@ -1,3 +1,4 @@
+import { captureDocuments } from './document-identity.mjs';
 import { mkdir, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { URL } from 'node:url';
@@ -68,6 +69,7 @@ for (const route of routes) {
         const browserVersion = (await browser.version()).split('/').at(-1);
         if (browserVersion !== process.env.AUDIT_CHROME_VERSION) throw new Error(`Browser version mismatch: ${browserVersion}`);
         const page = await browser.newPage();
+        const documents = verifyProduction ? captureDocuments(page, url, manifest.deploymentCommit) : null;
         const result = await lighthouse(url, { port: chrome.port, output: ['json', 'html'],
           logLevel: 'error', onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
           }, device === 'desktop' ? desktopConfig : undefined, page);
@@ -76,10 +78,14 @@ for (const route of routes) {
         await writeFile(resolve(directory, `${name}.json`), result.report[0]);
         await writeFile(resolve(directory, `${name}.html`), result.report[1]);
         reportsWritten = true;
+        const documentIdentity = documents ? await documents.verify() : null;
         // Inspect the actual audited tab, not a second successful navigation.
-        const health = { url: page.url(), browserVersion, checkedAt: new Date().toISOString(),
+        const health = { documentIdentity, url: page.url(), browserVersion, checkedAt: new Date().toISOString(),
           ...await inspectRouteHealth(page, route, readiness) };
-        await page.screenshot({ path: resolve(directory, `${name}.png`), fullPage: false });
+        if (documents) await documents.verify();
+        const screenshot = await page.screenshot({ fullPage: false });
+        if (documents) await documents.verify();
+        await writeFile(resolve(directory, `${name}.png`), screenshot);
         await writeFile(resolve(directory, `${name}.health.json`), JSON.stringify(health, null, 2));
         healthWritten = true;
         runs.push(assessRun(result.lhr, health, { url, device }));

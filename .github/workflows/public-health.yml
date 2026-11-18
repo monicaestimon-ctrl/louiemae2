@@ -4,13 +4,20 @@ on:
   schedule:
     - cron: '17 6 * * *'
   workflow_dispatch:
+    inputs:
+      deployment_commit:
+        description: Optional full independently verified production commit after a rollback
+        required: false
+        type: string
 
 permissions:
   contents: read
+  deployments: read
 
 concurrency:
   group: production-lighthouse
   cancel-in-progress: false
+  queue: max
 
 jobs:
   health:
@@ -24,19 +31,22 @@ jobs:
           node-version: '24.14.1'
           cache: npm
       - run: npm ci
+      - name: Resolve expected production release from deployment records
+        run: node scripts/lighthouse/expected-release.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_DEPLOYMENT_COMMIT: ${{ inputs.deployment_commit }}
       - name: Check monitoring acceptance policy
         run: node --test scripts/lighthouse/smoke-policy.node.mjs
       - name: Install pinned browser
         run: node scripts/lighthouse/install-browser.mjs
       - name: Verify current production public journeys
         run: node scripts/lighthouse/smoke.mjs
-        env:
-          AUDIT_DEPLOYMENT_COMMIT: ${{ github.sha }}
       - name: Retain successful and failed health evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: storefront-health-${{ github.run_id }}
-          path: artifacts/lighthouse/smoke-*/
+          name: storefront-health-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/lighthouse/
           retention-days: 30
           if-no-files-found: warn

@@ -150,3 +150,12 @@ it.each(['furniture','decor','fashion'])('renders the %s category root without u
  expect(html.querySelectorAll('img').length).toBeGreaterThan(0);
  expect(result.body).not.toContain('No products');
 });
+
+it('keeps a configured category social image without querying product previews', async () => {
+  fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({status:'success',value:{...site,collections:[{...site.collections[0],heroImage:''}]}}) }));
+  const result=await request({id:'furniture'});
+  expect(result.code).toBe(200);
+  const document=new globalThis.DOMParser().parseFromString(result.body,'text/html');
+  expect(document.querySelector('meta[property="og:image"]')?.getAttribute('content')).toContain('/images/brand/furniture-chair.png');
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});

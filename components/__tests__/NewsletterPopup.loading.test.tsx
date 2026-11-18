@@ -27,12 +27,15 @@ it('opens a dismissible loading dialog and bounds a hung form import without cle
     vi.advanceTimersByTime(10000);
   });
   expect(screen.getByRole('status')).toHaveTextContent('Opening the newsletter form');
-  expect(screen.getByRole('button', { name: 'Close newsletter popup' })).toBeEnabled();
+  const close = screen.getByRole('button', { name: 'Close newsletter popup' });
+  close.focus();
+  expect(close).toHaveFocus();
   await act(async () => {
     vi.advanceTimersByTime(10000);
   });
   expect(screen.getByRole('alert')).toHaveTextContent('newsletter form could not be loaded');
-  expect(screen.getByRole('alert')).toHaveTextContent('page footer');
+  expect(screen.getByRole('link', { name: 'our home page' })).toHaveAttribute('href', '/#home');
+  expect(screen.getByRole('button', { name: 'Close newsletter popup' })).toBe(close);
   fireEvent.click(screen.getByRole('button', { name: 'Close newsletter popup' }));
   expect(screen.queryByRole('dialog')).toBeNull();
   expect(localStorage.getItem('louiemae_ashcroft_cart_v1')).toBe('saved-cart-proof');

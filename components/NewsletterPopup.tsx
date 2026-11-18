@@ -12,20 +12,19 @@ function PopupLoadState({
   onDismiss: () => void;
 }) {
   return (
-    <div className="relative m-4 max-w-md rounded-xl bg-earth p-8 text-cream">
+    <div className="relative bg-earth p-8 pt-16 text-cream">
       <p role={failed ? 'alert' : 'status'}>
-        {failed
-          ? 'The newsletter form could not be loaded. You can close this window and use the signup form in the page footer.'
-          : 'Opening the newsletter form...'}
+        {failed ? 'The newsletter form could not be loaded.' : 'Opening the newsletter form...'}
       </p>
-      <button
-        type="button"
-        onClick={onDismiss}
-        className="mt-4 min-h-11 border border-cream px-4"
-        aria-label="Close newsletter popup"
-      >
-        Close
-      </button>
+      {failed && (
+        <p className="mt-4">
+          Visit{' '}
+          <a className="underline" href="/#home" onClick={onDismiss}>
+            our home page
+          </a>{' '}
+          and use “Join The Mae Letter” near the bottom.
+        </p>
+      )}
     </div>
   );
 }
@@ -121,18 +120,38 @@ export const NewsletterPopup: React.FC = () => {
       onClose={handleDismiss}
       className="flex items-center justify-center text-cream"
     >
-      <ErrorBoundary fallback={<PopupLoadState failed onDismiss={handleDismiss} />}>
-        <Suspense fallback={<PopupLoadState onDismiss={handleDismiss} />}>
-          <NewsletterPopupContent
-            email={email}
-            status={status}
-            error={error}
-            setEmail={setEmail}
-            handleSubmit={handleSubmit}
-            handleDismiss={handleDismiss}
-          />
-        </Suspense>
-      </ErrorBoundary>
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 bg-black/60 backdrop-blur-md"
+        onClick={handleDismiss}
+      />
+      <div
+        data-newsletter-panel
+        className="relative m-4 max-h-[calc(100dvh_-_2rem)] w-full max-w-3xl overflow-y-auto rounded-3xl bg-earth"
+      >
+        <button
+          type="button"
+          onClick={handleDismiss}
+          aria-label="Close newsletter popup"
+          className="absolute top-3 right-3 z-20 flex h-11 w-11 items-center justify-center rounded-full bg-black/50 text-cream hover:bg-black/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 transition-colors"
+        >
+          <span aria-hidden="true" className="text-2xl">
+            ×
+          </span>
+        </button>
+        <ErrorBoundary fallback={<PopupLoadState failed onDismiss={handleDismiss} />}>
+          <Suspense fallback={<PopupLoadState onDismiss={handleDismiss} />}>
+            <NewsletterPopupContent
+              email={email}
+              status={status}
+              error={error}
+              setEmail={setEmail}
+              handleSubmit={handleSubmit}
+              handleDismiss={handleDismiss}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      </div>
     </Modal>
   );
 };
