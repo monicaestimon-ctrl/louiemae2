@@ -30,7 +30,12 @@ export function collectionDocument(template: string, collection: PublicCollectio
   }).join('');
   const hero = collection.rootCategories ? renderToStaticMarkup(React.createElement(CollectionRootHero, {collection:collection.id,title:collection.title,subtitle:collection.subtitle,categories:collection.rootCategories})) : null;
   const content = `<main id="lm-collection-document" data-collection-id="${escape(collection.id)}" tabindex="-1" ${hero ? 'data-root-hero="true" class="bg-cream min-h-screen pt-20"' : 'class="lm-collection-basic"'}>${hero ? `<section class="relative w-full min-h-screen flex flex-col"><div class="absolute inset-0 bg-cream z-0"></div>${hero}</section>` : ''}<div class="lm-collection-body"><a href="/">Louie Mae</a>${hero ? '' : `<h1>${escape(collection.title)}</h1><p>${escape(collection.subtitle)}</p>`}<nav aria-label="Collection categories">${collection.categories.map(category => `<a href="/collection/${encodeURIComponent(collection.id)}?cat=${encodeURIComponent(category.id)}&amp;view=products">${escape(category.title)}</a>`).join('')}</nav>${cards ? `<div class="lm-collection-grid">${cards}</div>` : ''}<p role="status">Loading current collection options…</p><noscript><p>Enable JavaScript for the full catalog, filters and purchasing. <a href="/#support/contact">Contact us for assistance</a>.</p></noscript></div></main>`;
-  let html = template.replace(/<!--home-document-start-->[\s\S]*?<!--home-document-end-->/, '')
+  let html = template
+    // Collection hero text is upright; later italic content retains its CSS font face.
+    .replace(/<link\b[^>]*>/gi, tag =>
+      /rel="preload"/.test(tag) && /as="font"/.test(tag) &&
+      /href="\/fonts\/cormorant-garamond-latin-400-italic\.woff2"/.test(tag) ? '' : tag)
+    .replace(/<!--home-document-start-->[\s\S]*?<!--home-document-end-->/, '')
     .replace(/<title>[\s\S]*?<\/title>/, () => `<title>${escape(title)}</title>`);
   const tags = { description, 'og:title': title, 'twitter:title': title,
     'og:description': description, 'twitter:description': description, 'og:url': canonical, 'og:type': 'website',
