@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../lib/serverHttp.js';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { request as httpRequest, type IncomingMessage } from 'node:http';

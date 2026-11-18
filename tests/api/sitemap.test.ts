@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../../lib/serverHttp.js';
 import handler from '../../api/sitemap';
 const fetchMock = vi.fn();
 beforeEach(() => {

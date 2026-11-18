@@ -1,5 +1,5 @@
 import { STOREFRONT_ORIGIN } from '../lib/productMetadata.js';
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../lib/serverHttp.js';
 import { isCollectionId } from '../lib/collectionId.js';
 
 // Per-page metadata for social sharing previews
