@@ -10,6 +10,7 @@ export function createFieldTransport(
     url.protocol !== 'https:' ||
     !url.hostname.endsWith('.convex.site') ||
     url.pathname !== '/quality' ||
+    url.port ||
     url.search ||
     url.hash ||
     url.username ||
@@ -31,25 +32,42 @@ export function createFieldTransport(
         delivered.has(body)
       )
         return 'skipped';
+      if (controller.signal.aborted) return 'skipped';
       attempts++;
       pending.add(body);
+      const delivery = new globalThis.AbortController();
+      let rejectDelivery: (reason: Error) => void = () => {};
+      const cancellation = new Promise<Response>((_, reject) => {
+        rejectDelivery = reject;
+      });
+      const abort = () => {
+        delivery.abort();
+        rejectDelivery(new Error('Measurement delivery canceled'));
+      };
+      const timeout = setTimeout(abort, 5000);
+      controller.signal.addEventListener('abort', abort, { once: true });
       try {
-        const response = await request(url.href, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body,
-          credentials: 'omit',
-          referrerPolicy: 'no-referrer',
-          mode: 'cors',
-          keepalive: true,
-          signal: controller.signal,
-        });
+        const response = await Promise.race([
+          request(url.href, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body,
+            credentials: 'omit',
+            referrerPolicy: 'no-referrer',
+            mode: 'cors',
+            keepalive: true,
+            signal: delivery.signal,
+          }),
+          cancellation,
+        ]);
         if (!response.ok || revoked) return 'failed';
         delivered.add(body);
         return 'sent';
       } catch {
         return 'failed';
       } finally {
+        clearTimeout(timeout);
+        controller.signal.removeEventListener('abort', abort);
         pending.delete(body);
       }
     },

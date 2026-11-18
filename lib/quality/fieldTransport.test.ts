@@ -68,3 +68,22 @@ it('rejects private additions and untrusted endpoint shapes', async () => {
   ])
     expect(() => createFieldTransport(url, () => true, request)).toThrow();
 });
+
+it('times out a stalled request without automatic retries or stranding the pending batch', async () => {
+  vi.useFakeTimers();
+  try {
+    const request = vi.fn<typeof fetch>(() => new Promise<Response>(() => {}));
+    const sender = createFieldTransport(endpoint, () => true, request);
+    const sending = sender.send(batch);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(await sending).toBe('failed');
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls[0][1]?.signal?.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    request.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    expect(await sender.send(batch)).toBe('sent');
+    expect(request).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});
