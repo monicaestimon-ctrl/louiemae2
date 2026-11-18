@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 assert.ok(existsSync('dist/index.html'), 'Missing dist/index.html: run npm run build before the product runtime check.');
 
 const output = 'artifacts/lighthouse/product-runtime';
-await build({ entryPoints: ['lib/serverPublicInitialData.ts', 'lib/publicInitialData.ts', 'components/JournalLead.ts', 'components/CollectionRootHero.ts', 'api/journal.ts', 'lib/serverJournalDocument.ts', 'lib/journalContent.ts', 'lib/journalUrl.ts', 'api/product.ts', 'api/collection.ts', 'api/page.ts', 'lib/serverPageDocument.ts', 'lib/serverCollectionDocument.ts', 'lib/collectionId.ts', 'lib/productCategories.ts', 'lib/serverProductDocument.ts', 'lib/publicProductBootstrap.ts', 'lib/responsiveImage.ts', 'lib/productMetadata.ts'],
+await build({ entryPoints: ['lib/catalogVersion.ts', 'lib/kidsInitialPreview.ts', 'lib/serverPublicInitialData.ts', 'lib/publicInitialData.ts', 'components/JournalLead.ts', 'components/CollectionRootHero.ts', 'api/journal.ts', 'lib/serverJournalDocument.ts', 'lib/journalContent.ts', 'lib/journalUrl.ts', 'api/product.ts', 'api/collection.ts', 'api/page.ts', 'lib/serverPageDocument.ts', 'lib/serverCollectionDocument.ts', 'lib/collectionId.ts', 'lib/productCategories.ts', 'lib/serverProductDocument.ts', 'lib/publicProductBootstrap.ts', 'lib/responsiveImage.ts', 'lib/productMetadata.ts'],
   outbase: '.', outdir: output, bundle: false, platform: 'node', format: 'esm', target: 'node24' });
 await mkdir(`${output}/lib`, { recursive: true });
 for (const file of ['imageManifest.json', 'productImageManifest.json', 'editorialImageManifest.json']) {
@@ -90,6 +90,27 @@ try {
     assert.equal(id ? initial.article.contentHtml : initial.posts[0].title, id ? '<p>Readable article</p>' : 'Runtime story');
     results.push({ name: id ? 'article' : 'journal', status: response.code });
   }
+  for (const [name, preview, expected] of [
+    ['kids verified', {ready:true,version:5,products:[{_id:'dress',name:'Runtime dress',price:32,category:'Dresses',images:[],variantCount:2}]},200],
+    ['kids empty', {ready:true,version:5,products:[]},200],
+    ['kids unready', {ready:false,version:5,products:[]},503],
+    ['kids stale version', {ready:true,version:4,products:[]},503],
+  ]) {
+    globalThis.fetch = async (_url, options) => {
+      const request = JSON.parse(options.body);
+      assert.equal(options.headers.Authorization, undefined);
+      const value = request.path === 'siteContent:get' ? {navLinks:[],home:{},story:{},collections:[{id:'kids',title:'Kids',subtitle:'Verified preview',subcategories:[]}]} : preview;
+      if (request.path !== 'siteContent:get') assert.equal(request.path, 'catalog:kidsRootPreview');
+      return {ok:true,json:async()=>({status:'success',value})};
+    };
+    const headers={};const response={status(code){this.code=code;return this;},send(body){this.body=body;},setHeader(k,v){headers[k]=v;}};
+    await collectionHandler({method:'GET',query:{id:'kids'}},response);
+    assert.equal(response.code,expected);assert.equal(headers['Cache-Control'],'no-store');
+    if(expected===200) assert.deepEqual(initialData(response.body,'/collection/kids').kids,preview);
+    else {assert.equal(headers['X-Robots-Tag'],'noindex');assert.ok(!response.body.includes('lm-public-initial-data'));}
+    results.push({name,status:response.code});
+  }
+
 } finally { globalThis.fetch = originalFetch; }
 await writeFile('artifacts/lighthouse/product-runtime-check.json', JSON.stringify({ node: process.version, results }, null, 2));
 console.log('Unbundled product/collection Node runtime and built template verified.');

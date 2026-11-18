@@ -78,3 +78,51 @@ it('applies the same category identity filter to both product sources', async ()
   expect(unmatched.code).toBe(200); expect(unmatched.body).not.toContain('/products/chair');
   expect(unmatched.body).not.toContain('No products');
 });
+
+const kidsProduct = { _id: 'dress', name: 'Dress', price: 32, category: 'Dresses', images: ['/dress.webp'], variantCount: 2 };
+const kidsPayload = (products: unknown[] = [kidsProduct]) => ({ ready: true, version: 5, products });
+function kidsSource(value: unknown) {
+  fetchMock.mockImplementation(async (_url, options) => {
+    const query = JSON.parse(options.body);
+    expect(options.headers.Authorization).toBeUndefined();
+    if (query.path === 'siteContent:get') return { ok: true, json: async () => ({ status: 'success', value: {
+      ...site, collections: [{ ...site.collections[0], id: 'kids' }],
+    } }) };
+    if (query.path === 'catalog:kidsRootPreview') {
+      expect(query.args).toEqual({});
+      return { ok: true, json: async () => ({ status: 'success', value }) };
+    }
+    expect(query.path).toBe('catalog:storefrontPage');
+    return { ok: true, json: async () => ({ status: 'success', value: { page: [] } }) };
+  });
+}
+it('uses the verified eight-card Kids root for both initial HTML and a display-only snapshot', async () => {
+  const products = Array.from({ length: 8 }, (_, i) => ({ ...kidsProduct, _id: 'dress' + i, supplierCost: 12345, inStock: true }));
+  kidsSource(kidsPayload(products));
+  const result = await request({ id: 'kids' });
+  expect(result.code).toBe(200); expect(fetchMock).toHaveBeenCalledTimes(2);
+  const document = new globalThis.DOMParser().parseFromString(result.body, 'text/html');
+  const snapshot = JSON.parse(document.getElementById('lm-public-initial-data')!.textContent!);
+  expect(snapshot.data.kids.products.map((p: { _id: string }) => p._id)).toEqual(products.map(p => p._id));
+  expect([...document.querySelectorAll('.lm-collection-card')].map(a => a.getAttribute('href'))).toEqual(products.map(p => '/products/' + p._id));
+  expect(result.body).not.toContain('supplierCost'); expect(result.body).not.toContain('inStock');
+  expect(snapshot.data.kids.products).toHaveLength(8);
+});
+it.each([undefined, null, { ...kidsPayload(), ready: false }, { ...kidsPayload(), version: 4 }, kidsPayload(Array(9).fill(kidsProduct))])('fails closed for unverified Kids root evidence', async value => {
+  kidsSource(value); const result = await request({ id: 'kids' });
+  expect(result.code).toBe(503); expect(result.headers['X-Robots-Tag']).toBe('noindex');
+  expect(result.body).not.toContain('lm-public-initial-data');
+});
+it('distinguishes verified Kids emptiness from an unavailable source', async () => {
+  kidsSource(kidsPayload([])); const result = await request({ id: 'kids' });
+  expect(result.code).toBe(200);
+  const document = new globalThis.DOMParser().parseFromString(result.body, 'text/html');
+  expect(JSON.parse(document.getElementById('lm-public-initial-data')!.textContent!).data.kids.products).toEqual([]);
+});
+it.each([{ id: 'kids', view: 'products' }, { id: 'kids', cat: 'chairs' }])('does not seed filtered or grid responses with root cards', async query => {
+  kidsSource(kidsPayload()); const result = await request(query);
+  expect(result.code).toBe(200);
+  expect(fetchMock.mock.calls.map(([, options]) => JSON.parse(options.body).path)).not.toContain('catalog:kidsRootPreview');
+  const document = new globalThis.DOMParser().parseFromString(result.body, 'text/html');
+  expect(JSON.parse(document.getElementById('lm-public-initial-data')!.textContent!).data.kids).toBeUndefined();
+});

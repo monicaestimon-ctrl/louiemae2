@@ -159,3 +159,16 @@ it('binds collection configuration to its exact valid route without seeding prod
   expect(parsePublicInitialData(text, '/collection/furniture', 31_001)).toBeUndefined();
   expect(parsePublicInitialData(encoded('/collection/INVALID').text, '/collection/INVALID', 1000)).toEqual({});
 });
+
+it('decodes bounded Kids display data only on its exact initial route', () => {
+  const kids = { ready: true as const, version: 5, products: [{ _id: 'dress', name: 'Dress', price: 32, category: 'Dresses', images: ['/dress.webp'], variantCount: 2 }] };
+  const html = withPublicInitialData('<head></head>', '/collection/kids', { kids }, 1000);
+  const text = new globalThis.DOMParser().parseFromString(html, 'text/html').getElementById(PUBLIC_INITIAL_ID)!.textContent!;
+  expect(parsePublicInitialData(text, '/collection/kids', 1000)?.kids).toEqual(kids);
+  expect(parsePublicInitialData(text, '/collection/fashion', 1000)).toBeUndefined();
+  expect(parsePublicInitialData(text, '/collection/kids', 31_001)).toBeUndefined();
+  const envelope = JSON.parse(text); envelope.path = '/story';
+  expect(parsePublicInitialData(JSON.stringify(envelope), '/story', 1000)?.kids).toBeUndefined();
+  envelope.path = '/collection/kids'; envelope.data.kids.version = 4;
+  expect(parsePublicInitialData(JSON.stringify(envelope), '/collection/kids', 1000)?.kids).toBeUndefined();
+});

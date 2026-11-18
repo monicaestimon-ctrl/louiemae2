@@ -1,3 +1,4 @@
+import { kidsInitialPreview, type KidsInitialPreview } from './kidsInitialPreview.js';
 import type { FunctionReturnType } from 'convex/server';
 import type { api } from '../convex/_generated/api';
 export type PublicSiteData = Pick<
@@ -7,6 +8,7 @@ export type PublicSiteData = Pick<
 export type PublicPosts = FunctionReturnType<typeof api.blogPosts.publicSummaries>;
 export type PublicArticle = NonNullable<FunctionReturnType<typeof api.blogPosts.publicDetail>>;
 export type PublicInitialData = {
+  kids?: KidsInitialPreview;
   site?: PublicSiteData;
   posts?: PublicPosts;
   article?: PublicArticle;
@@ -115,7 +117,7 @@ function navigation(value: unknown, depth = 0): unknown[] {
     ];
   });
 }
-/** Only public display DTOs belong here. Never add account, pricing or purchase authority. */
+/** Only public display DTOs belong here. Never add private costs, account data or purchase authority. */
 export function publicSiteData(value: unknown): PublicSiteData | undefined {
   if (
     !record(value) ||
@@ -182,6 +184,7 @@ export function parsePublicInitialData(
     )
       return;
     const data: PublicInitialData = {};
+    if (path === '/collection/kids') data.kids = kidsInitialPreview(parsed.data.kids);
     if (path === '/shop' || path === '/story' || /^\/collection\/[a-z0-9][a-z0-9_-]{0,79}$/.test(path))
       data.site = publicSiteData(parsed.data.site);
     if (

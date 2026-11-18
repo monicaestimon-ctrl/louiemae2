@@ -6,6 +6,7 @@ import { isCollectionId } from '../lib/collectionId.js';
 import { collectionDocument, type PublicCollectionDocument } from '../lib/serverCollectionDocument.js';
 import { buildCatalogCategoryFilter, matchesCatalogCategoryFilter } from '../lib/productCategories.js';
 import type { CollectionConfig } from '../types';
+import { kidsInitialPreview } from '../lib/kidsInitialPreview.js';
 import { publicSiteData } from '../lib/publicInitialData.js';
 import { withPublicInitialData } from '../lib/serverPublicInitialData.js';
 
@@ -48,11 +49,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (typeof collection.title !== 'string' || typeof collection.subtitle !== 'string' || !Array.isArray(collection.subcategories)) throw new Error('Invalid collection configuration');
     if (!collection.subcategories.every(value => { const item = record(value); return item && typeof item.id === 'string' && typeof item.title === 'string'; })) throw new Error('Invalid category configuration');
     const filter = typeof category === 'string' && category && category !== 'All' ? buildCatalogCategoryFilter(category, collection as unknown as CollectionConfig) : undefined;
+    const isKidsRoot = id === 'kids' && !filter && req.query.view !== 'products';
     const [legacyValue, retailValue] = await Promise.all([
-      query(origin, 'catalog:storefrontPage', { collection: id, categoryFilter: filter, sort: 'newest', paginationOpts: { numItems: 12, cursor: null } }),
+      isKidsRoot ? query(origin, 'catalog:kidsRootPreview', {}) : query(origin, 'catalog:storefrontPage', { collection: id, categoryFilter: filter, sort: 'newest', paginationOpts: { numItems: 12, cursor: null } }),
       ['furniture', 'decor'].includes(id) ? query(origin, 'retailLaunch:storefrontPage', { paginationOpts: { numItems: 12, cursor: null } }) : Promise.resolve({ page: [] }),
     ]);
-    const legacy = record(legacyValue), retail = record(retailValue);
+    const kids = isKidsRoot ? kidsInitialPreview(legacyValue) : undefined;
+    if (isKidsRoot && !kids) throw new Error('Verified Kids preview unavailable');
+    const legacy = kids ? { page: kids.products.map(product => ({ ...product, collection: 'kids' })) } : record(legacyValue);
+    const retail = record(retailValue);
     if (!Array.isArray(legacy?.page) || !Array.isArray(retail?.page)) throw new Error('Collection products unavailable');
     const cards: PublicCollectionDocument['cards'] = [];
     const seen = new Set<string>();
@@ -76,6 +81,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       categories: collection.subcategories.map(record).flatMap(category => category && typeof category.id === 'string' && typeof category.title === 'string'
         ? [{ id: category.id.slice(0, 200), title: category.title.slice(0, 200) }] : []).slice(0, 100), cards };
     const template = await readFile(join(process.cwd(), 'dist', 'index.html'), 'utf8');
-    return res.status(200).send(req.method === 'HEAD' ? '' : withPublicInitialData(collectionDocument(template, document), `/collection/${id}`, { site: publicSiteData(site) }));
+    return res.status(200).send(req.method === 'HEAD' ? '' : withPublicInitialData(collectionDocument(template, document), `/collection/${id}`, { site: publicSiteData(site), ...(kids ? { kids } : {}) }));
   } catch { return failure(res, 503, 'Collections temporarily unavailable'); }
 }
