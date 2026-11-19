@@ -36,7 +36,8 @@
     "test:portal:browser": "node scripts/lighthouse/portal.mjs",
     "test:tray-request:browser": "node scripts/lighthouse/tray-request.mjs",
     "test:legacy-creator:browser": "node scripts/lighthouse/legacy-creator.mjs",
-    "test:product-navigation:browser": "node scripts/lighthouse/product-navigation.mjs"
+    "test:product-navigation:browser": "node scripts/lighthouse/product-navigation.mjs",
+    "test:field:browser": "vitest run --config scripts/lighthouse/field.vitest.config.mjs"
   },
   "dependencies": {
     "@auth/core": "0.41.3",
@@ -67,7 +68,8 @@
     "tailwind-merge": "^3.4.0",
     "three": "^0.160.0",
     "three-gpu-pathtracer": "^0.0.23",
-    "three-mesh-bvh": "^0.7.8"
+    "three-mesh-bvh": "^0.7.8",
+    "web-vitals": "6.2.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

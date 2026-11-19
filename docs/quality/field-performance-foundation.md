@@ -1,5 +1,7 @@
 # Field-performance monitoring foundation
 
+Historical phase record for PR #332. See [the integration and release runbook](field-performance-integration.md) for the subsequent frontend/HTTP/admin connections and activation gates.
+
 This phase is dormant infrastructure. It does not install web-vitals, expose an ingestion HTTP route, add a consent screen, or enable production collection. Those connections and their end-to-end verification remain a subsequent phase. `FIELD_QUALITY_ENABLED` defaults off; no environment setting is changed here.
 
 ## Data and consent boundary

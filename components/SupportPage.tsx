@@ -1,3 +1,4 @@
+import { PerformancePreferences } from './PerformancePreferences';
 
 import React, { useState, useEffect } from 'react';
 import { FadeIn } from './FadeIn';
@@ -377,6 +378,13 @@ export const SupportPage: React.FC<SupportPageProps> = ({ section }) => {
 
                         <div className="bg-white/60 rounded-2xl border border-earth/5 p-6 md:p-8 space-y-8">
                             <p className="font-sans text-muted-earth text-xs italic">Last updated: February 2026</p>
+
+                            <section className="space-y-3" aria-label="Optional performance measurements">
+                                <h3 className="font-serif text-xl text-earth">Optional performance measurements</h3>
+                                <p className="text-sm text-muted-earth">These measurements are off unless you opt in. We collect page-load, visual-stability and interaction timings, a public page type, mobile or desktop class, release version and a random token for one page visit. We do not include full URLs, account information, referral details or delivery information in these measurements. Reports use a 28-day window; hourly cleanup removes expired observations and may take longer after an interruption. Hosting providers may separately process connection metadata.</p>
+                                <PerformancePreferences className="min-h-11 border border-earth/30 rounded-full px-5 py-2 text-earth" />
+                                <p><a href="/privacy" className="underline text-earth">Read the full privacy policy</a></p>
+                            </section>
 
                             {/* Policy Sections */}
                             {[

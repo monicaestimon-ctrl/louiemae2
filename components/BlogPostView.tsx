@@ -28,12 +28,27 @@ export const BlogPostView: React.FC<BlogPostViewProps> = ({ postId }) => {
     const post = initial.value?._id === postId ? initial.value : null;
     const editorialStatus = initial.unavailable ? 'unavailable' : initial.value === undefined ? 'loading' : 'ready';
     const safeContent = post?.contentHtml ?? '';
-    useJournalMetadata(postId, editorialStatus === 'loading', editorialStatus === 'unavailable', post);
+    const removedFocusRef = useJournalMetadata(postId, editorialStatus === 'loading', editorialStatus === 'unavailable', post);
     const [showShareMenu, setShowShareMenu] = useState(false);
     const [copied, setCopied] = useState(false);
     const shareMenuRef = useRef<HTMLDivElement>(null);
     const headingRef = useRef<globalThis.HTMLHeadingElement>(null);
-    useEffect(() => { if (editorialStatus !== 'loading') headingRef.current?.focus({ preventScroll: true }); }, [postId, editorialStatus]);
+    // Preserve browser focus on document entry; in-app story navigation still announces its heading.
+    const initialDocumentRef = useRef(
+        typeof document !== 'undefined' && document.getElementById('lm-journal-document')?.dataset.postId === postId ? postId : null,
+    );
+    useEffect(() => {
+        if (initialDocumentRef.current === postId) {
+            const focused = removedFocusRef.current;
+            removedFocusRef.current = null;
+            if (focused && !focused.isConnected && document.activeElement === document.body)
+                headingRef.current?.focus({ preventScroll: true });
+            return;
+        }
+        initialDocumentRef.current = null;
+        if (editorialStatus === 'loading') return;
+        headingRef.current?.focus({ preventScroll: true });
+    }, [postId, editorialStatus, removedFocusRef]);
 
     // Close share menu on outside click
     useEffect(() => {
@@ -160,7 +175,7 @@ export const BlogPostView: React.FC<BlogPostViewProps> = ({ postId }) => {
 
             {/* Back Button + Share */}
             <div className="max-w-3xl mx-auto px-6 md:px-8 pt-10">
-                <FadeIn>
+                <div>
                     <div className="flex items-center justify-between mb-12">
                         <button
                             onClick={() => { window.location.hash = '#blog'; }}
@@ -192,7 +207,7 @@ export const BlogPostView: React.FC<BlogPostViewProps> = ({ postId }) => {
                             )}
                         </div>
                     </div>
-                </FadeIn>
+                </div>
             </div>
 
             {/* Post Header */}
@@ -200,24 +215,24 @@ export const BlogPostView: React.FC<BlogPostViewProps> = ({ postId }) => {
                 <JournalArticleHeading post={{ ...post, id: post._id }} readingTime={readingTime} headingRef={headingRef} />
 
                 {/* Post Content */}
-                <FadeIn threshold={0.01}>
+                <div>
                     <div
                         className="prose-blog font-serif text-lg text-earth leading-relaxed mb-12"
                         dangerouslySetInnerHTML={{ __html: safeContent }}
                     />
-                </FadeIn>
+                </div>
 
                 {/* Automatic Signature */}
-                <FadeIn threshold={0.01} delay={150}>
+                <div>
                     <div className="mt-16 mb-16 flex flex-col items-start">
                         <div className="h-px w-12 bg-bronze/20 mb-6" />
                         <p className="font-serif text-muted-earth text-lg italic leading-relaxed">simply,</p>
                         <p className="font-serif text-muted-earth text-2xl italic mt-1">mae</p>
                     </div>
-                </FadeIn>
+                </div>
 
                 {/* Share Footer */}
-                <FadeIn threshold={0.01} delay={300}>
+                <div>
                     <div className="border-t border-earth/10 pt-10 mt-10">
                         <div className="flex flex-col items-center gap-5">
                             <span className="text-[9px] uppercase tracking-[0.3em] text-muted-earth">Share this story</span>
@@ -231,7 +246,7 @@ export const BlogPostView: React.FC<BlogPostViewProps> = ({ postId }) => {
                             </button>
                         </div>
                     </div>
-                </FadeIn>
+                </div>
             </article>
         </main>
     );

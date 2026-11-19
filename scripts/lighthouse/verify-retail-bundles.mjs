@@ -24,12 +24,19 @@ for (const route of routes) {
   }
   for (const key of ['index.html', ...boot, route]) visit(key);
   for (const deferred of [
+    'lib/quality/fieldBootstrap.ts',
     'components/cart/CartDrawer.tsx',
     'components/ConciergePanel.tsx',
     'components/HomeProductPreview.tsx',
     'components/CollectionProductPreview.tsx',
   ]) {
     assert.ok(!seen.has(deferred), `${deferred} leaked into the initial ${route} graph`);
+  }
+  if (route !== 'components/StoryPage.tsx') {
+    assert.ok(
+      !seen.has('components/DynamicPage.tsx'),
+      'Custom page renderer must remain deferred on ' + route
+    );
   }
   const js = [...new Set([...seen].map((key) => manifest[key].file))];
   const css = [...new Set([...seen].flatMap((key) => manifest[key].css || []))];

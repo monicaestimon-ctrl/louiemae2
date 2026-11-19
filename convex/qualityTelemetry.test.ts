@@ -113,6 +113,11 @@ it('purges bounded expired visits without deleting live records, even when disab
       samples: [],
     });
   });
+  expect(await t.query(api.qualityTelemetry.summary, segment)).toMatchObject({
+    visits: 1,
+    retentionBacklog: true,
+    oldestExpiredAt: expired,
+  });
   vi.stubEnv('FIELD_QUALITY_ENABLED', '');
   expect(await t.mutation(internal.qualityTelemetry.purge, {})).toMatchObject({
     visits: 500,
@@ -126,6 +131,11 @@ it('purges bounded expired visits without deleting live records, even when disab
   const rows = await t.run((ctx) => ctx.db.query('qualityVisits').collect());
   expect(rows).toHaveLength(1);
   expect(rows[0].createdAt).toBe(now);
+  expect(await t.query(api.qualityTelemetry.summary, segment)).toMatchObject({
+    visits: 1,
+    retentionBacklog: false,
+    oldestExpiredAt: null,
+  });
 });
 it('marks bounded summaries as truncated rather than claiming a passing population', async () => {
   const t = convexTest(schema, modules);
@@ -172,4 +182,53 @@ it('does not label an apparently healthy sample as complete after collection hit
   expect(result.collectionLimited).toBe(true);
   expect(result.limitedDays).toBe(1);
   expect(result.metrics.find((metric) => metric.name === 'LCP')?.status).toBe('collection-limited');
+});
+it('keeps synthetic verification outside real-release sample thresholds', async () => {
+  const t = convexTest(schema, modules);
+  for (let i = 0; i < 49; i++)
+    await t.mutation(internal.qualityTelemetry.record, {
+      payload: JSON.stringify({ ...batch, documentToken: i.toString(16).padStart(32, '0') }),
+    });
+  await t.mutation(internal.qualityTelemetry.record, {
+    payload: JSON.stringify({ ...batch, release: '0'.repeat(40) }),
+  });
+  const real = await t.query(api.qualityTelemetry.summary, segment);
+  expect(real.synthetic).toBe(false);
+  expect(real.visits).toBe(49);
+  expect(real.metrics.find((m) => m.name === 'LCP')).toMatchObject({
+    count: 49,
+    status: 'insufficient-data',
+  });
+  const synthetic = await t.query(api.qualityTelemetry.summary, {
+    ...segment,
+    release: '0'.repeat(40),
+  });
+  expect(synthetic).toMatchObject({ synthetic: true, visits: 1 });
+});
+it('excludes expired rows immediately but alerts only after one purge interval', async () => {
+  const t = convexTest(schema, modules);
+  const now = Date.now();
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+  try {
+    const id = await t.run((ctx) =>
+      ctx.db.insert('qualityVisits', {
+        ...segment,
+        documentToken: batch.documentToken,
+        createdAt: now - 28 * 86_400_000 - 3_600_000 + 1,
+        updatedAt: now,
+        samples: [{ name: 'LCP', value: 2100, revision: 1 }],
+      })
+    );
+    expect(await t.query(api.qualityTelemetry.summary, segment)).toMatchObject({
+      visits: 0,
+      retentionBacklog: false,
+    });
+    await t.run((ctx) => ctx.db.patch(id, { createdAt: now - 28 * 86_400_000 - 3_600_000 }));
+    expect(await t.query(api.qualityTelemetry.summary, segment)).toMatchObject({
+      visits: 0,
+      retentionBacklog: true,
+    });
+  } finally {
+    clock.mockRestore();
+  }
 });

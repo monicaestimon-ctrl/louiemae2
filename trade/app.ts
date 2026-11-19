@@ -1115,7 +1115,7 @@ function Footer({ctx}){
       <${TradeNewsletter}/></div>
     <div><h2>Shop</h2>${['discover','studio','room','quiz'].map(r=>html`<button key=${r} onClick=${()=>ctx.go(r)}>${MENU.find(m=>m[0]===r)[1]}</button>`)}</div>
     <div><h2>Trade</h2><button onClick=${()=>ctx.go('trade')}>Apply</button><button onClick=${()=>ctx.go('hub')}>Your quotes</button><button onClick=${()=>ctx.setTray(true)}>Project tray</button></div>
-    <div><h2>You</h2><button onClick=${()=>ctx.go('profile')}>Profile</button><button onClick=${()=>ctx.go('account')}>Account</button></div>
+    <div><h2>You</h2><button onClick=${()=>ctx.go('profile')}>Profile</button><button onClick=${()=>ctx.go('account')}>Account</button><a href="/privacy">Privacy & performance preferences</a></div>
   </footer>`;
 }
 

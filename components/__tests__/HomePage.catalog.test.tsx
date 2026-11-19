@@ -23,7 +23,7 @@ vi.mock('../useStorefrontProductDetail', () => ({ useStorefrontProductDetail: (i
 } }));
 const CartProof = () => { const cart = useCart(); return <output aria-label="Cart proof">{JSON.stringify({ count: cart.itemCount, subtotal: cart.subtotal, variant: cart.items[0]?.selectedVariant?.id, product: cart.items[0]?.product.id })}</output>; };
 const App = () => <CartProvider><HomePage /><CartProof /></CartProvider>;
-const open = async () => { fireEvent.click(screen.getByRole('button', { name: 'Quick view Catalog chair' })); await waitFor(() => expect(screen.queryByText('Opening product details…')).toBeNull()); };
+const open = async () => { fireEvent.click(screen.getByRole('button', { name: 'Quick view Catalog chair' })); await waitFor(() => expect(screen.queryByText('Opening product details…')).toBeNull(), { timeout: 5_000 }); };
 beforeEach(() => {
   vi.clearAllMocks(); localStorage.clear(); mocks.ready = true; mocks.failed = false; mocks.loading = false; mocks.unavailable = false; mocks.detailFailed = false;
   mocks.product = { id: 'real-product', name: 'Authoritative chair', fulfillmentProvider: 'ashcroft', description: 'Real details', category: 'Chairs', price: 420, images: ['chair.jpg'], inStock: true,

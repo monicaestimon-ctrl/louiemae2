@@ -1,3 +1,4 @@
+import FieldPerformance from './FieldPerformance';
 import React, { useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
@@ -15,7 +16,7 @@ import './commerce-v2-admin.css';
 // Commerce v2 operations console (spec S35, v2 §20, §26). Admin-only: every query behind it
 // requires the admin allowlist on the server.
 
-type Section = 'decisions' | 'health' | 'reviews' | 'catalog' | 'fulfillment' | 'partners' | 'delivery' | 'integrations';
+type Section = 'decisions' | 'health' | 'reviews' | 'catalog' | 'fulfillment' | 'partners' | 'delivery' | 'integrations' | 'performance';
 const SECTIONS: [Section, string][] = [
   ['decisions', 'Decisions & flags'],
   ['health', 'Health & alerts'],
@@ -25,6 +26,7 @@ const SECTIONS: [Section, string][] = [
   ['delivery', 'Delivery & freight'],
   ['partners', 'Partners & payouts'],
   ['integrations', 'Integration readiness'],
+  ['performance', 'Field performance'],
 ];
 const money = (m: number) => `$${(m / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
 const card = 'bg-white border border-earth/10 rounded-lg p-4 space-y-2 text-sm text-earth';
@@ -495,7 +497,7 @@ export default function CommerceV2Admin() {
     (id === 'delivery' && permissions.support) ||
     ((id === 'decisions' || id === 'fulfillment') && permissions.operations) ||
     (id === 'health' && permissions.finance) ||
-    (id === 'integrations' && permissions.engineering));
+    ((id === 'integrations' || id === 'performance') && permissions.engineering));
   if (!sections.length) return <p role="alert">No staff permissions are assigned to this account.</p>;
   const section = sections.some(([id]) => id === selected) ? selected : sections[0][0];
   return (
@@ -514,6 +516,7 @@ export default function CommerceV2Admin() {
       {section === 'delivery' && <DeliveryOperations />}
       {section === 'partners' && <Partners />}
       {section === 'integrations' && <IntegrationReadiness />}
+      {section === 'performance' && <FieldPerformance />}
     </div>
   );
 }

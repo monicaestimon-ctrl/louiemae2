@@ -23,6 +23,9 @@ export type FieldBatch = {
 export const FIELD_MIN_SAMPLES = 50;
 export const FIELD_MAX_BATCH_BYTES = 2048;
 export const FIELD_RETENTION_DAYS = 28;
+export const FIELD_PURGE_INTERVAL_HOURS = 1;
+/** Reserved for isolated browser verification, never a real Git deployment commit. */
+export const FIELD_SYNTHETIC_RELEASE = '0'.repeat(40);
 const record = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === 'object' && !Array.isArray(value);
 const exactKeys = (value: Record<string, unknown>, keys: string[]) =>

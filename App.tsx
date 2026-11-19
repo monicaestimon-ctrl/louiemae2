@@ -24,7 +24,6 @@ import {
   productUrl,
   storefrontRoute,
 } from './lib/storefrontNavigation';
-import { DynamicPage } from './components/DynamicPage';
 import { NewsletterPopup } from './components/NewsletterPopup';
 import { SiteProvider, useSite } from './contexts/BlogContext';
 import { NewsletterProvider } from './contexts/NewsletterContext';
@@ -56,6 +55,7 @@ const named = <K extends string, T extends Record<K, React.ComponentType<never>>
   }
   return Object.assign(PreloadedPage, { preload: resource.preload });
 };
+const DynamicPage = named(() => import('./components/DynamicPage'), 'DynamicPage');
 const HomePage = named(() => import('./components/HomePage'), 'HomePage');
 const StoryPage = named(() => import('./components/StoryPage'), 'StoryPage');
 const BlogPage = named(() => import('./components/BlogPage'), 'BlogPage');
