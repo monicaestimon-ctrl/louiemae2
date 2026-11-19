@@ -9,7 +9,7 @@ type Props = {
 };
 import React from 'react';
 import { publicProductImage } from '../lib/productMetadata.js';
-import { responsiveImage } from '../lib/responsiveImage.js';
+import { CollectionCategoryImage } from './CollectionCategoryImage.js';
 function categoryHref(collection: string, category: Category) {
   const redirect = category.redirect?.replace(/^#/, '/');
   if (redirect && /^\/(?:collection\/[a-z0-9_-]+(?:\?[^#]*)?|blog|shop|story)$/.test(redirect))
@@ -104,11 +104,8 @@ function CollectionRootHero({
                         },
                       },
                       publicProductImage(cat.image) &&
-                        /* @__PURE__ */ React.createElement('img', {
-                          ...responsiveImage(
-                            publicProductImage(cat.image),
-                            '(min-width: 768px) 33vw, 200px'
-                          ),
+                        /* @__PURE__ */ React.createElement(CollectionCategoryImage, {
+                          source: publicProductImage(cat.image),
                           loading: idx === 0 ? 'eager' : 'lazy',
                           fetchPriority: idx === 0 ? 'high' : void 0,
                           decoding: 'async',
@@ -175,11 +172,8 @@ function CollectionRootHero({
                         },
                       },
                       publicProductImage(cat.image) &&
-                        /* @__PURE__ */ React.createElement('img', {
-                          ...responsiveImage(
-                            publicProductImage(cat.image),
-                            '(min-width: 768px) 33vw, 200px'
-                          ),
+                        /* @__PURE__ */ React.createElement(CollectionCategoryImage, {
+                          source: publicProductImage(cat.image),
                           loading: idx === 0 ? 'eager' : 'lazy',
                           fetchPriority: idx === 0 ? 'high' : void 0,
                           decoding: 'async',
@@ -290,11 +284,8 @@ function CollectionRootHero({
                     },
                   },
                   publicProductImage(cat.image) &&
-                    /* @__PURE__ */ React.createElement('img', {
-                      ...responsiveImage(
-                        publicProductImage(cat.image),
-                        '(min-width: 768px) 33vw, 200px'
-                      ),
+                    /* @__PURE__ */ React.createElement(CollectionCategoryImage, {
+                      source: publicProductImage(cat.image),
                       loading: idx === 0 ? 'eager' : 'lazy',
                       fetchPriority: idx === 0 ? 'high' : void 0,
                       decoding: 'async',

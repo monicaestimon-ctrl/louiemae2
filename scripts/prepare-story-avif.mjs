@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 const source = 'public/images/brand/fam2.png';
 const bytes = await readFile(source);
 const sha256 = createHash('sha256').update(bytes).digest('hex');
-const recipe = 'avif-quality45-effort7-lossless-orientation-v1';
+const recipe = 'avif-quality40-effort7-lossless-orientation-v1';
 const key = createHash('sha256')
   .update(sha256 + '|' + recipe)
   .digest('hex')
@@ -18,7 +18,7 @@ const renditions = [];
 for (const width of entry.widths) {
   const output = await sharp(oriented)
     .resize({ width, withoutEnlargement: true })
-    .avif({ quality: 45, effort: 7 })
+    .avif({ quality: 40, effort: 7 })
     .toBuffer();
   await writeFile('public' + base + '-' + width + '.avif', output);
   renditions.push({

@@ -79,6 +79,7 @@ jobs:
           node --test scripts/product-images.node.mjs
           node scripts/verify-product-images.mjs
           node scripts/verify-story-images.mjs
+          node scripts/verify-fashion-category-images.mjs
           node scripts/verify-product-formats.mjs
           node --test scripts/product-formats-staging.node.mjs
           node scripts/verify-editorial-images.mjs
@@ -111,6 +112,7 @@ jobs:
           node scripts/lighthouse/staff-entry.mjs
           node scripts/lighthouse/editorial-formats.mjs
           node scripts/lighthouse/story-formats.mjs
+          node scripts/lighthouse/collection-formats.mjs
           node scripts/lighthouse/startup-recovery.mjs
           node scripts/lighthouse/visible-startup.mjs
           node scripts/lighthouse/product-formats.mjs
