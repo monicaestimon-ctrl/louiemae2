@@ -431,8 +431,14 @@ describe('media identity and review', () => {
     const fetch=vi.fn(async()=>new Response('changed bytes'));vi.stubGlobal('fetch',fetch);
     const input={variantId:cv._id,sku:cv.supplierSku,piecesPerPack:cv.piecesPerPack,sourceUrl:'https://images.salsify.com/reviewed.png',contentHash:'c'.repeat(64),sourceWorkbookSha256:'a'.repeat(64),reviewSha256:'b'.repeat(64)};
     await expect(t.action(internal.catMediaProcessing.prepareReviewedSource,input)).rejects.toThrow(/bytes changed/);
-    for(const change of [{sku:'OTHER'},{piecesPerPack:cv.piecesPerPack+1},{sourceUrl:'https://example.com/photo.jpg'},{contentHash:'invalid'}])
-      await expect(t.action(internal.catMediaProcessing.prepareReviewedSource,{...input,...change})).rejects.toThrow();
+    const rejectionCases = [
+      { change: { sku: 'OTHER' }, message: /SKU and pack/ },
+      { change: { piecesPerPack: cv.piecesPerPack + 1 }, message: /SKU and pack/ },
+      { change: { sourceUrl: 'https://example.com/photo.jpg' }, message: /supplier image host/ },
+      { change: { contentHash: 'invalid' }, message: /Valid reviewed hashes/ },
+    ];
+    for (const { change, message } of rejectionCases)
+      await expect(t.action(internal.catMediaProcessing.prepareReviewedSource, { ...input, ...change })).rejects.toThrow(message);
     await t.run(ctx=>ctx.db.patch(cv._id,{availability:'discontinued'}));
     await expect(t.action(internal.catMediaProcessing.prepareReviewedSource,input)).rejects.toThrow(/SKU and pack/);
     expect(fetch).toHaveBeenCalledTimes(1);
