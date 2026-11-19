@@ -1,6 +1,6 @@
 // @vitest-environment node
 /// <reference types="vite/client" />
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { convexTest } from 'convex-test';
 import schema from './schema';
 import { api, internal } from './_generated/api';
@@ -26,6 +26,7 @@ beforeEach(() => {
   process.env.CJ_ADMIN_EMAILS = ADMIN;
 });
 afterEach(() => {
+  vi.unstubAllGlobals();
   delete process.env.CJ_ADMIN_EMAILS;
   delete process.env.DELIVERY_ADMIN_ROLES;
   delete process.env.CATALOG_PUBLICATION_V2_ENABLED;
@@ -390,6 +391,69 @@ describe('media identity and review', () => {
     expect((await t.run(ctx => ctx.db.get(id)))!.verifiedAgainst?.sku).toBe(cv.supplierSku);
     expect((await t.run(ctx => ctx.db.get(otherId)))!.holds).toContain('MEDIA_MISSING');
   });
+  it('prepares a hash-bound supplier source without granting publication or rights, and reuses it on retry', async () => {
+    const {t,cv}=await fixture();
+    const bytes=await sharp({create:{width:1000,height:1000,channels:3,background:'white'}}).png().toBuffer();
+    const fetch=vi.fn(async()=>new Response(bytes,{headers:{'content-type':'image/png'}}));vi.stubGlobal('fetch',fetch);
+    const input={variantId:cv._id,sku:cv.supplierSku,piecesPerPack:cv.piecesPerPack,sourceUrl:'https://images.salsify.com/reviewed.png',contentHash:createHash('sha256').update(bytes).digest('hex'),sourceWorkbookSha256:'a'.repeat(64),reviewSha256:'b'.repeat(64)};
+    const before=await t.run(ctx=>ctx.db.get(cv._id));
+    const result=await t.action(internal.catMediaProcessing.prepareReviewedSource,input);
+    expect(result.widths).toEqual([640,1000]);
+    const asset=await t.run(ctx=>ctx.db.get(result.assetId));
+    expect(asset).toMatchObject({status:'pending',variantId:cv._id,contentHash:input.contentHash,sourceUrl:input.sourceUrl});
+    expect(asset?.rights.basis).toContain('publication rights require separate review');
+    expect(asset?.rights.evidenceRef).toContain(input.sourceWorkbookSha256);
+    expect(await t.run(ctx=>ctx.db.get(cv._id))).toEqual(before);
+    expect(await t.action(internal.catMediaProcessing.prepareReviewedSource,input)).toMatchObject({assetId:result.assetId,duplicate:true});
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('resumes an interrupted source import without duplicating its original or replacing rights evidence', async () => {
+    const { t, cv, args } = await fixture();
+    const bytes = await sharp({ create: { width: 1000, height: 1000, channels: 3, background: 'white' } }).png().toBuffer();
+    const contentHash = createHash('sha256').update(bytes).digest('hex');
+    const sourceUrl = 'https://images.salsify.com/reviewed.png';
+    const storageId = await t.run(ctx => ctx.storage.store(new Blob([bytes], { type: 'image/png' })));
+    const saved = await t.mutation(internal.catMedia.record, { ...args, storageId, contentHash, sourceUrl });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(bytes)));
+    const result = await t.action(internal.catMediaProcessing.prepareReviewedSource, {
+      variantId: cv._id, sku: cv.supplierSku, piecesPerPack: cv.piecesPerPack,
+      sourceUrl, contentHash, sourceWorkbookSha256: 'a'.repeat(64), reviewSha256: 'b'.repeat(64),
+    });
+    expect(result).toEqual({ assetId: saved.id, duplicate: true, widths: [640, 1000] });
+    const assets = await t.run(ctx => ctx.db.query('catMediaAssets').collect());
+    expect(assets).toHaveLength(1);
+    expect(assets[0]).toMatchObject({ storageId, rights: args.rights, status: 'pending' });
+  });
+
+  it('rejects changed bytes, wrong identities, discontinued variants and unapproved image hosts',async()=>{
+    const {t,cv}=await fixture();
+    const fetch=vi.fn(async()=>new Response('changed bytes'));vi.stubGlobal('fetch',fetch);
+    const input={variantId:cv._id,sku:cv.supplierSku,piecesPerPack:cv.piecesPerPack,sourceUrl:'https://images.salsify.com/reviewed.png',contentHash:'c'.repeat(64),sourceWorkbookSha256:'a'.repeat(64),reviewSha256:'b'.repeat(64)};
+    await expect(t.action(internal.catMediaProcessing.prepareReviewedSource,input)).rejects.toThrow(/bytes changed/);
+    const rejectionCases = [
+      { change: { sku: 'OTHER' }, message: /SKU and pack/ },
+      { change: { piecesPerPack: cv.piecesPerPack + 1 }, message: /SKU and pack/ },
+      { change: { sourceUrl: 'https://example.com/photo.jpg' }, message: /supplier image host/ },
+      { change: { contentHash: 'invalid' }, message: /Valid reviewed hashes/ },
+    ];
+    for (const { change, message } of rejectionCases)
+      await expect(t.action(internal.catMediaProcessing.prepareReviewedSource, { ...input, ...change })).rejects.toThrow(message);
+    await t.run(ctx=>ctx.db.patch(cv._id,{availability:'discontinued'}));
+    await expect(t.action(internal.catMediaProcessing.prepareReviewedSource,input)).rejects.toThrow(/SKU and pack/);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(await t.run(ctx=>ctx.db.query('catMediaAssets').collect())).toHaveLength(0);
+  });
+
+  it('rechecks the selected SKU when bytes arrive before recording the media',async()=>{
+    const {t,cv}=await fixture();
+    const bytes=await sharp({create:{width:1000,height:1000,channels:3,background:'white'}}).png().toBuffer();
+    vi.stubGlobal('fetch',vi.fn(async()=>{await t.run(ctx=>ctx.db.patch(cv._id,{piecesPerPack:cv.piecesPerPack+1}));return new Response(bytes)}));
+    const input={variantId:cv._id,sku:cv.supplierSku,piecesPerPack:cv.piecesPerPack,sourceUrl:'https://images.salsify.com/reviewed.png',contentHash:createHash('sha256').update(bytes).digest('hex'),sourceWorkbookSha256:'a'.repeat(64),reviewSha256:'b'.repeat(64)};
+    await expect(t.action(internal.catMediaProcessing.prepareReviewedSource,input)).rejects.toThrow(/SKU and pack/);
+    expect(await t.run(ctx=>ctx.db.query('catMediaAssets').collect())).toHaveLength(0);
+  });
+
   it('prepares only the manifest-bound stored photo, with idempotent derivatives and no automatic approval', async () => {
     const { t, admin, cv } = await fixture();
     const image = await sharp({ create: { width: 1000, height: 1000, channels: 3, background: 'white' } }).png().toBuffer();

@@ -104,9 +104,29 @@ export function verifiedImageMatches(asset: Doc<'catMediaAssets'>, cv: Doc<'catV
     && (!cv.color || asset.verifiedAgainst?.color?.trim().toLowerCase() === cv.color.trim().toLowerCase());
 }
 
+/** Deployment-admin lookup for a hash-bound, externally reviewed supplier photo. */
+export const reviewedSourceTarget = internalQuery({
+  args: { variantId: v.id('catVariants'), sku: v.string(), piecesPerPack: v.number(), contentHash: v.string(), sourceUrl: v.string() },
+  handler: async (ctx, a) => {
+    const cv = await ctx.db.get(a.variantId);
+    const product = cv ? await ctx.db.get(cv.productId) : null;
+    if (!cv || !product || product.provider !== 'zuo' || product.zuoStaging?.excluded
+      || cv.availability === 'discontinued' || cv.supplierSku !== a.sku || cv.piecesPerPack !== a.piecesPerPack)
+      throw new CommerceError('INVALID_INPUT', 'Current selected SKU and pack must match');
+    const rows = (await ctx.db.query('catMediaAssets').withIndex('by_product', q => q.eq('productId', cv.productId).eq('role','hero')).collect())
+      .filter(m => m.variantId === cv._id && m.contentHash === a.contentHash && m.sourceUrl === a.sourceUrl);
+    if (rows.length > 1 || rows[0]?.status === 'rejected') throw new CommerceError('INVALID_INPUT', 'Image association needs reconciliation');
+    const asset = rows[0];
+    if (asset && (!asset.storageId || !asset.rights.basis.trim() || !await ctx.storage.getUrl(asset.storageId)))
+      throw new CommerceError('INVALID_INPUT', 'Existing source image needs reconciliation');
+    return { productId: cv.productId, asset: asset ? { id:asset._id, storageId:asset.storageId!, widths:asset.derivatives.map(d=>d.width) } : null };
+  },
+});
+
 export const record = internalMutation({
   args: {
     productId: v.id('commerceProducts'),
+    expectedZuo: v.optional(v.object({ sku:v.string(), piecesPerPack:v.number() })),
     variantId: v.optional(v.id('catVariants')),
     role: v.union(v.literal('hero'), v.literal('gallery'), v.literal('assembly'), v.literal('swatch')),
     storageId: v.optional(v.id('_storage')),
@@ -121,6 +141,13 @@ export const record = internalMutation({
     rejectReason: v.optional(v.string()),
   },
   handler: async (ctx, a) => {
+    if (a.expectedZuo) {
+      const cv = a.variantId ? await ctx.db.get(a.variantId) : null;
+      const product = await ctx.db.get(a.productId);
+      if (!cv || !product || product.provider !== 'zuo' || product.zuoStaging?.excluded || cv.availability === 'discontinued'
+        || cv.supplierSku !== a.expectedZuo.sku || cv.piecesPerPack !== a.expectedZuo.piecesPerPack)
+        throw new CommerceError('INVALID_INPUT', 'Selected SKU changed during image preparation');
+    }
     if (!await ctx.db.get(a.productId)) throw new CommerceError('INVALID_INPUT', 'Product not found');
     if (a.variantId && (await ctx.db.get(a.variantId))?.productId !== a.productId)
       throw new CommerceError('INVALID_INPUT', 'Image variant does not belong to this product');
@@ -133,7 +160,9 @@ export const record = internalMutation({
       && m.rights.attributionRequired === a.rights.attributionRequired
       && m.rights.privateOriginal === a.rights.privateOriginal);
     if (dup) return { id: dup._id, duplicate: true };
-    const id = await ctx.db.insert('catMediaAssets', { ...a, derivatives: [], altText: '', createdAt: Date.now() });
+    const { expectedZuo: _expectedZuo, ...assetData } = a;
+    void _expectedZuo; // Selection guard is not a persisted asset field.
+    const id = await ctx.db.insert('catMediaAssets', { ...assetData, derivatives: [], altText: '', createdAt: Date.now() });
     return { id, duplicate: false };
   },
 });
