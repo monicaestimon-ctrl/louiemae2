@@ -1,4 +1,5 @@
 import { qualityTables } from './qualityTables';
+import { trendsiTables } from './trendsiTables';
 import { publicSearchTables } from './publicSearchTables';
 import { sourcePropertiesValidator } from './sourcePropertiesValidator';
 import { defineSchema, defineTable } from "convex/server";
@@ -56,6 +57,7 @@ const cjFulfillmentReadinessValidator = v.union(
 );
 
 export default defineSchema({
+    ...trendsiTables,
     ...qualityTables,
     ...publicSearchTables,
     // Only processing leases are represented here; permanent identities remain in cjWebhookLog.

@@ -13,7 +13,7 @@ import { useNewsletterAdmin } from '../contexts/NewsletterContext';
 import { FadeIn } from './FadeIn';
 import { Plus, Edit3, Trash2, LogOut, X, Image as ImageIcon, Layout, ArrowLeft, PenTool, BookOpen, Home, Settings, Wand2 as WandIcon, Loader2, FileText, ShoppingBag, Tag, ChevronDown, Layers, Menu, Upload, Grid, Maximize, Type, Mail, Users, Send, BarChart2, Package, Lock, ChevronLeft, ExternalLink, Search, Eye, EyeOff, Rocket, RefreshCw, Link2 } from 'lucide-react';
 import { BlogPost, CustomPage, PageSection, Product, CollectionType, CollectionConfig, EmailCampaign } from '../types';
-import { AdminOrders } from './AdminOrders';
+import { OrdersWorkspace } from './TrendsiManualAdmin';
 import { NewsletterStudio } from './NewsletterStudio';
 import { ProductImport } from './ProductImport';
 import { CJSettings } from './CJSettings';
@@ -946,7 +946,7 @@ const OwnerAdminPage: React.FC = () => {
             {/* ORDERS TAB */}
             {activeTab === 'orders' && (
                <FadeIn>
-                  <AdminOrders />
+                  <OrdersWorkspace />
                </FadeIn>
             )}
 

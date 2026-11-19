@@ -126,7 +126,7 @@ export default function CollectionProductPreview({
                 <div className="space-y-3 mb-6">
                   <div className="flex items-center gap-2 text-xs text-green-700">
                     <span className="w-2 h-2 rounded-full bg-green-600"></span>
-                    {selectedProduct.fulfillmentProvider && selectedProduct.inStock
+                    {selectedProduct.variants?.some(option => option.id.startsWith('trendsi-')) ? 'Availability confirmed by our team' : selectedProduct.fulfillmentProvider && selectedProduct.inStock
                       ? 'Available to order'
                       : 'Coming Soon'}
                   </div>

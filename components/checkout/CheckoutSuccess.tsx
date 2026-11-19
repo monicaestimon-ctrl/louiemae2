@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
+import { TrendsiReceipt } from './TrendsiReceipt';
 import { useCart } from '../../contexts/CartContext';
 import {
   cartFingerprint,
@@ -220,7 +221,7 @@ export const CheckoutSuccess: React.FC = () => {
     <main className="min-h-screen bg-cream pt-32 pb-20 px-6">
       <div className="max-w-2xl mx-auto text-center">
         <ReceiptBoundary key={route}>
-          <Receipt />
+          {new URLSearchParams(route.split('?')[1] ?? '').has('trendsi') ? <TrendsiReceipt route={route} /> : <Receipt />}
         </ReceiptBoundary>
         <nav className="mt-8 flex gap-6 justify-center" aria-label="After checkout">
           <a href="/#shop">Continue shopping</a>
