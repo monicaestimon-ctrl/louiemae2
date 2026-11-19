@@ -3506,7 +3506,7 @@ function Welcome({ctx}) {
 }
 
 /* ================= APP ================= */
-export function App({catalogComplete=true,onCatalogIntent=()=>{}}={}){
+export function App({catalogComplete=true,onCatalogIntent=()=>{},suspended=false}={}){
   useCatalogRevision();
   const me0=useQuery(api.holm.me);const me=me0||{signedIn:false,verified:false,admin:false,tradeStatus:'none'};
   const {signOut:authSignOut}=useAuthActions();const ensureProfile=useMutation(api.holm.ensureProfile);
@@ -3584,6 +3584,9 @@ export function App({catalogComplete=true,onCatalogIntent=()=>{}}={}){
   const ctx={...inspoCtx,catalogComplete,requestCatalog:onCatalogIntent,detailProduct,projectCatalog,projectReview,me,afterSignIn,signInThen,signOut,route,go,space,setSpace,mode,setMode,boards,saveTo,createBoard,updateBoard,tray,setTrayState,activeProject,trayCount,addToTray,setTray,setMenu,pin,openPin,recent,createProject,addZone,addToProject,toggleLike:id=>setLikes(l=>l.includes(id)?l.filter(x=>x!==id):[...l,id]),likes,toast,query,setQuery,imgQ,setImgQ,imageSearch,studioSeed,setStudioSeed,roomSeed,setRoomSeed,toStudio,board,setBoard,trend,setTrend,collages,saveCollage:(c,quiet)=>{setCollages(cs=>[c,...cs.filter(x=>c.id?x.id!==c.id:x.title!==c.title)]);if(!quiet)toast('Collage saved',{label:'View',fn:()=>go('boards')})},setTarget:n=>{setTrayState(t=>({...t,projects:t.projects.map(p=>p.id===t.active?{...p,target:n}:p)}));toast(`Seat target for ${activeProject.name} set to ${n}`,{label:'Open tray',fn:()=>setTray(true)})}};
   const pages={inspo:Inspo,home:Home,discover:Discover,trend:Trend,studio:Studio,room:Room,boards:Boards,board:BoardDetail,profile:Profile,hub:Hub,trade:Trade,quiz:Quiz,account:Account,welcome:Welcome,admin:AdminPage,sourcing:Sourcing,'partner-terms':PartnerTerms};
   const Page=pages[route]||Home;
+  // Keep persistence hooks alive while entry screens own the UI. Studio cleanup
+  // can save its last document into this still-mounted owner.
+  if(suspended)return null;
   if(route.startsWith('q/'))return html`<${React.Fragment}><${ClientQuote} ctx=${ctx} code=${route.slice(2)}/><${Toast} t=${toastS} onClose=${()=>setToastS(null)}/><//>`;
   return html`<${React.Fragment}>
     <${Header} ctx=${ctx}/>
