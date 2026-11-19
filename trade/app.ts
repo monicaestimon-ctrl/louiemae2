@@ -1302,7 +1302,7 @@ function PinDetail({ctx}){
         <h1>${p.name}</h1><p className="pp-line">${p.line}</p>
         <div className="pp-price">
           <b className="num">${fmt(unit,true)}</b>
-          ${ctx.mode==='trade'?html`<span className="mono">MSRP ${fmt(p.price,true)}</span><span className="save-pill">Trade · save ${fmt(p.price-unit)}</span>`:html`<button className="lnk" onClick=${()=>ctx.go('trade')}>${ctx.me.tradeStatus==='pending'?'Trade pricing unlocks after approval':'Trade price after verification'}</button>`}
+          ${ctx.mode==='trade'?(Number.isFinite(p.price)?html`<span className="mono">MSRP ${fmt(p.price,true)}</span><span className="save-pill">Trade · save ${fmt(p.price-unit)}</span>`:html`<span className="mono">Retail comparison unavailable</span>`):html`<button className="lnk" onClick=${()=>ctx.go('trade')}>${ctx.me.tradeStatus==='pending'?'Trade pricing unlocks after approval':'Trade price after verification'}</button>`}
         </div>
         ${p.oos&&html`<div className="note">${I('pin',{width:18})}<span>Out of stock at the supplier. Add it to a project and we'll confirm restock timing with your quote.</span></div>`}
 

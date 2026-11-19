@@ -2,7 +2,7 @@
 
 The initial Phase G+H implementation is merged, but that is not end-to-end operational acceptance. Use the dated production evidence and current feature flags to establish what is actually active. The remaining catalog, delivery, authenticated-journey and financial gates below must be checked against current production records.
 
-After a successful main build, CI deploys Convex, adds missing configuration records, runs the additive identity backfill and reports ledger parity. Ledger and credit cutovers are separate controlled operations; CI does not automatically perform them.
+After a successful main build, CI deploys Convex, adds missing configuration records, runs the additive identity backfill and samples ledger parity. That CI step calls `ledgerParity` once, checks at most 25 beneficiaries, returns a continuation cursor and is allowed to fail without failing the job. Before cutover, follow every cursor page, verify all results and resolve failures; a green CI job is not complete parity evidence. Ledger and credit cutovers are separate controlled operations; CI does not automatically perform them.
 
 Standing owner authorization covers ordinary implementation, review, merge, deployment and eligible-product rollout. Do not request the same authorization again. Deferred authenticated browser access is a verification dependency, not a reason to stop independent code work. Real test payments, transfers, payouts and supplier dispatch remain unauthorized.
 
@@ -32,10 +32,10 @@ Check each current registry record before changing it. Seeded defaults start as 
 
 ## Step 2. Catalog (gate 1)
 
-1. Reconcile the current import manifest and existing records first. Do not reimport the already-staged 803 products merely to activate them. For a genuinely new package, under **Catalog & import**, upload `Zuo-Draft-Import.json` and run **Dry run** with "Require the reconciled package counts" ticked. The counts must be 865 / 803 / 306 / 135 / 296 / 66 / 62 / 226 / 639. If the column names differ, add aliases in `lib/zuoImport.ts`, never edit the source file. Then run **Commit**.
+1. Reconcile the current import manifest and existing records first. Do not reimport the already-staged 803 products merely to activate them. Under **Catalog & import**, upload `Zuo-Draft-Import.json` and run **Dry run**. For the historical reconciled snapshot only, tick "Require the reconciled package counts" and require 865 / 803 / 306 / 135 / 296 / 66 / 62 / 226 / 639. For a genuinely new package, leave that historical-count option unticked and reconcile every dry-run count against the new package’s manifest. If the column names differ, add aliases in `lib/zuoImport.ts`, never edit the source file. Then run **Commit**.
 2. Pick the pilot cohort: one single item, one multi-piece pack, one décor or lighting item, one Ground shipment and one manually quoted LTL item. For each one:
    1. Verify its source-bound images using the reviewed ingestion/verification workflow and record revision-bound stock with `catStock.recordEvidence`. Preserve warehouse, pack/unit basis, source date and whether the quantity is on-hand or available-to-sell; the legacy binary stock setter is not a substitute.
-   2. Resolve evidence-backed cost, stock and policy holds. In **Product review and publication**, verify the selected canonical identities, then complete manual review only after all other gates pass. A generic review note is not a substitute for missing evidence.
+   2. Resolve evidence-backed cost, stock and policy holds. If the draft was excluded solely for temporary unavailability, first record current confirmed available-to-sell stock evidence, then use **Restore restocked draft** in **Product review and publication**. On-hand quantity alone does not qualify. After restoration, verify the selected canonical identities, then complete manual review only after all other gates pass. A generic review note is not a substitute for missing evidence.
    3. Run pricing (`catPricing.recomputeVariants`).
    4. Advance it through each stage.
 3. Turn on `CATALOG_PUBLICATION_V2_ENABLED=true`, then publish the pilot products by name. Publishing takes at most 50 products per call and never works "by count".

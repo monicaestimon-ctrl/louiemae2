@@ -79,7 +79,7 @@ export async function gates(ctx: Ctx, productId: Id<'commerceProducts'>) {
 export const status = query({
   args: { productId: v.id('commerceProducts') },
   handler: async (ctx, a) => {
-    await requireCjAdminIdentity(ctx);
+    await requireDeliveryRole(ctx, 'approver');
     const g = await gates(ctx, a.productId);
     const product = await ctx.db.get(a.productId);
     return { stockExcluded: stockOnlyExcluded(product), stage: g.meta.stage, holds: g.meta.holds, gates: g.gates, variants: g.variants.map((cv) => ({ id: cv._id, sku: cv.supplierSku, holds: cv.holds, availability: cv.availability })) };
@@ -89,7 +89,7 @@ export const status = query({
 export const reviewQueue = query({
   args: { paginationOpts: paginationOptsValidator },
   handler: async (ctx, a) => {
-    await requireCjAdminIdentity(ctx);
+    await requireDeliveryRole(ctx, 'approver');
     if (a.paginationOpts.numItems < 1 || a.paginationOpts.numItems > 25) throw new CommerceError('INVALID_INPUT');
     const page = await ctx.db.query('catProductMeta').order('desc').paginate(a.paginationOpts);
     const rows = await Promise.all(page.page.map(async meta => {

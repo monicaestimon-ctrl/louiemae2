@@ -56,7 +56,12 @@ export function DiscoverCatalog(props: Props) {
   const palette = props.imageQuery?.pal ?? [];
   if (palette.length) products = [...products].sort((a, b) => Math.min(...palette.map(color => distance(color, a.tone))) - Math.min(...palette.map(color => distance(color, b.tone))));
   products = products.filter(product => (type === 'all' || product.type === type) && (!materials.length || materials.includes(product.mat)) && (!tones.length || tones.some(tone => distance(tone, product.tone) < 48)) && (maximum === null || priceOf(product) <= maximum) && (!inStock || !product.oos));
-  if (sort !== 'rel') products = [...products].sort((a, b) => sort === 'lo' ? priceOf(a) - priceOf(b) : priceOf(b) - priceOf(a));
+  if (sort !== 'rel') products = [...products].sort((a, b) => {
+    const left = priceOf(a), right = priceOf(b);
+    if (!Number.isFinite(left)) return Number.isFinite(right) ? 1 : 0;
+    if (!Number.isFinite(right)) return -1;
+    return sort === 'lo' ? left - right : right - left;
+  });
   const searching = Boolean(query.trim() || props.imageQuery);
   const count = materials.length + tones.length + Number(inStock) + Number(maximum !== null);
   function resetFilters() { setMaterials([]); setTones([]); setType('all'); setMaximum(null); setInStock(false); }

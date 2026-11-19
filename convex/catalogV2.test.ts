@@ -1026,6 +1026,14 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     await expect(t.query(api.catPublication.reviewQueue, { paginationOpts: { cursor: null, numItems: 25 } })).rejects.toThrow();
     const queue = await admin.query(api.catPublication.reviewQueue, { paginationOpts: { cursor: null, numItems: 25 } });
     expect(queue.page[0]).toMatchObject({ productId, included: true, stage: 'imported_draft' });
+    process.env.DELIVERY_ADMIN_ROLES = JSON.stringify({ [ADMIN]: ['approver'] });
+    expect((await admin.query(api.catPublication.reviewQueue, { paginationOpts: { cursor: null, numItems: 25 } })).page).toHaveLength(1);
+    expect((await admin.query(api.catPublication.status, { productId })).stage).toBe('imported_draft');
+    process.env.DELIVERY_ADMIN_ROLES = JSON.stringify({ [ADMIN]: ['operations'] });
+    await expect(admin.query(api.catPublication.reviewQueue, { paginationOpts: { cursor: null, numItems: 25 } })).rejects.toThrow();
+    await expect(admin.query(api.catPublication.status, { productId })).rejects.toThrow();
+    delete process.env.DELIVERY_ADMIN_ROLES;
+
     await expect(admin.query(api.catPublication.reviewQueue, { paginationOpts: { cursor: null, numItems: 26 } })).rejects.toThrow();
     await expect(t.mutation(api.catPublication.releaseManualReview, input)).rejects.toThrow();
     await expect(admin.mutation(api.catPublication.releaseManualReview, input)).rejects.toThrow();
@@ -1256,6 +1264,15 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     });
     const partner = t.withIdentity({ subject: `${identity.userId}|s` });
     expect((await partner.query(api.holm.catalogItems, { productIds: [productId] }))[0].item?.variants[0].trade).toBe(approvedTradePrice.packPriceMinor);
+
+    const retailRevision = (await t.run(ctx => ctx.db.get(cv.retailPriceRevisionId!)))!;
+    await t.run(ctx => ctx.db.patch(retailRevision._id, { effectiveTo: Date.now() - 1000 }));
+    expect((await housePage()).page).toMatchObject([{ id: productId, variants: [{ retail: null, trade: null }] }]);
+    expect((await partner.query(api.holm.catalogItems, { productIds: [productId] }))[0].item?.variants).toMatchObject([{ id: cv._id, retail: null, trade: approvedTradePrice.packPriceMinor }]);
+    expect((await partner.query(api.holm.catalogPage, { paginationOpts: { cursor: null, numItems: 50 } })).page).toHaveLength(1);
+    await expect(t.run(ctx => assertSellable(ctx, cv._id, 'purchase', Date.now(), 'trade'))).resolves.toBeTruthy();
+    expect(await read()).toBeNull();
+    await t.run(ctx => ctx.db.patch(retailRevision._id, { effectiveTo: retailRevision.effectiveTo }));
     await t.run(ctx => ctx.db.patch(identity.profileId, { tradeStatus: 'pending' }));
     expect((await partner.query(api.holm.catalogItems, { productIds: [productId] }))[0].item?.variants[0].trade).toBeNull();
     await expect(t.query(api.holm.catalogItems, { productIds: Array(25).fill(productId) })).rejects.toThrow();

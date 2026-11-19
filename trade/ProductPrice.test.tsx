@@ -38,3 +38,9 @@ describe('approved product price presentation', () => {
     expect(formatHolmPrice(1234.5, true)).toBe('$1,234.50');
   });
 });
+
+it('shows current trade pricing without an unavailable struck-through retail comparison', () => {
+  const view = render(<ProductPrice p={{ price: Number.NaN, trade: 90 }} mode="trade" />);
+  expect(view.container.textContent).toContain('$90.00');
+  expect(view.container.querySelector('s')).toBeNull();
+});

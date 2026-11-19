@@ -50,7 +50,7 @@ export function resolveProjectProduct(
   return {
     ...product,
     vid: variant.id,
-    price: variant.retail / 100,
+    price: variant.retail === null ? Number.NaN : variant.retail / 100,
     trade: variant.trade === null ? null : variant.trade / 100,
     minimum: variant.minimum,
     increment: variant.increment,

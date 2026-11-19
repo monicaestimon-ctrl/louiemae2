@@ -18,7 +18,7 @@ Run `node scripts/lighthouse/catalog-publication.mjs` after a production build f
 
 The shared purchase, estimate and new-referral eligibility gate also validates the approved revision against the exact variant, requested purchase channel, positive integer price and effective window. Expired or future approvals cannot be reused merely because their status still says approved. Historical paid-order snapshots are unchanged.
 
-HOLM catalog, calculator and delivery paths pass the trade channel explicitly. The delivery and calculator paths can retain a valid trade offer when an optional retail comparison expires. Catalog cards that display a retail comparison still require that comparison to be current; do not display a stale reference price. Referral eligibility always requires the retail channel.
+HOLM catalog, calculator and delivery paths pass the trade channel explicitly. The delivery and calculator paths can retain a valid trade offer when an optional retail comparison expires. Catalog cards retain the valid trade offer but omit an expired retail comparison and savings claim. The API returns a null retail comparison; the client carries it as a non-finite display value so totals cannot silently treat it as zero. No trade price is substituted as a retail price. Referral eligibility always requires the retail channel.
 
 Draft image preparation allows a staged SKU excluded only for CURRENTLY_UNAVAILABLE, while retaining its stock exclusion and all sales holds. Exact SKU/pack, hash, host and discontinued checks remain. Empty, mixed or merchandising/discontinued exclusions are rejected. This lets reviewed photography be prepared before restocking without making the item purchasable.
 
