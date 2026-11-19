@@ -71,7 +71,7 @@ export default function DeliveryDiagnostics() {
         <table>
           <thead>
             <tr>
-              <th>ZIP prefix</th>
+              <th>ZIP coverage</th>
               <th>Zone</th>
               <th>Enabled</th>
             </tr>
@@ -79,7 +79,7 @@ export default function DeliveryDiagnostics() {
           <tbody>
             {coverage?.lanes.map((l) => (
               <tr key={l.prefix}>
-                <td>{l.prefix}</td>
+                <td>{l.prefix} ({l.match === 'exact_zip' ? 'exact ZIP' : 'prefix'})</td>
                 <td>{l.zone}</td>
                 <td>{l.enabled ? 'Pilot lane' : 'Quote only'}</td>
               </tr>

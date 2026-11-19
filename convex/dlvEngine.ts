@@ -1,3 +1,4 @@
+import { deliveryZone } from '../lib/delivery/zones';
 import { ashcroftAvailable } from './ashcroftInventory';
 import { modeledParcelFreight, type ModeledParcelRates } from '../lib/delivery/modeledParcel';
 // Server-owned delivery service (spec S17, S18, v2 §9–§12). One engine serves product, cart,
@@ -494,9 +495,7 @@ export function groupFreight(
     return null;
   }
   if (f.rateBasis === 'modeled_parcel') {
-    const zone = f.modeledZip5Zones !== undefined
-      ? f.modeledZip5Zones[dest.zip.trim().slice(0, 5)]
-      : f.zip3Zones[dest.zip.slice(0, 3)];
+    const zone = deliveryZone(f, dest.zip);
     if (c.mode !== 'ground' || !zone || !f.modeledParcel) {
       reasons.push('Shipment or destination is outside the approved parcel model');
       return null;

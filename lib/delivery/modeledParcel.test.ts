@@ -9,6 +9,23 @@ const model: ModeledParcelRates = { sourceSha256: 'a'.repeat(64), sourceObserved
 const rule = { dimDivisorMm3PerG: 5021 } as Parameters<typeof modeledParcelFreight>[1];
 const carton: CartonIn = { lengthMm: 100, widthMm: 100, heightMm: 100, grossWeightG: 400, supplierMethod: 'ground' };
 describe('approved modeled parcel rates', () => {
+  const inchModel: ModeledParcelRates = { ...model, dimensionalRounding: { unit: 'inch', divisorIn3PerLb: 139 },
+    packageMinorByZone: { west: Array.from({ length: 72 }, (_, i) => (i + 1) * 100) } };
+  it('rounds each fractional-inch edge before dimensional weight, independently per carton', () => {
+    const fractional = { ...carton, lengthMm: 257, widthMm: 257, heightMm: 257 };
+    // 257 mm is just over 10 inches: 11*11*11 /139 rounds to10 lb, not8.
+    expect(modeledParcelFreight([fractional], rule, 'west', inchModel)).toEqual({ freightMinor: 1000, billableLb: [10] });
+    const exact = { ...carton, lengthMm: 254, widthMm: 254, heightMm: 254 };
+    expect(modeledParcelFreight([exact, fractional], rule, 'west', inchModel)).toEqual({ freightMinor: 1800, billableLb: [8, 10] });
+    expect(modeledParcelFreight([{ ...fractional, grossWeightG: 5000 }], rule, 'west', inchModel)).toEqual({ freightMinor: 1200, billableLb: [12] });
+  });
+  it('requires a quote when rounded dimensions or weights exceed the modeled envelope', () => {
+    expect(modeledParcelFreight([{ ...carton, lengthMm: 1199 }], rule, 'west', inchModel)).toHaveProperty('reason');
+    expect(modeledParcelFreight([{ ...carton, lengthMm: 257, widthMm: 257, heightMm: 257 }], rule, 'west', { ...inchModel, maxVolumeMm3: 18_000_000 })).toHaveProperty('reason');
+    expect(modeledParcelFreight([{ ...carton, lengthMm: 257, widthMm: 257, heightMm: 257 }], rule, 'west', { ...inchModel, packageMinorByZone: { west: Array(9).fill(100) } })).toHaveProperty('reason');
+    for (const rounding of [{ unit: 'cm', divisorIn3PerLb: 139 }, { unit: 'inch', divisorIn3PerLb: 0 }, { unit: 'inch', divisorIn3PerLb: 139.5 }, null])
+      expect(validModeledParcel({ ...model, dimensionalRounding: rounding })).toBe(false);
+  });
   it('rates each carton by its own rounded billable weight', () => {
     expect(modeledParcelFreight([carton, { ...carton, grossWeightG: 700 }], rule, 'west', model)).toEqual({ freightMinor: 3000, billableLb: [1, 2] });
     expect(modeledParcelFreight([{ ...carton, lengthMm: 180, widthMm: 180, heightMm: 180 }], rule, 'west', model)).toEqual({ freightMinor: 2500, billableLb: [3] });

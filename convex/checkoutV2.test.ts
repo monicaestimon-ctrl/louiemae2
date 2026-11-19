@@ -2358,6 +2358,30 @@ describe('tax reporting reconciliation', () => {
 });
 
 describe('delivery staff permissions', () => {
+  it('reports exact modeled ZIP lanes without implying prefix-wide coverage', async () => {
+    const s = await setup();
+    const modeled = await s.admin.mutation(api.sysConfig.propose, {
+      kind: 'carrierRule', key: 'zuo-freight', note: 'Synthetic exact-ZIP coverage fixture',
+      value: { ...FREIGHT, rateBasis: 'modeled_parcel', modeledZip5Zones: { '95206': 'exact-sample' },
+        modeledParcel: { sourceSha256: 'a'.repeat(64), sourceObservedAt: NOW - 1000,
+          maxCartons: 4, maxLongestMm: 1200, maxSecondLongestMm: 760,
+          maxLengthPlusGirthMm: 3500, maxVolumeMm3: 500000000, maxActualWeightG: 22000,
+          packageMinorByZone: { 'exact-sample': Array(150).fill(1000) } } },
+    });
+    await s.admin.mutation(api.sysConfig.approve, { id: modeled });
+    const estimate = await estimateViaGateway(s.t, { lines: [zuoLine(s)], channel: 'retail', zip: '95206', visitorKey: 'coverage-fixture' });
+    const coverage = await s.admin.query(api.dlvAdmin.coverage, {});
+    expect(coverage.lanes).toEqual([{ prefix: '95206', zone: 'exact-sample', match: 'exact_zip', enabled: true, region: 'Other' }]);
+    await s.t.mutation(internal.dlvTelemetry.record, { durationMs: 20, channel: 'retail', path: 'matrix', outcome: 'ok', estimateId: estimate.estimateId });
+    const observations = await s.t.run(ctx => ctx.db.query('dlvObservations').collect());
+    expect(observations.at(-1)?.scopes.find(scope => scope.supplier === 'zuo')?.zone).toBe('exact-sample');
+    await s.t.run(async ctx => {
+      const controls = await ctx.db.query('sysConfig').withIndex('by_kind_key_version', q => q.eq('kind', 'deliveryControls').eq('key', 'delivery-controls')).order('desc').first();
+      await ctx.db.patch(controls!._id, { value: { ...controls!.value, blockedZip5: ['95206'] } });
+    });
+    expect((await s.admin.query(api.dlvAdmin.coverage, {})).lanes[0].enabled).toBe(false);
+  });
+
   it('keeps support away from costs and rate approvals', async () => {
     const s = await setup();
     const estimate = await estimateViaGateway(s.t, { lines: [zuoLine(s)], channel: 'retail', zip: '95206', visitorKey: 'support-fixture' });
