@@ -701,6 +701,55 @@ describe('delivery estimates (S17, S18)', () => {
     ).rejects.toSatisfy((e) => isCommerceError(e, 'FEATURE_DISABLED'));
   });
 
+  it('versions the independent Ashcroft per-item policy and caps estimate validity', async () => {
+    const s = await setup({ approveMixed: true });
+    const input = { lines: [{ productId: s.ashId, variantId: 'b1', packs: 2 }], channel: 'retail' as const, zip: '95206', visitorKey: 'visitor-1234567890' };
+    const first = await estimateViaGateway(s.t, input);
+    expect(first.status).toBe('ok');
+    expect(first.deliveryChargeMinor).toBe(5800);
+    const original = await s.t.run(ctx => ctx.db.get(first.estimateId));
+    expect(original?.internal.configVersions['ashcroft-launch']).toBe(1);
+    const until = Date.now() + 60_000;
+    const id = await s.admin.mutation(api.sysConfig.propose, {
+      kind: 'deliveryRule', key: 'ashcroft-launch',
+      value: { engine: 'ashcroft_per_item', source: 'lib/retailLaunch.ts retailDelivery()' },
+      note: 'Fixture policy revision, same fee table',
+    });
+    await s.admin.mutation(api.sysConfig.approve, { id });
+    await s.t.run(ctx => ctx.db.patch(id, { effectiveTo: until }));
+    const next = await estimateViaGateway(s.t, input);
+    const revised = await s.t.run(ctx => ctx.db.get(next.estimateId));
+    expect(next.deliveryChargeMinor).toBe(first.deliveryChargeMinor);
+    expect(next.expiresAt).toBe(until);
+    expect(revised?.internal.configVersions['ashcroft-launch']).toBe(2);
+    expect(revised?.sourceVersionsHash).not.toBe(original?.sourceVersionsHash);
+    const mixed = await estimateViaGateway(s.t, { ...input, lines: [...input.lines, zuoLine(s)] });
+    expect(mixed.status).toBe('ok');
+    expect(mixed.deliveryChargeMinor).toBe(5800 + 4999);
+    expect(mixed.expiresAt).toBe(until);
+  });
+
+  it.each(['missing', 'expired', 'proposed', 'wrong-engine', 'wrong-source'])('quotes Ashcroft when its policy is %s without substituting Zuo fees', async state => {
+    const s = await setup({ approveMixed: true });
+    await s.t.run(async ctx => {
+      const row = await ctx.db.query('sysConfig').withIndex('by_kind_key_version', q => q.eq('kind','deliveryRule').eq('key','ashcroft-launch')).first();
+      if (!row) throw new Error('Missing fixture rule');
+      if (state === 'missing') await ctx.db.delete(row._id);
+      else if (state === 'expired') await ctx.db.patch(row._id, { effectiveTo: Date.now()-1 });
+      else if (state === 'proposed') await ctx.db.patch(row._id, { status: 'proposed' });
+      else if (state === 'wrong-source') await ctx.db.patch(row._id, { value: { engine: 'ashcroft_per_item', source: 'unsupported table' } });
+      else await ctx.db.patch(row._id, { value: { engine: 'zuo_ladder', source: row.value.source } });
+    });
+    for (const lines of [[{productId:s.ashId,variantId:'b1',packs:1}], [zuoLine(s),{productId:s.ashId,variantId:'b1',packs:1}]]) {
+      const r = await estimateViaGateway(s.t, {lines, channel:'retail',zip:'95206',visitorKey:'visitor-1234567890'});
+      expect(r.status).toBe('quote_required');
+      expect(r.deliveryChargeMinor).toBeNull();
+    }
+    const zuo = await estimateViaGateway(s.t, {lines:[zuoLine(s)],channel:'retail',zip:'95206',visitorKey:'visitor-1234567890'});
+    expect(zuo.status).toBe('ok');
+    expect(zuo.deliveryChargeMinor).toBe(4999);
+  });
+
   it('needs the mixed-cart decision (D-12) before combining Zuo and Ashcroft, then sums groups once', async () => {
     const s = await setup();
     const mixed = [zuoLine(s), { productId: s.ashId, variantId: 'b1', packs: 1 }];
