@@ -21,6 +21,7 @@ const app = await build({
     {
       name: 'read-only-entry',
       setup(b) {
+        b.onResolve({ filter: /^@convex-dev\/auth\/react$/ }, () => ({path:'auth',namespace:'fixture'}));
         b.onResolve({ filter: /^convex\/react$/ }, () => ({
           path: 'convex',
           namespace: 'fixture',
@@ -34,11 +35,11 @@ const app = await build({
           resolveDir: process.cwd(),
           loader: 'js',
           contents:
-            path === 'app'
+            path === 'auth' ? `export const useAuthActions=()=>({signIn:()=>{window.writes++;throw Error('Forbidden fixture auth command')}});` : path === 'app'
               ? `export const App=()=>null;export const Turntable=()=>null;export const setProducts=()=>{};`
               : path === 'staff'
-                ? `const rows=[];export const useRecoverableQuery=()=>({status:'ready',data:rows,retry:()=>{}});`
-                : `import{getFunctionName}from'convex/server';const rows=[];export const useConvexAuth=()=>({isLoading:false,isAuthenticated:window.me.signedIn});export const useQuery=(ref)=>getFunctionName(ref)==='holm:me'?window.me:rows;export const usePaginatedQuery=()=>{window.catalogQueries++;return{results:rows,status:'Exhausted',loadMore:()=>{}}};export const useMutation=()=>()=>{window.writes++;throw Error('Forbidden fixture write')};`,
+                ? `import{getFunctionName}from'convex/server';const rows=[];export const useRecoverableQuery=(ref,args)=>{if(args!=='skip'&&['holm:catalogPage','holm:catalogItems'].includes(getFunctionName(ref)))window.catalogQueries++;return({status:'ready',data:rows,retry:()=>{}})};`
+                : `import{getFunctionName}from'convex/server';const rows=[];export const useConvexAuth=()=>({isLoading:false,isAuthenticated:window.me.signedIn});export const useQuery=(ref,args)=>{const name=getFunctionName(ref);if(args!=='skip'&&['holm:catalogPage','holm:catalogItems'].includes(name))window.catalogQueries++;return name==='holm:me'?window.me:name==='holm:signInOptions'?{google:true}:rows};export const usePaginatedQuery=(ref,args)=>{if(args!=='skip'&&['holm:catalogPage','holm:catalogItems'].includes(getFunctionName(ref)))window.catalogQueries++;return{results:rows,status:'Exhausted',loadMore:()=>{}}};export const useMutation=()=>()=>{window.writes++;throw Error('Forbidden fixture write')};`,
         }));
       },
     },
@@ -78,6 +79,10 @@ try {
     await page.goto(origin + '/#admin', { waitUntil: 'networkidle0' });
     await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Team only');
     assert.equal(await page.evaluate(() => window.catalogQueries), 0);
+    await page.click('button.btn-ink');
+    await page.waitForSelector('input[type=email]');
+    assert.equal(await page.evaluate(() => window.location.hash), '#admin');
+    assert.equal(await page.evaluate(() => window.catalogQueries), 0);
     await page.evaluate(() => {
       window.me = { signedIn: true, admin: true, email: 'staff@example.test' };
       window.render();
@@ -115,6 +120,7 @@ try {
       height,
       staffIndependentOfCatalog: true,
       anonymousDenied: true,
+      signInIndependentOfCatalog: true,
       roleLoss: true,
       catalogRecovery: true,
       axeViolations: 0,

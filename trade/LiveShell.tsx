@@ -107,6 +107,6 @@ export function LiveShell() {
   // Remounting creates a fresh Convex pagination id. A previous account's
   // cached trade rows must never be reused after logout or a role change.
   const viewerKey = me.signedIn ? `${me.email}:${me.verified ? 'trade' : 'retail'}` : 'anonymous';
-  if (staffRoute) return <StaffEntry key={`${viewerKey}:${Boolean(me.admin)}`} admin={Boolean(me.admin)} Turntable={Turntable} />;
+  if (staffRoute) return <StaffEntry key={`${viewerKey}:${Boolean(me.admin)}`} admin={Boolean(me.admin)} signedIn={me.signedIn} Turntable={Turntable} />;
   return <CatalogShell key={viewerKey} me={me} />;
 }

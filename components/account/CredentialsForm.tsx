@@ -4,9 +4,9 @@ import { useFormValidation } from '../forms/useFormValidation';
 import { ValidationSummary } from '../forms/ValidationSummary';
 import './credentials.css';
 
-type Props = { site: 'creator' | 'trade'; googleEnabled?: boolean; afterSignIn?: string };
+type Props = { site: 'creator' | 'trade'; googleEnabled?: boolean; afterSignIn?: string; oauthRedirectTo?: '/trade/#admin' };
 /** Shared credentials UI; account permissions and membership remain server-owned. */
-export function CredentialsForm({ site, googleEnabled = false, afterSignIn = 'home' }: Props) {
+export function CredentialsForm({ site, googleEnabled = false, afterSignIn = 'home', oauthRedirectTo }: Props) {
   const { signIn } = useAuthActions();
   const id = useId();
   const [flow, setFlow] = useState<'signIn' | 'signUp'>(site === 'creator' ? 'signUp' : 'signIn');
@@ -60,7 +60,7 @@ export function CredentialsForm({ site, googleEnabled = false, afterSignIn = 'ho
   const google = async () => {
     if (!begin()) return;
     try {
-      sessionStorage.setItem(
+      if (!oauthRedirectTo) sessionStorage.setItem(
         site === 'creator' ? 'lm:after' : 'hol:after',
         site === 'creator' ? '#creators' : afterSignIn
       );
@@ -68,7 +68,7 @@ export function CredentialsForm({ site, googleEnabled = false, afterSignIn = 'ho
       /* Authentication can continue without session storage. */
     }
     try {
-      await signIn('google', { redirectTo: site === 'creator' ? '/' : '/trade/' });
+      await signIn('google', { redirectTo: oauthRedirectTo ?? (site === 'creator' ? '/' : '/trade/') });
     } catch {
       feedback.report({
         _form: 'Google sign-in is not available right now. Use your email instead.',

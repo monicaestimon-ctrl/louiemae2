@@ -11,6 +11,7 @@ vi.mock('convex/react', () => ({
   usePaginatedQuery: () => {mocks.catalogQueries();return { results: mocks.rows, status: mocks.status, loadMore: mocks.loadMore };},
 }));
 vi.mock('./admin/HouseStaffGate',()=>({HouseStaffGate:({admin}:{admin:boolean})=><main>{admin?<><h1>Staff management</h1><input aria-label='Staff draft'/></>:<h1>Team only</h1>}</main>}));
+vi.mock('@convex-dev/auth/react',()=>({useAuthActions:()=>({signIn:vi.fn()})}));
 vi.mock('./catalog', () => ({ liveProducts: (rows: unknown[]) => rows }));
 vi.mock('./app', () => ({ Turntable: () => null, App: ({onCatalogIntent}: {onCatalogIntent: () => void}) => <main className="home">Verified catalog<input aria-label="Unsaved project name" /><button onClick={onCatalogIntent}>Discover catalog</button></main>, setProducts: (rows: unknown[], refs: unknown[]) => { mocks.install(rows); mocks.references(refs); } }));
 beforeEach(() => {
@@ -242,5 +243,18 @@ it('requires settled account identity and discards staff drafts on role loss',()
   mocks.me={...mocks.me,admin:false};view.rerender(<LiveShell/>);
   expect(screen.queryByLabelText('Staff draft')).toBeNull();expect(screen.getByRole('heading',{name:'Team only'})).toBeTruthy();
   mocks.me={...mocks.me,admin:true};view.rerender(<LiveShell/>);expect(screen.getByLabelText('Staff draft')).toHaveValue('');
+  expect(mocks.catalogQueries).not.toHaveBeenCalled();
+});
+
+it('offers catalog-independent staff sign-in and keeps admin destination after password authentication',()=>{
+  window.history.replaceState(null,'','/trade/#admin');mocks.me={signedIn:false};mocks.status='Exhausted';
+  const view=render(<LiveShell/>);
+  fireEvent.click(screen.getByRole('button',{name:'Sign in to staff account'}));
+  expect(screen.getByRole('heading',{name:'Sign in to House management'})).toBeTruthy();
+  expect(screen.getByLabelText(/email/i)).toBeTruthy();
+  expect(mocks.catalogQueries).not.toHaveBeenCalled();
+  mocks.me={signedIn:true,verified:true,admin:true,email:'staff@example.test'};view.rerender(<LiveShell/>);
+  expect(screen.getByRole('heading',{name:'Staff management'})).toBeTruthy();
+  expect(window.location.hash).toBe('#admin');
   expect(mocks.catalogQueries).not.toHaveBeenCalled();
 });
