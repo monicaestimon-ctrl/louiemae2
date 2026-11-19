@@ -129,7 +129,7 @@ export default function HomeProductPreview({
                 <div className="space-y-4 mb-8">
                   <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50/50 backdrop-blur-sm px-4 py-2 rounded-lg border border-green-100/50 max-w-max">
                     <span className="w-1.5 h-1.5 rounded-full bg-green-600 animate-pulse"></span>
-                    {selectedProduct.fulfillmentProvider && selectedProduct.inStock
+                    {selectedProduct.variants?.some(option => option.id.startsWith('trendsi-')) ? 'Availability confirmed by our team' : selectedProduct.fulfillmentProvider && selectedProduct.inStock
                       ? 'Available to order'
                       : 'Coming Soon'}
                   </div>

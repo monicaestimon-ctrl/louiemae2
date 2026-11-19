@@ -3,6 +3,7 @@ import { ShoppingBag, Check } from 'lucide-react';
 import { useCart } from '../../contexts/CartContext';
 import { Product, ProductVariant } from '../../types';
 import { publicQuantityRules } from '../../lib/orderQuantity';
+import { TrendsiRequestButton } from '../TrendsiRequestButton';
 
 interface AddToCartButtonProps {
   product: Product;
@@ -97,6 +98,9 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({
   };
 
   const buttonText = getButtonText();
+
+  if (product.variants?.some(v => v.id.startsWith('trendsi-')))
+    return <TrendsiRequestButton product={product} option={option} />;
 
   if (comingSoon)
     return (

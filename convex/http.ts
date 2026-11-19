@@ -314,6 +314,23 @@ http.route({
             return new Response(JSON.stringify({ received: true, ignored: 'payment_scope' }), { status: 200 });
         }
 
+        if (['charge.refunded', 'charge.dispute.created', 'charge.dispute.closed'].includes(event.type)) {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            const object = event.data.object as Stripe.Charge | Stripe.Dispute;
+            const paymentIntentId = typeof object.payment_intent === 'string' ? object.payment_intent : object.payment_intent?.id;
+            if (paymentIntentId && await ctx.runAction(internal.trendsiPayments.receiveByPayment, { paymentIntentId }))
+                return new Response(JSON.stringify({ received: true }), { status: 200 });
+        }
+
+        // Manual Trendsi payments are verified from Stripe, never from a staff status change.
+        if (event.type.startsWith('checkout.session.') && (event.data.object as Stripe.Checkout.Session).metadata?.trendsiOrderId) {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            if (!acceptsPlatformPayment(event.livemode, event.account)) return new Response('Ignored payment scope', { status: 200 });
+            const session = event.data.object as Stripe.Checkout.Session;
+            await ctx.runAction(internal.trendsiPayments.receive, { id: session.metadata!.trendsiOrderId as Id<'trendsiOrders'> });
+            return new Response(JSON.stringify({ received: true }), { status: 200 });
+        }
+
         // v2 checkout (docs/production-v2 S19): store the verified event first, then process it
         // durably. Duplicate or out-of-order deliveries are no-ops.
         if (event.type.startsWith('checkout.session.') && (event.data.object as Stripe.Checkout.Session).metadata?.intentId) {
