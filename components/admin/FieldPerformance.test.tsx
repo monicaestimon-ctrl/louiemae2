@@ -87,3 +87,9 @@ it('alerts engineering when expired observations await cleanup', () => {
   render(<FieldPerformance />);
   expect(screen.getByRole('alert')).toHaveTextContent('Expired observations are awaiting cleanup');
 });
+it('labels the reserved synthetic segment without claiming real-user health', () => {
+  setup();
+  query.mockReturnValue({ status: 'ready', data: { ...report, synthetic: true } });
+  render(<FieldPerformance />);
+  expect(screen.getByRole('alert')).toHaveTextContent('Synthetic verification segment');
+});

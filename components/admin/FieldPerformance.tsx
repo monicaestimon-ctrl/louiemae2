@@ -76,6 +76,12 @@ export default function FieldPerformance() {
           </button>
         </div>
       )}
+      {report?.synthetic && (
+        <p role="alert">
+          Synthetic verification segment. These measurements are excluded from real deployment
+          segments and do not assess real-user health.
+        </p>
+      )}
       {report && (
         <>
           <p role="status">

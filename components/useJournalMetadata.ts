@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import type { JournalPost } from '../lib/serverJournalDocument';
 import { journalUrl } from '../lib/journalUrl';
 import { publicProductImage, STOREFRONT_ORIGIN } from '../lib/productMetadata';
@@ -10,9 +10,14 @@ export function useJournalMetadata(
   post?: JournalPost | null,
   indexImage?: string
 ) {
+  const removedFocusRef = useRef<globalThis.Element | null>(null);
   useLayoutEffect(() => {
     const initial = document.getElementById('lm-journal-document');
-    if (!loading || initial?.dataset.postId !== id) initial?.remove();
+    if (!loading || initial?.dataset.postId !== id) {
+      const focused = document.activeElement;
+      if (focused && initial?.contains(focused)) removedFocusRef.current = focused;
+      initial?.remove();
+    }
   }, [id, loading]);
   useEffect(() => {
     if (loading) return;
@@ -69,4 +74,5 @@ export function useJournalMetadata(
       return () => robots.remove();
     }
   }, [id, loading, failed, post, indexImage]);
+  return removedFocusRef;
 }

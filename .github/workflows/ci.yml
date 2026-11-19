@@ -134,6 +134,8 @@ jobs:
             artifacts/lighthouse/story-formats/*.png
             artifacts/lighthouse/product-formats/*.png
             artifacts/lighthouse/board-controls/*.png
+            artifacts/lighthouse/field-monitoring/
+            artifacts/lighthouse/field-admin/
           if-no-files-found: ignore
           retention-days: 14
 

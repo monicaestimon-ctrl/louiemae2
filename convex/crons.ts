@@ -1,3 +1,4 @@
+import { FIELD_PURGE_INTERVAL_HOURS } from '../lib/quality/fieldPolicy';
 import { cronJobs } from "convex/server";
 import { internal } from "./_generated/api";
 
@@ -19,7 +20,7 @@ crons.interval('recover-delivery-tax-reporting', { minutes: 5 }, internal.dlvTax
 crons.interval('recover-notification-outbox', { minutes: 5 }, internal.sysNotify.recover, {});
 crons.interval('purge-delivery-observations', { hours: 1 }, internal.dlvTelemetry.purge, {});
 // Retention continues when optional field collection is disabled.
-crons.interval('purge-field-quality-observations', { hours: 1 }, internal.qualityTelemetry.purge, {});
+crons.interval('purge-field-quality-observations', { hours: FIELD_PURGE_INTERVAL_HOURS }, internal.qualityTelemetry.purge, {});
 crons.interval('expire-delivery-quotes', { minutes: 5 }, internal.dlvQuoteLifecycle.expire, {});
 
 // v2 tiers: recompute once a day at 00:15 America/Chicago (the handler checks local time, so DST is handled).

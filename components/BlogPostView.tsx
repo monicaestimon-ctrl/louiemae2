@@ -28,7 +28,7 @@ export const BlogPostView: React.FC<BlogPostViewProps> = ({ postId }) => {
     const post = initial.value?._id === postId ? initial.value : null;
     const editorialStatus = initial.unavailable ? 'unavailable' : initial.value === undefined ? 'loading' : 'ready';
     const safeContent = post?.contentHtml ?? '';
-    useJournalMetadata(postId, editorialStatus === 'loading', editorialStatus === 'unavailable', post);
+    const removedFocusRef = useJournalMetadata(postId, editorialStatus === 'loading', editorialStatus === 'unavailable', post);
     const [showShareMenu, setShowShareMenu] = useState(false);
     const [copied, setCopied] = useState(false);
     const shareMenuRef = useRef<HTMLDivElement>(null);
@@ -38,11 +38,17 @@ export const BlogPostView: React.FC<BlogPostViewProps> = ({ postId }) => {
         typeof document !== 'undefined' && document.getElementById('lm-journal-document')?.dataset.postId === postId ? postId : null,
     );
     useEffect(() => {
-        if (initialDocumentRef.current === postId) return;
+        if (initialDocumentRef.current === postId) {
+            const focused = removedFocusRef.current;
+            removedFocusRef.current = null;
+            if (focused && !focused.isConnected && document.activeElement === document.body)
+                headingRef.current?.focus({ preventScroll: true });
+            return;
+        }
         initialDocumentRef.current = null;
         if (editorialStatus === 'loading') return;
         headingRef.current?.focus({ preventScroll: true });
-    }, [postId, editorialStatus]);
+    }, [postId, editorialStatus, removedFocusRef]);
 
     // Close share menu on outside click
     useEffect(() => {

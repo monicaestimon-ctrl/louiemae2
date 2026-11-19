@@ -49,3 +49,17 @@ it('focuses the heading on in-app story navigation and again when returning', ()
   view.rerender(<BlogPostView postId="story1" />);
   expect(screen.getByRole('heading', { level: 1 })).toHaveFocus();
 });
+it('transfers focus from a disconnected server control to the client heading', () => {
+  document.body.innerHTML =
+    '<main id="lm-journal-document" data-post-id="story1"><a href="/blog">Back to Blog</a></main>';
+  const link = document.querySelector('a')!;
+  link.focus();
+  query.mockReturnValue({ status: 'ready', data: post });
+  render(
+    <React.StrictMode>
+      <BlogPostView postId="story1" />
+    </React.StrictMode>
+  );
+  expect(link.isConnected).toBe(false);
+  expect(screen.getByRole('heading', { level: 1 })).toHaveFocus();
+});

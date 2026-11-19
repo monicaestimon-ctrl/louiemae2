@@ -4,6 +4,8 @@ import { requireDeliveryRole } from './dlvAccess';
 import { qualityRoute, qualityDevice } from './qualityTables';
 import {
   FIELD_RETENTION_DAYS,
+  FIELD_PURGE_INTERVAL_HOURS,
+  FIELD_SYNTHETIC_RELEASE,
   FIELD_MAX_BATCH_BYTES,
   parseFieldBatch,
   replaceFieldSample,
@@ -99,7 +101,10 @@ export const summary = query({
       .order('desc')
       .take(5001);
     const oldest = await ctx.db.query('qualityVisits').withIndex('by_created').order('asc').first();
-    const oldestExpiredAt = oldest && oldest.createdAt <= since ? oldest.createdAt : null;
+    const oldestExpiredAt =
+      oldest && oldest.createdAt <= since - FIELD_PURGE_INTERVAL_HOURS * 3_600_000
+        ? oldest.createdAt
+        : null;
     const truncated = rows.length > 5000;
     const observations = rows.slice(0, 5000);
     const budget = await ctx.db
@@ -121,6 +126,7 @@ export const summary = query({
       route: args.route,
       device: args.device,
       release: args.release,
+      synthetic: args.release === FIELD_SYNTHETIC_RELEASE,
       truncated,
       retentionBacklog: oldestExpiredAt !== null,
       oldestExpiredAt,
