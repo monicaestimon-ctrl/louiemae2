@@ -4,17 +4,19 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { getFunctionName } from 'convex/server';
 import { LiveShell, TradeBoundary } from './LiveShell';
 
-const mocks = vi.hoisted(() => ({ me: undefined as { signedIn: boolean; verified?: boolean } | undefined, authLoading: false, authenticated: undefined as boolean | undefined, curated: [] as unknown[] | undefined, failed: false, rows: [] as unknown[], status: 'LoadingFirstPage', loadMore: vi.fn(), install: vi.fn(), references: vi.fn() }));
+const mocks = vi.hoisted(() => ({ me: undefined as { signedIn: boolean; verified?: boolean; admin?: boolean; email?:string } | undefined, authLoading: false, authenticated: undefined as boolean | undefined, curated: [] as unknown[] | undefined, failed: false, rows: [] as unknown[], status: 'LoadingFirstPage', catalogQueries:vi.fn(), loadMore: vi.fn(), install: vi.fn(), references: vi.fn() }));
 vi.mock('convex/react', () => ({
   useConvexAuth: () => ({ isLoading: mocks.authLoading, isAuthenticated: mocks.authenticated ?? Boolean(mocks.me?.signedIn) }),
   useQuery: (query: Parameters<typeof getFunctionName>[0]) => { if (mocks.failed) throw new Error('account unavailable'); return getFunctionName(query) === 'holm:catalogItems' ? mocks.curated : mocks.me; },
-  usePaginatedQuery: () => ({ results: mocks.rows, status: mocks.status, loadMore: mocks.loadMore }),
+  usePaginatedQuery: () => {mocks.catalogQueries();return { results: mocks.rows, status: mocks.status, loadMore: mocks.loadMore };},
 }));
+vi.mock('./admin/HouseStaffGate',()=>({HouseStaffGate:({admin}:{admin:boolean})=><main>{admin?<><h1>Staff management</h1><input aria-label='Staff draft'/></>:<h1>Team only</h1>}</main>}));
+vi.mock('@convex-dev/auth/react',()=>({useAuthActions:()=>({signIn:vi.fn()})}));
 vi.mock('./catalog', () => ({ liveProducts: (rows: unknown[]) => rows }));
-vi.mock('./app', () => ({ App: ({onCatalogIntent}: {onCatalogIntent: () => void}) => <main className="home">Verified catalog<input aria-label="Unsaved project name" /><button onClick={onCatalogIntent}>Discover catalog</button></main>, setProducts: (rows: unknown[], refs: unknown[]) => { mocks.install(rows); mocks.references(refs); } }));
+vi.mock('./app', () => ({ Turntable: () => null, App: ({onCatalogIntent}: {onCatalogIntent: () => void}) => <main className="home">Verified catalog<input aria-label="Unsaved project name" /><button onClick={onCatalogIntent}>Discover catalog</button></main>, setProducts: (rows: unknown[], refs: unknown[]) => { mocks.install(rows); mocks.references(refs); } }));
 beforeEach(() => {
   window.history.replaceState(null, '', '/trade/');
-  mocks.curated=[]; mocks.me = undefined; mocks.authLoading = false; mocks.authenticated = undefined; mocks.failed = false; mocks.rows = []; mocks.status = 'LoadingFirstPage'; mocks.loadMore.mockReset(); mocks.install.mockReset(); mocks.references.mockReset();
+  mocks.curated=[]; mocks.me = undefined; mocks.authLoading = false; mocks.authenticated = undefined; mocks.failed = false; mocks.rows = []; mocks.status = 'LoadingFirstPage'; mocks.catalogQueries.mockReset();mocks.loadMore.mockReset(); mocks.install.mockReset(); mocks.references.mockReset();
   vi.useFakeTimers(); vi.spyOn(console, 'error').mockImplementation(() => undefined);
   const shell = document.createElement('div'); shell.id = 'holm-shell'; shell.textContent = 'Startup hero'; document.body.append(shell);
 });
@@ -213,4 +215,46 @@ it('does not carry home-page discovery demand into another viewer session', () =
   view.rerender(<LiveShell/>);
   expect(mocks.loadMore).not.toHaveBeenCalled();
   expect(mocks.install).toHaveBeenLastCalledWith([{id:'public'}]);
+});
+
+it('opens staff management without any catalog subscription when the catalog is empty',()=>{
+  window.history.replaceState(null,'','/trade/#admin');
+  mocks.me={signedIn:true,verified:true,admin:true,email:'staff@example.test'};
+  mocks.status='Exhausted';mocks.curated=undefined;
+  render(<LiveShell/>);
+  expect(screen.getByRole('heading',{name:'Staff management'})).toBeTruthy();
+  expect(mocks.catalogQueries).not.toHaveBeenCalled();
+  expect(mocks.install).not.toHaveBeenCalled();
+  expect(document.getElementById('holm-shell')).toBeNull();
+});
+it('denies anonymous staff entry without requesting a catalog and restores catalog recovery on home navigation',()=>{
+  window.history.replaceState(null,'','/trade/#admin');mocks.me={signedIn:false};mocks.status='Exhausted';
+  render(<LiveShell/>);
+  expect(screen.getByRole('heading',{name:'Team only'})).toBeTruthy();expect(mocks.catalogQueries).not.toHaveBeenCalled();
+  act(()=>{window.history.replaceState(null,'','/trade/#home');window.dispatchEvent(new HashChangeEvent('hashchange'))});
+  expect(screen.queryByRole('heading',{name:'Team only'})).toBeNull();
+  expect(mocks.catalogQueries).toHaveBeenCalled();expect(screen.getByRole('status')).toHaveTextContent('No products are available');
+});
+it('requires settled account identity and discards staff drafts on role loss',()=>{
+  window.history.replaceState(null,'','/trade/#admin');mocks.me={signedIn:true,verified:true,admin:true,email:'staff@example.test'};mocks.authLoading=true;
+  const view=render(<LiveShell/>);expect(screen.queryByRole('heading',{name:'Staff management'})).toBeNull();
+  mocks.authLoading=false;view.rerender(<LiveShell/>);
+  fireEvent.input(screen.getByLabelText('Staff draft'),{target:{value:'Private draft'}});
+  mocks.me={...mocks.me,admin:false};view.rerender(<LiveShell/>);
+  expect(screen.queryByLabelText('Staff draft')).toBeNull();expect(screen.getByRole('heading',{name:'Team only'})).toBeTruthy();
+  mocks.me={...mocks.me,admin:true};view.rerender(<LiveShell/>);expect(screen.getByLabelText('Staff draft')).toHaveValue('');
+  expect(mocks.catalogQueries).not.toHaveBeenCalled();
+});
+
+it('offers catalog-independent staff sign-in and keeps admin destination after password authentication',()=>{
+  window.history.replaceState(null,'','/trade/#admin');mocks.me={signedIn:false};mocks.status='Exhausted';
+  const view=render(<LiveShell/>);
+  fireEvent.click(screen.getByRole('button',{name:'Sign in to staff account'}));
+  expect(screen.getByRole('heading',{name:'Sign in to House management'})).toBeTruthy();
+  expect(screen.getByLabelText(/email/i)).toBeTruthy();
+  expect(mocks.catalogQueries).not.toHaveBeenCalled();
+  mocks.me={signedIn:true,verified:true,admin:true,email:'staff@example.test'};view.rerender(<LiveShell/>);
+  expect(screen.getByRole('heading',{name:'Staff management'})).toBeTruthy();
+  expect(window.location.hash).toBe('#admin');
+  expect(mocks.catalogQueries).not.toHaveBeenCalled();
 });

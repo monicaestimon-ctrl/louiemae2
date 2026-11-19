@@ -3401,7 +3401,7 @@ function fitToDims(T,obj,dims){const box=new T.Box3().setFromObject(obj);const s
   const b2=new T.Box3().setFromObject(obj);const c=b2.getCenter(new T.Vector3());obj.position.x-=c.x;obj.position.z-=c.z;obj.position.y-=b2.min.y;
   obj.traverse(o=>{if(o.isMesh){o.castShadow=o.receiveShadow=true}});return obj}
 // A turntable: one model, lit, turning slowly, with its W × D × H beneath.
-function Turntable({url,dims,height=260}){
+export function Turntable({url,dims,height=260}){
   const cv=useRef();const [three,failed]=useThree();const [err,setErr]=useState('');
   useEffect(()=>{if(!three||!url)return;const T=three;const c=cv.current;const r=new T.WebGLRenderer({canvas:c,antialias:true,alpha:true});r.setPixelRatio(Math.min(devicePixelRatio||1,2));r.outputColorSpace=T.SRGBColorSpace;r.toneMapping=T.ACESFilmicToneMapping;r.shadowMap.enabled=true;
     const scene=new T.Scene();const cam=new T.PerspectiveCamera(30,1,.01,100);scene.add(new T.HemisphereLight('#FFF6EA','#B8A58C',1.2*LX));const sun=new T.DirectionalLight('#FFF4E5',2.4*LX);sun.position.set(2,4,3);sun.castShadow=true;scene.add(sun);

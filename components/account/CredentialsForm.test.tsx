@@ -63,3 +63,12 @@ it.each([
     expect(screen.getByLabelText(site === 'trade' ? 'Work email' : 'Email')).toBeEnabled();
   }
 );
+
+it('returns staff OAuth directly to the catalog-independent admin route without a stale return intent', async()=>{
+  mocks.signIn.mockRejectedValue(new Error('Fixture unavailable'));
+  render(<CredentialsForm site="trade" googleEnabled afterSignIn="admin" oauthRedirectTo="/trade/#admin"/>);
+  fireEvent.click(screen.getByRole('button',{name:'Continue with Google'}));
+  await waitFor(()=>expect(screen.getByRole('alert')).toHaveFocus());
+  expect(mocks.signIn).toHaveBeenCalledWith('google',{redirectTo:'/trade/#admin'});
+  expect(sessionStorage.getItem('hol:after')).toBeNull();
+});

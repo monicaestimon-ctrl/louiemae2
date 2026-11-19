@@ -108,6 +108,7 @@ jobs:
           npm run test:field:browser
           node scripts/lighthouse/field-admin.mjs
           node scripts/lighthouse/house-staff.mjs
+          node scripts/lighthouse/staff-entry.mjs
           node scripts/lighthouse/editorial-formats.mjs
           node scripts/lighthouse/story-formats.mjs
           node scripts/lighthouse/startup-recovery.mjs
@@ -141,6 +142,7 @@ jobs:
             artifacts/lighthouse/field-monitoring/
             artifacts/lighthouse/field-admin/
             artifacts/lighthouse/house-staff/
+            artifacts/lighthouse/staff-entry/
           if-no-files-found: ignore
           retention-days: 14
 
