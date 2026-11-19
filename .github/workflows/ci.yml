@@ -38,6 +38,9 @@ jobs:
       - name: Type check
         run: npm run type-check
 
+      - name: Strict HOLM staff type check
+        run: npx tsc --noEmit -p tsconfig.holm-staff.json
+
       - name: Strict Convex type check
         run: npx tsc -p convex/tsconfig.json
 
@@ -104,6 +107,7 @@ jobs:
           node scripts/lighthouse/journal.mjs
           npm run test:field:browser
           node scripts/lighthouse/field-admin.mjs
+          node scripts/lighthouse/house-staff.mjs
           node scripts/lighthouse/editorial-formats.mjs
           node scripts/lighthouse/story-formats.mjs
           node scripts/lighthouse/startup-recovery.mjs
@@ -136,6 +140,7 @@ jobs:
             artifacts/lighthouse/board-controls/*.png
             artifacts/lighthouse/field-monitoring/
             artifacts/lighthouse/field-admin/
+            artifacts/lighthouse/house-staff/
           if-no-files-found: ignore
           retention-days: 14
 
