@@ -707,6 +707,17 @@ export async function computeEstimate(
     configVersions['mixed-zuo-ashcroft'] = mixed.version;
     configs.push(mixed);
   }
+  // Ashcroft keeps its existing per-item formula, independently of Zuo's ladder.
+  // Bind the approved rule to the estimate so policy changes invalidate checkout.
+  const ashcroftRule = ash.length
+    ? await deliveryConfig<{ engine: string; source: string }>('deliveryRule', 'ashcroft-launch', true)
+    : null;
+  const ashcroftPolicyReady = !ash.length || (ashcroftRule?.value?.engine === 'ashcroft_per_item'
+    && ashcroftRule.value.source === 'lib/retailLaunch.ts retailDelivery()');
+  if (ashcroftRule) {
+    configs.push(ashcroftRule);
+    configVersions['ashcroft-launch'] = ashcroftRule.version;
+  }
   const extraFixedMinor = ash.reduce((t, l) => t + l.fixedDeliveryMinor, 0);
   const groupsOut: EstimateOutcome['groups'] = [];
   const taxPolicy = await maybeConfig<TaxProviderPolicy>(ctx, 'taxProviderPolicy', 'delivery-tax');
@@ -755,10 +766,11 @@ export async function computeEstimate(
       subsidyMinor: 0,
       requirementMinor: extraFixedMinor,
       chargeMinor: extraFixedMinor,
-      quoteRequired: false,
-      reasons: [],
+      quoteRequired: !ashcroftPolicyReady,
+      reasons: ashcroftPolicyReady ? [] : ['Supplier delivery policy needs approval'],
     });
   const destReasons = quoteOnlyReasons(input.destination.zip, input.destination.address);
+  if (!ashcroftPolicyReady) destReasons.push('Supplier delivery policy needs approval');
   if (!servicePolicy || servicePolicy.value.code !== input.service)
     destReasons.push('Delivery service terms need approval');
   if (ash.length && !servicePolicy?.value.modes.per_item)
@@ -791,7 +803,6 @@ export async function computeEstimate(
       ...(tax
         ? {
             taxMinor: tax.taxMinor,
-            validUntil: Math.min(tax.expiresAt, servicePolicy?.effectiveTo ?? Infinity),
             taxCalculationRef: tax.reference,
             lineTaxes: tax.lineTaxes,
             deliveryTaxMinor: tax.deliveryTaxMinor,
@@ -800,6 +811,13 @@ export async function computeEstimate(
       lines,
       merchandiseMinor,
       creditMinor,
+      validUntil: Math.min(
+        Number.MAX_SAFE_INTEGER,
+        ashcroftRule?.effectiveTo ?? Infinity,
+        servicePolicy?.effectiveTo ?? Infinity,
+        taxPolicy?.effectiveTo ?? Infinity,
+        tax?.expiresAt ?? Infinity
+      ),
       deliveryMinor: extraFixedMinor,
       groups: groupsOut,
       reasons: [],
@@ -969,6 +987,7 @@ export async function computeEstimate(
     assumptionsConfig.effectiveTo ?? Infinity,
     ladderCfg.effectiveTo ?? Infinity,
     zuoRule.effectiveTo ?? Infinity,
+    ashcroftRule?.effectiveTo ?? Infinity,
     freightCfg?.effectiveTo ?? Infinity,
     freightCfg?.value.rule.effectiveTo ?? Infinity,
     freightCfg?.value.validUntil ?? Infinity,
