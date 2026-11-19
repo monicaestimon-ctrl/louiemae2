@@ -88,7 +88,9 @@ describe('store catalog integration', () => {
     card.focus();
     expect(card).toHaveFocus();
     fireEvent.click(card);
-    expect(await screen.findByText(/Loading product details/)).toBeInTheDocument();
+    // The detail chunk is intentionally lazy. A busy full-suite runner can need
+    // more than Testing Library's default second to import it.
+    expect(await screen.findByText(/Loading product details/, {}, { timeout: 5000 })).toBeInTheDocument();
     expect(mocks.detail).toHaveBeenLastCalledWith('root-preview');
     expect(mocks.addToCart).not.toHaveBeenCalled();
   });

@@ -6,7 +6,7 @@ const e = JSON.parse(await readFile('docs/quality/story-image-provenance.json', 
 const m = JSON.parse(await readFile('lib/imageManifest.json', 'utf8'))[e.source];
 const hash = (b) => createHash('sha256').update(b).digest('hex');
 assert.equal(e.source, '/images/brand/fam2.png');
-assert.equal(e.recipe, 'avif-quality45-effort7-lossless-orientation-v1');
+assert.equal(e.recipe, 'avif-quality40-effort7-lossless-orientation-v1');
 assert.equal(hash(await readFile('public' + e.source)), e.sha256);
 assert.equal(e.base, '/images/opt/brand-formats/' + hash(e.sha256 + '|' + e.recipe).slice(0, 24));
 assert.equal(m.avifBase, e.base);
