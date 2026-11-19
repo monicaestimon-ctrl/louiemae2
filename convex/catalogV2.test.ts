@@ -219,6 +219,35 @@ describe('stock evidence authoring', () => {
     const args = { variantId: cv._id, expectedRevisionId: null, expectedWarehouseId: warehouseId, expectedWarehouseFingerprint: warehouseFingerprint, expectedPiecesPerPack: 2, requestKey: 'stock-evidence-fixture', quantity: '5.000000000', unitBasis: 'piece' as const, kind: 'on_hand' as const, availability: 'in_stock' as const, confirmed: true, observedAt: NOW - 1000, source: 'CA_QTY fixture column', note: 'California only; excludes transit and Florida. Physical on-hand, not supplier allocation.' };
     return { t, admin, cv, args };
   }
+  it('restores only stock-excluded drafts after fresh available-to-sell evidence, retaining review holds', async () => {
+    const { t, admin, cv, args } = await fixture();
+    await approve(t, admin, 'freshness-default');
+    const staging = { sku: cv.supplierSku, pack: cv.piecesPerPack, unitsPerSellUnit: cv.piecesPerPack,
+      runId: 'fixture', manifestSha256: 'a'.repeat(64), payload: 'fixture', sourceEvidence: '{}',
+      excluded: true, exclusionReasons: ['CURRENTLY_UNAVAILABLE'], holdReasons: [], status: 'staged_not_orderable' as const };
+    await t.run(ctx => ctx.db.patch(cv.productId, { zuoStaging: staging }));
+    const restore = { productId: cv.productId, variantIds: [cv._id], reason: 'Reviewed current warehouse available-to-sell source' };
+    await expect(t.mutation(api.catPublication.restoreStockExcludedDraft, restore)).rejects.toThrow();
+    await expect(admin.mutation(api.catPublication.restoreStockExcludedDraft, restore)).rejects.toThrow(/available-to-sell/);
+    const onHand = await admin.mutation(api.catStock.recordEvidence, args);
+    await expect(admin.mutation(api.catPublication.restoreStockExcludedDraft, restore)).rejects.toThrow(/available-to-sell/);
+    const ats = await admin.mutation(api.catStock.recordEvidence, { ...args, expectedRevisionId: onHand,
+      requestKey: 'stock-ats-restoration', kind: 'available_to_sell', unitBasis: 'pack', quantity: '5' });
+    await t.run(ctx => ctx.db.patch(ats, { observedAt: NOW - 2 * 86400000 }));
+    await expect(admin.mutation(api.catPublication.restoreStockExcludedDraft, restore)).rejects.toThrow(/not current/);
+    await t.run(async ctx => {
+      await ctx.db.patch(ats, { observedAt: args.observedAt });
+      await ctx.db.patch(cv.productId, { zuoStaging: { ...staging, exclusionReasons: ['CURRENTLY_UNAVAILABLE', 'NOT_SELECTED'] } });
+    });
+    await expect(admin.mutation(api.catPublication.restoreStockExcludedDraft, restore)).rejects.toThrow(/Only an initially/);
+    await t.run(ctx => ctx.db.patch(cv.productId, { zuoStaging: staging }));
+    await expect(admin.mutation(api.catPublication.restoreStockExcludedDraft, restore)).resolves.toEqual({ restoredVariants: 1 });
+    expect(await t.run(ctx => ctx.db.get(cv.productId))).toMatchObject({ zuoStaging: { excluded: false, exclusionReasons: [] } });
+    expect(await t.run(ctx => ctx.db.get(cv._id))).toMatchObject({ holds: expect.arrayContaining(['MANUAL']), retailPriceRevisionId: cv.retailPriceRevisionId, tradePriceRevisionId: cv.tradePriceRevisionId });
+    expect(await t.run(ctx => ctx.db.query('catProductMeta').first())).toMatchObject({ stage: 'imported_draft', holds: expect.arrayContaining(['MANUAL']) });
+    expect(await t.run(ctx => ctx.db.query('commerceListings').collect())).toHaveLength(0);
+  });
+
   it('appends source revisions, binds origin and pack, and retains exclusions and prices', async () => {
     const { t, admin, cv, args } = await fixture();
     const id = await admin.mutation(api.catStock.recordEvidence, args);
@@ -405,6 +434,33 @@ describe('media identity and review', () => {
     expect(asset?.rights.evidenceRef).toContain(input.sourceWorkbookSha256);
     expect(await t.run(ctx=>ctx.db.get(cv._id))).toEqual(before);
     expect(await t.action(internal.catMediaProcessing.prepareReviewedSource,input)).toMatchObject({assetId:result.assetId,duplicate:true});
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('prepares draft photography for stock-excluded products without releasing their exclusion', async () => {
+    const { t, cv } = await fixture();
+    const staging = { sku: cv.supplierSku, pack: cv.piecesPerPack, unitsPerSellUnit: cv.piecesPerPack,
+      runId: 'fixture', manifestSha256: 'a'.repeat(64), payload: 'fixture', excluded: true,
+      exclusionReasons: ['CURRENTLY_UNAVAILABLE'], holdReasons: ['STOCK_UNVERIFIED'],
+      status: 'staged_not_orderable' as const, sourceEvidence: '{}' };
+    await t.run(async ctx => {
+      await ctx.db.patch(cv.productId, { zuoStaging: staging });
+      await ctx.db.patch(cv._id, { availability: 'out_of_stock' });
+    });
+    const bytes = await sharp({ create: { width: 1000, height: 1000, channels: 3, background: 'white' } }).png().toBuffer();
+    const fetch = vi.fn(async () => new Response(bytes)); vi.stubGlobal('fetch', fetch);
+    const input = { variantId: cv._id, sku: cv.supplierSku, piecesPerPack: cv.piecesPerPack,
+      sourceUrl: 'https://images.salsify.com/reviewed.png', contentHash: createHash('sha256').update(bytes).digest('hex'),
+      sourceWorkbookSha256: 'a'.repeat(64), reviewSha256: 'b'.repeat(64) };
+    const result = await t.action(internal.catMediaProcessing.prepareReviewedSource, input);
+    expect(await t.run(ctx => ctx.db.get(result.assetId))).toMatchObject({ status: 'pending' });
+    expect(await t.run(ctx => ctx.db.get(cv.productId))).toMatchObject({ zuoStaging: staging });
+    expect(await t.run(ctx => ctx.db.get(cv._id))).toMatchObject({ availability: 'out_of_stock', holds: cv.holds });
+    expect(await t.run(ctx => ctx.db.query('commerceListings').collect())).toHaveLength(0);
+    for (const reasons of [[], ['DISCONTINUED'], ['CURRENTLY_UNAVAILABLE', 'NOT_SELECTED']]) {
+      await t.run(ctx => ctx.db.patch(cv.productId, { zuoStaging: { ...staging, exclusionReasons: reasons } }));
+      await expect(t.action(internal.catMediaProcessing.prepareReviewedSource, input)).rejects.toThrow(/SKU and pack/);
+    }
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
@@ -925,6 +981,92 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     return { t, admin, cv, productId: cv.productId };
   }
 
+  it('verifies canonical identity without publishing or resolving unrelated holds, and rejects conflicting mappings', async () => {
+    const { t, admin, cv, productId } = await readyProduct();
+    await t.run(async ctx => {
+      const product = (await ctx.db.get(productId))!;
+      await ctx.db.patch(productId, { draft: { ...product.draft, variants: product.draft.variants.map(v => ({ ...v, id: cv._id, sku: cv.supplierSku })) },
+        zuoStaging: { sku: cv.supplierSku, pack: cv.piecesPerPack, unitsPerSellUnit: cv.piecesPerPack,
+          runId: 'identity-fixture', manifestSha256: 'a'.repeat(64), payload: 'fixture', sourceEvidence: '{}',
+          excluded: false, exclusionReasons: [], holdReasons: [], status: 'staged_not_orderable' } });
+      await ctx.db.patch(cv._id, { holds: ['MAPPING_MISSING', 'MANUAL', 'COST_MISSING'] });
+    });
+    const args = { productId, variantIds: [cv._id] };
+    await expect(t.mutation(api.catPublication.verifyCanonicalIdentity, args)).rejects.toThrow();
+    await expect(admin.mutation(api.catPublication.verifyCanonicalIdentity, { ...args, variantIds: [cv._id, cv._id] })).rejects.toThrow(/distinct/);
+    await expect(admin.mutation(api.catPublication.verifyCanonicalIdentity, args)).resolves.toEqual({ verifiedVariants: 1 });
+    await admin.mutation(api.catPublication.verifyCanonicalIdentity, args);
+    const maps = await t.run(ctx => ctx.db.query('catRetailMappings').collect());
+    expect(maps).toHaveLength(1);
+    expect(maps[0]).toMatchObject({ holmProductId: productId, retailProductId: productId, holmVariantId: cv._id, retailVariantId: cv._id });
+    expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).toEqual(['MANUAL', 'COST_MISSING']);
+    expect(await t.run(ctx => ctx.db.query('commerceListings').collect())).toHaveLength(0);
+    await t.run(async ctx => {
+      await ctx.db.patch(maps[0]._id, { retailVariantId: 'conflicting-variant' });
+      await ctx.db.patch(cv._id, { holds: ['MAPPING_MISSING', 'MANUAL'] });
+    });
+    await expect(admin.mutation(api.catPublication.verifyCanonicalIdentity, args)).rejects.toThrow(/conflict/);
+    expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).toContain('MAPPING_MISSING');
+    await t.run(ctx => ctx.db.patch(cv._id, { piecesPerPack: cv.piecesPerPack + 1 }));
+    await expect(admin.mutation(api.catPublication.verifyCanonicalIdentity, args)).rejects.toThrow(/must match/);
+  });
+
+  it('releases product and variant manual review atomically only after current readiness passes', async () => {
+    const { t, admin, cv, productId } = await readyProduct();
+    const metaId = await t.run(async ctx => {
+      const meta = (await ctx.db.query('catProductMeta').first())!;
+      await ctx.db.patch(productId, { zuoStaging: { sku: cv.supplierSku, pack: cv.piecesPerPack,
+        unitsPerSellUnit: cv.piecesPerPack, runId: 'review-fixture', manifestSha256: 'a'.repeat(64),
+        payload: 'fixture', sourceEvidence: '{}', excluded: false, exclusionReasons: [], holdReasons: [], status: 'staged_not_orderable' } });
+      await ctx.db.patch(meta._id, { holds: ['MANUAL'] });
+      await ctx.db.patch(cv._id, { holds: ['MANUAL'], referralEligible: true });
+      return meta._id;
+    });
+    const input = { productId, variantIds: [cv._id], reason: 'Reviewed current source records and product qualification.' };
+    await expect(t.query(api.catPublication.reviewQueue, { paginationOpts: { cursor: null, numItems: 25 } })).rejects.toThrow();
+    const queue = await admin.query(api.catPublication.reviewQueue, { paginationOpts: { cursor: null, numItems: 25 } });
+    expect(queue.page[0]).toMatchObject({ productId, included: true, stage: 'imported_draft' });
+    await expect(admin.query(api.catPublication.reviewQueue, { paginationOpts: { cursor: null, numItems: 26 } })).rejects.toThrow();
+    await expect(t.mutation(api.catPublication.releaseManualReview, input)).rejects.toThrow();
+    await expect(admin.mutation(api.catPublication.releaseManualReview, input)).rejects.toThrow();
+    expect((await t.run(ctx => ctx.db.get(metaId)))?.holds).toEqual(['MANUAL']);
+    expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).toEqual(['MANUAL']);
+    await t.run(async ctx => {
+      const storageId = await ctx.storage.store(new Blob(['image']));
+      const derivative = await ctx.storage.store(new Blob(['web image'], { type: 'image/webp' }));
+      await ctx.db.insert('catMediaAssets', { productId, variantId: cv._id, role: 'hero', storageId,
+        derivatives: [{ width: 1200, format: 'webp', storageId: derivative }], contentHash: 'review-fixture',
+        mime: 'image/jpeg', width: 1200, height: 1200, bytes: 5, sourceUrl: 'https://www.zuomod.com/fixture.jpg',
+        rights: { basis: 'fixture media permission', attributionRequired: false, privateOriginal: true },
+        altText: 'Oak dining chair supplier photograph', verifiedAgainst: { sku: cv.supplierSku, pack: cv.packId }, status: 'verified', createdAt: NOW });
+      await ctx.db.patch(cv.currentCostRevisionId!, { verifiedAt: NOW - 3600000, dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true });
+    });
+    await expect(admin.mutation(api.catPublication.releaseManualReview, { ...input, variantIds: [] })).rejects.toThrow(/distinct/);
+    await expect(admin.mutation(api.catPublication.releaseManualReview, { ...input, variantIds: [cv._id, cv._id] })).rejects.toThrow(/distinct/);
+    await t.run(ctx => ctx.db.patch(cv.retailPriceRevisionId!, { effectiveTo: NOW - 1 }));
+    await expect(admin.mutation(api.catPublication.releaseManualReview, input)).rejects.toThrow(/current approved retail/);
+    expect((await t.run(ctx => ctx.db.get(metaId)))?.holds).toEqual(['MANUAL']);
+    await t.run(ctx => ctx.db.patch(cv.retailPriceRevisionId!, { effectiveTo: undefined }));
+    const result = await admin.mutation(api.catPublication.releaseManualReview, input);
+    expect(result).toMatchObject({ reviewedVariants: 1, stage: 'imported_draft' });
+    expect((await t.run(ctx => ctx.db.get(metaId)))?.holds).toEqual([]);
+    expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).toEqual([]);
+    expect(await t.run(ctx => ctx.db.query('commerceListings').collect())).toHaveLength(0);
+    expect((await t.run(ctx => ctx.db.query('sysAuditEvents').collect())).some(e => e.action === 'publication.manual_review')).toBe(true);
+    await t.run(async ctx => {
+      const product = (await ctx.db.get(productId))!;
+      await ctx.db.patch(productId, { zuoStaging: { ...product.zuoStaging!, excluded: true } });
+    });
+    await expect(admin.mutation(api.catPublication.releaseManualReview, input)).rejects.toThrow(/included/);
+    await t.run(async ctx => {
+      const product = (await ctx.db.get(productId))!;
+      await ctx.db.patch(productId, { zuoStaging: { ...product.zuoStaging!, excluded: false } });
+    });
+    await t.run(ctx => ctx.db.patch(cv._id, { availability: 'discontinued', holds: ['MANUAL'] }));
+    await expect(admin.mutation(api.catPublication.releaseManualReview, input)).rejects.toThrow(/belong/);
+    expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).toEqual(['MANUAL']);
+  });
+
   it('exports staged images and complete expenses without disguising unknown economics', async () => {
     const { t, admin, cv, productId } = await readyProduct();
     const args = { paginationOpts: { cursor: null, numItems: 20 } };
@@ -1021,7 +1163,22 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     // Removing a hold does not turn unknown expenses into verified zero costs.
     await expect(t.run((ctx) => assertSellable(ctx, cv._id, 'purchase', NOW))).rejects.toThrow(/COST_MISSING/);
     await t.run(ctx => ctx.db.patch(cv.currentCostRevisionId!, { dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true }));
+    await t.run(ctx => ctx.db.patch(cv.retailPriceRevisionId!, { effectiveFrom: NOW - 1 }));
     await expect(t.run((ctx) => assertSellable(ctx, cv._id, 'purchase', NOW))).resolves.toBeTruthy();
+    const price = (await t.run(ctx => ctx.db.get(cv.retailPriceRevisionId!)))!;
+    for (const change of [
+      { effectiveTo: NOW }, { effectiveFrom: NOW + 1 },
+      { channel: 'trade' as const }, { packPriceMinor: 0 },
+    ]) {
+      await t.run(ctx => ctx.db.patch(price._id, change));
+      for (const purpose of ['purchase', 'link', 'estimate'] as const)
+        await expect(t.run(ctx => assertSellable(ctx, cv._id, purpose, NOW))).rejects.toThrow(/No current approved retail price/);
+      await t.run(ctx => ctx.db.patch(price._id, {
+        effectiveFrom: price.effectiveFrom, effectiveTo: price.effectiveTo,
+        channel: price.channel, packPriceMinor: price.packPriceMinor,
+      }));
+    }
+
   });
 
   it('publishes only named, ready products atomically and unpublishes without touching orders', async () => {
@@ -1038,6 +1195,11 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     for (const to of ['evidence_review', 'economics_review', 'content_review', 'ready'] as const) await admin.mutation(api.catPublication.advance, { productId, to });
     await expect(admin.mutation(api.catPublication.publish, { productIds: [productId], channels: ['retail', 'house'] })).rejects.toSatisfy((e) => isCommerceError(e, 'FEATURE_DISABLED'));
     process.env.CATALOG_PUBLICATION_V2_ENABLED = 'true';
+    // A valid retail revision cannot make an expired trade destination publishable.
+    await t.run(ctx => ctx.db.patch(cv.tradePriceRevisionId!, { effectiveTo: NOW - 1 }));
+    await expect(admin.mutation(api.catPublication.publish, { productIds: [productId], channels: ['retail', 'house'] })).rejects.toThrow(/current approved trade/);
+    expect(await t.run(ctx => ctx.db.query('commerceListings').collect())).toHaveLength(0);
+    await t.run(ctx => ctx.db.patch(cv.tradePriceRevisionId!, { effectiveTo: undefined }));
     const res = await admin.mutation(api.catPublication.publish, { productIds: [productId], channels: ['retail', 'house'] });
     expect(res[0].variants).toBe(1);
     const listings = await t.run((ctx) => ctx.db.query('commerceListings').collect());

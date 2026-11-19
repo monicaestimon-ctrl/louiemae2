@@ -16,6 +16,16 @@ import { nameProblems, slugify } from '../lib/slug';
 
 const MIN_EDGE = 800;
 
+// Stock exclusions block selling, not preparation of reviewed draft photography.
+// Other exclusions still require explicit merchandising reconciliation.
+function mayPrepareDraftPhoto(product: Doc<'commerceProducts'>, cv: Doc<'catVariants'>) {
+  const staging = product.zuoStaging;
+  return !staging?.excluded || (staging.sku === cv.supplierSku && staging.pack === cv.piecesPerPack
+    && staging.exclusionReasons.length > 0
+    && staging.exclusionReasons.every(reason => reason === 'CURRENTLY_UNAVAILABLE'));
+}
+
+
 export const stagedPrimary = internalQuery({
   args: { variantId: v.id('catVariants') },
   handler: async (ctx, a) => {
@@ -110,7 +120,7 @@ export const reviewedSourceTarget = internalQuery({
   handler: async (ctx, a) => {
     const cv = await ctx.db.get(a.variantId);
     const product = cv ? await ctx.db.get(cv.productId) : null;
-    if (!cv || !product || product.provider !== 'zuo' || product.zuoStaging?.excluded
+    if (!cv || !product || product.provider !== 'zuo' || !mayPrepareDraftPhoto(product, cv)
       || cv.availability === 'discontinued' || cv.supplierSku !== a.sku || cv.piecesPerPack !== a.piecesPerPack)
       throw new CommerceError('INVALID_INPUT', 'Current selected SKU and pack must match');
     const rows = (await ctx.db.query('catMediaAssets').withIndex('by_product', q => q.eq('productId', cv.productId).eq('role','hero')).collect())
@@ -144,7 +154,7 @@ export const record = internalMutation({
     if (a.expectedZuo) {
       const cv = a.variantId ? await ctx.db.get(a.variantId) : null;
       const product = await ctx.db.get(a.productId);
-      if (!cv || !product || product.provider !== 'zuo' || product.zuoStaging?.excluded || cv.availability === 'discontinued'
+      if (!cv || !product || product.provider !== 'zuo' || !mayPrepareDraftPhoto(product, cv) || cv.availability === 'discontinued'
         || cv.supplierSku !== a.expectedZuo.sku || cv.piecesPerPack !== a.expectedZuo.piecesPerPack)
         throw new CommerceError('INVALID_INPUT', 'Selected SKU changed during image preparation');
     }

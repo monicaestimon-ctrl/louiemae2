@@ -131,9 +131,9 @@ export function isCurrentPrice(price: Doc<'catPriceRevisions'> | null, variantId
 /**
  * The single sellability gate (v2 §6). Throws a typed error unless the variant has no open
  * holds, current evidence, an allowed availability and (for purchase and links) an approved
- * retail price. Called from every server path; the UI only mirrors it.
+ * channel price (retail for links). Called from every server path; the UI only mirrors it.
  */
-export async function assertSellable(ctx: Ctx, variantId: Id<'catVariants'>, purpose: SellPurpose, now = Date.now()) {
+export async function assertSellable(ctx: Ctx, variantId: Id<'catVariants'>, purpose: SellPurpose, now = Date.now(), channel: 'retail' | 'trade' = 'retail') {
   const v = await ctx.db.get(variantId);
   if (!v) throw new CommerceError('STOCK_UNAVAILABLE', 'Variant not found');
   if (v.availability === 'discontinued') throw new CommerceError('STOCK_UNAVAILABLE', 'Discontinued', 'This item has been discontinued.');
@@ -149,8 +149,10 @@ export async function assertSellable(ctx: Ctx, variantId: Id<'catVariants'>, pur
   if (holds.has('DELIVERY_UNSUPPORTED') && purpose !== 'link') throw new CommerceError('DELIVERY_QUOTE_REQUIRED', 'Delivery unsupported');
   if (holds.size) throw new CommerceError('COST_REVIEW_REQUIRED', [...holds].join(','));
   if (purpose !== 'publish') {
-    const price = v.retailPriceRevisionId ? await ctx.db.get(v.retailPriceRevisionId) : null;
-    if (!price || price.status !== 'approved') throw new CommerceError('COST_REVIEW_REQUIRED', 'No approved retail price');
+    const priceChannel = purpose === 'link' ? 'retail' : channel;
+    const priceId = priceChannel === 'retail' ? v.retailPriceRevisionId : v.tradePriceRevisionId;
+    const price = priceId ? await ctx.db.get(priceId) : null;
+    if (!isCurrentPrice(price, v._id, priceChannel, now)) throw new CommerceError('COST_REVIEW_REQUIRED', `No current approved ${priceChannel} price`);
   }
   return v;
 }

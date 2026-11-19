@@ -92,7 +92,7 @@ export async function catalogItem(ctx: QueryCtx, listing: Doc<'commerceListings'
       const id = ctx.db.normalizeId('catVariants', option.id);
       if (!id) continue;
       try {
-        const cv = await assertSellable(ctx, id, 'estimate', now);
+        const cv = await assertSellable(ctx, id, 'estimate', now, 'trade');
         const retail = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
         const approved = cv.tradePriceRevisionId ? await ctx.db.get(cv.tradePriceRevisionId) : null;
         if (cv.productId !== product._id || !isCurrentPrice(retail, id, 'retail', now) ||
