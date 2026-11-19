@@ -56,3 +56,10 @@ it('restores quantities into the same option and room without overwriting anothe
   expect(merged.map(item => item.qty)).toEqual([5, 4]);
   expect(items.map(item => item.qty)).toEqual([2, 4]);
 });
+
+it('retains saved trade options when their retail comparison is unavailable', () => {
+  const current = { ...product, variants: [{ ...product.variants[0], retail: null }] };
+  const resolved = resolveProjectProduct({ pid: 1, lid: 'product-a', vid: 'saved-option' }, new Map([[1, current]]));
+  expect(resolved?.price).toBeNaN();
+  expect(resolved?.trade).toBe(110);
+});

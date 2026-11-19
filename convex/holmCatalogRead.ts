@@ -84,7 +84,7 @@ export async function catalogItem(ctx: QueryCtx, listing: Doc<'commerceListings'
   const product = await ctx.db.get(listing.productId);
   if (!product || !listing.published || listing.channel !== 'house') return null;
   const s = listing.snapshot;
-  let variants: { id: string; name: string; image?: string; minimum: number; increment: number; retail: number; trade: number | null }[] = [];
+  let variants: { id: string; name: string; image?: string; minimum: number; increment: number; retail: number | null; trade: number | null }[] = [];
   let inStock = true;
   if (product.provider === 'zuo') {
     if (!flag('TRADE_CHECKOUT_V2_ENABLED')) return null;
@@ -92,13 +92,13 @@ export async function catalogItem(ctx: QueryCtx, listing: Doc<'commerceListings'
       const id = ctx.db.normalizeId('catVariants', option.id);
       if (!id) continue;
       try {
-        const cv = await assertSellable(ctx, id, 'estimate', now);
+        const cv = await assertSellable(ctx, id, 'estimate', now, 'trade');
         const retail = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
         const approved = cv.tradePriceRevisionId ? await ctx.db.get(cv.tradePriceRevisionId) : null;
-        if (cv.productId !== product._id || !isCurrentPrice(retail, id, 'retail', now) ||
+        if (cv.productId !== product._id ||
           !isCurrentPrice(approved, id, 'trade', now) || approved.packPriceMinor !== option.price) continue;
         variants.push({ id, name: option.name, image: option.image, minimum: cv.orderMinimumPacks,
-          increment: cv.orderIncrementPacks, retail: retail.packPriceMinor, trade: trade ? approved.packPriceMinor : null });
+          increment: cv.orderIncrementPacks, retail: isCurrentPrice(retail, id, 'retail', now) ? retail.packPriceMinor : null, trade: trade ? approved.packPriceMinor : null });
       } catch (error) {
         if (!isCommerceError(error)) throw error;
       }

@@ -219,7 +219,7 @@ export async function resolveLines(
       );
     if (product.provider === 'zuo') {
       const vid = ctx.db.normalizeId('catVariants', l.variantId);
-      const cv = vid ? await assertSellable(ctx, vid, 'purchase', now) : null;
+      const cv = vid ? await assertSellable(ctx, vid, 'purchase', now, channel) : null;
       if (!cv || cv.productId !== product._id)
         throw new CommerceError('STOCK_UNAVAILABLE', 'Variant mismatch');
       checkPackQuantity(cv, l.packs);

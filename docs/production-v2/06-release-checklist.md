@@ -1,23 +1,23 @@
 # 06. Release checklist: what is live, and what turns each v2 feature on
 
-As of the Phase G+H merge, all of the v2 code is merged to `main` and deployed to production by CI (`deploy-convex`). After each deploy, CI also:
+The initial Phase G+H implementation is merged, but that is not end-to-end operational acceptance. Use the dated production evidence and current feature flags to establish what is actually active. The remaining catalog, delivery, authenticated-journey and financial gates below must be checked against current production records.
 
-- seeds the configuration registry (adding missing records only),
-- runs the identity, ledger and credit backfills (idempotent, adds rows only), and
-- prints the ledger parity check.
+After a successful main build, CI deploys Convex, adds missing configuration records, runs the additive identity backfill and samples ledger parity. That CI step calls `ledgerParity` once, checks at most 25 beneficiaries, returns a continuation cursor and is allowed to fail without failing the job. Before cutover, follow every cursor page, verify all results and resolve failures; a green CI job is not complete parity evidence. Ledger and credit cutovers are separate controlled operations; CI does not automatically perform them.
 
-**Every v2 customer and money path is still switched off.** Turning each one on is an owner action, done in the order below and only after the matching gate in [05 §2](05-release-decisions-runbooks.md) is signed. None of these steps needs a code change.
+Standing owner authorization covers ordinary implementation, review, merge, deployment and eligible-product rollout. Do not request the same authorization again. Deferred authenticated browser access is a verification dependency, not a reason to stop independent code work. Real test payments, transfers, payouts and supplier dispatch remain unauthorized.
 
-All approvals happen in **Admin → Commerce v2 → Operations & decisions**. All flags are set in the **Convex dashboard → Settings → Environment variables** for the production deployment.
+The owner has approved provisional modeled freight from the retained supplier/reference evidence. Exact account-specific freight quotes are not a prerequisite for that model. Keep source dates, assumptions, supported coverage and quote-required exceptions explicit; do not describe planning values as contracted carrier quotes or silently extend expired evidence.
+
+Operational decisions are recorded under **Admin → Commerce v2 → Operations & decisions**. Deployment flags are stored in the production Convex environment. Enable each only when its applicable readiness gate passes; deployed code alone does not enable shopping.
 
 ## Step 1. Decisions to approve (decision register)
 
-Each item below is a seeded `proposed` record, unless it says to propose one first. Approve it only once the owner named in 05 §1 has agreed.
+Check each current registry record before changing it. Seeded defaults start as `proposed`. Record existing owner decisions without asking for repeated approval; unresolved business or legal decisions still need their designated owner. Approval of an approach does not establish missing supplier evidence.
 
 | Decision | Record(s) to approve | Unblocks |
 | --- | --- | --- |
 | D-16 freshness and estimate validity | `freshnessPolicy/freshness-default`, `estimatePolicy/estimate-policy` | Sellability checks, estimates |
-| D-03 delivery processing and freight | `deliveryLadder/delivery-ladder`. Then propose and approve `carrierRule/zuo-freight` with real carrier zones, rates and per-state tax rates. The seeded version is empty, so every quote is quote-required until then. | Zuo delivery estimates |
+| D-03 delivery processing and freight | `deliveryLadder/delivery-ladder`. Install the approved, versioned modeled `carrierRule/zuo-freight` with supported destination and package coverage, or verified carrier rates when available. Preserve quote-required behavior outside that scope. Tax calculation is a separate verified checkout dependency; do not invent per-state rates. | Zuo delivery estimates |
 | D-08 service and returns | `deliveryRule/zuo-95206-curbside`. Then propose `returnPolicy/returns-zuo-<category>` and `returnPolicy/returns-ashcroft-<category>` records. | Checkout, returns |
 | D-12 mixed carts | `deliveryRule/mixed-zuo-ashcroft` | Zuo + Ashcroft in one checkout |
 | D-01 MAP floors | Assign a per-SKU policy for each of the 135 MAP-based candidates (Admin → Catalog). Until then they stay held. | Those SKUs only |
@@ -32,10 +32,10 @@ Each item below is a seeded `proposed` record, unless it says to propose one fir
 
 ## Step 2. Catalog (gate 1)
 
-1. Under **Catalog & import**, upload `Zuo-Draft-Import.json` and run **Dry run** with "Require the reconciled package counts" ticked. The counts must be 865 / 803 / 306 / 135 / 296 / 66 / 62 / 226 / 639. If the column names differ, add aliases in `lib/zuoImport.ts`, never edit the source file. Then run **Commit**.
+1. Reconcile the current import manifest and existing records first. Do not reimport the already-staged 803 products merely to activate them. Under **Catalog & import**, upload `Zuo-Draft-Import.json` and run **Dry run**. For the historical reconciled snapshot only, tick "Require the reconciled package counts" and require 865 / 803 / 306 / 135 / 296 / 66 / 62 / 226 / 639. For a genuinely new package, leave that historical-count option unticked and reconcile every dry-run count against the new package’s manifest. If the column names differ, add aliases in `lib/zuoImport.ts`, never edit the source file. Then run **Commit**.
 2. Pick the pilot cohort: one single item, one multi-piece pack, one décor or lighting item, one Ground shipment and one manually quoted LTL item. For each one:
-   1. Verify its images (`catMedia.ingest` and `catMedia.verify`) and record stock (`catStock.recordStock`).
-   2. Resolve its holds in the cost and policy queue.
+   1. Verify its source-bound images using the reviewed ingestion/verification workflow and record revision-bound stock with `catStock.recordEvidence`. Preserve warehouse, pack/unit basis, source date and whether the quantity is on-hand or available-to-sell; the legacy binary stock setter is not a substitute.
+   2. Resolve evidence-backed cost, stock and policy holds. If the draft was excluded solely for temporary unavailability, first record current confirmed available-to-sell stock evidence, then use **Restore restocked draft** in **Product review and publication**. On-hand quantity alone does not qualify. After restoration, verify the selected canonical identities, then complete manual review only after all other gates pass. A generic review note is not a substitute for missing evidence.
    3. Run pricing (`catPricing.recomputeVariants`).
    4. Advance it through each stage.
 3. Turn on `CATALOG_PUBLICATION_V2_ENABLED=true`, then publish the pilot products by name. Publishing takes at most 50 products per call and never works "by count".
@@ -61,10 +61,11 @@ After each step:
 
 To roll back, turn the flag off. Paid orders, tracking and obligations keep working (OPS01).
 
-## Step 4. Things only the owner can do
+## Step 4. Remaining access and owner decisions
 
-- Supply the Zuo package files (README §4). They are not in the repository.
-- Approve the decisions in Step 1. This build approves none of them.
+- Use the already-downloaded private Zuo package and dated evidence first. Ask for a missing source only when it cannot be verified from those files or authorized connected sources.
+- Resolve only outstanding decisions in Step 1; do not repeat approvals already provided.
+- Restore Zoho and authenticated production-browser access when available; these acceptance checks are deferred, not completed.
 - Authorize any Stripe test or live payment, transfer or payout check. The agent build makes none, and those scenarios are recorded as BLOCKED in the evidence log.
-- Set the production environment variables.
+- Production environment changes are within the standing rollout authorization once their readiness gates pass. Do not activate financial execution or unsupported checkout paths merely to remove a visible blocker.
 - Name an owner for each runbook (05 §4).

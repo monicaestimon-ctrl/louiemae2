@@ -108,6 +108,7 @@ jobs:
           node scripts/lighthouse/journal.mjs
           npm run test:field:browser
           node scripts/lighthouse/field-admin.mjs
+          node scripts/lighthouse/catalog-publication.mjs
           node scripts/lighthouse/house-staff.mjs
           node scripts/lighthouse/staff-entry.mjs
           node scripts/lighthouse/editorial-formats.mjs
@@ -143,6 +144,8 @@ jobs:
             artifacts/lighthouse/board-controls/*.png
             artifacts/lighthouse/field-monitoring/
             artifacts/lighthouse/field-admin/
+            artifacts/lighthouse/catalog-publication-*.png
+            artifacts/lighthouse/catalog-publication-browser.json
             artifacts/lighthouse/house-staff/
             artifacts/lighthouse/staff-entry/
           if-no-files-found: ignore

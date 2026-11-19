@@ -9,7 +9,7 @@ export type LiveVariant = {
   image?: string;
   minimum: number;
   increment: number;
-  retail: number;
+  retail: number | null;
   trade: number | null;
 };
 import type { ProductImageMedia } from '../types';
@@ -204,7 +204,8 @@ export function liveProducts(items: LiveItem[]): HolmProduct[] {
       type,
       mat: best ? best[4] : materialOf(text),
       tone: best ? best[5] : toneOf(text),
-      price: v0.retail / 100,
+      // Null is transported explicitly; NaN keeps missing comparisons out of arithmetic totals.
+      price: v0.retail === null ? Number.NaN : v0.retail / 100,
       trade: v0.trade === null ? null : v0.trade / 100,
       seats: best ? best[6] : (SEATS[typeGuess] ?? 1),
       oos: !item.inStock,

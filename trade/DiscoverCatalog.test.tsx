@@ -64,3 +64,11 @@ it('sorts and filters by the approved price displayed in trade mode', () => {
   fireEvent.change(screen.getByRole('slider'), { target: { value: '150' } });
   expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['Sofa']);
 });
+
+it('keeps unavailable comparisons visible without treating them as zero in price sorting', () => {
+  setup([{ ...products[0], price: Number.NaN }, products[1]]);
+  for (const value of ['lo', 'hi']) {
+    fireEvent.change(screen.getByLabelText('Sort'), { target: { value } });
+    expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['Lamp', 'Sofa']);
+  }
+});

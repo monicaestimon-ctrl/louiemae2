@@ -3,11 +3,13 @@
 // (never "all drafts"), publishes only variants that pass every gate, commits both channels
 // atomically, and unpublish/rollback never touch paid orders or financial obligations.
 import { v } from 'convex/values';
+import { paginationOptsValidator } from 'convex/server';
 import { mutation, query } from './functions';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { requireCjAdminIdentity } from './cjAdminAccess';
-import { assertSellable } from './catCore';
+import { assertSellable, evaluate, isCurrentPrice, openHold, resolveHold } from './catCore';
+import { requireDeliveryRole } from './dlvAccess';
 import { computeScenarios } from './catPricing';
 import { audit } from './sysCore';
 import { requireFlag } from '../lib/flags';
@@ -18,6 +20,13 @@ import { verifiedImageMatches } from './catMedia';
 type Ctx = QueryCtx | MutationCtx;
 type Stage = Doc<'catProductMeta'>['stage'];
 const ORDER: Stage[] = ['imported_draft', 'evidence_review', 'economics_review', 'content_review', 'ready', 'published'];
+
+function stockOnlyExcluded(product: Doc<'commerceProducts'> | null) {
+  const staging = product?.zuoStaging;
+  return !!staging?.excluded && staging.exclusionReasons.length > 0
+    && staging.exclusionReasons.every(reason => reason === 'CURRENTLY_UNAVAILABLE');
+}
+
 
 async function variantsOf(ctx: Ctx, productId: Id<'commerceProducts'>) {
   return ctx.db.query('catVariants').withIndex('by_product', (q) => q.eq('productId', productId)).collect();
@@ -50,7 +59,7 @@ export async function gates(ctx: Ctx, productId: Id<'commerceProducts'>) {
     }
     for (const h of cv.holds) out.economics_review.push(`${tag}: hold ${h}`);
     const retail = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
-    if (retail?.status !== 'approved') out.content_review.push(`${tag}: no approved retail price`);
+    if (!isCurrentPrice(retail, cv._id, 'retail')) out.content_review.push(`${tag}: no current approved retail price`);
     if (cv.referralEligible === undefined) out.content_review.push(`${tag}: commission prequalification not run (or referral not explicitly disabled)`);
   }
   if (meta.commissionCategory === 'review_required') out.content_review.push('Commission category needs review');
@@ -70,9 +79,129 @@ export async function gates(ctx: Ctx, productId: Id<'commerceProducts'>) {
 export const status = query({
   args: { productId: v.id('commerceProducts') },
   handler: async (ctx, a) => {
-    await requireCjAdminIdentity(ctx);
+    await requireDeliveryRole(ctx, 'approver');
     const g = await gates(ctx, a.productId);
-    return { stage: g.meta.stage, holds: g.meta.holds, gates: g.gates, variants: g.variants.map((cv) => ({ id: cv._id, sku: cv.supplierSku, holds: cv.holds, availability: cv.availability })) };
+    const product = await ctx.db.get(a.productId);
+    return { stockExcluded: stockOnlyExcluded(product), stage: g.meta.stage, holds: g.meta.holds, gates: g.gates, variants: g.variants.map((cv) => ({ id: cv._id, sku: cv.supplierSku, holds: cv.holds, availability: cv.availability })) };
+  },
+});
+
+export const reviewQueue = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, a) => {
+    await requireDeliveryRole(ctx, 'approver');
+    if (a.paginationOpts.numItems < 1 || a.paginationOpts.numItems > 25) throw new CommerceError('INVALID_INPUT');
+    const page = await ctx.db.query('catProductMeta').order('desc').paginate(a.paginationOpts);
+    const rows = await Promise.all(page.page.map(async meta => {
+      const product = await ctx.db.get(meta.productId);
+      return product?.provider === 'zuo' ? { productId: meta.productId, name: meta.louieMaeName,
+        stage: meta.stage, holds: meta.holds, stockExcluded: stockOnlyExcluded(product), included: !!product.zuoStaging && !product.zuoStaging.excluded } : null;
+    }));
+    return { ...page, page: rows.filter((r): r is NonNullable<typeof r> => r !== null) };
+  },
+});
+
+/** Reinclude only an initially stock-excluded draft after current available-to-sell evidence.
+ * This restores review access, never publication or an automatic purchase promise. */
+export const restoreStockExcludedDraft = mutation({
+  args: { productId: v.id('commerceProducts'), variantIds: v.array(v.id('catVariants')), reason: v.string() },
+  handler: async (ctx, a) => {
+    const actor = await requireDeliveryRole(ctx, 'approver');
+    if (a.reason.trim().length < 10 || a.reason.length > 1000 || !a.variantIds.length
+      || a.variantIds.length > 50 || new Set(a.variantIds).size !== a.variantIds.length)
+      throw new CommerceError('INVALID_INPUT', 'Choose distinct variants and record the restocking evidence');
+    const product = await ctx.db.get(a.productId);
+    const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', a.productId)).unique();
+    if (!product || product.provider !== 'zuo' || !product.zuoStaging || !stockOnlyExcluded(product)
+      || !meta || meta.stage !== 'imported_draft')
+      throw new CommerceError('INVALID_INPUT', 'Only an initially stock-excluded staged draft can be restored');
+    const listings = await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', product._id)).collect();
+    if (listings.some(l => l.published)) throw new CommerceError('INVALID_INPUT', 'Published products need a separate availability review');
+    for (const id of a.variantIds) {
+      const cv = await ctx.db.get(id);
+      const stock = cv?.currentStockRevisionId ? await ctx.db.get(cv.currentStockRevisionId) : null;
+      if (!cv || cv.productId !== product._id || cv.availability === 'discontinued'
+        || cv.supplierSku !== product.zuoStaging.sku || cv.piecesPerPack !== product.zuoStaging.pack
+        || !stock || stock.variantId !== cv._id || stock.kind !== 'available_to_sell' || !stock.confirmed)
+        throw new CommerceError('STOCK_UNAVAILABLE', 'Exact SKU, pack and verified available-to-sell stock required');
+      const current = await evaluate(ctx, cv);
+      if (current.availability !== 'in_stock' || current.holds.includes('STOCK_UNVERIFIED'))
+        throw new CommerceError('STOCK_UNAVAILABLE', 'Stock evidence is not current and available');
+      await openHold(ctx, cv._id, 'MANUAL', 'Restocked draft requires full publication review', actor.email);
+    }
+    await ctx.db.patch(product._id, { zuoStaging: { ...product.zuoStaging, excluded: false, exclusionReasons: [] }, updatedAt: Date.now() });
+    await ctx.db.patch(meta._id, { holds: [...new Set([...meta.holds, 'MANUAL' as const])], updatedAt: Date.now() });
+    await audit(ctx, { actor: actor.email, action: 'publication.stock_draft_restored', entityTable: 'commerceProducts',
+      entityId: product._id, before: product.zuoStaging.exclusionReasons, after: { variantIds: a.variantIds, stage: 'imported_draft' }, reason: a.reason.trim() });
+    return { restoredVariants: a.variantIds.length };
+  },
+});
+
+/** The staged importer uses one canonical product/variant in both channels.
+ * Verify that identity before publication without pretending a retail listing exists. */
+export const verifyCanonicalIdentity = mutation({
+  args: { productId: v.id('commerceProducts'), variantIds: v.array(v.id('catVariants')) },
+  handler: async (ctx, a) => {
+    const actor = await requireDeliveryRole(ctx, 'approver');
+    if (!a.variantIds.length || a.variantIds.length > 50 || new Set(a.variantIds).size !== a.variantIds.length)
+      throw new CommerceError('INVALID_INPUT', 'Choose 1–50 distinct variants');
+    const product = await ctx.db.get(a.productId);
+    const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', a.productId)).unique();
+    if (!product || product.provider !== 'zuo' || !product.zuoStaging || product.zuoStaging.excluded || !meta || meta.stage === 'archived')
+      throw new CommerceError('INVALID_INPUT', 'Included staged Zuo product required');
+    const now = Date.now();
+    for (const id of a.variantIds) {
+      const cv = await ctx.db.get(id);
+      const supplier = cv ? await ctx.db.get(cv.supplierId) : null;
+      const draft = product.draft.variants.filter(v => v.id === id);
+      if (!cv || cv.productId !== product._id || supplier?.code !== 'zuo' || cv.availability === 'discontinued'
+        || cv.supplierSku !== product.zuoStaging.sku || cv.piecesPerPack !== product.zuoStaging.pack
+        || draft.length !== 1 || draft[0].sku !== cv.supplierSku)
+        throw new CommerceError('INVALID_INPUT', 'Canonical product, SKU, pack and draft variant must match');
+      const maps = await ctx.db.query('catRetailMappings').withIndex('by_holm_variant', q => q.eq('holmProductId', product._id).eq('holmVariantId', id).eq('status', 'active')).collect();
+      if (maps.length > 1 || maps.some(m => m.retailProductId !== product._id || m.retailVariantId !== id || m.effectiveFrom > now || (m.effectiveTo !== undefined && m.effectiveTo <= now)))
+        throw new CommerceError('INVALID_INPUT', 'Existing retail mapping needs explicit conflict review');
+      if (!maps.length) await ctx.db.insert('catRetailMappings', { holmProductId: product._id, holmVariantId: id,
+        retailProductId: product._id, retailVariantId: id, status: 'active', createdAt: now,
+        createdBy: actor.email, effectiveFrom: now, source: 'verified_staged_canonical_identity' });
+      await resolveHold(ctx, id, 'MAPPING_MISSING', actor.email, 'Verified staged canonical product, supplier SKU, pack and draft variant identity');
+    }
+    await audit(ctx, { actor: actor.email, action: 'publication.identity_verified', entityTable: 'commerceProducts',
+      entityId: product._id, after: { variantIds: a.variantIds }, reason: 'Same canonical variant in retail and HOLM; publication and eligibility checked separately' });
+    return { verifiedVariants: a.variantIds.length };
+  },
+});
+
+/** Release only the manual review hold after every other current gate passes.
+ * A failed check rolls back both product and variant changes in this transaction. */
+export const releaseManualReview = mutation({
+  args: { productId: v.id('commerceProducts'), variantIds: v.array(v.id('catVariants')), reason: v.string() },
+  handler: async (ctx, a) => {
+    const actor = await requireDeliveryRole(ctx, 'approver');
+    if (a.reason.trim().length < 10 || a.reason.length > 1000)
+      throw new CommerceError('INVALID_INPUT', 'Record the completed review in 10–1000 characters');
+    if (!a.variantIds.length || a.variantIds.length > 50 || new Set(a.variantIds).size !== a.variantIds.length)
+      throw new CommerceError('INVALID_INPUT', 'Choose 1–50 distinct variants for this product');
+    const product = await ctx.db.get(a.productId);
+    const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', a.productId)).unique();
+    if (!product || product.provider !== 'zuo' || !product.zuoStaging || product.zuoStaging.excluded || !meta || meta.stage === 'archived')
+      throw new CommerceError('INVALID_INPUT', 'An included, non-archived staged Zuo product is required');
+    for (const id of a.variantIds) {
+      const cv = await ctx.db.get(id);
+      if (!cv || cv.productId !== product._id || cv.availability === 'discontinued'
+        || cv.supplierSku !== product.zuoStaging.sku || cv.piecesPerPack !== product.zuoStaging.pack)
+        throw new CommerceError('INVALID_INPUT', 'Every reviewed variant must belong to this product and remain available for review');
+      await resolveHold(ctx, id, 'MANUAL', actor.email, a.reason.trim());
+    }
+    await ctx.db.patch(meta._id, { holds: meta.holds.filter(h => h !== 'MANUAL'), updatedAt: Date.now() });
+    const current = await gates(ctx, product._id);
+    const blockers = Object.values(current.gates).flat();
+    if (blockers.length)
+      throw new CommerceError('COST_REVIEW_REQUIRED', blockers.slice(0, 20).join('; '));
+    for (const id of a.variantIds) await assertSellable(ctx, id, 'publish');
+    await audit(ctx, { actor: actor.email, action: 'publication.manual_review', entityTable: 'commerceProducts',
+      entityId: product._id, before: meta.holds, after: { variantIds: a.variantIds, holds: current.meta.holds }, reason: a.reason.trim() });
+    return { productId: product._id, reviewedVariants: a.variantIds.length, stage: current.meta.stage };
   },
 });
 
@@ -117,7 +246,7 @@ async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, m
     const retail = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
     const trade = cv.tradePriceRevisionId ? await ctx.db.get(cv.tradePriceRevisionId) : null;
     const price = channel === 'retail' ? retail : trade;
-    if (price?.status !== 'approved') throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: no approved ${channel === 'retail' ? 'retail' : 'trade'} price`);
+    if (!isCurrentPrice(price, cv._id, channel === 'retail' ? 'retail' : 'trade')) throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: no current approved ${channel === 'retail' ? 'retail' : 'trade'} price`);
     const cost = cv.currentCostRevisionId ? await ctx.db.get(cv.currentCostRevisionId) : null;
     const imageUrl = imageMedia.find(m => m.variantIds.includes(cv._id))?.url;
     if (!imageUrl) throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: public variant photograph is unavailable`);

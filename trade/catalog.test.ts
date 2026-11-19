@@ -41,3 +41,12 @@ it('retains noncurated numeric IDs when unrelated rows or prices change', () => 
   expect(changed.price).toBe(200);
   expect(changed.trade).toBeNull();
 });
+
+it('retains an approved trade price without inventing a missing retail comparison', () => {
+  const source = item('trade-only-price', 'Chair');
+  source.variants[0] = { ...source.variants[0], retail: null, trade: 9000 };
+  const product = liveProducts([source])[0];
+  expect(product.price).toBeNaN();
+  expect(product.trade).toBe(90);
+  expect(product.variants[0].retail).toBeNull();
+});

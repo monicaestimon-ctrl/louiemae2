@@ -61,7 +61,7 @@ export const catalog = query({
           const id = ctx.db.normalizeId('catVariants', x.id);
           if (!id) continue;
           try {
-            const cv = await assertSellable(ctx, id, 'estimate', now);
+            const cv = await assertSellable(ctx, id, 'estimate', now, 'trade');
             const price = cv.tradePriceRevisionId ? await ctx.db.get(cv.tradePriceRevisionId) : null;
             if (cv.productId !== p.productId || !isCurrentPrice(price, id, 'trade', now) || price.packPriceMinor !== x.price) continue;
             variants.push({
@@ -107,7 +107,7 @@ export const calculate = query({
             'COST_REVIEW_REQUIRED',
             'This item needs an approved project quote'
           );
-        const cv = await assertSellable(ctx, id, 'estimate');
+        const cv = await assertSellable(ctx, id, 'estimate', now, 'trade');
         if (cv.productId !== l.productId) throw new CommerceError('INVALID_INPUT');
         checkPackQuantity(cv, l.packs);
         const [supplier, retail, trade, meta, retailListing, tradeListing] = await Promise.all([

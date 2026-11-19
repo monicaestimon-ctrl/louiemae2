@@ -17,7 +17,7 @@ export function ProductPrice({
   return (
     <span className="num">
       {formatHolmPrice(mode === 'trade' ? trade : retail, !big && qty === 1)}
-      {mode === 'trade' && !big && (
+      {mode === 'trade' && !big && Number.isFinite(retail) && (
         <>
           {' '}
           <s className="mute" style={{ fontSize: 11 }}>
