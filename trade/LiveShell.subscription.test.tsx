@@ -8,7 +8,7 @@ import { LiveShell } from './LiveShell';
 const state = vi.hoisted(() => ({ installed: [] as Array<{ id: string }>, authenticated: true }));
 vi.mock('convex/react', async importOriginal => ({ ...(await importOriginal<typeof import('convex/react')>()), useConvexAuth: () => ({ isLoading: false, isAuthenticated: state.authenticated }) }));
 vi.mock('./catalog', () => ({ liveProducts: (rows: unknown[]) => rows }));
-vi.mock('./app', () => ({
+vi.mock('./app', () => ({ Turntable: () => null,
   setProducts: (rows: Array<{ id: string }>) => { state.installed = rows; },
   App: () => <main>{state.installed.map(row => <p key={row.id}>{row.id}</p>)}</main>,
 }));
