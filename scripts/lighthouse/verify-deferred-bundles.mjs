@@ -1,7 +1,7 @@
 import { readFile, mkdir, writeFile, stat } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 const manifest = JSON.parse(await readFile('dist/.vite/manifest.json', 'utf8'));
-const tools = ['trade/TradeWelcome.tsx', 'trade/TradeApplication.tsx', 'trade/TradeAccount.tsx',
+const tools = ['trade/TradeWelcome.tsx', 'trade/admin/HouseStaff.ts', 'trade/TradeApplication.tsx', 'trade/TradeAccount.tsx',
   'components/delivery/TradeDeliveryCalculator.tsx', 'components/delivery/ProjectDeliveryPanel.tsx',
   'components/delivery/ProductDeliveryEstimate.tsx', 'components/partner/ProgramHubV2.tsx', 'components/delivery/DeliveryQuoteStatus.tsx'];
 const roots = Object.keys(manifest).filter(key => manifest[key].dynamicImports?.includes(tools[0]));
