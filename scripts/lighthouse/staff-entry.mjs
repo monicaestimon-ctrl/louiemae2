@@ -35,7 +35,7 @@ const app = await build({
           resolveDir: process.cwd(),
           loader: 'js',
           contents:
-            path === 'auth' ? `export const useAuthActions=()=>({signIn:()=>{window.writes++;throw Error('Forbidden fixture auth command')}});` : path === 'app'
+            path === 'auth' ? `export const useAuthActions=()=>({signOut:()=>{window.writes++;throw Error('Forbidden fixture auth command')},signIn:()=>{window.writes++;throw Error('Forbidden fixture auth command')}});` : path === 'app'
               ? `export const App=()=>null;export const Turntable=()=>null;export const setProducts=()=>{};`
               : path === 'staff'
                 ? `import{getFunctionName}from'convex/server';const rows=[];export const useRecoverableQuery=(ref,args)=>{if(args!=='skip'&&['holm:catalogPage','holm:catalogItems'].includes(getFunctionName(ref)))window.catalogQueries++;return({status:'ready',data:rows,retry:()=>{}})};`
@@ -46,7 +46,7 @@ const app = await build({
   ],
 });
 const css =
-  (await readFile('trade/style.css', 'utf8')) + (await readFile('trade/admin/staff.css', 'utf8'));
+  (await readFile('trade/style.css', 'utf8')) + (await readFile('trade/admin/staff.css', 'utf8')) + (await readFile('components/account/credentials.css', 'utf8')) + (await readFile('components/performancePreferences.css', 'utf8'));
 const server = createServer((req, res) => {
   res.setHeader('Content-Type', req.url === '/app.js' ? 'text/javascript' : 'text/html');
   res.end(
@@ -113,6 +113,18 @@ try {
     await page.click('a[href="#home"]');
     await page.waitForFunction(() => document.body.innerText.includes('No products are available'));
     assert.ok((await page.evaluate(() => window.catalogQueries)) > 0);
+    const catalogReads = await page.evaluate(() => window.catalogQueries);
+    await page.click('a[href="#account"]');
+    await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Your account');
+    assert.equal(await page.evaluate(() => window.catalogQueries), catalogReads);
+    await page.evaluate(() => { window.me = {signedIn:false}; window.render(); });
+    await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Sign in to manage your account');
+    await page.click('button.btn-ink');
+    await page.waitForSelector('input[type=email]');
+    assert.equal(await page.evaluate(() => window.catalogQueries), catalogReads);
+    assert.deepEqual((await page.evaluate(() => window.axe.run())).violations.map(v => v.id), []);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    await page.screenshot({path:`artifacts/lighthouse/staff-entry/account-sign-in-${width}.png`,fullPage:true});
     assert.equal(await page.evaluate(() => window.writes), 0);
     assert.deepEqual(errors, []);
     results.push({
@@ -121,6 +133,7 @@ try {
       staffIndependentOfCatalog: true,
       anonymousDenied: true,
       signInIndependentOfCatalog: true,
+      customerAccountIndependentOfCatalog: true,
       roleLoss: true,
       catalogRecovery: true,
       axeViolations: 0,

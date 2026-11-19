@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 're
 import { useConvexAuth, usePaginatedQuery, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { api } from '../convex/_generated/api';
+import { AccountEntry } from './AccountEntry';
 import { StaffEntry } from './admin/StaffEntry';
 import { useCatalogDemand } from './useCatalogDemand';
 import { usePendingTimeout } from '../contexts/usePendingTimeout';
@@ -19,7 +20,7 @@ function Recovery({ retry, empty = false }: { retry: () => void; empty?: boolean
     <h1 id="holm-recovery-title">House of Louie Mae</h1>
     <p role="status">{empty ? 'No products are available to browse right now. Please contact us for help.' : 'The trade catalog is temporarily unavailable. We cannot verify current account pricing or availability.'}</p>
     <button onClick={retry}>Try again</button>
-    <nav aria-label="Recovery navigation"><a href="/">Louie Mae retail</a>{' · '}<a href="/#support/contact">Contact support</a></nav>
+    <nav aria-label="Recovery navigation"><a href="#account">My account / sign in</a>{' · '}<a href="/">Louie Mae retail</a>{' · '}<a href="/#support/contact">Contact support</a></nav>
   </main>;
 }
 
@@ -89,9 +90,9 @@ function CatalogShell({ me }: { me: FunctionReturnType<typeof api.holm.me> }) {
 
 /** Resolve account access before starting a viewer-specific catalog subscription. */
 export function LiveShell() {
-  const [staffRoute, setStaffRoute] = useState(() => window.location.hash.slice(1).split('?')[0] === 'admin');
+  const [entryRoute, setEntryRoute] = useState(() => window.location.hash.slice(1).split('?')[0]);
   useEffect(() => {
-    const changed = () => setStaffRoute(window.location.hash.slice(1).split('?')[0] === 'admin');
+    const changed = () => setEntryRoute(window.location.hash.slice(1).split('?')[0]);
     window.addEventListener('hashchange', changed);
     changed();
     return () => window.removeEventListener('hashchange', changed);
@@ -107,6 +108,7 @@ export function LiveShell() {
   // Remounting creates a fresh Convex pagination id. A previous account's
   // cached trade rows must never be reused after logout or a role change.
   const viewerKey = me.signedIn ? `${me.email}:${me.verified ? 'trade' : 'retail'}` : 'anonymous';
-  if (staffRoute) return <StaffEntry key={`${viewerKey}:${Boolean(me.admin)}`} admin={Boolean(me.admin)} signedIn={me.signedIn} Turntable={Turntable} />;
+  if (entryRoute === 'welcome' || entryRoute === 'account') return <AccountEntry key={`${viewerKey}:${Boolean(me.admin)}`} me={me} route={entryRoute} />;
+  if (entryRoute === 'admin') return <StaffEntry key={`${viewerKey}:${Boolean(me.admin)}`} admin={Boolean(me.admin)} signedIn={me.signedIn} Turntable={Turntable} />;
   return <CatalogShell key={viewerKey} me={me} />;
 }

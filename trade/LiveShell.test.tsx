@@ -4,10 +4,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { getFunctionName } from 'convex/server';
 import { LiveShell, TradeBoundary } from './LiveShell';
 
-const mocks = vi.hoisted(() => ({ me: undefined as { signedIn: boolean; verified?: boolean; admin?: boolean; email?:string } | undefined, authLoading: false, authenticated: undefined as boolean | undefined, curated: [] as unknown[] | undefined, failed: false, rows: [] as unknown[], status: 'LoadingFirstPage', catalogQueries:vi.fn(), loadMore: vi.fn(), install: vi.fn(), references: vi.fn() }));
+const mocks = vi.hoisted(() => ({ me: undefined as { signedIn: boolean; verified?: boolean; admin?: boolean; email?:string } | undefined, authLoading: false, authenticated: undefined as boolean | undefined, curated: [] as unknown[] | undefined, failed: false, rows: [] as unknown[], status: 'LoadingFirstPage', ensure:vi.fn().mockResolvedValue(null), catalogQueries:vi.fn(), loadMore: vi.fn(), install: vi.fn(), references: vi.fn() }));
 vi.mock('convex/react', () => ({
   useConvexAuth: () => ({ isLoading: mocks.authLoading, isAuthenticated: mocks.authenticated ?? Boolean(mocks.me?.signedIn) }),
   useQuery: (query: Parameters<typeof getFunctionName>[0]) => { if (mocks.failed) throw new Error('account unavailable'); return getFunctionName(query) === 'holm:catalogItems' ? mocks.curated : mocks.me; },
+  useMutation:()=>mocks.ensure,
   usePaginatedQuery: () => {mocks.catalogQueries();return { results: mocks.rows, status: mocks.status, loadMore: mocks.loadMore };},
 }));
 vi.mock('./admin/HouseStaffGate',()=>({HouseStaffGate:({admin}:{admin:boolean})=><main>{admin?<><h1>Staff management</h1><input aria-label='Staff draft'/></>:<h1>Team only</h1>}</main>}));
@@ -257,4 +258,13 @@ it('offers catalog-independent staff sign-in and keeps admin destination after p
   expect(screen.getByRole('heading',{name:'Staff management'})).toBeTruthy();
   expect(window.location.hash).toBe('#admin');
   expect(mocks.catalogQueries).not.toHaveBeenCalled();
+});
+
+it.each(['welcome','account'])('opens %s without catalog subscriptions or stale products',route=>{
+ window.history.replaceState(null,'',`/trade/#${route}`);mocks.me={signedIn:false};mocks.status='Exhausted';
+ render(<LiveShell/>);
+ expect(screen.getByRole('navigation',{name:'Account navigation'})).toBeTruthy();
+ expect(mocks.catalogQueries).not.toHaveBeenCalled();expect(mocks.install).not.toHaveBeenCalled();
+ expect(document.getElementById('holm-shell')).toBeNull();
+ expect(screen.queryByText('Verified catalog')).toBeNull();
 });
