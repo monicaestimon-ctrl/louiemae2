@@ -4,7 +4,7 @@ import { useFormValidation } from '../forms/useFormValidation';
 import { ValidationSummary } from '../forms/ValidationSummary';
 import './credentials.css';
 
-type Props = { site: 'creator' | 'trade'; googleEnabled?: boolean; afterSignIn?: string; oauthRedirectTo?: '/trade/#admin' };
+type Props = { site: 'creator' | 'trade'; googleEnabled?: boolean; afterSignIn?: string; oauthRedirectTo?: '/trade/#admin' | '/trade/#welcome' };
 /** Shared credentials UI; account permissions and membership remain server-owned. */
 export function CredentialsForm({ site, googleEnabled = false, afterSignIn = 'home', oauthRedirectTo }: Props) {
   const { signIn } = useAuthActions();

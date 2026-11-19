@@ -1,22 +1,33 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { getFunctionName } from 'convex/server';
 import { LiveShell, TradeBoundary } from './LiveShell';
 
-const mocks = vi.hoisted(() => ({ me: undefined as { signedIn: boolean; verified?: boolean; admin?: boolean; email?:string } | undefined, authLoading: false, authenticated: undefined as boolean | undefined, curated: [] as unknown[] | undefined, failed: false, rows: [] as unknown[], status: 'LoadingFirstPage', catalogQueries:vi.fn(), loadMore: vi.fn(), install: vi.fn(), references: vi.fn() }));
+const mocks = vi.hoisted(() => ({ me: undefined as { signedIn: boolean; verified?: boolean; admin?: boolean; email?:string } | undefined, authLoading: false, authenticated: undefined as boolean | undefined, curated: [] as unknown[] | undefined, failed: false, rows: [] as unknown[], status: 'LoadingFirstPage', ensure:vi.fn().mockResolvedValue(null), savedDraft:vi.fn(), catalogQueries:vi.fn(), loadMore: vi.fn(), install: vi.fn(), references: vi.fn() }));
 vi.mock('convex/react', () => ({
   useConvexAuth: () => ({ isLoading: mocks.authLoading, isAuthenticated: mocks.authenticated ?? Boolean(mocks.me?.signedIn) }),
   useQuery: (query: Parameters<typeof getFunctionName>[0]) => { if (mocks.failed) throw new Error('account unavailable'); return getFunctionName(query) === 'holm:catalogItems' ? mocks.curated : mocks.me; },
+  useMutation:()=>mocks.ensure,
   usePaginatedQuery: () => {mocks.catalogQueries();return { results: mocks.rows, status: mocks.status, loadMore: mocks.loadMore };},
 }));
 vi.mock('./admin/HouseStaffGate',()=>({HouseStaffGate:({admin}:{admin:boolean})=><main>{admin?<><h1>Staff management</h1><input aria-label='Staff draft'/></>:<h1>Team only</h1>}</main>}));
 vi.mock('@convex-dev/auth/react',()=>({useAuthActions:()=>({signIn:vi.fn()})}));
 vi.mock('./catalog', () => ({ liveProducts: (rows: unknown[]) => rows }));
-vi.mock('./app', () => ({ Turntable: () => null, App: ({onCatalogIntent}: {onCatalogIntent: () => void}) => <main className="home">Verified catalog<input aria-label="Unsaved project name" /><button onClick={onCatalogIntent}>Discover catalog</button></main>, setProducts: (rows: unknown[], refs: unknown[]) => { mocks.install(rows); mocks.references(refs); } }));
+vi.mock('./app', () => ({ Turntable: () => null, App: function DraftOwner({onCatalogIntent,suspended}: {onCatalogIntent: () => void;suspended?:boolean}) {
+  const [draft,setDraft]=useState('');
+  const [snapshot,setSnapshot]=useState('');
+  useEffect(()=>{if(!draft)return;const timer=setTimeout(()=>mocks.savedDraft(draft),1500);return()=>clearTimeout(timer)},[draft]);
+  return <main className="home">Verified catalog<input aria-label="Unsaved project name" value={draft} onChange={e=>setDraft(e.target.value)}/><output aria-label="Saved snapshot">{snapshot}</output>{!suspended&&<FinalSnapshot save={setSnapshot}/>}<button onClick={onCatalogIntent}>Discover catalog</button></main>;
+}, setProducts: (rows: unknown[], refs: unknown[]) => { mocks.install(rows); mocks.references(refs); } }));
+function FinalSnapshot({save}:{save:(value:string)=>void}) {
+  useEffect(()=>()=>save('Final Studio edit'),[save]);
+  return <span>Studio editor</span>;
+}
+
 beforeEach(() => {
   window.history.replaceState(null, '', '/trade/');
-  mocks.curated=[]; mocks.me = undefined; mocks.authLoading = false; mocks.authenticated = undefined; mocks.failed = false; mocks.rows = []; mocks.status = 'LoadingFirstPage'; mocks.catalogQueries.mockReset();mocks.loadMore.mockReset(); mocks.install.mockReset(); mocks.references.mockReset();
+  mocks.curated=[]; mocks.me = undefined; mocks.authLoading = false; mocks.authenticated = undefined; mocks.failed = false; mocks.rows = []; mocks.status = 'LoadingFirstPage'; mocks.savedDraft.mockReset();mocks.catalogQueries.mockReset();mocks.loadMore.mockReset(); mocks.install.mockReset(); mocks.references.mockReset();
   vi.useFakeTimers(); vi.spyOn(console, 'error').mockImplementation(() => undefined);
   const shell = document.createElement('div'); shell.id = 'holm-shell'; shell.textContent = 'Startup hero'; document.body.append(shell);
 });
@@ -257,4 +268,27 @@ it('offers catalog-independent staff sign-in and keeps admin destination after p
   expect(screen.getByRole('heading',{name:'Staff management'})).toBeTruthy();
   expect(window.location.hash).toBe('#admin');
   expect(mocks.catalogQueries).not.toHaveBeenCalled();
+});
+
+it.each(['welcome','account'])('opens %s without catalog subscriptions or stale products',route=>{
+ window.history.replaceState(null,'',`/trade/#${route}`);mocks.me={signedIn:false};mocks.status='Exhausted';
+ render(<LiveShell/>);
+ expect(screen.getByRole('navigation',{name:'Account navigation'})).toBeTruthy();
+ expect(mocks.catalogQueries).not.toHaveBeenCalled();expect(mocks.install).not.toHaveBeenCalled();
+ expect(document.getElementById('holm-shell')).toBeNull();
+ expect(screen.queryByText('Verified catalog')).toBeNull();
+});
+
+it.each(['account','welcome','admin'])('preserves pending saves and child cleanup snapshots across %s',route=>{
+ mocks.me={signedIn:false};mocks.rows=[{id:'one'}];mocks.status='Exhausted';
+ render(<LiveShell/>);
+ fireEvent.change(screen.getByLabelText('Unsaved project name'),{target:{value:'Latest board edit'}});
+ act(()=>{window.history.replaceState(null,'',`/trade/#${route}`);window.dispatchEvent(new HashChangeEvent('hashchange'))});
+ expect(screen.getByLabelText('Unsaved project name').closest('[hidden]')).not.toBeNull();
+ expect(screen.getByLabelText('Saved snapshot')).toHaveTextContent('Final Studio edit');
+ act(()=>vi.advanceTimersByTime(1500));
+ expect(mocks.savedDraft).toHaveBeenCalledExactlyOnceWith('Latest board edit');
+ act(()=>{window.history.replaceState(null,'','/trade/#home');window.dispatchEvent(new HashChangeEvent('hashchange'))});
+ expect(screen.getByLabelText('Unsaved project name')).toHaveValue('Latest board edit');
+ expect(screen.getByLabelText('Saved snapshot')).toHaveTextContent('Final Studio edit');
 });

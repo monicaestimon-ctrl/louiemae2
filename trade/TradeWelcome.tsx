@@ -8,9 +8,10 @@ type Props = {
   afterSignIn?: string;
   onNavigate: (route: string) => void;
   artwork: string[][];
+  oauthRedirectTo?: '/trade/#welcome';
 };
 /** Resume the requested trade route after sign-in; profile assurance is idempotent and server-owned. */
-export function TradeWelcome({ signedIn, afterSignIn = 'home', onNavigate, artwork }: Props) {
+export function TradeWelcome({ signedIn, afterSignIn = 'home', onNavigate, artwork, oauthRedirectTo }: Props) {
   const ensure = useMutation(api.holm.ensureProfile);
   const options = useQuery(api.holm.signInOptions);
   useEffect(() => {
@@ -38,7 +39,7 @@ export function TradeWelcome({ signedIn, afterSignIn = 'home', onNavigate, artwo
         </div>
       </div>
       <div className="wl-form">
-        <CredentialsForm site="trade" googleEnabled={options?.google} afterSignIn={afterSignIn} />
+        <CredentialsForm site="trade" googleEnabled={options?.google} afterSignIn={afterSignIn} oauthRedirectTo={oauthRedirectTo} />
       </div>
     </main>
   );
