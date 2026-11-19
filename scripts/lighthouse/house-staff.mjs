@@ -35,7 +35,7 @@ const output = await build({
           contents:
             path === 'convex'
               ? `export const useMutation=()=>()=>{window.writes++;throw Error('No writes allowed')}`
-              : `import{useState}from'react';export function useRecoverableQuery(){const[retry,setRetry]=useState(false);window.queries++;return window.location.search.includes('unavailable')&&!retry?{status:'unavailable',retry:()=>{window.retries++;setRetry(true)}}:{status:'ready',data:[],retry:()=>{}}}`,
+              : `import{useState}from'react';import{getFunctionName}from'convex/server';const empty=[];const assets=[{productId:'fixture-chair',name:'Fixture chair',image:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',dimsCm:null}];export function useRecoverableQuery(ref){const[retry,setRetry]=useState(false);window.queries++;return window.location.search.includes('unavailable')&&!retry?{status:'unavailable',retry:()=>{window.retries++;setRetry(true)}}:{status:'ready',data:getFunctionName(ref)==='holmAssets:readiness'?assets:empty,retry:()=>{}}}`,
         }));
       },
     },
@@ -92,6 +92,15 @@ try {
     ]) {
       await click(tab);
       await page.waitForFunction(() => !document.querySelector('[role="status"]'));
+      if (tab === 'Asset readiness') {
+        await click('Fixture chair');
+        await page.waitForSelector('.rd-body');
+        await page.focus('input[type=file]');
+        assert.equal(
+          await page.$eval('input[type=file]', (e) => e === document.activeElement),
+          true
+        );
+      }
       await page.addScriptTag({ content: axe.source });
       const violations = await page.evaluate(() => window.axe.run());
       assert.deepEqual(
@@ -109,6 +118,7 @@ try {
         fullPage: true,
       });
     }
+    assert.equal(await page.evaluate(() => window.writes), 0, 'Tab checks attempted a mutation');
     await page.goto(origin + '?unavailable', { waitUntil: 'networkidle0' });
     await page.waitForSelector('[role="alert"]');
     await click('Try again');

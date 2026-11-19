@@ -239,7 +239,16 @@ function AssetsAdmin({ ctx }: { ctx: StaffContext }) {
                 html`<button
                   className="lnk"
                   onClick=${() =>
-                    act('dims', () => setDims({ productId: r.productId, dimsCm: null }))}
+                    act('dims', async () => {
+                      const submitted = dims[r.productId];
+                      await setDims({ productId: r.productId, dimsCm: null });
+                      setD((current) => {
+                        if (current[r.productId] !== submitted) return current;
+                        const next = { ...current };
+                        delete next[r.productId];
+                        return next;
+                      });
+                    })}
                 >
                   Use the listing's dimensions
                 </button>`}
@@ -292,7 +301,8 @@ function AssetsAdmin({ ctx }: { ctx: StaffContext }) {
                   >Upload a cutout<input
                     type="file"
                     accept="image/png,image/webp"
-                    hidden
+                    className="sr"
+                    disabled=${!!busy}
                     onChange=${async (e: React.ChangeEvent<HTMLInputElement>) => {
                       const x = e.target.files?.[0];
                       if (!x) return;
@@ -368,7 +378,8 @@ function AssetsAdmin({ ctx }: { ctx: StaffContext }) {
                   >${r.modelUrl ? 'Upload a new model' : 'Upload a GLB'}<input
                     type="file"
                     accept=".glb,model/gltf-binary"
-                    hidden
+                    className="sr"
+                    disabled=${!!busy}
                     onChange=${(e: React.ChangeEvent<HTMLInputElement>) => {
                       const x = e.target.files?.[0];
                       if (!x) return;
@@ -381,7 +392,7 @@ function AssetsAdmin({ ctx }: { ctx: StaffContext }) {
                           modelId: id,
                           status: 'draft',
                         });
-                        if (res && !res.ok) throw new Error(res.error);
+                        if (res && res.ok === false) throw new Error(res.error);
                         ctx.toast('Model uploaded for review');
                       });
                     }}
@@ -500,7 +511,7 @@ function SourcingAdmin({ ctx }: { ctx: StaffContext }) {
           })),
       });
       ctx.toast('Saved');
-      setEdit({ ...edit, [r._id]: undefined });
+      setEdit((current) => (current[r._id] === e ? { ...current, [r._id]: undefined } : current));
     } catch (x) {
       ctx.toast(errText(x));
     }
@@ -632,6 +643,7 @@ function SourcingAdmin({ ctx }: { ctx: StaffContext }) {
                 <div className="g2f">
                   <select
                     className="field"
+                    aria-label="Request status"
                     value=${e.status}
                     onChange=${(x: ValueEvent) =>
                       setEd(r, { status: x.target.value as SourcingStatus })}
@@ -802,6 +814,8 @@ function PartnerLedger({ userId, ctx }: { userId: Id<'users'>; ctx: StaffContext
   const adjust = useMutation(api.holmAdmin.adjust);
   const [amt, setAmt] = useState('');
   const [note, setNote] = useState('');
+  const pending = useRef(false);
+  const [saving, setSaving] = useState(false);
   const $ = (c: number) => fmt(c / 100, true);
   const SRC = {
     storefront_order: 'louiemae.com order',
@@ -818,6 +832,9 @@ function PartnerLedger({ userId, ctx }: { userId: Id<'users'>; ctx: StaffContext
     </button>`;
   if (!l) return html`<${StaffQueryState} query=${query} />`;
   const save = () => {
+    if (pending.current) return;
+    pending.current = true;
+    setSaving(true);
     const cents = Math.round(Number(amt) * 100);
     adjust({ userId, amountCents: cents, note })
       .then(() => {
@@ -825,7 +842,11 @@ function PartnerLedger({ userId, ctx }: { userId: Id<'users'>; ctx: StaffContext
         setAmt('');
         setNote('');
       })
-      .catch((e) => ctx.toast(errText(e)));
+      .catch((e) => ctx.toast(errText(e)))
+      .finally(() => {
+        pending.current = false;
+        setSaving(false);
+      });
   };
   return html`<div style=${{ display: 'grid', gap: 10 }}>
     <div style=${{ overflowX: 'auto' }}>
@@ -888,6 +909,7 @@ function PartnerLedger({ userId, ctx }: { userId: Id<'users'>; ctx: StaffContext
         step="0.01"
         placeholder="Amount ($)"
         aria-label="Adjustment amount in dollars, negative to deduct"
+        disabled=${saving}
         value=${amt}
         onInput=${(e: ValueEvent) => setAmt(e.target.value)}
       />
@@ -896,10 +918,15 @@ function PartnerLedger({ userId, ctx }: { userId: Id<'users'>; ctx: StaffContext
         style=${{ maxWidth: 320 }}
         placeholder="Note (required)"
         aria-label="Adjustment note"
+        disabled=${saving}
         value=${note}
         onInput=${(e: ValueEvent) => setNote(e.target.value)}
       />
-      <button className="btn btn-line" disabled=${!note.trim() || !Number(amt)} onClick=${save}>
+      <button
+        className="btn btn-line"
+        disabled=${saving || !note.trim() || !Number(amt)}
+        onClick=${save}
+      >
         Add adjustment
       </button>
     </div>
@@ -1098,7 +1125,14 @@ function TierOverride({
 
 function PartnersAdmin({ ctx }: { ctx: StaffContext }) {
   const query = useRecoverableQuery(api.holmPartners.adminPartners, {});
-  const rows = query.data;
+  const [retained, setRetained] = useState<typeof query.data>();
+  if (query.data !== undefined && query.data !== retained) setRetained(query.data);
+  const rows = query.data ?? retained;
+  const preserve = (content: React.ReactNode) =>
+    html`<${React.Fragment}>
+      ${query.status !== 'ready' && html`<${StaffQueryState} query=${query} />`}
+      <div hidden=${query.status !== 'ready'} inert=${query.status !== 'ready'}>${content}</div>
+    <//>`;
   const setP = useMutation(api.holmPartners.adminSetPartner);
   const pay = useMutation(api.holmPartners.adminRecordPayout);
   const [refs, setRefs] = useState<Record<string, string>>({});
@@ -1106,108 +1140,113 @@ function PartnersAdmin({ ctx }: { ctx: StaffContext }) {
     p.then(() => ctx.toast(ok)).catch((e) => ctx.toast(errText(e)));
   if (rows === undefined) return html`<${StaffQueryState} query=${query} />`;
   if (!rows.length)
-    return html`<div style=${{ display: 'grid', gap: 14, marginTop: 18 }}>
-      <div className="empty">
-        <h3>No partners yet</h3>
-        <p>Accounts that join the partner program appear here.</p>
-      </div>
-      <${ExclusionsAdmin} ctx=${ctx} />
-    </div>`;
+    return preserve(
+      html`<div style=${{ display: 'grid', gap: 14, marginTop: 18 }}>
+        <div className="empty">
+          <h3>No partners yet</h3>
+          <p>Accounts that join the partner program appear here.</p>
+        </div>
+        <${ExclusionsAdmin} ctx=${ctx} />
+      </div>`
+    );
   // Payable on the 15th: $50 or more cleared and unpaid, and a way to pay them (Stripe ready
   // with automatic payouts on, or an approved W-9 for paying by hand).
   const auto = (p: Partner) => p.autoPayouts && p.payouts.ready;
   const payable = rows.filter((p) => p.unpaidCents >= 5000 && (auto(p) || p.w9Approved));
   const waiting = rows.filter((p) => p.unpaidCents >= 5000 && !auto(p) && !p.w9Approved);
-  return html`<div style=${{ display: 'grid', gap: 14, marginTop: 18 }}>
-    <div
-      className="panel row"
-      style=${{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}
-    >
-      <span
-        ><b style=${{ fontWeight: 500 }}
-          >Cleared and unpaid, due on the 15th:
-          ${fmt(payable.reduce((t, p) => t + p.unpaidCents, 0) / 100, true)}</b
-        >
-        <span className="mute"
-          >· ${payable.length} partner${payable.length === 1 ? '' : 's'}:
-          ${payable.filter(auto).length} through Stripe automatically,
-          ${payable.length - payable.filter(auto).length} by
-          hand${waiting.length
-            ? ` · ${waiting.length} more waiting on a W-9 or Stripe setup`
-            : ''}</span
-        ></span
+  return preserve(
+    html`<div style=${{ display: 'grid', gap: 14, marginTop: 18 }}>
+      <div
+        className="panel row"
+        style=${{ justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}
       >
-      <${CommissionsCsv} ctx=${ctx} />
-    </div>
-    <${ExclusionsAdmin} ctx=${ctx} />
-    ${rows.map(
-      (p) =>
-        html`<div key=${p.userId} className="panel" style=${{ display: 'grid', gap: 10 }}>
-          <div className="row" style=${{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
-            <h3>${p.name}</h3>
-            <span className="mono mute">${p.email} · ${p.refCode}</span>
-          </div>
-          <div className="kv">
-            <span className="mono mute">Pending</span><span>${fmt(p.pendingCents / 100, true)}</span
-            ><span className="mono mute">Cleared</span
-            ><span>${fmt(p.clearedCents / 100, true)}</span><span className="mono mute">Paid</span
-            ><span>${fmt(p.paidCents / 100, true)}</span><span className="mono mute">W-9</span
-            ><span
-              >${p.w9Status === 'none'
-                ? 'Not uploaded'
-                : html`${p.w9Url &&
-                  html`<a href=${p.w9Url} target="_blank" rel="noopener">View</a>
-                    · `}${p.w9Status === 'approved'
-                    ? 'Approved'
-                    : html`<button
-                        className="lnk"
-                        onClick=${() =>
-                          run(setP({ userId: p.userId, w9Approved: true }), 'W-9 approved')}
-                      >
-                        Approve
-                      </button>`}`}</span
-            >
-          </div>
-          <p className="help" style=${{ margin: 0 }}>
-            ${p.nextTier}. Payouts:
-            ${p.payouts.ready
-              ? 'Stripe ready'
-              : p.payouts.connected
-                ? p.payouts.due
-                  ? 'Stripe needs details from the partner'
-                  : 'Stripe setup in progress'
-                : 'not connected (paid by hand)'}.
-            Unpaid and cleared: ${fmt(p.unpaidCents / 100, true)}.
-          </p>
-          <${TierOverride}
-            key=${p.tier + (p.override?.reason || '')}
-            p=${p}
-            setP=${setP}
-            run=${run}
-          />
-          <${PartnerLedger} userId=${p.userId} ctx=${ctx} />
-          <div className="row" style=${{ flexWrap: 'wrap' }}>
-            ${p.clearedCents > 0 &&
-            html`<input
-                className="field"
-                style=${{ maxWidth: 260 }}
-                placeholder="Payment reference"
-                value=${refs[p.userId] || ''}
-                onInput=${(e: ValueEvent) => setRefs({ ...refs, [p.userId]: e.target.value })}
-              /><button
-                className="btn btn-ink"
-                onClick=${() =>
-                  run(
-                    pay({ userId: p.userId, reference: refs[p.userId] || '' }),
-                    'Payout recorded'
-                  )}
+        <span
+          ><b style=${{ fontWeight: 500 }}
+            >Cleared and unpaid, due on the 15th:
+            ${fmt(payable.reduce((t, p) => t + p.unpaidCents, 0) / 100, true)}</b
+          >
+          <span className="mute"
+            >· ${payable.length} partner${payable.length === 1 ? '' : 's'}:
+            ${payable.filter(auto).length} through Stripe automatically,
+            ${payable.length - payable.filter(auto).length} by
+            hand${waiting.length
+              ? ` · ${waiting.length} more waiting on a W-9 or Stripe setup`
+              : ''}</span
+          ></span
+        >
+        <${CommissionsCsv} ctx=${ctx} />
+      </div>
+      <${ExclusionsAdmin} ctx=${ctx} />
+      ${rows.map(
+        (p) =>
+          html`<div key=${p.userId} className="panel" style=${{ display: 'grid', gap: 10 }}>
+            <div className="row" style=${{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
+              <h3>${p.name}</h3>
+              <span className="mono mute">${p.email} · ${p.refCode}</span>
+            </div>
+            <div className="kv">
+              <span className="mono mute">Pending</span
+              ><span>${fmt(p.pendingCents / 100, true)}</span
+              ><span className="mono mute">Cleared</span
+              ><span>${fmt(p.clearedCents / 100, true)}</span><span className="mono mute">Paid</span
+              ><span>${fmt(p.paidCents / 100, true)}</span><span className="mono mute">W-9</span
+              ><span
+                >${p.w9Status === 'none'
+                  ? 'Not uploaded'
+                  : html`${p.w9Url &&
+                    html`<a href=${p.w9Url} target="_blank" rel="noopener">View</a>
+                      · `}${p.w9Status === 'approved'
+                      ? 'Approved'
+                      : html`<button
+                          className="lnk"
+                          onClick=${() =>
+                            run(setP({ userId: p.userId, w9Approved: true }), 'W-9 approved')}
+                        >
+                          Approve
+                        </button>`}`}</span
               >
-                Record payout of ${fmt(p.clearedCents / 100, true)}
-              </button>`}
-          </div>
-        </div>`
-    )}
-  </div>`;
+            </div>
+            <p className="help" style=${{ margin: 0 }}>
+              ${p.nextTier}. Payouts:
+              ${p.payouts.ready
+                ? 'Stripe ready'
+                : p.payouts.connected
+                  ? p.payouts.due
+                    ? 'Stripe needs details from the partner'
+                    : 'Stripe setup in progress'
+                  : 'not connected (paid by hand)'}.
+              Unpaid and cleared: ${fmt(p.unpaidCents / 100, true)}.
+            </p>
+            <${TierOverride}
+              key=${p.tier + (p.override?.reason || '')}
+              p=${p}
+              setP=${setP}
+              run=${run}
+            />
+            <${PartnerLedger} userId=${p.userId} ctx=${ctx} />
+            <div className="row" style=${{ flexWrap: 'wrap' }}>
+              ${p.clearedCents > 0 &&
+              html`<input
+                  className="field"
+                  style=${{ maxWidth: 260 }}
+                  placeholder="Payment reference"
+                  value=${refs[p.userId] || ''}
+                  onInput=${(e: ValueEvent) => setRefs({ ...refs, [p.userId]: e.target.value })}
+                /><button
+                  className="btn btn-ink"
+                  onClick=${() =>
+                    run(
+                      pay({ userId: p.userId, reference: refs[p.userId] || '' }),
+                      'Payout recorded'
+                    )}
+                >
+                  Record payout of ${fmt(p.clearedCents / 100, true)}
+                </button>`}
+            </div>
+          </div>`
+      )}
+    </div>`
+  );
 }
 
 function TradeAdmin({ ctx }: { ctx: StaffContext }) {

@@ -26,3 +26,10 @@
 .house-staff textarea {
   max-width: 100%;
 }
+
+.house-staff label.btn:focus-within {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+.house-staff .kpi { display: flex; flex-direction: column; gap: 6px; }
+.house-staff .rd-sec h4 small { margin-left: 6px; }
