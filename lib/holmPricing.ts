@@ -1,6 +1,7 @@
 // House of Louie Mae trade pricing. All money is integer USD cents.
 // Trade is retail less the trade discount, never below landed cost plus the margin floor,
-// and never above retail. Project pricing adds a tiered discount on a project's trade
+// and never above retail. An unfunded or unknown-cost offer returns zero and is not sellable.
+// Project pricing adds a tiered discount on a project's trade
 // subtotal, again never below each piece's floor.
 
 export const HOLM_RULES = {
@@ -33,9 +34,12 @@ export function floorCents(costCents: number, rules: HolmRules = HOLM_RULES) {
 
 /** Trade unit price for one variant. */
 export function tradeCents(retailCents: number, costCents: number, rules: HolmRules = HOLM_RULES) {
-  if (!Number.isSafeInteger(retailCents) || retailCents <= 0) return 0;
+  if (!Number.isSafeInteger(retailCents) || retailCents <= 0
+    || !Number.isSafeInteger(costCents) || costCents <= 0) return 0;
+  const floor = floorCents(costCents, rules);
+  if (!Number.isSafeInteger(floor) || floor <= 0 || floor > retailCents) return 0;
   const listed = Math.round((retailCents * (10000 - rules.tradeDiscountBps)) / 10000);
-  return Math.min(retailCents, Math.max(listed, floorCents(costCents, rules)));
+  return Math.min(retailCents, Math.max(listed, floor));
 }
 
 /** The project tier a trade subtotal reaches, and the next tier to aim for. */
@@ -52,10 +56,15 @@ export type PricedLine = { unitCents: number; quantity: number; floorCents: numb
 /**
  * Applies project pricing to trade lines. The tier is set by the whole trade subtotal;
  * each line's unit price drops by up to the tier rate but never below its floor, and never
- * rises above its trade price (when the floor is above retail, trade is already at retail).
+ * rises above its trade price. An unfunded line is rejected rather than lowering its floor.
  */
 export function applyProjectPricing(lines: PricedLine[], rules: HolmRules = HOLM_RULES) {
+  if (lines.some(l => !Number.isSafeInteger(l.unitCents) || l.unitCents <= 0
+    || !Number.isSafeInteger(l.quantity) || l.quantity <= 0
+    || !Number.isSafeInteger(l.floorCents) || l.floorCents < 0 || l.floorCents > l.unitCents))
+    throw new Error('Project pricing requires valid funded lines.');
   const subtotal = lines.reduce((t, l) => t + l.unitCents * l.quantity, 0);
+  if (!Number.isSafeInteger(subtotal)) throw new Error('Project total exceeds supported bounds.');
   const { bps, next } = projectTier(subtotal, rules);
   const units = lines.map((l) =>
     bps

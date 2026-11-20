@@ -1,3 +1,4 @@
+import { legacySupplierCostMinor } from '../lib/legacySupplierCost';
 import { CommerceError, isCommerceError } from '../lib/errors';
 import { ashcroftQuantity } from '../lib/ashcroftInventory';
 import { latestFeed } from './ashcroftInventory';
@@ -54,6 +55,7 @@ export const catalog = query({
             price: rate ? launchPrice(option.price, rate.freight, rate.delivery) : option.price,
             purchasable:
               !!publicQuantityRules(option.minimum, option.increment) && !!rate &&
+              legacySupplierCostMinor(listing.fulfillment?.find(x => x.id === option.id)?.cost, product.draft.currency, product.draft.usdRate) !== null &&
               await ashcroftAvailable(ctx, listing.fulfillment?.find((x) => x.id === option.id)?.sku, listing.snapshot.description, option.minimum),
           }))),
         };
@@ -140,6 +142,8 @@ export const createSnapshot = internalMutation({
       const rate = retailDelivery(listing.snapshot.category, listing.snapshot.name);
       if (!option || !supplier?.sku || !(await ashcroftAvailable(ctx, supplier.sku, listing.snapshot.description, item.quantity)) || !rate)
         throw new Error('This item is Coming Soon.');
+      if (legacySupplierCostMinor(supplier.cost, product.draft.currency, product.draft.usdRate) === null)
+        throw new CommerceError('COST_REVIEW_REQUIRED');
       checkQuantity(item.quantity, option);
       if (item.quantity > 20) throw new Error('Please contact us for orders above 20 units.');
       const unitPrice = launchPrice(option.price, rate.freight, rate.delivery);

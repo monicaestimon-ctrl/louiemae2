@@ -35,7 +35,7 @@ const output = await build({
           contents:
             path === 'convex'
               ? `export const useMutation=()=>()=>{window.writes++;throw Error('No writes allowed')}`
-              : `import{useState}from'react';import{getFunctionName}from'convex/server';const empty=[];const assets=[{productId:'fixture-chair',name:'Fixture chair',image:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',dimsCm:null}];export function useRecoverableQuery(ref){const[retry,setRetry]=useState(false);window.queries++;return window.location.search.includes('unavailable')&&!retry?{status:'unavailable',retry:()=>{window.retries++;setRetry(true)}}:{status:'ready',data:getFunctionName(ref)==='holmAssets:readiness'?assets:empty,retry:()=>{}}}`,
+              : `import{useState}from'react';import{getFunctionName}from'convex/server';const empty=[];const pricing=[{productId:'held-fixture',name:'Held fixture sofa',variant:'Tan',sku:'FIXTURE-HELD',costCents:0,retailCents:200000,tradeCents:0,projectCents:0,tradeMarginBps:null,projectMarginBps:null,afterEliteBps:null,flags:['Cost review required: new offers unavailable']}];const assets=[{productId:'fixture-chair',name:'Fixture chair',image:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==',dimsCm:null}];export function useRecoverableQuery(ref){const[retry,setRetry]=useState(false);window.queries++;return window.location.search.includes('unavailable')&&!retry?{status:'unavailable',retry:()=>{window.retries++;setRetry(true)}}:{status:'ready',data:getFunctionName(ref)==='holmAssets:readiness'?assets:getFunctionName(ref)==='holm:adminPricing'?pricing:empty,retry:()=>{}}}`,
         }));
       },
     },
@@ -92,6 +92,16 @@ try {
     ]) {
       await click(tab);
       await page.waitForFunction(() => !document.querySelector('[role="status"]'));
+      if (tab === 'Pricing') {
+        await page.waitForSelector('tbody tr');
+        const cells = await page.$$eval('tbody tr:first-child td', nodes => nodes.map(n => n.textContent.trim()));
+        assert.equal(cells[2], 'Missing');
+        assert.equal(cells[4], 'Unavailable');
+        assert.equal(cells[5], 'Unavailable');
+        assert.equal(cells[6], '—');
+        assert.equal(cells[7], '—');
+        assert.match(cells[9], /Cost review required/);
+      }
       if (tab === 'Asset readiness') {
         await click('Fixture chair');
         await page.waitForSelector('.rd-body');

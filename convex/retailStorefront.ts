@@ -1,3 +1,4 @@
+import { legacySupplierCostMinor } from '../lib/legacySupplierCost';
 import { publicQuantityRules, type OrderQuantityRules } from '../lib/orderQuantity';
 import type { QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
@@ -11,6 +12,7 @@ import { isCommerceError } from '../lib/errors';
 // Adapt the retail listing into LouieMae's existing product modal and cards.
 export async function storefrontListing(ctx: QueryCtx, listing: Doc<'commerceListings'>, evidence?: AshcroftReviewEvidence) {
   const current = evidence ?? { feed: await latestFeed(ctx), now: Date.now() };
+  const product = await ctx.db.get(listing.productId);
   const s = listing.snapshot;
   const rate = retailDelivery(s.category, s.name);
   const variants = await Promise.all(s.variants.map(async v => {
@@ -18,7 +20,8 @@ export async function storefrontListing(ctx: QueryCtx, listing: Doc<'commerceLis
     return {
       id: v.id, name: v.name, image: v.image, quantityRules,
       price: rate ? launchPrice(v.price, rate.freight, rate.delivery) / 100 : v.price / 100,
-      inStock: !!quantityRules && !!rate && ashcroftAvailableFromFeed(current.feed, listing.fulfillment?.find(f => f.id === v.id)?.sku, s.description, v.minimum, current.now),
+      inStock: !!quantityRules && !!rate && !!product &&
+        legacySupplierCostMinor(listing.fulfillment?.find(f => f.id === v.id)?.cost, product.draft.currency, product.draft.usdRate) !== null && ashcroftAvailableFromFeed(current.feed, listing.fulfillment?.find(f => f.id === v.id)?.sku, s.description, v.minimum, current.now),
     };
   }));
   const price = Math.min(...variants.map(v => v.price));

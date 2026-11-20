@@ -122,6 +122,7 @@ jobs:
           node scripts/lighthouse/primary-image-startup.mjs
           node scripts/lighthouse/product-formats.mjs
           node scripts/lighthouse/delivery-estimator.mjs
+          node scripts/lighthouse/trade-calculator.mjs
           node scripts/lighthouse/lazy-cart.mjs
           node scripts/lighthouse/product-preview.mjs
           node scripts/lighthouse/product-navigation.mjs

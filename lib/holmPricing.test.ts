@@ -21,8 +21,8 @@ describe('House of Louie Mae trade pricing', () => {
     expect(p - 568_00 - (p * 0.029 + 30)).toBeGreaterThanOrEqual(p * 0.25 - 1);
   });
 
-  it('never prices above retail, even when cost is higher', () => {
-    expect(tradeCents(10_000_00, 9_000_00)).toBe(10_000_00);
+  it('does not offer a price when retail cannot fund the known cost floor', () => {
+    expect(tradeCents(10_000_00, 9_000_00)).toBe(0);
   });
 
   it('reaches 3% over $10,000 and 5% over $25,000', () => {
@@ -41,13 +41,17 @@ describe('House of Louie Mae trade pricing', () => {
     expect(out.discountCents).toBe(2 * 375_00 + 2 * 100_00);
   });
 
-  it('never raises a line above its trade price when the floor is above retail', () => {
-    const out = applyProjectPricing([
+  it('rejects unfunded project lines instead of lowering their floor', () => {
+    expect(() => applyProjectPricing([
       { unitCents: 10_000_00, quantity: 3, floorCents: 12_000_00 },
-    ]);
-    expect(out.bps).toBe(500);
-    expect(out.units).toEqual([10_000_00]);
-    expect(out.discountCents).toBe(0);
+    ])).toThrow(/funded lines/);
+  });
+  it.each([0, -1, NaN, Infinity, 100.5])('does not turn unknown or invalid cost %s into an offer', cost => {
+    expect(tradeCents(100_000, cost)).toBe(0);
+  });
+  it('refuses malformed project quantities and unsupported totals', () => {
+    expect(() => applyProjectPricing([{unitCents: 10000, quantity: 1.5, floorCents: 1000}])).toThrow();
+    expect(() => applyProjectPricing([{unitCents: Number.MAX_SAFE_INTEGER, quantity: 2, floorCents: 1000}])).toThrow();
   });
 
   it('prices client quotes from trade', () => {

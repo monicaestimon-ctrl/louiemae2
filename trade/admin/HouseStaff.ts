@@ -760,8 +760,8 @@ function PricingAdmin({ ctx }: { ctx: StaffContext }) {
                     ${[
                       r.costCents ? $(r.costCents) : 'Missing',
                       $(r.retailCents),
-                      $(r.tradeCents),
-                      $(r.projectCents),
+                      r.tradeCents > 0 ? $(r.tradeCents) : 'Unavailable',
+                      r.projectCents > 0 ? $(r.projectCents) : 'Unavailable',
                       m(r.tradeMarginBps),
                       m(r.projectMarginBps),
                       m(r.afterEliteBps),
