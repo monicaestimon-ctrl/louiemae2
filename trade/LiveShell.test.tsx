@@ -270,9 +270,16 @@ it('offers catalog-independent staff sign-in and keeps admin destination after p
   expect(mocks.catalogQueries).not.toHaveBeenCalled();
 });
 
-it.each(['welcome','account','hub','trade'])('opens %s without catalog subscriptions or stale products',route=>{
+it.each([
+ ['welcome','House of Louie Mae'],
+ ['account','Sign in to manage your account'],
+ ['hub','Independent Trade Hub'],
+ ['trade','Trade pricing for businesses that build rooms.'],
+])('opens %s without catalog subscriptions or stale products',async(route,heading)=>{
+ vi.useRealTimers();
  window.history.replaceState(null,'',`/trade/#${route}`);mocks.me={signedIn:false};mocks.status='Exhausted';
  render(<LiveShell/>);
+ expect(await screen.findByRole('heading',{name:heading,level:1})).toBeTruthy();
  expect(screen.getByRole('navigation',{name:'Account navigation'})).toBeTruthy();
  expect(mocks.catalogQueries).not.toHaveBeenCalled();expect(mocks.install).not.toHaveBeenCalled();
  expect(document.getElementById('holm-shell')).toBeNull();
