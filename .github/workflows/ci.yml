@@ -94,6 +94,9 @@ jobs:
           CHROME_PATH: /usr/bin/google-chrome
         run: |
           npm run test:holm:browser
+          npm run test:holm-tools:browser
+          npm run test:planner-dialogs:browser
+          node scripts/lighthouse/holm-editor-loading.mjs
           node scripts/lighthouse/holm-catalog-intent.mjs
           node scripts/lighthouse/board-controls.mjs
           node scripts/lighthouse/collection-assets.mjs
@@ -116,6 +119,7 @@ jobs:
           node scripts/lighthouse/collection-formats.mjs
           node scripts/lighthouse/startup-recovery.mjs
           node scripts/lighthouse/visible-startup.mjs
+          node scripts/lighthouse/primary-image-startup.mjs
           node scripts/lighthouse/product-formats.mjs
           node scripts/lighthouse/delivery-estimator.mjs
           node scripts/lighthouse/lazy-cart.mjs

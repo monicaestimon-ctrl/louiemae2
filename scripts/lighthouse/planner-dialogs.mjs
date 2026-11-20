@@ -14,7 +14,7 @@ const stubs = {
   auth: `export const useAuthActions=()=>({signIn:async()=>{throw Error('No auth permitted')},signOut:async()=>{throw Error('No auth permitted')}});export const useAuthToken=()=>null;`,
   convex: `import{getFunctionName}from'convex/server';export const useQuery=(ref)=>getFunctionName(ref)==='holmRender:one'?window.fixtureRender:getFunctionName(ref)==='holm:me'?{signedIn:false,verified:false,admin:false,tradeStatus:'none'}:undefined;export const useQueries=q=>Object.fromEntries(Object.keys(q).map(k=>[k,undefined]));export const useMutation=()=>async()=>{window.fixtureCommands=(window.fixtureCommands||0)+1;throw Error('No mutation permitted')};export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});export const useAction=useMutation;export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});`,
 };
-const entry = `import React,{useState}from'react';import{createRoot}from'react-dom/client';import{FloorPlanEditor,AiRender}from'./trade/app';function Fixture(){const[open,setOpen]=useState(false);return <><button id="opener" onClick={()=>setOpen(true)}>Open floor plan</button>{open&&(window.fixtureKind==='ai'?<AiRender ctx={{}} id="fixture" onClose={()=>setOpen(false)} onRetry={()=>{throw Error("Generation prohibited")}} onShare={()=>{throw Error("Sharing prohibited")}}/>:<FloorPlanEditor ctx={{me:{signedIn:false},toast(){}}} doc={{floor:'oak',wall:'cream'}} units="m" onClose={()=>setOpen(false)} onApply={()=>{throw Error('Apply prohibited')}}/>)}</>};createRoot(document.getElementById('root')).render(<Fixture/>);`;
+const entry = `import React,{useState}from'react';import{createRoot}from'react-dom/client';import{FloorPlanEditor,AiRender}from'./trade/editors';function Fixture(){const[open,setOpen]=useState(false);return <><button id="opener" onClick={()=>setOpen(true)}>Open floor plan</button>{open&&(window.fixtureKind==='ai'?<AiRender ctx={{}} id="fixture" onClose={()=>setOpen(false)} onRetry={()=>{throw Error("Generation prohibited")}} onShare={()=>{throw Error("Sharing prohibited")}}/>:<FloorPlanEditor ctx={{me:{signedIn:false},toast(){}}} doc={{floor:'oak',wall:'cream'}} units="m" onClose={()=>setOpen(false)} onApply={()=>{throw Error('Apply prohibited')}}/>)}</>};createRoot(document.getElementById('root')).render(<Fixture/>);`;
 const bundle = await build({
   stdin: { contents: entry, resolveDir: process.cwd(), loader: 'tsx' },
   bundle: true,
@@ -30,9 +30,9 @@ const bundle = await build({
     {
       name: 'fixture',
       setup(b) {
-        b.onLoad({ filter: /[\\/]trade[\\/]app\.ts$/ }, async () => ({
+        b.onLoad({ filter: /[\\/]trade[\\/]editors\.ts$/ }, async () => ({
           contents:
-            (await readFile('trade/app.ts', 'utf8')) + '\nexport {FloorPlanEditor,AiRender};',
+            (await readFile('trade/editors.ts', 'utf8')) + '\nexport {FloorPlanEditor,AiRender};',
           loader: 'ts',
           resolveDir: resolve('trade'),
         }));
