@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "strict": true },
+  "include": ["trade/admin/**/*.ts", "trade/admin/**/*.tsx", "vite-env.d.ts"],
+  "exclude": ["node_modules", "tmp", "trade/admin/**/*.test.ts", "trade/admin/**/*.test.tsx"]
+}

@@ -1,22 +1,25 @@
+import { LazyProductPreview } from './LazyProductPreview';
+import { CollectionRootHero } from './CollectionRootHero';
 
-import React, { useState, useMemo } from 'react';
-import { useQuery } from 'convex/react';
+import React, { useState, useMemo, useLayoutEffect, useRef } from 'react';
 import { api } from '../convex/_generated/api';
 import { FadeIn } from './FadeIn';
 import { useSite } from '../contexts/BlogContext';
-import { Product, CollectionType, ProductVariant, Category, CollectionConfig } from '../types';
-import { ArrowLeft, X, ArrowUpRight, Check } from 'lucide-react';
-import { AddToCartButton } from './cart';
-import { GlassButton } from './ui/GlassButton';
-import { useNewsletter } from '../contexts/NewsletterContext';
+import { Product, CollectionType, Category, CollectionConfig } from '../types';
+import { ArrowLeft, ArrowUpRight } from 'lucide-react';
+import { CollectionSignup } from './CollectionSignup';
 import { SafeImage } from './SafeImage';
-import { getCategoryParentId } from '../lib/productCategories';
-import { useStorefrontProductDetail } from './useStorefrontProductDetail';
+import { getCategoryParentId, getCategoryLabel } from '../lib/productCategories';
 import { useStoreCatalog, useStoreCategoryOptions, type StoreCardProduct } from './useStoreCatalog';
+import { useKidsRootPreview } from './useKidsRootPreview';
 
-import { VariantSelector, NO_IMAGE_KEY } from './VariantSelector';
-import { responsiveImage } from '../lib/responsiveImage';
-const navigateToStoreHash = (hash: string) => { window.location.hash = hash; };
+import { useRecoverableQuery } from '../contexts/useRecoverableQuery';
+let pendingStoreFocus: { hash: string; at: number } | null = null;
+const navigateToStoreHash = (hash: string) => {
+  if (window.location.hash === hash) return;
+  pendingStoreFocus = hash.startsWith('#collection/') ? { hash, at: Date.now() } : null;
+  window.location.hash = hash;
+};
 
 interface StorePageProps {
   collection: CollectionType;
@@ -34,13 +37,13 @@ interface PreviewProps {
   handleCategoryChange: (category: string) => void;
   onSelect: (product: StoreCardProduct) => void;
 }
-const CatalogUnavailable = () => <p role="status" className="py-8 text-center text-earth/60">Products are temporarily unavailable. Please check back shortly.</p>;
+const CatalogUnavailable = () => <div role="status" className="py-8 text-center text-earth"><p>Products are temporarily unavailable. Please try again.</p><button className="min-h-11 underline" onClick={() => window.location.reload()}>Reload products</button></div>;
 
   // Render a product card (reusable for both preview and full grid)
   const ProductCard: React.FC<{ product: StoreCardProduct; index: number; compact?: boolean; onSelect: (product: StoreCardProduct) => void }> = ({ product, index, compact, onSelect }) => (
     <FadeIn delay={Math.min(index, 5) * 50} className="group cursor-pointer">
-      <div
-        className={`relative aspect-square overflow-hidden bg-white mb-3 rounded-2xl shadow-sm hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-500 border border-white/40 group`}
+      <button type="button"
+        className={`block w-full relative aspect-square overflow-hidden bg-white mb-3 rounded-2xl shadow-sm hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-500 border border-white/40 group`}
         onClick={() => onSelect(product)}
       >
         {product.isNew && !compact && (
@@ -50,30 +53,28 @@ const CatalogUnavailable = () => <p role="status" className="py-8 text-center te
         )}
         <SafeImage
           src={product.images[0]}
+          media={product.imageMedia} sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
           alt={product.name}
           className="w-full h-full object-contain"
         />
         {/* Subtle Inner Glow Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+        <span className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></span>
         {!compact && (
-          <div className="absolute bottom-0 left-0 right-0 p-3 translate-y-full group-hover:translate-y-0 transition-transform duration-500">
-            <GlassButton
-              variant="primary"
-              size="sm"
-              fullWidth
-              className="py-3 text-[10px] bg-white/80 backdrop-blur-md shadow-lg border border-white/50 hover:bg-earth hover:text-white transition-colors duration-300"
+          <span className="absolute bottom-0 left-0 right-0 p-3 translate-y-0 md:translate-y-full md:group-hover:translate-y-0 group-focus-within:translate-y-0 transition-transform duration-500">
+            <span
+              className="block w-full py-3 text-[10px] bg-white/80 backdrop-blur-md shadow-lg border border-white/50 hover:bg-earth hover:text-white transition-colors duration-300"
             >
               Quick View
-            </GlassButton>
-          </div>
+            </span>
+          </span>
         )}
-      </div>
+      </button>
 
       <div className={compact ? 'px-2' : 'px-1'}>
         <h3 className={`font-serif ${compact ? 'text-sm' : 'text-base'} text-earth leading-tight mb-1 group-hover:text-bronze transition-colors truncate`}>
           {product.name}
         </h3>
-        {!product.inStock && <span className="block text-xs uppercase tracking-widest text-bronze">Coming Soon</span>}<span className={`font-serif italic text-earth/80 ${compact ? 'text-sm' : 'text-base'} group-hover:text-bronze/80 transition-colors`}>${product.price}</span>
+        {!product.inStock && <span className="block text-xs uppercase tracking-widest text-bronze">Coming Soon</span>}<span className={`font-serif italic text-earth ${compact ? 'text-sm' : 'text-base'} group-hover:text-bronze transition-colors`}>${product.price}</span>
       </div>
     </FadeIn>
   );
@@ -90,89 +91,25 @@ const CatalogUnavailable = () => <p role="status" className="py-8 text-center te
     </div>
   );
 
-  // Reusable Coming Soon newsletter signup for empty product views
-  const ComingSoonSignup: React.FC<{ selectedCategory: string }> = ({ selectedCategory }) => {
-    const { addSubscriberWithTags } = useNewsletter();
-    const [csEmail, setCsEmail] = useState('');
-    const [csStatus, setCsStatus] = useState<'idle' | 'loading' | 'success'>('idle');
-
-    const handleCsSubscribe = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!csEmail) return;
-      setCsStatus('loading');
-
-      const categoryTag = `category:${selectedCategory.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`;
-      await addSubscriberWithTags(csEmail, 'Guest', ['vip', 'early-access', categoryTag]);
-
-      setCsStatus('success');
-      setCsEmail('');
-    };
-
-    return (
-      <form onSubmit={handleCsSubscribe} className="w-full max-w-sm mx-auto flex flex-col gap-6 mt-6">
-        <div className="relative group w-full">
-          <input
-            type="email"
-            value={csEmail}
-            onChange={(e) => setCsEmail(e.target.value)}
-            placeholder="Email Address"
-            required
-            className="w-full bg-transparent border-b border-white/20 pb-3 text-sm md:text-base text-white placeholder:text-white/30 focus:outline-none focus:border-white transition-colors"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={csStatus === 'loading' || csStatus === 'success'}
-          className="w-full bg-white text-stone-900 py-4 text-[10px] uppercase tracking-[0.25em] hover:bg-stone-200 transition-colors disabled:opacity-70 flex items-center justify-center gap-3 rounded-full font-medium mt-2 shadow-lg"
-        >
-          {csStatus === 'loading' ? 'Requesting Access...' : csStatus === 'success' ? <><Check className="w-4 h-4" /> Secured</> : 'Request Early Access'}
-        </button>
-      </form>
-    );
-  };
-
   // Subcategory box with product previews
   const SubcategoryWithPreviews: React.FC<PreviewProps & { category: Category; index: number }> = ({ category, index, config, ready, checking, handleCategoryChange, onSelect }) => {
     const preview = useStoreCatalog(config, category.title, ready, undefined, 4);
     const previewProducts = preview.products;
-    const { addSubscriberWithTags } = useNewsletter();
-    const [email, setEmail] = useState('');
-    const [subStatus, setSubStatus] = useState<'idle' | 'loading' | 'success'>('idle');
-
-    const handleSubscribe = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!email) return;
-      setSubStatus('loading');
-
-      const categoryTag = `category:${category.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}`;
-      const success = await addSubscriberWithTags(email, 'Guest', ['vip', 'early-access', categoryTag]);
-
-      if (success) {
-        setSubStatus('success');
-        setEmail('');
-      } else {
-        setSubStatus('idle');
-        alert('Already subscribed!');
-      }
-    };
-
     return (
       <FadeIn delay={index * 100} className="mb-16">
         {/* Clean Section Header */}
         <div className="flex items-center justify-between mb-6 border-b border-earth/10 pb-2">
-          <div
-            className="group cursor-pointer flex items-center gap-3"
-            onClick={() => handleCategoryChange(category.title)}
-          >
-            <h3 className="font-serif text-2xl md:text-3xl text-earth transition-colors group-hover:text-bronze">
+          <h3 className="font-serif text-2xl md:text-3xl text-earth">
+            <button type="button" className="group min-h-11 flex items-center gap-3 text-left transition-colors hover:text-bronze"
+              onClick={() => handleCategoryChange(category.title)}>
               {category.title}
-            </h3>
-            <ArrowUpRight className="w-5 h-5 text-earth/30 transition-all group-hover:text-bronze group-hover:translate-x-1 group-hover:-translate-y-1" />
-          </div>
+              <ArrowUpRight aria-hidden="true" className="w-5 h-5 text-muted-earth transition-all group-hover:text-bronze group-hover:translate-x-1 group-hover:-translate-y-1" />
+            </button>
+          </h3>
 
           <button
             onClick={() => handleCategoryChange(category.title)}
-            className="hidden md:flex items-center gap-2 text-xs uppercase tracking-widest text-earth/50 hover:text-earth transition-colors"
+            className="hidden md:flex items-center gap-2 text-xs uppercase tracking-widest text-muted-earth hover:text-earth transition-colors"
           >
             View All
           </button>
@@ -181,7 +118,7 @@ const CatalogUnavailable = () => <p role="status" className="py-8 text-center te
         {/* Product Previews */}
         {checking || preview.loading ? (
           <ProductLoadingGrid compact />
-        ) : !ready ? <CatalogUnavailable /> : previewProducts.length > 0 ? (
+        ) : !ready || preview.unavailable ? <CatalogUnavailable /> : previewProducts.length > 0 ? (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
             {previewProducts.map((product, idx) => (
               <ProductCard key={product.id} product={product} index={idx} compact onSelect={onSelect} />
@@ -206,29 +143,11 @@ const CatalogUnavailable = () => <p role="status" className="py-8 text-center te
               <div className="absolute bottom-0 left-0 w-64 h-64 bg-white/10 rounded-full blur-3xl opacity-50 -z-10 -translate-x-1/4 translate-y-1/4" />
 
               <h4 className="font-serif text-4xl md:text-5xl text-cream mb-4 tracking-tight drop-shadow-md">Coming Soon</h4>
-              <p className="text-sm md:text-xs text-cream/70 uppercase tracking-[0.2em] mb-12 max-w-md mx-auto leading-relaxed font-light">
+              <p className="text-sm md:text-xs text-muted-cream uppercase tracking-[0.2em] mb-12 max-w-md mx-auto leading-relaxed font-light">
                 Join the inner circle. Receive 24-hour early access to {category.title} drops before they open to the public.
               </p>
 
-              <form onSubmit={handleSubscribe} className="w-full max-w-sm flex flex-col gap-6">
-                <div className="relative group w-full">
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Email Address"
-                    required
-                    className="w-full bg-transparent border-b border-white/20 pb-3 text-sm md:text-base text-white placeholder:text-white/30 focus:outline-none focus:border-white transition-colors"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={subStatus === 'loading' || subStatus === 'success'}
-                  className="w-full bg-white text-stone-900 py-4 text-[10px] uppercase tracking-[0.25em] hover:bg-stone-200 transition-colors disabled:opacity-70 flex items-center justify-center gap-3 font-medium mt-2 rounded-full shadow-lg"
-                >
-                  {subStatus === 'loading' ? 'Requesting Access...' : subStatus === 'success' ? <><Check className="w-4 h-4" /> Secured</> : 'Request Early Access'}
-                </button>
-              </form>
+              <CollectionSignup key={category.id} category={category.title} />
             </div>
           </div>
         )}
@@ -237,12 +156,12 @@ const CatalogUnavailable = () => <p role="status" className="py-8 text-center te
   };
 
   // Hero Slider for the top of the Category Page
-  const HeroProductSlider: React.FC<PreviewProps & { categoryTitle: string }> = ({ categoryTitle, config, ready, checking, onSelect }) => {
-    const preview = useStoreCatalog(config, categoryTitle, ready, 'featured', 8);
+  const HeroProductSlider: React.FC<PreviewProps & { categoryTitle: string; categoryId: string }> = ({ categoryTitle, categoryId, config, ready, checking, onSelect }) => {
+    const preview = useStoreCatalog(config, categoryId, ready, 'featured', 8);
     const featuredProducts = preview.products;
     const collection = config.id;
     if (checking || preview.loading) return <ProductLoadingGrid />;
-    if (!ready) return <CatalogUnavailable />;
+    if (!ready || preview.unavailable) return <CatalogUnavailable />;
 
     if (featuredProducts.length === 0) return null;
 
@@ -253,7 +172,7 @@ const CatalogUnavailable = () => <p role="status" className="py-8 text-center te
             <h2 className="font-serif text-3xl md:text-5xl text-earth mb-3">
               {categoryTitle}
             </h2>
-            <p className="text-xs uppercase tracking-widest text-earth/60">
+            <p className="text-xs uppercase tracking-widest text-muted-earth">
               Latest Arrivals & Curated Picks
             </p>
           </div>
@@ -271,10 +190,10 @@ const CatalogUnavailable = () => <p role="status" className="py-8 text-center te
               // #collection/kids?cat=Girls%20All -> Level 3? No, that's messy.
 
               // Let's us just scroll to the first subcategory for now, or just let the user browse.
-              // Actually, the user asked for "All Girls section... slide through products". 
+              // Actually, the user asked for "All Girls section... slide through products".
               // This slider IS that section. The "View All" button is less critical if the slider shows the best stuff.
 
-              // BETTER: Add a specific "Shop All" swimming lane at the bottom? 
+              // BETTER: Add a specific "Shop All" swimming lane at the bottom?
               // OR: Just let them click subcategories.
 
               // Let's scroll to the first subcategory for now.
@@ -299,9 +218,9 @@ const CatalogUnavailable = () => <p role="status" className="py-8 text-center te
           <div className="min-w-[200px] md:min-w-[240px] snap-center flex items-center justify-center">
             <button
               onClick={() => {
-                window.location.hash = `#collection/${collection}?cat=${encodeURIComponent(categoryTitle)}&view=products`;
+                navigateToStoreHash(`#collection/${collection}?cat=${encodeURIComponent(categoryId)}&view=products`);
               }}
-              className="group flex flex-col items-center gap-4 text-earth/50 hover:text-earth transition-colors"
+              className="group flex flex-col items-center gap-4 text-muted-earth hover:text-earth transition-colors"
             >
               <div className="w-16 h-16 rounded-full border border-earth/20 flex items-center justify-center group-hover:border-earth transition-colors">
                 <ArrowUpRight className="w-6 h-6" />
@@ -316,10 +235,7 @@ const CatalogUnavailable = () => <p role="status" className="py-8 text-center te
 
 
 export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategory = 'All', forceProductView = false }) => {
-  const { siteContent, isLoading } = useSite();
-  const readiness = useQuery(api.catalogReadiness.status, {});
-  const catalogReady = readiness?.ready === true;
-  const catalogUnavailable = readiness !== undefined && !catalogReady;
+  const { siteContent, isLoading, siteContentStatus } = useSite();
   const [sortOption, setSortOption] = useState<'newest' | 'price-asc' | 'price-desc'>('newest');
 
   // Find the configuration for this collection from the dynamic state
@@ -333,25 +249,25 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
     };
   }, [siteContent.collections, collection]);
 
-  // Decoded category from URL
-  const selectedCategory = useMemo(() => decodeURIComponent(initialCategory), [initialCategory]);
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
-  const { product: selectedProduct, loading: detailLoading, unavailable: detailUnavailable } = useStorefrontProductDetail(selectedProductId);
-  const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(undefined);
-  // Price/stock changes and deleted options must not leave a stale cart selection.
-  const selectedVariant = selectedProduct?.variants?.length === 1
-    ? selectedProduct.variants[0]
-    : selectedProduct?.variants?.find(variant => variant.id === selectedVariantId && variant.inStock !== false);
-  const selectedPrice = (selectedProduct?.price ?? 0) + (selectedVariant?.priceAdjustment ?? 0);
-  const setSelectedVariant = (variant: ProductVariant | undefined) => setSelectedVariantId(variant?.id);
-  /** Tracks the active image group (color/style) independently from selectedVariant */
-  const [activeImageGroupKey, setActiveImageGroupKey] = useState<string | null>(null);
+  // The route parser already decoded URLSearchParams. Decoding again breaks
+  // legitimate percent signs and can turn a filter into a page-level exception.
+  const selectedCategory = initialCategory;
+  const selectedCategoryTitle = getCategoryLabel(config, selectedCategory);
+  const mainRef = useRef<HTMLElement>(null);
+  // A retail referral link lands on ?product=<id> (and ?variant=<id>): open that piece directly.
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(() => {
+    const q = window.location.hash.split('?')[1];
+    return q ? new URLSearchParams(q).get('product') : null;
+  });
+  const [initialVariantId, setInitialVariantId] = useState<string | undefined>(() => {
+    const q = window.location.hash.split('?')[1];
+    return (q && new URLSearchParams(q).get('variant')) || undefined;
+  });
 
   // Reset variant and group key when changing product
   const handleSelectProduct = (product: Pick<Product, 'id'> | null) => {
     setSelectedProductId(product?.id ?? null);
-    setSelectedVariant(undefined);
-    setActiveImageGroupKey(null);
+    setInitialVariantId(undefined);
   };
 
   // Get main categories for logic checks
@@ -418,15 +334,39 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
     );
   }, [config, selectedCategory, viewLevel]);
 
+  // Category-only roots need verified navigation settings, not inventory. Product
+  // grids and category previews require readiness. Kids root receives readiness
+  // and its bounded cards together, avoiding a serial readiness/page waterfall.
+  const rootPreview = useKidsRootPreview(viewLevel === 'ROOT' && collection === 'kids');
+  const needsCatalog = viewLevel !== 'ROOT';
+  const readinessRequest = useRecoverableQuery(api.catalogReadiness.status, needsCatalog ? {} : 'skip');
+  const readiness = readinessRequest.data;
+  const catalogReady = needsCatalog && readiness?.ready === true;
+  const readinessUnavailable = needsCatalog && (readinessRequest.status === 'unavailable' || (readiness !== undefined && !catalogReady));
   const grid = useStoreCatalog(config, selectedCategory, catalogReady && viewLevel === 'PRODUCT', sortOption);
-  const rootPreview = useStoreCatalog(config, 'All', catalogReady && viewLevel === 'ROOT' && collection === 'kids', undefined, 8);
   const categoryOptions = useStoreCategoryOptions(config, selectedCategory, catalogReady && viewLevel === 'PRODUCT');
   const filteredProducts = grid.products;
   const categories = categoryOptions.categories;
-  const storefrontIsLoading = isLoading || readiness === undefined || (viewLevel === 'PRODUCT' ? grid.loading : rootPreview.loading);
+  const catalogUnavailable = siteContentStatus === 'unavailable' || readinessUnavailable || grid.unavailable || rootPreview.unavailable;
+  const storefrontIsLoading = !catalogUnavailable && (isLoading || (needsCatalog && readiness === undefined) || (viewLevel === 'PRODUCT' ? grid.loading : rootPreview.loading));
+  useLayoutEffect(() => {
+    if (!storefrontIsLoading) document.getElementById('lm-collection-document')?.remove();
+  }, [storefrontIsLoading, collection]);
+
+  useLayoutEffect(() => {
+    if (!pendingStoreFocus) return;
+    const pending = pendingStoreFocus;
+    pendingStoreFocus = null;
+    if (pending.hash !== window.location.hash || Date.now() - pending.at > 10_000) return;
+    const target = mainRef.current?.querySelector<HTMLElement>('button[aria-pressed="true"]')
+      ?? mainRef.current?.querySelector<HTMLElement>('h1') ?? mainRef.current;
+    if (!target) return;
+    if (target.tagName !== 'BUTTON') target.tabIndex = -1;
+    target.focus();
+  }, [collection, selectedCategory, viewLevel]);
 
   const handleCategoryChange = (cat: string) => {
-    if (cat === selectedCategory) return;
+    if (getCategoryLabel(config, cat) === selectedCategoryTitle) return;
 
     const subConfig = config.subcategories.find(c => c.title === cat);
     if (subConfig && subConfig.redirect) {
@@ -455,7 +395,8 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
   };
 
   return (
-    <div className="bg-cream min-h-screen pt-20">
+    <main ref={mainRef} className="bg-cream min-h-screen pt-20" data-lm-collection-ready={!storefrontIsLoading && !catalogUnavailable && siteContentStatus === 'ready' ? collection : undefined}>
+      {viewLevel !== 'ROOT' && <h1 className="sr-only">{selectedCategory === 'All' ? config.title : `${config.subcategories.find(category => category.id === selectedCategory)?.title || selectedCategory} — ${config.title}`}</h1>}
 
       {/* Unified Header Section - Clean cream background with centered title for all collections */}
       <section className={`relative transition-all duration-700 w-full ${viewLevel === 'ROOT' ? 'min-h-screen' : ''} flex flex-col`}>
@@ -464,253 +405,14 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
         <div className="absolute inset-0 bg-cream z-0"></div>
 
         {/* Header Title - Unified layout matching Kids for all collections */}
-        {viewLevel === 'ROOT' && (
-          <>
-            <div className="relative z-30 pt-32 pb-8 md:pb-12 text-center bg-transparent pointer-events-none">
-              <FadeIn>
-                <h1 className="font-serif text-5xl md:text-7xl text-earth drop-shadow-sm mb-4 mix-blend-multiply opacity-90">
-                  {config.title}
-                </h1>
-                <p className="font-sans text-earth/80 text-[10px] md:text-sm uppercase tracking-[0.3em] px-8 max-w-xs md:max-w-none mx-auto">
-                  {config.subtitle}
-                </p>
-              </FadeIn>
-            </div>
-
-            {/* Category Cards */}
-            <div className="pb-16 md:pb-24">
-              {mainCategories.length <= 5 ? (
-                <>
-                  {/* ≤5 categories: Mobile Horizontal Scroll */}
-                  <div className="md:hidden">
-                    <div className="relative">
-                      <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-cream to-transparent z-10 pointer-events-none" />
-                      <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-cream to-transparent z-10 pointer-events-none" />
-
-                      <div
-                        className="flex gap-4 overflow-x-auto scrollbar-hide px-8 pb-4 scroll-smooth"
-                        style={{
-                          scrollSnapType: 'x mandatory',
-                          WebkitOverflowScrolling: 'touch',
-                          perspective: '1200px',
-                        }}
-                      >
-                        {mainCategories.map((cat, idx, arr) => {
-                          const centerIdx = (arr.length - 1) / 2;
-                          const offset = idx - centerIdx;
-                          const rotateY = Math.max(-12, Math.min(12, offset * 4));
-                          const translateZ = Math.min(0, Math.abs(offset) * -8);
-
-                          return (
-                            <button
-                              key={cat.id}
-                              onClick={() => {
-                                if (cat.redirect) {
-                                  window.location.hash = cat.redirect.replace('#', '');
-                                } else {
-                                  handleCategoryChange(cat.title);
-                                }
-                              }}
-                              className="
-                                group relative flex-shrink-0 overflow-hidden rounded-2xl
-                                w-[200px] aspect-[3/4]
-                                bg-stone-100 
-                                shadow-lg hover:shadow-2xl
-                                transition-all duration-500 ease-out
-                                hover:scale-[1.02]
-                              "
-                              style={{
-                                transform: `rotateY(${rotateY}deg) translateZ(${translateZ}px)`,
-                                transformStyle: 'preserve-3d',
-                                scrollSnapAlign: 'center',
-                              }}
-                            >
-                              <img
-                                {...responsiveImage(cat.image, '(min-width: 768px) 33vw, 70vw')}
-                                loading="lazy"
-                                decoding="async"
-                                alt={cat.title}
-                                className="absolute inset-0 w-full h-full object-cover transition-all duration-700 group-hover:scale-110"
-                                style={{ opacity: 0 }}
-                                onLoad={(e) => { (e.target as HTMLImageElement).style.opacity = '1'; }}
-                              />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-                              <div className="absolute inset-0 flex flex-col justify-end items-center text-center p-6">
-                                <h3 className="font-serif text-lg text-white font-light tracking-wide mb-2 whitespace-nowrap">
-                                  {cat.title}
-                                </h3>
-                                <p className="text-white/70 text-xs uppercase tracking-[0.2em]">
-                                  {cat.caption || 'Shop Now'}
-                                </p>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* ≤5 categories: Desktop Full-Frame Grid */}
-                  <div className="hidden md:block px-8">
-                    <div className="container mx-auto">
-                      <div
-                        className={`grid gap-6 ${mainCategories.length <= 3 ? 'grid-cols-3' :
-                          mainCategories.length <= 4 ? 'grid-cols-4' :
-                            'grid-cols-5'
-                          }`}
-                        style={{ perspective: '1200px' }}
-                      >
-                        {mainCategories.map((cat, idx, arr) => {
-                          const centerIdx = (arr.length - 1) / 2;
-                          const offset = idx - centerIdx;
-                          const rotateY = offset * 8;
-                          const translateZ = Math.abs(offset) * -20;
-
-                          return (
-                            <button
-                              key={cat.id}
-                              onClick={() => {
-                                if (cat.redirect) {
-                                  window.location.hash = cat.redirect.replace('#', '');
-                                } else {
-                                  handleCategoryChange(cat.title);
-                                }
-                              }}
-                              className="
-                                group relative overflow-hidden rounded-2xl
-                                aspect-[2/3]
-                                bg-stone-100 
-                                shadow-lg hover:shadow-2xl
-                                transition-all duration-500 ease-out
-                                hover:scale-[1.02]
-                              "
-                              style={{
-                                transform: `rotateY(${rotateY}deg) translateZ(${translateZ}px)`,
-                                transformStyle: 'preserve-3d',
-                              }}
-                            >
-                              <img
-                                {...responsiveImage(cat.image, '(min-width: 768px) 33vw, 70vw')}
-                                loading="lazy"
-                                decoding="async"
-                                alt={cat.title}
-                                className="absolute inset-0 w-full h-full object-cover transition-all duration-700 group-hover:scale-110"
-                                style={{ opacity: 0 }}
-                                onLoad={(e) => { (e.target as HTMLImageElement).style.opacity = '1'; }}
-                              />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-                              <div className="absolute inset-0 flex flex-col justify-end items-center text-center p-6">
-                                <h3 className="font-serif text-lg lg:text-xl text-white font-light tracking-wide mb-1 leading-tight whitespace-nowrap">
-                                  {cat.title}
-                                </h3>
-                                <p className="text-white/70 text-xs uppercase tracking-[0.2em]">
-                                  {cat.caption || 'Shop Now'}
-                                </p>
-                              <div className="mt-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                                  <span className="inline-flex items-center text-white text-sm bg-white/10 backdrop-blur-md px-4 py-2 rounded-full border border-white/20">
-                                    Explore
-                                    <svg className="w-4 h-4 ml-2 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                                    </svg>
-                                  </span>
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                /* >5 categories: Slidable Horizontal Carousel with grid-matched card sizes */
-                <div className="relative">
-                  {/* Peek fade effect */}
-                  <div className="absolute left-0 top-0 bottom-0 w-8 md:w-16 bg-gradient-to-r from-cream to-transparent z-10 pointer-events-none" />
-                  <div className="absolute right-0 top-0 bottom-0 w-8 md:w-16 bg-gradient-to-l from-cream to-transparent z-10 pointer-events-none" />
-
-                  <div
-                    className="flex gap-4 md:gap-6 overflow-x-auto scrollbar-hide px-8 md:px-16 pb-4 scroll-smooth"
-                    style={{
-                      scrollSnapType: 'x mandatory',
-                      WebkitOverflowScrolling: 'touch',
-                      perspective: '1200px',
-                    }}
-                  >
-                    {mainCategories.map((cat, idx, arr) => {
-                      const centerIdx = (arr.length - 1) / 2;
-                      const offset = idx - centerIdx;
-                      const rotateY = Math.max(-12, Math.min(12, offset * 4));
-                      const translateZ = Math.min(0, Math.abs(offset) * -8);
-
-                      return (
-                        <button
-                          key={cat.id}
-                          onClick={() => {
-                            if (cat.redirect) {
-                              window.location.hash = cat.redirect.replace('#', '');
-                            } else {
-                              handleCategoryChange(cat.title);
-                            }
-                          }}
-                          className="
-                            group relative flex-shrink-0 overflow-hidden rounded-2xl
-                            w-[200px] md:w-[calc((100vw-10rem)/5)] lg:w-[calc((1024px-10rem)/5)] xl:w-[calc((1280px-10rem)/5)]
-                            aspect-[3/4] md:aspect-[2/3]
-                            bg-stone-100 
-                            shadow-lg hover:shadow-2xl
-                            transition-all duration-500 ease-out
-                            hover:scale-[1.02]
-                          "
-                          style={{
-                            transform: `rotateY(${rotateY}deg) translateZ(${translateZ}px)`,
-                            transformStyle: 'preserve-3d',
-                            scrollSnapAlign: 'center',
-                          }}
-                        >
-                          <img
-                            {...responsiveImage(cat.image, '(min-width: 768px) 33vw, 70vw')}
-                            loading="lazy"
-                            decoding="async"
-                            alt={cat.title}
-                            className="absolute inset-0 w-full h-full object-cover transition-all duration-700 group-hover:scale-110"
-                            style={{ opacity: 0 }}
-                            onLoad={(e) => { (e.target as HTMLImageElement).style.opacity = '1'; }}
-                          />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-                          <div className="absolute inset-0 flex flex-col justify-end items-center text-center p-6 md:p-8">
-                            <h3 className="font-serif text-xl md:text-lg lg:text-xl text-white font-light tracking-wide mb-2 whitespace-nowrap">
-                              {cat.title}
-                            </h3>
-                            <p className="text-white/70 text-xs md:text-sm uppercase tracking-[0.2em]">
-                              {cat.caption || 'Shop Now'}
-                            </p>
-                            <div className="mt-3 md:mt-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                              <span className="inline-flex items-center text-white text-xs md:text-sm">
-                                Explore
-                                <svg className="w-4 h-4 ml-2 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                                </svg>
-                              </span>
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          </>
-        )}
+        {viewLevel === 'ROOT' && <CollectionRootHero collection={collection} title={config.title} subtitle={config.subtitle} categories={mainCategories} status={collection !== 'kids' && catalogUnavailable ? <CatalogUnavailable /> : undefined} />}
       </section>
 
       {viewLevel === 'ROOT' && <div className="text-center py-6"><button type="button" onClick={() => window.location.assign(`#collection/${collection}?cat=All&view=products`)} className="border border-earth/20 rounded-full px-6 py-3 text-sm">Shop all {config.title}</button></div>}
 
       {/* --- LEVEL 1: ROOT VIEW - New Arrivals Feed (Kids) --- */}
       {viewLevel === 'ROOT' && collection === 'kids' && (
-        <section className="px-4 md:px-8 pb-12 md:pb-16 -mt-8 relative z-30">
-          {/* Negative margin to pull it up into the concave scoop if needed, but let's keep it safe below */}
+        <section className="px-4 md:px-8 pb-12 md:pb-16 relative z-30">
           <div className="container mx-auto">
             {storefrontIsLoading ? (
               <ProductLoadingGrid />
@@ -718,7 +420,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
               <>
                 <FadeIn className="mb-8 text-center md:text-left">
                   <h2 className="font-serif text-3xl md:text-4xl text-earth mb-3 ml-2">New Arrivals</h2>
-                  <p className="text-xs uppercase tracking-widest text-earth/50 ml-2">
+                  <p className="text-xs uppercase tracking-widest text-muted-earth ml-2">
                     Latest collections for the little ones
                   </p>
                 </FadeIn>
@@ -732,8 +434,8 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
 
                   <div className="min-w-[200px] md:min-w-[240px] snap-center flex items-center justify-center">
                     <button
-                      onClick={() => { window.location.hash = `#collection/${collection}?cat=All&view=products`; }}
-                      className="group flex flex-col items-center gap-4 text-earth/50 hover:text-earth transition-colors"
+                      onClick={() => { navigateToStoreHash(`#collection/${collection}?cat=All&view=products`); }}
+                      className="group flex flex-col items-center gap-4 text-muted-earth hover:text-earth transition-colors"
                     >
                       <div className="w-16 h-16 rounded-full border border-earth/20 flex items-center justify-center group-hover:border-earth transition-colors">
                         <ArrowUpRight className="w-6 h-6" />
@@ -756,7 +458,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
             <div className="container mx-auto flex items-center justify-between">
               <button
                 onClick={() => handleCategoryChange(getBackDestination())}
-                className="text-[10px] uppercase tracking-widest text-earth/50 hover:text-earth flex items-center gap-1"
+                className="text-[10px] uppercase tracking-widest text-muted-earth hover:text-earth flex items-center gap-1"
               >
                 <ArrowLeft className="w-3 h-3" /> Back to {config.title}
               </button>
@@ -767,13 +469,13 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
             <div className="container mx-auto">
 
               {/* NEW: Hero Slider at the Top */}
-              <HeroProductSlider categoryTitle={selectedCategory} config={config} ready={catalogReady} checking={isLoading || readiness === undefined} handleCategoryChange={handleCategoryChange} onSelect={handleSelectProduct} />
+              <HeroProductSlider categoryId={selectedCategory} categoryTitle={selectedCategoryTitle} config={config} ready={catalogReady} checking={!readinessUnavailable && (isLoading || readiness === undefined)} handleCategoryChange={handleCategoryChange} onSelect={handleSelectProduct} />
 
               <div id="sub-cats-start" className="h-px w-full bg-earth/10 mb-16"></div>
 
               {/* Subcategory Swimlanes */}
               {childCategories.map((cat, idx) => (
-                <SubcategoryWithPreviews key={cat.id} category={cat} index={idx} config={config} ready={catalogReady} checking={isLoading || readiness === undefined} handleCategoryChange={handleCategoryChange} onSelect={handleSelectProduct} />
+                <SubcategoryWithPreviews key={cat.id} category={cat} index={idx} config={config} ready={catalogReady} checking={!readinessUnavailable && (isLoading || readiness === undefined)} handleCategoryChange={handleCategoryChange} onSelect={handleSelectProduct} />
               ))}
             </div>
           </section>
@@ -790,7 +492,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
               <div className="flex min-w-0 md:flex-1 items-center gap-3 overflow-x-auto no-scrollbar w-full md:w-auto pb-2 md:pb-0">
                 <button
                   onClick={() => handleCategoryChange(getBackDestination())}
-                  className="whitespace-nowrap text-[10px] uppercase tracking-widest text-cream/50 hover:text-cream flex items-center gap-1 group transition-colors"
+                  className="whitespace-nowrap text-[10px] uppercase tracking-widest text-muted-cream hover:text-cream flex items-center gap-1 group transition-colors"
                 >
                   <div className="bg-white/5 border border-white/10 p-1.5 rounded-full group-hover:bg-white/10 transition-colors">
                     <ArrowLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
@@ -801,21 +503,22 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                 {categories.map(cat => (
                   <button
                     key={cat}
+                    aria-pressed={selectedCategoryTitle === cat}
                     onClick={() => handleCategoryChange(cat)}
-                    className={`whitespace-nowrap text-[10px] uppercase tracking-widest transition-all duration-300 px-3 py-1.5 rounded-full ${selectedCategory === cat ? 'bg-white/10 text-cream border border-white/20 shadow-inner' : 'text-cream/50 hover:text-cream hover:bg-white/5 border border-transparent'}`}
+                    className={`whitespace-nowrap text-[10px] uppercase tracking-widest transition-all duration-300 px-3 py-1.5 rounded-full ${selectedCategoryTitle === cat ? 'bg-white/10 text-cream border border-white/20 shadow-inner' : 'text-muted-cream hover:text-cream hover:bg-white/5 border border-transparent'}`}
                   >
                     {cat}
                   </button>
                 ))}
               </div>
 
-              {(categoryOptions.canLoadMore || categoryOptions.loading) && <button type="button" disabled={categoryOptions.loading} onClick={categoryOptions.loadMore} className="text-xs text-cream/70 whitespace-nowrap">{categoryOptions.loading ? 'Loading categories…' : 'Load more category options'}</button>}
+              {(categoryOptions.canLoadMore || categoryOptions.loading) && <button type="button" disabled={categoryOptions.loading} onClick={categoryOptions.loadMore} className="text-xs text-muted-cream whitespace-nowrap">{categoryOptions.loading ? 'Loading categories…' : 'Load more category options'}</button>}
               <div className="flex items-center gap-2 ml-auto md:ml-0 bg-white/5 border border-white/10 px-3 py-1.5 rounded-full backdrop-blur-md">
-                <span className="text-[10px] uppercase tracking-widest text-cream/50">Sort By:</span>
+                <span className="text-[10px] uppercase tracking-widest text-muted-cream">Sort By:</span>
                 <select
                   aria-label="Sort products" value={sortOption}
                   onChange={(e) => setSortOption(e.target.value as 'newest' | 'price-asc' | 'price-desc')}
-                  className="bg-transparent text-[10px] uppercase tracking-widest text-bronze focus:outline-none cursor-pointer appearance-none ml-1 font-medium"
+                  className="bg-transparent text-[10px] uppercase tracking-widest text-cream cursor-pointer appearance-none ml-1 font-medium"
                 >
                   <option value="newest" className="bg-stone-900 text-cream">Newest</option>
                   <option value="price-asc" className="bg-stone-900 text-cream">Price: Low to High</option>
@@ -848,14 +551,14 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                     <div className="relative z-10 w-full p-12 md:p-24 flex flex-col items-center justify-center text-center backdrop-blur-2xl bg-earth/15 border border-white/10 rounded-[2rem]">
                       {/* Subtle light effect inside the card */}
                       <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-white/30 to-transparent" />
-                      <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl opacity-50 -z-10 translate-x-1/3 -translate-y-1/3" />
+                      <div aria-hidden="true" className="absolute inset-0 overflow-hidden rounded-[2rem] pointer-events-none"><div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl opacity-50 -z-10 translate-x-1/3 -translate-y-1/3" /></div>
 
-                      <h3 className="font-serif text-4xl md:text-6xl text-white mb-6 tracking-tight">Coming Soon</h3>
+                      <h2 className="font-serif text-4xl md:text-6xl text-white mb-6 tracking-tight">Coming Soon</h2>
                       <p className="text-sm md:text-xs text-white/60 uppercase tracking-[0.2em] mb-12 max-w-md mx-auto font-light leading-relaxed">
-                        Join the inner circle. Receive 24-hour early access to {selectedCategory} drops before they open to the public.
+                        Join the inner circle. Receive 24-hour early access to {selectedCategoryTitle} drops before they open to the public.
                       </p>
 
-                      <ComingSoonSignup selectedCategory={selectedCategory} />
+                      <CollectionSignup key={selectedCategory} category={selectedCategory} />
 
                       <button onClick={() => handleCategoryChange(getBackDestination())} className="mt-16 text-[9px] uppercase tracking-[0.2em] text-white/50 border-b border-white/30 pb-1 hover:text-white hover:border-white transition-colors z-20 relative">
                         Return to Collections
@@ -867,43 +570,44 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-10">
                   {filteredProducts.map((product, idx) => (
                     <FadeIn key={product.id} delay={Math.min(idx, 5) * 50} className="group min-w-0">
-                      <div
-                        className={`relative ${collection === 'furniture' || collection === 'decor' ? 'aspect-square' : 'aspect-[3/4]'} overflow-hidden bg-[#f3efe8] mb-4 rounded-sm`}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`View ${product.name}`}
-                        onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); handleSelectProduct(product); } }}
-                        onClick={() => handleSelectProduct(product)}
-                      >
+                      <div className="relative mb-4">
                         {product.isNew && (
-                          <span className="absolute top-3 left-3 bg-white/90 px-2 py-1 text-[9px] uppercase tracking-widest text-earth z-10 rounded-sm">
+                          <span className="pointer-events-none absolute top-3 left-3 bg-white/90 px-2 py-1 text-[9px] uppercase tracking-widest text-earth z-10 rounded-sm">
                             New
                           </span>
                         )}
                         {product.variantCount > 1 && (
-                          <span className="absolute top-3 right-3 bg-bronze/90 px-2 py-1 text-[9px] uppercase tracking-widest text-white z-10 rounded-sm">
+                          <span className="pointer-events-none absolute top-3 right-3 bg-bronze/90 px-2 py-1 text-[9px] uppercase tracking-widest text-white z-10 rounded-sm">
                             Multiple Options
                           </span>
                         )}
-                        <SafeImage
-                          src={product.images[0]}
-                          alt={product.name}
-                          className="w-full h-full object-contain"
-                        />
-                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors"></div>
-                        <div className="absolute bottom-0 left-0 right-0 p-3 opacity-100 md:opacity-0 md:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200">
-                          <span className="block text-center w-full bg-white/90 backdrop-blur-sm text-earth py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-earth hover:text-white transition-colors shadow-lg">
-                            Quick View
+                        <button
+                          className={`block w-full relative ${collection === 'furniture' || collection === 'decor' ? 'aspect-square' : 'aspect-[3/4]'} overflow-hidden bg-[#f3efe8] rounded-sm`}
+                          type="button"
+                          aria-label={`Quick View ${product.name}`}
+                          onClick={() => handleSelectProduct(product)}
+                        >
+                          <SafeImage
+                            src={product.images[0]}
+                            media={product.imageMedia} sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
+                            alt={product.name}
+                            className="w-full h-full object-contain"
+                          />
+                          <span className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors"></span>
+                          <span className="absolute bottom-0 left-0 right-0 p-3 opacity-100 md:opacity-0 md:group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-200">
+                            <span className="block text-center w-full bg-white/90 backdrop-blur-sm text-earth py-3 text-[10px] uppercase tracking-[0.2em] hover:bg-earth hover:text-white transition-colors shadow-lg">
+                              Quick View
+                            </span>
                           </span>
-                        </div>
+                        </button>
                       </div>
 
                       <div className="flex flex-col gap-2">
                         <div className="min-w-0">
-                          <h3 className="font-serif text-lg text-earth leading-tight mb-1 group-hover:text-bronze transition-colors">
+                          <h2 className="font-serif text-lg text-earth leading-tight mb-1 group-hover:text-bronze transition-colors">
                             {product.name}
-                          </h3>
-                          <p className="text-[10px] uppercase tracking-widest text-earth/50">{product.category}</p>
+                          </h2>
+                          <p className="text-[10px] uppercase tracking-widest text-muted-earth">{product.category}</p>
                         </div>
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="text-sm text-earth whitespace-nowrap">${product.price.toLocaleString('en-US')}</span>{!product.inStock && <span className="text-xs text-bronze">Coming Soon</span>}</div>
                       </div>
@@ -912,7 +616,8 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
                 </div>
               )}
               {catalogReady && <div className="mt-8 text-center">
-                <p role="status" className="text-sm text-earth/60">{filteredProducts.length} products loaded{grid.complete ? ' · All matching products shown' : ''}</p>
+                <p role="status" className="text-sm text-muted-earth">{filteredProducts.length} products loaded{grid.complete ? ' · All matching products shown' : ''}</p>
+                {grid.additionalLoadingFailed && <div role="status" className="mt-4 text-earth"><p>More products could not be loaded. You can keep browsing the products above.</p><button type="button" className="min-h-11 underline" onClick={() => window.location.reload()}>Reload products</button></div>}
                 {(grid.canLoadMore || grid.loadingMore) && <button type="button" disabled={grid.loadingMore} onClick={grid.loadMore} className="mt-4 border border-earth/20 rounded-full px-6 py-3">{grid.loadingMore ? 'Loading products…' : 'Load more products'}</button>}
               </div>}
             </div>
@@ -921,76 +626,7 @@ export const StorePage: React.FC<StorePageProps> = ({ collection, initialCategor
       )}
 
       {/* Product Modal */}
-      {selectedProductId && (detailLoading || detailUnavailable) && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-6" role="dialog" aria-modal="true" aria-label="Product details">
-        <div className="rounded-lg bg-cream p-8 text-earth">
-          <p role="status">{detailLoading ? 'Loading product details…' : 'This product is no longer available.'}</p>
-          <button type="button" onClick={() => handleSelectProduct(null)} className="mt-5 underline">Close</button>
-        </div>
-      </div>}
-      {selectedProduct && (
-        <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:p-8" role="dialog" aria-modal="true" aria-label="Product details">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => handleSelectProduct(null)}></div>
-
-          <div className="bg-cream w-full max-w-5xl h-[92vh] supports-[height:100svh]:h-[92svh] md:h-auto md:max-h-[85vh] rounded-t-3xl md:rounded-sm shadow-2xl relative flex flex-col md:flex-row overflow-hidden animate-fade-in-up">
-            <button
-              onClick={() => handleSelectProduct(null)}
-              aria-label="Close product details"
-              className="absolute top-3 right-3 md:top-4 md:right-4 z-20 p-2.5 md:p-2 bg-white/80 md:bg-white/50 hover:bg-white rounded-full shadow-sm md:shadow-none transition-colors"
-            >
-              <X className="w-5 h-5 text-earth" />
-            </button>
-            <div className="w-full md:w-1/2 bg-white h-[42%] shrink-0 md:h-auto overflow-hidden relative group">
-              <SafeImage
-                src={selectedVariant?.image || (activeImageGroupKey && activeImageGroupKey !== NO_IMAGE_KEY ? activeImageGroupKey : selectedProduct.images[0])}
-                alt={selectedProduct.name}
-                className="w-full h-full object-contain"
-              />
-            </div>
-            <div className="w-full md:w-1/2 flex-1 min-h-0 p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:p-10 overflow-y-auto overscroll-contain bg-cream flex flex-col">
-              <div className="mb-auto">
-                <div className="flex items-center gap-3 mb-4 text-[10px] uppercase tracking-widest text-earth/50">
-                  <span>{config.title}</span>
-                  <span className="w-1 h-1 bg-bronze rounded-full"></span>
-                  <span>{selectedProduct.category}</span>
-                </div>
-                <h2 className="font-serif text-2xl md:text-4xl text-earth mb-4 leading-tight">{selectedProduct.name}</h2>
-                <p className="font-serif text-xl md:text-2xl italic text-bronze mb-6">
-                  ${selectedPrice.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(selectedPrice) ? 0 : 2, maximumFractionDigits: 2 })}
-                </p>
-                <div className="h-px w-full bg-earth/10 mb-6"></div>
-
-                {/* Variant Selector — Two-tier: Color/Style swatches → Size pills */}
-                {selectedProduct.variants && selectedProduct.variants.length > 1 && (
-                  <div className="mb-6">
-                    <VariantSelector
-                      variants={selectedProduct.variants}
-                      selectedVariant={selectedVariant}
-                      activeImageGroupKey={activeImageGroupKey}
-                      onSelectVariant={setSelectedVariant}
-                      onSetGroupKey={setActiveImageGroupKey}
-                    />
-                  </div>
-                )}
-
-                <p className="font-sans text-earth/70 leading-relaxed mb-6 text-sm">{selectedProduct.description}</p>
-                <div className="space-y-3 mb-6">
-                  <div className="flex items-center gap-2 text-xs text-green-700">
-                    <span className="w-2 h-2 rounded-full bg-green-600"></span>
-                    {selectedProduct.fulfillmentProvider && selectedProduct.inStock ? 'Available to order' : 'Coming Soon'}
-                  </div>
-                </div>
-              </div>
-              {selectedProduct.fulfillmentProvider && selectedProduct.inStock && <p className="text-sm text-earth/60">${selectedProduct.deliveryFee} Economy delivery per item</p>}
-              <AddToCartButton
-                product={selectedProduct}
-                selectedVariant={selectedVariant}
-                variantRequired={!!(selectedProduct.variants && selectedProduct.variants.length > 0)}
-                className="mt-6"
-              />
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+      <LazyProductPreview productId={selectedProductId} initialVariantId={initialVariantId} collectionTitle={config.title} presentation="collection" onClose={() => handleSelectProduct(null)} />
+    </main>
   );
 };

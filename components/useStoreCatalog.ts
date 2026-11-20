@@ -1,12 +1,14 @@
 import { useEffect, useMemo } from 'react';
 import { usePaginatedQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
-import { buildCatalogCategoryFilter, matchesCatalogCategoryFilter } from '../lib/productCategories';
+import { buildCatalogCategoryFilter, matchesCatalogCategoryFilter, getCategoryLabel } from '../lib/productCategories';
 import type { CollectionConfig, Product } from '../types';
+import { usePendingTimeout } from '../contexts/usePendingTimeout';
 
-export type StoreCardProduct = Pick<Product, 'id' | 'name' | 'images' | 'price' | 'category' | 'isNew' | 'inStock'> & { variantCount: number };
+export type StoreCardProduct = Pick<Product, 'id' | 'name' | 'images' | 'imageMedia' | 'price' | 'category' | 'isNew' | 'inStock'> & { variantCount: number };
 export type StoreSort = 'newest' | 'price-asc' | 'price-desc' | 'featured';
 
+/** Read bounded storefront pages, retaining loaded cards if a later page stalls. */
 export function useStoreCatalog(config: CollectionConfig, category: string, ready: boolean, sort?: StoreSort, previewLimit?: number) {
   const categoryFilter = useMemo(() => category === 'All' ? undefined : buildCatalogCategoryFilter(category, config), [category, config]);
   const page = usePaginatedQuery(api.catalog.storefrontPage,
@@ -27,21 +29,25 @@ export function useStoreCatalog(config: CollectionConfig, category: string, read
     category: row.category, isNew: row.isNew, variantCount: row.variantCount, inStock: false,
   })) : [];
   const eligible = retailEnabled ? retail.results.filter(p => p.collection === config.id && (!categoryFilter || matchesCatalogCategoryFilter(p, categoryFilter)))
-    .map(p => ({ id: p._id, name: p.name, images: p.images, price: p.price, category: p.category, isNew: p.isNew, variantCount: p.variantCount, inStock: p.inStock })) : [];
+    .map(p => ({ id: p._id, name: p.name, images: p.images, imageMedia: p.imageMedia, price: p.price, category: p.category, isNew: p.isNew, variantCount: p.variantCount, inStock: p.inStock })) : [];
   let products = [...eligible, ...legacy];
   if (sort === 'price-asc') products.sort((a, b) => a.price - b.price);
   if (sort === 'price-desc') products.sort((a, b) => b.price - a.price);
   if (previewLimit) products = products.slice(0, previewLimit);
-  return { products, loading: ready && ((retailEnabled && retail.status === 'LoadingFirstPage') || status === 'LoadingFirstPage' || Boolean(previewLimit && count < previewLimit && status !== 'Exhausted')),
+  const pending = ready && ((retailEnabled && retail.status === 'LoadingFirstPage') || status === 'LoadingFirstPage' || status === 'LoadingMore' || Boolean(previewLimit && count < previewLimit && status !== 'Exhausted'));
+  const timedOut = usePendingTimeout(pending, `${config.id}:${category}:${sort}:${previewLimit}`);
+  const unavailable = timedOut && products.length === 0;
+  return { products, unavailable, loading: !timedOut && ready && ((retailEnabled && retail.status === 'LoadingFirstPage') || status === 'LoadingFirstPage' || Boolean(previewLimit && count < previewLimit && status !== 'Exhausted')),
     complete: ready && status === 'Exhausted' && (!retailEnabled || retail.status === 'Exhausted'), canLoadMore: ready && status === 'CanLoadMore',
-    loadingMore: ready && status === 'LoadingMore', loadMore: () => loadMore(25) };
+    additionalLoadingFailed: timedOut && products.length > 0, loadingMore: !timedOut && ready && status === 'LoadingMore', loadMore: () => loadMore(25) };
 }
 
+/** Combine configured categories with explicitly paged legacy category names. */
 export function useStoreCategoryOptions(config: CollectionConfig, selected: string, ready: boolean) {
   const page = usePaginatedQuery(api.catalog.categoryOptionsPage, ready ? { collection: config.id } : 'skip', { initialNumItems: 25 });
   const categories = Array.from(new Set([...config.subcategories.map(category => category.title),
     ...(config.id === 'furniture' ? ['Sofas', 'Sectionals', 'Benches', 'Accent Chairs', 'Dining Chairs', 'Dining Tables', 'Barstools', 'Counterstools', 'Stools', 'Ottomans'] : config.id === 'decor' ? ['Lighting'] : []),
-    ...(ready ? page.results : []), ...(selected === 'All' ? [] : [selected])])).filter(category => category && category !== 'All').sort();
+    ...(ready ? page.results : []), ...(selected === 'All' ? [] : [selected])].map(value => getCategoryLabel(config, value)))).filter(category => category && category !== 'All').sort();
   return { categories: ['All', ...categories], canLoadMore: ready && page.status === 'CanLoadMore',
     loading: ready && (page.status === 'LoadingFirstPage' || page.status === 'LoadingMore'), loadMore: () => page.loadMore(25) };
 }

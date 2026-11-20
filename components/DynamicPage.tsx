@@ -13,7 +13,7 @@ interface DynamicPageProps {
 }
 
 export const DynamicSectionRenderer: React.FC<{ section: PageSection, index: number }> = ({ section, index }) => {
-    const { product: featuredProduct } = useStorefrontProductDetail(section.type === 'product-feature' ? section.productId : undefined);
+    const { product: featuredProduct, loading: featureLoading, failed: featureFailed, retry: retryFeature } = useStorefrontProductDetail(section.type === 'product-feature' ? section.productId : undefined);
 
     switch (section.type) {
         case 'hero':
@@ -134,9 +134,8 @@ export const DynamicSectionRenderer: React.FC<{ section: PageSection, index: num
         case 'product-feature': {
             const product = featuredProduct;
             if (!product) {
-                // Return a placeholder or null, but for admin preview purposes, user might want to see that something is there.
-                // For now, returning null is standard, but let's at least log it or check if we should show a placeholder.
-                return null;
+                if (!section.productId || (!featureLoading && !featureFailed)) return null;
+                return <section className="min-h-96 p-8 text-center text-earth" role="status"><p>{featureLoading ? 'Loading featured product…' : featureFailed ? 'Featured product is temporarily unavailable.' : 'This featured product is no longer available.'}</p>{featureFailed && <button className="min-h-11 underline" onClick={retryFeature}>Try again</button>}</section>;
             }
             return (
                 <section className="px-6 md:px-12 mb-24 bg-cream-dark/30 py-20">

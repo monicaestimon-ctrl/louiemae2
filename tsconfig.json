@@ -25,5 +25,14 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "artifacts",
+    "outputs",
+    "tmp",
+    "coverage",
+    ".vercel"
+  ]
 }

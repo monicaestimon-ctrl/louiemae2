@@ -1,16 +1,19 @@
 
 import React, { useState, useRef } from 'react';
+import DeliveryBoundary from './delivery/DeliveryBoundary';
+import CommerceV2Admin from './admin/CommerceV2Admin';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
 import { useSite } from '../contexts/BlogContext';
+import { useSiteAccount } from '../contexts/useSiteAccount';
 import { useAdminCatalog } from '../contexts/AdminCatalogDemand';
 import { RichTextEditor } from './RichTextEditor';
 import { useNewsletterAdmin } from '../contexts/NewsletterContext';
 import { FadeIn } from './FadeIn';
 import { Plus, Edit3, Trash2, LogOut, X, Image as ImageIcon, Layout, ArrowLeft, PenTool, BookOpen, Home, Settings, Wand2 as WandIcon, Loader2, FileText, ShoppingBag, Tag, ChevronDown, Layers, Menu, Upload, Grid, Maximize, Type, Mail, Users, Send, BarChart2, Package, Lock, ChevronLeft, ExternalLink, Search, Eye, EyeOff, Rocket, RefreshCw, Link2 } from 'lucide-react';
 import { BlogPost, CustomPage, PageSection, Product, CollectionType, CollectionConfig, EmailCampaign } from '../types';
-import { AdminOrders } from './AdminOrders';
+import { OrdersWorkspace } from './TrendsiManualAdmin';
 import { NewsletterStudio } from './NewsletterStudio';
 import { ProductImport } from './ProductImport';
 import { CJSettings } from './CJSettings';
@@ -22,6 +25,7 @@ import { SafeImage } from './SafeImage';
 import { productStorefrontStatusLabel } from '../lib/productVisibility';
 import { getEffectiveSubcategoryIds } from '../lib/productCategories';
 import { getUserFacingErrorMessage } from '../lib/errorMessages';
+import { withAdminWriteFeedback } from '../lib/adminWriteFeedback';
 import { type CjProductConnectionState } from '../lib/cjProductStatus';
 import { cjListingUrl } from '../lib/cjPricingReview';
 import { useAdminProductDetail } from './useAdminProductDetail';
@@ -41,7 +45,8 @@ type AdminTab =
    | 'cj-risk-check'
    | 'import'
    | 'shared-products'
-   | 'cj-settings';
+   | 'cj-settings'
+   | 'commerce-v2';
 
 type CjAdminNavTarget = 'cj-settings' | 'cj-control-room' | 'cj-risk-check';
 type CjAdminNavRequest = CjAdminNavTarget | {
@@ -51,7 +56,7 @@ type CjAdminNavRequest = CjAdminNavTarget | {
 };
 
 type NavIcon = React.ComponentType<{ className?: string }>;
-type NavGroupId = 'sourcing' | 'settings';
+type NavGroupId = 'sourcing' | 'settings' | 'commerce';
 
 // The six places used day to day. Everything else lives in a folded group below.
 const PRIMARY_NAV: Array<{ tab: AdminTab; label: string; icon: NavIcon }> = [
@@ -70,6 +75,11 @@ const NAV_GROUPS: Array<{ id: NavGroupId; label: string; icon: NavIcon; items: A
          { tab: 'cj-risk-check', label: 'Risk check' },
          { tab: 'import', label: 'Import products' },
          { tab: 'shared-products', label: 'Publishing destinations' },
+      ],
+   },
+   {
+      id: 'commerce', label: 'Commerce v2', icon: Package, items: [
+         { tab: 'commerce-v2', label: 'Operations & decisions' },
       ],
    },
    {
@@ -254,7 +264,22 @@ const ImageUploader: React.FC<{
 };
 
 export const AdminPage: React.FC = () => {
-   const { isAuthenticated, isAuthLoading, signIn, logout, posts, addPost, updatePost, deletePost, siteContent, updateSiteContent, addCustomPage, updateCustomPage, deleteCustomPage, addProduct, addProducts, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
+   const { isAuthenticated, isAuthLoading, logout } = useSite();
+   const account = useSiteAccount(isAuthenticated, isAuthLoading);
+   const access = account.session;
+   if (account.status === 'loading') return <main className="p-6 pt-28"><p role="status">Checking staff access…</p></main>;
+   if (account.status === 'unavailable') return <main className="p-6 pt-28"><h1>Account access temporarily unavailable</h1><p role="status">We cannot verify staff permissions. Please try again.</p><button onClick={() => window.location.reload()}>Try again</button><a href="/#support">Contact support</a></main>;
+   if (!isAuthenticated || access?.owner) return <OwnerAdminPage />;
+   return <main className="mx-auto max-w-6xl p-6 pt-28 space-y-6">
+      <button type="button" onClick={() => logout()}>Sign out</button>
+      {access?.delivery ? <DeliveryBoundary><CommerceV2Admin /></DeliveryBoundary> : <p role="alert">This account does not have staff access.</p>}
+   </main>;
+};
+/** Owner workspace with visible save failures and independently loaded administrative tools. */
+const OwnerAdminPage: React.FC = () => {
+   const { isAuthenticated, isAuthLoading, signIn, logout, posts, editorialStatus, retryEditorial, addPost, updatePost, deletePost, siteContent, updateSiteContent: writeSiteContent, addCustomPage, updateCustomPage: writeCustomPage, deleteCustomPage, addProduct, addProducts, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
+   const updateSiteContent = withAdminWriteFeedback(writeSiteContent, message => alert(message));
+   const updateCustomPage = withAdminWriteFeedback(writeCustomPage, message => alert(message));
    const { subscribers, subscriberListTruncated, campaigns, createCampaign, updateCampaign, sendCampaign, deleteCampaign, stats } = useNewsletterAdmin();
    const linkDescriptionAuditToProduct = useMutation(api.descriptionAudits.linkAuditToProduct);
    const launchNextProducts = useMutation(api.products.launchNextProducts);
@@ -271,7 +296,7 @@ export const AdminPage: React.FC = () => {
    // Navigation State
    const [activeTab, setActiveTabState] = useState<AdminTab>(() => {
       const saved = localStorage.getItem('admin-active-tab');
-      const validTabs = ['dashboard', 'journal', 'pages', 'products', 'structure', 'newsletter', 'orders', 'cj-control-room', 'cj-risk-check', 'import', 'shared-products', 'cj-settings'] as const;
+      const validTabs = ['dashboard', 'journal', 'pages', 'products', 'structure', 'newsletter', 'orders', 'cj-control-room', 'cj-risk-check', 'import', 'shared-products', 'cj-settings', 'commerce-v2'] as const;
       return saved && (validTabs as readonly string[]).includes(saved) ? saved as typeof validTabs[number] : 'dashboard';
    });
    const [cjNavContext, setCjNavContext] = useState<{ orderId?: string; productId?: string }>({});
@@ -366,7 +391,8 @@ export const AdminPage: React.FC = () => {
    };
 
    // --- HELPER: ADD SECTION ---
-   const handleAddSection = (type: PageSection['type']) => {
+   /** Retain the section picker until its requested section has actually been saved. */
+   const handleAddSection = async (type: PageSection['type']) => {
       const newSection: PageSection = {
          id: Date.now().toString(),
          type,
@@ -380,17 +406,18 @@ export const AdminPage: React.FC = () => {
          productId: type === 'product-feature' ? firstContentProduct?.page[0]?.id : undefined
       };
 
+      let saved = false;
       if (activePageEditor === 'home') {
-         updateSiteContent('home', { sections: [...(siteContent.home.sections || []), newSection] });
+         saved = await updateSiteContent('home', { sections: [...(siteContent.home.sections || []), newSection] });
       } else if (activePageEditor === 'story') {
-         updateSiteContent('story', { sections: [...(siteContent.story.sections || []), newSection] });
+         saved = await updateSiteContent('story', { sections: [...(siteContent.story.sections || []), newSection] });
       } else if (activePageEditor && activePageEditor !== 'story') {
          const page = siteContent.customPages.find(p => p.id === activePageEditor);
          if (page) {
-            updateCustomPage(page.id, { sections: [...page.sections, newSection] });
+            saved = await updateCustomPage(page.id, { sections: [...page.sections, newSection] });
          }
       }
-      setShowSectionPicker(false);
+      if (saved) setShowSectionPicker(false);
    };
 
    // --- NEWSLETTER HANDLERS ---
@@ -585,13 +612,16 @@ export const AdminPage: React.FC = () => {
       }
    };
 
-   const handleDeleteCollection = (id: string) => {
+   /** Confirm deletion and surface guard or server failures to the owner. */
+   const handleDeleteCollection = async (id: string) => {
       if (confirm(`Delete collection "${id}"? Products in this collection will remain but be uncategorized.`)) {
-         deleteCollection(id);
+         try { await deleteCollection(id); }
+         catch (error) { alert(getUserFacingErrorMessage(error, 'This collection could not be deleted.')); }
       }
    };
 
    // --- PAGE GENERATION HANDLERS ---
+   /** Keep the generation prompt until generated content is successfully persisted. */
    const handleGeneratePage = async () => {
       if (!generatorPrompt.title || !generatorPrompt.description) return;
 
@@ -612,21 +642,24 @@ export const AdminPage: React.FC = () => {
             })),
          };
 
-         addCustomPage(newPage);
+         await addCustomPage(newPage);
          setShowPageGenerator(false);
          setGeneratorPrompt({ title: '', description: '' });
          setActivePageEditor(newPage.id);
-      } catch {
-         alert("Failed to generate page. Please try again.");
+      } catch (error) {
+         alert(getUserFacingErrorMessage(error, 'Failed to generate or save this page. Please try again.'));
       } finally {
          setIsGenerating(false);
       }
    };
 
-   const handleDeleteCustomPage = (id: string) => {
+   /** Keep the page editor open when deletion is rejected. */
+   const handleDeleteCustomPage = async (id: string) => {
       if (confirm('Are you sure you want to delete this entire page?')) {
-         deleteCustomPage(id);
-         setActivePageEditor(null);
+         try {
+            await deleteCustomPage(id);
+            setActivePageEditor(null);
+         } catch (error) { alert(getUserFacingErrorMessage(error, 'This page could not be deleted.')); }
       }
    };
 
@@ -913,7 +946,13 @@ export const AdminPage: React.FC = () => {
             {/* ORDERS TAB */}
             {activeTab === 'orders' && (
                <FadeIn>
-                  <AdminOrders />
+                  <OrdersWorkspace />
+               </FadeIn>
+            )}
+
+            {activeTab === 'commerce-v2' && (
+               <FadeIn>
+                  <CommerceV2Admin />
                </FadeIn>
             )}
 
@@ -1609,7 +1648,8 @@ export const AdminPage: React.FC = () => {
             )}
 
             {/* JOURNAL TAB */}
-            {activeTab === 'journal' && (
+            {activeTab === 'journal' && (editorialStatus === 'loading' || editorialStatus === 'unavailable') && <div role="status" className="p-8 text-cream"><p>{editorialStatus === 'loading' ? 'Loading journal…' : 'Journal is temporarily unavailable.'}</p>{editorialStatus === 'unavailable' && <button className="min-h-11 underline" onClick={retryEditorial}>Try again</button>}</div>}
+            {activeTab === 'journal' && editorialStatus !== 'loading' && editorialStatus !== 'unavailable' && (
                <FadeIn>
                   <div className="flex flex-col md:flex-row gap-3 md:gap-0 justify-between md:items-end mb-8 md:mb-12 border-b border-white/10 pb-4 md:pb-6">
                      <div><span className="text-bronze text-xs uppercase tracking-[0.4em] mb-2 block glow-text">Content Marketing</span><h1 className="font-serif text-2xl md:text-4xl text-cream drop-shadow-md">Simply Mae Journal</h1></div>

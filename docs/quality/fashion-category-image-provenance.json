@@ -1,0 +1,18 @@
+{
+  "source": "/images/brand/mae-dress.png",
+  "sha256": "8bb160eaa7120efbed7cbce9ea69ec0bd0bead50a3d56591367bb37668c860cf",
+  "recipe": "avif-quality40-effort7-lossless-orientation-v1",
+  "base": "/images/opt/brand-formats/a2946227eaf04d50de9d77f6",
+  "renditions": [
+    {
+      "width": 480,
+      "bytes": 19817,
+      "sha256": "70c00660bc3302747c7d7fe71877347c5c8577e9aabfcb7e5468a6634bda5834"
+    },
+    {
+      "width": 533,
+      "bytes": 23163,
+      "sha256": "9529a3747d4dbb396c974a340830758a6928f6c8665978023d07eb377ac2a99b"
+    }
+  ]
+}

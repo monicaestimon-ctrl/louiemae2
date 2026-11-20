@@ -1,3 +1,4 @@
+import { FIELD_PURGE_INTERVAL_HOURS } from '../lib/quality/fieldPolicy';
 import { cronJobs } from "convex/server";
 import { internal } from "./_generated/api";
 
@@ -8,6 +9,35 @@ const monitoringEnabled = process.env.BACKGROUND_MONITORING_ENABLED === 'true';
 
 // Only summaries whose 48-hour pending threshold is due are revisited.
 if (monitoringEnabled) crons.interval('refresh-due-product-health', { minutes: 5 }, internal.productHealth.refreshDue, {});
+
+// v2 catalog: re-evaluate source freshness so stale cost, MAP or stock becomes a hold, never a sale.
+if (monitoringEnabled) crons.interval('refresh-catalog-freshness', { hours: 1 }, internal.catStock.refreshPage, {});
+
+// v2 checkout: expired intents release their holds; verified payment events never wait unprocessed.
+crons.interval('expire-checkout-intents', { minutes: 15 }, internal.ordCheckout.expireStale, {});
+crons.interval('recover-payment-events', { minutes: 5 }, internal.ordPayments.recoverBacklog, {});
+crons.interval('recover-delivery-tax-reporting', { minutes: 5 }, internal.dlvTax.recoverTransactions, {});
+crons.interval('recover-notification-outbox', { minutes: 5 }, internal.sysNotify.recover, {});
+crons.interval('purge-delivery-observations', { hours: 1 }, internal.dlvTelemetry.purge, {});
+// Retention continues when optional field collection is disabled.
+crons.interval('purge-field-quality-observations', { hours: FIELD_PURGE_INTERVAL_HOURS }, internal.qualityTelemetry.purge, {});
+crons.interval('expire-delivery-quotes', { minutes: 5 }, internal.dlvQuoteLifecycle.expire, {});
+
+// v2 tiers: recompute once a day at 00:15 America/Chicago (the handler checks local time, so DST is handled).
+crons.cron('tier-daily-chicago', '15 * * * *', internal.prgTiers.dailyTick, {});
+
+// v2 ledger: clear commission 30 days after payment, settle business-referral awards, and run
+// payouts (the handlers do nothing unless PAYOUT_EXECUTION_ENABLED is the only payout route).
+crons.interval('clear-commissions-v2', { hours: 1 }, internal.ldgCommissions.clearDue, {});
+crons.interval('settle-credit-awards-v2', { hours: 1 }, internal.ldgCredits.awardDue, {});
+crons.cron('payout-run-chicago', '0 * * * *', internal.ldgPayoutActions.tick, {});
+crons.interval('reconcile-uncertain-payouts', { hours: 1 }, internal.ldgPayoutActions.reconcileUncertain, {});
+
+// v2 monitoring: alerts for backlog, duplicate money events, payout exceptions and missed jobs.
+crons.interval('v2-alerts', { minutes: 5 }, internal.sysAlerts.check, {});
+
+// v2 cutover: once v2 payouts are the active route, legacy commissions are mirrored into the v2 ledger.
+crons.interval('sync-legacy-ledger', { hours: 1 }, internal.v2Migrations.syncLegacyLedgerPage, {});
 
 // Persist signups first; process/recover the bounded marketing queue separately.
 crons.interval('sync-klaviyo-waitlist', { minutes: 1 }, internal.klaviyoWaitlist.dispatch, {});
@@ -67,4 +97,5 @@ crons.interval(
 
 // Check each approved product about daily, in bounded batches with shared CJ throttling.
 if (monitoringEnabled) crons.interval('monitor-cj-pricing', { minutes: 15 }, internal.cjPricingReview.dispatchMonitor, {});
+crons.interval('delivery-request-retention', { minutes: 1 }, internal.dlvPerimeter.purge, {});
 export default crons;

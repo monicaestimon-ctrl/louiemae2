@@ -1,0 +1,56 @@
+/* The operations workspace appears inside both light staff and dark owner shells. */
+.commerce-v2-admin {
+  color-scheme: light;
+  color: #4a3b32;
+  background: #f9f7f2;
+  border-radius: 0.5rem;
+  padding: clamp(0.75rem, 2vw, 1.5rem);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.commerce-v2-admin :is(fieldset, section, form, label) {
+  min-width: 0;
+}
+
+.commerce-v2-admin
+  :is(
+    select,
+    textarea,
+    input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='submit']):not(
+        [type='button']
+      )
+  ) {
+  color: #4a3b32;
+  background: #fff;
+  border-color: #83634b;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.commerce-v2-admin :is(input, textarea)::placeholder {
+  color: #75665b;
+  opacity: 1;
+}
+
+.commerce-v2-admin :is(button, input, select, textarea, summary, a):focus-visible {
+  outline: 2px solid #4a3b32;
+  outline-offset: 3px;
+}
+
+.commerce-v2-admin button {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.commerce-v2-admin pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+@media (pointer: coarse) {
+  .commerce-v2-admin :is(button, select, input:not([type='checkbox']):not([type='radio'])) {
+    min-height: 2.75rem;
+  }
+}

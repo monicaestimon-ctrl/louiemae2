@@ -1,4 +1,5 @@
 import type { Category, CollectionConfig, Product } from '../types';
+import { isCollectionId } from './collectionId.js';
 
 export const MAX_PRODUCT_SUBCATEGORIES = 8;
 
@@ -19,6 +20,14 @@ const cleanIds = (ids: readonly string[] | undefined): string[] =>
 export function getCategoryById(collection: CollectionConfig | undefined, id: string | undefined): Category | undefined {
   if (!collection || !id) return undefined;
   return collection.subcategories.find((category) => category.id === id);
+}
+
+/** Display configured IDs and titles once, preserving unmatched legacy labels. */
+export function getCategoryLabel(collection: CollectionConfig, value: string): string {
+  if (value === 'All') return value;
+  return collection.subcategories.find(category => category.id === value)?.title
+    ?? collection.subcategories.find(category => category.title === value)?.title
+    ?? value;
 }
 
 export function getCategoryParentId(category: Category, collection: CollectionConfig): string | undefined {
@@ -131,6 +140,7 @@ export function validateCollectionTaxonomy(collections: readonly CollectionConfi
 
   for (const collection of collections) {
     if (!collection.id.trim()) errors.push('Every collection requires a stable ID.');
+    else if (!isCollectionId(collection.id)) errors.push(`${collection.title}: collection ID must start with a lowercase letter or number, use only lowercase letters, numbers, hyphens or underscores, and contain at most 80 characters.`);
     const ids = collection.subcategories.map((category) => category.id);
     if (ids.some((id) => !id.trim())) errors.push(`${collection.title}: every category requires a stable ID.`);
     if (new Set(ids).size !== ids.length) errors.push(`${collection.title}: category IDs must be unique.`);

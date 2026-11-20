@@ -1,10 +1,12 @@
+import { ATTRIBUTION_DAYS } from './partnerAttributionPolicy';
+export { REF_CODE } from './partnerAttributionPolicy';
 // House of Louie Mae partner program rules. Money in integer cents, rates in basis points.
 // Commission is earned on retail-priced orders only; trade-priced orders earn nothing, and
 // referring a business earns store credit instead.
 export const HOLM_PARTNERS = {
   tiers: { base: 1000, active: 1200, top: 1500, elite: 1800 },
   ceilingBps: 2300,
-  attributionDays: 30,
+  attributionDays: ATTRIBUTION_DAYS,
   clearingDays: 30,
   quoteHoldDays: 120, // unpaid partner-attributed quotes stop waiting for payment after this
   referralCreditCents: 10_000, // $100 store credit
@@ -15,8 +17,7 @@ export const HOLM_PARTNERS = {
   channels: ['story', 'pin', 'post', 'pdf', 'link', 'share', 'qr'],
 } as const;
 
-/** The shape of a partner's referral code. */
-export const REF_CODE = /^[A-Z0-9]{4,16}$/;
+
 
 export type HolmChannel = (typeof HOLM_PARTNERS.channels)[number];
 // Links shared before the fixed channel list keep counting under the nearest channel.

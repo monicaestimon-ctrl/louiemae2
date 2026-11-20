@@ -3,9 +3,9 @@
 // the storefront through a partner link and later requests a quote on /trade is still credited,
 // and the reverse. The server keeps the real 30-day window (holmClicks); this copy only
 // remembers which code to send.
-import { HOLM_PARTNERS, REF_CODE } from './holmPartners';
+import { ATTRIBUTION_DAYS, REF_CODE } from './partnerAttributionPolicy';
 
-export const ATTRIBUTION_MS = HOLM_PARTNERS.attributionDays * 864e5;
+export const ATTRIBUTION_MS = ATTRIBUTION_DAYS * 864e5;
 const SITE = 'https://www.louiemae.com';
 
 export type StoredRef = { code: string; ch: string; at: number };

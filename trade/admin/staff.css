@@ -1,0 +1,35 @@
+.house-staff .seg {
+  flex-wrap: wrap;
+  max-width: 100%;
+  border-radius: 18px;
+}
+.house-staff .seg button {
+  height: auto;
+  min-height: 36px;
+  padding-block: 6px;
+}
+.house-staff .ph-head {
+  flex-wrap: wrap;
+}
+.house-staff h1 {
+  margin-top: 24px;
+}
+.house-staff h2 {
+  margin-top: 24px;
+  margin-bottom: 16px;
+}
+.house-staff .panel {
+  min-width: 0;
+}
+.house-staff input,
+.house-staff select,
+.house-staff textarea {
+  max-width: 100%;
+}
+
+.house-staff label.btn:focus-within {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+.house-staff .kpi { display: flex; flex-direction: column; gap: 6px; }
+.house-staff .rd-sec h4 small { margin-left: 6px; }

@@ -1,0 +1,8 @@
+{
+  "chrome": "157.0.8103.78",
+  "node": "24.14.1",
+  "lighthouse": "13.6.0",
+  "os": "ubuntu-22.04",
+  "runner": "GitHub-hosted standard Linux x64 runner, serial audits",
+  "origin": "https://www.louiemae.com"
+}

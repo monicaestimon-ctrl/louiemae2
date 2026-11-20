@@ -9,9 +9,12 @@ export type LiveVariant = {
   image?: string;
   minimum: number;
   increment: number;
-  retail: number;
+  retail: number | null;
   trade: number | null;
 };
+import type { ProductImageMedia } from '../types';
+import { CURATED_SOURCES } from './curatedSources';
+import { holmLegacyId } from '../lib/holmProductIdentity';
 import { parseDims, type DimsCm } from '../lib/holmDims';
 
 export type LiveAssets = {
@@ -25,6 +28,8 @@ export type LiveAssets = {
   mountHeightCm: number | null;
 };
 export type LiveItem = {
+  checkoutMode?: 'v2' | 'quote';
+  imageMedia?: ProductImageMedia[];
   id: string;
   name: string;
   description: string;
@@ -36,6 +41,8 @@ export type LiveItem = {
   assets?: LiveAssets;
 };
 export type HolmProduct = {
+  checkoutMode?: 'v2' | 'quote';
+  imageMedia?: ProductImageMedia[];
   id: number;
   lid: string; // commerceProducts id
   vid: string; // default variant
@@ -104,7 +111,7 @@ const CURATED_CUT: Record<number, [number, number]> = {1:[1031,308],2:[1084,368]
 // Curated pieces listed here ship a TRELLIS image-to-3D model in public/trade/m/ (full and low detail,
 // Meshopt geometry and WebP textures, width on X, front facing +Z; see scripts/trellis/). The planner
 // scales it to W × D × H. An uploaded model on the piece's asset row takes its place.
-const CURATED_MODEL = new Set([1, 2, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 18]);
+const CURATED_MODEL = new Set([1, 2, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24]);
 const CURATED_W: Record<number, number> = {1:245,2:235,3:250,4:240,5:300,6:300,7:290,8:46,9:80,10:88,11:64,12:100,13:150,14:85,15:70,16:80,17:270,18:135,19:130,20:150,21:150,22:122,23:110,24:125};
 // Typical depth by type, for a curated piece whose listing gives only a width. Zero means as deep as wide.
 const TYPE_DEPTH: Record<string, number> = { sofa: 95, sectional: 170, bench: 45, ottoman: 0, lighting: 0, stool: 45, chair: 75, table: 90 };
@@ -144,7 +151,6 @@ const TONES: [RegExp, string][] = [
   [/blue|navy/i, '#33445E'],
 ];
 
-const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9& ]+/g, ' ').split(/\s+/).filter(Boolean);
 const cleanName = (s: string) => s.split('|')[0].trim();
 
 function materialOf(text: string) {
@@ -166,31 +172,20 @@ function widthOf(facts: string) {
   const n = parseFloat(m[1]);
   return Math.round(m[2].toLowerCase() === 'cm' ? n : n * 2.54);
 }
-function stableId(id: string) {
-  let h = 2166136261;
-  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
-  return 1000 + ((h >>> 0) % 9_000_000);
-}
 
 export function liveProducts(items: LiveItem[]): HolmProduct[] {
-  const used = new Set<number>();
+  const used = new Map<number, string>();
   const out: HolmProduct[] = [];
   for (const item of items) {
     const full = cleanName(item.name);
-    const w = words(full);
-    // Curated match: same first name, and the most words in common with the curated line.
-    let best: (typeof CURATED)[number] | null = null;
-    let bestScore = 0;
-    for (const c of CURATED) {
-      if (used.has(c[0]) || w[0] !== c[1].toLowerCase()) continue;
-      const score = 1 + words(c[2]).filter((x) => w.includes(x)).length;
-      if (score > bestScore) [best, bestScore] = [c, score];
-    }
+    // Identity must not depend on page order, availability or a marketing rename.
+    const best = CURATED.find(c => c[0] === CURATED_SOURCES[item.id]);
     const v0 = item.variants[0];
     if (!v0) continue;
     const typeGuess = TYPE_BY_CATEGORY[item.category.toLowerCase()] ?? (/sofa/i.test(full) ? 'sofa' : /light|lamp|pendant/i.test(full) ? 'lighting' : /bench/i.test(full) ? 'bench' : /ottoman/i.test(full) ? 'ottoman' : 'chair');
-    const id = best ? best[0] : stableId(item.id);
-    if (best) used.add(best[0]);
+    const id = holmLegacyId(item.id);
+    if (used.has(id)) throw new Error('Catalog product identities require review.');
+    used.set(id, item.id);
     const text = `${full} ${item.facts}`;
     const type = best ? best[3] : typeGuess;
     const a = item.assets;
@@ -209,7 +204,8 @@ export function liveProducts(items: LiveItem[]): HolmProduct[] {
       type,
       mat: best ? best[4] : materialOf(text),
       tone: best ? best[5] : toneOf(text),
-      price: v0.retail / 100,
+      // Null is transported explicitly; NaN keeps missing comparisons out of arithmetic totals.
+      price: v0.retail === null ? Number.NaN : v0.retail / 100,
       trade: v0.trade === null ? null : v0.trade / 100,
       seats: best ? best[6] : (SEATS[typeGuess] ?? 1),
       oos: !item.inStock,
@@ -217,6 +213,8 @@ export function liveProducts(items: LiveItem[]): HolmProduct[] {
       facts: item.facts,
       img: v0.image || item.images[0] || '',
       imgs: item.images,
+      imageMedia: item.imageMedia,
+      checkoutMode: item.checkoutMode,
       ar: 1,
       sku: `HL-${String(id).padStart(3, '0')}`,
       likes: 0,

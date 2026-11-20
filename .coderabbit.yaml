@@ -1,0 +1,7 @@
+# Generated binary renditions are verified by scripts/verify-product-images.mjs
+# and visually reviewed as documented in docs/quality/product-images.md.
+# Keep the generator, renderer, tests, manifests and provenance in code review.
+# https://docs.coderabbit.ai/reference/configuration#reviews-path-filters
+reviews:
+  path_filters:
+    - "!public/images/opt/products/*.webp"

@@ -66,7 +66,7 @@ p{margin:0}
 .ib{width:38px;height:38px;border-radius:999px;display:inline-grid;place-items:center;transition:background .2s}
 .ib:hover{background:var(--plaster)}
 .ib svg{width:19px;height:19px}
-.chip{height:34px;padding:0 14px;border-radius:999px;border:1px solid var(--line2);display:inline-flex;align-items:center;gap:7px;font-size:13px;white-space:nowrap;transition:background .2s,border-color .2s,color .2s}
+.chip{height:34px;padding:0 14px;border-radius:999px;border:1px solid var(--line2);display:inline-flex;align-items:center;gap:7px;font-size:13px;white-space:nowrap;transition:border-color .2s}
 .chip:hover{border-color:var(--ink)}
 .chip.on{background:var(--ink);color:var(--onink);border-color:var(--ink)}
 .dot{width:12px;height:12px;border-radius:50%;display:inline-block;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)}
@@ -533,7 +533,7 @@ a.pin-act{text-decoration:none}
 .acct nav button.on{background:var(--plaster);color:var(--ink);font-weight:500}
 .acct nav .danger{color:var(--bad)}
 .acct-sec{display:grid;gap:18px;max-width:640px}
-.acct-sec h2{font-size:40px}
+.acct-sec h1,.acct-sec h2{font-size:40px}
 .linkrow{display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
 .linkrow .lg{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;font-weight:600;color:#fff;font-size:15px}
 @media (max-width:760px){.acct{grid-template-columns:1fr}.acct nav{position:static;grid-auto-flow:column;overflow-x:auto}}
@@ -790,11 +790,11 @@ a.pin-act{text-decoration:none}
 .ix-search input{flex:1;background:none;border:0;outline:none;color:var(--ink);min-width:0;font-size:15px}
 .ix-search input::placeholder{color:var(--mute)}
 .ix-main,.ix-more{display:flex;flex-direction:column}
-.ix-main button{text-align:left;font-family:var(--display);font-size:30px;line-height:1.15;padding:6px 0;color:var(--ink)}
+.ix-main a{text-align:left;font-family:var(--display);font-size:30px;line-height:1.15;padding:6px 0;color:var(--ink)}
 .ix-more{padding-top:18px;border-top:1px solid var(--line)}
-.ix-more button{text-align:left;font-size:15px;padding:7px 0;color:var(--bark)}
-.ix-main button:hover,.ix-more button:hover,.ix-main button:focus-visible,.ix-more button:focus-visible{color:var(--cognac)}
-.ix-main button.on,.ix-more button.on{color:var(--cognac)}
+.ix-more a{text-align:left;font-size:15px;padding:7px 0;color:var(--bark)}
+.ix-main a:hover,.ix-more a:hover,.ix-main a:focus-visible,.ix-more a:focus-visible{color:var(--cognac)}
+.ix-main a.on,.ix-more a.on{color:var(--cognac)}
 .ix-dim{opacity:.55}
 .ix-set{display:flex;flex-direction:column;padding-top:12px;border-top:1px solid var(--line)}
 .ix-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;font-size:14px;color:var(--bark);text-align:left;width:100%}
@@ -843,8 +843,8 @@ a.pin-act{text-decoration:none}
 .pp-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(360px,.9fr)}
 .pp-stage{position:sticky;top:60px;height:calc(100svh - 60px);min-height:520px;padding:18px clamp(16px,2vw,28px);display:flex;flex-direction:column;gap:12px}
 .pp-views{display:flex;gap:4px;padding:3px;background:var(--plaster);border-radius:999px;align-self:flex-start;max-width:100%;overflow-x:auto}
-.pp-views button{height:32px;padding:0 14px;border-radius:999px;font-size:13px;color:var(--mute);font-weight:500;white-space:nowrap}
-.pp-views button.on{background:var(--card);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.pp-views button{height:44px;padding:0 14px;border-radius:999px;font-size:13px;color:var(--ink);font-weight:500;white-space:nowrap}
+.pp-views button.on{background:var(--card);color:var(--ink);box-shadow:inset 0 -3px 0 var(--ink);font-weight:700}
 .pp-set{position:relative;flex:1;border-radius:28px;overflow:hidden;display:grid;place-items:end center;padding-bottom:17%;isolation:isolate}
 .pp-floorline{position:absolute;left:0;right:0;bottom:0;height:34%;opacity:.35}
 .pp-obj{position:relative;transition:transform .4s ease-out}
@@ -869,11 +869,22 @@ a.pin-act{text-decoration:none}
 .pp-loupe{position:absolute;width:180px;height:180px;border-radius:50%;transform:translate(-50%,-50%);border:3px solid #FFFDF9;box-shadow:0 20px 40px rgba(0,0,0,.35);background-repeat:no-repeat;pointer-events:none}
 .pp-panel{padding:28px clamp(18px,3vw,44px) 40px;display:flex;flex-direction:column;gap:20px;border-left:1px solid var(--line);min-width:0}
 .pp-panel h1{font-size:clamp(48px,5vw,76px);letter-spacing:-.02em;margin-top:4px}
+.pp .ix-dim{opacity:1;color:var(--mute)}
+.pp .save-pill{color:var(--ink)}
 .pp-line{color:var(--mute);font-size:16px;margin-top:-12px}
 .pp-price{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
 .pp-price b{font-family:var(--display);font-size:42px;font-weight:500}
 .pp-price .mono{color:var(--mute);text-decoration:line-through}
 .pp-block{display:grid;gap:10px;padding-top:18px;border-top:1px solid var(--line)}
+.pp-zip form{display:grid;gap:12px;min-width:0}
+.pp-zip form>div{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+.pp-zip label{display:grid;gap:5px;max-width:100%;font-size:13px}
+.pp-zip input:not([type=checkbox]),.pp-zip textarea,.pp-zip select{box-sizing:border-box;max-width:100%;min-height:44px;border:1px solid var(--line2);background:var(--card);color:var(--ink);padding:8px}
+.pp-zip input[type=number]{width:90px}
+.pp-zip button{min-height:44px;border:1px solid var(--line2);padding:8px 12px;background:var(--paper);color:var(--ink)}
+.pp-zip button:disabled{opacity:.5;cursor:not-allowed}
+.pp-zip :is(button,input,textarea,select):focus-visible{outline:2px solid var(--cognac);outline-offset:3px}
+.pp-zip p{font-size:13px;line-height:1.5;overflow-wrap:anywhere}
 .pp-lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
 .pp-swatch{display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 14px 0 6px;border-radius:999px;border:1px solid var(--line2);font-size:13px}
 .pp-swatch i{width:26px;height:26px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)}
@@ -1800,8 +1811,8 @@ header.top:not(.over){background:color-mix(in srgb,var(--paper) 94%,transparent)
 /* boot and failure states */
 .holm-boot{min-height:100svh;display:grid;place-content:center;gap:12px;text-align:center;padding:24px;background:var(--paper);color:var(--ink);font-family:var(--sans)}
 .holm-boot h1{font-family:var(--display);font-weight:400;font-size:clamp(34px,4vw,52px)}
-.holm-boot p{color:var(--mute)}
-.holm-boot button{justify-self:center;height:42px;padding:0 20px;border-radius:999px;background:var(--ink);color:var(--onink);border:0;cursor:pointer}
+.holm-boot p{color:var(--ink);max-width:42rem;margin:0 auto}
+.holm-boot button{justify-self:center;min-height:44px;padding:0 20px;border-radius:999px;background:var(--ink);color:var(--onink);border:0;cursor:pointer}
 
 /* Collection cards: every cutout fits inside its stage. Tall pieces such as floor lamps
    scale down by height instead of spilling over the row below. */
@@ -2069,3 +2080,12 @@ header.top:not(.over){background:color-mix(in srgb,var(--paper) 94%,transparent)
 .ai-spin{width:36px;height:36px;border-radius:50%;border:3px solid var(--plaster,#EFE8DD);border-top-color:var(--cognac,#A0612F);animation:ai-spin 1s linear infinite;margin-bottom:10px}
 @keyframes ai-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.ai-spin{animation-duration:3s}}
+
+/* Product quick views remain native controls without nesting board/project actions. */
+.pin-open{position:relative;display:block;width:100%;padding:0;border:0;background:transparent;cursor:zoom-in}
+.pin-open:focus-visible{outline:none}
+.pin-open:focus-visible::after{content:"";position:absolute;inset:4px;border:2px solid #fff;outline:2px solid #4a3b32;pointer-events:none;z-index:2}
+.pin-ov{pointer-events:none}
+.pin-ov :is(button,a){pointer-events:auto}
+
+.ix-main a,.ix-more a{min-height:44px;display:flex;align-items:center}

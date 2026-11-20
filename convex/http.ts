@@ -1,3 +1,6 @@
+import { qualityConfig, qualityOptions, qualityRecord } from './qualityHttp';
+import { readDeliveryJson } from '../lib/delivery/requestBounds';
+import { publicDeliveryError } from '../lib/delivery/publicErrors';
 import { httpRouter } from "convex/server";
 import { v } from "convex/values";
 import { httpAction, internalAction, type ActionCtx } from "./_generated/server";
@@ -16,8 +19,14 @@ import { cjJsonResponse } from "../lib/cjWebhookHttp";
 import { parseCjWebhookPayload, type ParsedCjWebhookPayload } from "../lib/cjWebhookRequest";
 import { parseCjSourcingWebhookEvidence } from "../lib/cjSourcingWebhook";
 import { getStripeWebhookVerificationError, shouldAllowUnsignedStripeWebhook } from "../lib/stripeWebhook";
+import { customerMessage, isCommerceError } from "../lib/errors";
+import { acceptsPlatformPayment } from '../lib/paymentMode';
 
 const http = httpRouter();
+http.route({ path: '/quality/config', method: 'GET', handler: qualityConfig });
+http.route({ path: '/quality/config', method: 'OPTIONS', handler: qualityOptions });
+http.route({ path: '/quality', method: 'POST', handler: qualityRecord });
+http.route({ path: '/quality', method: 'OPTIONS', handler: qualityOptions });
 
 // Add Convex Auth routes
 auth.addHttpRoutes(http);
@@ -114,14 +123,18 @@ http.route({
                 if (!Array.isArray(items) || !items.length || items.length > 30 || items.some((i: any) => !i || !Number.isSafeInteger(i.quantity) || i.quantity < 1)) {
                     return new Response(JSON.stringify({ error: 'Check your cart quantities.' }), { status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
                 }
+                if (body.reviewVersion !== undefined && (body.reviewVersion !== 1 || items.some((i: any) => !Number.isSafeInteger(i.reviewed?.merchandiseMinor) || i.reviewed.merchandiseMinor < 0 || !Number.isSafeInteger(i.reviewed?.deliveryMinor) || i.reviewed.deliveryMinor < 0))) {
+                    return new Response(JSON.stringify({ code: 'PRICE_CHANGED', error: 'Refresh your cart and review the current prices before checkout.' }), { status: 409, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+                }
                 let snapshot;
                 try {
                     snapshot = await ctx.runMutation(internal.retailLaunch.createSnapshot, {
-                        items: items.map((i: any) => ({ productId: String(i.productId || ''), variantId: String(i.variantId || ''), quantity: i.quantity })),
+                        items: items.map((i: any) => ({ productId: String(i.productId || ''), variantId: String(i.variantId || ''), quantity: i.quantity, ...(body.reviewVersion === 1 ? { reviewed: { merchandiseMinor: i.reviewed.merchandiseMinor, deliveryMinor: i.reviewed.deliveryMinor } } : {}) })),
                         ...(typeof body.refCode === 'string' && typeof body.visitorId === 'string' ? { refCode: body.refCode.slice(0, 32), visitorId: body.visitorId.slice(0, 64) } : {}),
                         ...(body.useCredit === true ? { useCredit: true } : {}),
                     });
-                } catch {
+                } catch (error) {
+                    if (isCommerceError(error, 'PRICE_CHANGED')) return new Response(JSON.stringify({ code: 'PRICE_CHANGED', error: customerMessage(error) }), { status: 409, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
                     return new Response(JSON.stringify({ code: 'OUT_OF_STOCK', error: 'This item is Coming Soon or no longer available. Please remove it from your cart.' }), { status: 409, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
                 }
                 // Store credit: a one-time discount on the items (Stripe never applies it to delivery).
@@ -164,6 +177,80 @@ http.route({
     }),
 });
 
+// v2 checkout (docs/production-v2 S19): an idempotent intent from a full-address estimate,
+// then a Stripe Checkout session for exactly the accepted total. Off unless
+// RETAIL_ZUO_CHECKOUT_ENABLED is "true".
+http.route({
+    path: "/v2/checkout",
+    method: "POST",
+    handler: httpAction(async (ctx, request) => {
+        const json = (body: unknown, status: number) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
+        if (process.env.RETAIL_ZUO_CHECKOUT_ENABLED !== 'true' && process.env.TRADE_CHECKOUT_V2_ENABLED !== 'true') return json({ code: 'FEATURE_DISABLED', error: "This isn't available yet." }, 403);
+        const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+        if (!stripeSecretKey) return json({ error: 'Payments are not configured.' }, 500);
+        let body: any;
+        try {
+            body = await readDeliveryJson(request);
+        } catch {
+            return json({ code: 'INVALID_INPUT', error: 'Invalid request.' }, 400);
+        }
+        let result: any;
+        try {
+            result = await ctx.runMutation(internal.ordCheckout.createIntent, {
+                idempotencyKey: String(body.idempotencyKey || ''),
+                estimateId: body.estimateId,
+                lines: Array.isArray(body.lines) ? body.lines.map((l: any) => ({ productId: String(l.productId || ''), variantId: String(l.variantId || ''), packs: Number(l.packs) })) : [],
+                address: body.address,
+                service: String(body.service || 'curbside'),
+                acceptTotalMinor: Number(body.acceptTotalMinor),
+                ...(typeof body.guestCapability === 'string' ? { guestCapability: body.guestCapability } : {}),
+                ...(typeof body.email === 'string' ? { email: body.email.slice(0, 254) } : {}),
+                ...(typeof body.visitorKey === 'string' ? { visitorKey: body.visitorKey.slice(0, 64) } : {}),
+                ...(body.useCredit === true ? { useCredit: true } : {}),
+            });
+        } catch (err: any) {
+            const safe = publicDeliveryError(err);
+            return json({ code: safe.data.code, error: customerMessage(safe), ...(safe.data.requestId ? { requestId: safe.data.requestId } : {}) }, safe.data.code === 'TEMPORARILY_UNAVAILABLE' ? 503 : 409);
+        }
+        if (result.status === 'price_changed') return json({ code: 'PRICE_CHANGED', error: 'Your total changed. Please review before paying.', ...result }, 409);
+        const stripe = new Stripe(stripeSecretKey);
+        try {
+            const session = await stripe.checkout.sessions.create({
+                mode: 'payment',
+                payment_method_types: ['card'],
+                line_items: [
+                    ...(result.lines.length>=100?[{price_data:{currency:'usd',product_data:{name:`Accepted project quote (${result.lines.length} items)`},unit_amount:result.lines.reduce((n:number,l:any)=>n+l.unitMinor*l.packs,0)},quantity:1}]:result.lines.map((l: any) => ({ price_data: { currency: 'usd', product_data: { name: l.name }, unit_amount: l.unitMinor }, quantity: l.packs }))),
+                    ...(result.taxMinor > 0 ? [{ price_data: { currency: 'usd', product_data: { name: 'Sales tax' }, unit_amount: result.taxMinor }, quantity: 1 }] : []),
+                ],
+                shipping_options: [{ shipping_rate_data: { type: 'fixed_amount', fixed_amount: { amount: result.deliveryMinor, currency: 'usd' }, display_name: result.serviceLabel.slice(0, 100) } }],
+                ...(result.creditMinor > 0 ? { discounts: [{ coupon: (await stripe.coupons.create({ amount_off: result.creditMinor, currency: 'usd', duration: 'once', max_redemptions: 1, name: 'Store credit' }, { idempotencyKey: `v2-credit:${result.intentId}` })).id }] } : {}),
+                ...(result.email ? { customer_email: result.email } : {}),
+                metadata: { intentId: result.intentId },
+                expires_at: Math.floor(result.expiresAt / 1000),
+                success_url: 'https://www.louiemae.com/#checkout/success?session_id={CHECKOUT_SESSION_ID}',
+                cancel_url: 'https://www.louiemae.com/#checkout/cancel',
+            }, { idempotencyKey: `v2-checkout-session:${result.intentId}` });
+            if (session.amount_total !== result.totalMinor) {
+                await stripe.checkout.sessions.expire(session.id);
+                await ctx.runMutation(internal.ordCheckout.fail, { intentId: result.intentId });
+                return json({ code: 'PAYMENT_RECONCILIATION_REQUIRED', error: 'Checkout could not start.' }, 500);
+            }
+            await ctx.runMutation(internal.ordCheckout.attachSession, { intentId: result.intentId, sessionId: session.id });
+            return json({ url: session.url, sessionId: session.id, intentId: result.intentId }, 200);
+        } catch {
+            console.error('v2 checkout session failed', result.intentId);
+            // A timeout can follow successful session creation. Retain the intent and its
+            // reservations so the same idempotency key can reconcile the uncertain outcome.
+            return json({ error: 'Payment setup is still being confirmed. Retry this same checkout.' }, 502);
+        }
+    }),
+});
+http.route({
+    path: "/v2/checkout",
+    method: "OPTIONS",
+    handler: httpAction(async () => new Response(null, { status: 204, headers: corsHeaders })),
+});
+
 // CORS preflight handler
 http.route({
     path: "/stripe/checkout",
@@ -203,7 +290,15 @@ http.route({
             }
 
             if (webhookSecret && signature) {
-                event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
+                // Partners' connected-account events (account.updated) come from a separate Connect
+                // endpoint in Stripe, which has its own signing secret.
+                const connectSecret = process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
+                try {
+                    event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
+                } catch (err) {
+                    if (!connectSecret) throw err;
+                    event = await stripe.webhooks.constructEventAsync(body, signature, connectSecret);
+                }
             } else if (shouldAllowUnsignedStripeWebhook(process.env)) {
                 event = JSON.parse(body) as Stripe.Event;
             } else {
@@ -214,12 +309,84 @@ http.route({
             return new Response(`Webhook Error: ${err.message}`, { status: 400 });
         }
 
+        if (['charge.refunded', 'charge.dispute.created', 'charge.dispute.closed'].includes(event.type) &&
+            !acceptsPlatformPayment(event.livemode, event.account)) {
+            return new Response(JSON.stringify({ received: true, ignored: 'payment_scope' }), { status: 200 });
+        }
+
+        if (['charge.refunded', 'charge.dispute.created', 'charge.dispute.closed'].includes(event.type)) {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            const object = event.data.object as Stripe.Charge | Stripe.Dispute;
+            const paymentIntentId = typeof object.payment_intent === 'string' ? object.payment_intent : object.payment_intent?.id;
+            if (paymentIntentId && await ctx.runAction(internal.trendsiPayments.receiveByPayment, { paymentIntentId }))
+                return new Response(JSON.stringify({ received: true }), { status: 200 });
+        }
+
+        // Manual Trendsi payments are verified from Stripe, never from a staff status change.
+        if (event.type.startsWith('checkout.session.') && (event.data.object as Stripe.Checkout.Session).metadata?.trendsiOrderId) {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            if (!acceptsPlatformPayment(event.livemode, event.account)) return new Response('Ignored payment scope', { status: 200 });
+            const session = event.data.object as Stripe.Checkout.Session;
+            await ctx.runAction(internal.trendsiPayments.receive, { id: session.metadata!.trendsiOrderId as Id<'trendsiOrders'> });
+            return new Response(JSON.stringify({ received: true }), { status: 200 });
+        }
+
+        // v2 checkout (docs/production-v2 S19): store the verified event first, then process it
+        // durably. Duplicate or out-of-order deliveries are no-ops.
+        if (event.type.startsWith('checkout.session.') && (event.data.object as Stripe.Checkout.Session).metadata?.intentId) {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            const session = event.data.object as Stripe.Checkout.Session;
+            const shipping = (session as any).collected_information?.shipping_details || (session as any).shipping_details;
+            const digest = Array.from(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', new globalThis.TextEncoder().encode(body))), (b) => b.toString(16).padStart(2, '0')).join('');
+            await ctx.runMutation(internal.ordPayments.receive, {
+                eventId: event.id,
+                type: event.type,
+                livemode: event.livemode,
+                ...(event.account ? { account: event.account } : {}),
+                payloadHash: digest,
+                payload: {
+                    id: session.id,
+                    intentId: session.metadata!.intentId,
+                    payment_status: session.payment_status,
+                    amount_total: session.amount_total,
+                    currency: session.currency,
+                    payment_intent: typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id ?? null,
+                    email: (session.customer_details?.email || '').toLowerCase(),
+                    ...(shipping?.address ? { shipping: { line1: shipping.address.line1 || '', ...(shipping.address.line2 ? { line2: shipping.address.line2 } : {}), city: shipping.address.city || '', state: shipping.address.state || '', postalCode: shipping.address.postal_code || '', country: shipping.address.country || '' } } : {}),
+                },
+            });
+            return new Response(JSON.stringify({ received: true }), { status: 200 });
+        }
+
+        if (['refund.created', 'refund.updated', 'refund.failed', 'charge.refund.updated'].includes(event.type)) {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            const refund = event.data.object as Stripe.Refund;
+            const paymentIntentId = typeof refund.payment_intent === 'string' ? refund.payment_intent : refund.payment_intent?.id;
+            const chargeId = typeof refund.charge === 'string' ? refund.charge : refund.charge?.id;
+            if (paymentIntentId && chargeId) {
+                const digest = Array.from(new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', new globalThis.TextEncoder().encode(body))), b => b.toString(16).padStart(2, '0')).join('');
+                await ctx.runMutation(internal.ordPayments.receive, {
+                    eventId: event.id, type: event.type, livemode: event.livemode,
+                    ...(event.account ? { account: event.account } : {}), payloadHash: digest,
+                    payload: { id: refund.id, paymentIntentId, chargeId, status: refund.status, created: event.created },
+                });
+            }
+            return new Response(JSON.stringify({ received: true }), { status: 200 });
+        }
+
         // Commercial invoice payments must use a verified invoice snapshot, never Checkout metadata.
         if (event.type === 'charge.refunded' || event.type === 'charge.dispute.created') {
             if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
             const payment = (event.data.object as Stripe.Charge | Stripe.Dispute).payment_intent;
             const paymentIntentId = typeof payment === 'string' ? payment : payment?.id;
             if (paymentIntentId) await ctx.runAction(internal.commerceStripe.reconcileReversal, { paymentIntentId });
+            // v2 orders: commission reversal/hold and credit reinstatement (no-op for other payments).
+            if (paymentIntentId) {
+                const isRefund = event.type === 'charge.refunded';
+                const ch = event.data.object as Stripe.Charge;
+                if(isRefund) await ctx.runMutation(internal.dlvTax.receiveRefund,{paymentIntentId,eventId:event.id,refundedMinor:ch.amount_refunded,chargeMinor:ch.amount});
+                await ctx.runMutation(internal.ldgCommissions.onPaymentEvent, isRefund ? { paymentIntentId, kind: 'refund', refundedCents: ch.amount_refunded, chargeCents: ch.amount } : { paymentIntentId, kind: 'dispute', disputeId: (event.data.object as Stripe.Dispute).id });
+            }
             // A partner's commission on a storefront order shrinks with a refund and is taken back for a dispute.
             if (paymentIntentId) {
                 const charge = event.data.object as Stripe.Charge;
@@ -233,6 +400,10 @@ http.route({
         // A partner's Stripe Connect account changed (for example, finished setup): keep their status current.
         if (event.type === 'account.updated') {
             if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            // A live Connect endpoint also receives test-mode events for connected accounts: only
+            // events in the same mode as this deployment's key may change a partner's status.
+            const liveKey = /^(sk|rk)_live_/.test(stripeSecretKey);
+            if (event.livemode !== liveKey) return new Response(JSON.stringify({ received: true, ignored: 'mode' }), { status: 200 });
             const account = event.data.object as Stripe.Account;
             await ctx.runMutation(internal.holmPayouts.setConnectStatus, {
                 accountId: account.id,
@@ -247,6 +418,25 @@ http.route({
             const id = (event.data.object as Stripe.Checkout.Session).metadata?.retailCheckoutId;
             if (id) await ctx.runMutation(internal.holmCredit.releaseCheckout, { retailCheckoutId: id });
             return new Response(JSON.stringify({ received: true }), { status: 200 });
+        }
+        // v2: dispute closed (won or lost) for a v2 order.
+        if (event.type === 'charge.dispute.closed') {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            const d = event.data.object as Stripe.Dispute;
+            const pi = typeof d.payment_intent === 'string' ? d.payment_intent : d.payment_intent?.id;
+            if (pi && (d.status === 'won' || d.status === 'lost')) await ctx.runMutation(internal.ldgCommissions.onPaymentEvent, { paymentIntentId: pi, kind: d.status === 'won' ? 'dispute_won' : 'dispute_lost', disputeId: d.id });
+        }
+        // v2 payouts: bank arrival on connected accounts is observed separately from the transfer.
+        if (event.type.startsWith('payout.') && event.account) {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            const p = event.data.object as Stripe.Payout;
+            const status = (['pending', 'in_transit', 'paid', 'failed', 'canceled'] as const).find((x) => x === p.status);
+            if (status) await ctx.runMutation(internal.ldgPayouts.observeBankPayout, { accountId: event.account, stripePayoutId: p.id, amountMinor: p.amount, status, ...(p.arrival_date ? { arrivalDate: p.arrival_date * 1000 } : {}), ...(p.failure_code ? { failureCode: p.failure_code } : {}) });
+            return new Response(JSON.stringify({ received: true }), { status: 200 });
+        }
+        if (event.type === 'transfer.reversed') {
+            if (!webhookSecret || !signature) return new Response('Signed payment webhook required', { status: 400 });
+            await ctx.runMutation(internal.ldgPayouts.onTransferReversed, { transferId: (event.data.object as Stripe.Transfer).id });
         }
         // A won dispute gives the partner's storefront commission back.
         if (event.type === 'charge.dispute.closed' && (event.data.object as Stripe.Dispute).status === 'won') {

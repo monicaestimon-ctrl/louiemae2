@@ -1,8 +1,31 @@
+import { paginationOptsValidator } from 'convex/server';
+import { catalogPageOptions } from '../lib/catalogPagination';
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireCjAdminIdentity } from "./cjAdminAccess";
+import { journalHtml } from '../lib/journalContent';
 
 // Public query returns published posts only.
+export const publicSummaries = query({
+    args: {},
+    handler: async (ctx) => {
+        const posts = await ctx.db.query('blogPosts').withIndex('by_status', q => q.eq('status', 'published')).take(250);
+        return posts.map(({ _id, _creationTime, title, excerpt, image, category, date, status }) => ({ _id, _creationTime, title, excerpt, image, category, date, status, content: '' }));
+    },
+});
+
+export const publicDetail = query({
+    args: { id: v.string() },
+    handler: async (ctx, { id }) => {
+        const normalized = ctx.db.normalizeId('blogPosts', id);
+        if (!normalized) return null;
+        const post = await ctx.db.get(normalized);
+        if (post?.status !== 'published') return null;
+        const { _id, title, excerpt, content, image, category, date } = post;
+        return { _id, title, excerpt, contentHtml: journalHtml(content), image, category, date, status: 'published' as const };
+    },
+});
+
 export const list = query({
     args: {},
     handler: async (ctx) => {
@@ -82,5 +105,15 @@ export const remove = mutation({
     handler: async (ctx, args) => {
         await requireCjAdminIdentity(ctx);
         await ctx.db.delete(args.id);
+    },
+});
+
+/** Published article identities only; draft bodies and dates never enter the sitemap. */
+export const sitemapPage = query({
+    args: { paginationOpts: paginationOptsValidator },
+    handler: async (ctx, args) => {
+        const batch = await ctx.db.query('blogPosts').withIndex('by_status', q => q.eq('status', 'published'))
+            .paginate(catalogPageOptions(args.paginationOpts, 100, 500_000));
+        return { page: batch.page.map(post => `/blog/${encodeURIComponent(post._id)}`), isDone: batch.isDone, continueCursor: batch.continueCursor, pageStatus: batch.pageStatus, splitCursor: batch.splitCursor };
     },
 });

@@ -1,4 +1,7 @@
 import { v } from 'convex/values';
+import { flag } from '../lib/flags';
+import { recordClickCore } from './prgAttribution';
+import { CommerceError } from '../lib/errors';
 import { query, mutation, internalMutation } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
@@ -25,6 +28,8 @@ export const join = mutation({
   args: { acceptTerms: v.boolean() },
   handler: async (ctx, a) => {
     const me = await requireUser(ctx);
+    // v2 (S24): enrollment runs through prgMemberships (profile, versioned terms, checks).
+    if (flag('CREATOR_ENROLLMENT_V2_ENABLED')) throw new CommerceError('FEATURE_DISABLED', 'Use prgMemberships.creatorStart', 'Join from the Creator Hub to accept the current terms.');
     if (!a.acceptTerms) throw new Error('Accept the partner terms to join.');
     if (isPartner(me.profile)) return me.profile!.refCode;
     let code = makeCode(me.profile?.businessName || me.profile?.displayName || me.email);
@@ -80,8 +85,13 @@ export async function insertClick(
 }
 
 export const recordClick = mutation({
-  args: { refCode: v.string(), channel: v.string(), target: v.string(), visitorId: v.string() },
-  handler: async (ctx, a) => insertClick(ctx, a),
+  args: { refCode: v.string(), channel: v.string(), target: v.string(), visitorId: v.string(), userAgent: v.optional(v.string()) },
+  handler: async (ctx, a) => {
+    const ok = await insertClick(ctx, a);
+    // v2 (S27): the same visit also becomes an opaque, rate-protected click record.
+    if (ok && flag('ATTRIBUTION_V2_ENABLED')) await recordClickCore(ctx, { refCode: a.refCode, visitorKey: a.visitorId, userAgent: a.userAgent ?? 'browser', consent: 'unknown' });
+    return ok;
+  },
 });
 
 /**
@@ -208,6 +218,8 @@ const overrideActive = (p: Doc<'holmProfiles'>, now: number) => !!p.tierOverride
 export const updateTiers = internalMutation({
   args: { cursor: v.optional(v.string()), now: v.optional(v.number()) },
   handler: async (ctx, a) => {
+    // v2 (S28): once v2 accrual is on, tiers are computed by prgTiers.
+    if (flag('COMMISSION_ACCRUAL_V2_ENABLED')) return;
     // One page of partners per run, and one small job per partner, so no single transaction
     // reads more than one partner's 12 months of orders. Every page uses the same moment.
     const now = a.now ?? Date.now();
@@ -549,6 +561,8 @@ export const reconcile = internalMutation({
       await ctx.db.patch(c._id, { status: project && project.status !== 'payment_review' && project.status !== 'cancelled' ? 'cleared' : 'void' });
     }
     // 3. Business referrals: $100 credit after the referred business is verified and a first order over $500 is paid.
+    // v2 (S31) settles awards with a 30-day wait and anti-double-reward instead.
+    if (flag('CREDIT_V2_ENABLED')) return;
     // Least recently checked first and in small batches, so one run stays within read limits.
     const verified = await ctx.db
       .query('holmReferrals')

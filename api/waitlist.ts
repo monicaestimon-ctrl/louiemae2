@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import type { VercelRequest, VercelResponse } from '../lib/serverHttp.js';
 import { createHmac } from 'node:crypto';
 import { ConvexHttpClient } from 'convex/browser';
 import { api } from '../convex/_generated/api.js';
@@ -12,8 +12,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (origin && origin !== `https://${host}` && origin !== `http://${host}`) return res.status(403).json({ error: 'Please join from the Louie Mae website.' });
   if (!req.headers['content-type']?.includes('application/json')) return res.status(415).json({ error: 'Please use the signup form.' });
   if (Number(req.headers['content-length']) > 2048) return res.status(413).json({ error: 'Please use a valid email address.' });
-  const body = req.body;
-  if (!body || typeof body !== 'object' || Array.isArray(body)) return res.status(400).json({ error: 'Please use the signup form.' });
+  const value = req.body;
+  const body = value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>) : null;
+  if (!body) return res.status(400).json({ error: 'Please use the signup form.' });
   if (body.website) return res.status(400).json({ error: 'Please leave the website field empty.' });
   const email = normalizeWaitlistEmail(body.email);
   if (!email || body.consent !== true) return res.status(400).json({ error: 'Please enter a valid email address and agree to receive updates.' });

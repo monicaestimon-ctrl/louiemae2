@@ -1,22 +1,32 @@
 import { serializeSourceProperties } from '../lib/sourceProperties';
 
 import React, { createContext, useContext, ReactNode, useEffect, useRef } from 'react';
-import { useQuery, useMutation, useConvexAuth } from 'convex/react';
+import { useMutation, useConvexAuth } from 'convex/react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { api } from '../convex/_generated/api';
 import { Id } from '../convex/_generated/dataModel';
 import { BlogPost, SiteContent, CustomPage, Product, NavLink, CollectionConfig } from '../types';
 import { BLOG_POSTS as INITIAL_POSTS, INITIAL_SITE_CONTENT, PRODUCTS as INITIAL_PRODUCTS } from '../constants';
 import { AdminCatalogDemandContext, StorefrontCatalogDemandContext, useCatalogDemand } from './AdminCatalogDemand';
+import { usePublicEditorialPosts, type EditorialStatus } from './usePublicEditorialPosts';
+import { usePublicSiteContent, type PublicContentStatus } from './usePublicSiteContent';
+import { useSiteAccount, type AccountStatus } from './useSiteAccount';
+import { useRecoverableQuery } from './useRecoverableQuery';
 
 interface SiteContextType {
   posts: BlogPost[];
+  editorialStatus: EditorialStatus;
+  retryEditorial: () => void;
+  catalogStatus: 'idle' | 'loading' | 'ready' | 'unavailable';
+  siteContentStatus: PublicContentStatus;
+  customPagesStatus: PublicContentStatus;
   products: Product[];
   siteContent: SiteContent;
   isLoading: boolean;  // True while Convex data is loading
   isCatalogLoading: boolean;
   isAuthenticated: boolean;
   isAuthLoading: boolean;  // True while auth state is loading
+  accountStatus: AccountStatus;
   signIn: (email: string, password: string, flow: 'signIn' | 'signUp') => Promise<void>;
   logout: () => void;
   // Blog Actions
@@ -30,14 +40,14 @@ interface SiteContextType {
   updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
   deleteProduct: (id: string) => void;
   // Site Content Actions
-  updateSiteContent: (section: keyof SiteContent, data: Partial<SiteContent[keyof SiteContent]>) => void;
+  updateSiteContent: (section: keyof SiteContent, data: Partial<SiteContent[keyof SiteContent]>) => Promise<void>;
   // Custom Page Actions
-  addCustomPage: (page: CustomPage) => void;
-  updateCustomPage: (id: string, page: Partial<CustomPage>) => void;
-  deleteCustomPage: (id: string) => void;
+  addCustomPage: (page: CustomPage) => Promise<void>;
+  updateCustomPage: (id: string, page: Partial<CustomPage>) => Promise<void>;
+  deleteCustomPage: (id: string) => Promise<void>;
   getCustomPage: (slug: string) => CustomPage | undefined;
   // Navigation & Collection Actions
-  updateNavigation: (navLinks: NavLink[]) => void;
+  updateNavigation: (navLinks: NavLink[]) => Promise<void>;
   addCollection: (collection: CollectionConfig) => Promise<void>;
   updateCollection: (id: string, collection: Partial<CollectionConfig>) => Promise<void>;
   deleteCollection: (id: string) => Promise<void>;
@@ -45,23 +55,34 @@ interface SiteContextType {
 
 const SiteContext = createContext<SiteContextType | undefined>(undefined);
 
+/** Supply public fallback presentation without treating unavailable configuration as writable data. */
 export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // --- Auth State (using Convex Auth) ---
   const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
   const { signIn: authSignIn, signOut: authSignOut } = useAuthActions();
   const { requested: adminCatalogRequested, register: registerAdminCatalog } = useCatalogDemand();
   const { requested: storefrontCatalogRequested, register: registerStorefrontCatalog } = useCatalogDemand();
-  const needsAdminCatalog = isAuthenticated && adminCatalogRequested;
+  const account = useSiteAccount(isAuthenticated, isAuthLoading);
+  const adminSession = account.session;
+  const siteOwner = isAuthenticated && adminSession?.owner === true;
+  const needsAdminCatalog = siteOwner && adminCatalogRequested;
 
   // --- Convex Queries ---
-  const adminPosts = useQuery(api.blogPosts.listAdmin, isAuthenticated ? {} : 'skip');
-  const publicPosts = useQuery(api.blogPosts.list, isAuthenticated ? 'skip' : {});
-  const convexPosts = isAuthenticated ? adminPosts : publicPosts;
-  const adminProducts = useQuery(api.products.list, needsAdminCatalog ? {} : 'skip');
-  const storefrontProducts = useQuery(api.products.listForStorefront, !needsAdminCatalog && storefrontCatalogRequested ? {} : 'skip');
+  const adminEditorial = useRecoverableQuery(api.blogPosts.listAdmin, siteOwner ? {} : 'skip');
+  const adminPosts = adminEditorial.data;
+  const publicEditorial = usePublicEditorialPosts(!siteOwner);
+  const convexPosts = siteOwner ? adminPosts : publicEditorial.posts;
+  const editorialStatus: EditorialStatus = siteOwner
+    ? adminEditorial.status === 'unavailable' ? 'unavailable' : adminPosts === undefined ? 'loading' : adminPosts.length ? 'ready' : 'empty'
+    : publicEditorial.status;
+  const adminCatalog = useRecoverableQuery(api.products.list, needsAdminCatalog ? {} : 'skip');
+  const storefrontCatalog = useRecoverableQuery(api.products.listForStorefront, !needsAdminCatalog && storefrontCatalogRequested ? {} : 'skip');
+  const adminProducts = adminCatalog.data;
+  const storefrontProducts = storefrontCatalog.data;
   const convexProducts = needsAdminCatalog ? adminProducts : storefrontProducts;
-  const convexSiteContent = useQuery(api.siteContent.get);
-  const convexCustomPages = useQuery(api.customPages.list);
+  const publicContent = usePublicSiteContent();
+  const convexSiteContent = publicContent.siteContent;
+  const convexCustomPages = publicContent.customPages;
 
   // --- Convex Mutations ---
   const createPost = useMutation(api.blogPosts.create);
@@ -85,7 +106,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // --- Seed initial data if Convex is empty ---
   useEffect(() => {
-    if (isAuthenticated && convexSiteContent === null && !siteContentSeedStarted.current) {
+    if (siteOwner && convexSiteContent === null && !siteContentSeedStarted.current) {
       siteContentSeedStarted.current = true;
       void seedSiteContent({
         navLinks: INITIAL_SITE_CONTENT.navLinks,
@@ -94,27 +115,27 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         story: INITIAL_SITE_CONTENT.story,
       }).catch(error => console.error('Site content seeding failed:', error));
     }
-  }, [isAuthenticated, convexSiteContent, seedSiteContent]);
+  }, [siteOwner, convexSiteContent, seedSiteContent]);
 
   useEffect(() => {
-    if (isAuthenticated && adminProducts?.length === 0 && !productSeedStarted.current) {
+    if (siteOwner && adminProducts?.length === 0 && !productSeedStarted.current) {
       productSeedStarted.current = true;
       void Promise.all(INITIAL_PRODUCTS.map(product => {
         const { id, ...productData } = product;
         return createProduct(productData);
       })).catch(error => console.error('Product seeding failed:', error));
     }
-  }, [isAuthenticated, adminProducts, createProduct]);
+  }, [siteOwner, adminProducts, createProduct]);
 
   useEffect(() => {
-    if (isAuthenticated && adminPosts?.length === 0 && !postSeedStarted.current) {
+    if (siteOwner && adminPosts?.length === 0 && !postSeedStarted.current) {
       postSeedStarted.current = true;
       void Promise.all(INITIAL_POSTS.map(post => {
         const { id, date, ...postData } = post;
         return createPost(postData);
       })).catch(error => console.error('Blog post seeding failed:', error));
     }
-  }, [isAuthenticated, adminPosts, createPost]);
+  }, [siteOwner, adminPosts, createPost]);
 
   // --- Transform Convex data to match existing types ---
   const posts: BlogPost[] = (convexPosts ?? []).map(p => ({
@@ -173,7 +194,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     : { ...INITIAL_SITE_CONTENT, customPages };
 
   // Track loading state - undefined means still loading from Convex
-  const isLoading = convexSiteContent === undefined;
+  const isLoading = publicContent.siteContentStatus === 'loading';
 
   // --- Auth ---
   const signIn = async (email: string, password: string, flow: 'signIn' | 'signUp') => {
@@ -319,29 +340,46 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   // --- Site Content Actions ---
-  const updateSiteContentAction = (section: keyof SiteContent, data: Partial<SiteContent[keyof SiteContent]>) => {
+  /** Reject writes derived from fallback or unresolved settings. */
+  const requireCurrentSettings = () => {
+    if (publicContent.siteContentStatus !== 'ready' || !convexSiteContent) {
+      throw new Error('Site settings are unavailable. Reload verified settings before saving changes.');
+    }
+  };
+  /** Require a completed custom-page read before editing the page collection. */
+  const requireCurrentPages = () => {
+    if (publicContent.customPagesStatus !== 'ready') {
+      throw new Error('Custom pages are unavailable. Reload verified pages before saving changes.');
+    }
+  };
+  /** Merge a section only against verified settings and return the mutation outcome. */
+  const updateSiteContentAction = async (section: keyof SiteContent, data: Partial<SiteContent[keyof SiteContent]>) => {
     if (section === 'customPages') return; // Handled separately
+    requireCurrentSettings();
 
     const currentValue = siteContent[section];
     // Use deep merge to properly handle nested objects like home.hero, home.categoryImages, etc.
     const updatedValue = deepMerge(currentValue, data);
 
-    updateSiteContentMutation({ [section]: updatedValue } as any);
+    await updateSiteContentMutation({ [section]: updatedValue } as any);
   };
 
   // --- Custom Page Actions ---
-  const addCustomPage = (page: CustomPage) => {
+  const addCustomPage = async (page: CustomPage) => {
+    requireCurrentPages();
     const { id, ...pageData } = page;
-    createCustomPage(pageData);
+    await createCustomPage(pageData);
   };
 
-  const updateCustomPageAction = (id: string, pageData: Partial<CustomPage>) => {
+  const updateCustomPageAction = async (id: string, pageData: Partial<CustomPage>) => {
+    requireCurrentPages();
     const { id: _, ...updates } = pageData as any;
-    updateCustomPageMutation({ id: id as Id<"customPages">, ...updates });
+    await updateCustomPageMutation({ id: id as Id<"customPages">, ...updates });
   };
 
-  const deleteCustomPageAction = (id: string) => {
-    removeCustomPage({ id: id as Id<"customPages"> });
+  const deleteCustomPageAction = async (id: string) => {
+    requireCurrentPages();
+    await removeCustomPage({ id: id as Id<"customPages"> });
   };
 
   const getCustomPage = (slug: string) => {
@@ -349,16 +387,19 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   // --- Navigation & Collection Actions ---
-  const updateNavigation = (navLinks: NavLink[]) => {
-    updateSiteContentMutation({ navLinks });
+  const updateNavigation = async (navLinks: NavLink[]) => {
+    requireCurrentSettings();
+    await updateSiteContentMutation({ navLinks });
   };
 
   const addCollection = async (collection: CollectionConfig): Promise<void> => {
+    requireCurrentSettings();
     const newCollections = [...siteContent.collections, collection];
     await updateSiteContentMutation({ collections: newCollections });
   };
 
   const updateCollection = async (id: string, collectionData: Partial<CollectionConfig>): Promise<void> => {
+    requireCurrentSettings();
     const updatedCollections = siteContent.collections.map(c =>
       c.id === id ? { ...c, ...collectionData } : c
     );
@@ -366,6 +407,7 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const deleteCollection = async (id: string): Promise<void> => {
+    requireCurrentSettings();
     const filteredCollections = siteContent.collections.filter(c => c.id !== id);
     await updateSiteContentMutation({ collections: filteredCollections });
   };
@@ -373,11 +415,17 @@ export const SiteProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   return (
     <SiteContext.Provider value={{
       posts,
+      editorialStatus,
+      siteContentStatus: publicContent.siteContentStatus,
+      customPagesStatus: publicContent.customPagesStatus,
       products,
+      catalogStatus: needsAdminCatalog ? adminCatalog.status : storefrontCatalog.status,
+      retryEditorial: siteOwner ? adminEditorial.retry : () => window.location.reload(),
       siteContent,
       isLoading,
       isCatalogLoading: convexProducts === undefined,
       isAuthenticated,
+      accountStatus: account.status,
       isAuthLoading,
       signIn,
       logout,

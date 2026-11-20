@@ -1,0 +1,63 @@
+{
+  "https://kindred-squid-489.convex.cloud/api/storage/079185ef-9529-4b90-a7f7-e49f6d8ea1d3": {
+    "base": "/images/opt/editorial/239bd7c669e7eaf801fbb27b",
+    "widths": [
+      320,
+      480,
+      640,
+      960,
+      1024
+    ],
+    "ratio": 1.5,
+    "windows": {
+      "indexMobile": {
+        "base": "/images/opt/editorial/a7f05487661fe9afd74e3777",
+        "widths": [
+          320,
+          480,
+          640,
+          960,
+          1024
+        ],
+        "ratio": 1.25,
+        "avifBase": "/images/opt/editorial/9c0579170ba054339c93ac01"
+      },
+      "indexDesktop": {
+        "base": "/images/opt/editorial/5e5db078c011de471e115244",
+        "widths": [
+          320,
+          480,
+          640,
+          960,
+          1024
+        ],
+        "ratio": 0.42857142857142855,
+        "avifBase": "/images/opt/editorial/13bfe94e5b71fa4a6d0cb81b"
+      },
+      "articleMobile": {
+        "base": "/images/opt/editorial/4f7c64e70f93cbc50cc2cf89",
+        "widths": [
+          320,
+          480,
+          640,
+          960,
+          1024
+        ],
+        "ratio": 0.5625,
+        "avifBase": "/images/opt/editorial/95b02488310c1e8a1bd6a520"
+      },
+      "articleDesktop": {
+        "base": "/images/opt/editorial/108a8c09c18d107bebe714bd",
+        "widths": [
+          320,
+          480,
+          640,
+          960,
+          1024
+        ],
+        "ratio": 0.3333333333333333,
+        "avifBase": "/images/opt/editorial/09ca7fd559acda657e1d725c"
+      }
+    }
+  }
+}

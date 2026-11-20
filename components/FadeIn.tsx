@@ -5,7 +5,7 @@ interface FadeInProps {
   delay?: number;
   className?: string;
   threshold?: number;
-  /** On mobile (<768px), use a quick subtle fade with no translate shift */
+  /** On mobile (<768px), reveal immediately without a translate shift. */
   mobileFast?: boolean;
 }
 
@@ -30,7 +30,7 @@ export const FadeIn: React.FC<FadeInProps> = ({
     }
   }, [mobileFast]);
 
-  // On mobile with mobileFast, use near-zero threshold so even a tiny scroll triggers the fade
+  // Preserve the existing mobile threshold for callers using mobileFast.
   const effectiveThreshold = (mobileFast && isMobile) ? 0.005 : threshold;
 
   useEffect(() => {
@@ -62,15 +62,15 @@ export const FadeIn: React.FC<FadeInProps> = ({
     };
   }, [delay, effectiveThreshold]);
 
-  // Mobile fast: quick 300ms opacity fade, no vertical shift
+  // Never animate text opacity: intermediate frames must retain readable contrast.
   const useFastFade = mobileFast && isMobile;
 
   return (
     <div
       ref={domRef}
-      className={`ease-out transform ${useFastFade
-        ? `transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`
-        : `transition-all duration-1000 ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-16'}`
+      className={`lm-reveal opacity-100 ease-out transform ${useFastFade
+        ? 'transition-none'
+        : `transition-transform duration-1000 ${isVisible ? 'translate-y-0' : 'translate-y-16'}`
         } ${className}`}
       style={{ transitionDelay: `${delay}ms` }}
     >

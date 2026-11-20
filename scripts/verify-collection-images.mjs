@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import sharp from 'sharp';
+import { brandImageWidths } from './brand-image-widths.mjs';
+const evidence = JSON.parse(
+  await readFile('docs/quality/collection-image-provenance.json', 'utf8')
+);
+const manifest = JSON.parse(await readFile('lib/imageManifest.json', 'utf8'));
+assert.equal(evidence.recipe, 'brand-webp-q74-effort6-orient-v1');
+assert.equal(evidence.source, '/images/brand/girls-dress.png');
+const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
+const source = await readFile('public' + evidence.source);
+assert.equal(hash(source), evidence.sourceSha256);
+const original = await sharp(source).metadata();
+assert.equal(original.width, 533);
+assert.equal(original.height, 800);
+assert.ok(!original.orientation || original.orientation === 1);
+assert.equal(evidence.width, 360);
+assert.equal(evidence.height, 540);
+const entry = manifest[evidence.source];
+assert.deepEqual(entry.widths, brandImageWidths(evidence.source, original.width));
+assert.equal(entry.base, '/images/opt/brand/girls-dress');
+const bytes = await readFile('public' + entry.base + '-360.webp');
+assert.equal(hash(bytes), evidence.sha256);
+assert.equal(bytes.length, evidence.bytes);
+assert.ok(bytes.length < (await readFile('public' + entry.base + '-480.webp')).length);
+const result = await sharp(bytes).metadata();
+assert.equal(result.format, 'webp');
+assert.equal(result.width, evidence.width);
+assert.equal(result.height, evidence.height);
+assert.ok(result.width <= original.width && result.height <= original.height);
+console.log('Reviewed collection image source, width policy, dimensions and bytes verified.');

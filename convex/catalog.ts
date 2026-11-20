@@ -2,7 +2,7 @@ import { paginationOptsValidator } from 'convex/server';
 import { v, ConvexError } from 'convex/values';
 import { query } from './_generated/server';
 import { requireCjAdminIdentity } from './cjAdminAccess';
-import { requireCatalogReady } from './catalogReadiness';
+import { catalogIsReady, requireCatalogReady } from './catalogReadiness';
 import { CATALOG_VERSION, adminCatalogSearchText, type publicCatalogProduct, type adminCatalogProduct } from '../lib/catalogProjection';
 import { catalogPageOptions } from '../lib/catalogPagination';
 import { matchesCjQueueFilter } from '../lib/cjVariantQueue';
@@ -59,6 +59,35 @@ export const recentApprovalsPage = query({ args: { paginationOpts: paginationOpt
     .order('desc').paginate(catalogPageOptions(args.paginationOpts));
   return { ...batch, page: batch.page.filter(row => Boolean(row.approvedAt)).map(sourcingRow) };
 } });
+
+// A single live transaction supplies the kids root's readiness and first cards.
+// This additive endpoint must be deployed before its frontend consumer. It is
+// a preview selection, not a complete catalog or purchase-eligibility response.
+export const kidsRootPreview = query({
+  args: {},
+  returns: v.object({
+    ready: v.boolean(), version: v.number(),
+    products: v.array(v.object({
+      _id: v.id('products'), name: v.string(), images: v.array(v.string()),
+      price: v.number(), category: v.string(), isNew: v.optional(v.boolean()),
+      variantCount: v.number(),
+    })),
+  }),
+  handler: async ctx => {
+    if (!await catalogIsReady(ctx)) return { ready: false, version: CATALOG_VERSION, products: [] };
+    // Fixed cardinality and indexed visibility/collection avoid scanning or
+    // automatically filling filtered pages. Matches storefrontPage's default order.
+    const rows = await ctx.db.query('productCatalog')
+      .withIndex('by_visible_collection_created', q => q.eq('visible', true).eq('collection', 'kids'))
+      .order('asc').take(8);
+    return { ready: true, version: CATALOG_VERSION, products: rows.map(row => {
+      const product = publicRow(row);
+      return { _id: product._id, name: product.name, images: product.images.slice(0, 1),
+        price: product.price, category: product.category, isNew: product.isNew,
+        variantCount: product.variantCount };
+    }) };
+  },
+});
 
 export const storefrontPage = query({ args: { ...filters,
   sort: v.optional(v.union(v.literal('newest'), v.literal('price-asc'), v.literal('price-desc'), v.literal('featured'))),

@@ -1,0 +1,328 @@
+{
+  "recipe": "editorial-webp-q85-effort6-orient-v1",
+  "records": [
+    {
+      "source": "https://kindred-squid-489.convex.cloud/api/storage/079185ef-9529-4b90-a7f7-e49f6d8ea1d3",
+      "retrievedAt": "2026-11-17T13:55:07.031Z",
+      "contentType": "image/png",
+      "bytes": 2385519,
+      "sha256": "6b8501227caab4ca5abdb88879fdde3cc8b5b57325f27e4c13af966f977b4823",
+      "width": 1024,
+      "height": 1536,
+      "format": "png",
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 30064,
+          "sha256": "9a5a7606bd362d8361ab80c2ed34c2aea4ab1268912acb4e9330f1178b84fce6"
+        },
+        {
+          "width": 480,
+          "bytes": 51532,
+          "sha256": "142c19bee61afcc36063c4d0eed2b3b2d606455b692358b87af429b50cd3af21"
+        },
+        {
+          "width": 640,
+          "bytes": 74752,
+          "sha256": "6a100ddd2d92ab8874530e009ab0f5f7b8dcdfef62905796b241a4ff3a0fc44f"
+        },
+        {
+          "width": 960,
+          "bytes": 127496,
+          "sha256": "8fd474a16a18e921fca2d9b7e6bbe7ec8d674b86e5d174313471afce95e3fa81"
+        },
+        {
+          "width": 1024,
+          "bytes": 135162,
+          "sha256": "1b726d8c340e955229d6cd708c254372fbd0387f77ff0f190369c3dbd798ec68"
+        }
+      ],
+      "windows": {
+        "indexMobile": {
+          "recipe": "editorial-webp-q85-effort6-cover-centre-v1",
+          "ratio": 1.25,
+          "renditions": [
+            {
+              "width": 320,
+              "height": 400,
+              "bytes": 26316,
+              "sha256": "dfe878d64d8ac658d065ef60c9a5af44f8783f85d69cd0bcf75a23080baab8cd"
+            },
+            {
+              "width": 480,
+              "height": 600,
+              "bytes": 46692,
+              "sha256": "5f92220e722965f35eca2df1bd839ef678930f9944a055017766bf28dd6f59da"
+            },
+            {
+              "width": 640,
+              "height": 800,
+              "bytes": 68858,
+              "sha256": "ce7711a91c144b2ec342552e6aa9cc2fee0872370201ed2ee06d519ed56811dc"
+            },
+            {
+              "width": 960,
+              "height": 1200,
+              "bytes": 113108,
+              "sha256": "c007f704c4db00813e257b35028eff0bc5662ff0cf9fcb2b9fac17f972357b52"
+            },
+            {
+              "width": 1024,
+              "height": 1280,
+              "bytes": 120438,
+              "sha256": "687ad6754ea68e40b625b63ec967363b92130047fbd8066b72f6fd4a0a317bfb"
+            }
+          ],
+          "avif": {
+            "recipe": "editorial-avif-q55-effort6-cover-centre-v1",
+            "renditions": [
+              {
+                "width": 320,
+                "height": 400,
+                "bytes": 12629,
+                "sha256": "8e7c3c73fabbaffe4edf87082b64afbcf364daa69dd70d1476e9ef364b6d6158"
+              },
+              {
+                "width": 480,
+                "height": 600,
+                "bytes": 23110,
+                "sha256": "4b9cb58a1ae87deeeba5c7bd0809aee387af7dbad0a8fc388eb471c001e2b803"
+              },
+              {
+                "width": 640,
+                "height": 800,
+                "bytes": 34695,
+                "sha256": "cdac1fcb576562a07bffff0197592135b1414bc7b0af1cfad95883b9b8214705"
+              },
+              {
+                "width": 960,
+                "height": 1200,
+                "bytes": 58364,
+                "sha256": "52254b2cff49ec8d9a40461815e2c71b267114c84fb4f2aeadca20a5f4002f6e"
+              },
+              {
+                "width": 1024,
+                "height": 1280,
+                "bytes": 63160,
+                "sha256": "9817f8a4d7e8e91c539c095dac4518876b48a783f01c11e0fa3c7a6905171edf"
+              }
+            ]
+          }
+        },
+        "indexDesktop": {
+          "recipe": "editorial-webp-q85-effort6-cover-centre-v1",
+          "ratio": 0.42857142857142855,
+          "renditions": [
+            {
+              "width": 320,
+              "height": 137,
+              "bytes": 9836,
+              "sha256": "8a8bcdbb5aa5a51521c835a95eccc836fd348a7778b221709a11db8eebdfc274"
+            },
+            {
+              "width": 480,
+              "height": 206,
+              "bytes": 17376,
+              "sha256": "f4d06efafac9877d841c257c100c264c4e7b6a9258a1d2c234ce2ed233e389db"
+            },
+            {
+              "width": 640,
+              "height": 274,
+              "bytes": 25886,
+              "sha256": "18123ea6a6f4be3f6645ad5a78f6e09352a02568ac0970221b531c934051fa17"
+            },
+            {
+              "width": 960,
+              "height": 411,
+              "bytes": 41968,
+              "sha256": "3b6b128b8789e5539da260f348e656560729470b9f6d67052bd86a51f506750d"
+            },
+            {
+              "width": 1024,
+              "height": 439,
+              "bytes": 45956,
+              "sha256": "9b59267e27ac8c56723322db8fbca80fcd8be106c5169c2bb065f60ecbfd20eb"
+            }
+          ],
+          "avif": {
+            "recipe": "editorial-avif-q55-effort6-cover-centre-v1",
+            "renditions": [
+              {
+                "width": 320,
+                "height": 137,
+                "bytes": 5081,
+                "sha256": "5ceebd5f9f73afb8fbf198f2a25cf48837e459ab38f2802cd18250502987eb43"
+              },
+              {
+                "width": 480,
+                "height": 206,
+                "bytes": 8971,
+                "sha256": "9daf6ae370af9e85acf9e582a50c1ad3ab35f78bd1f4e339a99a57631e320193"
+              },
+              {
+                "width": 640,
+                "height": 274,
+                "bytes": 13674,
+                "sha256": "93289dad4aac1ffde46c35b1f6d9bf41f01e61f42dae0006fc5c73b8fd4d4027"
+              },
+              {
+                "width": 960,
+                "height": 411,
+                "bytes": 22923,
+                "sha256": "a0b0ca007c55e15294bbf8236fb533db103651602fdb4668b953afaa4f16f4dc"
+              },
+              {
+                "width": 1024,
+                "height": 439,
+                "bytes": 24579,
+                "sha256": "619c26b8d0e2535c6ee19493af3b0ed8ce70eb92df39eee04419debb9d1c0d8f"
+              }
+            ]
+          }
+        },
+        "articleMobile": {
+          "recipe": "editorial-webp-q85-effort6-cover-centre-v1",
+          "ratio": 0.5625,
+          "renditions": [
+            {
+              "width": 320,
+              "height": 180,
+              "bytes": 13244,
+              "sha256": "9c668ad2605db23ad34404903aece96b8ec6d8a9861a2b5bff45772fd23f2937"
+            },
+            {
+              "width": 480,
+              "height": 270,
+              "bytes": 22910,
+              "sha256": "523e24f118c8bc9f20f356423134b2f44ce0da866f15c2bacb6538f21c3baf28"
+            },
+            {
+              "width": 640,
+              "height": 360,
+              "bytes": 34014,
+              "sha256": "25e006b5be6890bbb772e7491ad4d55e641664f586cd70dc38c72ea68c3d66ba"
+            },
+            {
+              "width": 960,
+              "height": 540,
+              "bytes": 54292,
+              "sha256": "bbebc0aac07bb68189bfe0deebbec0a2dba9b57d5917591546375155e1bc6b12"
+            },
+            {
+              "width": 1024,
+              "height": 576,
+              "bytes": 60068,
+              "sha256": "e71c78709b70380ade6c8a4b42f0216360326946c7d5c669cf3528a2e0560df5"
+            }
+          ],
+          "avif": {
+            "recipe": "editorial-avif-q55-effort6-cover-centre-v1",
+            "renditions": [
+              {
+                "width": 320,
+                "height": 180,
+                "bytes": 6390,
+                "sha256": "d69192a8410d9f12e9fd563b47b90b90f713f21f9f5660f402a08b9feeee27b2"
+              },
+              {
+                "width": 480,
+                "height": 270,
+                "bytes": 11787,
+                "sha256": "7384267f45aa2904cefb29a2236965d886d8518d21448ddc389ea47eb4d5d5ba"
+              },
+              {
+                "width": 640,
+                "height": 360,
+                "bytes": 17552,
+                "sha256": "b70fd6d5f60d97fb1451673ee52192f100c5d12cdbd3c65bc2245a70843c4def"
+              },
+              {
+                "width": 960,
+                "height": 540,
+                "bytes": 29385,
+                "sha256": "18cf805d2fcb6b956a119a011ad3085c2e8b0809507b37e8331f67e692de0814"
+              },
+              {
+                "width": 1024,
+                "height": 576,
+                "bytes": 31558,
+                "sha256": "835925b446b47a5fa84c8fbb46cf99fe37883e42c1507940ee3ffa6671379f55"
+              }
+            ]
+          }
+        },
+        "articleDesktop": {
+          "recipe": "editorial-webp-q85-effort6-cover-centre-v1",
+          "ratio": 0.3333333333333333,
+          "renditions": [
+            {
+              "width": 320,
+              "height": 107,
+              "bytes": 7574,
+              "sha256": "e33d4b0f6a4959a3399a4de8820a04a6971004018632be5e5c0618da4fd6e5d6"
+            },
+            {
+              "width": 480,
+              "height": 160,
+              "bytes": 13078,
+              "sha256": "27a485794a218901c3405b299fce21fca21345d9cbda66f0d30170dd91c0bbe9"
+            },
+            {
+              "width": 640,
+              "height": 213,
+              "bytes": 19642,
+              "sha256": "85cddb2d1dff78ae915430db19bcf3eda91117e29030c81e3d0de9fcb0c0a5df"
+            },
+            {
+              "width": 960,
+              "height": 320,
+              "bytes": 31538,
+              "sha256": "7a3a82912808af245f10e926703479eac453d11a621293fad841115792dfe812"
+            },
+            {
+              "width": 1024,
+              "height": 341,
+              "bytes": 35422,
+              "sha256": "53a2ef4eaf60c9d584acc1e5a88f8fd638a31c18f4b11d8ecb1c431da042598d"
+            }
+          ],
+          "avif": {
+            "recipe": "editorial-avif-q55-effort6-cover-centre-v1",
+            "renditions": [
+              {
+                "width": 320,
+                "height": 107,
+                "bytes": 3996,
+                "sha256": "5e3b4c3f040965c1f364046803f6d0461eb4ccbcafac91be0a0f693245abb0fa"
+              },
+              {
+                "width": 480,
+                "height": 160,
+                "bytes": 6986,
+                "sha256": "e75a4ec6866ce7c047df90a3f0f96e9fa191fd3e470f80ce73c9d62b2ca70d30"
+              },
+              {
+                "width": 640,
+                "height": 213,
+                "bytes": 10579,
+                "sha256": "2f7643183296ff5c8ee14abfdfdf40fc6cb5fb7722a1754637c9d1083b50887e"
+              },
+              {
+                "width": 960,
+                "height": 320,
+                "bytes": 17723,
+                "sha256": "8d004198a04225b177cd7ab9d6327edb45874e05dca99072b67c7ec32a466278"
+              },
+              {
+                "width": 1024,
+                "height": 341,
+                "bytes": 19446,
+                "sha256": "68de60d5675a93bccfeec23fdde6fc1c663a74a5304b14abff6db615ab56c40f"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

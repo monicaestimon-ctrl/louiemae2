@@ -1,0 +1,42 @@
+{
+  "records": [
+    {
+      "source": "https://diligent-jay-261.convex.cloud/api/storage/2cfa8cb6-ad7f-4def-858d-27c53dd3bb07",
+      "sourceSha256": "7bd0a63300b8ee1cd3673ba6d86f9062c74474905a4a72d5ddabd9c6c40ae759",
+      "recipe": "avif-quality65-effort7-lossless-orientation-v1",
+      "base": "/images/opt/product-formats/b4a9f0f9de0302fd114aa7b5",
+      "renditions": [
+        {
+          "width": 320,
+          "bytes": 16706,
+          "webpBytes": 23340,
+          "sha256": "0cf9dbec2cd7ed617fdd96d3000a49a637ae469a0ea7e6e64a67a104b5582a3e"
+        },
+        {
+          "width": 480,
+          "bytes": 36592,
+          "webpBytes": 51746,
+          "sha256": "de8c8c14ee457b25e753ed2e90a20118c8cc421b5d9af8a37b850ac77b2f951b"
+        },
+        {
+          "width": 640,
+          "bytes": 63468,
+          "webpBytes": 90794,
+          "sha256": "50f0af2f709a86c2cc29bbc4dd63ddcdef1e88c8431ca8de9931ee2b7a144f3f"
+        },
+        {
+          "width": 960,
+          "bytes": 125423,
+          "webpBytes": 177944,
+          "sha256": "eccdce5e4ad4a9d0b48c105b24c81749b7252be06b85e966eb26b56bcb22b8f5"
+        },
+        {
+          "width": 1254,
+          "bytes": 186785,
+          "webpBytes": 271154,
+          "sha256": "ce26949e539a835fe0cae7403a321de0cb397df6433fc4ae0334a31c89d43d1b"
+        }
+      ]
+    }
+  ]
+}

@@ -27,6 +27,8 @@ describe('FadeIn', () => {
         );
 
         expect(screen.getByText('Test Content')).toBeInTheDocument();
+        expect(screen.getByText('Test Content').parentElement).toHaveClass('opacity-100');
+        expect(screen.getByText('Test Content').parentElement).not.toHaveClass('opacity-0');
     });
 
     it('applies custom className', () => {
