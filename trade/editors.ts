@@ -1,5 +1,7 @@
 /* eslint-disable */
 // @ts-nocheck
+import { shareableBoard } from './shareableBoard';
+import { calibrationScale, renderPlannerLabels, renderAtRevision, usingDisposable, withRestoredVisibility } from './editorSafety';
 import { HouseStaffGate } from './admin/HouseStaffGate';
 import { TradeAccount, TradeWelcome, TradeApplication, ProjectDeliveryPanel, ProductDeliveryEstimate, ProgramHubV2, TeamPanel } from './deferredFeatures';
 import { DeliveryCalculatorDisclosure } from './DeliveryCalculatorDisclosure';
@@ -668,7 +670,7 @@ const pieceUrl=(pid,ref,ch)=>pieceShareUrl(shareOrigin(),pid,ref,ch);
 const isPhone=()=>matchMedia('(pointer:coarse)').matches&&innerWidth<900;
 
 // Uploaded photos stay on the sharer's device; the shared layout keeps everything else.
-const shareableDoc=doc=>doc&&({...doc,bg:doc.bg?.img?.startsWith('data:')?{color:'#EFE6D8',grid:doc.bg.grid}:doc.bg,els:doc.els.filter(e=>!String(e.src||'').startsWith('data:'))});
+const shareableDoc=shareableBoard;
 
 const ROUTES=[['image','Download image','PNG at 2×, ready to print or post','download'],['pdf','Download PDF','The board, then a product sheet with live links','board'],['story','Instagram Story','A 1080 × 1920 template, with the link copied for the sticker','img'],['pin','Pin or post','1000 × 1500 for Pinterest, or 1080 × 1350 for a feed','pin'],['link','Copy link','A short link to the shoppable board','link'],['share','Send to a friend','Your phone\'s share sheet, or email on a computer','send']];
 
@@ -697,7 +699,7 @@ function ShareSheet({ctx,title,doc,image,ids,selections,boardKey,room,units,onCl
   const boardCanvas=async w=>{if(doc)return renderBoard(doc,w,{products:savedCatalog.products});const im=await loadImg(image);const c=document.createElement('canvas');c.width=w;c.height=Math.round(w*im.height/im.width);c.getContext('2d').drawImage(im,0,0,c.width,c.height);return c};
   // The link is made once per mode (with the rendered board as its cover) and reused by every route.
   const ensure=async()=>{check();if(links[m]?.signature===signature)return links[m];if(!ctx.me.signedIn){onClose();ctx.toast('Sign in to share a link');ctx.signInThen(ctx.route);return null}
-    let coverId;try{const c=await boardCanvas(1200);const b=await canvasBlob(c,'image/jpeg',.88);const bytes=await b.arrayBuffer();check();coverId=await uploadCover({bytes,type:'image/jpeg'});check()}catch(e){coverId=undefined}
+    let coverId;try{const c=doc?await renderBoard(shareableDoc(doc),1200,{products:savedCatalog.products}):await boardCanvas(1200);const b=await canvasBlob(c,'image/jpeg',.88);const bytes=await b.arrayBuffer();check();coverId=await uploadCover({bytes,type:'image/jpeg'});check()}catch(e){coverId=undefined}
     check();const r=await share({title,mode:shop?'shop':'presentation',items:pieces.map(id=>({productId:productLookup(id).lid,variantId:productLookup(id).vid,qty:counts[id]})),boardKey:boardKey||undefined,doc:doc?shareableDoc(doc):undefined,coverId});
     check();setLinks(l=>({...l,[m]:{...r,signature}}));return r};
   const run=async(k,fn)=>{setBusy(k);setErr('');try{check();await fn()}catch(e){setErr(errText(e))}finally{setBusy('')}};
@@ -740,7 +742,7 @@ function StoryBuilder({ctx,doc,boardCanvas,pieces,title,pin,prices,ensure,onQR,b
   const [ground,setGround]=useState('#EFE6D8');const [caption,setCaption]=useState('');const [showP,setShowP]=useState(prices);const [size,setSize]=useState('pin');const [url,setUrl]=useState(null);
   const list=kind==='single'?STORY_SINGLE:STORY_BOARD.filter(([k])=>k!=='before'||doc?.bg?.img);const t=list[((ti%list.length)+list.length)%list.length];
   const SIZES={pin:{w:1000,h:1500},feed:{w:1080,h:1350}};const dims=pin?SIZES[size]:STORY;
-  useEffect(()=>{let live=true;const tm=setTimeout(async()=>{try{const c=await renderStory(doc,{products,productLookup,title,kind,t:t[0],pid,ground,caption,prices:prices&&showP,size:dims,board:boardCanvas?await boardCanvas(2160):null,ids:pieces});if(live)setUrl(c.toDataURL('image/jpeg',.8))}catch(e){}},150);return()=>{live=false;clearTimeout(tm)}},[kind,t[0],pid,ground,caption,showP,size,pin,signature]);
+  useEffect(()=>{let live=true;const tm=setTimeout(async()=>{try{const c=await renderStory(doc,{products,productLookup,title,kind,t:t[0],pid,ground,caption,prices:prices&&showP,size:dims,board:boardCanvas?await boardCanvas(2160):null,ids:pieces});if(live)setUrl(c.toDataURL('image/jpeg',.8))}catch(e){}},150);return()=>{live=false;clearTimeout(tm)}},[kind,t[0],pid,ground,caption,showP,size,pin,signature,prices]);
   const out=()=>run('story',async()=>{const c=await renderStory(doc,{products,productLookup,title,kind,t:t[0],pid,ground,caption,prices:prices&&showP,size:dims,board:boardCanvas?await boardCanvas(2160):null,ids:pieces});const blob=await canvasBlob(c);
     check();const l=await ensure();if(!l)return;check();const ch=pin?(size==='pin'?'pin':'post'):'story';const link=bundleUrl(l.slug,ch);const file=new File([blob],fileName(title,'png'),{type:'image/png'});
     if(isPhone()&&navigator.canShare?.({files:[file]})){await copyText(link,()=>{});ctx.toast(pin?'Link copied. Paste it as the post\'s link.':'Link copied. Add a Link sticker and paste.');try{check();await navigator.share({files:[file],title})}catch(e){}return}
@@ -1017,7 +1019,7 @@ function ReadyRoom({ctx,onDraftChange,products}){
     // labels (plan names, room dims, distances)
     const tmp=new T.Vector3();
     function labels(){const el=labRef.current;if(!el)return;const d=S.doc;const u=S.units;const out=[];const proj=(x,y,z)=>{tmp.set(x,y,z).project(S.camObj);return [(tmp.x+1)/2*size.w,(1-tmp.y)/2*size.h,tmp.z<1]};
-      const lab=(cls,p,t)=>{if(p[2])out.push(`<span class="pl-lab ${cls}" style="left:${p[0]}px;top:${p[1]}px">${t}</span>`)};
+      const lab=(cls,p,t)=>{if(p[2])out.push({className:cls,x:p[0],y:p[1],text:t})};
       if(S.view==='plan'&&d.zones?.length){const t=d.wallT||.12;for(const zn of d.zones){const cw=polyArea(zn.poly)>0;zn.poly.forEach((a,i)=>{const b=zn.poly[(i+1)%zn.poly.length];const len=Math.hypot(b[0]-a[0],b[1]-a[1]);if(len<.3)return;const ux=(b[0]-a[0])/len,uz=(b[1]-a[1])/len;const nx=cw?uz:-uz,nz=cw?-ux:ux;lab('dim',proj((a[0]+b[0])/2+nx*(t+.3),0,(a[1]+b[1])/2+nz*(t+.3)),fmtLen(len,u))});
           const c=polyCentre(zn.poly);const seats=d.items.filter(it=>!it.hang&&inPoly([it.x,it.z],zn.poly)).reduce((s2,it)=>s2+byId(it).seats,0);lab('zone',proj(c[0],0,c[1]),`${zn.name} · ${seats} seat${seats===1?'':'s'}`)}
         for(const v of S.rugs.values()){const r=v.it;lab('rug'+(r.uid===S.sel?' sel':''),proj(r.x,0,r.z+rugExt(r)[1]-.22),`Rug · ${r.size}`)}
@@ -1039,7 +1041,7 @@ function ReadyRoom({ctx,onDraftChange,products}){
         if(!isRug){const D=byId(it).dimsCm;if(D)lab('size',proj(it.x,(it.hang?sv.g.position.y:0)+sv.hp+.18,it.z),`${fmtCm(D.w,u)} W × ${fmtCm(D.d,u)} D × ${fmtCm(D.h,u)} H`)}}
       // Rebuild the measure lines and labels only when they change, so an idle view costs nothing.
       const lk=JSON.stringify(lines);if(lk!==S.lineKey){S.lineKey=lk;clear(dimG);lines.forEach(([x1,z1,x2,z2])=>dimG.add(new T.Line(new T.BufferGeometry().setFromPoints([new T.Vector3(x1,.03,z1),new T.Vector3(x2,.03,z2)]),dimM)))}
-      const html=out.join('');if(html!==S.labHtml){S.labHtml=html;el.innerHTML=html}}
+      const key=JSON.stringify(out);if(key!==S.labHtml){S.labHtml=key;renderPlannerLabels(el,out)}}
     const bounce=t=>{const n=7.5625,k=2.75;return t<1/k?n*t*t:t<2/k?n*(t-=1.5/k)*t+.75:t<2.5/k?n*(t-=2.25/k)*t+.9375:n*(t-=2.625/k)*t+.984375};
     const walk=dt=>{if(!S.keys.size)return;const e=S.eye,d=S.doc,sp=1.4*dt;let f=(S.keys.has('f')?1:0)-(S.keys.has('b')?1:0),st=(S.keys.has('r')?1:0)-(S.keys.has('l')?1:0);
       const dx=(Math.sin(e.yaw)*f+Math.cos(e.yaw)*st)*sp,dz=(-Math.cos(e.yaw)*f+Math.sin(e.yaw)*st)*sp;const free=(x,z)=>Math.abs(x)<d.W/2-.3&&Math.abs(z)<d.D/2-.3&&![...S.items.values()].some(v=>{if(v.it.hang)return false;const [a,b]=plExt(v.it);return Math.abs(x-v.it.x)<a+.25&&Math.abs(z-v.it.z)<b+.25});
@@ -1056,20 +1058,41 @@ function ReadyRoom({ctx,onDraftChange,products}){
     const api={select:id=>{S.sel=id;applyLook();E.current.onSelect&&E.current.onSelect(id)},onMoved:(id,o)=>E.current.onMoved&&E.current.onMoved(id,o),onDrop:(pid,x,z)=>E.current.onDrop&&E.current.onDrop(pid,x,z)};
     // Still render: a progressive path tracer refines the current view into a photograph with real
     // bounced light, at 2560 × 1440, for up to 18 seconds. Where it can't run, a high-quality raster frame stands in.
-    async function still(onProgress,W=2560,H=1440){if(S.view==='plan')throw new Error('Switch to Orbit or Walk to render.');const cam=S.camObj.clone();cam.aspect=W/H;cam.updateProjectionMatrix();
+    async function still(onProgress,W=2560,H=1440){
+      if(S.view==='plan')throw new Error('Switch to Orbit or Walk to render.');
+      const cam=S.camObj.clone();cam.aspect=W/H;cam.updateProjectionMatrix();
       const hidden=[];scene.traverse(o=>{if(o.visible&&(o.isLine||o.isLineSegments||o.isSprite||o===grid||o===sky||o===ground)){hidden.push(o);o.visible=false}});
-      for(const v of S.items.values()){const p=byId(v.it);if(v.model&&p.modelLow&&!v.hi){v.hi=true;try{const obj=await loadGLB(p.model,renderer);fitToDims(T,obj,p.dimsCm);obj.position.y=v.model.position.y;v.g.remove(v.model);v.g.add(obj);v.model=obj}catch(e){}}}
-      const off=new T.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});off.setSize(W,H,false);off.outputColorSpace=T.SRGBColorSpace;off.toneMapping=T.ACESFilmicToneMapping;off.toneMappingExposure=renderer.toneMappingExposure;off.shadowMap.enabled=true;off.shadowMap.type=T.PCFSoftShadowMap;off.setClearColor(renderer.getClearColor(new T.Color()));
-      const restore=()=>{hidden.forEach(o=>o.visible=true);off.dispose()};
-      try{if(!canTrace(renderer)||window.__forceTrace===false)throw new Error('This device renders stills without path tracing.');const {WebGLPathTracer}=await import('three-gpu-pathtracer');const sky=renderer.getClearColor(new T.Color());const env=new T.DataTexture(new Float32Array([sky.r,sky.g,sky.b,1,sky.r,sky.g,sky.b,1,.35,.3,.26,1,.35,.3,.26,1]),2,2,T.RGBAFormat,T.FloatType);env.mapping=T.EquirectangularReflectionMapping;env.needsUpdate=true;
-        const prevEnv=scene.environment,prevBg=scene.background;scene.environment=env;scene.background=sky;
-        // The path tracer reads environmentRotation and backgroundRotation from every scene it makes; three r160 doesn't define them yet.
-        if(!('environmentRotation' in T.Scene.prototype)){T.Scene.prototype.environmentRotation=new T.Euler();T.Scene.prototype.backgroundRotation=new T.Euler()}
-        try{const pt=new WebGLPathTracer(off);pt.tiles.set(2,2);pt.setScene(scene,cam);const t0=performance.now();let n=0;
-          while(performance.now()-t0<18000&&n<600){pt.renderSample();n++;onProgress&&onProgress(Math.min(1,(performance.now()-t0)/18000),n);await new Promise(r=>setTimeout(r,0))}
-          const url=off.domElement.toDataURL('image/jpeg',.94);pt.dispose?.();return {url,samples:n,traced:true}}
-        finally{scene.environment=prevEnv;scene.background=prevBg;env.dispose();restore()}}
-      catch(e){console.warn('Path tracing unavailable; rendering a raster still instead.',e);const o2=new T.WebGLRenderer({antialias:true,preserveDrawingBuffer:true});o2.setSize(W,H,false);o2.outputColorSpace=T.SRGBColorSpace;o2.toneMapping=T.ACESFilmicToneMapping;o2.shadowMap.enabled=true;o2.setClearColor(renderer.getClearColor(new T.Color()));o2.render(scene,cam);const url=o2.domElement.toDataURL('image/jpeg',.94);o2.dispose();return {url,samples:0,traced:false}}}
+      return withRestoredVisibility(hidden,async()=>{
+        for(const v of S.items.values()){const p=byId(v.it);if(v.model&&p.modelLow&&!v.hi){v.hi=true;try{const obj=await loadGLB(p.model,renderer);fitToDims(T,obj,p.dimsCm);obj.position.y=v.model.position.y;v.g.remove(v.model);v.g.add(obj);v.model=obj}catch(e){}}}
+        const configure=off=>{off.setSize(W,H,false);off.outputColorSpace=T.SRGBColorSpace;off.toneMapping=T.ACESFilmicToneMapping;off.toneMappingExposure=renderer.toneMappingExposure;off.shadowMap.enabled=true;off.shadowMap.type=T.PCFSoftShadowMap;off.setClearColor(renderer.getClearColor(new T.Color()));};
+        try{
+          if(!canTrace(renderer)||window.__forceTrace===false)throw new Error('This device renders stills without path tracing.');
+          const {WebGLPathTracer}=await import('three-gpu-pathtracer');
+          return await usingDisposable(()=>new T.WebGLRenderer({antialias:true,preserveDrawingBuffer:true}),async off=>{
+            configure(off);const sky=renderer.getClearColor(new T.Color());
+            return usingDisposable(()=>new T.DataTexture(new Float32Array([sky.r,sky.g,sky.b,1,sky.r,sky.g,sky.b,1,.35,.3,.26,1,.35,.3,.26,1]),2,2,T.RGBAFormat,T.FloatType),async env=>{
+              env.mapping=T.EquirectangularReflectionMapping;env.needsUpdate=true;
+              const prevEnv=scene.environment,prevBg=scene.background;
+              try{
+                scene.environment=env;scene.background=sky;
+                if(!('environmentRotation' in T.Scene.prototype)){T.Scene.prototype.environmentRotation=new T.Euler();T.Scene.prototype.backgroundRotation=new T.Euler()}
+                return await usingDisposable(()=>new WebGLPathTracer(off),async pt=>{
+                  pt.tiles.set(2,2);pt.setScene(scene,cam);const t0=performance.now();let n=0;
+                  while(performance.now()-t0<18000&&n<600){pt.renderSample();n++;onProgress&&onProgress(Math.min(1,(performance.now()-t0)/18000),n);await new Promise(r=>setTimeout(r,0))}
+                  return {url:off.domElement.toDataURL('image/jpeg',.94),samples:n,traced:true};
+                });
+              }finally{scene.environment=prevEnv;scene.background=prevBg;}
+            });
+          });
+        }catch(e){
+          console.warn('Path tracing unavailable; rendering a raster still instead.',e);
+          return usingDisposable(()=>new T.WebGLRenderer({antialias:true,preserveDrawingBuffer:true}),off=>{
+            configure(off);off.render(scene,cam);
+            return {url:off.domElement.toDataURL('image/jpeg',.94),samples:0,traced:false};
+          });
+        }
+      });
+    }
     Object.assign(E.current,{S,buildRoom,syncItems,syncRugs,applyLook,api,still,snapshot:()=>{renderer.render(scene,S.camObj);return cv.toDataURL('image/jpeg',.92)}});
     loop();setEng(n=>n+1);
     return()=>{run=false;S.alive=false;cancelAnimationFrame(raf);ro.disconnect();removeEventListener('keydown',kd);removeEventListener('keyup',ku);removeEventListener('blur',stopWalking);document.removeEventListener('focusin',stopWalking);scene.traverse(o=>{if(o.geometry)o.geometry.dispose()});pmrem.dispose();envTex?.dispose();composer?.dispose?.();renderer.dispose()};
@@ -1079,6 +1102,9 @@ function ReadyRoom({ctx,onDraftChange,products}){
   const geoKey=JSON.stringify([doc.W,doc.D,doc.H,doc.wallT,doc.wall,doc.floor,doc.floorTint,doc.openings,doc.wallImg?doc.wallImg.length:0,doc.zones,doc.blocks,doc.underlay?{...doc.underlay,img:doc.underlay.img.length}:null]);
   useEffect(()=>{const e=E.current;if(!e.buildRoom)return;e.buildRoom(doc);e.syncItems(doc.items);setTimeout(()=>{if(e.S)e.S.ready=true},50)},[geoKey,eng]);
   const catalogSignature=JSON.stringify(doc.items.map(it=>byId(it)));
+  const sceneRevision=useRef(0),previousSceneInputs=useRef('');
+  const sceneInputs=JSON.stringify([doc,catalogSignature,view,style,tod,title,units]);
+  if(previousSceneInputs.current!==sceneInputs){previousSceneInputs.current=sceneInputs;sceneRevision.current++}
   useEffect(()=>setShareImg(null),[catalogSignature]);
   useEffect(()=>{const e=E.current;if(e.syncItems)e.syncItems(doc.items)},[doc.items,eng,catalogSignature]);
   useEffect(()=>{const e=E.current;if(e.syncRugs)e.syncRugs(doc.rugs||[])},[doc.rugs,eng]);
@@ -1111,20 +1137,20 @@ function ReadyRoom({ctx,onDraftChange,products}){
   // result here when it's ready and gets it by email too.
   const startAi=async()=>{if(!eng)return;if(!ctx.me.signedIn){setShowPrompt(false);ctx.toast('Sign in to make an AI render');ctx.signInThen('room');return}
     if(view==='plan'){ctx.toast('Switch to Orbit or Walk to make an AI render.');return}
-    setAiBusy(true);try{const S=E.current.S;const snap=await dataUrlBlob(E.current.snapshot());
+    setAiBusy(true);try{const captured={doc:structuredClone(docRef.current),title,units};const S=E.current.S;const snap=await dataUrlBlob(E.current.snapshot());
       const pieces=[...new Set(doc.items.map(i=>byId(i)?.lid).filter(Boolean))].slice(0,6);
       const id=await createRender({title,prompt,snapshot:await snap.arrayBuffer(),camera:S?{view:S.view,orbit:S.cam,walk:S.eye}:undefined,pieces});
-      setShowPrompt(false);setAiJob(id)}catch(e){ctx.toast(errText(e))}finally{setAiBusy(false)}};
+      setShowPrompt(false);setAiJob({id,...captured})}catch(e){ctx.toast(errText(e))}finally{setAiBusy(false)}};
   return html`<main className="sx planner2"><h1 className="sr">Room planner</h1>${!!doc.placementConflicts?.length&&html`<p role="alert" className="help">Some pieces could not be placed without overlap or outside the floor plan. Your pieces are preserved. Enlarge the room, move or remove these pieces: ${doc.items.filter(i=>doc.placementConflicts.includes(i.uid)).map(i=>byId(i).name).join(", ")}</p>`}
-    <${SxTop} ctx=${ctx} title=${title} setTitle=${t=>setTitle(t.slice(0,TITLE_MAX))} view="3d" onView=${k=>{ctx.setStudioSeed({view:k==='room'?'room':'collage',sync:doc.items.map(currentIdentity)});ctx.go('studio')}} saved="Saved on this device" onShare=${()=>eng&&setShareImg(E.current.snapshot())}>
+    <${SxTop} ctx=${ctx} title=${title} setTitle=${t=>setTitle(t.slice(0,TITLE_MAX))} view="3d" onView=${k=>{ctx.setStudioSeed({view:k==='room'?'room':'collage',sync:doc.items.map(currentIdentity)});ctx.go('studio')}} saved="Saved on this device" onShare=${()=>eng&&setShareImg({url:E.current.snapshot(),doc:structuredClone(docRef.current),title,units})}>
       <${SxMenu} ctx=${ctx} hist=${{undo,redo,canUndo:hist.current.past.length>0,canRedo:hist.current.future.length>0,steps:hist.current.past.length}}>
         <div className="sx-pop-sec"><span className="sx-lbl">Placing</span>
           <button className="toggle" onClick=${()=>setSnap(!snap)}><span>Snap to 5 cm and walls</span><span className=${'sw'+(snap?' on':'')}></span></button></div>
         <div className="sx-pop-sec"><span className="sx-lbl">Units</span><div className="seg" role="group" aria-label="Units">${[['m','Metres'],['ft','Feet and inches']].map(([k,l])=>html`<button key=${k} className=${units===k?'on':''} onClick=${()=>setUnits(k)}>${l}</button>`)}</div></div>
         <div className="sx-pop-sec"><span className="sx-lbl">This room</span>
-          <button className="pop-item" data-close disabled=${!eng} onClick=${()=>setShot(E.current.snapshot())}>${I('cam',{width:16})} Snapshot</button>
+          <button className="pop-item" data-close disabled=${!eng} onClick=${()=>setShot({url:E.current.snapshot(),doc:structuredClone(docRef.current),title,units})}>${I('cam',{width:16})} Snapshot</button>
           <button className="pop-item" data-close onClick=${async()=>{try{const signature=JSON.stringify(doc.items.map(i=>byId(i)));const generation=catalogGeneration;const blob=await planPdf(doc,{title,units,link:null,products});if(generation!==catalogGeneration||signature!==JSON.stringify(docRef.current.items.map(i=>byId(i)))||!E.current.S?.alive)throw Error('The catalog changed. Review your saved items and try again.');saveBlob(blob,fileName(title+'-plan','pdf'));ctx.toast('Plan PDF downloaded')}catch(e){ctx.toast(errText(e))}}}>${I('board',{width:16})} Download the plan as a PDF</button>
-          <button className="pop-item" data-close disabled=${!eng||!doc.items.length} onClick=${()=>{const img=E.current.snapshot();const ids=doc.items.map(i=>i.pid);const els=ids.slice(0,8).map((pid,i)=>({...mkImg(pid,0,'collage',SLOTS,'cutout'),x:4+i*12,y:84,w:11,rot:0}));ctx.setStudioSeed({collage:{id:uid(),title:(title+' view').slice(0,TITLE_MAX),mode:'collage',page:'landscape',shape:'rect',edge:'shadow',bg:{img},els}});ctx.go('studio')}}>${I('img',{width:16})} Send this view to the Studio</button>
+          <button className="pop-item" data-close disabled=${!eng||!doc.items.length} onClick=${()=>{const img=E.current.snapshot();const ids=doc.items.map(currentIdentity);const els=ids.slice(0,8).map((identity,i)=>({...mkImg(identity,0,'collage',SLOTS,'cutout'),x:4+i*12,y:84,w:11,rot:0}));ctx.setStudioSeed({collage:{id:uid(),title:(title+' view').slice(0,TITLE_MAX),mode:'collage',page:'landscape',shape:'rect',edge:'shadow',bg:{img},els}});ctx.go('studio')}}>${I('img',{width:16})} Send this view to the Studio</button>
           <button className="pop-item" data-close onClick=${()=>setShowPrompt(true)}>${I('wand',{width:16})} Render brief</button></div>
       <//>
     <//>
@@ -1185,7 +1211,7 @@ function ReadyRoom({ctx,onDraftChange,products}){
               <div className="sx-pop-sec"><span className="sx-lbl">Look</span><div className="seg" role="group" aria-label="Look">${[['material','Render'],['clay','Clay'],['line','Line']].map(([k,l])=>html`<button key=${k} className=${style===k?'on':''} onClick=${()=>setStyle(k)}>${l}</button>`)}</div></div>
               <div className="sx-pop-sec"><span className="sx-lbl">Time of day · ${todLabel}</span><input type="range" min="0" max="1" step="0.01" value=${tod} onInput=${e=>setTod(+e.target.value)} aria-label="Time of day" style=${{accentColor:'var(--cognac)'}}/></div>
             </div>`}</div>
-          ${style==='material'&&view!=='plan'&&html`<button className="sx-look sx-render" disabled=${!eng||!!rendering} onClick=${async()=>{setRendering({p:0});try{const r=await E.current.still(pr=>setRendering({p:pr}));setRendering(null);setShareImg(r.url);if(!r.traced)ctx.toast('This device rendered a quick still instead of a path-traced one.')}catch(e){setRendering(null);ctx.toast(errText(e))}}}>${I('cam',{width:14})} ${rendering?`Rendering ${Math.round(rendering.p*100)}%`:'Render'}</button>`}
+          ${style==='material'&&view!=='plan'&&html`<button className="sx-look sx-render" disabled=${!eng||!!rendering} onClick=${async()=>{setRendering({p:0});try{const capturedDoc=structuredClone(docRef.current);const capturedTitle=title,capturedUnits=units;const r=await renderAtRevision(()=>sceneRevision.current,()=>E.current.still(pr=>setRendering({p:pr})));setRendering(null);if(!r){ctx.toast('The room changed while rendering. Render again to share the current room.');return}setShareImg({url:r.url,doc:capturedDoc,title:capturedTitle,units:capturedUnits});if(!r.traced)ctx.toast('This device rendered a quick still instead of a path-traced one.')}catch(e){setRendering(null);ctx.toast(errText(e))}}}>${I('cam',{width:14})} ${rendering?`Rendering ${Math.round(rendering.p*100)}%`:'Render'}</button>`}
           ${view!=='plan'&&html`<button className="sx-look sx-render" disabled=${!eng||aiBusy} onClick=${startAi} title="A photoreal picture of this view, made by AI">${I('wand',{width:14})} ${aiBusy?'Sending…':'AI render'}</button>`}
         </div>
         <div className="pl-hint sx-hint">${view==='plan'?'Drag to pan · scroll to zoom · drag a piece to move it':view==='eye'?'WASD or arrows to walk · drag to look':view==='product'?'Drag to turn the piece':'Drag to orbit · right-drag or two fingers to pan · scroll to zoom · double-click a piece to focus'}</div>
@@ -1221,7 +1247,7 @@ function ReadyRoom({ctx,onDraftChange,products}){
       <${SxPill} ctx=${ctx} count=${doc.items.length} total=${pieces.reduce((s,p)=>s+pr(p,ctx.mode),0)} onOpen=${()=>setTraySheet(true)}/>
     </section>
     ${traySheet&&html`<${SxTray} ctx=${{...ctx,savedProducts:products}} rows=${plRows} onClose=${()=>setTraySheet(false)}/>`}
-    ${shareImg&&html`<${ShareSheet} ctx=${ctx} title=${title} image=${shareImg} ids=${doc.items.map(i=>i.pid)} boardKey=${roomKey} room=${doc} units=${units} onClose=${()=>setShareImg(null)}/>`}
+    ${shareImg&&html`<${ShareSheet} ctx=${ctx} title=${shareImg.title} image=${shareImg.url} ids=${shareImg.doc.items.map(i=>i.pid)} selections=${shareImg.doc.items.map(currentIdentity)} boardKey=${roomKey} room=${shareImg.doc} units=${shareImg.units} onClose=${()=>setShareImg(null)}/>`}
     ${planOpen&&html`<${FloorPlanEditor} ctx=${ctx} doc=${doc} units=${units} onClose=${()=>setPlanOpen(false)} onApply=${applyPlan}/>`}
     ${tplAsk&&html`<${SxDialog} title="Replace this room?" onClose=${()=>setTplAsk(null)}>
       <p className="sx-note">Starting from <b>${PL_TEMPLATES[tplAsk].label}</b> replaces the room and its ${doc.items.length} piece${doc.items.length===1?'':'s'} with:</p>
@@ -1230,14 +1256,14 @@ function ReadyRoom({ctx,onDraftChange,products}){
       <div className="row" style=${{gap:8,justifyContent:'flex-end'}}><button className="btn btn-line btn-sm" onClick=${()=>setTplAsk(null)}>Keep my room</button>
         <button className="btn btn-cog btn-sm" onClick=${()=>{const k=tplAsk;const t=JSON.parse(JSON.stringify(PL_TEMPLATES[k]));commit(plReflow({...t,tpl:k,items:t.items.map(it=>({...it,uid:uid()})),rugs:[],wallImg:null}));setSel(null);setTplAsk(null);ctx.toast('Room replaced',{label:'Undo',fn:undo})}}>Replace canvas</button></div>
     <//>`}
-    ${shot&&html`<${Modal} open label="Snapshot" onClose=${()=>setShot(null)}><div className="scrim" onClick=${e=>e.target===e.currentTarget&&setShot(null)}><div className="sheet share" style=${{width:'min(1000px,100%)'}}><div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>Snapshot</h2><button className="ib" aria-label="Close" onClick=${()=>setShot(null)}>${I('x')}</button></div><img src=${shot} alt="Snapshot of the room" style=${{borderRadius:12}}/><div className="row" style=${{gap:8,flexWrap:'wrap'}}><a className="btn btn-cog btn-sm" href=${shot} download=${(title||'room').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.jpg'}>${I('download',{width:15})} Download image</a><button className="btn btn-line btn-sm" onClick=${()=>{setShareImg(shot);setShot(null)}}>${I('share',{width:15})} Share</button></div></div></div><//>`}
+    ${shot&&html`<${Modal} open label="Snapshot" onClose=${()=>setShot(null)}><div className="scrim" onClick=${e=>e.target===e.currentTarget&&setShot(null)}><div className="sheet share" style=${{width:'min(1000px,100%)'}}><div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>Snapshot</h2><button className="ib" aria-label="Close" onClick=${()=>setShot(null)}>${I('x')}</button></div><img src=${shot.url} alt="Snapshot of the room" style=${{borderRadius:12}}/><div className="row" style=${{gap:8,flexWrap:'wrap'}}><a className="btn btn-cog btn-sm" href=${shot.url} download=${(title||'room').replace(/[^a-z0-9]+/gi,'-').toLowerCase()+'.jpg'}>${I('download',{width:15})} Download image</a><button className="btn btn-line btn-sm" onClick=${()=>{setShareImg(shot);setShot(null)}}>${I('share',{width:15})} Share</button></div></div></div><//>`}
     ${showPrompt&&html`<${Modal} open label="Render brief" onClose=${()=>setShowPrompt(false)}><div className="scrim" onClick=${e=>e.target===e.currentTarget&&setShowPrompt(false)}><div className="sheet share" style=${{width:'min(720px,100%)'}}>
       <div className="row" style=${{justifyContent:'space-between'}}><h2 style=${{fontSize:32}}>Render <em style=${{color:'var(--cognac)'}}>brief</em></h2><button className="ib" aria-label="Close" onClick=${()=>setShowPrompt(false)}>${I('x')}</button></div>
       <p className="help" style=${{margin:0}}>Written from your exact layout, materials and light. AI render turns this view into a photoreal picture from the brief, keeping your exact layout and pieces.</p>
       <pre style=${{whiteSpace:'pre-wrap',background:'var(--plaster)',padding:16,borderRadius:12,fontFamily:'var(--mono)',fontSize:12.5,lineHeight:1.6,margin:0,maxHeight:320,overflow:'auto'}}>${prompt}</pre>
-      <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-ink btn-sm" onClick=${()=>copyText(prompt,ctx.toast)}>${I('copy',{width:14})} Copy brief</button><button className="btn btn-line btn-sm" disabled=${!eng} onClick=${()=>{setShowPrompt(false);setShot(E.current.snapshot())}}>${I('cam',{width:14})} Take snapshot</button><button className="btn btn-cog btn-sm" disabled=${aiBusy||!eng} onClick=${startAi}>${I('wand',{width:14})} ${aiBusy?'Sending…':'Make an AI render'}</button></div>
+      <div className="row" style=${{flexWrap:'wrap'}}><button className="btn btn-ink btn-sm" onClick=${()=>copyText(prompt,ctx.toast)}>${I('copy',{width:14})} Copy brief</button><button className="btn btn-line btn-sm" disabled=${!eng} onClick=${()=>{setShowPrompt(false);setShot({url:E.current.snapshot(),doc:structuredClone(docRef.current),title,units})}}>${I('cam',{width:14})} Take snapshot</button><button className="btn btn-cog btn-sm" disabled=${aiBusy||!eng} onClick=${startAi}>${I('wand',{width:14})} ${aiBusy?'Sending…':'Make an AI render'}</button></div>
     </div></div><//>`}
-    ${aiJob&&html`<${AiRender} ctx=${ctx} id=${aiJob} onClose=${()=>setAiJob(null)} onShare=${u=>{setShareImg(u);setAiJob(null)}} onRetry=${()=>{setAiJob(null);startAi()}}/>`}
+    ${aiJob&&html`<${AiRender} ctx=${ctx} id=${aiJob.id} onClose=${()=>setAiJob(null)} onShare=${u=>{setShareImg({...aiJob,url:u});setAiJob(null)}} onRetry=${()=>{setAiJob(null);startAi()}}/>`}
   </main>`;
 }
 
@@ -1303,7 +1329,7 @@ function FloorPlanEditor({ctx,doc,units,onClose,onApply}){
   // Drag a corner to move it.
   const dragPt=(e,zid,i)=>{e.stopPropagation();const mv=ev=>{const p=at(ev);setP(s=>({...s,zones:s.zones.map(z=>z.id!==zid?z:{...z,poly:z.poly.map((q,k)=>k===i?p:q)})}))};const up=()=>removeEventListener('pointermove',mv);addEventListener('pointermove',mv);addEventListener('pointerup',up,{once:true})};
   const dragBlock=(e,id)=>{e.stopPropagation();const mv=ev=>{const p=at(ev);setP(s=>({...s,blocks:s.blocks.map(b=>b.id!==id?b:{...b,x:p[0],z:p[1]})}))};const up=()=>removeEventListener('pointermove',mv);addEventListener('pointermove',mv);addEventListener('pointerup',up,{once:true})};
-  const setScale=()=>{const v=fromU(parseFloat(calLen));if(cal.length<2||!(v>0))return;setP(p=>({...p,mPerPx:v/lenPx(cal[0],cal[1])}));setMode(P.zones.length?'select':'draw')};
+  const setScale=()=>{const v=fromU(parseFloat(calLen));const scale=cal.length<2?null:calibrationScale(v,lenPx(cal[0],cal[1]));if(scale===null){setErr('Choose two distinct points and enter a finite positive length.');return}setErr('');setP(p=>({...p,mPerPx:scale}));setMode(P.zones.length?'select':'draw')};
   const ai=async()=>{if(!P.img)return;if(!ctx.me.signedIn){ctx.toast('Sign in to read walls from a plan');return}setBusy('ai');setErr('');
     try{const r=await readWalls({image:P.img.split(',')[1],mime:'image/jpeg'});const px=([x,y])=>[x*P.w,y*P.h];
       setP(p=>({...p,zones:r.rooms.map(rm=>({id:uid(),name:rm.name,poly:rm.points.map(px),floor:doc.floor,wall:doc.wall})),blocks:r.blocks.map(b=>{const q=b.points.map(px);const xs=q.map(v=>v[0]),ys=q.map(v=>v[1]);return {id:uid(),name:b.name,x:(Math.min(...xs)+Math.max(...xs))/2,z:(Math.min(...ys)+Math.max(...ys))/2,w:(Math.max(...xs)-Math.min(...xs))*p.mPerPx,d:(Math.max(...ys)-Math.min(...ys))*p.mPerPx,h:1.05,rot:0}})}));
@@ -1356,7 +1382,7 @@ function FloorPlanEditor({ctx,doc,units,onClose,onApply}){
             <button className="ib" aria-label="Remove" onClick=${()=>setP(p=>({...p,blocks:p.blocks.filter(x=>x.id!==b.id)}))}>${I('x',{width:14})}</button></div>`)}<//>`}
         </aside>
       </div>
-      ${err&&html`<p className="sx-note" style=${{color:'var(--bad)'}}>${err}</p>`}
+      ${err&&html`<p role="alert" className="sx-note" style=${{color:'var(--bad)'}}>${err}</p>`}
       <div className="row" style=${{justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
         ${doc.zones?.length?html`<button className="lnk" onClick=${()=>onApply(null)}>Go back to a rectangular room</button>`:html`<span></span>`}
         <span className="row" style=${{gap:8}}><button className="btn btn-line btn-sm" onClick=${onClose}>Cancel</button><button className="btn btn-cog btn-sm" disabled=${!P.zones.length} onClick=${apply}>Use this plan</button></span></div>

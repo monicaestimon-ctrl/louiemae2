@@ -79,6 +79,15 @@ try {
   await page.waitForSelector('#opener');
   await page.click('#opener');
   await page.waitForSelector('dialog[open]');
+  await page.evaluate(() => [...document.querySelectorAll('button')].find(e => e.textContent === 'Scale').click());
+  const calibration = await (await page.$('.fp-sheet svg')).boundingBox();
+  await page.mouse.click(calibration.x + calibration.width * .25, calibration.y + calibration.height * .25);
+  await page.mouse.click(calibration.x + calibration.width * .25, calibration.y + calibration.height * .25);
+  await page.type('input[aria-label="Real length of the wall"]', '2');
+  await page.evaluate(() => [...document.querySelectorAll('button')].find(e => e.textContent === 'Set scale').click());
+  await page.waitForFunction(() => document.querySelector('[role="alert"]')?.textContent.includes('distinct points'));
+  assert.equal(await page.$eval('.fp-tools .seg .on', e => e.textContent), 'Scale');
+  assert.ok(await page.evaluate(() => document.body.textContent.includes('1 px = 2.0 cm')), 'Previous valid scale retained');
   await page.evaluate(() =>
     [...document.querySelectorAll('button')].find((e) => e.textContent === 'Draw a room').click()
   );
@@ -140,6 +149,7 @@ try {
   const result = {
     scope: 'Actual FloorPlanEditor, local draw only, no uploads or commands',
     draftEscapeBeforeClose: true,
+    coincidentCalibrationRejected: true,
     enterClosesDraft: true,
     tabContained: true,
     focusRestored: true,

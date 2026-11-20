@@ -1,7 +1,7 @@
 import {createServer} from 'node:http';
 import {once} from 'node:events';
 import path from 'node:path';
-/* global document, window, location, localStorage */
+/* global document, window, location, localStorage, sessionStorage */
 import { build } from 'esbuild';
 import puppeteer from 'puppeteer-core';
 import assert from 'node:assert/strict';
@@ -15,7 +15,7 @@ const stubs = {
   auth: `export const useAuthActions=()=>({signIn:async()=>{throw Error('No auth permitted')},signOut:async()=>{throw Error('No auth permitted')}});export const useAuthToken=()=>null;`,
   convex: `import{getFunctionName}from'convex/server';import{useSyncExternalStore}from'react';const subscribe=fn=>{window.addEventListener('fixture-auth',fn);return()=>window.removeEventListener('fixture-auth',fn)};export const useQuery=(ref)=>{const signedIn=useSyncExternalStore(subscribe,()=>!!window.fixtureSignedIn);return getFunctionName(ref)==='holm:me'?{signedIn,verified:false,admin:false,tradeStatus:'none'}:undefined;};export const useQueries=q=>Object.fromEntries(Object.entries(q).map(([k,v])=>[k,v.args.productIds?v.args.productIds.map(productId=>({productId,item:null})):{ready:true,items:v.args.legacyIds.map(legacyId=>({legacyId,status:'unavailable',item:null}))}]));export const useMutation=ref=>async()=>{if(getFunctionName(ref)==='holm:ensureProfile')return;window.fixtureCommands=(window.fixtureCommands||0)+1;throw Error('No mutation permitted')};export const usePaginatedQuery=()=>({results:[],status:'Exhausted',loadMore(){}});export const useAction=useMutation;export const useConvexAuth=()=>({isLoading:false,isAuthenticated:false});`,
 };
-const entry = `import React from'react';import{createRoot}from'react-dom/client';import{App,setProducts}from'./trade/app';const image='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';const products=Array.from({length:24},(_,i)=>({id:i+1,lid:'fixture'+i,vid:'fixture'+i,variants:[],name:'Fixture '+(i+1),full:'Fixture '+(i+1),line:'Chair',type:'sofa',mat:'leather',tone:'#6B4A33',price:100,trade:null,seats:1,oos:false,note:'Fixture only',facts:'',img:image,imgs:[image],ar:1,sku:'FIXTURE',likes:0,widthCm:50,dimsCm:{w:50,d:50,h:50},dimsSource:'fixture',cutout:null,cutAR:null,model:null,modelLow:null,hangs:false,mountCm:null,minimum:1,increment:1,checkoutMode:'quote'}));setProducts(products);const root=createRoot(document.getElementById('root'));root.render(<App/>);window.fixtureRemoveProduct=id=>{setProducts(products.filter(p=>p.id!==id))};window.fixtureSingleProduct=()=>setProducts(products.slice(0,1));`;
+const entry = `import React from'react';import{createRoot}from'react-dom/client';import{App,setProducts}from'./trade/app';const image='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';const products=Array.from({length:24},(_,i)=>({id:i+1,lid:'fixture'+i,vid:i===0?'finish-b':'fixture'+i,variants:[],name:'Fixture '+(i+1),full:'Fixture '+(i+1),line:'Chair',type:'sofa',mat:'leather',tone:'#6B4A33',price:100,trade:null,seats:1,oos:false,note:'Fixture only',facts:'',img:image,imgs:[image],ar:1,sku:'FIXTURE',likes:0,widthCm:50,dimsCm:{w:50,d:50,h:50},dimsSource:'fixture',cutout:null,cutAR:null,model:null,modelLow:null,hangs:false,mountCm:null,minimum:1,increment:1,checkoutMode:'quote'}));setProducts(products);const root=createRoot(document.getElementById('root'));root.render(<App/>);window.fixtureRemoveProduct=id=>{setProducts(products.filter(p=>p.id!==id))};window.fixtureSingleProduct=()=>setProducts(products.slice(0,1));`;
 const bundle = await build({
   stdin: { contents: entry, resolveDir: process.cwd(), loader: 'tsx' },
   bundle: true,
@@ -76,7 +76,7 @@ try{for(mode of ['slow','failure','sharing','sharing-failure']){const scenario=m
   await page.waitForFunction(()=>document.activeElement?.id==='sharing-opener');
   if(pending){pending.setHeader('Content-Type','text/javascript');pending.end(outputs.get('/'+path.basename(editor)).contents);pending=null;await page.waitForNetworkIdle();}
  }else{
-  await page.evaluate(()=>{location.hash='studio'});
+  await page.evaluate(()=>{const button=document.querySelector('.pin button[title="Place in Studio"]');if(!button)throw Error('Studio action missing');button.click()});
   if(mode==='slow'){
   await page.waitForFunction(()=>document.querySelector('[role=status]')?.textContent.includes('Loading studio'));
   assert.ok(pending);await page.evaluate(()=>{location.hash='discover'});await page.waitForSelector('.pin-open');
@@ -85,8 +85,12 @@ try{for(mode of ['slow','failure','sharing','sharing-failure']){const scenario=m
   }else{
   await page.waitForFunction(()=>document.querySelector('[role=alert]')?.textContent.includes('Studio could not load'));
   assert.equal(await page.evaluate(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='Reload page')),true);
+  assert.equal(await page.evaluate(()=>window.fixtureCommands||0),0,'No prohibited commands before reload');
+  assert.equal(await page.evaluate(()=>JSON.parse(sessionStorage.getItem('hol:pending-studio')).seed.ids[0].vid),'finish-b');
   mode='recovered';await Promise.all([page.waitForNavigation({waitUntil:'networkidle2'}),page.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Reload page').click())]);await page.waitForSelector('.sx');
   }
+  assert.equal(await page.$$eval('.sx-canvas .el',els=>els.length),1,'Pending selection restored instead of sample');
+  assert.equal(await page.evaluate(()=>sessionStorage.getItem('hol:pending-studio')),null,'Consumed seed cleared');
  }
  assert.equal(await page.evaluate(()=>localStorage.getItem('hol:tray')),before);
  assert.equal(await page.evaluate(()=>window.fixtureCommands||0),0);assert.deepEqual(errors,[]);

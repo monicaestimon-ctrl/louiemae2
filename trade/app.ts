@@ -1,5 +1,6 @@
 /* eslint-disable */
 // @ts-nocheck
+import { usePendingStudioSeed } from './pendingStudioSeed';
 import {Studio,Room,Quiz,ShareSheet} from './DesignTools';
 import { html, MAT, TYPE, byId, has, tp, pr, cut, pinItUrl, threeP, loadThree, LX, useThree, SPACES, SPACE_KEYS, COMMUNITY, load, store, hex2rgb, cdist, uid, copyText, COLOR_WORDS, matchPrompt, ICONS, I, useOutside, SaveMenu, PinCard, BoardPin, Wall, GLOW_AT, ROOMS, TEX, rnd, texture, STUDY, FLOOR_TILE, PAGES, pageOf, borderOf, POLY0, BW, boardH, boardPath, maskOf, LAYOUTS, SLOTS, mkImg, mkText, toneF, cropStyle, ElView, blends, elStyle, bgStyle, BoardPreview, errText, dataUrlBlob, dimsText, bundleUrl, gltfP, gltfLoader, glbCache, loadGLB, fitToDims } from './editorShared';
 export {html} from './editorShared';
@@ -2043,7 +2044,7 @@ export function App({catalogComplete=true,onCatalogIntent=()=>{},suspended=false
   usePrivateIndexing(!!me.signedIn || trayOpen);
   const [menu,setMenu]=useState(false);const [toastS,setToastS]=useState(null);
   const [query,setQuery]=useState('');const [imgQ,setImgQ]=useState(null);
-  const [studioSeed,setStudioSeed]=useState(null);const [nonce,setNonce]=useState(0);const [roomSeed,setRoomSeed]=useState(null);const [board,setBoard]=useState('b1');const [trend,setTrend]=useState('t1');
+  const [studioSeed,setStudioSeed]=usePendingStudioSeed();const [nonce,setNonce]=useState(0);const [roomSeed,setRoomSeed]=useState(null);const [board,setBoard]=useState('b1');const [trend,setTrend]=useState('t1');
   useEffect(()=>{const h=()=>{const r=getRoute();setPinReturnsToTray(false);if(r.startsWith('p/')){const id=+r.slice(2);if(Number.isSafeInteger(id)&&id>0){setPinIdentity({pid:id});setPin(id);return}}setRoute(r);setPin(null);scrollTo(0,0)};h();addEventListener('hashchange',h);return()=>removeEventListener('hashchange',h)},[]);
   // a visit through a partner link (?ref=CODE&ch=channel)
   const recordClick=useMutation(api.holmPartners.recordClick);
