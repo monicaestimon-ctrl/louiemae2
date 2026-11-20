@@ -6,6 +6,7 @@ import type { ComponentProps } from 'react';
 const mocks=vi.hoisted(()=>({signOut:vi.fn(),signIn:vi.fn(),ensure:vi.fn(),queries:vi.fn()}));
 vi.mock('@convex-dev/auth/react',()=>({useAuthActions:()=>({signOut:mocks.signOut,signIn:mocks.signIn})}));
 vi.mock('convex/react',()=>({useMutation:()=>mocks.ensure,useQuery:(ref:Parameters<typeof getFunctionName>[0],args:unknown)=>{mocks.queries(getFunctionName(ref),args);return getFunctionName(ref)==='holm:signInOptions'?{google:true}:null}}));
+vi.mock('./app',()=>({Hub:({ctx}:{ctx:{go:(route:string)=>void;toast:(message:string)=>void}})=><main><h1>Independent hub fixture</h1><button onClick={()=>ctx.go('welcome')}>Hub sign in</button><button onClick={()=>ctx.toast('Copied')}>Copy fixture</button></main>}));
 import { AccountEntry } from './AccountEntry';
 const member:ComponentProps<typeof AccountEntry>['me']={signedIn:true,email:'member@example.test',displayName:'Member',businessName:'Studio',tradeStatus:'approved',verified:true,partner:false,partnerTier:null,refCode:null,admin:false};
 beforeEach(()=>{vi.resetAllMocks();mocks.ensure.mockResolvedValue(null);window.history.replaceState(null,'','/trade/#account');sessionStorage.clear();localStorage.clear();});
@@ -35,4 +36,13 @@ it('clears private local project state only after successful sign-out',async()=>
  mocks.signOut.mockResolvedValue(null);localStorage.setItem('hol:tray','private draft');localStorage.setItem('unrelated','keep');
  render(<AccountEntry me={member} route="account"/>);fireEvent.click(await screen.findByRole('button',{name:'Log out'}));
  await waitFor(()=>expect(location.hash).toBe('#welcome'));expect(localStorage.getItem('hol:tray')).toBeNull();expect(localStorage.getItem('unrelated')).toBe('keep');
+});
+
+it('keeps hub sign-in return intent and local feedback independent of inventory',async()=>{
+ render(<AccountEntry me={{signedIn:false}} route="hub"/>);
+ fireEvent.click(await screen.findByRole('button',{name:'Copy fixture'}));
+ expect(screen.getByRole('status')).toHaveTextContent('Copied');
+ fireEvent.click(screen.getByRole('button',{name:'Hub sign in'}));
+ expect(location.hash).toBe('#welcome');expect(sessionStorage.getItem('hol:after')).toBe('hub');
+ expect(mocks.queries.mock.calls.some(([name])=>name.startsWith('holm:catalog'))).toBe(false);
 });

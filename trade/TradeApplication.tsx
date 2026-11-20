@@ -50,7 +50,7 @@ const LABELS: Partial<Record<ApplicationField, string>> = {
 };
 /** Accessible step-based application. Validation precedes uploads; eligibility and approval stay server-owned. */
 export function TradeApplication({ me, onNavigate, onSignIn }: Props) {
-  const application = useQuery(api.holm.myApplication);
+  const application = useQuery(api.holm.myApplication, me.signedIn ? {} : 'skip');
   const apply = useMutation(api.holm.applyTrade);
   const uploadUrl = useMutation(api.holm.uploadUrl);
   const [values, setValues] = useState<ApplicationValues>(BLANK);

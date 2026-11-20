@@ -114,6 +114,7 @@ jobs:
           node scripts/lighthouse/catalog-publication.mjs
           node scripts/lighthouse/house-staff.mjs
           node scripts/lighthouse/staff-entry.mjs
+          node scripts/lighthouse/trade-hub-entry.mjs
           node scripts/lighthouse/editorial-formats.mjs
           node scripts/lighthouse/story-formats.mjs
           node scripts/lighthouse/collection-formats.mjs
