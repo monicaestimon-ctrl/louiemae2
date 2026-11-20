@@ -11,3 +11,9 @@ This phase does not replace legacy margin caps, change the published tier percen
 The owner preview and deployment-admin-only `catCategories.inspect` share a bounded, paginated read-only audit. It compares the proposed category with existing explicit metadata when present, so a stale explicit Furniture label on lighting remains visible even after the legacy mapping changes. Inspection never approves a proposal or changes catalog, pricing, or commission records.
 
 Products without explicit category metadata remain marked for review even when the suggested category matches the legacy calculation. A fallback calculation is never treated as completed category approval.
+
+## Catalog terminology coverage
+
+The production read-only audit found existing furniture metadata whose product text was not recognized by the suggestion helper: armchairs, singular benches, storage chests, bar carts and seating. These terms now produce furniture suggestions. Broad room labels such as Outdoor or Bedroom still require product evidence; they do not automatically classify all products in those rooms as furniture. Lighting takes precedence and conflicting clothing/furniture terms still require review.
+
+This vocabulary correction changes suggestions and future legacy calculations, not explicit catalog approvals. It does not rewrite existing category metadata, costs, prices, inventory or earned commissions.
