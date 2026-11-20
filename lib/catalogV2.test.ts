@@ -17,13 +17,13 @@ describe('commission categories (S08)', () => {
     expect(proposeCategory(text)).toEqual({ category: 'furniture', reason: 'furniture term' });
   });
   it('keeps broad room categories and ambiguous merchandise in review', () => {
-    for (const text of ['Outdoor', 'Bedroom', 'Mystery item', 'Seating apparel'])
+    for (const text of ['Outdoor', 'Bedroom', 'Mystery item', 'Seating apparel', 'Decor Bar cart tray', 'Armchair pillow', 'Bench cushion decor'])
       expect(proposeCategory(text).category).toBe('review_required');
     expect(proposeCategory('Seating table lamp').category).toBe('decor');
     expect(proposeCategory('Light oak bench').category).toBe('furniture');
   });
 
-  it('maps lighting to décor and refuses ambiguous text', () => {
+  it('maps lighting to dÃ©cor and refuses ambiguous text', () => {
     expect(proposeCategory('Table lamp').category).toBe('decor');
     expect(proposeCategory('Pendant lighting').category).toBe('decor');
     expect(proposeCategory('Dining chair').category).toBe('furniture');
@@ -38,7 +38,7 @@ describe('packs and cartons (CAT03)', () => {
   it('keeps pieces, packs and cartons consistent', () => {
     expect(physicalUnits(pair, 3)).toBe(6);
     const cartons = cartonsFor([{ cartonsPerPack: 2, lengthMm: 900, widthMm: 600, heightMm: 500, grossWeightG: 15_000 }], 3);
-    expect(cartons).toHaveLength(6); // 2 cartons per pack × 3 packs, each listed separately
+    expect(cartons).toHaveLength(6); // 2 cartons per pack Ã— 3 packs, each listed separately
     expect(piecePriceInfo(45_806, 2)).toBe(22_903);
     expect(packLabel(2)).toBe('Set of 2');
     expect(packLabel(1)).toBe('');
