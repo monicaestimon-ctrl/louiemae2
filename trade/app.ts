@@ -82,9 +82,10 @@ import { api } from '../convex/_generated/api';
 
 import { phoneCut } from './phoneCut.mjs';
 
-import { loadBuild, BUILD } from './filmBuild';
-
-import { loadModel, MODEL } from './filmModel';
+// The hero's painted parts and their timeline (trade/filmBuild.ts, filmModel.ts, filmTiming.ts)
+// load only when the hero is about to draw, which keeps them out of the startup bundle.
+const loadBuild = (base) => Promise.all([import('./filmBuild'), import('./filmTiming')]).then(([m, t]) => m.loadBuild(base).then((B) => ({ B, timeline: t.buildTimeline })));
+const loadModel = (base) => import('./filmModel').then((m) => m.loadModel(base));
 
 import {LazyDeliveryQuoteAccess as DeliveryQuoteAccess} from '../components/delivery/LazyDeliveryQuoteAccess';
 
@@ -571,25 +572,6 @@ const FILM_AR=16/9;
 const PHONE_FRAMES='(max-aspect-ratio: 3/4)';
 
 function useMedia(q){const [m,setM]=useState(()=>matchMedia(q).matches);useEffect(()=>{const mq=matchMedia(q);const f=()=>setM(mq.matches);mq.addEventListener('change',f);return()=>mq.removeEventListener('change',f)},[q]);return m}
-// Each film is told in five parts, two of them painted live over it:
-//   the plan (film) → the clay model raised out of the plan, walls first, then each piece from
-//   its footprint (trade/filmModel.ts) → the camera dives into the model (film) → the room,
-//   still clay, finished by one sweep of light into the real thing (trade/filmBuild.ts) → the
-//   furnished room, its hotspots and the night (film).
-// MODEL_SECS and BUILD_SECS are how much scroll the painted parts get, in film seconds. Where a
-// film's layers are missing or fail to load, the film plays those parts as it is.
-const MODEL_SECS=9,BUILD_SECS=7;
-const BUILD_CH=['Then every piece, in clay.','Each one rises from its place in the plan.'];
-/** Scroll timeline for a film with its painted parts: segment starts, chapter starts and copy, in scroll seconds. */
-function buildTimeline(F,model){const TL=F.TL,tc=TL.ch[1]+1.15,t1=model?Math.min(1,TL.ch[1]*0.4):tc,S1=model?MODEL_SECS:0;
-  const te=TL.ch[2]-0.25,tf=TL.hot[0][0]+0.4,S2=BUILD_SECS;
-  // scroll seconds where each part starts: model, dive, build, furnished
-  const a=t1,c=a+S1,d=c+(te-tc),e=d+S2;
-  return {t1,tc,te,tf,a,c,d,e,S1,S2,total:e+TL.total-tf,
-    ch:[0,model?a:TL.ch[1],model?a+S1*MODEL.pieces[0]:tc,d+S2*BUILD.finish[0],e,e+TL.ch[4]-tf],
-    copy:[F.ch[0],F.ch[1],BUILD_CH,F.ch[2],F.ch[3],F.ch[4]],shop:4,
-    dark:d+S2*(BUILD.finish[0]+BUILD.finish[1])/2}}
-
 
 function FilmStudy({ctx,fk,setFk}){
   const F=FILMS[fk],D=DESK[fk],TL=D?D.TL:F.TL;const siblings=filmsFor(ctx.space);
@@ -599,13 +581,15 @@ function FilmStudy({ctx,fk,setFk}){
   const [box,setBox]=useState({w:1,h:1});const [pick,setPick]=useState(null);const [started,setStarted]=useState(false);const [ready,setReady]=useState(false);
   // index.html already showed chapter one; don't replay its entrance when the app takes over.
   const [fromShell]=useState(()=>document.documentElement.dataset.shell==='trade');useEffect(()=>{delete document.documentElement.dataset.shell},[]);
-  // the build in front of the film: null while its layers load, false if they can't
-  const [modeled,setModeled]=useState(false);const BT=useMemo(()=>buildTimeline({...F,TL},modeled),[fk,modeled]);const BTr=useRef(BT);BTr.current=BT;
+  // the build in front of the film: the film plays as it is until the build's painter and
+  // timeline have loaded (null), and for good if they can't (false)
+  const [modeled,setModeled]=useState(false);const [timeline,setTimeline]=useState(null);
+  const BT=useMemo(()=>timeline?timeline({...F,TL},modeled):null,[fk,modeled,timeline]);const BTr=useRef(BT);BTr.current=BT;
   const bcRef=useRef(),painter=useRef(null),modeler=useRef(null),painted=useRef(-1);const [built,setBuilt]=useState(null);
-  const useBuild=built!==false;const CH=useBuild?BT.ch:TL.ch,COPY=useBuild?BT.copy:F.ch,SHOP=useBuild?BT.shop:3;
+  const useBuild=built===true&&!!BT;const CH=useBuild?BT.ch:TL.ch,COPY=useBuild?BT.copy:F.ch,SHOP=useBuild?BT.shop:3;
   const mode=useRef(useBuild);mode.current=useBuild;
   useEffect(()=>{let dead=false;painter.current=null;modeler.current=null;painted.current=-1;setBuilt(null);setModeled(false);
-    loadBuild(`f/${fk}/b/`).then(B=>{if(dead)return;const c=bcRef.current;if(c){c.width=B.W;c.height=B.H}painter.current=B;setBuilt(true)},()=>{if(!dead)setBuilt(false)});
+    loadBuild(`f/${fk}/b/`).then(({B,timeline:t})=>{if(dead)return;const c=bcRef.current;if(c){c.width=B.W;c.height=B.H}painter.current=B;setTimeline(()=>t);setBuilt(true)},()=>{if(!dead)setBuilt(false)});
     loadModel(`f/${fk}/b/`).then(M=>{if(dead)return;modeler.current=M;setModeled(true)},()=>{});
     return()=>{dead=true}},[fk]);
   // The film waits for the page to finish loading so it never competes with first paint.

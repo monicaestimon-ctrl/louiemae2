@@ -10,10 +10,8 @@
 // Built from the layers scripts/build-film-layers.mjs cuts out of each film (the empty and
 // furnished frames) and the outline of every object scripts/build-film-sketches.mjs finds.
 
-export const BUILD = {
-  enter: [0, 0.16],     // the clay room comes in as the camera lands
-  finish: [0.3, 0.92],  // the sweep that finishes it
-};
+import { BUILD } from './filmTiming';
+export { BUILD };
 
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const img = (src) => new Promise((res, rej) => { const i = new Image(); i.decoding = 'async'; i.onload = () => res(i); i.onerror = rej; i.src = src; });

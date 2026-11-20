@@ -9,11 +9,8 @@
 //
 // Built from the layers scripts/build-film-model.mjs cuts out of the film's clay model.
 
-export const MODEL = {
-  plan: [0, 0.14],     // the plan gives way to the flat model
-  walls: [0.1, 0.46],  // the walls rise
-  pieces: [0.4, 0.9],  // each piece rises, back of the room first
-};
+import { MODEL } from './filmTiming';
+export { MODEL };
 
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const img = (src) => new Promise((res, rej) => { const i = new Image(); i.decoding = 'async'; i.onload = () => res(i); i.onerror = rej; i.src = src; });
