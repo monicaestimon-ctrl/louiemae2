@@ -87,7 +87,7 @@ describe('product type from category', () => {
     expect(productTypeFor('cj', 'Linen dress', 'Fashion')).toBe('clothing');
     expect(productTypeFor('cj', 'Throw pillows')).toBe('decor');
     expect(productTypeFor('cj', 'Cartoon print')).toBe('furniture');
-    expect(productTypeFor('ashcroft', 'mirror')).toBe('furniture');
+    expect(productTypeFor('ashcroft', 'mirror')).toBe('decor');
   });
 });
 
@@ -99,5 +99,15 @@ describe('lines that earn no commission', () => {
     const withExcluded = lineCommissions([line], 'elite', 0, 100_000).lines[0].amountCents;
     expect(withExcluded).toBeGreaterThanOrEqual(alone);
     expect(withExcluded).toBe(lineCommissions([line], 'elite', 0, 0).lines[0].amountCents + (withExcluded - alone));
+  });
+});
+
+describe('supplier-independent category rates',()=>{
+  it.each(['ashcroft','owner_managed','zuo','cj'])('classifies explicit lighting and décor for %s',provider=>{
+    for(const category of ['Lighting','Table lamp','Floor lamps','Wall sconces','Pendant','Chandelier'])
+      expect(productTypeFor(provider,category,'Furniture')).toBe('decor');
+    expect(productTypeFor(provider,'Mirrors','Furniture')).toBe('decor');
+    expect(productTypeFor(provider,'Light oak dining table','Furniture')).toBe('furniture');
+    expect(productTypeFor(provider,'Linen dress','Furniture')).toBe('clothing');
   });
 });

@@ -1330,7 +1330,7 @@ describe('categories and mechanisms (CAT04, PRI03)', () => {
     });
     const preview = await admin.query(api.catCategories.preview, {});
     const row0 = preview.rows.find((r) => r.productId === productId)!;
-    expect(row0).toMatchObject({ legacyType: 'furniture', proposed: 'decor', lighting: true, changes: true });
+    expect(row0).toMatchObject({ legacyType: 'decor', current: null, proposed: 'decor', lighting: true, changes: true });
     await admin.mutation(api.catCategories.commit, { productIds: [productId], category: 'decor', reason: 'All lighting is décor (v2 §5)' });
     const meta = await t.run((ctx) => ctx.db.query('catProductMeta').first());
     expect(meta!.commissionCategory).toBe('decor');

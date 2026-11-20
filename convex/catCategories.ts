@@ -2,7 +2,7 @@
 // read-only; commit writes the category going forward. Earned commission rows are never touched,
 // so historical category, rate and amount stay exactly as earned (CAT04).
 import { v } from 'convex/values';
-import { mutation, query } from './_generated/server';
+import { internalQuery, mutation, query } from './_generated/server';
 import type { QueryCtx } from './_generated/server';
 import type { Id } from './_generated/dataModel';
 import { requireCjAdminIdentity } from './cjAdminAccess';
@@ -18,35 +18,44 @@ export async function explicitCategory(ctx: QueryCtx, productId: Id<'commercePro
   return meta?.commissionCategory ?? null;
 }
 
-/** Every product with its current legacy type, the proposed explicit category and any conflict. */
+/** One read-only page shared by owner UI and deployment-admin audit tooling. */
+async function previewPage(ctx: QueryCtx, cursor?: string | null) {
+  const page = await ctx.db.query('commerceProducts').paginate({ cursor: cursor ?? null, numItems: 100 });
+  const rows = await Promise.all(
+    page.page.map(async (p) => {
+      const meta = await ctx.db.query('catProductMeta').withIndex('by_product', (q) => q.eq('productId', p._id)).first();
+      const text = `${p.draft.category} ${p.draft.name}`;
+      const proposed = proposeCategory(text);
+      const legacy = productTypeFor(p.provider, p.draft.category);
+      return {
+        productId: p._id,
+        provider: p.provider,
+        name: p.draft.name,
+        navCategory: p.draft.category,
+        legacyType: legacy,
+        current: meta?.commissionCategory ?? null,
+        proposed: proposed.category,
+        reason: proposed.reason,
+        lighting: isLighting(text),
+        changes: (meta?.commissionCategory ?? null) !== proposed.category,
+        costIncomplete: p.draft.variants.some((x) => !(x.cost > 0)),
+      };
+    })
+  );
+  return { rows, continueCursor: page.continueCursor, isDone: page.isDone };
+}
+/** Every product with current type, proposed explicit category and conflicts. */
 export const preview = query({
   args: { cursor: v.optional(v.union(v.string(), v.null())) },
   handler: async (ctx, a) => {
     await requireCjAdminIdentity(ctx);
-    const page = await ctx.db.query('commerceProducts').paginate({ cursor: a.cursor ?? null, numItems: 100 });
-    const rows = await Promise.all(
-      page.page.map(async (p) => {
-        const meta = await ctx.db.query('catProductMeta').withIndex('by_product', (q) => q.eq('productId', p._id)).first();
-        const text = `${p.draft.category} ${p.draft.name}`;
-        const proposed = proposeCategory(text);
-        const legacy = productTypeFor(p.provider, p.draft.category);
-        return {
-          productId: p._id,
-          provider: p.provider,
-          name: p.draft.name,
-          navCategory: p.draft.category,
-          legacyType: legacy,
-          current: meta?.commissionCategory ?? null,
-          proposed: proposed.category,
-          reason: proposed.reason,
-          lighting: isLighting(text),
-          changes: legacy !== proposed.category,
-          costIncomplete: p.draft.variants.some((x) => !(x.cost > 0)),
-        };
-      })
-    );
-    return { rows, continueCursor: page.continueCursor, isDone: page.isDone };
+    return previewPage(ctx, a.cursor);
   },
+});
+/** Deployment-admin read-only audit. Never approves categories or alters earned commissions. */
+export const inspect = internalQuery({
+  args: { cursor: v.optional(v.union(v.string(), v.null())) },
+  handler: (ctx, a) => previewPage(ctx, a.cursor),
 });
 
 /** Sets the explicit category for future eligibility. Historical commissions are not changed. */
