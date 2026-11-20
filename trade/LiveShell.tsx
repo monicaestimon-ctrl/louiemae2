@@ -20,7 +20,7 @@ function Recovery({ retry, empty = false }: { retry: () => void; empty?: boolean
     <h1 id="holm-recovery-title">House of Louie Mae</h1>
     <p role="status">{empty ? 'No products are available to browse right now. Please contact us for help.' : 'The trade catalog is temporarily unavailable. We cannot verify current account pricing or availability.'}</p>
     <button onClick={retry}>Try again</button>
-    <nav aria-label="Recovery navigation"><a href="#account">My account / sign in</a>{' · '}<a href="/">Louie Mae retail</a>{' · '}<a href="/#support/contact">Contact support</a></nav>
+    <nav aria-label="Recovery navigation"><a href="#account">My account / sign in</a>{' · '}<a href="#hub">Quotes and trade pass</a>{' · '}<a href="/">Louie Mae retail</a>{' · '}<a href="/#support/contact">Contact support</a></nav>
   </main>;
 }
 
@@ -113,7 +113,7 @@ export function LiveShell() {
 
 /** Keep draft owners alive across entry routes, but never across viewer changes. */
 function ViewerRoutes({ me, route }: { me: FunctionReturnType<typeof api.holm.me>; route: string }) {
-  const independent = route === 'account' || route === 'welcome' || route === 'admin';
+  const independent = route === 'account' || route === 'welcome' || route === 'hub' || route === 'trade' || route === 'admin';
   const [openedCatalog, setOpenedCatalog] = useState(!independent);
   if (!independent && !openedCatalog) setOpenedCatalog(true);
   return <>
@@ -122,7 +122,7 @@ function ViewerRoutes({ me, route }: { me: FunctionReturnType<typeof api.holm.me
         <CatalogShell me={me} suspended={independent} />
       </ModalSuspensionContext.Provider></TradeBoundary>
     </div>}
-    {(route === 'welcome' || route === 'account') && <AccountEntry me={me} route={route} />}
+    {(route === 'welcome' || route === 'account' || route === 'hub' || route === 'trade') && <AccountEntry me={me} route={route} />}
     {route === 'admin' && <StaffEntry admin={Boolean(me.admin)} signedIn={me.signedIn} Turntable={Turntable} />}
   </>;
 }

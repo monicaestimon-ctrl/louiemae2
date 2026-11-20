@@ -1,5 +1,6 @@
 /* eslint-disable */
 // @ts-nocheck
+import { useRecoverableQuery } from '../contexts/useRecoverableQuery';
 import { usePendingStudioSeed } from './pendingStudioSeed';
 import {Studio,Room,Quiz,ShareSheet} from './DesignTools';
 import { html, MAT, TYPE, byId, has, tp, pr, cut, pinItUrl, threeP, loadThree, LX, useThree, SPACES, SPACE_KEYS, COMMUNITY, load, store, hex2rgb, cdist, uid, copyText, COLOR_WORDS, matchPrompt, ICONS, I, useOutside, SaveMenu, PinCard, BoardPin, Wall, GLOW_AT, ROOMS, TEX, rnd, texture, STUDY, FLOOR_TILE, PAGES, pageOf, borderOf, POLY0, BW, boardH, boardPath, maskOf, LAYOUTS, SLOTS, mkImg, mkText, toneF, cropStyle, ElView, blends, elStyle, bgStyle, BoardPreview, errText, dataUrlBlob, dimsText, bundleUrl, gltfP, gltfLoader, glbCache, loadGLB, fitToDims } from './editorShared';
@@ -1860,15 +1861,20 @@ function PartnerPanel({ctx}){
 }
 
 /** Present trade account and quote states under a primary page heading. */
-function Hub({ctx}){
+export function Hub({ctx}){
   const me=ctx.me;
-  const quotes=useQuery(api.holm.myQuoteRequests)||[];const cqs=useQuery(api.holm.myClientQuotes)||[];const app=useQuery(api.holm.myApplication);const v2=useQuery(api.v2Admin.publicFlags);
+  const args=me.signedIn?{}:'skip';
+  const quotesQuery=useRecoverableQuery(api.holm.myQuoteRequests,args), clientQuery=useRecoverableQuery(api.holm.myClientQuotes,args), applicationQuery=useRecoverableQuery(api.holm.myApplication,args), flagsQuery=useRecoverableQuery(api.v2Admin.publicFlags,args);
+  const reads=[quotesQuery,clientQuery,applicationQuery,flagsQuery];
+  const quotes=quotesQuery.data||[],cqs=clientQuery.data||[],app=applicationQuery.data,v2=flagsQuery.data;
   if(!me.signedIn)return html`<main className="wrap"><div className="empty" style=${{padding:'80px 0'}}><h1>Sign in to see your quotes</h1><p>Quote requests, client quote links and your trade pass live here.</p><button className="btn btn-ink" onClick=${()=>ctx.go('welcome')}>Sign in</button></div></main>`;
+  if(reads.some(q=>q.status==='unavailable'))return html`<main className="wrap"><h1>Trade Hub</h1><section role="alert"><p>Your quotes and membership details are temporarily unavailable. Your saved records are unchanged.</p><button className="btn btn-line" onClick=${()=>reads.forEach(q=>q.retry())}>Try Hub again</button></section></main>`;
+  if(reads.some(q=>q.status!=='ready'))return html`<main className="wrap" aria-busy="true"><h1>Trade Hub</h1><p role="status">Loading your quotes and membership…</p></main>`;
   const status={requested:'Requested',quoted:'Quote ready',accepted:'Accepted',invoiced:'Invoiced',paid:'Paid',fulfilled:'Delivered',cancelled:'Cancelled'};
   const cqStatus={sent:'Sent',viewed:'Viewed',approved:'Approved',changes_requested:'Changes requested'};
   return html`<main className="wrap"><h1 className="sr">Trade Hub</h1>
-    ${me.verified?html`<section className="tp-row"><${TradePass} name=${me.businessName||me.displayName} since="trade"/><div className="tp-copy"><h2>Your trade pass</h2><p>Created automatically when your trade account was approved. Trade pricing and project pricing are on for every piece: an extra 3% over $10,000 and 5% over $25,000 in trade per project.</p></div></section>`
-    :html`<section className="panel" style=${{margin:'40px 0 18px',display:'grid',gap:10}}><h2 style=${{fontSize:34}}>${app?.status==='pending'?'Your trade application is in review':app?.status==='needs_info'?'We need a little more information':'Trade pricing for businesses'}</h2><p className="mute">${app?.status==='pending'?`We're checking ${app.businessName}. Most applications are reviewed within one business day, and trade prices appear here as soon as you're approved.`:app?.status==='needs_info'?(app.reviewNote||'Check your email for what we need.'):'Verified trade accounts see trade pricing on every piece, project pricing on larger orders and client quotes.'}</p>${app?.status!=='pending'&&html`<button className="btn btn-ink" style=${{justifySelf:'start'}} onClick=${()=>ctx.go('trade')}>Apply for trade</button>`}</section>`}
+    ${me.verified?html`<section className="tp-row"><${TradePass} name=${me.businessName||me.displayName} since="trade"/><div className="tp-copy"><h2>Your trade pass</h2><p>Created automatically when your trade account was approved. Approved prices and eligible project savings are shown before ordering. Product eligibility, minimum prices and supplier restrictions apply.</p></div></section>`
+    :html`<section className="panel" style=${{margin:'40px 0 18px',display:'grid',gap:10}}><h2 style=${{fontSize:34}}>${app?.status==='pending'?'Your trade application is in review':app?.status==='needs_info'?'We need a little more information':'Trade pricing for businesses'}</h2><p className="mute">${app?.status==='pending'?`We're checking ${app.businessName}. Most applications are reviewed within one business day, and trade prices appear here as soon as you're approved.`:app?.status==='needs_info'?(app.reviewNote||'Check your email for what we need.'):'Verified trade accounts see approved prices on eligible pieces, qualifying project savings and client quotes.'}</p>${app?.status!=='pending'&&html`<button className="btn btn-ink" style=${{justifySelf:'start'}} onClick=${()=>ctx.go('trade')}>Apply for trade</button>`}</section>`}
     <div className="g2" style=${{margin:'18px 0 60px'}}>
       <div className="panel"><h3>Quote requests</h3>
         ${quotes.length?html`<table className="t" style=${{marginTop:8}}><thead><tr><th>Reference</th><th>Project</th><th className="r">Subtotal</th><th>Status</th></tr></thead><tbody>${quotes.map(r=>html`<tr key=${r.reference}><td className="mono">${r.reference}</td><td>${r.projectName}</td><td className="r num">${fmt(r.subtotal/100)}</td><td>${r.invoiceUrl?html`<a href=${r.invoiceUrl} target="_blank" rel="noopener">${status[r.status]||r.status}</a>`:(status[r.status]||r.status)}</td></tr>`)}</tbody></table>`

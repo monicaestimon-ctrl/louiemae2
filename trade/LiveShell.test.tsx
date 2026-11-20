@@ -14,7 +14,7 @@ vi.mock('convex/react', () => ({
 vi.mock('./admin/HouseStaffGate',()=>({HouseStaffGate:({admin}:{admin:boolean})=><main>{admin?<><h1>Staff management</h1><input aria-label='Staff draft'/></>:<h1>Team only</h1>}</main>}));
 vi.mock('@convex-dev/auth/react',()=>({useAuthActions:()=>({signIn:vi.fn()})}));
 vi.mock('./catalog', () => ({ liveProducts: (rows: unknown[]) => rows }));
-vi.mock('./app', () => ({ Turntable: () => null, App: function DraftOwner({onCatalogIntent,suspended}: {onCatalogIntent: () => void;suspended?:boolean}) {
+vi.mock('./app', () => ({ Hub:()=> <main><h1>Independent Trade Hub</h1></main>, Turntable: () => null, App: function DraftOwner({onCatalogIntent,suspended}: {onCatalogIntent: () => void;suspended?:boolean}) {
   const [draft,setDraft]=useState('');
   const [snapshot,setSnapshot]=useState('');
   useEffect(()=>{if(!draft)return;const timer=setTimeout(()=>mocks.savedDraft(draft),1500);return()=>clearTimeout(timer)},[draft]);
@@ -270,16 +270,23 @@ it('offers catalog-independent staff sign-in and keeps admin destination after p
   expect(mocks.catalogQueries).not.toHaveBeenCalled();
 });
 
-it.each(['welcome','account'])('opens %s without catalog subscriptions or stale products',route=>{
+it.each([
+ ['welcome','House of Louie Mae'],
+ ['account','Sign in to manage your account'],
+ ['hub','Independent Trade Hub'],
+ ['trade','Trade pricing for businesses that build rooms.'],
+])('opens %s without catalog subscriptions or stale products',async(route,heading)=>{
+ vi.useRealTimers();
  window.history.replaceState(null,'',`/trade/#${route}`);mocks.me={signedIn:false};mocks.status='Exhausted';
  render(<LiveShell/>);
+ expect(await screen.findByRole('heading',{name:heading,level:1})).toBeTruthy();
  expect(screen.getByRole('navigation',{name:'Account navigation'})).toBeTruthy();
  expect(mocks.catalogQueries).not.toHaveBeenCalled();expect(mocks.install).not.toHaveBeenCalled();
  expect(document.getElementById('holm-shell')).toBeNull();
  expect(screen.queryByText('Verified catalog')).toBeNull();
 });
 
-it.each(['account','welcome','admin'])('preserves pending saves and child cleanup snapshots across %s',route=>{
+it.each(['account','welcome','hub','trade','admin'])('preserves pending saves and child cleanup snapshots across %s',route=>{
  mocks.me={signedIn:false};mocks.rows=[{id:'one'}];mocks.status='Exhausted';
  render(<LiveShell/>);
  fireEvent.change(screen.getByLabelText('Unsaved project name'),{target:{value:'Latest board edit'}});
