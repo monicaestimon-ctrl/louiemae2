@@ -9,3 +9,5 @@ The mapping helper is a legacy compatibility path. Unmapped legacy records retai
 This phase does not replace legacy margin caps, change the published tier percentages, approve supplier evidence, activate new commissions or enable payouts. The v2 eligibility and ledger cutover remain separate release requirements.
 
 The owner preview and deployment-admin-only `catCategories.inspect` share a bounded, paginated read-only audit. It compares the proposed category with existing explicit metadata when present, so a stale explicit Furniture label on lighting remains visible even after the legacy mapping changes. Inspection never approves a proposal or changes catalog, pricing, or commission records.
+
+Products without explicit category metadata remain marked for review even when the suggested category matches the legacy calculation. A fallback calculation is never treated as completed category approval.

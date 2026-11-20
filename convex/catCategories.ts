@@ -37,7 +37,7 @@ async function previewPage(ctx: QueryCtx, cursor?: string | null) {
         proposed: proposed.category,
         reason: proposed.reason,
         lighting: isLighting(text),
-        changes: (meta?.commissionCategory ?? legacy) !== proposed.category,
+        changes: (meta?.commissionCategory ?? null) !== proposed.category,
         costIncomplete: p.draft.variants.some((x) => !(x.cost > 0)),
       };
     })
