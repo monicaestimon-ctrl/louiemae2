@@ -162,3 +162,33 @@ describe('visible server document startup', () => {
     expect(start).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('primary server image scheduling', () => {
+  function image(loading = 'eager') {
+    document.querySelector('main')!.innerHTML = `<img fetchpriority="high" loading="${loading}" src="/hero.webp">`;
+    const img = document.querySelector('img')!;
+    Object.defineProperty(img, 'complete', { configurable: true, value: false });
+    return img;
+  }
+  it('waits for primary image load after first paint, without extending the existing deadline', () => {
+    const img = image(), start = vi.fn(); startAfterVisibleContent(start); paint();
+    expect(start).not.toHaveBeenCalled(); img.dispatchEvent(new Event('load'));
+    expect(start).toHaveBeenCalledTimes(1); vi.runAllTimers(); expect(start).toHaveBeenCalledTimes(1);
+  });
+  it('still waits for paint when an image settles first, including failures', () => {
+    const img = image(), start = vi.fn(); startAfterVisibleContent(start); img.dispatchEvent(new Event('error'));
+    expect(start).not.toHaveBeenCalled(); paint(); expect(start).toHaveBeenCalledTimes(1);
+  });
+  it('does not delay for lazy images', () => {
+    image('lazy'); const start = vi.fn(); startAfterVisibleContent(start); paint(); expect(start).toHaveBeenCalledTimes(1);
+  });
+  it.each(['timeout', 'interaction'])('bypasses a stalled image on %s', mode => {
+    image(); const start = vi.fn(); startAfterVisibleContent(start); paint();
+    if (mode === 'timeout') vi.advanceTimersByTime(1500); else window.dispatchEvent(new Event('pointerdown'));
+    expect(start).toHaveBeenCalledTimes(1);
+  });
+  it('cancellation prevents late image events starting the application', () => {
+    const img = image(), start = vi.fn(); const cancel = startAfterVisibleContent(start); paint(); cancel();
+    img.dispatchEvent(new Event('load')); vi.runAllTimers(); expect(start).not.toHaveBeenCalled();
+  });
+});
