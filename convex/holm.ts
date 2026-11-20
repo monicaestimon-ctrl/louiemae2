@@ -250,13 +250,14 @@ export const adminPricing = query({
     const deepest = Math.max(...HOLM_RULES.projectTiers.map((t) => t.bps));
     const rows = [];
     for (const listing of listings) {
-      const priced = await pricedListing(ctx, listing);
+      const priced = await pricedListing(ctx, listing, true);
       if (!priced) continue;
       for (const x of priced.variants) {
         const listedTrade = Math.round((x.retail * (10000 - HOLM_RULES.tradeDiscountBps)) / 10000);
         const project = Math.min(x.trade, Math.max(x.floor, Math.round((x.trade * (10000 - deepest)) / 10000)));
         const flags: string[] = [];
-        if (x.cost <= 0) flags.push('No dealer cost: trade has no margin floor');
+        if (!x.offerAvailable) flags.push('Availability review required: not a current offer');
+        if (x.trade <= 0) flags.push('Cost review required: new offers unavailable');
         if (x.cost > 0 && x.trade > listedTrade) flags.push(`Floor holds trade at ${Math.round((1 - x.trade / x.retail) * 100)}% off`);
         if (priced.product.provider === 'ashcroft' && !x.freightKnown) flags.push('Freight allowance estimated');
         if (x.cost > 0 && marginBps(project, x.cost) < HOLM_RULES.minMarginBps - 5) flags.push('Below margin floor');
@@ -277,8 +278,8 @@ export const adminPricing = query({
           projectCents: project,
           costCents: x.cost,
           retailMarginBps: x.cost > 0 ? marginBps(x.retail, x.cost) : null,
-          tradeMarginBps: x.cost > 0 ? marginBps(x.trade, x.cost) : null,
-          projectMarginBps: x.cost > 0 ? marginBps(project, x.cost) : null,
+          tradeMarginBps: x.cost > 0 && x.trade > 0 ? marginBps(x.trade, x.cost) : null,
+          projectMarginBps: x.cost > 0 && project > 0 ? marginBps(project, x.cost) : null,
           afterEliteBps,
           type,
           flags,

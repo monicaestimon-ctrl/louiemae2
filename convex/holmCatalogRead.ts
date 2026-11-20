@@ -57,12 +57,17 @@ export function variantFreight(route: FulfillmentVariant, rate: ReturnType<typeo
   return rate ? { cents: rate.freight, known: true } : freightFor(route.sku);
 }
 
-export async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>) {
+// includeUnfunded is for the owner-only diagnostic; customer reads and quotes omit it.
+export async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>, includeUnfunded = false) {
   const product = await ctx.db.get(listing.productId);
-  if (!product || !(await listingReady(ctx, product, listing))) return null;
+  if (!product || product.provider === 'zuo') return null;
+  const ready = await listingReady(ctx, product, listing);
+  if (!ready && !includeUnfunded) return null;
   const { linked, store, rate } = await pricingParts(ctx, product, listing);
-  const availableOptions = await Promise.all(listing.snapshot.variants.map(async sv =>
-    product.provider !== 'ashcroft' || await ashcroftAvailable(ctx, listing.fulfillment?.find(f => f.id === sv.id)?.sku, listing.snapshot.description, sv.minimum) ? sv : null));
+  const availableOptions = await Promise.all(listing.snapshot.variants.map(async sv => {
+    const available = product.provider !== 'ashcroft' || await ashcroftAvailable(ctx, listing.fulfillment?.find(f => f.id === sv.id)?.sku, listing.snapshot.description, sv.minimum);
+    return available || includeUnfunded ? { ...sv, offerAvailable: ready && available } : null;
+  }));
   const variants = availableOptions.filter(sv => sv !== null).flatMap((sv) => {
     const route = listing.fulfillment?.find((f) => f.id === sv.id);
     if (!route) return [];
@@ -70,11 +75,18 @@ export async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>) 
     if (base <= 0) return [];
     const retail = rate ? launchPrice(base, rate.freight, rate.delivery) : base;
     const freight = variantFreight(route, rate);
-    const cost = costCents(product, route, linked, freight.cents);
-    // Zuo (v2): the approved trade pack price is the trade price and its floor (10% or the
-    // approved 5%), never the general 25% schedule; it is never discounted further by projects.
-    if (product.provider === 'zuo') return route.commercial > 0 ? [{ ...sv, retail, cost, sku: route.sku, freightKnown: true, trade: route.commercial, floor: route.commercial }] : [];
-    return [{ ...sv, retail, cost, sku: route.sku, freightKnown: freight.known, trade: tradeCents(retail, cost), floor: floorCents(cost) }];
+    const rateToUsd = product.draft.usdRate;
+    const conversionKnown = Number.isFinite(route.cost) && route.cost > 0
+      && /^[A-Z]{3}$/.test(product.draft.currency)
+      && Number.isFinite(rateToUsd) && rateToUsd > 0
+      && (product.draft.currency !== 'USD' || rateToUsd === 1);
+    const computedCost = conversionKnown ? costCents(product, route, linked, freight.cents) : 0;
+    const cost = Number.isSafeInteger(computedCost) && computedCost > 0 ? computedCost : 0;
+    const trade = tradeCents(retail, cost);
+    // A displayed/quoted legacy offer must fund its known cost floor. Unknown costs
+    // and floors above retail are unavailable, never zero-price or clipped offers.
+    if (trade <= 0 && !includeUnfunded) return [];
+    return [{ ...sv, retail, cost, sku: route.sku, freightKnown: freight.known, trade, floor: floorCents(cost) }];
   });
   return variants.length ? { product, listing, variants, inStock: linked?.inStock !== false } : null;
 }

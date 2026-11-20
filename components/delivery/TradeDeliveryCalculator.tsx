@@ -1,3 +1,4 @@
+import { useRecoverableQuery } from '../../contexts/useRecoverableQuery';
 import { useDeliveryRequest } from './useDeliveryRequest';
 import DeliveryBoundary from './DeliveryBoundary';
 import React, { useEffect, useState } from 'react';
@@ -8,8 +9,13 @@ import DeliveryQuoteRequest from './DeliveryQuoteRequest';
 import { customerMessage } from '../../lib/errors';
 const money = (n: number | null) => (n === null ? 'Unavailable' : `$${(n / 100).toFixed(2)}`);
 export default function TradeDeliveryCalculator() {
-  const settings = useQuery(api.dlvTradeCalculator.settings, {});
-  if (!settings) return <p>Loading calculator…</p>;
+  const query = useRecoverableQuery(api.dlvTradeCalculator.settings, {});
+  if (query.status === 'unavailable') return <div role="alert">
+    <p>The project calculator is temporarily unavailable. Your saved projects are unchanged.</p>
+    <button type="button" onClick={query.retry}>Try calculator again</button>
+  </div>;
+  const settings = query.data;
+  if (!settings) return <p role="status">Loading calculator…</p>;
   if (!settings.enabled)
     return (
       <p>Build a project in your tray to request confirmed merchandise and delivery pricing.</p>
@@ -67,7 +73,12 @@ function ApprovedCalculator() {
   return (
     <section className="space-y-3 text-sm" aria-label="Trade project delivery and savings">
       <h3>Calculate your project</h3>
+      {status === 'LoadingFirstPage' && <p role="status">Loading approved products…</p>}
+      {status === 'Exhausted' && results.length === 0 && <p role="status">
+        No products are currently eligible for automatic project pricing. You can still request a project quote from your tray.
+      </p>}
       <select
+        disabled={results.length === 0}
         aria-label="Add project product"
         value=""
         onChange={(e) => {
