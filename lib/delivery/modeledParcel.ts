@@ -11,6 +11,8 @@ export type ModeledParcelRates = {
   maxLengthPlusGirthMm: number;
   maxVolumeMm3: number;
   maxActualWeightG: number;
+  /** Source-specific parcel billing. Omitted only for legacy metric models. */
+  dimensionalRounding?: { unit: 'inch'; divisorIn3PerLb: number };
   /** Index zero is one billable pound. Missing weights/zones require a quote. */
   packageMinorByZone: Record<string, number[]>;
 };
@@ -22,6 +24,9 @@ export function validModeledParcel(value: unknown): value is ModeledParcelRates 
     || m.sourceObservedAt <= 0 || m.sourceObservedAt > Date.now()) return false;
   for (const n of [m.maxCartons, m.maxLongestMm, m.maxSecondLongestMm, m.maxLengthPlusGirthMm,
     m.maxVolumeMm3, m.maxActualWeightG]) if (!Number.isSafeInteger(n) || n < 1) return false;
+  if (m.dimensionalRounding !== undefined && (!m.dimensionalRounding || m.dimensionalRounding.unit !== 'inch'
+    || !Number.isSafeInteger(m.dimensionalRounding.divisorIn3PerLb)
+    || m.dimensionalRounding.divisorIn3PerLb < 1 || m.dimensionalRounding.divisorIn3PerLb > 1000)) return false;
   if (m.maxCartons > 500 || !m.packageMinorByZone || typeof m.packageMinorByZone !== 'object'
     || Array.isArray(m.packageMinorByZone)) return false;
   const entries = Object.entries(m.packageMinorByZone);
@@ -48,7 +53,31 @@ export function modeledParcelFreight(cartons: readonly CartonIn[], rule: Carrier
       || m.actualG > model.maxActualWeightG)
       return { reason: 'Carton size or weight is outside the approved parcel model' };
     // 1 lb = 453.59237 g. Round each carton independently; never average a basket.
-    const lb = Math.ceil(m.billableG / 453.59237);
+    let lb = Math.ceil(m.billableG / 453.59237);
+    if (model.dimensionalRounding) {
+      // Whole-inch parcel billing rounds every edge before multiplying. Keep the
+      // rounded package inside the supported handling envelope as well.
+      if (!dims.every(Number.isSafeInteger)) return { reason: 'Invalid carton measurements' };
+      const inches = dims.map(mm => (BigInt(mm) * 10n + 253n) / 254n);
+      const cubic = inches[0] * inches[1] * inches[2];
+      if (inches[0] * 254n > BigInt(model.maxLongestMm) * 10n
+        || inches[1] * 254n > BigInt(model.maxSecondLongestMm) * 10n
+        || (inches[0] + 2n * (inches[1] + inches[2])) * 254n > BigInt(model.maxLengthPlusGirthMm) * 10n
+        || cubic * 16387064n > BigInt(model.maxVolumeMm3) * 1000n)
+        return { reason: 'Rounded carton dimensions are outside the approved parcel model' };
+      const divisor = BigInt(model.dimensionalRounding.divisorIn3PerLb);
+      const dimensionalLb = (cubic + divisor - 1n) / divisor;
+      if (dimensionalLb > BigInt(rates.length)) return { reason: 'Billable carton weight is outside the approved parcel model' };
+      lb = Math.max(Math.ceil(m.actualG / 453.59237), Number(dimensionalLb));
+    }
+    if (!Number.isSafeInteger(lb) || lb < 1 || lb > rates.length)
+      return { reason: 'Billable carton weight is outside the approved parcel model' };
+    // Classification uses metric volume; the final rounded billing weight can
+    // be higher. The carrier's cap governs both paths, per carton.
+    const cap = rule.ground.maxBillableWeightG;
+    if (cap !== undefined && (!Number.isSafeInteger(cap) || cap <= 0
+      || BigInt(lb) * 45359237n > BigInt(cap) * 100000n))
+      return { reason: 'Rounded billable weight exceeds the ground service limit' };
     const price = rates[lb - 1];
     if (!price) return { reason: 'Billable carton weight is outside the approved parcel model' };
     weights.push(lb); total += price;

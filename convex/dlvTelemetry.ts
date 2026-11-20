@@ -1,3 +1,4 @@
+import { deliveryZone, type DeliveryZoneMap } from '../lib/delivery/zones';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import { internalMutation, query } from './_generated/server';
@@ -39,10 +40,7 @@ export const record = internalMutation({
               q.eq('kind', 'carrierRule').eq('key', 'zuo-freight').eq('version', version)
             )
             .first();
-    const zone =
-      (rate?.value as { zip3Zones?: Record<string, string> } | undefined)?.zip3Zones?.[
-        estimate?.destination.zip.slice(0, 3) ?? ''
-      ] ?? 'unmapped';
+    const zone = deliveryZone(rate?.value as DeliveryZoneMap | undefined, estimate?.destination.zip ?? '') ?? 'unmapped';
     const scopes = (estimate?.groups ?? []).map((g) => ({
       supplier: g.supplierCode,
       origin: g.groupKey.split(':')[1] ?? 'unknown',

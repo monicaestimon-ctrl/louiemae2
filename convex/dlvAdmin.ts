@@ -1,3 +1,4 @@
+import { deliveryLanes } from '../lib/delivery/zones';
 import { v } from 'convex/values';
 import { paginationOptsValidator } from 'convex/server';
 import { query, mutation } from './_generated/server';
@@ -44,20 +45,23 @@ export const coverage = query({
       carrierValidUntil: freight?.value.validUntil ?? null,
       carrierCurrent: !!freight?.value.validUntil && freight.value.validUntil > now,
       taxApproved: !!tax,
-      lanes: Object.entries(freight?.value.zip3Zones ?? {}).map(([prefix, zone]) => ({
+      lanes: deliveryLanes(freight?.value).map(({ prefix, zone, match, controlPrefix }) => ({
         prefix,
         zone,
+        match,
         enabled:
           controls?.value.automaticEnabled === true &&
-          controls.value.zip3Allowlist.includes(prefix),
+          controls.value.zip3Allowlist.includes(controlPrefix) &&
+          (match !== 'exact_zip' || !controls.value.blockedZip5.includes(prefix)) &&
+          !(Number(controlPrefix) >= 995 || (Number(controlPrefix) >= 967 && Number(controlPrefix) <= 968)),
         region:
-          Number(prefix) >= 995
+          Number(controlPrefix) >= 995
             ? 'Alaska'
-            : Number(prefix) >= 967 && Number(prefix) <= 968
+            : Number(controlPrefix) >= 967 && Number(controlPrefix) <= 968
               ? 'Hawaii'
               : 'Other',
       })),
-      note: 'A ZIP-prefix lane is not a claim of statewide coverage. Destination exceptions, service, carton, cost and tax gates still apply. Alaska and Hawaii use confirmed quotes.',
+      note: 'Exact ZIP lanes cover only the displayed five-digit ZIP; prefix lanes cover their configured prefix. Neither is a statewide guarantee. Destination exceptions, service, carton, cost and tax gates still apply. Alaska and Hawaii use confirmed quotes.',
     };
   },
 });
