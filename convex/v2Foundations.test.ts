@@ -210,3 +210,19 @@ describe('zuo provider (S04)', () => {
     delete process.env.COMMERCE_PUBLISHING_ENABLED;
   });
 });
+
+it('reports stale explicit lighting categories without mutating records or granting public audit access',async()=>{
+  const t=convexTest(schema,modules);
+  await t.run(async ctx=>{
+    const productId=await ctx.db.insert('commerceProducts',{provider:'ashcroft',sourceKey:'category-audit',draft:{...blankCommerceDraft(),name:'Fixture lamp',category:'Lighting'},revision:1,updatedAt:1});
+    await ctx.db.insert('catProductMeta',{productId,commissionCategory:'furniture',navCategory:'Lighting',louieMaeName:'Fixture lamp',slug:'fixture-lamp',slugHistory:[],supplierName:'Ashcroft',holds:[],stage:'published',createdAt:1,updatedAt:1});
+  });
+  const before=await t.run(ctx=>ctx.db.query('catProductMeta').collect());
+  const page=await t.query(internal.catCategories.inspect,{});
+  expect(page.rows).toHaveLength(1);
+  expect(page.rows[0]).toMatchObject({current:'furniture',proposed:'decor',changes:true,lighting:true});
+  expect(page.isDone).toBe(true);
+  expect(await t.run(ctx=>ctx.db.query('catProductMeta').collect())).toEqual(before);
+  expect(await t.run(ctx=>ctx.db.query('sysAuditEvents').collect())).toEqual([]);
+  await expect(t.query(api.catCategories.preview,{})).rejects.toThrow();
+});

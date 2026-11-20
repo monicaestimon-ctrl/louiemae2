@@ -193,3 +193,28 @@ describe('a signed-in buyer on another device', () => {
     void checkoutId;
   });
 });
+
+it('uses décor for new lighting earnings and preserves already-earned furniture rates after reclassification',async()=>{
+  const t=convexTest(schema,modules),{checkoutId}=await setup(t);
+  await t.mutation(internal.holmPartners.storefrontCommission,paid(checkoutId));
+  const original=(await commissions(t))[0];
+  await t.run(async ctx=>{
+    const listing=(await ctx.db.query('commerceListings').first())!;
+    await ctx.db.patch(listing._id,{snapshot:{...listing.snapshot,category:'Lighting'}});
+  });
+  await t.mutation(internal.holmPartners.storefrontCommission,paid(checkoutId));
+  expect((await commissions(t))[0]).toEqual(original);
+  const second=await t.run(async ctx=>{
+    const checkout=(await ctx.db.get(checkoutId))!;
+    const {_id,_creationTime,...value}=checkout;void _id;void _creationTime;
+    return ctx.db.insert('retailCheckouts',value);
+  });
+  await t.mutation(internal.holmPartners.storefrontCommission,{...paid(second),stripeSessionId:'cs_lighting',paymentIntentId:'pi_lighting'});
+  const newer=(await commissions(t)).find(c=>c.stripeSessionId==='cs_lighting')!;
+  expect(newer.lines![0]).toMatchObject({type:'decor',rateBps:800,capped:false});
+  await t.mutation(internal.holmPartners.storefrontReversal,{paymentIntentId:'pi_1',kind:'refund',refundedCents:102450,chargeCents:204900});
+  const retained=(await commissions(t)).find(c=>c._id===original._id)!;
+  expect(retained.lines).toEqual(original.lines);
+  expect(retained.rateBps).toBe(original.rateBps);
+  expect(retained.amountCents).toBe(10000);
+});

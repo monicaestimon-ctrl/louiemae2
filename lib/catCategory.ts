@@ -4,7 +4,7 @@
 
 export type CommissionCategory = 'furniture' | 'decor' | 'clothing' | 'review_required';
 
-const LIGHTING = /\b(light(?:ing)?|lamps?|pendants?|chandeliers?|sconces?|lanterns?|flush ?mounts?)\b/;
+const LIGHTING = /\b(lighting|(?:ceiling|wall|floor|table|outdoor) lights?|lamps?|pendants?|chandeliers?|sconces?|lanterns?|flush ?mounts?)\b/;
 const FURNITURE = /\b(furniture|sofas?|sectionals?|loveseats?|chairs?|tables?|desks?|dressers?|cabinets?|sideboards?|credenzas?|consoles?|beds?|headboards?|benches?|stools?|barstools?|counterstools?|ottomans?|nightstands?|bookcases?|shelv(?:es|ing)|buffets?|armoires?|daybeds?|chaises?)\b/;
 const CLOTHING = /\b(fashion|kids|cloth(?:es|ing)?|apparel|wear|dress(?:es)?|outfits?|rompers?|tops?|bottoms?|leggings?|footwear|shoes?)\b/;
 const DECOR = /\b(d[eé]cor|vases?|candles?|pillows?|throws?|rugs?|art|wall art|mirrors?|baskets?|tabletop|frames?|planters?|bowls?|sculptures?|objects?|clocks?|trays?)\b/;
@@ -26,7 +26,7 @@ export function proposeCategory(text: string): { category: CommissionCategory; r
   return { category: 'review_required', reason: 'no confident match' };
 }
 
-/** The legacy product type for the same text (lib/holmPartners productTypeFor puts lighting in furniture). */
+/** Identifies lighting without treating a light-colored material as a lighting product. */
 export const isLighting = (text: string) => LIGHTING.test(` ${text.toLowerCase()} `);
 
 export const referralEligibleCategory = (c: CommissionCategory): c is Exclude<CommissionCategory, 'review_required'> => c !== 'review_required';
