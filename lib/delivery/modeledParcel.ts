@@ -70,6 +70,14 @@ export function modeledParcelFreight(cartons: readonly CartonIn[], rule: Carrier
       if (dimensionalLb > BigInt(rates.length)) return { reason: 'Billable carton weight is outside the approved parcel model' };
       lb = Math.max(Math.ceil(m.actualG / 453.59237), Number(dimensionalLb));
     }
+    if (!Number.isSafeInteger(lb) || lb < 1 || lb > rates.length)
+      return { reason: 'Billable carton weight is outside the approved parcel model' };
+    // Classification uses metric volume; the final rounded billing weight can
+    // be higher. The carrier's cap governs both paths, per carton.
+    const cap = rule.ground.maxBillableWeightG;
+    if (cap !== undefined && (!Number.isSafeInteger(cap) || cap <= 0
+      || BigInt(lb) * 45359237n > BigInt(cap) * 100000n))
+      return { reason: 'Rounded billable weight exceeds the ground service limit' };
     const price = rates[lb - 1];
     if (!price) return { reason: 'Billable carton weight is outside the approved parcel model' };
     weights.push(lb); total += price;
