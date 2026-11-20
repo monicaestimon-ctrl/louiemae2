@@ -13,6 +13,16 @@ const D = 24 * H;
 const policy = { stockSyncMaxHours: 24, checkoutSourceMaxHours: 24, costMapMaxDays: 7, recheckOnSupplierNotice: true };
 
 describe('commission categories (S08)', () => {
+  it.each(['Seating', 'Armchair', 'Outdoor armchairs', 'Bench', 'Benches', 'Outdoor extendable bench', 'Bedroom chest', 'Storage chests', 'Outdoor bar cart'])('recognizes catalog furniture terminology: %s', text => {
+    expect(proposeCategory(text)).toEqual({ category: 'furniture', reason: 'furniture term' });
+  });
+  it('keeps broad room categories and ambiguous merchandise in review', () => {
+    for (const text of ['Outdoor', 'Bedroom', 'Mystery item', 'Seating apparel'])
+      expect(proposeCategory(text).category).toBe('review_required');
+    expect(proposeCategory('Seating table lamp').category).toBe('decor');
+    expect(proposeCategory('Light oak bench').category).toBe('furniture');
+  });
+
   it('maps lighting to décor and refuses ambiguous text', () => {
     expect(proposeCategory('Table lamp').category).toBe('decor');
     expect(proposeCategory('Pendant lighting').category).toBe('decor');
