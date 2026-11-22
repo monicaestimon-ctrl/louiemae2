@@ -5,7 +5,7 @@
 export type CommissionCategory = 'furniture' | 'decor' | 'clothing' | 'review_required';
 
 const LIGHTING = /\b(lighting|(?:ceiling|wall|floor|table|outdoor) lights?|lamps?|pendants?|chandeliers?|sconces?|lanterns?|flush ?mounts?)\b/;
-const FURNITURE = /\b(furniture|sofas?|sectionals?|loveseats?|chairs?|tables?|desks?|dressers?|cabinets?|sideboards?|credenzas?|consoles?|beds?|headboards?|benches?|stools?|barstools?|counterstools?|ottomans?|nightstands?|bookcases?|shelv(?:es|ing)|buffets?|armoires?|daybeds?|chaises?)\b/;
+const FURNITURE = /\b(furniture|seating|armchairs?|chests?|bar carts?|sofas?|sectionals?|loveseats?|chairs?|tables?|desks?|dressers?|cabinets?|sideboards?|credenzas?|consoles?|beds?|headboards?|bench(?:es)?|stools?|barstools?|counterstools?|ottomans?|nightstands?|bookcases?|shelv(?:es|ing)|buffets?|armoires?|daybeds?|chaises?)\b/;
 const CLOTHING = /\b(fashion|kids|cloth(?:es|ing)?|apparel|wear|dress(?:es)?|outfits?|rompers?|tops?|bottoms?|leggings?|footwear|shoes?)\b/;
 const DECOR = /\b(d[eé]cor|vases?|candles?|pillows?|throws?|rugs?|art|wall art|mirrors?|baskets?|tabletop|frames?|planters?|bowls?|sculptures?|objects?|clocks?|trays?)\b/;
 
@@ -20,6 +20,7 @@ export function proposeCategory(text: string): { category: CommissionCategory; r
   const furniture = FURNITURE.test(t);
   const clothing = CLOTHING.test(t);
   if (furniture && clothing) return { category: 'review_required', reason: 'matches furniture and clothing' };
+  if (furniture && DECOR.test(t)) return { category: 'review_required', reason: 'matches furniture and decor' };
   if (furniture) return { category: 'furniture', reason: 'furniture term' };
   if (clothing) return { category: 'clothing', reason: 'clothing term' };
   if (DECOR.test(t)) return { category: 'decor', reason: 'décor term' };
