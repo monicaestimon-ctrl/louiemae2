@@ -61,7 +61,7 @@ export async function currentCost(ctx: Ctx, v: Doc<'catVariants'>) {
   return v.currentCostRevisionId ? ctx.db.get(v.currentCostRevisionId) : null;
 }
 
-async function freshnessPolicy(ctx: Ctx, key: string, simulate = false): Promise<FreshnessPolicy> {
+export async function freshnessPolicy(ctx: Ctx, key: string, simulate = false): Promise<FreshnessPolicy> {
   const cfg = await maybeConfig<FreshnessPolicy>(ctx, 'freshnessPolicy', key);
   if (cfg) return cfg.value;
   if (simulate) return { stockSyncMaxHours: 24, checkoutSourceMaxHours: 24, costMapMaxDays: 7, recheckOnSupplierNotice: true };
@@ -97,7 +97,7 @@ export async function evaluate(ctx: Ctx, v: Doc<'catVariants'>, now = Date.now()
   if (v.currentStockRevisionId) {
     const stock = stockView(await ctx.db.get(v.currentStockRevisionId), v.warehouseId, v.piecesPerPack, now, policy.stockSyncMaxHours * 3600000, v.orderMinimumPacks, await digest(v.warehouseId ? await ctx.db.get(v.warehouseId) : null));
     result.availability = stock.availability;
-    result.stockObservedAt = stock.observedAt;
+    result.stockObservedAt = stock.current ? stock.observedAt : undefined;
     result.holds = result.holds.filter(h => h !== 'STOCK_UNVERIFIED');
     if (!stock.current || stock.availability === 'unknown') result.holds.push('STOCK_UNVERIFIED');
   }

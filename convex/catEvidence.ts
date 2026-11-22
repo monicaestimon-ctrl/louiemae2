@@ -6,7 +6,7 @@ import { digest as evidenceDigest } from './dlvSecurity';
 import { normalizeCartons } from '../lib/shipping/evidence';
 import type { Id } from './_generated/dataModel';
 import { requireDeliveryRole } from './dlvAccess';
-import { openHold } from './catCore';
+import { openHold, freshnessPolicy } from './catCore';
 import { audit, openReview } from './sysCore';
 import { CommerceError } from '../lib/errors';
 import { dollarsToMinor } from '../lib/decimal';
@@ -17,15 +17,27 @@ import type { PricingAssumptions } from '../lib/config';
 import { latestSupplierStock } from './supplierStockRead';
 import { supplierStockConstraint } from '../lib/supplierStock';
 import { currentObservation } from '../lib/catFreshness';
+import { stockView } from '../lib/stockEvidence';
 
 async function applySupplierAvailability(ctx: MutationCtx, variantId: Id<'catVariants'>, dryRun: boolean) {
+  const now = Date.now();
   const cv = (await ctx.db.get(variantId))!;
   const stock = cv.currentStockRevisionId ? await ctx.db.get(cv.currentStockRevisionId) : null;
   const observations = await latestSupplierStock(ctx, variantId);
   const binary = currentObservation(await ctx.db.query('catSourceObservations')
-    .withIndex('by_variant_field_observed', q => q.eq('variantId', variantId).eq('field', 'stock')).order('desc').take(20), 'stock', Date.now());
-  const stockObservedAt = stock?.observedAt ?? (binary && binary !== 'conflict' ? binary.observedAt : undefined);
-  const constraint = supplierStockConstraint(observations, stockObservedAt, Date.now());
+    .withIndex('by_variant_field_observed', q => q.eq('variantId', variantId).eq('field', 'stock')).order('desc').take(20), 'stock', now);
+  let stockObservedAt = binary && binary !== 'conflict' ? binary.observedAt : undefined;
+  if (cv.currentStockRevisionId) {
+    const supplier = await ctx.db.get(cv.supplierId);
+    // The same policy/default and validation as evaluation. This reconciliation
+    // can only withdraw stock, so it remains usable before policy activation.
+    const policy = await freshnessPolicy(ctx, supplier?.freshnessKey ?? 'freshness-default', true);
+    const validated = stockView(stock, cv.warehouseId, cv.piecesPerPack, now,
+      policy.stockSyncMaxHours * 3600000, cv.orderMinimumPacks,
+      await evidenceDigest(cv.warehouseId ? await ctx.db.get(cv.warehouseId) : null));
+    stockObservedAt = validated.current ? validated.observedAt : undefined;
+  }
+  const constraint = supplierStockConstraint(observations, stockObservedAt, now);
   if (!constraint || cv.availability === 'discontinued') return 'unchanged' as const;
   const changed = cv.availability !== constraint.availability || cv.availabilityObservedAt !== constraint.observedAt
     || !cv.holds.includes('STOCK_UNVERIFIED');

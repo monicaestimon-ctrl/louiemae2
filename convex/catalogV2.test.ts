@@ -281,6 +281,28 @@ describe('stock evidence authoring', () => {
       expectedObservationId: observationId, expectedStockRevisionId: newId }] })).results[0].status).toBe('unchanged');
     expect((await view()).holds).not.toContain('STOCK_UNVERIFIED');
   });
+  it.each(['warehouse', 'pack', 'expired', 'unconfirmed', 'unknown-kind'] as const)('does not let a newer invalid %s stock revision suppress confirmed zero inventory', async invalid => {
+    const { t, admin, cv, args } = await fixture();
+    await approve(t, admin, 'freshness-default');
+    const stockId = await admin.mutation(api.catStock.recordEvidence, { ...args, kind: 'available_to_sell', observedAt: NOW });
+    const observationId = await t.run(async ctx => {
+      await ctx.db.patch(cv._id, { availability: 'in_stock' });
+      if (invalid === 'warehouse') await ctx.db.patch(args.expectedWarehouseId, { originZip: '90012' });
+      if (invalid === 'pack') await ctx.db.patch(cv._id, { piecesPerPack: 3 });
+      if (invalid === 'expired') await ctx.db.patch(stockId, { validUntil: NOW - 1 });
+      if (invalid === 'unconfirmed') await ctx.db.patch(stockId, { confirmed: false });
+      if (invalid === 'unknown-kind') await ctx.db.patch(stockId, { kind: 'unknown' });
+      return ctx.db.insert('catSourceObservations', { supplierId: cv.supplierId, variantId: cv._id,
+        field: 'supplier_inventory_on_hand', extractedValue: JSON.stringify({ CA_QTY: 0, FL_QTY: 0, kind: 'on_hand' }),
+        observedAt: NOW - 500, confidence: 'confirmed', contentHash: `zero-${invalid}`, verifier: 'fixture', createdAt: NOW });
+    });
+    const reconcile = { dryRun: true, rows: [{ variantId: cv._id, expectedObservationId: observationId, expectedStockRevisionId: stockId }] };
+    expect((await t.run(async ctx => evaluate(ctx, (await ctx.db.get(cv._id))!, Date.now()))).availability).toBe('out_of_stock');
+    expect((await t.mutation(internal.catEvidence.reconcileZuoAvailability, reconcile)).results[0].status).toBe('ready');
+    expect((await t.run(ctx => ctx.db.get(cv._id)))?.availability).toBe('in_stock');
+    expect((await t.mutation(internal.catEvidence.reconcileZuoAvailability, { ...reconcile, dryRun: false })).results[0].status).toBe('applied');
+    expect(await t.run(ctx => ctx.db.get(cv._id))).toMatchObject({ availability: 'out_of_stock', currentStockRevisionId: stockId });
+  });
   it('restores only stock-excluded drafts after fresh available-to-sell evidence, retaining review holds', async () => {
     const { t, admin, cv, args } = await fixture();
     await approve(t, admin, 'freshness-default');
