@@ -1,5 +1,5 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getFunctionName } from 'convex/server';
 import CommerceV2Admin from './CommerceV2Admin';
@@ -13,9 +13,10 @@ const mock = vi.hoisted(() => ({
     engineering: false,
   },
   reads: vi.fn(),
+  release: vi.fn(),
 }));
 vi.mock('convex/react', () => ({
-  useMutation: () => vi.fn(),
+  useMutation: (ref: Parameters<typeof getFunctionName>[0]) => getFunctionName(ref) === 'sysConfig:approveDeliveryRelease' ? mock.release : vi.fn(),
   useQuery: (ref: Parameters<typeof getFunctionName>[0], args: unknown) => {
     const name = getFunctionName(ref);
     mock.reads(name, args);
@@ -28,7 +29,7 @@ vi.mock('convex/react', () => ({
           {
             _id: 'fixture',
             status: 'proposed',
-            kind: 'serviceLevel',
+            kind: 'deliveryLadder',
             key: 'fixture',
             version: 1,
             value: {},
@@ -48,6 +49,7 @@ vi.mock('convex/react', () => ({
 vi.mock('./DeliveryOperations', () => ({ default: () => <p>Scoped delivery workspace</p> }));
 beforeEach(() => {
   mock.reads.mockClear();
+  mock.release.mockReset();
   Object.assign(mock.permissions, {
     owner: false,
     support: true,
@@ -85,6 +87,21 @@ describe('staff console navigation', () => {
         .every(([, args]) => args === 'skip')
     ).toBe(true);
     expect(screen.queryByText(/Paid orders needing resolution/)).not.toBeInTheDocument();
+  });
+  it('submits only explicitly selected delivery settings and preserves selection after failure', async () => {
+    Object.assign(mock.permissions, { operations: true, approver: true });
+    mock.release.mockRejectedValueOnce(new Error('Refresh required')).mockResolvedValueOnce({ approved: 1 });
+    render(<CommerceV2Admin />);
+    fireEvent.click(screen.getByRole('button', { name: 'Decisions & flags' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include fixture v1 in delivery release' }));
+    fireEvent.change(screen.getByLabelText('Delivery release note'), { target: { value: 'Approved delivery model' } });
+    fireEvent.click(screen.getByRole('button', { name: /Approve selected delivery release/ }));
+    await waitFor(() => expect(mock.release).toHaveBeenCalledWith({ ids: ['fixture'], note: 'Approved delivery model' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Approve selected delivery release/ })).toBeEnabled());
+    expect(screen.getByRole('checkbox')).toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: /Approve selected delivery release/ }));
+    await screen.findByText('Released 1 delivery settings together');
+    expect(screen.getByRole('checkbox')).not.toBeChecked();
   });
   it('switches safely when roles change and gives engineers only integration readiness', () => {
     const view = render(<CommerceV2Admin />);

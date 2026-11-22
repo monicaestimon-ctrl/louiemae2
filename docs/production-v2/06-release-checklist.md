@@ -69,3 +69,9 @@ To roll back, turn the flag off. Paid orders, tracking and obligations keep work
 - Authorize any Stripe test or live payment, transfer or payout check. The agent build makes none, and those scenarios are recorded as BLOCKED in the evidence log.
 - Production environment changes are within the standing rollout authorization once their readiness gates pass. Do not activate financial execution or unsupported checkout paths merely to remove a visible blocker.
 - Name an owner for each runbook (05 §4).
+
+### Atomic delivery policy release
+
+The decision register can release 1–20 selected delivery proposals in one transaction. The approver reviews their displayed values and enters a release note. Select only one latest version per kind/key; scheduled future proposals must use the existing individual approval path. A changed, rejected, stale, or expired carrier record causes the entire release to fail without partial approval or audit events. Each successful approval records the authenticated actor and a common effective timestamp.
+
+This action does not activate feature flags, approve catalog evidence, qualify tax setup, change supplier rights, or grant payout permissions. Only delivery rules, ladder, carrier rates, controls, monitoring, and estimate policy are eligible. Renew dated freight evidence before approving an expired model. The same expiration check also applies to individual carrier approval.
