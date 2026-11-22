@@ -50,6 +50,18 @@ it('keeps curated facets tied to an explicit identity across marketing renames',
   expect(facets('Osborne')).toMatchObject({ curated: false, mat: 'unknown', type: 'other' });
 });
 
+it('separates secondary base materials while retaining standalone material titles', () => {
+  expect(facets('Tan Leather Chair with Brass Base')).toMatchObject({ mat: 'leather', tone: '#B07A4A' });
+  expect(facets('Brass Lamp')).toMatchObject({ mat: 'brass', tone: '#B58D52' });
+  expect(facets('Chair with Brass Base')).toMatchObject({ mat: 'unknown', tone: '' });
+});
+
+it('separates secondary leg colors while retaining standalone wood colors', () => {
+  expect(facets('Ivory Bouclé Chair with Walnut Legs')).toMatchObject({ mat: 'boucle', tone: '#E7DFD0' });
+  expect(facets('Walnut Dining Table')).toMatchObject({ mat: 'wood', tone: '#6B4A33' });
+  expect(facets('Chair on Walnut Legs')).toMatchObject({ mat: 'unknown', tone: '' });
+});
+
 it('cannot match unknown or malformed colors to a known palette', () => {
   for (const value of ['', '#abc', '#GG0000', 'tan']) expect(toneDistance(value, '#B07A4A')).toBe(Infinity);
   expect(toneDistance('#b07a4a', '#B07A4A')).toBe(0);

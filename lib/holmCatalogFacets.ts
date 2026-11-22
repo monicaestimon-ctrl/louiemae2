@@ -74,6 +74,13 @@ const TONES: [RegExp, string][] = [
 
 const cleanName = (s: string) => s.split('|')[0].trim();
 
+/** Separate explicit construction clauses from the primary title attributes. */
+function primaryTitle(text: string) {
+  const secondary = text.match(/\s+(?:with|featuring|on)\s+([^,;]+)/i);
+  return secondary && /\b(?:legs?|base|frame)\b/i.test(secondary[1])
+    ? text.slice(0, secondary.index).trim() : text;
+}
+
 function materialOf(text: string) {
   text = text.normalize('NFKD').replace(/\p{M}/gu, '');
   if (/\bboucle\b/i.test(text)) return 'boucle';
@@ -103,10 +110,11 @@ export function holmCatalogFacets(item: { name: string; category: string; facts:
       : /\bstool\b/i.test(full) ? 'stool'
       : /\bchair\b/i.test(full) ? 'chair'
       : /\btable\b/i.test(full) ? 'table' : 'other');
-  const namedMaterial = materialOf(full);
+  const primary = primaryTitle(full);
+  const namedMaterial = materialOf(primary);
   // A primary title attribute wins over secondary frame/base details. If no
   // title color exists, accept a labeled color field rather than any leg color.
-  const namedTone = toneOf(full);
+  const namedTone = toneOf(primary);
   const labeledColor = item.facts.match(/\b(?:color|colour)\s*:\s*([^\n;|]+)/i)?.[1] ?? '';
   const type = curated ? curated[3] : typeGuess;
   return {

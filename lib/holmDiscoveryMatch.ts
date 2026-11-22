@@ -20,7 +20,7 @@ export function matchHolmQuery<T extends Candidate>(query: string, products: rea
   const scored = products.map(product => {
     let score = 0;
     if (product.mat && product.mat !== 'unknown' && (words.includes(product.mat) || (product.mat === 'boucle' && words.includes('bouc')))) score += 5;
-    if (product.type && (words.includes(product.type) || words.includes(product.type.replace(/s$/, '')))) score += 3;
+    if (product.type && product.type !== 'other' && (words.includes(product.type) || words.includes(product.type.replace(/s$/, '')))) score += 3;
     if (words.includes('light') && product.type === 'lighting') score += 2;
     if (words.includes('seat') && product.seats > 0) score += 1;
     for (const [word, color] of Object.entries(HOLM_COLOR_WORDS)) {

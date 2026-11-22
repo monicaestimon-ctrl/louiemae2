@@ -22,6 +22,7 @@ it('matches new color hints while unspecified colors and materials receive no fa
   expect(matchHolmQuery('orange', [unknown, orange])).toEqual([orange]);
   expect(matchHolmQuery('tan', [unknown])).toEqual([]);
   expect(matchHolmQuery('unknown', [unknown])).toEqual([]);
+  expect(matchHolmQuery('another piece', [unknown])).toEqual([]);
   expect(matchHolmQuery('upholstered', [{ ...sofa, tone: '#923F3F' }])).toEqual([]);
 });
 it('handles empty queries/sets and retains the established relative relevance cutoff', () => {
