@@ -1,4 +1,5 @@
 import { legacySearchProjection, listingSearchProjection, sameSearchProjection, syncPublicSearch } from './publicSearchMaintenance';
+import { discoveryProjection, sameDiscovery, syncDiscovery } from './holmDiscoveryMaintenance';
 import { holmIdentityProjection, sameHolmIdentity, syncHolmIdentity } from './holmIdentityMaintenance';
 import { syncExpiry } from './webhookExpiryMaintenance';
 import { syncRecoveryQueue } from './webhookRecoveryMaintenance';
@@ -31,6 +32,9 @@ triggers.register('cjSourcingJobs', async (ctx, change) => {
   await syncSourcingCount(ctx, change.id, change.newDoc);
 });
 triggers.register('commerceListings', async (ctx, change) => {
+  const oldDiscovery = discoveryProjection(change.oldDoc);
+  const newDiscovery = discoveryProjection(change.newDoc);
+  if (!sameDiscovery(oldDiscovery, newDiscovery)) await syncDiscovery(ctx, change.id, newDiscovery);
   const oldIdentity = holmIdentityProjection(change.oldDoc);
   const newIdentity = holmIdentityProjection(change.newDoc);
   if (!sameHolmIdentity(oldIdentity, newIdentity)) await syncHolmIdentity(ctx, change.id, newIdentity);

@@ -225,6 +225,14 @@ This shared classifier is a prerequisite for server-owned discovery, not its com
 
 The Discover filter interface loads through the existing deferred-feature boundary when opened. It must remain outside the initial HOLM JavaScript dependency graph, with a readable loading state, timeout/retry controls and preserved surrounding navigation. A pending module must receive the latest query and account-price props when it resolves. This code split does not itself change catalog data pagination or grant price access.
 
+## 7.2 Transactional discovery metadata preparation
+
+`holmDiscoveryIndex` contains only published House listing identities and derived display/search attributes. Listing writes maintain it in the same transaction through `convex/functions.ts`; withdrawal, channel change and deletion remove the row. Unrelated timestamp/price updates do not rewrite unchanged metadata. A row is not proof of available stock, approved pricing or checkout eligibility. No customer-facing reader uses this preparation table yet.
+
+Before a future reader cutover, run `holmDiscoveryMigration.begin`, then resume `step` using the exact returned generation, phase and cursor. Each step scans at most 20 source rows with a byte budget. Preparation reconciles listings, removes orphan rows, then verifies both source-to-index and index-to-source coverage. Replayed batches and requests from an older begin generation cannot advance the current run. A mismatch enters `failed`; investigate before restarting. Retain the final version, generation, count and zero-mismatch evidence. These internal operations do not publish products or change stock/prices.
+
+The remaining reader migration must add current role-price ordering and its full invalidation/expiry dependencies, cursor binding, current eligibility revalidation, and the UI load-more transition together. A metadata-only index cannot establish globally ordered current prices. Existing saved-project identity resolution remains independent.
+
 # 8 Phase 5 Assets and rendering performance
 
 ## 8.1 Product image pipeline
