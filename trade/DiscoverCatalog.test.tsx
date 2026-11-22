@@ -12,6 +12,18 @@ function setup(items = products, pricing: 'retail' | 'trade' = 'retail') {
   return { onQuery };
 }
 afterEach(cleanup);
+it('limits the combined swatch and photo selection to eight and explains how to change it', () => {
+  render(<DiscoverCatalog products={products} query="" imageQuery={{ src: 'photo', pal: ['#123456'] }} types={{}} materials={{}} trends={[]} matchQuery={() => []} onQuery={() => {}} onClearImage={() => {}} onImage={() => {}} onTrend={() => {}} onSourcing={() => {}} renderProducts={() => null} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+  for (const name of ['Cognac', 'Tan', 'Espresso', 'Olive', 'Ivory', 'Stone', 'Black', 'Brass']) fireEvent.click(screen.getByRole('button', { name }));
+  expect(screen.getByRole('button', { name: 'Filter by #123456' })).toBeDisabled();
+  expect(screen.getByText('Up to eight tones can be selected. Remove a tone to choose another.')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Cognac' }));
+  expect(screen.getByRole('button', { name: 'Filter by #123456' })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Filter by #123456' }));
+  expect(screen.getByRole('button', { name: 'Cognac' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Filter by #123456' })).toHaveAttribute('aria-pressed', 'true');
+});
 it('ranks text matches within a photo search and removes obsolete photo tones', () => {
   const props = { products, query: '', imageQuery: { src: 'photo', pal: ['#123456'] } as { src: string; pal: string[] } | null,
     types: {}, materials: {}, trends: [], matchQuery: () => [], onQuery: vi.fn(), onClearImage: vi.fn(), onImage: vi.fn(), onTrend: vi.fn(), onSourcing: vi.fn(),

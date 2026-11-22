@@ -3,6 +3,7 @@ import { Camera, Search } from 'lucide-react';
 import { toneDistance as distance } from '../lib/holmCatalogFacets';
 import type { HolmProduct } from './catalog';
 import { ServerDiscoveryResults } from './ServerDiscoveryResults';
+import { MAX_DISCOVERY_TONES } from '../lib/holmDiscoveryFilters';
 
 type ImageQuery = { src: string; pal: string[] };
 type Trend = { id: string; name: string; image: string };
@@ -35,6 +36,10 @@ export function DiscoverCatalog(props: Props) {
   const [type, setType] = useState('all');
   const [materials, setMaterials] = useState<string[]>([]);
   const [tones, setTones] = useState<string[]>([]);
+  const toneLimit = tones.length >= MAX_DISCOVERY_TONES;
+  const toggleTone = (color: string) => setTones(previous => previous.includes(color)
+    ? previous.filter(value => value !== color)
+    : previous.length < MAX_DISCOVERY_TONES ? [...previous, color] : previous);
   const photoKey = JSON.stringify(props.imageQuery);
   const [toneSource, setToneSource] = useState(photoKey);
   if (toneSource !== photoKey) {
@@ -72,14 +77,15 @@ export function DiscoverCatalog(props: Props) {
         <input ref={file} type="file" accept="image/*" hidden onChange={event => { const selected = event.target.files?.[0]; if (selected) props.onImage(selected); event.target.value = ''; }} />
       </form>
     </div>
-    {props.imageQuery && <div className="img-q"><img src={props.imageQuery.src} alt="Your photo" /><div style={{ flex: 1, minWidth: 200 }}><b style={{ fontWeight: 500 }}>Matched to the tones in your photo</b><div className="row" style={{ marginTop: 6, gap: 6 }}>{palette.map(color => <button key={color} className="dot" style={{ width: 26, height: 26, background: color }} aria-label={`Filter by ${color}`} aria-pressed={tones.includes(color)} onClick={() => setTones(toggle(tones, color))} />)}<span className="mono mute">Tap a tone to narrow</span></div></div><button className="btn btn-line btn-sm" onClick={props.onClearImage}>Clear photo</button></div>}
+    {props.imageQuery && <div className="img-q"><img src={props.imageQuery.src} alt="Your photo" /><div style={{ flex: 1, minWidth: 200 }}><b style={{ fontWeight: 500 }}>Matched to the tones in your photo</b><div className="row" style={{ marginTop: 6, gap: 6 }}>{palette.map(color => <button key={color} className="dot" style={{ width: 26, height: 26, background: color }} aria-label={`Filter by ${color}`} aria-pressed={tones.includes(color)} disabled={toneLimit && !tones.includes(color)} onClick={() => toggleTone(color)} />)}<span className="mono mute">Tap a tone to narrow</span></div></div><button className="btn btn-line btn-sm" onClick={props.onClearImage}>Clear photo</button></div>}
+    {toneLimit && <p role="status">Up to eight tones can be selected. Remove a tone to choose another.</p>}
     {!searching && <div className="trend-row">{props.trends.map(trend => <button key={trend.id} className="trend" onClick={() => props.onTrend(trend.id)}><img src={trend.image} alt="" loading="lazy" /><div><span className="up">Explore</span><h2>{trend.name}</h2></div></button>)}</div>}
     <div className="filters"><div className="scroll-x">{[['all', 'Everything'], ...Object.entries(props.types)].map(([key, label]) => <button key={key} className={`chip${type === key ? ' on' : ''}`} aria-pressed={type === key} onClick={() => setType(key)}>{label}</button>)}</div><span style={{ flex: 1 }} />
       <button className={`chip${expanded ? ' on' : ''}`} aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>Filters{count > 0 && ` · ${count}`}</button>
       <select className="field" style={{ height: 44, width: 'auto', borderRadius: 999, fontSize: 13 }} value={sort} onChange={event => setSort(event.target.value)} aria-label="Sort"><option value="rel">Most relevant</option><option value="lo">Price, low to high</option><option value="hi">Price, high to low</option></select>
     </div>
     {expanded && <div className="filters filters-more">{Object.entries(props.materials).map(([key, label]) => <button key={key} className={`chip${materials.includes(key) ? ' on' : ''}`} aria-pressed={materials.includes(key)} onClick={() => setMaterials(toggle(materials, key))}>{label}</button>)}
-      <div className="swatches" role="group" aria-label="Color palette">{PALETTE.map(([name, color]) => <button key={color} className={tones.includes(color) ? 'on' : ''} style={{ background: color, width: 26, height: 26 }} aria-label={name} aria-pressed={tones.includes(color)} onClick={() => setTones(toggle(tones, color))} />)}</div>
+      <div className="swatches" role="group" aria-label="Color palette">{PALETTE.map(([name, color]) => <button key={color} className={tones.includes(color) ? 'on' : ''} style={{ background: color, width: 26, height: 26 }} aria-label={name} aria-pressed={tones.includes(color)} disabled={toneLimit && !tones.includes(color)} onClick={() => toggleTone(color)} />)}</div>
       <label className="row" style={{ fontSize: 13, gap: 8 }}>Price <b className="num" style={{ fontWeight: 500, minWidth: 56 }}>{maximum === null ? 'Any price' : `Up to ${dollars(maximum)}`}</b><>{props.serverViewerKey !== undefined ? <input type="number" min="0" max="100000000" step="50" value={maximum ?? ''} placeholder="Any price" aria-label="Maximum price" onChange={event => { const value = event.target.value === '' ? null : Number(event.target.value); if (value === null || (Number.isFinite(value) && value >= 0 && value <= 100000000)) setMaximum(value); }} style={{ width: 120 }} /> : <input type="range" min="0" max={rangeMaximum} step="50" value={maximum ?? rangeMaximum} onChange={event => { const value = Number(event.target.value); setMaximum(value === rangeMaximum ? null : value); }} style={{ width: 120 }} aria-label="Maximum price" aria-valuetext={maximum === null ? 'Any price' : dollars(maximum)} />}</></label>
       <button className="toggle" style={{ fontSize: 13 }} aria-pressed={inStock} onClick={() => setInStock(!inStock)}><span className={`sw${inStock ? ' on' : ''}`} /> In stock</button>
     </div>}

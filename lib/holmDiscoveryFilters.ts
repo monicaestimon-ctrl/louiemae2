@@ -7,8 +7,9 @@ export type DiscoveryRequest = {
   channel: 'retail' | 'trade';
 };
 const unique = (values: string[]) => [...new Set(values)].sort();
+export const MAX_DISCOVERY_TONES = 8;
 function palette(values: string[]) {
-  if (values.length > 8 || values.some(value => !/^#[a-f0-9]{6}$/i.test(value))) throw new Error('Use up to eight valid colors.');
+  if (values.length > MAX_DISCOVERY_TONES || values.some(value => !/^#[a-f0-9]{6}$/i.test(value))) throw new Error('Use up to eight valid colors.');
   return unique(values.map(value => value.toUpperCase()));
 }
 export function normalizeDiscoveryRequest(request: DiscoveryRequest) {

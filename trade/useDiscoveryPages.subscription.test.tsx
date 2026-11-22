@@ -1,12 +1,13 @@
 import React from 'react';
 import { act, cleanup, renderHook } from '@testing-library/react';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { ConvexProvider, type ConvexReactClient } from 'convex/react';
 import type { DiscoveryRequest } from '../lib/holmDiscoveryFilters';
 import { useDiscoveryPages } from './useDiscoveryPages';
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.useRealTimers(); });
 const base: DiscoveryRequest = { query: '', type: 'all', materials: [], tones: [], photoPalette: [], maximumMinor: null, inStock: false, sort: 'relevance', channel: 'retail' };
 it('keeps real SDK query subscriptions isolated from late responses and changed boundaries', () => {
+  vi.useFakeTimers();
   const values = new Map<string, unknown>();
   const watches = new Map<string, { cursor: string | null; request: DiscoveryRequest }>();
   const listeners = new Set<() => void>();
@@ -37,5 +38,12 @@ it('keeps real SDK query subscriptions isolated from late responses and changed 
   expect(hook.result.current.items).toEqual([]);
   respond('sofa', null, ['Current sofa'], null);
   expect(hook.result.current.items.map(item => item.name)).toEqual(['Current sofa']);
+  respond('sofa', null, ['Current sofa'], 'pending');
+  act(() => vi.advanceTimersByTime(29_900));
+  act(() => hook.result.current.loadMore());
+  expect(hook.result.current.items.map(item => item.name)).toEqual(['Current sofa']);
+  act(() => vi.advanceTimersByTime(100));
+  expect(hook.result.current.items).toEqual([]);
+  expect(hook.result.current.pending).toBe(true);
   hook.unmount(); expect(listeners.size).toBe(0);
 });

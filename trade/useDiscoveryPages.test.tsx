@@ -41,3 +41,17 @@ it('refreshes at the server deadline and stops refreshes when disabled or unmoun
   expect(mock.queries).toEqual({});
   hook.unmount(); expect(vi.getTimerCount()).toBe(0);
 });
+
+it('keeps the first response deadline while a later page remains pending', () => {
+  vi.useFakeTimers(); mock.results = { 0: page('next', 800) };
+  const hook = renderHook(() => useDiscoveryPages(request, 'anonymous', true));
+  const initial = mock.queries['0'].args.refreshToken;
+  act(() => vi.advanceTimersByTime(700));
+  act(() => hook.result.current.loadMore());
+  expect(hook.result.current.pending).toBe(true);
+  act(() => vi.advanceTimersByTime(99));
+  expect(mock.queries['0'].args.refreshToken).toBe(initial);
+  act(() => vi.advanceTimersByTime(1));
+  expect(mock.queries['0'].args.refreshToken).toBeGreaterThan(initial);
+  hook.unmount(); expect(vi.getTimerCount()).toBe(0);
+});

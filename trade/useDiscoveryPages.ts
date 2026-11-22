@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQueries } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { api } from '../convex/_generated/api';
@@ -15,7 +15,7 @@ export function useDiscoveryPages(request: DiscoveryRequest, viewerKey: string, 
   // This token only invalidates query caching. The server's own clock remains
   // the sole price authority; new visitors must not reuse a long-lived token 0.
   const [state, setState] = useState(() => ({ key, cursors: [null] as (string | null)[], refresh: Date.now() }));
-  const current = state.key === key ? state : { key, cursors: [null], refresh: Math.max(Date.now(), state.refresh + 1) };
+  const current = state.key === key ? state : { key, cursors: [null], refresh: state.refresh + 1 };
   if (state.key !== key) setState(current);
   const queries = useMemo(() => Object.fromEntries(enabled ? current.cursors.map((cursor, index) => [String(index), {
     query: api.holmDiscoveryQuery.page,
@@ -23,16 +23,32 @@ export function useDiscoveryPages(request: DiscoveryRequest, viewerKey: string, 
   }]) : []), [enabled, current.cursors, current.refresh, stableRequest]);
   const results = useQueries(queries);
   const chain = discoveryPageChain(current.cursors, current.cursors.map((_, index) => results[String(index)] as Page | Error | undefined));
+  // A suffix request must not restart the lifetime of already accepted prices.
+  // Each immutable response gets one receipt deadline for this query epoch.
+  const deadlineState = useRef<{ key: string; refresh: number; responses: WeakMap<object, number> } | null>(null);
   // Subscriptions whose upstream continuation changed must be discarded; the
   // pure chain evaluator already excludes their rows in this same render.
   if (state.key === key && !chain.pending && !chain.error && !chain.unavailable && chain.accepted < current.cursors.length) {
     setState({ ...current, cursors: current.cursors.slice(0, Math.max(1, chain.accepted)) });
   }
   useEffect(() => {
-    if (!enabled || chain.pending || chain.error || chain.unavailable || !chain.accepted) return;
-    const timer = window.setTimeout(() => setState(previous => previous.key !== key ? previous : { ...previous, refresh: Math.max(Date.now(), previous.refresh + 1) }), Math.max(100, Math.min(30_000, chain.refreshAfterMs)));
+    if (!enabled || chain.error || chain.unavailable || !chain.accepted) return;
+    if (deadlineState.current?.key !== key || deadlineState.current.refresh !== current.refresh)
+      deadlineState.current = { key, refresh: current.refresh, responses: new WeakMap() };
+    const deadlines = deadlineState.current.responses;
+    let refreshAt = Infinity;
+    for (let index = 0; index < chain.accepted; index++) {
+      const page = results[String(index)] as Page;
+      let deadline = deadlines.get(page);
+      if (deadline === undefined) {
+        deadline = Date.now() + Math.max(100, Math.min(30_000, page.refreshAfterMs));
+        deadlines.set(page, deadline);
+      }
+      refreshAt = Math.min(refreshAt, deadline);
+    }
+    const timer = window.setTimeout(() => setState(previous => previous.key !== key ? previous : { ...previous, refresh: Math.max(Date.now(), previous.refresh + 1) }), Math.max(0, refreshAt - Date.now()));
     return () => window.clearTimeout(timer);
-  }, [enabled, key, current.refresh, chain.pending, chain.error, chain.unavailable, chain.accepted, chain.refreshAfterMs]);
+  }, [enabled, key, current.refresh, chain.error, chain.unavailable, chain.accepted, results]);
   const loadMore = () => {
     if (!enabled || chain.pending || chain.error || chain.unavailable || chain.nextCursor === null) return;
     const next = chain.nextCursor;

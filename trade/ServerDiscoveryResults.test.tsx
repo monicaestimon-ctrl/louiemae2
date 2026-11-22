@@ -4,6 +4,7 @@ import type { LiveItem } from './catalog';
 import type { DiscoveryRequest } from '../lib/holmDiscoveryFilters';
 import { ServerDiscoveryResults } from './ServerDiscoveryResults';
 import { productsById, setProducts } from './catalogStore';
+import { Wall } from './editorShared';
 const mock = vi.hoisted(() => ({ read: vi.fn(), state: { items: [] as LiveItem[], pending: false, error: null as Error | null, unavailable: false, nextCursor: null as string | null, loadMore: vi.fn(), retry: vi.fn() } }));
 vi.mock('./useDiscoveryPages', () => ({ useDiscoveryPages: (request: DiscoveryRequest, viewer: string, enabled: boolean) => { mock.read(request, viewer, enabled); return mock.state; } }));
 const request: DiscoveryRequest = { query: '', type: 'all', materials: [], tones: [], photoPalette: [], maximumMinor: null, inStock: false, sort: 'priceAsc', channel: 'retail' };
@@ -19,6 +20,16 @@ it('preserves server order and installs only current display references', () => 
   mock.state.items = [row('a', 'Amber Chair')]; view.rerender(<View />);
   expect([...productsById.values()].map(item => item.lid)).toEqual(['a']);
   view.unmount(); expect(productsById.size).toBe(0);
+});
+it('renders real verified cards with controls before their discovery references are installed', () => {
+  const openPin = vi.fn();
+  mock.state.items = [row('outside-base', 'Zebra Chair')];
+  expect(productsById.size).toBe(0);
+  render(<ServerDiscoveryResults request={request} viewerKey="anonymous" searching={false} resetFilters={() => {}} renderProducts={items => <Wall items={items} ctx={{ boards: [], me: {}, mode: 'retail', openPin }} mixBoards={null} verified />} />);
+  expect(screen.queryByAltText('Unavailable saved product')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /^View Zebra/ }));
+  expect(openPin).toHaveBeenCalledWith(expect.any(Number), expect.objectContaining({ lid: 'outside-base', vid: 'v' }));
+  expect(screen.getByRole('button', { name: /Add Zebra to project tray/ })).toBeTruthy();
 });
 it('keeps empty candidate pages navigable without claiming no matches', () => {
   mock.state.nextCursor = 'next'; render(<View />);

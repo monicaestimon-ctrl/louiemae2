@@ -169,8 +169,8 @@ function SaveMenu({ctx,product,onDone,returnFocus,align='right'}){
 
 
 /** Typed controls delegate to the existing source/variant-aware owner operations. */
-function PinCard({p,ctx}){
-  const available=ctx.savedProducts?ctx.savedProducts.get(p.id)?.lid===p.lid:has(p.id);
+function PinCard({p,ctx,verified=false}){
+  const available=verified||(ctx.savedProducts?ctx.savedProducts.get(p.id)?.lid===p.lid:has(p.id));
   return html`<${CatalogProductCard} product=${p} boards=${ctx.boards} mode=${ctx.mode} available=${available}
     pinterestUrl=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'pin'))}
     icons=${{down:I('down',{width:14}),pinterest:I('pint'),studio:I('brush'),add:I('plus')}}
@@ -191,8 +191,8 @@ function BoardPin({b,ctx}){
   </div>`;
 }
 
-function Wall({items,ctx,density='normal',mixBoards}){
-  const out=[];items.forEach((p,i)=>{out.push(html`<${PinCard} key=${projectItemKey({pid:p.id,lid:p.lid,vid:p.vid})} p=${p} ctx=${ctx}/>`);if(mixBoards?.length&&i%5===2){const b=mixBoards[Math.floor(i/5)%mixBoards.length];out.push(html`<${BoardPin} key=${'b'+b.id+i} b=${b} ctx=${ctx}/>`)}});
+function Wall({items,ctx,density='normal',mixBoards,verified=false}){
+  const out=[];items.forEach((p,i)=>{out.push(html`<${PinCard} key=${projectItemKey({pid:p.id,lid:p.lid,vid:p.vid})} p=${p} ctx=${ctx} verified=${verified}/>`);if(mixBoards?.length&&i%5===2){const b=mixBoards[Math.floor(i/5)%mixBoards.length];out.push(html`<${BoardPin} key=${'b'+b.id+i} b=${b} ctx=${ctx}/>`)}});
   return html`<div className=${'wall '+(density==='compact'?'compact':density==='wide'?'wide':'')}>${out}</div>`;
 }
 
