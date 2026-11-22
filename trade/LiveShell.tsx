@@ -40,7 +40,9 @@ function CatalogShell({ me, suspended = false }: { me: FunctionReturnType<typeof
   const { results, status, loadMore } = usePaginatedQuery(api.holm.catalogPage, {}, { initialNumItems: 24 });
   const curatedRows = useQuery(api.holm.catalogItems, { productIds: CURATED_IDS });
   const references = useMemo(() => curatedRows === undefined ? null : liveProducts(curatedRows.flatMap(row => row.item ? [row.item] : []) as LiveItem[]), [curatedRows]);
-  const catalogDemand = useCatalogDemand();
+  const discoveryReadiness = useQuery(api.holmDiscoveryQuery.readiness);
+  const serverDiscovery = discoveryReadiness?.ready === true;
+  const catalogDemand = useCatalogDemand(discoveryReadiness === undefined ? 'pending' : serverDiscovery ? 'server' : 'legacy');
   // Fill empty candidate pages to find a real first selection. Beyond that,
   // discovery/compose intent requests the full legacy dataset until server discovery replaces it.
   useEffect(() => {
@@ -85,7 +87,7 @@ function CatalogShell({ me, suspended = false }: { me: FunctionReturnType<typeof
     return shell ? null : <main className="holm-boot" aria-busy="true"><p role="status">Opening House of Louie Mae…</p></main>;
   }
   return <>{empty && <Recovery empty retry={() => window.location.reload()} />}
-    <div hidden={empty} inert={empty}><ModalSuspensionContext.Provider value={empty || suspended}>{hasContent && <CatalogApp suspended={suspended} key={me?.signedIn && me.verified ? 'trade' : 'retail'} catalogComplete={status === 'Exhausted'} onCatalogIntent={catalogDemand.request} />}</ModalSuspensionContext.Provider></div></>;
+    <div hidden={empty} inert={empty}><ModalSuspensionContext.Provider value={empty || suspended}>{hasContent && <CatalogApp suspended={suspended} serverDiscovery={serverDiscovery} key={me?.signedIn && me.verified ? 'trade' : 'retail'} catalogComplete={status === 'Exhausted'} onCatalogIntent={catalogDemand.request} />}</ModalSuspensionContext.Provider></div></>;
 }
 
 /** Resolve account access before starting a viewer-specific catalog subscription. */

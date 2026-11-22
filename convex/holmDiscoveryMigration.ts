@@ -7,13 +7,15 @@ import { HOLM_DISCOVERY_VERSION, discoveryState, discoveryProjection, sameDiscov
 export const status = internalQuery({ args: {}, handler: async ctx => {
   const current = await discoveryState(ctx);
   return current ? { version: current.version, generation: current.generation, phase: current.phase,
-    cursor: current.cursor, checked: current.checked, mismatchIds: current.mismatchIds, updatedAt: current.updatedAt } : null;
+    cursor: current.cursor, checked: current.checked, mismatchIds: current.mismatchIds, updatedAt: current.updatedAt,
+    readerEnabled: current.readerEnabled ?? false, readerOfferGeneration: current.readerOfferGeneration ?? null } : null;
 } });
 
 /** Prepare and verify derived discovery metadata. This does not activate a customer reader. */
 export const begin = internalMutation({ args: {}, handler: async ctx => {
   const old = await discoveryState(ctx);
-  const next = { version: HOLM_DISCOVERY_VERSION, generation: (old?.generation ?? 0) + 1, phase: 'listings' as const, cursor: null, checked: 0, mismatchIds: [], updatedAt: Date.now() };
+  if (old?.readerEnabled) throw new Error('Disable the discovery reader before preparing another generation.');
+  const next = { version: HOLM_DISCOVERY_VERSION, generation: (old?.generation ?? 0) + 1, readerEnabled: false, phase: 'listings' as const, cursor: null, checked: 0, mismatchIds: [], updatedAt: Date.now() };
   if (old) await ctx.db.replace(old._id, next); else await ctx.db.insert('holmDiscoveryState', next);
   return next;
 } });

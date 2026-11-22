@@ -245,6 +245,18 @@ Maintain derived offers in the source transaction for listing, linked retail pri
 
 Before reader cutover, prove complete global ordering with multiple variants, withdrawals, equal prices, role changes and effective-window expiry. Bind cursors to query/viewer identity and index version, prevent stale responses from replacing a new search, and retain independent saved-project resolution. The displayed price and selected variant must agree. A candidate index alone does not satisfy this cutover or the first-page-readiness requirement.
 
+## 7.4 Bounded discovery reader and controlled activation
+
+Discovery metadata version 2 includes a bounded public search document and a tone/name index. Normalize accents and punctuation consistently, use at most 16 terms/200 characters, match any term with prefix matching only on the final term, and use the native search service's relevance ranking. Explicit price sorting uses approved candidate offers and the same search predicate. Before activation, compare native and predicate membership on real production metadata through the read-only `searchParityPage` diagnostic; the local database mock does not certify native multi-term semantics.
+
+Return at most 24 candidate rows per request with a 1 MB read budget. Bind each continuation to the normalized query, filters, page size, signed-in identity, current trade permission, metadata version and both preparation generations. Revalidate current listing, metadata, price, stock and display identity before returning public fields. Anonymous visitors receive null trade prices. Both price directions use each product's cheapest currently eligible channel variant; card price, image, detail identity and project selection must use that same variant. Photo relevance traverses known tone buckets by distance, with unknown tones last; explicit price order takes precedence.
+
+The React reader keeps only a contiguous chain of live page results. A changed upstream continuation immediately excludes its stale suffix, even before subscriptions are replaced. Filters/account changes restart the chain. Empty filtered pages retain an explicit Load more action. Server-provided refresh deadlines recheck effective prices within 30 seconds or at the selected offer's expiry; client time never determines price authority. Loading, unavailable, timeout and manual-retry states must be accessible. Numeric price filters must not impose a cap derived from a partially loaded catalog.
+
+Discovery display references are separate from the home selection and independently resolved saved projects. Remove withdrawn references and clear every viewer's references on teardown. Protect numeric display-ID collisions; persistence and project actions retain canonical product/variant identity. Keep legacy full-catalog behavior for Quiz/Studio features that still require it, but do not download all pages for Discover when the new reader is active.
+
+Activation is a deployment-admin-only audited action, bound to verified metadata and offer generations. Preparation alone leaves the reader off. Deploy compatible code, prepare version 2 metadata, verify native/predicate search parity, verify current price/privacy behavior and browser journeys, then enable the reader and repeat production checks. Disabling the reader restores the existing catalog path without changing product publication, pricing, stock or checkout eligibility. A reader migration does not qualify Zuo products for sale.
+
 # 8 Phase 5 Assets and rendering performance
 
 ## 8.1 Product image pipeline

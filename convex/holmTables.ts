@@ -65,9 +65,11 @@ export const holmTables = {
   }).index('by_listing', ['listingId']).index('by_name', ['version', 'nameKey', 'productId'])
     .index('by_type_name', ['version', 'type', 'nameKey', 'productId'])
     .index('by_material_name', ['version', 'material', 'nameKey', 'productId'])
+    .index('by_tone_name', ['version', 'tone', 'nameKey', 'productId'])
     .searchIndex('search_text', { searchField: 'text', filterFields: ['version', 'type', 'material'] }),
   holmDiscoveryState: defineTable({
     version: v.number(), generation: v.number(),
+    readerEnabled: v.optional(v.boolean()), readerOfferGeneration: v.optional(v.number()),
     phase: v.union(v.literal('listings'), v.literal('orphans'), v.literal('verifyListings'), v.literal('verifyIndex'), v.literal('verified'), v.literal('failed')),
     cursor: v.union(v.string(), v.null()), checked: v.number(), mismatchIds: v.array(v.string()), updatedAt: v.number(),
   }).index('by_version', ['version']),

@@ -1,10 +1,25 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it } from 'vitest';
 import { useState } from 'react';
-import { products, productsById, setProducts, useCatalogRevision } from './catalogStore';
+import { products, productsById, setProducts, useCatalogRevision, setDiscoveryReferences, clearDiscoveryReferences } from './catalogStore';
 import { displayProduct } from './catalogLookup';
 
 afterEach(() => { cleanup(); setProducts([]); });
+it('keeps current discovery variants across home refreshes and protects replacement owners', () => {
+  const owner = Symbol('first'), next = Symbol('second');
+  const base = { ...displayProduct(new Map(), 1), lid: 'same', vid: 'base' };
+  setProducts([base]);
+  setDiscoveryReferences(owner, [{ ...base, vid: 'selected' }]);
+  setProducts([base]);
+  expect(productsById.get(1)?.vid).toBe('selected');
+  setDiscoveryReferences(next, [{ ...base, vid: 'replacement' }]);
+  clearDiscoveryReferences(owner);
+  expect(productsById.get(1)?.vid).toBe('replacement');
+  clearDiscoveryReferences(next);
+  expect(productsById.get(1)?.vid).toBe('base');
+  setDiscoveryReferences(owner, [{ ...base, vid: 'selected' }]);
+  setProducts([]); expect(productsById.size).toBe(0);
+});
 it('re-renders catalog consumers without losing local project state and removes withdrawn products', () => {
   function Consumer() {
     useCatalogRevision();
