@@ -1,5 +1,5 @@
 import FieldPerformance from './FieldPerformance';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
@@ -33,12 +33,22 @@ const money = (m: number) => `$${(m / 100).toLocaleString('en-US', { minimumFrac
 const card = 'bg-white border border-earth/10 rounded-lg p-4 space-y-2 text-sm text-earth';
 const btn = 'px-3 py-1.5 border border-earth/30 text-[11px] uppercase tracking-widest hover:bg-earth hover:text-cream disabled:opacity-40';
 const errText = (e: unknown) => commerceErrorData(e)?.detail ?? customerMessage(e);
+const DELIVERY_RELEASE_KINDS = new Set(['deliveryLadder', 'deliveryRule', 'carrierRule', 'deliveryControls', 'deliveryMonitoringPolicy', 'estimatePolicy']);
 
 function Decisions({ canApprove }: { canApprove: boolean }) {
   const data = useQuery(api.sysConfig.list, {});
   const approve = useMutation(api.sysConfig.approve);
   const reject = useMutation(api.sysConfig.reject);
+  const release = useMutation(api.sysConfig.approveDeliveryRelease);
+  const [selected, setSelected] = useState<Id<'sysConfig'>[]>([]);
+  const [releaseNote, setReleaseNote] = useState('');
+  const [releasing, setReleasing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  useEffect(() => {
+    if (!data) return;
+    const eligible = new Set(data.records.filter(r => r.status === 'proposed' && DELIVERY_RELEASE_KINDS.has(r.kind)).map(r => r._id));
+    setSelected(ids => ids.every(id => eligible.has(id)) ? ids : ids.filter(id => eligible.has(id)));
+  }, [data]);
   if (!data) return <p>Loading…</p>;
   const proposed = data.records.filter((r) => r.status === 'proposed');
   const approved = data.records.filter((r) => r.status === 'approved');
@@ -57,18 +67,38 @@ function Decisions({ canApprove }: { canApprove: boolean }) {
       </div>
       <div className={card}>
         <h3 className="font-serif text-lg">Awaiting your decision ({proposed.length})</h3>
+        <fieldset disabled={!canApprove || releasing} className="space-y-2">
+          <legend>Release selected delivery settings together</legend>
+          <p className="text-xs">Review each value below. The selected proposals take effect together; checkout flags remain separate.</p>
+          <label className="block">Delivery release note
+            <input className="block border p-2 w-full" value={releaseNote} onChange={e => setReleaseNote(e.target.value)} />
+          </label>
+          <button className={btn} disabled={!selected.length || !releaseNote.trim()} onClick={async () => {
+            setReleasing(true);
+            try {
+              const result = await release({ ids: selected, note: releaseNote });
+              setSelected([]); setReleaseNote(''); setMsg(`Released ${result.approved} delivery settings together`);
+            } catch (e) { setMsg(errText(e)); }
+            finally { setReleasing(false); }
+          }}>Approve selected delivery release ({selected.length})</button>
+          <button className={btn} disabled={!selected.length} onClick={() => setSelected([])}>Clear delivery selection</button>
+        </fieldset>
         {proposed.map((r) => (
           <div key={r._id} className="border-t border-earth/10 pt-2">
             <p>
               <b>{r.decision ?? '—'}</b> · {r.kind}/{r.key} v{r.version}
             </p>
+            {DELIVERY_RELEASE_KINDS.has(r.kind) && <label className="flex gap-2">
+              <input type="checkbox" disabled={!canApprove || releasing} checked={selected.includes(r._id)} onChange={e => setSelected(ids => e.target.checked ? [...ids, r._id] : ids.filter(id => id !== r._id))} />
+              Include {r.key} v{r.version} in delivery release
+            </label>}
             <p className="text-xs text-earth/70">{r.note}</p>
             <pre className="text-[11px] bg-cream/50 p-2 overflow-auto max-h-40">{JSON.stringify(r.value, null, 2)}</pre>
             <div className="flex gap-2">
-              <button className={btn} disabled={!canApprove} onClick={() => approve({ id: r._id }).then(() => setMsg(`Approved ${r.key}`), (e) => setMsg(errText(e)))}>
+              <button className={btn} disabled={!canApprove || releasing} onClick={() => approve({ id: r._id }).then(() => setMsg(`Approved ${r.key}`), (e) => setMsg(errText(e)))}>
                 Approve
               </button>
-              <button className={btn} disabled={!canApprove} onClick={() => reject({ id: r._id, note: 'Rejected in the decision register' }).then(() => setMsg(`Rejected ${r.key}`), (e) => setMsg(errText(e)))}>
+              <button className={btn} disabled={!canApprove || releasing} onClick={() => reject({ id: r._id, note: 'Rejected in the decision register' }).then(() => setMsg(`Rejected ${r.key}`), (e) => setMsg(errText(e)))}>
                 Reject
               </button>
             </div>

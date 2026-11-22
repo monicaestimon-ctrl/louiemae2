@@ -188,16 +188,18 @@ export const propose = mutation({
   },
 });
 
-/** The owner approves a proposed record: it comes into force now and retires the version it replaces. */
-export const approve = mutation({
-  args: { id: v.id('sysConfig'), note: v.optional(v.string()) },
-  handler: async (ctx, a) => {
-    const admin = await requireDeliveryRole(ctx, 'approver');
+/** Shared approval path: single records and atomic delivery releases use identical checks. */
+async function approveRecord(ctx: MutationCtx, a: { id: Doc<'sysConfig'>['_id']; note?: string }, admin: { email: string }, now: number) {
     const row = await ctx.db.get(a.id);
     if (!row || row.status !== 'proposed')
       throw new CommerceError('INVALID_INPUT', 'Only a proposed record can be approved.');
     parseConfig(row.kind as ConfigKind, row.value);
-    const now = Date.now();
+    if (row.kind === 'carrierRule') {
+      const rule = (row.value as { rule: { effectiveFrom: number; effectiveTo?: number } }).rule;
+      if (rule.effectiveTo !== undefined && rule.effectiveTo <= Math.max(now, row.effectiveFrom))
+        throw new CommerceError('INVALID_INPUT', 'Carrier evidence expires before this release starts');
+    }
+
     const current = await ctx.db
       .query('sysConfig')
       .withIndex('by_kind_key_version', (q) => q.eq('kind', row.kind).eq('key', row.key))
@@ -232,6 +234,43 @@ export const approve = mutation({
       reason: a.note,
       after: { kind: row.kind, key: row.key, version: row.version },
     });
+}
+
+export const approve = mutation({
+  args: { id: v.id('sysConfig'), note: v.optional(v.string()) },
+  handler: async (ctx, a) => {
+    const admin = await requireDeliveryRole(ctx, 'approver');
+    await approveRecord(ctx, a, admin, Date.now());
+  },
+});
+
+const DELIVERY_RELEASE_KINDS = new Set(['deliveryLadder', 'deliveryRule', 'carrierRule', 'deliveryControls', 'deliveryMonitoringPolicy', 'estimatePolicy']);
+
+/** Selected proposals become effective together, or none do. Does not enable deployment flags. */
+export const approveDeliveryRelease = mutation({
+  args: { ids: v.array(v.id('sysConfig')), note: v.string() },
+  handler: async (ctx, a) => {
+    const admin = await requireDeliveryRole(ctx, 'approver');
+    if (!a.note.trim() || a.ids.length < 1 || a.ids.length > 20 || new Set(a.ids).size !== a.ids.length)
+      throw new CommerceError('INVALID_INPUT', 'Select 1–20 distinct delivery proposals and supply a release note');
+    const now = Date.now();
+    const keys = new Set<string>();
+    for (const id of a.ids) {
+      const row = await ctx.db.get(id);
+      if (!row || row.status !== 'proposed' || !DELIVERY_RELEASE_KINDS.has(row.kind))
+        throw new CommerceError('INVALID_INPUT', 'Only proposed delivery settings belong in this release');
+      if (row.effectiveFrom > now)
+        throw new CommerceError('INVALID_INPUT', 'Atomic delivery releases must start now, not on different future dates');
+      if (row.kind === 'carrierRule' && (row.value as { rule: { effectiveFrom: number } }).rule.effectiveFrom > now)
+        throw new CommerceError('INVALID_INPUT', 'Carrier evidence must already be effective in an atomic release');
+      const key = `${row.kind}/${row.key}`;
+      if (keys.has(key)) throw new CommerceError('INVALID_INPUT', 'Select only one version of each delivery setting');
+      keys.add(key);
+      const latest = await ctx.db.query('sysConfig').withIndex('by_kind_key_version', q => q.eq('kind', row.kind).eq('key', row.key)).order('desc').first();
+      if (latest?._id !== row._id) throw new CommerceError('INVALID_INPUT', 'A newer setting exists; refresh the decision register');
+    }
+    for (const id of a.ids) await approveRecord(ctx, { id, note: a.note.trim() }, admin, now);
+    return { approved: a.ids.length, effectiveFrom: now };
   },
 });
 
