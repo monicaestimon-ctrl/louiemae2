@@ -95,6 +95,7 @@ jobs:
         run: |
           npm run test:holm:browser
           node scripts/lighthouse/discovery.mjs
+          node scripts/lighthouse/product-referral.mjs
           npm run test:holm-tools:browser
           npm run test:planner-dialogs:browser
           node scripts/lighthouse/holm-editor-loading.mjs

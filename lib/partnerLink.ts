@@ -113,10 +113,9 @@ export function shareOrigin(): string {
   return /(^|\.)louiemae\.com$/.test(window.location.hostname) ? window.location.origin : SITE;
 }
 
-/** A link to one piece on /trade, carrying the partner's code when the sharer is a partner. */
-export function pieceShareUrl(origin: string, pieceId: number | string, refCode?: string | null, ch = 'link'): string {
-  const code = normalizeCode(refCode);
-  return `${origin}/trade${code ? `?ref=${code}&ch=${encodeURIComponent(ch)}` : ''}#p/${pieceId}`;
+/** Ordinary trade-product sharing is separate from retail referral attribution. */
+export function pieceShareUrl(origin: string, pieceId: number | string): string {
+  return `${origin}/trade#p/${encodeURIComponent(pieceId)}`;
 }
 
 /**

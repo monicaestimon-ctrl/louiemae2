@@ -76,10 +76,10 @@ describe('partner links in the browser', () => {
     expect(activeRef(1_000 + ATTRIBUTION_MS)).toBeNull();
   });
 
-  it('builds piece links on louiemae.com with the code only when there is one', () => {
+  it('keeps ordinary trade-piece links separate from retail referral codes', () => {
     expect(shareOrigin()).toBe('https://www.louiemae.com'); // jsdom runs on localhost
-    expect(pieceShareUrl('https://www.louiemae.com', 7, 'MAE1234', 'pin')).toBe('https://www.louiemae.com/trade?ref=MAE1234&ch=pin#p/7');
-    expect(pieceShareUrl('https://www.louiemae.com', 7, null)).toBe('https://www.louiemae.com/trade#p/7');
+    expect(pieceShareUrl('https://www.louiemae.com', 7)).toBe('https://www.louiemae.com/trade#p/7');
+    expect(pieceShareUrl('https://www.louiemae.com', 'piece?ref=OTHER')).toBe('https://www.louiemae.com/trade#p/piece%3Fref%3DOTHER');
     expect(normalizeCode(' mae-12 34 ')).toBe('MAE1234');
     expect(normalizeCode('abc')).toBe('');
   });

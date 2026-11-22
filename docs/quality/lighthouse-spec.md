@@ -452,6 +452,18 @@ For a bad release, stop further rollout, restore the last compatible frontend, d
 
 # 14 Completion checklist and handoff requirements
 
+## Product-level retail referral acceptance
+
+HOLM product details separate ordinary trade-product sharing from **Copy retail referral link**. Ordinary product/Pinterest links do not carry a retail referral code. The retail action is deferred until product details open and uses the exact canonical product/variant; it never guesses a retail destination from the product name or public numeric ID.
+
+Preview and creation share the current published retail mapping, purchasable retail variant, supplier inventory/cost availability, catalog holds, explicit referral qualification, category and approved commission schedule. Expired or ambiguous explicit mappings are unavailable. A normalized variant ID must belong to its stated product. Viewing a product never enrolls a member or creates a link. Both referral-generation and commission-accrual flags must be active, and the signed-in identity must have an active referral membership and beneficiary.
+
+Eligible previews show the retail destination, category (lighting is décor), applicable percentage, the actual approved exception note and disclosure example. Creation rechecks eligibility server-side. Generic links only support the public retail home/shop/collection/new-arrivals destinations and cannot bypass product qualification or point at trade/account/admin routes. Existing earned terms and links are not rewritten by this UI change.
+
+The component refreshes time-dependent eligibility every 30 seconds, exposes loading/failure/manual retry states, suppresses duplicate commands, discards late results after product/variant/viewer changes, and offers a selectable URL if clipboard permission fails. No commission action or previously generated URL is displayed when current preview eligibility is unavailable. Browser fixtures verify mobile/desktop layout, accessibility, destination and withdrawal handling without production writes.
+
+Release evidence must distinguish this sharing interface from program activation: current legacy manual qualification records still require the SKU economics audit, and Zuo still requires its current cost/MAP/stock/price evidence. This phase does not activate program flags, certify existing qualification records, create memberships, issue rewards, or authorize payments. Production acceptance additionally needs an authorized authenticated member journey and a qualified purchasable retail listing; synthetic fixture success is not that proof.
+
 Implementation is complete only when:
 
 - All recorded findings have a tested resolution or an explicitly approved, accurately scoped exception.

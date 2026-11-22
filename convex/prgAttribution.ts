@@ -30,7 +30,7 @@ export async function productRate(ctx: Ctx, productId: Id<'commerceProducts'>, t
   const exc = await ctx.db.query('prgSkuCommissionExceptions').withIndex('by_product_effective', (q) => q.eq('productId', productId)).order('desc').take(10);
   const live = exc.find((e) => e.effectiveFrom <= at && (e.effectiveTo === undefined || e.effectiveTo > at));
   const fromException = live?.rates.find((r) => r.tierKey === tier)?.rateBps;
-  return { rateBps: Math.min(fromException ?? rateFor(sched, tier, category), sched.ceilingBps), exceptionVersion: live?.version };
+  return { rateBps: Math.min(fromException ?? rateFor(sched, tier, category), sched.ceilingBps), exceptionVersion: live?.version, exceptionNote: live?.visibleNote };
 }
 
 async function isSelf(ctx: Ctx, b: Doc<'prgBeneficiaries'>, userId: Id<'users'> | undefined, email?: string) {

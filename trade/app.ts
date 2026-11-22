@@ -9,7 +9,7 @@ export {html} from './editorShared';
 // @ts-nocheck
 import { HouseStaffGate } from './admin/HouseStaffGate';
 
-import { TradeAccount, TradeWelcome, TradeApplication, ProjectDeliveryPanel, ProductDeliveryEstimate, ProgramHubV2, TeamPanel } from './deferredFeatures';
+import { TradeAccount, TradeWelcome, TradeApplication, ProjectDeliveryPanel, ProductDeliveryEstimate, ProductRetailReferral, ProgramHubV2, TeamPanel } from './deferredFeatures';
 
 import { DeliveryCalculatorDisclosure } from './DeliveryCalculatorDisclosure';
 
@@ -1241,10 +1241,12 @@ function PinDetail({ctx}){
             <button className="btn btn-line btn-sm" disabled=${!has(p.id)} title=${!has(p.id)?"Studio is unavailable for this saved product":undefined} onClick=${()=>ctx.toStudio([{pid:p.id,lid:p.lid,vid:p.vid}])}>${I('brush',{width:15})} Studio</button>
             <button className="btn btn-line btn-sm" disabled=${!p.dimsCm} title=${!p.dimsCm?"Measurements are needed for 3D planning":undefined} onClick=${()=>{ctx.setRoomSeed([{pid:p.id,lid:p.lid,vid:p.vid}]);ctx.openPin(null);ctx.go('room')}}>${I('cube',{width:15})} 3D</button>
             <button className="ib" aria-pressed=${liked} aria-label="Like" onClick=${()=>ctx.toggleLike(p.id)} style=${{color:liked?'var(--cognac)':''}}>${I('heart',liked?{fill:'currentColor'}:{})}</button>
-            <button className="ib" aria-label="Copy link" onClick=${()=>copyText(pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'link'),ctx.toast)}>${I('share')}</button>
-            <a className="ib" aria-label="Save to Pinterest" href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'pin'))} target="_blank" rel="noopener">${I('pint')}</a>
+            <button className="ib" aria-label="Copy trade product link" onClick=${()=>copyText(pieceShareUrl(shareOrigin(),p.id),ctx.toast)}>${I('share')}</button>
+            <a className="ib" aria-label="Save trade product to Pinterest" href=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id))} target="_blank" rel="noopener">${I('pint')}</a>
           </div>
         </div>
+
+        ${p.lid&&p.vid&&html`<${ProductRetailReferral} productId=${p.lid} variantId=${p.vid} viewerKey=${ctx.me.signedIn?ctx.me.email:'anonymous'} onAccount=${()=>{ctx.openPin(null);ctx.go(ctx.me.signedIn?'hub':'welcome')}}/>`}
 
         <div className="pp-block pp-zip">
           <span className="pp-lbl">Delivering to</span>
