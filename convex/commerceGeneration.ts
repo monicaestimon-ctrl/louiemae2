@@ -1,3 +1,4 @@
+import { mutation as indexedMutation } from './functions';
 import { v } from 'convex/values';
 import { mutation, query, internalMutation, internalQuery } from './_generated/server';
 import { internal } from './_generated/api';
@@ -142,7 +143,7 @@ export const privateJob = internalQuery({
   args: { id: v.id('commerceGenerations') },
   handler: (ctx, { id }) => ctx.db.get(id),
 });
-export const approve = mutation({
+export const approve = indexedMutation({
   args: { id: v.id('commerceGenerations'), revision: v.number() },
   handler: async (ctx, args) => {
     const actor = await requireCjAdminIdentity(ctx);

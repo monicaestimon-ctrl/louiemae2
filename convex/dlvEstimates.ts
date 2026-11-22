@@ -1,10 +1,11 @@
+import { internalMutation as indexedInternalMutation } from './functions';
 import { customerFacing } from '../lib/delivery/publicErrors';
 import { assertDeliveryBounds } from '../lib/delivery/requestBounds';
 // Delivery estimate contract (spec S18, v2 §12). ZIP estimates are non-binding; a full-address
 // estimate valid through payment initiation is required for checkout. Any change to cart,
 // address, membership, service, quantity, credit, discount or source version invalidates it.
 import { v } from 'convex/values';
-import { internalMutation, query } from './_generated/server';
+import { query } from './_generated/server';
 import type { Id } from './_generated/dataModel';
 import { computeEstimate, cartHash, type LineInput } from './dlvEngine';
 import { activeConfig } from './sysConfig';
@@ -101,7 +102,7 @@ export const productProfile = query({
  * Estimates delivery for a cart or a single product. Returns customer-safe fields only; the
  * internal breakdown stays on the stored estimate for admins.
  */
-export const compute = internalMutation({
+export const compute = indexedInternalMutation({
   args: {
     lines: v.array(lineArg),
     channel: v.union(v.literal('retail'), v.literal('trade')),

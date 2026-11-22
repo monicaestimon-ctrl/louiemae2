@@ -1,6 +1,7 @@
+import { internalMutation as indexedInternalMutation, mutation as indexedMutation } from './functions';
 // Finance evidence authoring. Evidence changes invalidate qualification, never approved prices.
 import { v, type ObjectType } from 'convex/values';
-import { internalMutation, internalQuery, mutation, query } from './_generated/server';
+import { internalQuery, query } from './_generated/server';
 import type { MutationCtx } from './_generated/server';
 import { digest as evidenceDigest } from './dlvSecurity';
 import { normalizeCartons } from '../lib/shipping/evidence';
@@ -52,7 +53,7 @@ async function applySupplierAvailability(ctx: MutationCtx, variantId: Id<'catVar
 }
 
 /** Correct existing evidence without inventing another supplier file or granting sellability. */
-export const reconcileZuoAvailability = internalMutation({
+export const reconcileZuoAvailability = indexedInternalMutation({
   args: { dryRun: v.boolean(), rows: v.array(v.object({ variantId: v.id('catVariants'),
     expectedObservationId: v.id('catSourceObservations'), expectedStockRevisionId: v.union(v.id('catStockRevisions'), v.null()) })) },
   handler: async (ctx, a) => {
@@ -118,7 +119,7 @@ const costArgs = {
     note: v.string(),
 };
 
-export const recordCost = mutation({
+export const recordCost = indexedMutation({
   args: costArgs,
   handler: async (ctx, a) => saveCostEvidence(ctx, a, await requireDeliveryRole(ctx, 'finance')),
 });
@@ -312,7 +313,7 @@ export const supplierSourceSnapshot = internalQuery({
 });
 
 /** Deployment-admin reconciliation of a reviewed supplier file, never a publication endpoint. */
-export const reconcileZuoSource = internalMutation({
+export const reconcileZuoSource = indexedInternalMutation({
   args: {
     dryRun: v.boolean(),
     sourceSha256: v.string(),
@@ -416,7 +417,7 @@ export const reconcileZuoSource = internalMutation({
 
 /** Restore the approved packet allowance lost by the original staged migration.
  * Never changes prices, carrier methods, stock, commission eligibility or publication. */
-export const restoreStagedAllowances = internalMutation({
+export const restoreStagedAllowances = indexedInternalMutation({
   args: { dryRun: v.boolean(), rows: v.array(v.object({ variantId: v.id('catVariants'),
     expectedSizeClass: v.string(), sourceSha256: v.string() })) },
   handler: async (ctx, a) => {

@@ -1,3 +1,4 @@
+import { mutation as indexedMutation } from './functions';
 // Retail mappings and the link builder (spec S26, v2 §16, §22). Retail links exist only for
 // approved referral members and mapped, published, purchasable retail variants, and always point
 // at Louie Mae — even when created inside HOLM. No mapping means a clear unavailable state.
@@ -144,7 +145,7 @@ export const retireMapping = mutation({
 });
 
 /** Explicit, visible referral eligibility for a variant (manual prequalification or disabling referrals). */
-export const setReferralEligibility = mutation({
+export const setReferralEligibility = indexedMutation({
   args: { variantId: v.id('catVariants'), eligible: v.boolean(), reason: v.string() },
   handler: async (ctx, a) => {
     const admin = await requireCjAdminIdentity(ctx);

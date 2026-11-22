@@ -96,6 +96,10 @@ import type * as holmAssets from "../holmAssets.js";
 import type * as holmCatalogRead from "../holmCatalogRead.js";
 import type * as holmConnect from "../holmConnect.js";
 import type * as holmCredit from "../holmCredit.js";
+import type * as holmDiscoveryMaintenance from "../holmDiscoveryMaintenance.js";
+import type * as holmDiscoveryMigration from "../holmDiscoveryMigration.js";
+import type * as holmDiscoveryOfferMigration from "../holmDiscoveryOfferMigration.js";
+import type * as holmDiscoveryOffers from "../holmDiscoveryOffers.js";
 import type * as holmEmail from "../holmEmail.js";
 import type * as holmIdentityMaintenance from "../holmIdentityMaintenance.js";
 import type * as holmIdentityMigration from "../holmIdentityMigration.js";
@@ -166,6 +170,7 @@ import type * as sourcePropertiesValidator from "../sourcePropertiesValidator.js
 import type * as sourcingCounts from "../sourcingCounts.js";
 import type * as sourcingCountsMaintenance from "../sourcingCountsMaintenance.js";
 import type * as subscribers from "../subscribers.js";
+import type * as supplierStockRead from "../supplierStockRead.js";
 import type * as sysAlerts from "../sysAlerts.js";
 import type * as sysConfig from "../sysConfig.js";
 import type * as sysCore from "../sysCore.js";
@@ -287,6 +292,10 @@ declare const fullApi: ApiFromModules<{
   holmCatalogRead: typeof holmCatalogRead;
   holmConnect: typeof holmConnect;
   holmCredit: typeof holmCredit;
+  holmDiscoveryMaintenance: typeof holmDiscoveryMaintenance;
+  holmDiscoveryMigration: typeof holmDiscoveryMigration;
+  holmDiscoveryOfferMigration: typeof holmDiscoveryOfferMigration;
+  holmDiscoveryOffers: typeof holmDiscoveryOffers;
   holmEmail: typeof holmEmail;
   holmIdentityMaintenance: typeof holmIdentityMaintenance;
   holmIdentityMigration: typeof holmIdentityMigration;
@@ -357,6 +366,7 @@ declare const fullApi: ApiFromModules<{
   sourcingCounts: typeof sourcingCounts;
   sourcingCountsMaintenance: typeof sourcingCountsMaintenance;
   subscribers: typeof subscribers;
+  supplierStockRead: typeof supplierStockRead;
   sysAlerts: typeof sysAlerts;
   sysConfig: typeof sysConfig;
   sysCore: typeof sysCore;

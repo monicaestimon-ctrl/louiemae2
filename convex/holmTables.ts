@@ -40,6 +40,37 @@ export const sourcingStatus = v.union(
 );
 
 export const holmTables = {
+  // Internal candidate prices only. Customer readers must revalidate eligibility,
+  // effective windows and role access before returning any offer.
+  holmDiscoveryOffers: defineTable({
+    listingId: v.id('commerceListings'), productId: v.id('commerceProducts'), variantId: v.string(),
+    retailMinor: v.union(v.number(), v.null()), tradeMinor: v.number(),
+    retailFrom: v.union(v.number(), v.null()), retailTo: v.union(v.number(), v.null()),
+    tradeFrom: v.number(), tradeTo: v.union(v.number(), v.null()),
+    retailRevisionId: v.optional(v.id('catPriceRevisions')), tradeRevisionId: v.optional(v.id('catPriceRevisions')),
+  }).index('by_listing', ['listingId', 'variantId']).index('by_product', ['productId'])
+    .index('by_retail', ['retailMinor', 'productId', 'variantId'])
+    .index('by_trade', ['tradeMinor', 'productId', 'variantId']),
+  holmDiscoveryOfferState: defineTable({
+    version: v.number(), generation: v.number(),
+    phase: v.union(v.literal('listings'), v.literal('orphans'), v.literal('verifyListings'), v.literal('verifyIndex'), v.literal('verified'), v.literal('failed')),
+    cursor: v.union(v.string(), v.null()), checked: v.number(), mismatchIds: v.array(v.string()), updatedAt: v.number(),
+  }).index('by_version', ['version']),
+  // Derived navigation metadata. Current catalog eligibility and role-specific prices
+  // remain separate authorities; no customer reader switches on merely because rows exist.
+  holmDiscoveryIndex: defineTable({
+    listingId: v.id('commerceListings'), productId: v.id('commerceProducts'), version: v.number(),
+    name: v.string(), nameKey: v.string(), text: v.string(), type: v.string(),
+    material: v.string(), tone: v.string(), seats: v.number(),
+  }).index('by_listing', ['listingId']).index('by_name', ['version', 'nameKey', 'productId'])
+    .index('by_type_name', ['version', 'type', 'nameKey', 'productId'])
+    .index('by_material_name', ['version', 'material', 'nameKey', 'productId'])
+    .searchIndex('search_text', { searchField: 'text', filterFields: ['version', 'type', 'material'] }),
+  holmDiscoveryState: defineTable({
+    version: v.number(), generation: v.number(),
+    phase: v.union(v.literal('listings'), v.literal('orphans'), v.literal('verifyListings'), v.literal('verifyIndex'), v.literal('verified'), v.literal('failed')),
+    cursor: v.union(v.string(), v.null()), checked: v.number(), mismatchIds: v.array(v.string()), updatedAt: v.number(),
+  }).index('by_version', ['version']),
   holmCatalogIdentities: defineTable({
     listingId: v.id('commerceListings'), productId: v.id('commerceProducts'), legacyId: v.number(),
   }).index('by_listing', ['listingId']).index('by_legacy', ['legacyId']),

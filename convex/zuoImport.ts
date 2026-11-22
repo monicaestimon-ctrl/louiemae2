@@ -1,3 +1,4 @@
+import { internalMutation as indexedInternalMutation, mutation as indexedMutation } from './functions';
 // Zuo import (spec S09, v2 §3, §22). The admin's browser parses the package with lib/zuoImport
 // and sends it in chunks. A dry run writes only the batch and per-record report. A commit writes
 // products, variants, cartons, immutable observations, cost revisions, the approved cohort's
@@ -490,7 +491,7 @@ async function stageImport(ctx: MutationCtx, a: ObjectType<typeof stageArgs>, ac
     await ctx.db.patch(batch._id, { summary });
     return summary;
 }
-export const stage = mutation({
+export const stage = indexedMutation({
   args: stageArgs,
   handler: async (ctx, a) => stageImport(ctx, a, (await requireCjAdminIdentity(ctx)).email),
 });
@@ -607,7 +608,7 @@ export const beginStagedMigration = internalMutation({
   },
 });
 
-export const stageStoredMigration = internalMutation({
+export const stageStoredMigration = indexedInternalMutation({
   args: { batchId: v.id('catImportBatches'), skus: v.array(v.string()) },
   handler: async (ctx, a) => {
     const batch = await ctx.db.get(a.batchId);

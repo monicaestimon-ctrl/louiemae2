@@ -1,9 +1,10 @@
+import { internalMutation as indexedInternalMutation, mutation as indexedMutation } from './functions';
 // Names, slugs and the media pipeline (spec S14, v2 §5). Supplier images are fetched from
 // allowlisted hosts only, validated from their bytes, deduplicated by hash and stored privately;
 // a person verifies each against SKU, colour and pack and writes the alt text before it can be
 // used. A failed or unverified image keeps the listing in draft.
 import { v, type Infer } from 'convex/values';
-import { action, internalMutation, internalQuery, mutation, query, type MutationCtx } from './_generated/server';
+import { action, internalMutation, internalQuery, query, type MutationCtx } from './_generated/server';
 import { paginationOptsValidator } from 'convex/server';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -257,14 +258,14 @@ async function verifyAsset(ctx: MutationCtx, a: Infer<typeof verifyValidator>, a
     await audit(ctx, { actor: admin.email, action: a.approve ? 'media.verify' : 'media.reject', entityTable: 'catMediaAssets', entityId: asset._id, reason: a.reason });
 }
 const verifyValidator = v.object(verifyArgs);
-export const verify = mutation({
+export const verify = indexedMutation({
   args: verifyValidator,
   handler: async (ctx, a) => verifyAsset(ctx, a, await requireCjAdminIdentity(ctx)),
 });
 
 /** Admin-CLI application of an externally reviewed, hash-bound supplier photo manifest.
  * Does not grant media rights, change prices, or publish products. */
-export const applyReviewedZuoPhotos = internalMutation({
+export const applyReviewedZuoPhotos = indexedInternalMutation({
   args: { dryRun: v.boolean(), reviewSha256: v.string(), sourceSha256: v.string(),
     rows: v.array(v.object({ variantId: v.id('catVariants'), sku: v.string(),
       piecesPerPack: v.number(), contentHash: v.string(), sourceUrl: v.string(),
@@ -310,7 +311,7 @@ export const productMedia = query({
 });
 
 /** Renames a product: short Louie Mae name, unique slug, and the old slug kept as a redirect. */
-export const rename = mutation({
+export const rename = indexedMutation({
   args: { productId: v.id('commerceProducts'), name: v.string() },
   handler: async (ctx, a) => {
     const admin = await requireCjAdminIdentity(ctx);

@@ -1,11 +1,12 @@
 import ts from 'typescript';
 
-// Follow typed product/listing/job/webhook writes through helpers to their mutation entry
+// Follow typed catalog/price/job/webhook writes through helpers to their mutation entry
 // points. This catches an unwrapped new writer before it can make summaries stale.
 const config = ts.readConfigFile('convex/tsconfig.json', ts.sys.readFile);
 const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, 'convex');
 const program = ts.createProgram(parsed.fileNames, parsed.options);
 const checker = program.getTypeChecker();
+const sourceTables = ['products', 'cjSourcingJobs', 'cjWebhookLog', 'commerceListings', 'commerceProducts', 'catVariants', 'catPriceRevisions'];
 const projectSource = source => !source.isDeclarationFile && !source.fileName.includes('node_modules')
   && !source.fileName.includes('.test.') && !source.fileName.includes('_generated');
 
@@ -21,9 +22,9 @@ function writesSummarySources(root, seen = new Set()) {
       if (first && ts.isPropertyAccessExpression(callee)
         && callee.expression.getText().endsWith('.db')) {
         const operation = callee.name.text;
-        if (operation === 'insert' && ts.isStringLiteral(first) && ['products', 'cjSourcingJobs', 'cjWebhookLog', 'commerceListings'].includes(first.text)) found = true;
+        if (operation === 'insert' && ts.isStringLiteral(first) && sourceTables.includes(first.text)) found = true;
         if (['patch', 'replace', 'delete'].includes(operation)
-          && ['products', 'cjSourcingJobs', 'cjWebhookLog', 'commerceListings'].some(table => checker.typeToString(checker.getTypeAtLocation(first)).includes('"' + table + '"'))) found = true;
+          && sourceTables.some(table => checker.typeToString(checker.getTypeAtLocation(first)).includes('"' + table + '"'))) found = true;
       }
       let symbol = checker.getSymbolAtLocation(callee);
       if (symbol?.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
@@ -74,6 +75,6 @@ for (const source of program.getSourceFiles()) {
   }
 }
 if (violations.length) {
-  console.error(`Product/listing/job/webhook writers missing transactional summary maintenance:\n${violations.join('\n')}`);
+  console.error(`Catalog/price/job/webhook writers missing transactional summary maintenance:\n${violations.join('\n')}`);
   process.exitCode = 1;
-} else console.log(`Summary maintenance covers ${checked} typed product/listing/job/webhook mutation entry points.`);
+} else console.log(`Summary maintenance covers ${checked} typed catalog/price/job/webhook mutation entry points.`);

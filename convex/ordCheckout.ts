@@ -1,3 +1,4 @@
+import { internalMutation as indexedInternalMutation } from './functions';
 import { assertDeliveryBounds } from '../lib/delivery/requestBounds';
 // Checkout service (spec S19, v2 §12, §13). Creates an idempotent checkout intent from a valid
 // full-address estimate, reserves inventory, freezes the accepted line and delivery snapshot,
@@ -55,7 +56,7 @@ export type IntentResult =
  * service of a full-address estimate; the server recomputes everything and, if the total
  * changed, returns PRICE_CHANGED until the client accepts the new total explicitly.
  */
-export const createIntent = internalMutation({
+export const createIntent = indexedInternalMutation({
   args: {
     idempotencyKey: v.string(),
     estimateId: v.id('dlvEstimates'),

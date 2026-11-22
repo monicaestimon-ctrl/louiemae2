@@ -1,3 +1,4 @@
+import { mutation as indexedMutation } from './functions';
 import { customerFacing } from '../lib/delivery/publicErrors';
 import { assertDeliveryBounds } from '../lib/delivery/requestBounds';
 import { v } from 'convex/values';
@@ -297,7 +298,7 @@ export const updateRequest = mutation({
     });
   },
 });
-export const attachQuote = mutation({
+export const attachQuote = indexedMutation({
   args: { id: v.id('dlvQuoteRequests'), versionId: v.id('ordQuoteVersions') },
   handler: async (ctx, a) => {
     const actor = await requireDeliveryRole(ctx, 'operations');
@@ -365,7 +366,7 @@ export const recoverQuote = mutation({
     return { id: r._id };
   },
 });
-export const acceptQuote = mutation({
+export const acceptQuote = indexedMutation({
   args: {
     id: v.id('dlvQuoteRequests'),
     versionId: v.id('ordQuoteVersions'),
@@ -453,7 +454,7 @@ export const closeRequest = mutation({
       return { status: a.outcome };
     }),
 });
-export const prepareCheckout = mutation({
+export const prepareCheckout = indexedMutation({
   args: { id: v.id('dlvQuoteRequests'), guestCapability: v.optional(v.string()) },
   handler: async (ctx, a) =>
     customerFacing(async () => {

@@ -1,8 +1,9 @@
+import { internalMutation as indexedInternalMutation, mutation as indexedMutation } from './functions';
 // Availability observations and the freshness refresh job (spec S10, v2 §6). There is no
 // authorized live Zuo stock integration yet: operations record authenticated checks here, and
 // the job re-evaluates freshness so stale evidence becomes a hold instead of a sale.
 import { v } from 'convex/values';
-import { internalMutation, mutation, query } from './_generated/server';
+import { mutation, query } from './_generated/server';
 import { internal } from './_generated/api';
 import { requireDeliveryRole } from './dlvAccess';
 import { openHold, refreshVariant } from './catCore';
@@ -53,7 +54,7 @@ export const detail = query({
   },
 });
 
-export const recordEvidence = mutation({
+export const recordEvidence = indexedMutation({
   args: {
     variantId: v.id('catVariants'),
     expectedRevisionId: v.union(v.id('catStockRevisions'), v.null()),
@@ -252,7 +253,7 @@ export const recordEvidence = mutation({
 });
 
 /** One page of the freshness refresh; schedules the next page. Skips quietly while the policy is unapproved. */
-export const refreshPage = internalMutation({
+export const refreshPage = indexedInternalMutation({
   args: { cursor: v.optional(v.union(v.string(), v.null())) },
   handler: async (ctx, a) => {
     const page = await ctx.db
