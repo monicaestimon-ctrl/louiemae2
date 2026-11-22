@@ -1,5 +1,5 @@
 import FieldPerformance from './FieldPerformance';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
@@ -33,6 +33,7 @@ const money = (m: number) => `$${(m / 100).toLocaleString('en-US', { minimumFrac
 const card = 'bg-white border border-earth/10 rounded-lg p-4 space-y-2 text-sm text-earth';
 const btn = 'px-3 py-1.5 border border-earth/30 text-[11px] uppercase tracking-widest hover:bg-earth hover:text-cream disabled:opacity-40';
 const errText = (e: unknown) => commerceErrorData(e)?.detail ?? customerMessage(e);
+const DELIVERY_RELEASE_KINDS = new Set(['deliveryLadder', 'deliveryRule', 'carrierRule', 'deliveryControls', 'deliveryMonitoringPolicy', 'estimatePolicy']);
 
 function Decisions({ canApprove }: { canApprove: boolean }) {
   const data = useQuery(api.sysConfig.list, {});
@@ -43,6 +44,11 @@ function Decisions({ canApprove }: { canApprove: boolean }) {
   const [releaseNote, setReleaseNote] = useState('');
   const [releasing, setReleasing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  useEffect(() => {
+    if (!data) return;
+    const eligible = new Set(data.records.filter(r => r.status === 'proposed' && DELIVERY_RELEASE_KINDS.has(r.kind)).map(r => r._id));
+    setSelected(ids => ids.every(id => eligible.has(id)) ? ids : ids.filter(id => eligible.has(id)));
+  }, [data]);
   if (!data) return <p>Loading…</p>;
   const proposed = data.records.filter((r) => r.status === 'proposed');
   const approved = data.records.filter((r) => r.status === 'approved');
@@ -82,7 +88,7 @@ function Decisions({ canApprove }: { canApprove: boolean }) {
             <p>
               <b>{r.decision ?? '—'}</b> · {r.kind}/{r.key} v{r.version}
             </p>
-            {['deliveryLadder', 'deliveryRule', 'carrierRule', 'deliveryControls', 'deliveryMonitoringPolicy', 'estimatePolicy'].includes(r.kind) && <label className="flex gap-2">
+            {DELIVERY_RELEASE_KINDS.has(r.kind) && <label className="flex gap-2">
               <input type="checkbox" disabled={!canApprove || releasing} checked={selected.includes(r._id)} onChange={e => setSelected(ids => e.target.checked ? [...ids, r._id] : ids.filter(id => id !== r._id))} />
               Include {r.key} v{r.version} in delivery release
             </label>}

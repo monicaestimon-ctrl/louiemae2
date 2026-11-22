@@ -14,6 +14,7 @@ const mock = vi.hoisted(() => ({
   },
   reads: vi.fn(),
   release: vi.fn(),
+  fixtureStatus: 'proposed',
 }));
 vi.mock('convex/react', () => ({
   useMutation: (ref: Parameters<typeof getFunctionName>[0]) => getFunctionName(ref) === 'sysConfig:approveDeliveryRelease' ? mock.release : vi.fn(),
@@ -28,7 +29,7 @@ vi.mock('convex/react', () => ({
         records: [
           {
             _id: 'fixture',
-            status: 'proposed',
+            status: mock.fixtureStatus,
             kind: 'deliveryLadder',
             key: 'fixture',
             version: 1,
@@ -50,6 +51,7 @@ vi.mock('./DeliveryOperations', () => ({ default: () => <p>Scoped delivery works
 beforeEach(() => {
   mock.reads.mockClear();
   mock.release.mockReset();
+  mock.fixtureStatus = 'proposed';
   Object.assign(mock.permissions, {
     owner: false,
     support: true,
@@ -102,6 +104,17 @@ describe('staff console navigation', () => {
     fireEvent.click(screen.getByRole('button', { name: /Approve selected delivery release/ }));
     await screen.findByText('Released 1 delivery settings together');
     expect(screen.getByRole('checkbox')).not.toBeChecked();
+  });
+  it('removes a selected proposal when another decision makes it ineligible', async () => {
+    Object.assign(mock.permissions, { operations: true, approver: true });
+    const view = render(<CommerceV2Admin />);
+    fireEvent.click(screen.getByRole('button', { name: 'Decisions & flags' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include fixture v1 in delivery release' }));
+    mock.fixtureStatus = 'approved';
+    view.rerender(<CommerceV2Admin />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Approve selected delivery release (0)' })).toBeDisabled());
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(mock.release).not.toHaveBeenCalled();
   });
   it('switches safely when roles change and gives engineers only integration readiness', () => {
     const view = render(<CommerceV2Admin />);

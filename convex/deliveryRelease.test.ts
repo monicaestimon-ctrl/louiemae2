@@ -51,6 +51,20 @@ it('enforces approver role and retains original policy on denied access', async 
   await expect(admin.mutation(api.sysConfig.approveDeliveryRelease, { ids: [ladder._id], note: 'Review' })).rejects.toThrow();
   expect(await t.run(async ctx => (await ctx.db.get(ladder._id))?.status)).toBe('proposed');
 });
+it('keeps the current carrier approved when replacement evidence starts in the future', async () => {
+  const { t, admin, ladder, carrier } = await setup();
+  await admin.mutation(api.sysConfig.approve, { id: carrier._id });
+  const next = await admin.mutation(api.sysConfig.propose, {
+    kind: carrier.kind, key: carrier.key, note: 'Future evidence',
+    value: { ...carrier.value, rule: { ...carrier.value.rule, effectiveFrom: Date.now() + 100000 } },
+  });
+  await expect(admin.mutation(api.sysConfig.approveDeliveryRelease, { ids: [ladder._id, next], note: 'Review' })).rejects.toThrow('Carrier evidence must already be effective');
+  const original = await t.run(ctx => ctx.db.get(carrier._id));
+  expect(original?.status).toBe('approved');
+  expect(original?.effectiveTo).toBeUndefined();
+  expect(await t.run(async ctx => (await ctx.db.get(ladder._id))?.status)).toBe('proposed');
+  expect((await t.run(ctx => ctx.db.query('sysAuditEvents').collect())).filter(e => e.action === 'config.approve')).toHaveLength(1);
+});
 it('retains an existing approved version when a release cannot complete', async () => {
   const { t, admin, ladder, carrier } = await setup();
   await admin.mutation(api.sysConfig.approve, { id: ladder._id });

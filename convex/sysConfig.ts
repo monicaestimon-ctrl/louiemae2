@@ -261,6 +261,8 @@ export const approveDeliveryRelease = mutation({
         throw new CommerceError('INVALID_INPUT', 'Only proposed delivery settings belong in this release');
       if (row.effectiveFrom > now)
         throw new CommerceError('INVALID_INPUT', 'Atomic delivery releases must start now, not on different future dates');
+      if (row.kind === 'carrierRule' && (row.value as { rule: { effectiveFrom: number } }).rule.effectiveFrom > now)
+        throw new CommerceError('INVALID_INPUT', 'Carrier evidence must already be effective in an atomic release');
       const key = `${row.kind}/${row.key}`;
       if (keys.has(key)) throw new CommerceError('INVALID_INPUT', 'Select only one version of each delivery setting');
       keys.add(key);
