@@ -1,3 +1,4 @@
+import { internalMutation as indexedInternalMutation, mutation as indexedMutation } from './functions';
 // Pricing engine service (spec S12, v2 §7). Every variant carries a policy id and a reproducible
 // scenario result. Approved prices are never overwritten by the engine, and the 5% policy can
 // only be held by the approved 306-product cohort.
@@ -129,14 +130,14 @@ export async function recordScenarios(ctx: MutationCtx, variantId: Id<'catVarian
   return id;
 }
 
-export const recompute = internalMutation({
+export const recompute = indexedInternalMutation({
   args: { variantIds: v.array(v.id('catVariants')) },
   handler: async (ctx, a) => {
     for (const id of a.variantIds.slice(0, 50)) await recordScenarios(ctx, id, 'system:pricing');
   },
 });
 
-export const recomputeVariants = mutation({
+export const recomputeVariants = indexedMutation({
   args: { variantIds: v.array(v.id('catVariants')) },
   handler: async (ctx, a) => {
     const admin = await requireDeliveryRole(ctx, 'finance');
@@ -145,7 +146,7 @@ export const recomputeVariants = mutation({
 });
 
 /** The owner approves a pack price for a channel; it must clear the engine minimum (or the documented policy) and MAP. */
-export const approvePrice = mutation({
+export const approvePrice = indexedMutation({
   args: { variantId: v.id('catVariants'), channel: v.union(v.literal('retail'), v.literal('trade')), packPriceMinor: v.number(), reason: v.string() },
   handler: async (ctx, a) => {
     const admin = await requireDeliveryRole(ctx, 'approver');
@@ -195,7 +196,7 @@ export const approvePrice = mutation({
  * Assigns a margin policy. The 5% policy is allowed only for the approved 306 cohort; the 18%
  * policy needs a document reference; the MAP-floor hold stays until an explicit floor is set.
  */
-export const assignPolicy = mutation({
+export const assignPolicy = indexedMutation({
   args: { variantId: v.id('catVariants'), policyKey: v.string(), documentRef: v.optional(v.string()), reason: v.string() },
   handler: async (ctx, a) => {
     const admin = await requireDeliveryRole(ctx, 'approver');

@@ -1,3 +1,4 @@
+import { internalMutation as indexedInternalMutation } from './functions';
 import { customerFacing } from '../lib/delivery/publicErrors';
 import { assertDeliveryBounds } from '../lib/delivery/requestBounds';
 // Delivery estimate contract (spec S18, v2 §12). ZIP estimates are non-binding; a full-address
@@ -101,7 +102,7 @@ export const productProfile = query({
  * Estimates delivery for a cart or a single product. Returns customer-safe fields only; the
  * internal breakdown stays on the stored estimate for admins.
  */
-export const compute = internalMutation({
+export const compute = indexedInternalMutation({
   args: {
     lines: v.array(lineArg),
     channel: v.union(v.literal('retail'), v.literal('trade')),

@@ -1,3 +1,4 @@
+import { mutation as indexedMutation } from './functions';
 import { deliveryLanes } from '../lib/delivery/zones';
 import { v } from 'convex/values';
 import { paginationOptsValidator } from 'convex/server';
@@ -278,7 +279,7 @@ export const records = query({
   },
 });
 
-export const scenarios = mutation({
+export const scenarios = indexedMutation({
   args: {
     lines: v.array(lineArg),
     channel: v.union(v.literal('retail'), v.literal('trade')),

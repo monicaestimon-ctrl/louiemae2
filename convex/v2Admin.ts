@@ -1,3 +1,4 @@
+import { mutation as indexedMutation } from './functions';
 import { requireDeliveryRole } from './dlvAccess';
 // Admin consoles for v2 operations (spec S35, v2 §20) and public flag states for the portals.
 // Every admin query requires the admin allowlist; supplier costs and customer details never
@@ -72,7 +73,7 @@ export const openHolds = query({
 });
 
 /** People-resolved holds (e.g. METHOD_CHANGED after a delivery quote, SOURCE_ABSENT after verification). */
-export const resolveHoldAdmin = mutation({
+export const resolveHoldAdmin = indexedMutation({
   args: { variantId: v.id('catVariants'), reason: holdReason, resolution: v.string() },
   handler: async (ctx, a) => {
     const admin = await requireCjAdminIdentity(ctx);

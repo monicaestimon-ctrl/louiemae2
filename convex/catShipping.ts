@@ -1,3 +1,4 @@
+import { mutation as indexedMutation } from './functions';
 import { v } from 'convex/values';
 import { paginationOptsValidator } from 'convex/server';
 import { mutation, query } from './_generated/server';
@@ -122,7 +123,7 @@ async function retry(ctx: MutationCtx, actor: string, key: string, args: unknown
     throw new CommerceError('INVALID_INPUT', 'Retry differs from saved evidence');
   return { id, hash, result: old?.resultRef };
 }
-export const saveCartons = mutation({
+export const saveCartons = indexedMutation({
   args: {
     variantId: v.id('catVariants'),
     expectedFingerprint: v.string(),

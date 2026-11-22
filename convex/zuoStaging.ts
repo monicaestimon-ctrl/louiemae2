@@ -1,3 +1,4 @@
+import { mutation as indexedMutation } from './functions';
 import { v } from 'convex/values';
 import type { MutationCtx } from './_generated/server';
 import type { Id } from './_generated/dataModel';
@@ -39,7 +40,7 @@ async function ensureCatalogMeta(ctx: MutationCtx, productId: Id<'commerceProduc
 }
 
 /** Authenticated, insert-only staging. No listing creation and no publication capability. */
-export const importBatch = mutation({
+export const importBatch = indexedMutation({
   args: {
     runId: v.string(), manifestSha256: v.string(),
     rows: v.array(v.object({

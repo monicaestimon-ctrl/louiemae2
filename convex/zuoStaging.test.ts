@@ -14,8 +14,11 @@ function context() {
   const records:any[]=[]; const audits:any[]=[]; const tables:Record<string,any[]>={commerceProducts:records,commerceAudit:audits};
   const ctx:any={db:{query:(table:string)=>({withIndex:(_index:string, filter:any)=>{
     const eqs:[string,any][]=[];const q:any={eq:(k:string,v:any)=>{eqs.push([k,v]);return q;}};filter(q);
-    return {unique:async()=>(tables[table]??[]).find(r=>eqs.every(([k,v])=>r[k]===v))??null};
-  }}),insert:vi.fn(async(table:string,doc:any)=>{const id=table+':'+(tables[table]?.length??0);(tables[table]??=[]).push({...doc,_id:id});return id;})}};
+    return {unique:async()=>(tables[table]??[]).find(r=>eqs.every(([k,v])=>r[k]===v))??null,
+      collect:async()=>(tables[table]??[]).filter(r=>eqs.every(([k,v])=>r[k]===v))};
+  }}),get:async(id:string)=>Object.values(tables).flat().find(r=>r._id===id)??null,
+  normalizeId:(table:string,id:string)=>id.startsWith(table+':')?id:null,
+  insert:vi.fn(async(table:string,doc:any)=>{const id=table+':'+(tables[table]?.length??0);(tables[table]??=[]).push({...doc,_id:id});return id;})}};
   return {ctx,records,audits,tables};
 }
 const args=(r=row())=>({runId:'review-20261107',manifestSha256:'a'.repeat(64),rows:[r]});

@@ -1,3 +1,4 @@
+import { internalMutation as indexedInternalMutation, mutation as indexedMutation } from './functions';
 import { paginationOptsValidator } from 'convex/server';
 import { v } from 'convex/values';
 import { query, mutation, internalMutation, internalQuery } from './_generated/server';
@@ -33,7 +34,7 @@ export const record = internalQuery({
   args: { id: v.id('commerceProducts') },
   handler: (ctx, { id }) => ctx.db.get(id),
 });
-export const save = mutation({
+export const save = indexedMutation({
   args: { id: v.id('commerceProducts'), revision: v.number(), draft },
   handler: async (ctx, args) => {
     const actor = await requireCjAdminIdentity(ctx);
@@ -60,7 +61,7 @@ export const save = mutation({
     return revision;
   },
 });
-export const imported = internalMutation({
+export const imported = indexedInternalMutation({
   args: { sourceKey: v.string(), provider, draft, actor: v.string() },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -103,7 +104,7 @@ export const cjLibrary = query({
     };
   },
 });
-export const linkCj = mutation({
+export const linkCj = indexedMutation({
   args: { id: v.id('products') },
   handler: async (ctx, { id }) => {
     await requireCjAdminIdentity(ctx);
@@ -286,7 +287,7 @@ export const catalog = query({
     };
   },
 });
-export const refreshCj = mutation({
+export const refreshCj = indexedMutation({
   args: { id: v.id('commerceProducts'), revision: v.number() },
   handler: async (ctx, a) => {
     const actor = await requireCjAdminIdentity(ctx);

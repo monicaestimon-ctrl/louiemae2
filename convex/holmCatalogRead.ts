@@ -57,7 +57,8 @@ export function variantFreight(route: FulfillmentVariant, rate: ReturnType<typeo
   return rate ? { cents: rate.freight, known: true } : freightFor(route.sku);
 }
 
-// includeUnfunded is for the owner-only diagnostic; customer reads and quotes omit it.
+// includeUnfunded is for owner diagnostics and internal index preparation;
+// customer reads and quotes omit it. Internal candidates never grant eligibility.
 export async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>, includeUnfunded = false) {
   const product = await ctx.db.get(listing.productId);
   if (!product || product.provider === 'zuo') return null;

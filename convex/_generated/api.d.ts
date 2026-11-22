@@ -98,6 +98,8 @@ import type * as holmConnect from "../holmConnect.js";
 import type * as holmCredit from "../holmCredit.js";
 import type * as holmDiscoveryMaintenance from "../holmDiscoveryMaintenance.js";
 import type * as holmDiscoveryMigration from "../holmDiscoveryMigration.js";
+import type * as holmDiscoveryOfferMigration from "../holmDiscoveryOfferMigration.js";
+import type * as holmDiscoveryOffers from "../holmDiscoveryOffers.js";
 import type * as holmEmail from "../holmEmail.js";
 import type * as holmIdentityMaintenance from "../holmIdentityMaintenance.js";
 import type * as holmIdentityMigration from "../holmIdentityMigration.js";
@@ -292,6 +294,8 @@ declare const fullApi: ApiFromModules<{
   holmCredit: typeof holmCredit;
   holmDiscoveryMaintenance: typeof holmDiscoveryMaintenance;
   holmDiscoveryMigration: typeof holmDiscoveryMigration;
+  holmDiscoveryOfferMigration: typeof holmDiscoveryOfferMigration;
+  holmDiscoveryOffers: typeof holmDiscoveryOffers;
   holmEmail: typeof holmEmail;
   holmIdentityMaintenance: typeof holmIdentityMaintenance;
   holmIdentityMigration: typeof holmIdentityMigration;
