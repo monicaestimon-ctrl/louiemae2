@@ -18,7 +18,8 @@ describe('commission categories (S08)', () => {
   });
   it('retains picture frames and other accessory conflicts', () => {
     expect(proposeCategory('Picture frame').category).toBe('decor');
-    for (const text of ['Bed frame with picture frame', 'Bed frame tray', 'Decor bed frame', 'Armchair pillow'])
+    for (const text of ['Bed frame with picture frame', 'Bed frame tray', 'Decor bed frame', 'Armchair pillow',
+      'Bed frame replacement brackets', 'Bed-frame accessories', 'Bed frame hardware', 'Bed frame legs', 'Bed frame replacement slats'])
       expect(proposeCategory(text).category).toBe('review_required');
   });
   it.each(['Seating', 'Armchair', 'Outdoor armchairs', 'Bench', 'Benches', 'Outdoor extendable bench', 'Bedroom chest', 'Storage chests', 'Outdoor bar cart'])('recognizes catalog furniture terminology: %s', text => {

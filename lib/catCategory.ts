@@ -19,6 +19,9 @@ export function proposeCategory(text: string): { category: CommissionCategory; r
   if (LIGHTING.test(t)) return { category: 'decor', reason: 'lighting is décor' };
   const furniture = FURNITURE.test(t);
   const clothing = CLOTHING.test(t);
+  const bedFrame = /\bbed[\s-]+frames?\b/.test(t);
+  if (bedFrame && /\b(accessor(?:y|ies)|replacement|parts?|brackets?|hardware|slats?|rails?|legs?|feet|casters?|bolts?|screws?)\b/.test(t))
+    return { category: 'review_required', reason: 'bed frame part or accessory requires review' };
   // A bed frame is furniture. Keep other décor terms (including picture frames)
   // intact so an accessory or a mixed description still requires review.
   const decor = DECOR.test(t.replace(/\bbed[\s-]+frames?\b/g, 'bed'));
