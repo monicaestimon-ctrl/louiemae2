@@ -79,14 +79,7 @@ function useThree(){const [T,setT]=useState(()=>window.THREE||null);const [faile
   useEffect(()=>{if(T)return;let live=true;loadThree().then(m=>live&&setT(m),()=>live&&setFailed(true));return()=>{live=false}},[]);return [T,failed]}
 
 
-const SPACES = {
-  cafe:{label:'Café',head:['For cafés that keep',' the block ','awake.'],em:1,lede:'Banquettes, benches and warm leather that hold up to a full Saturday and still look good at closing.',picks:[2,13,12,9],bg:'#EADCC6',fg:'#2B211A',accent:'#A65F2C',line:'rgba(43,33,26,.22)',mats:['leather','rattan']},
-  coffee:{label:'Coffee bar',head:['Counter seats, slow mornings, ','a line out the door.',''],em:1,lede:'Compact ottomans and strap benches for tight floor plans, with rattan light hung over the bar.',picks:[21,15,8,24],bg:'#E3D3BC',fg:'#2B211A',accent:'#8A5530',line:'rgba(43,33,26,.22)',mats:['leather','rattan']},
-  restaurant:{label:'Restaurant',head:['Dining rooms people ','book twice.',''],em:1,lede:'Olive velvet, walnut and pendant light for rooms built around a long dinner.',picks:[4,12,20,23],bg:'#DCD9C3',fg:'#25221A',accent:'#5F5C3C',line:'rgba(37,34,26,.22)',mats:['velvet','leather']},
-  bar:{label:'Bar & lounge',head:['After hours, in ','cognac and brass.',''],em:1,lede:'Low sectionals and tufted ottomans that turn a back room into the reason people stay for one more.',picks:[5,17,11,16],bg:'#211812',fg:'#F3E8D8',accent:'#D9A66C',line:'rgba(243,232,216,.24)',mats:['velvet','leather','brass']},
-  work:{label:'Workspace',head:['Lounges that make the office ','worth the commute.',''],em:1,lede:'Bouclé corners and benches for lobbies, lounges and the meeting nobody books a room for.',picks:[7,18,19,3],bg:'#ECE7DE',fg:'#2B2620',accent:'#7D6B52',line:'rgba(43,38,32,.2)',mats:['boucle','leather']},
-  staging:{label:'Model home',head:['Staging that sells ','the square footage.',''],em:1,lede:'For agents, builders and developers: ivory bouclé, brass light and pieces that photograph well in daylight.',picks:[7,10,22,11],bg:'#EFE6D6',fg:'#2B211A',accent:'#A27C45',line:'rgba(43,33,26,.2)',mats:['boucle','brass']},
-};
+import { HOLM_SPACES as SPACES } from '../lib/holmSpaces';
 
 const SPACE_KEYS = Object.keys(SPACES);
 

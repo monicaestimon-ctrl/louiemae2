@@ -8,6 +8,20 @@ const item = (id: string, name: string): LiveItem => ({
   variants: [{ id: 'variant', name: 'Default', minimum: 1, increment: 1, retail: 10000, trade: null }],
 });
 
+it('keeps discovery price, image and add-to-project variant aligned', () => {
+  const row = item('discovery-fixture', 'Chair');
+  row.variants.push({ ...row.variants[0], id: 'lower', retail: 5000, trade: 4500, image: '/lower.webp', minimum: 2 });
+  row.defaultVariantId = 'lower';
+  expect(liveProducts([row])[0]).toMatchObject({ vid: 'lower', price: 50, trade: 45, img: '/lower.webp', minimum: 2 });
+  expect(liveProducts([{ ...row, defaultVariantId: 'withdrawn' }])).toEqual([]);
+});
+
+it('preserves server relevance and price ordering when mapping discovery pages', () => {
+  const rows = [item('z', 'Zebra Chair'), item('a', 'Amber Chair')];
+  expect(liveProducts(rows, true).map(row => row.lid)).toEqual(['z', 'a']);
+  expect(liveProducts(rows).map(row => row.lid)).toEqual(['a', 'z']);
+});
+
 it('keeps curated identities and assets stable across pages, ordering and renames', () => {
   const left = item(source(5), 'Osborne Left Facing');
   const right = item(source(6), 'Osborne Right Facing');

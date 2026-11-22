@@ -1,0 +1,43 @@
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
+import type { DiscoveryRequest } from '../lib/holmDiscoveryFilters';
+import { useDiscoveryPages } from './useDiscoveryPages';
+const mock = vi.hoisted(() => ({ results: {} as Record<string, unknown>, queries: {} as Record<string, { args: { cursor: string | null; refreshToken: number } }> }));
+vi.mock('convex/react', () => ({ useQueries: (queries: typeof mock.queries) => { mock.queries = queries; return mock.results; } }));
+const request: DiscoveryRequest = { query: '', type: 'all', materials: [], tones: [], photoPalette: [], maximumMinor: null, inStock: false, sort: 'relevance', channel: 'retail' };
+const page = (nextCursor: string | null, refreshAfterMs = 30000) => ({ ready: true, items: [], nextCursor, refreshAfterMs, serverNow: 1 });
+afterEach(() => { cleanup(); vi.useRealTimers(); mock.results = {}; mock.queries = {}; });
+it('requests only the first page until an explicit continuation, including empty pages', () => {
+  mock.results = { 0: page('next') };
+  const hook = renderHook(() => useDiscoveryPages(request, 'anonymous', true));
+  expect(Object.keys(mock.queries)).toEqual(['0']);
+  act(() => hook.result.current.loadMore());
+  expect(mock.queries['1'].args.cursor).toBe('next');
+  expect(hook.result.current.pending).toBe(true);
+  mock.results = { 0: page('replacement'), 1: page(null) };
+  hook.rerender();
+  expect(Object.keys(mock.queries)).toEqual(['0']);
+  expect(hook.result.current.nextCursor).toBe('replacement');
+});
+it('restarts subscriptions when viewer or filter changes', () => {
+  mock.results = { 0: page('next') };
+  const hook = renderHook(({ viewer, query }) => useDiscoveryPages({ ...request, query }, viewer, true), { initialProps: { viewer: 'first', query: '' } });
+  act(() => hook.result.current.loadMore());
+  hook.rerender({ viewer: 'second', query: '' });
+  expect(Object.keys(mock.queries)).toEqual(['0']);
+  act(() => hook.result.current.loadMore());
+  hook.rerender({ viewer: 'second', query: 'chair' });
+  expect(Object.keys(mock.queries)).toEqual(['0']);
+});
+it('refreshes at the server deadline and stops refreshes when disabled or unmounted', () => {
+  vi.useFakeTimers(); mock.results = { 0: page(null, 800) };
+  const hook = renderHook(({ enabled }) => useDiscoveryPages(request, 'anonymous', enabled), { initialProps: { enabled: true } });
+  const initial = mock.queries['0'].args.refreshToken;
+  act(() => vi.advanceTimersByTime(800));
+  expect(mock.queries['0'].args.refreshToken).toBeGreaterThan(initial);
+  hook.rerender({ enabled: false });
+  expect(mock.queries).toEqual({});
+  act(() => vi.advanceTimersByTime(30000));
+  expect(mock.queries).toEqual({});
+  hook.unmount(); expect(vi.getTimerCount()).toBe(0);
+});

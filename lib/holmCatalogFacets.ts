@@ -71,6 +71,7 @@ const TONES: [RegExp, string][] = [
   [/\bpink\b/i, '#CA929B'],
   [/\b(?:purple|violet)\b/i, '#7B5D86'],
 ];
+export const holmKnownTones = () => [...new Set([...CURATED.map(value => value[5]), ...TONES.map(value => value[1])])].sort();
 
 const cleanName = (s: string) => s.split('|')[0].trim();
 

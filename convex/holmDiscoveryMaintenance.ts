@@ -2,8 +2,9 @@ import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import { holmCatalogFacets } from '../lib/holmCatalogFacets';
 import { CURATED_SOURCES } from '../trade/curatedSources';
+import { discoverySearchDocument } from '../lib/holmDiscoverySearch';
 
-export const HOLM_DISCOVERY_VERSION = 1;
+export const HOLM_DISCOVERY_VERSION = 2;
 export type DiscoveryProjection = {
   listingId: Id<'commerceListings'>; productId: Id<'commerceProducts'>;
   version: number; name: string; nameKey: string; text: string;
@@ -16,7 +17,8 @@ export function discoveryProjection(listing: Doc<'commerceListings'> | null): Di
   const facets = holmCatalogFacets(listing.snapshot, CURATED_SOURCES[listing.productId]);
   const name = `${facets.name} ${facets.line}`.trim().slice(0, 256);
   return { listingId: listing._id, productId: listing.productId, version: HOLM_DISCOVERY_VERSION,
-    name, nameKey: normalized(name), text: normalized(`${name} ${listing.snapshot.category} ${facets.type} ${facets.mat === 'unknown' ? '' : facets.mat}`).slice(0, 640),
+    name, nameKey: normalized(name), text: discoverySearchDocument({ name, category: listing.snapshot.category, type: facets.type,
+      material: facets.mat, tone: facets.tone, seats: facets.seats, curatedId: CURATED_SOURCES[listing.productId] }),
     type: facets.type, material: facets.mat, tone: facets.tone, seats: facets.seats };
 }
 export function sameDiscovery(a: DiscoveryProjection | null, b: DiscoveryProjection | null) {

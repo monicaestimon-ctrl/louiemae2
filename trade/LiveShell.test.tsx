@@ -4,10 +4,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { getFunctionName } from 'convex/server';
 import { LiveShell, TradeBoundary } from './LiveShell';
 
-const mocks = vi.hoisted(() => ({ me: undefined as { signedIn: boolean; verified?: boolean; admin?: boolean; email?:string } | undefined, authLoading: false, authenticated: undefined as boolean | undefined, curated: [] as unknown[] | undefined, failed: false, rows: [] as unknown[], status: 'LoadingFirstPage', ensure:vi.fn().mockResolvedValue(null), savedDraft:vi.fn(), catalogQueries:vi.fn(), loadMore: vi.fn(), install: vi.fn(), references: vi.fn() }));
+const mocks = vi.hoisted(() => ({ discovery: { ready: false } as { ready: boolean } | undefined, me: undefined as { signedIn: boolean; verified?: boolean; admin?: boolean; email?:string } | undefined, authLoading: false, authenticated: undefined as boolean | undefined, curated: [] as unknown[] | undefined, failed: false, rows: [] as unknown[], status: 'LoadingFirstPage', ensure:vi.fn().mockResolvedValue(null), savedDraft:vi.fn(), catalogQueries:vi.fn(), loadMore: vi.fn(), install: vi.fn(), references: vi.fn() }));
 vi.mock('convex/react', () => ({
   useConvexAuth: () => ({ isLoading: mocks.authLoading, isAuthenticated: mocks.authenticated ?? Boolean(mocks.me?.signedIn) }),
-  useQuery: (query: Parameters<typeof getFunctionName>[0]) => { if (mocks.failed) throw new Error('account unavailable'); return getFunctionName(query) === 'holm:catalogItems' ? mocks.curated : mocks.me; },
+  useQuery: (query: Parameters<typeof getFunctionName>[0]) => { if (mocks.failed) throw new Error('account unavailable'); return getFunctionName(query) === 'holmDiscoveryQuery:readiness' ? mocks.discovery : getFunctionName(query) === 'holm:catalogItems' ? mocks.curated : mocks.me; },
   useMutation:()=>mocks.ensure,
   usePaginatedQuery: () => {mocks.catalogQueries();return { results: mocks.rows, status: mocks.status, loadMore: mocks.loadMore };},
 }));
@@ -27,7 +27,7 @@ function FinalSnapshot({save}:{save:(value:string)=>void}) {
 
 beforeEach(() => {
   window.history.replaceState(null, '', '/trade/');
-  mocks.curated=[]; mocks.me = undefined; mocks.authLoading = false; mocks.authenticated = undefined; mocks.failed = false; mocks.rows = []; mocks.status = 'LoadingFirstPage'; mocks.savedDraft.mockReset();mocks.catalogQueries.mockReset();mocks.loadMore.mockReset(); mocks.install.mockReset(); mocks.references.mockReset();
+  mocks.discovery={ ready: false }; mocks.curated=[]; mocks.me = undefined; mocks.authLoading = false; mocks.authenticated = undefined; mocks.failed = false; mocks.rows = []; mocks.status = 'LoadingFirstPage'; mocks.savedDraft.mockReset();mocks.catalogQueries.mockReset();mocks.loadMore.mockReset(); mocks.install.mockReset(); mocks.references.mockReset();
   vi.useFakeTimers(); vi.spyOn(console, 'error').mockImplementation(() => undefined);
   const shell = document.createElement('div'); shell.id = 'holm-shell'; shell.textContent = 'Startup hero'; document.body.append(shell);
 });
@@ -298,4 +298,15 @@ it.each(['account','welcome','hub','trade','admin'])('preserves pending saves an
  act(()=>{window.history.replaceState(null,'','/trade/#home');window.dispatchEvent(new HashChangeEvent('hashchange'))});
  expect(screen.getByLabelText('Unsaved project name')).toHaveValue('Latest board edit');
  expect(screen.getByLabelText('Saved snapshot')).toHaveTextContent('Final Studio edit');
+});
+
+it('does not drain the catalog for server discovery, but preserves legacy fallback', () => {
+  window.history.replaceState(null, '', '/trade/#discover');
+  mocks.me = { signedIn: false }; mocks.rows = [{ id: 'first' }]; mocks.status = 'CanLoadMore'; mocks.discovery = undefined;
+  const view = render(<LiveShell />);
+  expect(mocks.loadMore).not.toHaveBeenCalled();
+  mocks.discovery = { ready: true }; view.rerender(<LiveShell />);
+  expect(mocks.loadMore).not.toHaveBeenCalled();
+  mocks.discovery = { ready: false }; view.rerender(<LiveShell />);
+  expect(mocks.loadMore).toHaveBeenCalledWith(24);
 });

@@ -2,10 +2,12 @@ import { useRef, useState, type ReactNode } from 'react';
 import { Camera, Search } from 'lucide-react';
 import { toneDistance as distance } from '../lib/holmCatalogFacets';
 import type { HolmProduct } from './catalog';
+import { ServerDiscoveryResults } from './ServerDiscoveryResults';
 
 type ImageQuery = { src: string; pal: string[] };
 type Trend = { id: string; name: string; image: string };
 type Props = {
+  serverViewerKey?: string;
   products: HolmProduct[];
   pricing?: 'retail' | 'trade';
   query: string;
@@ -65,7 +67,7 @@ export function DiscoverCatalog(props: Props) {
   return <main className="wrap">
     <div className="ph-head"><div><span className="eyebrow">Discover</span><h1>{searching ? <>Results{query.trim() && <> for <em>{query}</em></>}</> : <>Find the piece, <em>then the room.</em></>}</h1></div>
       <form className="search" style={{ maxWidth: 520, margin: 0, flex: '1 1 320px', display: 'flex' }} onSubmit={event => { event.preventDefault(); props.onQuery(query); props.onClearImage(); }}>
-        <Search aria-hidden="true" /><input aria-label="Search" value={query} onChange={event => setDraft({ source: props.query, value: event.target.value })} placeholder="Search by piece, material, color or space" />
+        <Search aria-hidden="true" /><input aria-label="Search" maxLength={200} value={query} onChange={event => setDraft({ source: props.query, value: event.target.value })} placeholder="Search by piece, material, color or space" />
         <button type="button" className="ib" aria-label="Search with a photo" onClick={() => file.current?.click()}><Camera aria-hidden="true" /></button>
         <input ref={file} type="file" accept="image/*" hidden onChange={event => { const selected = event.target.files?.[0]; if (selected) props.onImage(selected); event.target.value = ''; }} />
       </form>
@@ -78,11 +80,15 @@ export function DiscoverCatalog(props: Props) {
     </div>
     {expanded && <div className="filters filters-more">{Object.entries(props.materials).map(([key, label]) => <button key={key} className={`chip${materials.includes(key) ? ' on' : ''}`} aria-pressed={materials.includes(key)} onClick={() => setMaterials(toggle(materials, key))}>{label}</button>)}
       <div className="swatches" role="group" aria-label="Color palette">{PALETTE.map(([name, color]) => <button key={color} className={tones.includes(color) ? 'on' : ''} style={{ background: color, width: 26, height: 26 }} aria-label={name} aria-pressed={tones.includes(color)} onClick={() => setTones(toggle(tones, color))} />)}</div>
-      <label className="row" style={{ fontSize: 13, gap: 8 }}>Price <b className="num" style={{ fontWeight: 500, minWidth: 56 }}>{maximum === null ? 'Any price' : `Up to ${dollars(maximum)}`}</b><input type="range" min="0" max={rangeMaximum} step="50" value={maximum ?? rangeMaximum} onChange={event => { const value = Number(event.target.value); setMaximum(value === rangeMaximum ? null : value); }} style={{ width: 120 }} aria-label="Maximum price" aria-valuetext={maximum === null ? 'Any price' : dollars(maximum)} /></label>
+      <label className="row" style={{ fontSize: 13, gap: 8 }}>Price <b className="num" style={{ fontWeight: 500, minWidth: 56 }}>{maximum === null ? 'Any price' : `Up to ${dollars(maximum)}`}</b><>{props.serverViewerKey !== undefined ? <input type="number" min="0" max="100000000" step="50" value={maximum ?? ''} placeholder="Any price" aria-label="Maximum price" onChange={event => { const value = event.target.value === '' ? null : Number(event.target.value); if (value === null || (Number.isFinite(value) && value >= 0 && value <= 100000000)) setMaximum(value); }} style={{ width: 120 }} /> : <input type="range" min="0" max={rangeMaximum} step="50" value={maximum ?? rangeMaximum} onChange={event => { const value = Number(event.target.value); setMaximum(value === rangeMaximum ? null : value); }} style={{ width: 120 }} aria-label="Maximum price" aria-valuetext={maximum === null ? 'Any price' : dollars(maximum)} />}</></label>
       <button className="toggle" style={{ fontSize: 13 }} aria-pressed={inStock} onClick={() => setInStock(!inStock)}><span className={`sw${inStock ? ' on' : ''}`} /> In stock</button>
     </div>}
+    {props.serverViewerKey !== undefined ? <ServerDiscoveryResults viewerKey={props.serverViewerKey} searching={searching} renderProducts={props.renderProducts} resetFilters={resetFilters}
+      request={{ query, type, materials, tones, photoPalette: palette, maximumMinor: maximum === null ? null : Math.round(maximum * 100), inStock,
+        sort: sort === 'lo' ? 'priceAsc' : sort === 'hi' ? 'priceDesc' : 'relevance', channel: props.pricing === 'trade' ? 'trade' : 'retail' }} /> : <>
     <p className="mono mute" role="status" style={{ marginBottom: 14 }}>{products.length} piece{products.length === 1 ? '' : 's'}</p>
     {products.length < 6 && <div className="sr-cta"><span><b>Not seeing the right piece?</b><br /><span className="mute" style={{ fontSize: 14 }}>Ask us to help source a piece for your project.</span></span><button className="btn btn-ink btn-sm" onClick={props.onSourcing}>Request sourcing</button></div>}
     {products.length ? props.renderProducts(products, searching) : <div className="empty"><h3>Nothing matches all of that</h3><p>Try removing a material or raising the price limit.</p><button className="btn btn-line" onClick={resetFilters}>Clear filters</button></div>}
+    </>}
   </main>;
 }

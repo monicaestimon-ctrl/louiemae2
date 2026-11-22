@@ -29,6 +29,7 @@ export type LiveAssets = {
   mountHeightCm: number | null;
 };
 export type LiveItem = {
+  defaultVariantId?: string;
   checkoutMode?: 'v2' | 'quote';
   imageMedia?: ProductImageMedia[];
   id: string;
@@ -105,7 +106,7 @@ function widthOf(facts: string) {
   return Math.round(m[2].toLowerCase() === 'cm' ? n : n * 2.54);
 }
 
-export function liveProducts(items: LiveItem[]): HolmProduct[] {
+export function liveProducts(items: LiveItem[], preserveOrder = false): HolmProduct[] {
   const used = new Map<number, string>();
   const out: HolmProduct[] = [];
   for (const item of items) {
@@ -113,7 +114,7 @@ export function liveProducts(items: LiveItem[]): HolmProduct[] {
     const { full, type } = facets;
     // Identity must not depend on page order, availability or a marketing rename.
     const best = facets.curated;
-    const v0 = item.variants[0];
+    const v0 = item.defaultVariantId === undefined ? item.variants[0] : item.variants.find(variant => variant.id === item.defaultVariantId);
     if (!v0) continue;
     const id = holmLegacyId(item.id);
     if (used.has(id)) throw new Error('Catalog product identities require review.');
@@ -163,5 +164,5 @@ export function liveProducts(items: LiveItem[]): HolmProduct[] {
     });
   }
   // Curated pieces first, in their designed order; the rest by name.
-  return out.sort((a, b) => (a.id < 100 ? a.id : 1e9) - (b.id < 100 ? b.id : 1e9) || a.full.localeCompare(b.full));
+  return preserveOrder ? out : out.sort((a, b) => (a.id < 100 ? a.id : 1e9) - (b.id < 100 ? b.id : 1e9) || a.full.localeCompare(b.full));
 }
