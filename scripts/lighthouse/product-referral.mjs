@@ -1,3 +1,4 @@
+/* global window, document, Event */
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { build } from 'esbuild';
