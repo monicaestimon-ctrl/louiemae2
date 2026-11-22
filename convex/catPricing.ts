@@ -3,7 +3,7 @@ import { internalMutation as indexedInternalMutation, mutation as indexedMutatio
 // scenario result. Approved prices are never overwritten by the engine, and the 5% policy can
 // only be held by the approved 306-product cohort.
 import { v } from 'convex/values';
-import { internalMutation, mutation, query } from './_generated/server';
+import { query } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { requireDeliveryRole } from './dlvAccess';

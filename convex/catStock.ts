@@ -3,7 +3,7 @@ import { internalMutation as indexedInternalMutation, mutation as indexedMutatio
 // authorized live Zuo stock integration yet: operations record authenticated checks here, and
 // the job re-evaluates freshness so stale evidence becomes a hold instead of a sale.
 import { v } from 'convex/values';
-import { internalMutation, mutation, query } from './_generated/server';
+import { mutation, query } from './_generated/server';
 import { internal } from './_generated/api';
 import { requireDeliveryRole } from './dlvAccess';
 import { openHold, refreshVariant } from './catCore';

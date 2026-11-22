@@ -2,7 +2,7 @@ import { mutation as indexedMutation } from './functions';
 import { deliveryLanes } from '../lib/delivery/zones';
 import { v } from 'convex/values';
 import { paginationOptsValidator } from 'convex/server';
-import { query, mutation } from './_generated/server';
+import { query } from './_generated/server';
 import { requireDeliveryRole } from './dlvAccess';
 import { maybeConfig } from './sysConfig';
 import { computeEstimate, type FreightConfig } from './dlvEngine';

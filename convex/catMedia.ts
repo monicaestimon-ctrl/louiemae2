@@ -4,7 +4,7 @@ import { internalMutation as indexedInternalMutation, mutation as indexedMutatio
 // a person verifies each against SKU, colour and pack and writes the alt text before it can be
 // used. A failed or unverified image keeps the listing in draft.
 import { v, type Infer } from 'convex/values';
-import { action, internalMutation, internalQuery, mutation, query, type MutationCtx } from './_generated/server';
+import { action, internalMutation, internalQuery, query, type MutationCtx } from './_generated/server';
 import { paginationOptsValidator } from 'convex/server';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';

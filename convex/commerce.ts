@@ -1,7 +1,7 @@
 import { internalMutation as indexedInternalMutation, mutation as indexedMutation } from './functions';
 import { paginationOptsValidator } from 'convex/server';
 import { v } from 'convex/values';
-import { query, mutation, internalMutation, internalQuery } from './_generated/server';
+import { query, internalQuery } from './_generated/server';
 import { mutation as productMutation } from './functions';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { draft, channel, provider } from './commerceTables';

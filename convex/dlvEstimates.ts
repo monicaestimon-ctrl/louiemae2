@@ -5,7 +5,7 @@ import { assertDeliveryBounds } from '../lib/delivery/requestBounds';
 // estimate valid through payment initiation is required for checkout. Any change to cart,
 // address, membership, service, quantity, credit, discount or source version invalidates it.
 import { v } from 'convex/values';
-import { internalMutation, query } from './_generated/server';
+import { query } from './_generated/server';
 import type { Id } from './_generated/dataModel';
 import { computeEstimate, cartHash, type LineInput } from './dlvEngine';
 import { activeConfig } from './sysConfig';

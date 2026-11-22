@@ -1,7 +1,7 @@
 import { internalMutation as indexedInternalMutation, mutation as indexedMutation } from './functions';
 // Finance evidence authoring. Evidence changes invalidate qualification, never approved prices.
 import { v, type ObjectType } from 'convex/values';
-import { internalMutation, internalQuery, mutation, query } from './_generated/server';
+import { internalQuery, query } from './_generated/server';
 import type { MutationCtx } from './_generated/server';
 import { digest as evidenceDigest } from './dlvSecurity';
 import { normalizeCartons } from '../lib/shipping/evidence';
