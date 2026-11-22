@@ -9,6 +9,7 @@ import { maybeConfig } from './sysConfig';
 import type { HoldReason } from './v2Validators';
 import { stockView } from '../lib/stockEvidence';
 import { digest } from './dlvSecurity';
+import { zuoStockConstraint } from './supplierStockRead';
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -99,6 +100,14 @@ export async function evaluate(ctx: Ctx, v: Doc<'catVariants'>, now = Date.now()
     result.stockObservedAt = stock.observedAt;
     result.holds = result.holds.filter(h => h !== 'STOCK_UNVERIFIED');
     if (!stock.current || stock.availability === 'unknown') result.holds.push('STOCK_UNVERIFIED');
+  }
+  if (supplier?.code === 'zuo') {
+    const constraint = await zuoStockConstraint(ctx, v._id, result.stockObservedAt, now);
+    if (constraint) {
+      if (result.availability !== 'discontinued') result.availability = constraint.availability;
+      result.stockObservedAt = constraint.observedAt;
+      if (!result.holds.includes('STOCK_UNVERIFIED')) result.holds.push('STOCK_UNVERIFIED');
+    }
   }
   return result;
 }
