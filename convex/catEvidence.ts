@@ -6,7 +6,7 @@ import { digest as evidenceDigest } from './dlvSecurity';
 import { normalizeCartons } from '../lib/shipping/evidence';
 import type { Id } from './_generated/dataModel';
 import { requireDeliveryRole } from './dlvAccess';
-import { openHold } from './catCore';
+import { openHold, freshnessPolicy } from './catCore';
 import { audit, openReview } from './sysCore';
 import { CommerceError } from '../lib/errors';
 import { dollarsToMinor } from '../lib/decimal';
@@ -14,6 +14,62 @@ import { stableStringify } from '../lib/zuoImport';
 import { stagedAllowanceClass } from '../lib/zuoStagedCatalog';
 import { activeConfig } from './sysConfig';
 import type { PricingAssumptions } from '../lib/config';
+import { latestSupplierStock } from './supplierStockRead';
+import { supplierStockConstraint } from '../lib/supplierStock';
+import { currentObservation } from '../lib/catFreshness';
+import { stockView } from '../lib/stockEvidence';
+
+async function applySupplierAvailability(ctx: MutationCtx, variantId: Id<'catVariants'>, dryRun: boolean) {
+  const now = Date.now();
+  const cv = (await ctx.db.get(variantId))!;
+  const stock = cv.currentStockRevisionId ? await ctx.db.get(cv.currentStockRevisionId) : null;
+  const observations = await latestSupplierStock(ctx, variantId);
+  const binary = currentObservation(await ctx.db.query('catSourceObservations')
+    .withIndex('by_variant_field_observed', q => q.eq('variantId', variantId).eq('field', 'stock')).order('desc').take(20), 'stock', now);
+  let stockObservedAt = binary && binary !== 'conflict' ? binary.observedAt : undefined;
+  if (cv.currentStockRevisionId) {
+    const supplier = await ctx.db.get(cv.supplierId);
+    // The same policy/default and validation as evaluation. This reconciliation
+    // can only withdraw stock, so it remains usable before policy activation.
+    const policy = await freshnessPolicy(ctx, supplier?.freshnessKey ?? 'freshness-default', true);
+    const validated = stockView(stock, cv.warehouseId, cv.piecesPerPack, now,
+      policy.stockSyncMaxHours * 3600000, cv.orderMinimumPacks,
+      await evidenceDigest(cv.warehouseId ? await ctx.db.get(cv.warehouseId) : null));
+    stockObservedAt = validated.current ? validated.observedAt : undefined;
+  }
+  const constraint = supplierStockConstraint(observations, stockObservedAt, now);
+  if (!constraint || cv.availability === 'discontinued') return 'unchanged' as const;
+  const changed = cv.availability !== constraint.availability || cv.availabilityObservedAt !== constraint.observedAt
+    || !cv.holds.includes('STOCK_UNVERIFIED');
+  if (dryRun) return changed ? 'ready' as const : 'unchanged' as const;
+  await openHold(ctx, variantId, 'STOCK_UNVERIFIED', 'On-hand evidence cannot establish available-to-sell stock.', 'deployment-admin:zuo-source-reconciliation');
+  if (!changed) return 'unchanged' as const;
+  await ctx.db.patch(variantId, { availability: constraint.availability, availabilityObservedAt: constraint.observedAt, updatedAt: Date.now() });
+  await audit(ctx, { actor: 'deployment-admin:zuo-source-reconciliation', action: 'supplier.availability_reconciled',
+    entityTable: 'catVariants', entityId: variantId, before: { availability: cv.availability, observedAt: cv.availabilityObservedAt ?? null },
+    after: constraint, reason: `Current supplier observations: ${observations.filter(o => o.observedAt === constraint.observedAt).map(o => o._id).join(',')}` });
+  return 'applied' as const;
+}
+
+/** Correct existing evidence without inventing another supplier file or granting sellability. */
+export const reconcileZuoAvailability = internalMutation({
+  args: { dryRun: v.boolean(), rows: v.array(v.object({ variantId: v.id('catVariants'),
+    expectedObservationId: v.id('catSourceObservations'), expectedStockRevisionId: v.union(v.id('catStockRevisions'), v.null()) })) },
+  handler: async (ctx, a) => {
+    if (!a.rows.length || a.rows.length > 20 || new Set(a.rows.map(r => r.variantId)).size !== a.rows.length) throw new CommerceError('INVALID_INPUT');
+    const results = [];
+    for (const row of a.rows) {
+      const cv = await ctx.db.get(row.variantId);
+      const supplier = cv ? await ctx.db.get(cv.supplierId) : null;
+      const [observation] = await latestSupplierStock(ctx, row.variantId);
+      if (!cv || supplier?.code !== 'zuo' || observation?._id !== row.expectedObservationId
+        || (cv.currentStockRevisionId ?? null) !== row.expectedStockRevisionId)
+        throw new CommerceError('INVALID_INPUT', 'Inventory evidence changed; reconcile again');
+      results.push({ sku: cv.supplierSku, status: await applySupplierAvailability(ctx, cv._id, a.dryRun) });
+    }
+    return { dryRun: a.dryRun, results };
+  },
+});
 
 const expense = v.union(
   v.object({ state: v.literal('unknown') }),
@@ -247,7 +303,9 @@ export const supplierSourceSnapshot = internalQuery({
       const supplier = cv ? await ctx.db.get(cv.supplierId) : null;
       if (!cv || supplier?.code !== 'zuo') throw new CommerceError('INVALID_INPUT');
       const cartons = await ctx.db.query('catCartons').withIndex('by_variant', q => q.eq('variantId', id)).collect();
+      const [inventory] = await latestSupplierStock(ctx, id);
       return { variantId: id, sku: cv.supplierSku, piecesPerPack: cv.piecesPerPack,
+        inventoryObservationId: inventory?._id ?? null, stockRevisionId: cv.currentStockRevisionId ?? null,
         costRevisionId: cv.currentCostRevisionId ?? null, cartonFingerprint: await evidenceDigest(cartons) };
     }));
   },
@@ -303,6 +361,10 @@ export const reconcileZuoSource = internalMutation({
       if ((cv.currentCostRevisionId ?? null) !== row.expectedCostRevisionId)
         throw new CommerceError('INVALID_INPUT', 'Current cost changed; reconcile again');
       const old = cv.currentCostRevisionId ? await ctx.db.get(cv.currentCostRevisionId) : null;
+      const [latestInventory] = await latestSupplierStock(ctx, cv._id);
+      if ((old?.verifiedAt !== undefined && old.verifiedAt > a.sourceObservedAt)
+        || (latestInventory && latestInventory.observedAt > a.inventoryObservedAt))
+        throw new CommerceError('INVALID_INPUT', 'An older supplier source cannot replace newer evidence');
       const oldCartons = await ctx.db.query('catCartons').withIndex('by_variant', q => q.eq('variantId', cv._id)).collect();
       if (await evidenceDigest(oldCartons) !== row.expectedCartonFingerprint)
         throw new CommerceError('INVALID_INPUT', 'Shipping evidence changed; reconcile again');
@@ -341,6 +403,7 @@ export const reconcileZuoSource = internalMutation({
       if (oldCartons.map(c => c.supplierMethod).join() !== cartons.map(c => c.supplierMethod).join())
         await openHold(ctx, cv._id, 'METHOD_CHANGED', 'Supplier shipping method changed; review current routing.', actor.email);
       if (row.status === 'DISC') await ctx.db.patch(cv._id, { availability: 'discontinued', updatedAt: now });
+      else await applySupplierAvailability(ctx, cv._id, false);
       await audit(ctx, { actor: actor.email, action: 'supplier.source_reconciled', entityTable: 'catVariants', entityId: cv._id,
         before: { costRevisionId: old?._id ?? null }, after: { costRevisionId: costId, shippingId, status: row.status },
         reason: source, requestId: key });

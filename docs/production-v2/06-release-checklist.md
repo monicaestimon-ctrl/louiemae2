@@ -54,6 +54,10 @@ The production evidence is retained under `outputs/production-access-audit-20261
 
 ## Step 3. Flags, in order
 
+Inventory source corrections precede activation. Zuo's on-hand feed can withdraw an older availability claim, but does not establish available-to-sell quantity. Explicit zero in both CA and FL means unavailable; missing counts, positive physical counts and conflicting same-time files remain unverified. A strictly newer verified stock check can supersede the feed. Discontinued variants still require the existing reviewed restoration path.
+
+For evidence already imported, use the deployment-admin `catEvidence:supplierSourceSnapshot` read and `catEvidence:reconcileZuoAvailability` dry run with the exact returned inventory observation and stock revision IDs. Review the results, then commit the same rows and read them back. A changed observation/revision rejects the request. This correction is bounded to 20 named variants, preserves the original supplier files, and audits changed availability/holds. It never enables products or changes prices. Ordinary future source reconciliation applies the same conservative rule; older source-effective dates cannot replace newer cost or inventory evidence.
+
 | # | Flag(s) | Requires |
 | --- | --- | --- |
 | 1 | `CATALOG_PUBLICATION_V2_ENABLED` | Gate 1 |
