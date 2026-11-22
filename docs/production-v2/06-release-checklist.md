@@ -40,17 +40,17 @@ Check each current registry record before changing it. Seeded defaults start as 
    4. Advance it through each stage.
 3. Turn on `CATALOG_PUBLICATION_V2_ENABLED=true`, then publish the pilot products by name. Publishing takes at most 50 products per call and never works "by count".
 
-### Bed-frame category correction after PR349
+### Bed-frame category verification after PR349
 
-The classification rule changes proposals; it does not rewrite existing metadata. After deployment, inspect the three reviewed Salisbury Queen Platform Bed Frame records:
+The classification rule changes proposals; it does not rewrite existing metadata. The November 22 production readback confirmed these three Salisbury Queen Platform Bed Frame records already have `commissionCategory: furniture`, with only `MANUAL` in their metadata holds and no `CATEGORY_REVIEW` hold:
 
 - `qn7cxz4r71qr54kb601hab0mpx8htg58`
 - `qn7cphnwgkphrk2yk2x65nrtr98hvs4p`
 - `qn74xgkxhqqazcgngj5snmsa658hvknn`
 
-Confirm their current names/categories still describe complete beds and their proposals are `furniture`. Through the authenticated category admin workflow (`catCategories.commit`), apply `furniture` to those exact product IDs with a recorded review reason. Read back all three `catProductMeta` records and confirm `commissionCategory: furniture` and removal of `CATEGORY_REVIEW`; retain every other hold. Preserve historical commission category/rate/amount and do not publish or activate checkout as part of reclassification. If identity, proposal or metadata changed, stop that record for review.
+No reclassification write is needed for that verified state. After deployment, rerun the read-only category audit and confirm the proposals now agree with the stored furniture category. Preserve the MANUAL hold and all other eligibility gates; this correction does not publish products, activate checkout or alter earned commissions. If later records actually contain `review_required`, review their identity first and use the authenticated `catCategories.commit` workflow, then read back the stored category and CATEGORY_REVIEW hold. Never assume a proposal mismatch means the stored category needs changing.
 
-This rollout is pending until the authenticated write and production readback are recorded. A successful code deployment or a corrected proposal alone does not complete it. The production audit is retained under `outputs/production-access-audit-20261122/category-review` outside the repository.
+The production evidence is retained under `outputs/production-access-audit-20261122/category-review/meta-readback.json` outside the repository.
 
 ## Step 3. Flags, in order
 
