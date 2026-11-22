@@ -14,6 +14,7 @@ export type LiveVariant = {
 };
 import type { ProductImageMedia } from '../types';
 import { CURATED_SOURCES } from './curatedSources';
+import { holmCatalogFacets } from '../lib/holmCatalogFacets';
 import { holmLegacyId } from '../lib/holmProductIdentity';
 import { parseDims, type DimsCm } from '../lib/holmDims';
 
@@ -77,34 +78,6 @@ export type HolmProduct = {
   increment: number;
 };
 
-// id, name, line, type, material, tone, seats
-const CURATED: [number, string, string, string, string, string, number][] = [
-  [1, 'Bramwell', 'Brown Leather Sofa', 'sofa', 'leather', '#6B4A33', 3],
-  [2, 'Roscoe', 'Cognac Leather Sofa', 'sofa', 'leather', '#A0612F', 3],
-  [3, 'Westcott', 'Tan Leather Sofa', 'sofa', 'leather', '#B07A4A', 3],
-  [4, 'Bellamere', 'Olive Velvet Sofa', 'sofa', 'velvet', '#5E6338', 3],
-  [5, 'Osborne', 'Velvet Sectional, Left Facing', 'sectional', 'velvet', '#9A5A2E', 4],
-  [6, 'Osborne', 'Velvet Sectional, Right Facing', 'sectional', 'velvet', '#9A5A2E', 4],
-  [7, 'Kensley', 'Ivory Bouclé Corner Sofa', 'sectional', 'boucle', '#E7DFD0', 5],
-  [8, 'Aster', 'Rattan Semi-Flush Light', 'lighting', 'rattan', '#C9A46C', 0],
-  [9, 'Ansel', 'Cognac Leather Square Ottoman', 'ottoman', 'leather', '#A0612F', 1],
-  [10, 'Kensley', 'Tufted Bouclé Ottoman', 'ottoman', 'boucle', '#EAE3D6', 1],
-  [11, 'Aurelia', 'Brass Curved Floor Lamp', 'lighting', 'brass', '#B58D52', 0],
-  [12, 'Elara', 'Three-Light Rattan Pendant', 'lighting', 'rattan', '#C9A46C', 0],
-  [13, 'Montrose', 'Tan Leather & Teak Bench', 'bench', 'leather', '#B07A4A', 2],
-  [14, 'Rory', 'Round Tan Leather Ottoman', 'ottoman', 'leather', '#B07A4A', 1],
-  [15, 'Stellan', 'Tufted Leather Drum Ottoman', 'ottoman', 'leather', '#B07A4A', 1],
-  [16, 'Marlowick', 'Tufted Leather Square Ottoman', 'ottoman', 'leather', '#B07A4A', 1],
-  [17, 'Selwyn', 'Corner Sectional with Ottoman', 'sectional', 'leather', '#A0612F', 5],
-  [18, 'Fable', 'Light Grey Bouclé Bench', 'bench', 'boucle', '#CFCBC4', 2],
-  [19, 'Ronan', 'Ivory Bouclé Pedestal Bench', 'bench', 'boucle', '#E7DFD0', 2],
-  [20, 'Lucienne', 'Black Faux Leather & Walnut Bench', 'bench', 'leather', '#2A2522', 2],
-  [21, 'Cressida', 'Woven Leather Strap Bench', 'bench', 'leather', '#8E532A', 2],
-  [22, 'Seren', 'Ivory Bouclé Storage Bench', 'bench', 'boucle', '#E7DFD0', 2],
-  [23, 'Beckett', 'Tan Leather Bench', 'bench', 'leather', '#B07A4A', 2],
-  [24, 'Tessa', 'Mid-Century Tan Leather Bench', 'bench', 'leather', '#B07A4A', 2],
-];
-
 // The curated pieces ship with studio cutouts in public/trade/c/ (each cutout's pixel size) and
 // measured widths. Their asset rows override these once they carry approved cutouts and dimensions.
 const CURATED_CUT: Record<number, [number, number]> = {1:[1031,308],2:[1084,368],3:[1057,352],4:[1100,379],5:[1100,375],6:[1100,370],7:[1100,552],8:[995,777],9:[941,673],10:[1100,551],11:[383,917],12:[944,889],13:[1100,726],14:[1100,520],15:[1046,641],16:[995,637],17:[1100,478],18:[1100,577],19:[1100,521],20:[1100,504],21:[1100,731],22:[1100,540],23:[956,426],24:[1100,688]};
@@ -124,47 +97,6 @@ function curatedEstimate(id: number, type: string): DimsCm | null {
   return { w, d: TYPE_DEPTH[type] || w, h: Math.round((w * c[1]) / c[0]) };
 }
 
-const TYPE_BY_CATEGORY: Record<string, string> = {
-  sofas: 'sofa',
-  sectionals: 'sectional',
-  ottomans: 'ottoman',
-  benches: 'bench',
-  lighting: 'lighting',
-  barstools: 'stool',
-  counterstools: 'stool',
-  stools: 'stool',
-  'dining tables': 'table',
-  'dining chairs': 'chair',
-  'accent chairs': 'chair',
-};
-const SEATS: Record<string, number> = { sofa: 3, sectional: 4, ottoman: 1, bench: 2, stool: 1, chair: 1, table: 0, lighting: 0 };
-const TONES: [RegExp, string][] = [
-  [/cognac|caramel|rust/i, '#A0612F'],
-  [/\btan\b|camel|saddle/i, '#B07A4A'],
-  [/brown|walnut|espresso|chocolate/i, '#6B4A33'],
-  [/olive|green|sage|moss/i, '#5E6338'],
-  [/ivory|cream|white|boucl|natural linen/i, '#E7DFD0'],
-  [/grey|gray|stone|oatmeal|beige/i, '#CFCBC4'],
-  [/black|charcoal/i, '#2A2522'],
-  [/brass|gold/i, '#B58D52'],
-  [/rattan|wicker|woven|cane|oak|wood/i, '#C9A46C'],
-  [/blue|navy/i, '#33445E'],
-];
-
-const cleanName = (s: string) => s.split('|')[0].trim();
-
-function materialOf(text: string) {
-  if (/boucl/i.test(text)) return 'boucle';
-  if (/velvet/i.test(text)) return 'velvet';
-  if (/rattan|wicker|woven|cane/i.test(text)) return 'rattan';
-  if (/brass|gold/i.test(text)) return 'brass';
-  if (/leather/i.test(text)) return 'leather';
-  if (/wood|oak|walnut|teak/i.test(text)) return 'wood';
-  return 'leather';
-}
-function toneOf(text: string) {
-  return TONES.find(([re]) => re.test(text))?.[1] ?? '#B07A4A';
-}
 /** Overall width in cm from "Overall dimensions (W × D × H): 92.5 × 39 × 26.4 in". */
 function widthOf(facts: string) {
   const m = facts.match(/(\d+(?:\.\d+)?)\s*[×x]\s*\d+(?:\.\d+)?(?:\s*[×x]\s*\d+(?:\.\d+)?)?\s*(in|cm)/i);
@@ -177,17 +109,16 @@ export function liveProducts(items: LiveItem[]): HolmProduct[] {
   const used = new Map<number, string>();
   const out: HolmProduct[] = [];
   for (const item of items) {
-    const full = cleanName(item.name);
+    const facets = holmCatalogFacets(item, CURATED_SOURCES[item.id]);
+    const { full, type } = facets;
     // Identity must not depend on page order, availability or a marketing rename.
-    const best = CURATED.find(c => c[0] === CURATED_SOURCES[item.id]);
+    const best = facets.curated;
     const v0 = item.variants[0];
     if (!v0) continue;
-    const typeGuess = TYPE_BY_CATEGORY[item.category.toLowerCase()] ?? (/sofa/i.test(full) ? 'sofa' : /light|lamp|pendant/i.test(full) ? 'lighting' : /bench/i.test(full) ? 'bench' : /ottoman/i.test(full) ? 'ottoman' : 'chair');
     const id = holmLegacyId(item.id);
     if (used.has(id)) throw new Error('Catalog product identities require review.');
     used.set(id, item.id);
     const text = `${full} ${item.facts}`;
-    const type = best ? best[3] : typeGuess;
     const a = item.assets;
     const parsed = a?.dimsCm ?? parseDims(item.facts);
     const dims = parsed ?? (best ? curatedEstimate(id, type) : null);
@@ -198,16 +129,16 @@ export function liveProducts(items: LiveItem[]): HolmProduct[] {
       lid: item.id,
       vid: v0.id,
       variants: item.variants,
-      name: best ? best[1] : full.split(' ')[0],
-      line: best ? best[2] : full.split(' ').slice(1).join(' ') || item.category,
+      name: facets.name,
+      line: facets.line,
       full,
       type,
-      mat: best ? best[4] : materialOf(text),
-      tone: best ? best[5] : toneOf(text),
+      mat: facets.mat,
+      tone: facets.tone,
       // Null is transported explicitly; NaN keeps missing comparisons out of arithmetic totals.
       price: v0.retail === null ? Number.NaN : v0.retail / 100,
       trade: v0.trade === null ? null : v0.trade / 100,
-      seats: best ? best[6] : (SEATS[typeGuess] ?? 1),
+      seats: facets.seats,
       oos: !item.inStock,
       note: item.description,
       facts: item.facts,

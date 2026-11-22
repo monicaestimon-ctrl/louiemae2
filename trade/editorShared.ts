@@ -1,11 +1,12 @@
 /* eslint-disable */
 // @ts-nocheck
+import { HOLM_COLOR_WORDS, matchHolmQuery } from '../lib/holmDiscoveryMatch';
+import { HOLM_MATERIAL_LABELS, HOLM_TYPE_LABELS, toneDistance } from '../lib/holmCatalogFacets';
 import { HouseStaffGate } from './admin/HouseStaffGate';
 import { TradeAccount, TradeWelcome, TradeApplication, ProjectDeliveryPanel, ProductDeliveryEstimate, ProgramHubV2, TeamPanel } from './deferredFeatures';
 import { DeliveryCalculatorDisclosure } from './DeliveryCalculatorDisclosure';
 import { TradeNewsletter } from './TradeNewsletter';
 import { ProgressiveSections } from './ProgressiveSections';
-import { DiscoverCatalog } from './DiscoverCatalog';
 import { SaveBoardMenu } from './SaveBoardMenu';
 import { CatalogProductCard } from './CatalogProductCard';
 import { ProductPrice as Price } from './ProductPrice';
@@ -48,9 +49,8 @@ export const html = htm.bind(React.createElement);
 
 
 /* ================= data ================= */
-const MAT = {leather:'Leather',velvet:'Velvet',boucle:'Bouclé',rattan:'Rattan',brass:'Brass',wood:'Wood'};
-
-const TYPE = {sofa:'Sofas',sectional:'Sectionals',ottoman:'Ottomans',bench:'Benches',lighting:'Lighting',chair:'Chairs',stool:'Stools',table:'Tables'};
+const MAT = HOLM_MATERIAL_LABELS;
+const TYPE = HOLM_TYPE_LABELS;
 
 // The catalog comes from the live House listings (see catalog.ts). Curated pieces keep
 // their numeric ids so hero films, scenes and cutouts stay attached to the right product.
@@ -99,29 +99,14 @@ const store=(k,v)=>{try{localStorage.setItem('hol:'+k,JSON.stringify(v))}catch(e
 
 const hex2rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
 
-const cdist=(a,b)=>{const[x,y,z]=hex2rgb(a),[p,q,r]=hex2rgb(b);return Math.hypot(x-p,y-q,z-r)};
+const cdist = toneDistance;
 
 const uid=()=>Math.random().toString(36).slice(2,9);
 
 const copyText=async(t,toast)=>{try{await navigator.clipboard.writeText(t);toast('Link copied')}catch(e){toast('Copy blocked here. Select the link and copy it.')}};
 
-const COLOR_WORDS={cognac:'#A0612F',tan:'#B07A4A',brown:'#6B4A33',olive:'#5E6338',green:'#5E6338',ivory:'#E7DFD0',cream:'#E7DFD0',white:'#E7DFD0',grey:'#CFCBC4',gray:'#CFCBC4',black:'#2A2522',brass:'#B58D52',gold:'#B58D52',natural:'#C9A46C',warm:'#A0612F',light:'#E7DFD0',dark:'#2A2522'};
-
-function matchPrompt(q){
-  const w=q.toLowerCase();
-  let scored=PRODUCTS.map(p=>{let s=0;
-    if(w.includes(p.mat)||(p.mat==='boucle'&&w.includes('bouc')))s+=5;
-    if(w.includes(p.type)||w.includes(p.type.replace(/s$/,'')))s+=3;
-    if(w.includes('light')&&p.type==='lighting')s+=2;
-    if(w.includes('seat')&&p.seats>0)s+=1;
-    Object.entries(COLOR_WORDS).forEach(([k,c])=>{if(w.includes(k)&&cdist(c,p.tone)<60)s+=3});
-    SPACE_KEYS.forEach(k=>{const sp=SPACES[k];if(w.includes(k)||w.includes(sp.label.toLowerCase().split(' ')[0])){if(sp.picks.includes(p.id))s+=4;if(sp.mats.includes(p.mat))s+=1}});
-    if(w.includes(p.name.toLowerCase()))s+=8;
-    return {p,s}});
-  const top=Math.max(0,...scored.map(x=>x.s));
-  scored=scored.filter(x=>x.s>0&&x.s>=top*.5).sort((a,b)=>b.s-a.s||a.p.id-b.p.id);
-  return scored.map(x=>x.p);
-}
+const COLOR_WORDS = HOLM_COLOR_WORDS;
+function matchPrompt(query: string) { return matchHolmQuery(query, PRODUCTS, SPACES); }
 
 
 /* ================= icons ================= */

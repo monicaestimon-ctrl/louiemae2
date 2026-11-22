@@ -28,6 +28,16 @@ it('isolates a failed import and retries without removing sibling content', asyn
   expect(load).toHaveBeenCalledTimes(2);
 });
 
+it('uses current catalog props when identity or query changes during loading', async () => {
+  let resolve!: (module: { default: React.ComponentType<{ query: string; price: number | null }> }) => void;
+  const Tool = deferredFeature(() => new Promise<{ default: React.ComponentType<{ query: string; price: number | null }> }>(r => { resolve = r; }), 'Discover products');
+  const view = render(<Tool query="sofa" price={125} />);
+  view.rerender(<Tool query="chair" price={null} />);
+  await act(async () => resolve({ default: ({ query, price }) => <p>{query}: {price ?? 'Sign in for trade pricing'}</p> }));
+  expect(screen.getByText('chair: Sign in for trade pricing')).toBeTruthy();
+  expect(screen.queryByText(/125/)).toBeNull();
+});
+
 it('offers retry for a stalled module request', async () => {
   vi.useFakeTimers();
   const load = vi.fn<() => Promise<{ default: React.ComponentType }>>()
