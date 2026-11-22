@@ -37,7 +37,7 @@ const avifRecipe = 'editorial-avif-q55-effort6-cover-centre-v1';
 const base = '/images/opt/editorial/' + hash(evidence.sha256 + ':' + recipe).slice(0, 24);
 const widths = [
   ...new Set(
-    [320, 480, 640, 960, 1280, 1600]
+    [320, 480, 640, 768, 960, 1280, 1600]
       .filter((w) => w < evidence.width)
       .concat(Math.min(evidence.width, 1600))
   ),

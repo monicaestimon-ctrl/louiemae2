@@ -27,6 +27,11 @@
           "sha256": "6a100ddd2d92ab8874530e009ab0f5f7b8dcdfef62905796b241a4ff3a0fc44f"
         },
         {
+          "width": 768,
+          "bytes": 95466,
+          "sha256": "e578e45aca1d3731f29a2cc366ed555e6026058224e6a37e448f152fe61c003b"
+        },
+        {
           "width": 960,
           "bytes": 127496,
           "sha256": "8fd474a16a18e921fca2d9b7e6bbe7ec8d674b86e5d174313471afce95e3fa81"
@@ -61,6 +66,12 @@
               "sha256": "ce7711a91c144b2ec342552e6aa9cc2fee0872370201ed2ee06d519ed56811dc"
             },
             {
+              "width": 768,
+              "height": 960,
+              "bytes": 85368,
+              "sha256": "6c4d087bbbac3562985379f6b764e8c39b472500f59c518238d42e0ea3719b76"
+            },
+            {
               "width": 960,
               "height": 1200,
               "bytes": 113108,
@@ -93,6 +104,12 @@
                 "height": 800,
                 "bytes": 34695,
                 "sha256": "cdac1fcb576562a07bffff0197592135b1414bc7b0af1cfad95883b9b8214705"
+              },
+              {
+                "width": 768,
+                "height": 960,
+                "bytes": 43969,
+                "sha256": "b3e0209d965ba85f0b36209d1fd90d603d27077070865171299fa64f6c966328"
               },
               {
                 "width": 960,
@@ -132,6 +149,12 @@
               "sha256": "18123ea6a6f4be3f6645ad5a78f6e09352a02568ac0970221b531c934051fa17"
             },
             {
+              "width": 768,
+              "height": 329,
+              "bytes": 32334,
+              "sha256": "81f860384fbb14e9ebae287aac69054368f352dff2828ea93237354078e94e5b"
+            },
+            {
               "width": 960,
               "height": 411,
               "bytes": 41968,
@@ -164,6 +187,12 @@
                 "height": 274,
                 "bytes": 13674,
                 "sha256": "93289dad4aac1ffde46c35b1f6d9bf41f01e61f42dae0006fc5c73b8fd4d4027"
+              },
+              {
+                "width": 768,
+                "height": 329,
+                "bytes": 17324,
+                "sha256": "5f3c7a92deacd1763de0c00ccda3c49e2d4a7d2cbea2fd1cec3d422b6eaa3300"
               },
               {
                 "width": 960,
@@ -203,6 +232,12 @@
               "sha256": "25e006b5be6890bbb772e7491ad4d55e641664f586cd70dc38c72ea68c3d66ba"
             },
             {
+              "width": 768,
+              "height": 432,
+              "bytes": 42676,
+              "sha256": "3cba46d20d498e959122b2ab4c3d046fa6a44265f051affc96e4b9998b6a82c5"
+            },
+            {
               "width": 960,
               "height": 540,
               "bytes": 54292,
@@ -235,6 +270,12 @@
                 "height": 360,
                 "bytes": 17552,
                 "sha256": "b70fd6d5f60d97fb1451673ee52192f100c5d12cdbd3c65bc2245a70843c4def"
+              },
+              {
+                "width": 768,
+                "height": 432,
+                "bytes": 22252,
+                "sha256": "731464d5a89d32800e85a855a2834eac581bf9ff2d59e547102fbb2dce591e34"
               },
               {
                 "width": 960,
@@ -274,6 +315,12 @@
               "sha256": "85cddb2d1dff78ae915430db19bcf3eda91117e29030c81e3d0de9fcb0c0a5df"
             },
             {
+              "width": 768,
+              "height": 256,
+              "bytes": 24526,
+              "sha256": "2a8234fc2afe9a127099ff2625115b9185ce8572ea08f7dc9799bf78c9ee431a"
+            },
+            {
               "width": 960,
               "height": 320,
               "bytes": 31538,
@@ -306,6 +353,12 @@
                 "height": 213,
                 "bytes": 10579,
                 "sha256": "2f7643183296ff5c8ee14abfdfdf40fc6cb5fb7722a1754637c9d1083b50887e"
+              },
+              {
+                "width": 768,
+                "height": 256,
+                "bytes": 13372,
+                "sha256": "78ed47c85547086df832e5e5ad20e30a89955279153b4b9672ea9de71969f712"
               },
               {
                 "width": 960,
