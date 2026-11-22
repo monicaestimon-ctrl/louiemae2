@@ -31,10 +31,10 @@ export function ServerDiscoveryResults({ request, viewerKey, searching, renderPr
   if (failed) return <section role="status"><h2>Catalog temporarily unavailable</h2><p>Please retry to check current prices and availability.</p><button className="btn btn-line" onClick={result.retry}>Try again</button></section>;
   const more = result.nextCursor !== null;
   return <section aria-label="Catalog results" aria-busy={pending}>
-    <p className="mono mute" role="status">{pending ? 'Checking current productsâ€¦' : `${items.length} piece${items.length === 1 ? '' : 's'} shown${more ? ' Â· More results available' : ''}`}</p>
+    <p className="mono mute" role="status">{pending ? 'Checking current products…' : `${items.length} piece${items.length === 1 ? '' : 's'} shown${more ? ' · More results available' : ''}`}</p>
     {items.length > 0 && renderProducts(items, searching)}
     {!pending && !items.length && !more && <div className="empty"><h3>Nothing matches all of that</h3><p>Try removing a filter or changing your search.</p><button className="btn btn-line" onClick={resetFilters}>Clear filters</button></div>}
     {!pending && !items.length && more && <p>More products remain to be checked for these filters.</p>}
-    {more && <button className="btn btn-line" disabled={pending} onClick={result.loadMore}>{pending ? 'Loadingâ€¦' : 'Load more products'}</button>}
+    {more && <button className="btn btn-line" disabled={pending} onClick={result.loadMore}>{pending ? 'Loading…' : 'Load more products'}</button>}
   </section>;
 }
