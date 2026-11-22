@@ -72,3 +72,18 @@ it('keeps unavailable comparisons visible without treating them as zero in price
     expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['Lamp', 'Sofa']);
   }
 });
+
+it('keeps unspecified pieces browsable without matching a known material or color', () => {
+  setup([{ ...products[0], name: 'Quill', type: 'other', mat: 'unknown', tone: '' }, products[1]]);
+  expect(screen.getAllByRole('listitem')).toHaveLength(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Leather' }));
+  expect(screen.queryByRole('listitem')).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Leather' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Tan' }));
+  // The existing distance threshold also admits this brass lamp. Unknown
+  // colors must not match, even when another valid near-tone result exists.
+  expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['Lamp']);
+  fireEvent.click(screen.getByRole('button', { name: 'Tan' }));
+  expect(screen.getAllByRole('listitem')).toHaveLength(2);
+});

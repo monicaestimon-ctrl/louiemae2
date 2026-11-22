@@ -50,3 +50,10 @@ it('retains an approved trade price without inventing a missing retail compariso
   expect(product.trade).toBe(90);
   expect(product.variants[0].retail).toBeNull();
 });
+
+it('maps missing facets honestly without changing identity or the approved price', () => {
+  const source = { ...item('unknown-facets', 'Quill'), category: '' };
+  const product = liveProducts([source])[0];
+  expect(product).toMatchObject({ lid: source.id, vid: 'variant', type: 'other', mat: 'unknown', tone: '', price: 100 });
+  expect(product.cutout).toBeNull();
+});

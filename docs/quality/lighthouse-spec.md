@@ -215,6 +215,14 @@ Read approved project tier settings and actual trade prices from v2 authorities.
 
 Acceptance: first page usable without later pages; no private-price flash during login/logout; filter changes reset cursors; stale requests cannot overwrite current results; catalog-to-project connection preserves variants and correct prices; unauthorized users cannot fetch trade payloads directly.
 
+## 7.1 Shared discovery facets
+
+`lib/holmCatalogFacets.ts` owns display names, coarse type/material hints and approximate color matching for HOLM's catalog adapter and discovery consumers. Curated identities retain their reviewed names and studio assets; an unrelated product with the same marketing name does not inherit them. These display facets never decide commission categories, prices, inventory, delivery eligibility or publication.
+
+Missing type, material and color must remain other/unspecified. A light-gray chair is not lighting, a gold finish is not proof of brass, and a woven textile is not proof of rattan. Primary title material/color takes priority over secondary frame and leg descriptions. A missing title color may use an explicit color field; no default tan color or leather material is inserted. Unknown tones cannot match a known palette. Products with unspecified facets remain browsable without a filter.
+
+This shared classifier is a prerequisite for server-owned discovery, not its completion. The next index/query cutover must preserve current approved role-specific prices, source updates, bounded reads, query-bound cursors, explicit load-more behavior and independently resolved saved projects. Local sorting of a loaded subset must never be presented as global price ordering. Revalidate current eligibility before returning an indexed result; a search row cannot grant checkout access.
+
 # 8 Phase 5 Assets and rendering performance
 
 ## 8.1 Product image pipeline

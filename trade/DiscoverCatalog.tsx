@@ -1,5 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { Camera, Search } from 'lucide-react';
+import { toneDistance as distance } from '../lib/holmCatalogFacets';
 import type { HolmProduct } from './catalog';
 
 type ImageQuery = { src: string; pal: string[] };
@@ -22,10 +23,6 @@ type Props = {
 };
 const PALETTE = [['Cognac', '#A0612F'], ['Tan', '#B07A4A'], ['Espresso', '#6B4A33'], ['Olive', '#5E6338'], ['Ivory', '#E7DFD0'], ['Stone', '#CFCBC4'], ['Black', '#2A2522'], ['Brass', '#B58D52']];
 const dollars = (value: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(value);
-function distance(a: string, b: string) {
-  if (!/^#[a-f0-9]{6}$/i.test(a) || !/^#[a-f0-9]{6}$/i.test(b)) return Infinity;
-  return Math.hypot(...[1, 3, 5].map(index => parseInt(a.slice(index, index + 2), 16) - parseInt(b.slice(index, index + 2), 16)));
-}
 const toggle = (values: string[], value: string) => values.includes(value) ? values.filter(item => item !== value) : [...values, value];
 
 /** Typed catalog boundary. Server pagination remains a separate migration. */
