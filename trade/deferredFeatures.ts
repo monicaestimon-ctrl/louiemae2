@@ -1,5 +1,7 @@
 import { deferredFeature } from './deferredFeature';
 
+export const DiscoverCatalog = deferredFeature(() => import('./DiscoverCatalog').then(m => ({ default: m.DiscoverCatalog })), 'Discover products');
+
 export const TradeWelcome = deferredFeature(() => import('./TradeWelcome').then(m => ({ default: m.TradeWelcome })), 'Sign in');
 export const TradeApplication = deferredFeature(() => import('./TradeApplication').then(m => ({ default: m.TradeApplication })), 'Trade application');
 export const TradeDeliveryCalculator = deferredFeature(() => import('../components/delivery/TradeDeliveryCalculator'), 'Delivery calculator');

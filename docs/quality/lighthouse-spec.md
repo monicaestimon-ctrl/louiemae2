@@ -223,6 +223,8 @@ Missing type, material and color must remain other/unspecified. A light-gray cha
 
 This shared classifier is a prerequisite for server-owned discovery, not its completion. The next index/query cutover must preserve current approved role-specific prices, source updates, bounded reads, query-bound cursors, explicit load-more behavior and independently resolved saved projects. Local sorting of a loaded subset must never be presented as global price ordering. Revalidate current eligibility before returning an indexed result; a search row cannot grant checkout access.
 
+The Discover filter interface loads through the existing deferred-feature boundary when opened. It must remain outside the initial HOLM JavaScript dependency graph, with a readable loading state, timeout/retry controls and preserved surrounding navigation. A pending module must receive the latest query and account-price props when it resolves. This code split does not itself change catalog data pagination or grant price access.
+
 # 8 Phase 5 Assets and rendering performance
 
 ## 8.1 Product image pipeline

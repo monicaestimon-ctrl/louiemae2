@@ -7,7 +7,6 @@ import { TradeAccount, TradeWelcome, TradeApplication, ProjectDeliveryPanel, Pro
 import { DeliveryCalculatorDisclosure } from './DeliveryCalculatorDisclosure';
 import { TradeNewsletter } from './TradeNewsletter';
 import { ProgressiveSections } from './ProgressiveSections';
-import { DiscoverCatalog } from './DiscoverCatalog';
 import { SaveBoardMenu } from './SaveBoardMenu';
 import { CatalogProductCard } from './CatalogProductCard';
 import { ProductPrice as Price } from './ProductPrice';

@@ -17,7 +17,7 @@ import { TradeNewsletter } from './TradeNewsletter';
 
 import { ProgressiveSections } from './ProgressiveSections';
 
-import { DiscoverCatalog } from './DiscoverCatalog';
+import { DiscoverCatalog } from './deferredFeatures';
 
 import { SaveBoardMenu } from './SaveBoardMenu';
 
