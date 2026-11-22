@@ -110,11 +110,11 @@ try {
       : { channel: 'chrome' }),
     headless: true,
   });
-  for (const width of [390, 768, 1440])
+  for (const [width, deviceScaleFactor] of [[390, 1], [768, 1], [1440, 1], [412, 1.75]])
     for (const kind of ['index', 'article'])
       for (const fallback of [false, true]) {
         const page = await browser.newPage();
-        await page.setViewport({ width, height: 900, deviceScaleFactor: 1 });
+        await page.setViewport({ width, height: 900, deviceScaleFactor });
         const client = await page.createCDPSession();
         if (fallback)
           await client.send('Emulation.setDisabledImageTypes', { imageTypes: ['avif'] });
@@ -144,6 +144,9 @@ try {
         const extension = fallback ? 'webp' : 'avif';
         assert.ok(new URL(actual.src).pathname.startsWith(base + '-'));
         assert.ok(actual.src.endsWith('.' + extension));
+        if (width === 412 && kind === 'article') {
+          assert.ok(actual.src.endsWith(`-768.${extension}`), 'A 412px article at DPR 1.75 should use the sufficient 768px source instead of 960px');
+        }
         assert.equal(actual.alt, kind === 'index' ? '' : post.title);
         assert.equal(
           requests.length,
@@ -151,12 +154,12 @@ try {
           'The picture must not preload/download its fallback as well'
         );
         assert.deepEqual(errors, []);
-        const screenshot = `${kind}-${width}-${extension}.png`;
+        const screenshot = `${kind}-${width}${deviceScaleFactor === 1 ? '' : `-dpr${deviceScaleFactor}`}-${extension}.png`;
         // Full-page capture can temporarily resize Chrome and trigger another media source.
         // Keep the measured viewport intact, and assert the request count after capture too.
         await page.screenshot({ path: resolve(directory, screenshot), fullPage: false });
         assert.equal(requests.length, 1, 'Capture must preserve the measured responsive source');
-        results.push({ kind, width, fallback, actual, requests, errors, screenshot });
+        results.push({ kind, width, deviceScaleFactor, fallback, actual, requests, errors, screenshot });
         await page.close();
       }
   for (const width of [390, 1440])
