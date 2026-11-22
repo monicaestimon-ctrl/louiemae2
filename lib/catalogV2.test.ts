@@ -13,6 +13,14 @@ const D = 24 * H;
 const policy = { stockSyncMaxHours: 24, checkoutSourceMaxHours: 24, costMapMaxDays: 7, recheckOnSupplierNotice: true };
 
 describe('commission categories (S08)', () => {
+  it.each(['Bedroom Salisbury Queen Platform Bed Frame', 'King bed-frame', 'Upholstered bed frames'])('recognizes bed frames as furniture: %s', text => {
+    expect(proposeCategory(text).category).toBe('furniture');
+  });
+  it('retains picture frames and other accessory conflicts', () => {
+    expect(proposeCategory('Picture frame').category).toBe('decor');
+    for (const text of ['Bed frame with picture frame', 'Bed frame tray', 'Decor bed frame', 'Armchair pillow'])
+      expect(proposeCategory(text).category).toBe('review_required');
+  });
   it.each(['Seating', 'Armchair', 'Outdoor armchairs', 'Bench', 'Benches', 'Outdoor extendable bench', 'Bedroom chest', 'Storage chests', 'Outdoor bar cart'])('recognizes catalog furniture terminology: %s', text => {
     expect(proposeCategory(text)).toEqual({ category: 'furniture', reason: 'furniture term' });
   });
