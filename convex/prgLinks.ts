@@ -9,7 +9,7 @@ import type { Id } from './_generated/dataModel';
 import { requireUser, viewer } from './holmAccess';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { audit, rateLimit } from './sysCore';
-import { assertSellable, evaluate } from './catCore';
+import { assertSellable, evaluate, isCurrentPrice } from './catCore';
 import { computeScenarios, recordScenarios } from './catPricing';
 import { beneficiaryOf, referralActive } from './prgCore';
 import { productRate, schedule } from './prgAttribution';
@@ -198,7 +198,7 @@ export const setReferralEligibility = indexedMutation({
     if (a.eligible && supplier?.code === 'zuo') {
       const freshness = await evaluate(ctx, cv);
       const price = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
-      if (freshness.holds.length || price?.status !== 'approved' || price.effectiveFrom > Date.now() || (price.effectiveTo !== undefined && price.effectiveTo <= Date.now()))
+      if (freshness.holds.length || !isCurrentPrice(price, cv._id, 'retail'))
         throw new CommerceError('COST_REVIEW_REQUIRED', 'Current cost, stock and approved retail price are required before enabling referrals');
       const economics = await computeScenarios(ctx, cv);
       if (!economics.referralQualified || economics.belowMinimum)

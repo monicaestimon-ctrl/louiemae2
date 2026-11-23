@@ -4,80 +4,19 @@ import { internalMutation as indexedInternalMutation, mutation as indexedMutatio
 // only be held by the approved 306-product cohort.
 import { v } from 'convex/values';
 import { query } from './_generated/server';
-import type { MutationCtx, QueryCtx } from './_generated/server';
-import type { Doc, Id } from './_generated/dataModel';
+import type { MutationCtx } from './_generated/server';
+import type { Id } from './_generated/dataModel';
 import { requireDeliveryRole } from './dlvAccess';
 import { activeConfig } from './sysConfig';
 import { audit, openReview } from './sysCore';
 import { openHold, resolveHold } from './catCore';
 import { projectDraftVariants } from './zuoImport';
 import { CommerceError, commerceErrorData } from '../lib/errors';
-import { rat, mul, parseDecimal } from '../lib/decimal';
-import { commissionReserve } from './dlvCommission';
 import { piecePriceInfo } from '../lib/catUnits';
-import { ENGINE_VERSION, minimumRetail, minimumTrade, scenarios, type PricingInput, type SizeClass } from '../lib/economics/pricing';
-import type { MarginPolicy, PricingAssumptions, TradeDiscountSchedule } from '../lib/config';
-import { stableStringify } from '../lib/zuoImport';
-
-type Ctx = QueryCtx | MutationCtx;
-type Opts = { simulate?: boolean };
-
-async function cfg<T>(ctx: Ctx, kind: Parameters<typeof activeConfig>[1], key: string, o: Opts) {
-  return (await activeConfig<T>(ctx, kind, key, o.simulate ? { allowProposed: 'simulation' } : {})).value;
-}
-
-/** Builds the engine input for a variant from its current evidence and approved config. */
-export async function pricingInput(ctx: Ctx, cv: Doc<'catVariants'>, o: Opts = {}): Promise<{ input: PricingInput; category: 'furniture' | 'decor' | 'clothing'; margin: MarginPolicy }> {
-  const cost = cv.currentCostRevisionId ? await ctx.db.get(cv.currentCostRevisionId) : null;
-  if (!cost || cost.wholesaleMinor === null) throw new CommerceError('COST_REVIEW_REQUIRED', 'No current wholesale cost');
-  const meta = await ctx.db.query('catProductMeta').withIndex('by_product', (q) => q.eq('productId', cv.productId)).first();
-  const category = meta?.commissionCategory;
-  if (!category || category === 'review_required') throw new CommerceError('COST_REVIEW_REQUIRED', 'Commission category needs review');
-  const policyKey = cv.marginPolicyKey ?? 'zuo-standard-20';
-  const margin = await cfg<MarginPolicy>(ctx, 'marginPolicy', policyKey, o);
-  if (margin.blocksAutomaticSale || margin.targetBps === undefined) throw new CommerceError('COST_REVIEW_REQUIRED', `${policyKey} holds automatic sale until a per-SKU floor is approved`);
-  const assumptions = await cfg<PricingAssumptions>(ctx, 'pricingAssumptions', 'zuo-pricing-assumptions', o);
-  const trade = await cfg<TradeDiscountSchedule>(ctx, 'tradeDiscountSchedule', 'trade-discount', o);
-  const supplier = await ctx.db.get(cv.supplierId);
-  const tradeRule = trade.suppliers[supplier?.code ?? ''];
-  if (!tradeRule) throw new CommerceError('POLICY_NOT_APPROVED', `No trade discount schedule for ${supplier?.code}`);
-  // Qualification always tests the configured retail referral schedule, including protected rates.
-  const maxCommissionBps = (await commissionReserve(ctx,cv.productId,category,true,Date.now())).bps;
-  const confirmed = (m: number | null, zero: boolean) => (m !== null ? m : zero ? 0 : null);
-  return {
-    category,
-    margin,
-    input: {
-      wholesalePiece: cost.wholesalePrecise ? mul(parseDecimal(cost.wholesalePrecise),rat(100)) : rat(cost.wholesaleMinor),
-      piecesPerPack: cv.piecesPerPack,
-      sizeClass: (cv.sizeClass ?? 'UNKNOWN') as SizeClass,
-      extraPackCostsMinor: [confirmed(cost.dutiesMinor, cost.dutiesConfirmedZero), confirmed(cost.inboundFreightMinor, cost.inboundConfirmedZero), confirmed(cost.supplierFeesMinor, cost.feesConfirmedZero)],
-      mapPackMinor: cost.mapApplicability === 'applies' && cost.mapMinor !== null ? cost.mapMinor * (cost.mapUnitBasis === 'piece' ? cv.piecesPerPack : 1) : null,
-      assumptions,
-      maxCommissionBps,
-      marginBps: margin.targetBps,
-      tradeDiscountBps: cv.marginPolicyKey === 'zuo-approved-5' && tradeRule.approvedExceptionBps ? tradeRule.approvedExceptionBps : tradeRule.defaultBps,
-    },
-  };
-}
-
-/** Runs the engine for a variant (no writes). */
-export async function computeScenarios(ctx: Ctx, cv: Doc<'catVariants'>, o: Opts = {}) {
-  const { input, category } = await pricingInput(ctx, cv, o);
-  const min = minimumRetail(input);
-  const tradeFloor = minimumTrade(input);
-  const approved = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
-  const trade = cv.tradePriceRevisionId ? await ctx.db.get(cv.tradePriceRevisionId) : null;
-  const retailMinor = approved?.status === 'approved' ? approved.packPriceMinor : min.retailMinor;
-  const tradeMinor = trade?.status === 'approved' ? trade.packPriceMinor : null;
-  const s = scenarios({ ...input, retailMinor, fullScheduleBps: input.maxCommissionBps,
-    extra: tradeMinor === null ? [] : [{ name: 'trade_approved', priceMinor: tradeMinor, commissionBps: 0 }],
-  });
-  const inputsHash = stableStringify({ ...input, wholesalePiece: `${input.wholesalePiece.n}/${input.wholesalePiece.d}`, retailMinor, tradeMinor });
-  return { minimumRetailMinor: min.retailMinor, minimumTradeMinor: tradeFloor, retailMinor, tradeMinor,
-    belowMinimum: retailMinor < min.retailMinor, belowTradeMinimum: tradeMinor !== null && tradeMinor < tradeFloor,
-    inputsHash, category, ...s };
-}
+import { ENGINE_VERSION } from '../lib/economics/pricing';
+import type { MarginPolicy } from '../lib/config';
+export { pricingInput, computeScenarios } from './catEconomics';
+import { computeScenarios } from './catEconomics';
 
 export const simulate = query({
   args: { variantId: v.id('catVariants') },
@@ -113,7 +52,8 @@ export async function recordScenarios(ctx: MutationCtx, variantId: Id<'catVarian
   const last = await ctx.db.query('catScenarioResults').withIndex('by_variant_computed', (q) => q.eq('variantId', variantId)).order('desc').first();
   const id = last?.inputsHash === res.inputsHash && last.engineVersion === ENGINE_VERSION ? last._id : await ctx.db.insert('catScenarioResults', { variantId, inputsHash: res.inputsHash, scenarios: res.scenarios, minimumRetailMinor: res.minimumRetailMinor, computedAt: Date.now(), engineVersion: ENGINE_VERSION });
   // Reusing an identical calculation must still repair eligibility and holds.
-  await resolveHold(ctx, variantId, 'PRICING_UNVERIFIED', by, 'Current economics verified');
+  if (res.retailApproved) await resolveHold(ctx, variantId, 'PRICING_UNVERIFIED', by, 'Current economics verified');
+  else await openHold(ctx, variantId, 'PRICING_UNVERIFIED', 'A calculated candidate is not an approved retail price', by);
   // Commission prequalification against the full schedule (v2 §7): a visible state, never a hidden cap.
   if (res.referralQualified) {
     await resolveHold(ctx, variantId, 'COMMISSION_UNQUALIFIED', by, 'Full schedule supported');
@@ -164,6 +104,8 @@ export const approvePrice = indexedMutation({
     const field = a.channel === 'retail' ? 'retailPriceRevisionId' : 'tradePriceRevisionId';
     const now = Date.now();
     const current = cv[field] ? await ctx.db.get(cv[field]!) : null;
+    if (current && (current.variantId !== cv._id || current.channel !== a.channel))
+      throw new CommerceError('COST_REVIEW_REQUIRED', 'Price revision does not belong to this variant and channel');
     if (current) await ctx.db.patch(current._id, { status: 'superseded', effectiveTo: now });
     const id = await ctx.db.insert('catPriceRevisions', {
       variantId: cv._id,
@@ -205,7 +147,7 @@ export const assignPolicy = indexedMutation({
     const policy = (await activeConfig<MarginPolicy>(ctx, 'marginPolicy', a.policyKey)).value;
     if (policy.cohort && policy.cohort !== cv.cohort) throw new CommerceError('FORBIDDEN', `${a.policyKey} is limited to the ${policy.cohort} cohort and is never extended automatically`);
     if (policy.requiresDocumentRef && !a.documentRef?.trim()) throw new CommerceError('INVALID_INPUT', `${a.policyKey} needs the document that approves it`);
-    await ctx.db.patch(cv._id, { marginPolicyKey: a.policyKey, updatedAt: Date.now() });
+    await ctx.db.patch(cv._id, { marginPolicyKey: a.policyKey, marginPolicyDocumentRef: a.documentRef?.trim() || undefined, updatedAt: Date.now() });
     if (!policy.blocksAutomaticSale) await resolveHold(ctx, cv._id, 'MAP_FLOOR_UNAPPROVED', admin.email, `Policy ${a.policyKey}`);
     await recordScenarios(ctx, cv._id, admin.email);
     await audit(ctx, { actor: admin.email, action: 'policy.assign', entityTable: 'catVariants', entityId: cv._id, before: cv.marginPolicyKey, after: a.policyKey, reason: [a.reason, a.documentRef].filter(Boolean).join(' · ') });

@@ -317,6 +317,7 @@ async function setup(opts: { approveMixed?: boolean } = {}) {
       availability: 'in_stock',
       fulfillmentRoute: 'manual_dealer_zuo',
       marginPolicyKey: 'zuo-approved-5',
+      cohort: 'approved_306',
       holds: [],
       referralEligible: true,
       createdAt: 1,

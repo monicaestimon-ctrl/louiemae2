@@ -10,6 +10,10 @@ import type { HoldReason } from './v2Validators';
 import { stockView } from '../lib/stockEvidence';
 import { digest } from './dlvSecurity';
 import { zuoStockConstraint } from './supplierStockRead';
+import { costIntegrityIssue } from './catCostValidity';
+import { qualifyApprovedPrice } from './catEconomics';
+import { isCurrentPrice } from './catPriceValidity';
+export { isCurrentPrice } from './catPriceValidity';
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -58,7 +62,8 @@ export async function resolveHold(ctx: MutationCtx, variantId: Id<'catVariants'>
 export const FRESHNESS_HOLDS: readonly HoldReason[] = ['COST_MISSING', 'COST_STALE', 'COST_CONFLICT', 'COST_IMPLAUSIBLE', 'MAP_MISSING', 'MAP_ZERO', 'CARTON_MISSING', 'STOCK_UNVERIFIED'];
 
 export async function currentCost(ctx: Ctx, v: Doc<'catVariants'>) {
-  return v.currentCostRevisionId ? ctx.db.get(v.currentCostRevisionId) : null;
+  const cost = v.currentCostRevisionId ? await ctx.db.get(v.currentCostRevisionId) : null;
+  return cost?.variantId === v._id ? cost : null;
 }
 
 export async function freshnessPolicy(ctx: Ctx, key: string, simulate = false): Promise<FreshnessPolicy> {
@@ -87,6 +92,7 @@ export async function evaluate(ctx: Ctx, v: Doc<'catVariants'>, now = Date.now()
     policy,
     now,
   });
+  if (cost && costIntegrityIssue(cost, v, now) && !result.holds.includes('COST_IMPLAUSIBLE')) result.holds.push('COST_IMPLAUSIBLE');
   // A wholesale number does not make the variant cost-complete. Never publish or
   // generate new referrals by treating an unknown expense as a confirmed zero.
   if (cost && (
@@ -130,13 +136,6 @@ export async function refreshVariant(ctx: MutationCtx, variantId: Id<'catVariant
 
 export type SellPurpose = 'publish' | 'purchase' | 'link' | 'estimate';
 
-/** Approved prices belong to one exact variant/channel and a bounded effective window. */
-export function isCurrentPrice(price: Doc<'catPriceRevisions'> | null, variantId: Id<'catVariants'>, channel: 'retail' | 'trade', now = Date.now()): price is Doc<'catPriceRevisions'> {
-  return !!price && price.variantId === variantId && price.channel === channel &&
-    price.status === 'approved' && Number.isSafeInteger(price.packPriceMinor) && price.packPriceMinor > 0 &&
-    price.effectiveFrom <= now && (price.effectiveTo === undefined || price.effectiveTo > now);
-}
-
 /**
  * The single sellability gate (v2 §6). Throws a typed error unless the variant has no open
  * holds, current evidence, an allowed availability and (for purchase and links) an approved
@@ -162,6 +161,9 @@ export async function assertSellable(ctx: Ctx, variantId: Id<'catVariants'>, pur
     const priceId = priceChannel === 'retail' ? v.retailPriceRevisionId : v.tradePriceRevisionId;
     const price = priceId ? await ctx.db.get(priceId) : null;
     if (!isCurrentPrice(price, v._id, priceChannel, now)) throw new CommerceError('COST_REVIEW_REQUIRED', `No current approved ${priceChannel} price`);
+    await qualifyApprovedPrice(ctx, v, priceChannel, now);
+  } else {
+    await qualifyApprovedPrice(ctx, v, channel, now);
   }
   return v;
 }

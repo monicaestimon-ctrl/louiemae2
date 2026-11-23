@@ -23,9 +23,11 @@ const ADMIN = 'owner@louiemae.com';
 const NOW = Date.now();
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'], now: NOW });
   process.env.CJ_ADMIN_EMAILS = ADMIN;
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   delete process.env.CJ_ADMIN_EMAILS;
   delete process.env.DELIVERY_ADMIN_ROLES;
@@ -1064,6 +1066,93 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     const cv = (await t.run((ctx) => ctx.db.query('catVariants').first()))!;
     return { t, admin, cv, productId: cv.productId };
   }
+
+  it('rechecks live economics without a background hold refresh and never substitutes a candidate price', async () => {
+    const { t, cv } = await readyProduct();
+    await t.run(async ctx => {
+      await ctx.db.patch(cv.currentCostRevisionId!, { dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true });
+      await ctx.db.patch(cv._id, { holds: [], referralEligible: true });
+    });
+    await expect(t.run(ctx => assertSellable(ctx, cv._id, 'purchase', NOW))).resolves.toBeTruthy();
+    const cost = (await t.run(ctx => ctx.db.get(cv.currentCostRevisionId!)))!;
+    await t.run(ctx => ctx.db.patch(cost._id, { wholesaleMinor: 30000, wholesalePrecise: '300', mapMinor: 80000 }));
+    for (const purpose of ['publish', 'purchase', 'link', 'estimate'] as const)
+      await expect(t.run(ctx => assertSellable(ctx, cv._id, purpose, NOW))).rejects.toThrow(/does not fund/);
+    expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).toEqual([]);
+    await t.run(ctx => ctx.db.patch(cost._id, { wholesaleMinor: cost.wholesaleMinor, wholesalePrecise: cost.wholesalePrecise, mapMinor: cost.mapMinor }));
+    await t.run(ctx => ctx.db.patch(cv.retailPriceRevisionId!, { status: 'candidate' }));
+    const preview = await t.run(async ctx => computeScenarios(ctx, (await ctx.db.get(cv._id))!));
+    expect(preview.retailApproved).toBe(false);
+    expect(preview.referralQualified).toBe(false);
+    expect(preview.retailMinor).toBe(preview.minimumRetailMinor);
+    await expect(t.run(ctx => assertSellable(ctx, cv._id, 'publish', NOW))).rejects.toThrow(/No current approved/);
+  });
+
+  it('rejects foreign, future, malformed and inconsistent costs even after holds are cleared', async () => {
+    const { t, cv } = await readyProduct();
+    await t.run(async ctx => {
+      await ctx.db.patch(cv.currentCostRevisionId!, { dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true });
+      await ctx.db.patch(cv._id, { holds: [], referralEligible: true });
+    });
+    const cost = (await t.run(ctx => ctx.db.get(cv.currentCostRevisionId!)))!;
+    const other = await t.run(async ctx => {
+      const { _id: _id, _creationTime: _time, ...copy } = cv;
+      void _id; void _time;
+      return ctx.db.insert('catVariants', { ...copy, supplierSku: 'OTHER' });
+    });
+    for (const change of [{ variantId: other }, { effectiveFrom: NOW + 1 }, { supplierFeesMinor: -1 },
+      { wholesaleMinor: 1.5 }, { wholesalePrecise: '1' }, { wholesalePrecise: '-115' }, { mapMinor: -1 }]) {
+      await t.run(ctx => ctx.db.patch(cost._id, change));
+      await expect(t.run(ctx => assertSellable(ctx, cv._id, 'purchase', NOW))).rejects.toSatisfy(e => isCommerceError(e, 'COST_REVIEW_REQUIRED'));
+      const { _id, _creationTime, ...original } = cost; void _id; void _creationTime;
+      await t.run(ctx => ctx.db.replace(cost._id, original));
+    }
+    await t.run(ctx => ctx.db.patch(cv._id, { cohort: 'not-approved' }));
+    await expect(t.run(ctx => assertSellable(ctx, cv._id, 'purchase', NOW))).rejects.toThrow(/cohort/);
+  });
+
+  it('keeps a foreign channel price intact and records documented margin exception authority', async () => {
+    const { t, admin, cv } = await readyProduct();
+    await t.run(ctx => ctx.db.patch(cv.currentCostRevisionId!, { dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true }));
+    await t.run(ctx => ctx.db.patch(cv._id, { retailPriceRevisionId: cv.tradePriceRevisionId }));
+    await expect(admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, channel: 'retail', packPriceMinor: 99999, reason: 'Attempt to replace mismatched pointer' })).rejects.toThrow(/does not belong/);
+    expect((await t.run(ctx => ctx.db.get(cv.tradePriceRevisionId!)))?.status).toBe('approved');
+    await t.run(ctx => ctx.db.patch(cv._id, { retailPriceRevisionId: cv.retailPriceRevisionId }));
+    await expect(admin.mutation(api.catPricing.assignPolicy, { variantId: cv._id, policyKey: 'zuo-legacy-18', reason: 'Document required' })).rejects.toThrow(/document/);
+    await admin.mutation(api.catPricing.assignPolicy, { variantId: cv._id, policyKey: 'zuo-legacy-18', documentRef: 'fixture:approved-exception', reason: 'Synthetic documented exception' });
+    expect((await t.run(ctx => ctx.db.get(cv._id)))?.marginPolicyDocumentRef).toBe('fixture:approved-exception');
+    await t.run(ctx => ctx.db.patch(cv._id, { marginPolicyDocumentRef: undefined }));
+    await expect(t.run(async ctx => computeScenarios(ctx, (await ctx.db.get(cv._id))!))).rejects.toThrow(/approval document/);
+  });
+
+  it('withdraws an unfunded referral offer when the approved commission schedule rises', async () => {
+    const { t, cv } = await readyProduct();
+    await t.run(async ctx => {
+      await ctx.db.patch(cv.currentCostRevisionId!, { dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true });
+      await ctx.db.patch(cv._id, { holds: [], referralEligible: true });
+    });
+    await expect(t.run(ctx => assertSellable(ctx, cv._id, 'link', NOW))).resolves.toBeTruthy();
+    await t.run(async ctx => {
+      const config = (await ctx.db.query('sysConfig').withIndex('by_kind_key_version', q => q.eq('kind', 'commissionSchedule').eq('key', 'commission-schedule')).first())!;
+      const value = config.value as { tiers: { rates: { furniture: number } }[] };
+      value.tiers.at(-1)!.rates.furniture = 2000;
+      await ctx.db.patch(config._id, { value });
+    });
+    await expect(t.run(ctx => assertSellable(ctx, cv._id, 'link', NOW))).rejects.toThrow(/does not fund/);
+    expect((await t.run(ctx => ctx.db.get(cv._id)))?.referralEligible).toBe(true); // Read checks cannot rewrite earned terms or admin records.
+  });
+
+  it('qualifies trade independently of unavailable retail commission configuration', async () => {
+    const { t, cv } = await readyProduct();
+    await t.run(async ctx => {
+      await ctx.db.patch(cv.currentCostRevisionId!, { dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true });
+      await ctx.db.patch(cv._id, { holds: [], referralEligible: true });
+      const configs = await ctx.db.query('sysConfig').withIndex('by_kind_key_version', q => q.eq('kind', 'commissionSchedule')).collect();
+      for (const config of configs) await ctx.db.patch(config._id, { status: 'retired' });
+    });
+    await expect(t.run(ctx => assertSellable(ctx, cv._id, 'purchase', NOW, 'trade'))).resolves.toBeTruthy();
+    await expect(t.run(ctx => assertSellable(ctx, cv._id, 'link', NOW))).rejects.toThrow(/no approved version/);
+  });
 
   it('verifies canonical identity without publishing or resolving unrelated holds, and rejects conflicting mappings', async () => {
     const { t, admin, cv, productId } = await readyProduct();

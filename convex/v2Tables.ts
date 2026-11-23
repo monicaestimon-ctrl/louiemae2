@@ -242,6 +242,7 @@ export const v2Tables = {
     availabilityObservedAt: v.optional(v.number()),
     fulfillmentRoute,
     marginPolicyKey: v.optional(v.string()),
+    marginPolicyDocumentRef: v.optional(v.string()),
     cohort: v.optional(v.string()),
     currentCostRevisionId: v.optional(v.id('catCostRevisions')),
     currentStockRevisionId: v.optional(v.id('catStockRevisions')),
