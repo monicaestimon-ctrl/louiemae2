@@ -55,6 +55,7 @@ async function qualifiedRetailTarget(ctx: QueryCtx, productId: Id<'commerceProdu
     throw new CommerceError('REFERRAL_INELIGIBLE', 'Retail variant unavailable', 'This option is not currently available for retail referrals.');
   const cv = await catVariantFor(ctx, target.productId, target.variantId);
   if (!cv || cv.holds.length || cv.referralEligible !== true) throw new CommerceError('REFERRAL_INELIGIBLE', 'Not prequalified');
+  if (cv.availability === 'discontinued') throw new CommerceError('REFERRAL_INELIGIBLE', 'Discontinued', 'This item is no longer sold, so it has no retail referral link.');
   const product = await ctx.db.get(target.productId);
   if (product?.provider === 'zuo') await assertSellable(ctx, cv._id, 'link');
   const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', target.productId)).first();

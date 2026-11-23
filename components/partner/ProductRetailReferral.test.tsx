@@ -9,7 +9,7 @@ const eligible = { status: 'eligible', category: 'decor', applicableRateBps: 800
 const props = { productId: 'lamp', variantId: 'brass', viewerKey: 'one', onAccount: vi.fn() };
 beforeEach(() => {
   mocks.query.mockReturnValue({ status: 'ready', data: eligible, retry: mocks.retry });
-  mocks.create.mockResolvedValue({ url: 'https://www.louiemae.com/r/example' });
+  mocks.create.mockResolvedValue({ url: 'https://www.louiemae.com/r/example', category: eligible.category, applicableRateBps: eligible.applicableRateBps, exceptionNote: eligible.exceptionNote });
   mocks.copy.mockResolvedValue(undefined);
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: mocks.copy } });
 });
@@ -25,6 +25,28 @@ it('shows the current rate and retail destination, and only creates a link on re
   expect(mocks.create).toHaveBeenCalledWith({ productId: 'lamp', variantId: 'brass', channelTag: 'share' });
   expect(mocks.copy).toHaveBeenCalledWith('https://www.louiemae.com/r/example');
   expect(screen.getByRole('textbox').getAttribute('value')).toBe('https://www.louiemae.com/r/example');
+  expect(screen.getByText(/8% of eligible merchandise paid/)).toBeTruthy();
+  expect(mocks.retry).toHaveBeenCalledOnce();
+});
+
+it('shows creation-time terms before confirming copy and lets later queries replace them', async () => {
+  let finishCopy!: () => void;
+  mocks.copy.mockImplementationOnce(() => new Promise<void>(resolve => { finishCopy = resolve; }));
+  mocks.create.mockResolvedValueOnce({ url: 'https://www.louiemae.com/r/new', category: 'furniture', applicableRateBps: 500, exceptionNote: 'Approved 5% exception.' });
+  const view = render(<ProductRetailReferral {...props} />);
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Copy retail referral link' })));
+  expect(screen.getByText('Furniture')).toBeTruthy();
+  expect(screen.getByText(/5% of eligible merchandise paid/)).toBeTruthy();
+  expect(screen.getByText('Approved 5% exception.')).toBeTruthy();
+  expect(screen.queryByText(/8% of eligible merchandise paid/)).toBeNull();
+  expect(screen.queryByText(/Retail referral link copied/)).toBeNull();
+  expect(mocks.retry).toHaveBeenCalledOnce();
+  await act(async () => finishCopy());
+  expect(screen.getByText(/Retail referral link copied/)).toBeTruthy();
+  mocks.query.mockReturnValue({ status: 'ready', data: { ...eligible, applicableRateBps: 900, exceptionNote: null }, retry: mocks.retry });
+  view.rerender(<ProductRetailReferral {...props} />);
+  expect(screen.getByText(/9% of eligible merchandise paid/)).toBeTruthy();
+  expect(screen.queryByText('Approved 5% exception.')).toBeNull();
 });
 
 it('offers manual copy when clipboard access fails', async () => {

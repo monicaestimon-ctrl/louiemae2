@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useMutation } from 'convex/react';
+import type { FunctionReturnType } from 'convex/server';
 import { api } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
 import { useRecoverableQuery } from '../../contexts/useRecoverableQuery';
 import { customerMessage } from '../../lib/errors';
 
 type Props = { productId: string; variantId: string; viewerKey: string; onAccount: () => void };
+type EligiblePreview = Extract<FunctionReturnType<typeof api.prgLinks.preview>, { status: 'eligible' }>;
 
 /** Identity changes discard pending commands and copied URLs as well as query state. */
 export default function ProductRetailReferral(props: Props) {
@@ -21,12 +23,17 @@ function Referral({ productId, variantId, onAccount }: Props) {
   const mounted = useRef(true);
   const [link, setLink] = useState('');
   const [message, setMessage] = useState('');
+  const latestPreview = useRef(result.data);
+  const [confirmed, setConfirmed] = useState<{ source: EligiblePreview; value: EligiblePreview } | null>(null);
+  useEffect(() => { latestPreview.current = result.data; }, [result.data]);
   useEffect(() => {
     mounted.current = true;
     const timer = window.setInterval(() => setRefreshToken(value => Math.max(Date.now(), value + 1)), 30_000);
     return () => { mounted.current = false; window.clearInterval(timer); };
   }, []);
-  const preview = result.data;
+  // Creation is newer authority than the preview it followed. A later query
+  // result supersedes this temporary display; it cannot preserve stale eligibility.
+  const preview = confirmed && confirmed.source === result.data ? confirmed.value : result.data;
   const copy = async () => {
     if (pending.current || preview?.status !== 'eligible') return;
     pending.current = true;
@@ -35,6 +42,10 @@ function Referral({ productId, variantId, onAccount }: Props) {
       // Always revalidate on the server, even when the preview was eligible.
       const created = await create({ productId: productId as Id<'commerceProducts'>, variantId, channelTag: 'share' });
       if (!mounted.current) return;
+      const source = latestPreview.current;
+      if (source?.status === 'eligible' && created.category !== undefined && created.applicableRateBps !== undefined)
+        setConfirmed({ source, value: { ...source, category: created.category, applicableRateBps: created.applicableRateBps, exceptionNote: created.exceptionNote ?? null } });
+      result.retry();
       setLink(created.url);
       try {
         await navigator.clipboard.writeText(created.url);

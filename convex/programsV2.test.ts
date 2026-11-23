@@ -144,7 +144,7 @@ describe('retail links and attribution (S26, S27, REF01â€“REF03)', () => {
     expect(await s.t.run(ctx => ctx.db.query('prgReferralLinks').collect())).toHaveLength(0);
   });
 
-  it.each(['cost', 'expired-stock', 'hold', 'withdrawn'] as const)('refuses %s products despite a previous qualification flag', async problem => {
+  it.each(['cost', 'expired-stock', 'hold', 'withdrawn', 'discontinued'] as const)('refuses %s products despite a previous qualification flag', async problem => {
     const s = await setup();
     const fx = await linkFixture(s);
     const u = await s.user('changed@studio.com');
@@ -154,10 +154,12 @@ describe('retail links and attribution (S26, S27, REF01â€“REF03)', () => {
       if (problem === 'expired-stock') await ctx.db.patch(fx.feedId, { validUntil: Date.now() - 1 });
       if (problem === 'hold') await ctx.db.patch(fx.variantId, { holds: ['COST_MISSING'] });
       if (problem === 'withdrawn') await ctx.db.patch(fx.retailListingId, { published: false });
+      if (problem === 'discontinued') await ctx.db.patch(fx.variantId, { availability: 'discontinued' });
     });
     const args = { productId: fx.retailId, variantId: 'v1' };
     expect(await u.as.query(api.prgLinks.preview, args)).toMatchObject({ status: 'unavailable' });
     await expect(u.as.mutation(api.prgLinks.create, { ...args, channelTag: 'share' })).rejects.toThrow();
+    expect(await s.t.run(ctx => ctx.db.query('prgReferralLinks').collect())).toHaveLength(0);
   });
 
   it('builds a Louie Mae link from a HOLM variant through its mapping, and refuses unmapped pieces', async () => {
