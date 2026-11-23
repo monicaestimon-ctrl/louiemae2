@@ -1154,6 +1154,54 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     await expect(t.run(ctx => assertSellable(ctx, cv._id, 'link', NOW))).rejects.toThrow(/no approved version/);
   });
 
+  it('keeps unfunded commission promises blocked across repeated recomputation', async () => {
+    const { t, cv } = await readyProduct();
+    await t.run(async ctx => {
+      await ctx.db.patch(cv.currentCostRevisionId!, { dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true });
+      await ctx.db.patch(cv._id, { holds: [], referralEligible: true });
+      await ctx.db.patch(cv.retailPriceRevisionId!, { packPriceMinor: 44000 });
+    });
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await t.run(ctx => recordScenarios(ctx, cv._id, 'fixture'));
+      expect(await t.run(ctx => ctx.db.get(cv._id))).toMatchObject({ referralEligible: true,
+        holds: expect.arrayContaining(['COMMISSION_UNQUALIFIED', 'MARGIN_BELOW_POLICY']) });
+      await expect(t.run(ctx => assertSellable(ctx, cv._id, 'purchase', NOW))).rejects.toThrow();
+    }
+  });
+
+  it('keeps funded trade purchasable after retail approval expires, without bypassing other holds', async () => {
+    const { t, cv } = await readyProduct();
+    await t.run(async ctx => {
+      await ctx.db.patch(cv.currentCostRevisionId!, { dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true });
+      await ctx.db.patch(cv._id, { holds: [], referralEligible: true });
+      await ctx.db.patch(cv.retailPriceRevisionId!, { effectiveTo: NOW });
+    });
+    await t.run(ctx => recordScenarios(ctx, cv._id, 'fixture'));
+    await expect(t.run(ctx => assertSellable(ctx, cv._id, 'purchase', NOW, 'trade'))).resolves.toBeTruthy();
+    await expect(t.run(ctx => assertSellable(ctx, cv._id, 'purchase', NOW, 'retail'))).rejects.toThrow();
+    await t.run(ctx => ctx.db.patch(cv._id, { holds: ['MANUAL'] }));
+    await expect(t.run(ctx => assertSellable(ctx, cv._id, 'purchase', NOW, 'trade'))).rejects.toThrow(/MANUAL/);
+  });
+
+  it('fails strict referral qualification without recording success when approval or costs are invalid', async () => {
+    const { t, admin, cv } = await readyProduct();
+    await t.run(async ctx => {
+      await ctx.db.patch(cv.currentCostRevisionId!, { dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true });
+      await ctx.db.patch(cv._id, { holds: [], referralEligible: false });
+      await ctx.db.patch(cv.retailPriceRevisionId!, { effectiveTo: NOW });
+    });
+    await expect(t.run(ctx => recordScenarios(ctx, cv._id, 'fixture', { requireReferralQualification: true }))).rejects.toThrow(/does not fund/);
+    expect(await t.run(ctx => ctx.db.query('catScenarioResults').collect())).toHaveLength(0);
+    await t.run(async ctx => {
+      await ctx.db.patch(cv.retailPriceRevisionId!, { effectiveTo: undefined });
+      await ctx.db.patch(cv.currentCostRevisionId!, { feesConfirmedZero: false });
+    });
+    await expect(admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, eligible: true, reason: 'Cannot activate unknown expenses' })).rejects.toThrow();
+    expect((await t.run(ctx => ctx.db.get(cv._id)))?.referralEligible).toBe(false);
+    expect(await t.run(ctx => ctx.db.query('catScenarioResults').collect())).toHaveLength(0);
+    expect((await t.run(ctx => ctx.db.query('sysAuditEvents').collect())).filter(e => e.action === 'referral.enable')).toHaveLength(0);
+  });
+
   it('funds explicitly non-referral retail offers without silently qualifying them for commissions', async () => {
     const { t, admin, cv, productId } = await readyProduct();
     await t.run(async ctx => {
@@ -1308,7 +1356,7 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
       await ctx.db.patch(cv._id, { holds: current.holds.filter(h => h !== 'MARGIN_BELOW_POLICY' && h !== 'COMMISSION_UNQUALIFIED'), referralEligible: true });
     });
     expect(await t.run(ctx => recordScenarios(ctx, cv._id, 'fixture'))).toBe(scenarioId);
-    expect(await t.run(ctx => ctx.db.get(cv._id))).toMatchObject({ referralEligible: false, holds: expect.arrayContaining(['MARGIN_BELOW_POLICY', 'COMMISSION_UNQUALIFIED']) });
+    expect(await t.run(ctx => ctx.db.get(cv._id))).toMatchObject({ referralEligible: true, holds: expect.arrayContaining(['MARGIN_BELOW_POLICY', 'COMMISSION_UNQUALIFIED']) });
     await expect(admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, eligible: true, reason: 'Attempt to override qualification' })).rejects.toThrow();
     await admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, channel: 'trade', packPriceMinor: 42000, reason: 'Trade price reviewed' });
     expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).toContain('MARGIN_BELOW_POLICY');

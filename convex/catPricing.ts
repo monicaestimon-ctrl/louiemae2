@@ -38,31 +38,39 @@ export const simulate = query({
 });
 
 /** Records scenario results for variants. Never changes an approved price; differences are flagged. */
-export async function recordScenarios(ctx: MutationCtx, variantId: Id<'catVariants'>, by: string) {
+export async function recordScenarios(ctx: MutationCtx, variantId: Id<'catVariants'>, by: string, options: { requireReferralQualification?: boolean } = {}) {
   const cv = await ctx.db.get(variantId);
-  if (!cv) return null;
+  if (!cv) {
+    if (options.requireReferralQualification) throw new CommerceError('INVALID_INPUT', 'Variant not found');
+    return null;
+  }
   let res;
   try {
-    res = await computeScenarios(ctx, cv, { reserveRetailCommission: cv.referralEligible !== false });
+    res = await computeScenarios(ctx, cv, { reserveRetailCommission: options.requireReferralQualification || cv.referralEligible !== false });
   } catch (e) {
+    if (options.requireReferralQualification) throw e;
     await openHold(ctx, variantId, 'PRICING_UNVERIFIED', 'Current economics could not be verified', by);
     await openReview(ctx, 'pricing_blocked', 'catVariants', variantId, commerceErrorData(e)?.detail ?? String((e as Error).message));
     return null;
   }
+  // Activation is atomic: never turn a failed calculation into a successful opt-in.
+  if (options.requireReferralQualification && (!res.referralQualified || res.belowMinimum))
+    throw new CommerceError('REFERRAL_INELIGIBLE', 'The approved retail price does not fund its current commission and margin policy');
   const last = await ctx.db.query('catScenarioResults').withIndex('by_variant_computed', (q) => q.eq('variantId', variantId)).order('desc').first();
   const id = last?.inputsHash === res.inputsHash && last.engineVersion === ENGINE_VERSION ? last._id : await ctx.db.insert('catScenarioResults', { variantId, inputsHash: res.inputsHash, scenarios: res.scenarios, minimumRetailMinor: res.minimumRetailMinor, computedAt: Date.now(), engineVersion: ENGINE_VERSION });
   // Reusing an identical calculation must still repair eligibility and holds.
-  if (res.retailApproved) await resolveHold(ctx, variantId, 'PRICING_UNVERIFIED', by, 'Current economics verified');
-  else await openHold(ctx, variantId, 'PRICING_UNVERIFIED', 'A calculated candidate is not an approved retail price', by);
+  // Approval validity is channel-specific and checked by assertSellable. A missing retail
+  // approval must not create a variant-wide blocker for a current funded trade offer.
+  await resolveHold(ctx, variantId, 'PRICING_UNVERIFIED', by, 'Current economics verified');
   // Commission prequalification against the full schedule (v2 §7): a visible state, never a hidden cap.
-  if (cv.referralEligible === false) {
+  if (cv.referralEligible === false && !options.requireReferralQualification) {
     await resolveHold(ctx, variantId, 'COMMISSION_UNQUALIFIED', by, 'Referrals explicitly disabled; direct-sale economics checked');
   } else if (res.referralQualified) {
     await resolveHold(ctx, variantId, 'COMMISSION_UNQUALIFIED', by, 'Full schedule supported');
     if (cv.referralEligible === undefined) await ctx.db.patch(variantId, { referralEligible: true });
   } else {
     await openHold(ctx, variantId, 'COMMISSION_UNQUALIFIED', 'Full-schedule commission scenario is below the margin policy', by);
-    if (cv.referralEligible) await ctx.db.patch(variantId, { referralEligible: false });
+    // Keep the eligibility decision: a failed computation is not an administrator opt-out.
   }
   if (res.belowMinimum || res.belowTradeMinimum) {
     const detail = `Retail ${res.retailMinor} / minimum ${res.minimumRetailMinor}; trade ${res.tradeMinor ?? 'unapproved'} / minimum ${res.minimumTradeMinor}`;
