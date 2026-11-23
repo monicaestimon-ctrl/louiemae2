@@ -10,7 +10,7 @@ import { openReview } from './sysCore';
 import { notify } from './sysNotify';
 import { flagStates, payoutRoute } from '../lib/flags';
 import { deliveryAlerts } from './dlvTelemetry';
-import { localParts } from '../lib/tiers';
+import { previousLocalDate } from '../lib/tiers';
 import type { TierPolicy } from '../lib/config';
 
 type Ctx = QueryCtx | MutationCtx;
@@ -40,10 +40,10 @@ export async function evaluateAlerts(ctx: Ctx, now = Date.now()): Promise<Alert[
   if (payoutRoute() === 'conflict') alerts.push({ key: 'payout_route_conflict', title: 'Both payout routes are switched on', detail: 'Turn off PARTNER_PAYOUTS_ENABLED or PAYOUT_EXECUTION_ENABLED; neither will run until one is off.' });
   const tierPolicy = await maybeConfig<TierPolicy>(ctx, 'tierPolicy', 'tier-policy');
   if (tierPolicy) {
-    const yesterday = localParts(now - 86_400_000, tierPolicy.value.tz).date;
-    const ran = await ctx.db.query('prgTierSnapshots').withIndex('by_reason_date', (q) => q.eq('reason', 'daily').eq('localDate', yesterday)).first();
+    const yesterday = previousLocalDate(now, tierPolicy.value.tz);
+    const ran = await ctx.db.query('prgTierRuns').withIndex('by_date', q => q.eq('localDate', yesterday)).unique();
     const anyBeneficiary = await ctx.db.query('prgBeneficiaries').withIndex('by_status', (q) => q.eq('status', 'active')).first();
-    if (anyBeneficiary && !ran) alerts.push({ key: `tier_job_missed_${yesterday}`, title: 'Daily tier job did not run', detail: `No daily tier snapshot for ${yesterday}` });
+    if (anyBeneficiary && ran?.status !== 'complete') alerts.push({ key: `tier_job_missed_${yesterday}`, title: 'Daily tier job did not complete', detail: `No complete daily tier run for ${yesterday}; status: ${ran?.status ?? 'missing'}` });
   }
   const published = await ctx.db.query('catProductMeta').withIndex('by_stage', (q) => q.eq('stage', 'published')).take(300);
   for (const m of published) {
