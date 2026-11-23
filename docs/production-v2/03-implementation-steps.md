@@ -805,3 +805,11 @@ Status: in progress: 06-release-checklist.md lists the owner actions; activation
 8. Any money-moving function whose verification is unauthorized or incomplete stays disabled, and the unmet gate is reported.
 
 **Exit criteria.** The definition of done in 05 §5.
+
+### S27/S28 follow-up: historical basket rates
+
+Generic retail links and other products in an attributed basket resolve the exact approved commission schedule recorded on the winning click, including a retired version. They use the SKU exception effective at the click and reconstruct audited category changes. A linked product retains its original product-rate snapshot. The applied rate remains the higher of the protected rate and the current eligible rate. Earlier click and attribution records are not rewritten.
+
+Exception schedules require exactly one entry for every tier. Future versions cannot hide the current exception; backdated/out-of-order writes, overlapping effective periods, incomplete schedules and missing or oversized history require review. Millisecond-equal schedule retirement retains the recorded click version; an ambiguous category transition at the exact click timestamp requires review.
+
+This closes the historical-rate calculation gap found during the release audit. It does not certify SKU economics, activate program flags or substitute for authenticated production acceptance. Interval-aware commission reserves and supplier-specific qualification remain separate audit work.

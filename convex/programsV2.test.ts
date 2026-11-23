@@ -4,9 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { convexTest } from 'convex-test';
 import schema from './schema';
 import { api, internal } from './_generated/api';
-import { snapshotForIntent } from './prgAttribution';
+import { productRate, schedule, snapshotForIntent } from './prgAttribution';
+import { historicalSchedule } from './prgRateHistory';
 import { recompute } from './prgTiers';
 import { isCommerceError } from '../lib/errors';
+import { TIER_ORDER } from '../lib/tiers';
 
 const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 const ADMIN = 'owner@louiemae.com';
@@ -249,5 +251,132 @@ describe('tiers v2 (S28, REF04)', () => {
     expect((await s.t.run((ctx) => recompute(ctx, ben._id, 'event', 'w3')))!.tier).toBe('active');
     const tier = await u.as.query(api.prgTiers.myTier, {});
     expect(tier).toMatchObject({ tier: 'active', next: 'top' });
+  });
+});
+
+const exceptionRates = (rateBps: number) => TIER_ORDER.map(tierKey => ({ tierKey, rateBps }));
+async function protectionFixture(kind: 'generic' | 'cross-product' | 'product' = 'generic') {
+  const s = await setup();
+  const linked = await linkFixture(s);
+  const fx = kind === 'cross-product' ? await linkFixture(s) : linked;
+  const u = await s.user('protected@studio.com');
+  await enrollCreator(s, u.as);
+  const link = await u.as.mutation(api.prgLinks.create, kind === 'generic' ? { path: '/', channelTag: 'share' } : { productId: linked.retailId, variantId: 'v1', channelTag: 'share' });
+  const visitorKey = 'protected-visitor-12345';
+  await s.t.mutation(api.prgAttribution.recordClick, { linkId: link.linkId, visitorKey, userAgent: 'Mozilla/5.0', consent: 'granted' });
+  const click = (await s.t.run(ctx => ctx.db.query('prgReferralClicks').first()))!;
+  const intentId = await s.t.run(async ctx => {
+    const estimateId = await ctx.db.insert('dlvEstimates', { channel: 'retail', destination: { zip: '95206', precision: 'zip' }, service: 'curbside', lines: [], groups: [], status: 'ok', merchandiseMinor: 0, discountMinor: 0, creditMinor: 0, expiresAt: 0, cartHash: '', sourceVersionsHash: '', internal: {}, createdAt: 0 });
+    return ctx.db.insert('ordCheckoutIntents', { idempotencyKey: 'protected-intent', estimateId, cartHash: '', channel: 'retail', buyer: {}, lineSnapshot: [], merchandiseMinor: 0, deliveryMinor: 0, taxMinor: 0, creditMinor: 0, totalMinor: 0, status: 'created', expiresAt: 0, createdAt: 0 });
+  });
+  const takeSnapshot = async (category: 'furniture' | 'decor' = 'furniture') => {
+    const id = await s.t.run(ctx => snapshotForIntent(ctx, { intentId, visitorKey, buyer: {}, channel: 'retail', lines: [{ lineKey: 'line', productId: fx.retailId, variantId: fx.variantId, category }] }));
+    return s.t.run(ctx => ctx.db.get(id!));
+  };
+  const reduce = async () => {
+    const old = (await s.t.run(ctx => schedule(ctx))).value;
+    await approveConfig(s, 'commission-schedule', { ...old, tiers: old.tiers.map(tier => tier.key === 'base' ? { ...tier, rates: { ...tier.rates, furniture: 700 } } : tier) });
+  };
+  vi.setSystemTime(Date.now() + 1000);
+  return { ...s, fx, click, takeSnapshot, reduce };
+}
+
+describe('historical basket rate protection (S27, REF03)', () => {
+  it.each(['generic', 'cross-product'] as const)('protects the recorded schedule for a %s click and honors a later tier increase', async kind => {
+    const s = await protectionFixture(kind);
+    const before = await s.takeSnapshot();
+    await s.reduce();
+    const reduced = await s.takeSnapshot();
+    expect(reduced!.lines[0]).toMatchObject({ protectedRateBps: 1000, currentRateBps: 700, appliedRateBps: 1000 });
+    await s.t.run(ctx => ctx.db.patch(s.click.beneficiaryId, { tierKey: 'active' }));
+    expect((await s.takeSnapshot())!.lines[0]).toMatchObject({ protectedRateBps: 1000, currentRateBps: 1200, appliedRateBps: 1200 });
+    expect(await s.t.run(ctx => ctx.db.get(before!._id))).toEqual(before);
+    expect(await s.t.run(ctx => ctx.db.get(s.click._id))).toEqual(s.click);
+  });
+
+  it.each(['generic', 'product'] as const)('protects the old category for a %s link without rewriting it', async kind => {
+    const s = await protectionFixture(kind);
+    await s.admin.mutation(api.catCategories.commit, { productIds: [s.fx.retailId], category: 'decor', reason: 'Correct lighting category' });
+    expect((await s.takeSnapshot('decor'))!.lines[0]).toMatchObject({ category: 'decor', protectedRateBps: 1000, currentRateBps: 800, appliedRateBps: 1000 });
+  });
+
+  it('uses the exception in force at the click even after replacement and expiry', async () => {
+    const s = await protectionFixture();
+    await s.t.run(async ctx => {
+      await ctx.db.insert('prgSkuCommissionExceptions', { productId: s.fx.retailId, rates: exceptionRates(900), visibleNote: 'Earlier rate', effectiveFrom: s.click.at - 10, effectiveTo: s.click.at + 10, approvedBy: ADMIN, version: 1, createdAt: s.click.at - 10 });
+      await ctx.db.insert('prgSkuCommissionExceptions', { productId: s.fx.retailId, rates: exceptionRates(500), visibleNote: 'Current rate', effectiveFrom: s.click.at + 10, approvedBy: ADMIN, version: 2, createdAt: s.click.at + 10 });
+    });
+    expect((await s.takeSnapshot())!.lines[0]).toMatchObject({ protectedRateBps: 900, currentRateBps: 500, appliedRateBps: 900 });
+  });
+
+  it.each(['generic', 'cross-product', 'product'] as const)('handles same-millisecond exception replacement for a %s click', async kind => {
+    const s = await protectionFixture(kind);
+    await s.t.run(async ctx => {
+      await ctx.db.insert('prgSkuCommissionExceptions', { productId: s.fx.retailId, rates: exceptionRates(900), visibleNote: 'Earlier rate', effectiveFrom: s.click.at - 10, effectiveTo: s.click.at, approvedBy: ADMIN, version: 1, createdAt: s.click.at - 10 });
+      await ctx.db.insert('prgSkuCommissionExceptions', { productId: s.fx.retailId, rates: exceptionRates(500), visibleNote: 'Replacement', effectiveFrom: s.click.at, approvedBy: ADMIN, version: 2, createdAt: s.click.at });
+    });
+    // Current reads remain well-defined, even at the creation timestamp.
+    expect(await s.t.run(async ctx => productRate(ctx, s.fx.retailId, 'base', 'furniture', (await schedule(ctx)).value, s.click.at))).toMatchObject({ rateBps: 500 });
+    if (kind === 'product') {
+      expect((await s.takeSnapshot())!.lines[0]).toMatchObject({ protectedRateBps: 1000, currentRateBps: 500, appliedRateBps: 1000 });
+    } else {
+      await expect(s.takeSnapshot()).rejects.toSatisfy(error => isCommerceError(error, 'COST_REVIEW_REQUIRED'));
+      expect(await s.t.run(ctx => ctx.db.query('prgAttributionSnapshots').collect())).toHaveLength(0);
+    }
+  });
+
+  it.each(['missing', 'rejected', 'malformed', 'duplicate', 'not-effective'] as const)('refuses %s historical configuration instead of substituting current rates', async problem => {
+    const s = await protectionFixture();
+    await s.reduce();
+    await s.t.run(async ctx => {
+      const old = (await ctx.db.query('sysConfig').withIndex('by_kind_key_version', q => q.eq('kind', 'commissionSchedule').eq('key', 'commission-schedule').eq('version', s.click.rateSnapshot.scheduleVersion)).first())!;
+      if (problem === 'missing') await ctx.db.delete(old._id);
+      if (problem === 'rejected') await ctx.db.patch(old._id, { status: 'rejected' });
+      if (problem === 'malformed') await ctx.db.patch(old._id, { value: { ceilingBps: 2300, tiers: [] } });
+      if (problem === 'not-effective') await ctx.db.patch(old._id, { effectiveTo: s.click.at - 1 });
+      if (problem === 'duplicate') { const { _id, _creationTime, ...copy } = old; void _id; void _creationTime; await ctx.db.insert('sysConfig', copy); }
+    });
+    await expect(s.takeSnapshot()).rejects.toSatisfy(error => isCommerceError(error, 'COST_REVIEW_REQUIRED'));
+    expect(await s.t.run(ctx => ctx.db.query('prgAttributionSnapshots').collect())).toHaveLength(0);
+  });
+
+  it('keeps the recorded version when retirement follows in the same millisecond', async () => {
+    const s = await protectionFixture();
+    vi.setSystemTime(s.click.at);
+    await s.reduce();
+    expect(await s.t.run(ctx => historicalSchedule(ctx, s.click.rateSnapshot.scheduleVersion, s.click.at))).toMatchObject({ tiers: [{ key: 'base', rates: { furniture: 1000 } }, {}, {}, {}] });
+    expect((await s.takeSnapshot())!.lines[0].appliedRateBps).toBe(1000);
+  });
+});
+
+describe('complete effective SKU exceptions (S28)', () => {
+  it('future rows cannot hide the currently applicable exception', async () => {
+    const s = await protectionFixture();
+    await s.admin.mutation(api.prgLinks.createException, { productId: s.fx.retailId, rates: exceptionRates(500), visibleNote: 'Visible 5% exception' });
+    for (let i = 1; i <= 12; i++) await s.admin.mutation(api.prgLinks.createException, { productId: s.fx.retailId, rates: exceptionRates(400), visibleNote: 'Future exception', effectiveFrom: Date.now() + i * 10000 });
+    const rate = await s.t.run(async ctx => productRate(ctx, s.fx.retailId, 'base', 'furniture', (await schedule(ctx)).value));
+    expect(rate).toMatchObject({ rateBps: 500, exceptionVersion: 1, exceptionNote: 'Visible 5% exception' });
+  });
+
+  it('rejects duplicated tiers and backdated or out-of-order changes without writing', async () => {
+    const s = await protectionFixture();
+    const args = { productId: s.fx.retailId, visibleNote: 'Exception', rates: exceptionRates(500) };
+    await expect(s.admin.mutation(api.prgLinks.createException, { ...args, rates: Array(4).fill({ tierKey: 'base', rateBps: 500 }) })).rejects.toSatisfy(error => isCommerceError(error, 'INVALID_INPUT'));
+    await expect(s.admin.mutation(api.prgLinks.createException, { ...args, effectiveFrom: Date.now() - 1 })).rejects.toSatisfy(error => isCommerceError(error, 'INVALID_INPUT'));
+    expect(await s.t.run(ctx => ctx.db.query('prgSkuCommissionExceptions').collect())).toHaveLength(0);
+    await s.admin.mutation(api.prgLinks.createException, { ...args, effectiveFrom: Date.now() + 10000 });
+    await expect(s.admin.mutation(api.prgLinks.createException, args)).rejects.toSatisfy(error => isCommerceError(error, 'INVALID_INPUT'));
+    expect(await s.t.run(ctx => ctx.db.query('prgSkuCommissionExceptions').collect())).toHaveLength(1);
+  });
+
+  it.each(['duplicate-tier', 'overlap', 'over-limit', 'reversed-period', 'empty-period'] as const)('blocks %s existing history instead of a hidden category fallback', async problem => {
+    const s = await protectionFixture();
+    await s.t.run(async ctx => {
+      const row = { productId: s.fx.retailId, rates: problem === 'duplicate-tier' ? Array(4).fill({ tierKey: 'base' as const, rateBps: 500 }) : exceptionRates(500), visibleNote: 'Exception', effectiveFrom: Date.now() - 1000, approvedBy: ADMIN, version: 1, createdAt: Date.now() - 1000 };
+      await ctx.db.insert('prgSkuCommissionExceptions', { ...row, ...(problem === 'reversed-period' ? { effectiveTo: row.effectiveFrom - 1 } : problem === 'empty-period' ? { effectiveTo: row.effectiveFrom } : {}) });
+      if (problem === 'overlap') await ctx.db.insert('prgSkuCommissionExceptions', { ...row, version: 2 });
+      if (problem === 'over-limit') for (let i = 0; i < 100; i++) await ctx.db.insert('prgSkuCommissionExceptions', { ...row, effectiveTo: s.click.at - 1, version: i + 2 });
+    });
+    await expect(s.t.run(async ctx => productRate(ctx, s.fx.retailId, 'elite', 'furniture', (await schedule(ctx)).value))).rejects.toSatisfy(error => isCommerceError(error, 'COST_REVIEW_REQUIRED'));
   });
 });
