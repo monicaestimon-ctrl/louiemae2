@@ -23,7 +23,7 @@ export default function InventoryCommitments({ variantId }: { variantId: Id<'cat
   const ashcroft = data.supplierCode === 'ashcroft';
   const sourceReady = ashcroft ? !!feedId : !!revision;
   return (
-    <details className="border p-3 mt-4">
+    <details className="border p-3 mt-4 break-words">
       <summary>Paid inventory commitments awaiting supplier reconciliation</summary>
       <p>
         Paid quantities remain deducted until a newer verified supplier count accounts for the
@@ -45,7 +45,7 @@ export default function InventoryCommitments({ variantId }: { variantId: Id<'cat
               : `${row.piecesPerPack ?? 'Unknown'} pieces per pack`}
             {data.canReconcile && (
               <button
-                className="border p-1 m-1"
+                className="border p-1 m-1 max-w-full break-all"
                 disabled={busy}
                 onClick={() => {
                   setSelected(row.id);
@@ -133,7 +133,7 @@ export default function InventoryCommitments({ variantId }: { variantId: Id<'cat
               required
               checked={confirmed}
               onChange={(e) => setConfirmed(e.target.checked)}
-            />
+            />{' '}
             I verified that this newer {ashcroft ? 'Ashcroft selling-unit inventory' : 'warehouse available-to-sell'} count already accounts for this exact paid allocation.
           </label>
           {stale && (
