@@ -38,15 +38,30 @@ export function ashcroftReservationBasis(cv: Doc<'catVariants'>, feedId: Id<'ash
   return { inventoryBasis: 'ashcroft_selling_unit' as const, supplierSku: cv.supplierSku, ashcroftFeedId: feedId };
 }
 
+/** Prove historical paid selling units from the immutable intent, never infer an original feed. */
+async function legacyPaidAshcroftMatches(ctx: Ctx, cv: Doc<'catVariants'>, row: Doc<'ordInventoryReservations'>) {
+  if (row.status !== 'consumed' || !Number.isSafeInteger(row.packs) || row.packs < 1
+    || (row.inventoryBasis !== undefined && row.inventoryBasis !== 'ashcroft_selling_unit')
+    || (row.supplierSku !== undefined && row.supplierSku !== cv.supplierSku)
+    || row.warehouseId !== undefined || (row.piecesPerPack !== undefined && row.piecesPerPack !== 1)) return false;
+  const intent = await ctx.db.get(row.intentId);
+  const lines = intent?.lineSnapshot.filter(l => l.variantId === cv._id) ?? [];
+  return !!intent && ['paid', 'exception'].includes(intent.status) && lines.length > 0
+    && lines.every(l => l.productId === cv.productId && l.supplierCode === 'ashcroft'
+      && l.supplierSku === cv.supplierSku && l.pieces === l.packs && Number.isSafeInteger(l.packs) && l.packs > 0)
+    && row.packs <= lines.reduce((sum, l) => sum + l.packs, 0);
+}
+
 /** Feed refresh alone never proves a paid allocation is included in the supplier count. */
-export async function availableAshcroftAfterCommitments(ctx: Ctx, cv: Doc<'catVariants'>, sourceUnits: number, now: number, excludeIntent?: Id<'ordCheckoutIntents'>) {
+export async function availableAshcroftAfterCommitments(ctx: Ctx, cv: Doc<'catVariants'>, sourceUnits: number, now: number, excludeIntent?: Id<'ordCheckoutIntents'>, reviewedRecovery = false) {
   if (!Number.isSafeInteger(sourceUnits) || sourceUnits < 0) unavailable('Invalid Ashcroft supplier count');
   let committed = 0;
   for (const row of await commitments(ctx, cv._id, now)) {
     if (row.intentId === excludeIntent) continue;
     if (row.inventoryBasis !== 'ashcroft_selling_unit' || row.supplierSku !== cv.supplierSku
       || !row.ashcroftFeedId || !Number.isSafeInteger(row.packs) || row.packs < 1)
-      unavailable('An existing Ashcroft commitment needs its selling-unit basis reconciled');
+      if (!reviewedRecovery || !await legacyPaidAshcroftMatches(ctx, cv, row))
+        unavailable('An existing Ashcroft commitment needs its selling-unit basis reconciled');
     committed += row.packs;
     if (!Number.isSafeInteger(committed)) unavailable('Ashcroft commitments require review');
   }
@@ -313,11 +328,24 @@ export const reconcile = mutation({
         'INVALID_INPUT',
         'Resolve the paid-order exception before reconciling supplier stock'
       );
+    const intentReservations = await ctx.db.query('ordInventoryReservations')
+      .withIndex('by_intent', q => q.eq('intentId', intent._id)).take(501);
+    const siblings = intentReservations.filter(r => r.variantId === cv._id);
+    if (!siblings.length || intentReservations.length > 500 || siblings.some(r => r.status !== 'consumed'
+      || !Number.isSafeInteger(r.packs) || r.packs < 1))
+      throw new CommerceError('INVALID_INPUT', 'Complete paid reservation group requires review');
+    const paidLines = intent.lineSnapshot.filter(l => l.variantId === cv._id);
+    const paidPacks = paidLines.reduce((n, l) => n + l.packs, 0);
+    const reservedPacks = siblings.reduce((n, r) => n + r.packs, 0);
+    if (!paidLines.length || !Number.isSafeInteger(paidPacks) || paidPacks <= 0 || reservedPacks !== paidPacks
+      || paidLines.some(l => l.productId !== cv.productId || l.supplierSku !== cv.supplierSku || !Number.isSafeInteger(l.packs) || l.packs < 1))
+      throw new CommerceError('INVALID_INPUT', 'Paid quantities or supplier identity do not match the reservation group');
     if (ashcroft) {
+      for (const sibling of siblings) if (!await legacyPaidAshcroftMatches(ctx, cv, sibling))
+        throw new CommerceError('INVALID_INPUT', 'Original paid Ashcroft selling-unit identity requires review');
       const stock = await currentAshcroftInventory(ctx, cv, Date.now(), true);
       if (a.expectedRevisionId || !a.expectedAshcroftFeedId || stock.feed._id !== a.expectedAshcroftFeedId
-        || row.inventoryBasis !== 'ashcroft_selling_unit' || row.supplierSku !== cv.supplierSku
-        || !row.ashcroftFeedId || row.ashcroftFeedId === stock.feed._id || stock.feed.observedAt < order.paidAt)
+        || siblings.some(r => r.ashcroftFeedId === stock.feed._id) || stock.feed.observedAt < order.paidAt)
         throw new CommerceError('INVALID_INPUT', 'Use a newer current Ashcroft selling-unit count that accounts for this paid allocation');
       sourceObservedAt = stock.feed.observedAt;
       reconciliationSource = { reconciledAshcroftFeedId: stock.feed._id };
@@ -326,7 +354,7 @@ export const reconcile = mutation({
         throw new CommerceError('INVALID_INPUT', 'Pending allocation or current stock changed; reload');
       const { revision, view } = await currentInventory(ctx, cv, Date.now());
       if (!revision || !view.current || revision.kind !== 'available_to_sell' || revision.observedAt < order.paidAt
-        || revision._id === row.stockRevisionId || row.warehouseId !== cv.warehouseId || row.piecesPerPack !== cv.piecesPerPack)
+        || siblings.some(r => revision._id === r.stockRevisionId || r.warehouseId !== cv.warehouseId || r.piecesPerPack !== cv.piecesPerPack))
         throw new CommerceError('INVALID_INPUT', 'Use a newer current warehouse count that accounts for this paid allocation');
       sourceObservedAt = revision.observedAt;
       reconciliationSource = { reconciledRevisionId: revision._id };
@@ -353,12 +381,12 @@ export const reconcile = mutation({
           acknowledgedPacks += allocation.packs;
       }
     }
-    if (acknowledgedPacks !== row.packs)
+    if (acknowledgedPacks !== reservedPacks)
       throw new CommerceError(
         'INVALID_INPUT',
         'Record supplier handoff and acknowledgement for the complete allocation before reconciliation'
       );
-    await ctx.db.patch(row._id, {
+    for (const sibling of siblings) await ctx.db.patch(sibling._id, {
       status: 'reconciled',
       ...reconciliationSource,
       reconciliationEvidence: a.evidence.trim(),
@@ -370,8 +398,8 @@ export const reconcile = mutation({
       action: 'inventory.supplier_allocation_reconciled',
       entityTable: 'ordInventoryReservations',
       entityId: row._id,
-      before: row,
-      after: { ...reconciliationSource, evidence: a.evidence.trim() },
+      before: siblings,
+      after: { ...reconciliationSource, reservationIds: siblings.map(r => r._id), evidence: a.evidence.trim() },
       reason: a.note.trim(),
       requestId: key,
     });

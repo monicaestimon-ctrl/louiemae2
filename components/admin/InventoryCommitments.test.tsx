@@ -64,6 +64,9 @@ it('retains notes and requires a new review when the Ashcroft feed changes', () 
   const result = view();
   fireEvent.click(screen.getByRole('button', { name: 'Review allocation reservation-1' }));
   fireEvent.change(screen.getByLabelText('Reconciliation note'), { target: { value: 'Keep this note' } });
+  fireEvent.change(screen.getByLabelText('Supplier allocation evidence reference'), { target: { value: 'Fixture supplier confirmation' } });
+  fireEvent.click(screen.getByRole('checkbox'));
+  expect(screen.getByRole('button', { name: 'Reconcile supplier allocation' })).toBeEnabled();
   mock.data.currentAshcroftFeedId = 'feed-2';
   result.rerender(<InventoryCommitments variantId={'variant' as Id<'catVariants'>} />);
   expect(screen.getByRole('alert')).toHaveTextContent('Stock or allocation changed');

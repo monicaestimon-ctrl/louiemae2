@@ -238,7 +238,7 @@ export const resumeOriginal = mutation({
         if (
           !listing?.published ||
           supplierLine?.sku !== variant.supplierSku ||
-          line.packs > await availableAshcroftAfterCommitments(ctx, variant, stock.availableUnits, now, intent._id)
+          line.packs > await availableAshcroftAfterCommitments(ctx, variant, stock.availableUnits, now, intent._id, true)
         )
           throw new CommerceError(
             'STOCK_UNAVAILABLE',

@@ -937,7 +937,21 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
       const { _id, _creationTime, ...rest } = old; void _id; void _creationTime;
       await ctx.db.insert('ashcroftInventoryFeeds', { ...rest, sha256: 'b'.repeat(64), observedAt: Date.now() });
     });
+    // Another paid legacy exception must still consume stock without deadlocking this reviewed recovery.
+    const otherLegacy = await s.t.run(async ctx => {
+      const { _id, _creationTime, ...copy } = original; void _id; void _creationTime;
+      const otherIntent = await ctx.db.insert('ordCheckoutIntents', { ...copy, status: 'exception',
+        idempotencyKey: 'other-legacy-exception', stripeSessionId: undefined,
+        lineSnapshot: original.lineSnapshot.filter(l => l.supplierCode === 'ashcroft') });
+      const reservation = await ctx.db.insert('ordInventoryReservations', { intentId: otherIntent,
+        variantId: ashcroftMirror._id, packs: 1, status: 'consumed', expiresAt: Date.now(), createdAt: Date.now() });
+      return { otherIntent, reservation };
+    });
     const orderId = await s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, args);
+    expect((await s.t.run(ctx => ctx.db.get(otherLegacy.otherIntent)))?.status).toBe('exception');
+    expect((await s.t.run(ctx => ctx.db.get(otherLegacy.reservation)))?.status).toBe('consumed');
+    expect((await s.t.run(ctx => ctx.db.get(otherLegacy.reservation)))?.ashcroftFeedId).toBeUndefined();
+
     expect((await s.t.run(ctx => ctx.db.get(originalAshcroftHold._id)))?.ashcroftFeedId).toBe(originalAshcroftHold.ashcroftFeedId);
     expect(await s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, args)).toBe(orderId);
     await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, { ...args, customerAgreement: 'Changed recovery notes' })).rejects.toThrow(/Changed recovery retry/);
@@ -2897,12 +2911,18 @@ describe('Ashcroft selling-unit inventory commitments', () => {
     expect(await s.t.run(ctx => availableAshcroftAfterCommitments(ctx, cv, 1, Date.now()))).toBe(0);
   });
 
-  it('keeps paid allocations across feed refresh and requires authorized acknowledged reconciliation', async () => {
+  it.each(['single', 'split', 'legacy-split'])('reconciles the complete acknowledged paid reservation group (%s)', async mode => {
     const s = await setup();
-    await paidOrder(s, [{ productId: s.ashId, variantId: 'b1', packs: 1 }]);
+    await paidOrder(s, [{ productId: s.ashId, variantId: 'b1', packs: 3 }]);
     const row = (await s.t.run(ctx => ctx.db.query('ordInventoryReservations').first()))!;
     const cv = (await s.t.run(ctx => ctx.db.get(row.variantId)))!;
     expect(row.status).toBe('consumed');
+    if (mode !== 'single') await s.t.run(async ctx => {
+      const { _id, _creationTime, ...copy } = row; void _id; void _creationTime;
+      const legacy = mode === 'legacy-split' ? { inventoryBasis: undefined, supplierSku: undefined, ashcroftFeedId: undefined } : {};
+      await ctx.db.patch(row._id, { packs: 1, ...legacy });
+      await ctx.db.insert('ordInventoryReservations', { ...copy, packs: 2, ...legacy });
+    });
     const args = { reservationId: row._id, expectedAshcroftFeedId: row.ashcroftFeedId!, evidence: 'Fixture supplier allocation', note: 'Fixture newer count includes acknowledged paid unit', confirmed: true, requestKey: 'ashcroft-reconcile-fixture-key' };
     await expect(s.admin.mutation(api.ordInventory.reconcile, args)).rejects.toThrow(/newer/);
     const feedId = await s.t.run(async ctx => {
@@ -2910,7 +2930,8 @@ describe('Ashcroft selling-unit inventory commitments', () => {
       const { _id, _creationTime, ...rest } = old; void _id; void _creationTime;
       return ctx.db.insert('ashcroftInventoryFeeds', { ...rest, sha256: 'b'.repeat(64), observedAt: Date.now(), rows: [{ sku: 'BEN123', quantity: 99 }] });
     });
-    expect(await s.t.run(ctx => availableAshcroftAfterCommitments(ctx, cv, 99, Date.now()))).toBe(98);
+    if (mode === 'legacy-split') await expect(s.t.run(ctx => availableAshcroftAfterCommitments(ctx, cv, 99, Date.now()))).rejects.toThrow(/basis/);
+    else expect(await s.t.run(ctx => availableAshcroftAfterCommitments(ctx, cv, 99, Date.now()))).toBe(96);
     const update = { ...args, expectedAshcroftFeedId: feedId };
     await expect(s.t.mutation(api.ordInventory.reconcile, update)).rejects.toThrow();
     await expect(s.admin.mutation(api.ordInventory.reconcile, update)).rejects.toThrow(/handoff and acknowledgement/);
@@ -2922,7 +2943,9 @@ describe('Ashcroft selling-unit inventory commitments', () => {
     await s.admin.mutation(api.ordInventory.reconcile, update);
     await s.admin.mutation(api.ordInventory.reconcile, update);
     await expect(s.admin.mutation(api.ordInventory.reconcile, { ...update, note: 'Changed retry' })).rejects.toThrow(/Retry/);
-    expect((await s.t.run(ctx => ctx.db.get(row._id)))?.reconciledAshcroftFeedId).toBe(feedId);
+    const reconciled = await s.t.run(ctx => ctx.db.query('ordInventoryReservations').collect());
+    expect(reconciled.every(r => r.status === 'reconciled' && r.reconciledAshcroftFeedId === feedId)).toBe(true);
+    if (mode === 'legacy-split') expect(reconciled.every(r => r.ashcroftFeedId === undefined && r.inventoryBasis === undefined)).toBe(true);
     expect(await s.t.run(ctx => availableAshcroftAfterCommitments(ctx, cv, 99, Date.now()))).toBe(99);
     expect((await s.admin.query(api.ordInventory.pending, { variantId: cv._id })).rows).toHaveLength(0);
   });
@@ -2959,6 +2982,9 @@ describe('Ashcroft selling-unit inventory commitments', () => {
     const cv = (await s.t.run(ctx => ctx.db.get(row.variantId)))!;
     await s.t.run(ctx => ctx.db.patch(row._id, { inventoryBasis: undefined }));
     await expect(s.t.run(ctx => availableAshcroftAfterCommitments(ctx, cv, 100, Date.now()))).rejects.toThrow(/basis/);
+    expect(await s.t.run(ctx => availableAshcroftAfterCommitments(ctx, cv, 100, Date.now(), undefined, true))).toBe(99);
+    await s.t.run(ctx => ctx.db.patch(row._id, { supplierSku: 'WRONG' }));
+    await expect(s.t.run(ctx => availableAshcroftAfterCommitments(ctx, cv, 100, Date.now(), undefined, true))).rejects.toThrow(/basis/);
     await expect(s.t.run(ctx => currentAshcroftInventory(ctx, { ...cv, optionKey: 'changed' }, Date.now()))).rejects.toThrow(/identity/);
     await expect(s.t.run(ctx => currentAshcroftInventory(ctx, { ...cv, supplierSku: 'MISSING' }, Date.now()))).rejects.toThrow(/confirmation/);
   });
