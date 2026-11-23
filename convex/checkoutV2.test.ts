@@ -101,7 +101,9 @@ beforeEach(() => {
   taxFixture.fail = false;
   paymentReadFixture.session.mockReset(); paymentReadFixture.refunds.mockReset();
   // Scheduled work (payment processing, email delivery) runs only when a test drives it.
-  vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'], now: Date.now() });
+  // Evidence and explicit resolveLines calls use NOW too. A fresh wall-clock
+  // value would make those calls precede the fixture's config approval.
+  vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'], now: NOW });
   process.env.CJ_ADMIN_EMAILS = ADMIN;
   process.env.DELIVERY_AUTOMATION_ENABLED = 'true';
   process.env.RETAIL_ZUO_CHECKOUT_ENABLED = 'true';
