@@ -1,6 +1,7 @@
 /* eslint-disable */
 // @ts-nocheck
 import { useRecoverableQuery } from '../contexts/useRecoverableQuery';
+import { useReferralAssociation } from '../contexts/useReferralAssociation';
 import { usePendingStudioSeed } from './pendingStudioSeed';
 import {Studio,Room,Quiz,ShareSheet} from './DesignTools';
 import { html, MAT, TYPE, byId, has, tp, pr, cut, pinItUrl, threeP, loadThree, LX, useThree, SPACES, SPACE_KEYS, COMMUNITY, load, store, hex2rgb, cdist, uid, copyText, COLOR_WORDS, matchPrompt, ICONS, I, useOutside, SaveMenu, PinCard, BoardPin, Wall, GLOW_AT, ROOMS, TEX, rnd, texture, STUDY, FLOOR_TILE, PAGES, pageOf, borderOf, POLY0, BW, boardH, boardPath, maskOf, LAYOUTS, SLOTS, mkImg, mkText, toneF, cropStyle, ElView, blends, elStyle, bgStyle, BoardPreview, errText, dataUrlBlob, dimsText, bundleUrl, gltfP, gltfLoader, glbCache, loadGLB, fitToDims } from './editorShared';
@@ -2029,6 +2030,7 @@ function Welcome({ctx}) {
 export function App({catalogComplete=true,onCatalogIntent=()=>{},suspended=false,serverDiscovery=false}={}){
   useCatalogRevision();
   const me0=useQuery(api.holm.me);const me=me0||{signedIn:false,verified:false,admin:false,tradeStatus:'none'};
+  useReferralAssociation(!!me.signedIn);
   const {signOut:authSignOut}=useAuthActions();const ensureProfile=useMutation(api.holm.ensureProfile);
   const linkVisit=useMutation(api.holmPartners.linkVisit);
   useEffect(()=>{if(!me.signedIn)return;ensureProfile({ref:activeRef()?.code}).then(()=>{const r=activeRef();if(r)return linkVisit({visitorId:visitorId(),refCode:r.code})}).catch(()=>{})},[me.signedIn]);

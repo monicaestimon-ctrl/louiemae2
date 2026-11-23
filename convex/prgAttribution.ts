@@ -16,10 +16,16 @@ import { CommerceError } from '../lib/errors';
 import { ATTRIBUTION_WINDOW_MS, appliedRate, looksLikeBot, opaqueId, visitorKeyHash, winningClick } from '../lib/attribution';
 import { rateFor } from '../lib/tiers';
 import type { AttributionPolicy, CommissionCategory, CommissionSchedule, TierKey } from '../lib/config';
+import { parseConfig } from '../lib/config';
 import { REF_CODE } from '../lib/holmPartners';
 import { categoryAtClick, checkedSchedule, effectiveException, historicalSchedule } from './prgRateHistory';
 
 type Ctx = QueryCtx | MutationCtx;
+
+async function attributionPolicy(ctx: Ctx) {
+  const record = await maybeConfig<AttributionPolicy>(ctx, 'attributionPolicy', 'attribution');
+  return record ? parseConfig('attributionPolicy', record.value) as AttributionPolicy : null;
+}
 
 export async function schedule(ctx: Ctx) {
   const s = await activeConfig<CommissionSchedule>(ctx, 'commissionSchedule', 'commission-schedule');
@@ -58,13 +64,13 @@ export async function recordClickCore(
   } else if (a.refCode && REF_CODE.test(a.refCode)) beneficiary = await ctx.db.query('prgBeneficiaries').withIndex('by_refCode', (q) => q.eq('refCode', a.refCode)).first();
   if (!beneficiary) return { clickId: null, eligible: false };
   const me = await viewer(ctx);
-  const policy = await maybeConfig<AttributionPolicy>(ctx, 'attributionPolicy', 'attribution');
+  const policy = await attributionPolicy(ctx);
   const reasons: string[] = [];
   if (looksLikeBot(a.userAgent)) reasons.push('bot');
   if (beneficiary.status !== 'active') reasons.push('beneficiary_inactive');
   if (await isSelf(ctx, beneficiary, me?.userId)) reasons.push('self');
   if (a.referrerHost && /(^|\.)louiemae\.com$/i.test(a.referrerHost) && !a.linkId) reasons.push('internal');
-  if (a.consent === 'denied' || (a.consent === 'unknown' && !policy?.value.consentUnknownAllowsStorage)) reasons.push('consent');
+  if (a.consent === 'denied' || (a.consent === 'unknown' && !policy?.consentUnknownAllowsStorage)) reasons.push('consent');
   const sched = await schedule(ctx);
   let product: Doc<'prgReferralClicks'>['rateSnapshot']['product'];
   if (link?.destination.kind === 'variant' && link.destination.productId) {
@@ -92,7 +98,7 @@ export async function recordClickCore(
     ...(terms ? { termsVersion: terms.version } : {}),
     rateSnapshot: { tierKey: beneficiary.tierKey, scheduleVersion: sched.version, ...(product ? { product } : {}) },
     at: now,
-    expiresAt: now + (policy?.value.windowMs ?? ATTRIBUTION_WINDOW_MS),
+    expiresAt: now + ATTRIBUTION_WINDOW_MS,
   });
   await bumpMetric(ctx, reasons.length ? 'attribution.click_ineligible' : 'attribution.click');
   return { clickId, eligible: reasons.length === 0 };
@@ -108,26 +114,50 @@ export const recordClick = mutation({
 
 /** A signed-in visitor: associate this browser's clicks with the account for cross-device credit. */
 export const associateVisitor = mutation({
-  args: { visitorKey: v.string() },
+  args: { visitorKey: v.string(), consent: v.optional(v.union(v.literal('granted'), v.literal('denied'), v.literal('unknown'))), cursor: v.optional(v.string()), cutoff: v.optional(v.number()), expectedUserId: v.optional(v.id('users')) },
   handler: async (ctx, a) => {
-    if (!flag('ATTRIBUTION_V2_ENABLED')) return;
+    const inactive = { associated: 0, isDone: true, cursor: null, cutoff: null, userId: null };
+    if (!flag('ATTRIBUTION_V2_ENABLED')) return inactive;
     const me = await viewer(ctx);
-    if (!me || !/^[\w-]{16,64}$/.test(a.visitorKey)) return;
+    if (!me || !/^[\w-]{16,64}$/.test(a.visitorKey)) return inactive;
+    if (a.expectedUserId !== undefined && a.expectedUserId !== me.userId)
+      throw new CommerceError('INVALID_INPUT', 'Account changed during referral association');
+    const policy = await attributionPolicy(ctx);
+    if (a.consent === 'denied' || (a.consent !== 'granted' && !policy?.consentUnknownAllowsStorage)) return inactive;
+    const now = Date.now();
+    const cutoff = a.cutoff ?? now;
+    if (!Number.isSafeInteger(cutoff) || cutoff > now || cutoff <= now - ATTRIBUTION_WINDOW_MS ||
+        (a.cursor && (a.cutoff === undefined || a.expectedUserId === undefined)))
+      throw new CommerceError('INVALID_INPUT', 'Invalid association continuation');
+    if (!(await rateLimit(ctx, `associate:${me.userId}`, 60, 60)))
+      throw new CommerceError('INVALID_INPUT', 'Referral association can resume shortly');
     const hash = await visitorKeyHash(a.visitorKey);
-    const clicks = await ctx.db.query('prgReferralClicks').withIndex('by_visitor_at', (q) => q.eq('visitorKeyHash', hash).gte('at', Date.now() - ATTRIBUTION_WINDOW_MS)).take(50);
-    for (const c of clicks) if (!c.userId) await ctx.db.patch(c._id, { userId: me.userId });
+    // Page a stable index: assigning userId must not remove rows from the
+    // continuation's result set and cause later visits to be skipped.
+    const page = await ctx.db.query('prgReferralClicks').withIndex('by_visitor_eligible_at_click', q =>
+      q.eq('visitorKeyHash', hash).eq('eligible', true).gt('at', cutoff - ATTRIBUTION_WINDOW_MS).lte('at', cutoff))
+      .order('desc').paginate({ numItems: 50, cursor: a.cursor ?? null });
+    let associated = 0;
+    for (const c of page.page) if (!c.userId && winningClick([c], now)) { await ctx.db.patch(c._id, { userId: me.userId }); associated++; }
+    return { associated, isDone: page.isDone, cursor: page.isDone ? null : page.continueCursor, cutoff, userId: me.userId };
   },
 });
 
 /** The winning click for a buyer (this browser, or the signed-in account's associated clicks). */
 export async function winningFor(ctx: Ctx, visitorKey: string | undefined, userId: Id<'users'> | undefined, now = Date.now()) {
-  const since = now - ATTRIBUTION_WINDOW_MS - 1;
+  const since = now - ATTRIBUTION_WINDOW_MS;
   const rows: Doc<'prgReferralClicks'>[] = [];
+  const select = (candidates: Doc<'prgReferralClicks'>[]) => {
+    const winner = winningClick(candidates.slice(0, 200), now);
+    if (!winner && candidates.length > 200)
+      throw new CommerceError('COST_REVIEW_REQUIRED', 'Referral history exceeds the safe scan limit');
+    if (winner) rows.push(winner);
+  };
   if (visitorKey && /^[\w-]{16,64}$/.test(visitorKey)) {
     const hash = await visitorKeyHash(visitorKey);
-    rows.push(...(await ctx.db.query('prgReferralClicks').withIndex('by_visitor_at', (q) => q.eq('visitorKeyHash', hash).gte('at', since)).take(200)));
+    select(await ctx.db.query('prgReferralClicks').withIndex('by_visitor_eligible_at_click', q => q.eq('visitorKeyHash', hash).eq('eligible', true).gt('at', since).lte('at', now)).order('desc').take(201));
   }
-  if (userId) rows.push(...(await ctx.db.query('prgReferralClicks').withIndex('by_user_at', (q) => q.eq('userId', userId).gte('at', since)).take(200)));
+  if (userId) select(await ctx.db.query('prgReferralClicks').withIndex('by_user_eligible_at_click', q => q.eq('userId', userId).eq('eligible', true).gt('at', since).lte('at', now)).order('desc').take(201));
   return winningClick(rows, now);
 }
 

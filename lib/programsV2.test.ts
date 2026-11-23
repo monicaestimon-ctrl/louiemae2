@@ -19,6 +19,7 @@ describe('attribution (REF02, G6)', () => {
     const x = c('a', 0);
     expect(winningClick([x], ATTRIBUTION_WINDOW_MS - 1)!.clickId).toBe('a');
     expect(winningClick([x], ATTRIBUTION_WINDOW_MS)).toBeNull();
+    expect(winningClick([{ ...x, expiresAt: ATTRIBUTION_WINDOW_MS * 2 }], ATTRIBUTION_WINDOW_MS)).toBeNull();
   });
   it('breaks ties deterministically and ignores future clicks', () => {
     expect(winningClick([c('a', 5), c('b', 5)], 6)!.clickId).toBe('b');

@@ -996,6 +996,8 @@ export const v2Tables = {
     .index('by_click', ['clickId'])
     .index('by_visitor_at', ['visitorKeyHash', 'at'])
     .index('by_user_at', ['userId', 'at'])
+    .index('by_visitor_eligible_at_click', ['visitorKeyHash', 'eligible', 'at', 'clickId'])
+    .index('by_user_eligible_at_click', ['userId', 'eligible', 'at', 'clickId'])
     .index('by_beneficiary_at', ['beneficiaryId', 'at']),
 
   prgAttributionSnapshots: defineTable({
