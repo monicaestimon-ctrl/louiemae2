@@ -42,7 +42,9 @@ describe('Ashcroft identity preparation', () => {
     expect(await s.t.run(ctx => ctx.db.query('catVariants').collect())).toHaveLength(0);
     const first = await s.t.mutation(internal.catAshcroft.commit, { rows: [row] });
     expect(await s.t.mutation(internal.catAshcroft.commit, { rows: [row] })).toEqual(first);
-    const cv = await s.t.run(ctx => ctx.db.get(first[0].variantRecordId));
+    const variantRecordId = await s.t.run(async ctx => ctx.db.normalizeId('catVariants', first[0].variantRecordId));
+    if (!variantRecordId) throw Error('Migration returned a non-variant identity');
+    const cv = await s.t.run(ctx => ctx.db.get(variantRecordId));
     expect(cv).toMatchObject({ productId: s.productId, legacyVariantId: 'set-one', supplierSku: 'SET-2',
       availability: 'unknown', piecesPerPack: 1, holds: ['COST_MISSING', 'MANUAL'] });
     expect(cv?.currentCostRevisionId).toBeUndefined();
@@ -118,3 +120,4 @@ describe('Ashcroft identity preparation', () => {
     expect((await s.t.run(ctx => ctx.db.get(id)))?.wholesaleUnitBasis).toBe('piece');
   });
 });
+

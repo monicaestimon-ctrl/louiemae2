@@ -2,7 +2,7 @@
 import { internalMutation } from './functions';
 import { internalQuery } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
-import type { Doc } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { v } from 'convex/values';
 import { ensureSupplier, supplierByCode, openHold } from './catCore';
 import { CommerceError } from '../lib/errors';
@@ -106,7 +106,7 @@ export const preview = internalQuery({
 
 export const commit = internalMutation({
   args: { rows: v.array(v.object({ productId: v.id('commerceProducts'), variantId: v.string(), fingerprint: v.string() })) },
-  handler: async (ctx, a) => {
+  handler: async (ctx, a): Promise<{ productId: Id<'commerceProducts'>; variantId: string; variantRecordId: Id<'catVariants'> }[]> => {
     if (!a.rows.length || a.rows.length > 20 || new Set(a.rows.map(r => `${r.productId}:${r.variantId}`)).size !== a.rows.length)
       throw new CommerceError('INVALID_INPUT', 'Commit 1–20 distinct reviewed identities');
     const result = [];
