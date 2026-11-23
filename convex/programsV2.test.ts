@@ -309,6 +309,22 @@ describe('historical basket rate protection (S27, REF03)', () => {
     expect((await s.takeSnapshot())!.lines[0]).toMatchObject({ protectedRateBps: 900, currentRateBps: 500, appliedRateBps: 900 });
   });
 
+  it.each(['generic', 'cross-product', 'product'] as const)('handles same-millisecond exception replacement for a %s click', async kind => {
+    const s = await protectionFixture(kind);
+    await s.t.run(async ctx => {
+      await ctx.db.insert('prgSkuCommissionExceptions', { productId: s.fx.retailId, rates: exceptionRates(900), visibleNote: 'Earlier rate', effectiveFrom: s.click.at - 10, effectiveTo: s.click.at, approvedBy: ADMIN, version: 1, createdAt: s.click.at - 10 });
+      await ctx.db.insert('prgSkuCommissionExceptions', { productId: s.fx.retailId, rates: exceptionRates(500), visibleNote: 'Replacement', effectiveFrom: s.click.at, approvedBy: ADMIN, version: 2, createdAt: s.click.at });
+    });
+    // Current reads remain well-defined, even at the creation timestamp.
+    expect(await s.t.run(async ctx => productRate(ctx, s.fx.retailId, 'base', 'furniture', (await schedule(ctx)).value, s.click.at))).toMatchObject({ rateBps: 500 });
+    if (kind === 'product') {
+      expect((await s.takeSnapshot())!.lines[0]).toMatchObject({ protectedRateBps: 1000, currentRateBps: 500, appliedRateBps: 1000 });
+    } else {
+      await expect(s.takeSnapshot()).rejects.toSatisfy(error => isCommerceError(error, 'COST_REVIEW_REQUIRED'));
+      expect(await s.t.run(ctx => ctx.db.query('prgAttributionSnapshots').collect())).toHaveLength(0);
+    }
+  });
+
   it.each(['missing', 'rejected', 'malformed', 'duplicate', 'not-effective'] as const)('refuses %s historical configuration instead of substituting current rates', async problem => {
     const s = await protectionFixture();
     await s.reduce();
@@ -353,11 +369,11 @@ describe('complete effective SKU exceptions (S28)', () => {
     expect(await s.t.run(ctx => ctx.db.query('prgSkuCommissionExceptions').collect())).toHaveLength(1);
   });
 
-  it.each(['duplicate-tier', 'overlap', 'over-limit'] as const)('blocks %s existing history instead of a hidden category fallback', async problem => {
+  it.each(['duplicate-tier', 'overlap', 'over-limit', 'reversed-period', 'empty-period'] as const)('blocks %s existing history instead of a hidden category fallback', async problem => {
     const s = await protectionFixture();
     await s.t.run(async ctx => {
       const row = { productId: s.fx.retailId, rates: problem === 'duplicate-tier' ? Array(4).fill({ tierKey: 'base' as const, rateBps: 500 }) : exceptionRates(500), visibleNote: 'Exception', effectiveFrom: Date.now() - 1000, approvedBy: ADMIN, version: 1, createdAt: Date.now() - 1000 };
-      await ctx.db.insert('prgSkuCommissionExceptions', row);
+      await ctx.db.insert('prgSkuCommissionExceptions', { ...row, ...(problem === 'reversed-period' ? { effectiveTo: row.effectiveFrom - 1 } : problem === 'empty-period' ? { effectiveTo: row.effectiveFrom } : {}) });
       if (problem === 'overlap') await ctx.db.insert('prgSkuCommissionExceptions', { ...row, version: 2 });
       if (problem === 'over-limit') for (let i = 0; i < 100; i++) await ctx.db.insert('prgSkuCommissionExceptions', { ...row, effectiveTo: s.click.at - 1, version: i + 2 });
     });

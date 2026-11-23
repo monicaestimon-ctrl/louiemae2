@@ -27,8 +27,8 @@ export async function schedule(ctx: Ctx) {
 }
 
 /** The rate for a product and tier: a visible SKU exception schedule wins over the category schedule. */
-export async function productRate(ctx: Ctx, productId: Id<'commerceProducts'>, tier: TierKey, category: CommissionCategory, sched: CommissionSchedule, at = Date.now()) {
-  const live = await effectiveException(ctx, productId, at);
+export async function productRate(ctx: Ctx, productId: Id<'commerceProducts'>, tier: TierKey, category: CommissionCategory, sched: CommissionSchedule, at = Date.now(), historical = false) {
+  const live = await effectiveException(ctx, productId, at, historical);
   const fromException = live?.rates.find((r) => r.tierKey === tier)?.rateBps;
   return { rateBps: Math.min(fromException ?? rateFor(sched, tier, category), sched.ceilingBps), exceptionVersion: live?.version, exceptionNote: live?.visibleNote };
 }
@@ -172,7 +172,7 @@ export async function snapshotForIntent(ctx: MutationCtx, a: { intentId: Id<'ord
       protectedSchedule ??= await historicalSchedule(ctx, snap.scheduleVersion, click.at);
       const protectedCategory = await categoryAtClick(ctx, l.productId, l.category, click.at);
       protectedBps = protectedCategory === 'review_required' ? 0 :
-        (await productRate(ctx, l.productId, snap.tierKey, protectedCategory, protectedSchedule, click.at)).rateBps;
+        (await productRate(ctx, l.productId, snap.tierKey, protectedCategory, protectedSchedule, click.at, true)).rateBps;
     }
     lines.push({ lineKey: l.lineKey, productId: l.productId, category: l.category, protectedRateBps: protectedBps, currentRateBps: current, appliedRateBps: appliedRate(protectedBps, current), eligible: true });
   }

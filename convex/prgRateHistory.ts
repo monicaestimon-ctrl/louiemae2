@@ -39,13 +39,17 @@ export async function historicalSchedule(ctx: Ctx, version: number, at: number) 
 }
 
 /** Exclude future rows at the index so they cannot hide applicable history. */
-export async function effectiveException(ctx: Ctx, productId: Id<'commerceProducts'>, at: number) {
+export async function effectiveException(ctx: Ctx, productId: Id<'commerceProducts'>, at: number, historical = false) {
   const rows = await ctx.db.query('prgSkuCommissionExceptions').withIndex('by_product_effective', q =>
     q.eq('productId', productId).lte('effectiveFrom', at)).order('desc').take(101);
   if (rows.length > 100) return review('Commission exception history requires reconciliation');
+  if (rows.some(row => row.effectiveTo !== undefined && row.effectiveTo <= row.effectiveFrom))
+    return review('Commission exception effective period is reversed or empty');
   const live = rows.filter(row => row.effectiveTo === undefined || row.effectiveTo > at);
   if (live.length > 1) return review('Commission exception effective periods overlap');
   const exception = live[0];
+  if (historical && exception?.createdAt === at)
+    return review('Commission exception changed at the click boundary; review its protected rate');
   if (exception && exception.createdAt > at)
     return review('Commission exception was recorded after the requested effective time');
   if (exception && (!completeExceptionRates(exception.rates) || !exception.visibleNote.trim()))
