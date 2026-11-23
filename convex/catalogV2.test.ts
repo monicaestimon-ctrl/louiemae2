@@ -1154,6 +1154,25 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     await expect(t.run(ctx => assertSellable(ctx, cv._id, 'link', NOW))).rejects.toThrow(/no approved version/);
   });
 
+  it('funds explicitly non-referral retail offers without silently qualifying them for commissions', async () => {
+    const { t, admin, cv, productId } = await readyProduct();
+    await t.run(async ctx => {
+      await ctx.db.patch(cv.currentCostRevisionId!, { dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true });
+      await ctx.db.patch(cv._id, { holds: [], referralEligible: true });
+      await ctx.db.patch(cv.retailPriceRevisionId!, { packPriceMinor: 44000 });
+    });
+    await expect(t.run(ctx => assertSellable(ctx, cv._id, 'purchase', NOW))).rejects.toThrow(/does not fund/);
+    await admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, eligible: false, reason: 'Offer as explicitly non-referral merchandise' });
+    await expect(t.run(ctx => assertSellable(ctx, cv._id, 'purchase', NOW))).resolves.toBeTruthy();
+    await expect(t.run(ctx => assertSellable(ctx, cv._id, 'link', NOW))).rejects.toSatisfy(e => isCommerceError(e, 'REFERRAL_INELIGIBLE'));
+    expect((await admin.query(api.catPublication.status, { productId })).gates.economics_review).toEqual([]);
+    await admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, channel: 'retail', packPriceMinor: 44000, reason: 'Direct sale price funds approved margin' });
+    await expect(admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, eligible: true, reason: 'Attempt unfunded commission eligibility' })).rejects.toThrow(/does not fund/);
+    await admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, channel: 'retail', packPriceMinor: 50000, reason: 'New price funds commission qualification' });
+    await admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, eligible: true, reason: 'Current price supports the full advertised schedule' });
+    await expect(t.run(ctx => assertSellable(ctx, cv._id, 'link', NOW))).resolves.toBeTruthy();
+  });
+
   it('verifies canonical identity without publishing or resolving unrelated holds, and rejects conflicting mappings', async () => {
     const { t, admin, cv, productId } = await readyProduct();
     await t.run(async ctx => {

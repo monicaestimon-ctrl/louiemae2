@@ -47,7 +47,7 @@ export async function pricingInput(ctx: Ctx, cv: Doc<'catVariants'>, o: Opts = {
   const trade = await cfg<TradeDiscountSchedule>(ctx, 'tradeDiscountSchedule', 'trade-discount', o);
   const tradeRule = trade.suppliers[supplier?.code ?? ''];
   if (!tradeRule) throw new CommerceError('POLICY_NOT_APPROVED', `No trade discount schedule for ${supplier?.code}`);
-  // Qualification always tests the configured retail referral schedule, including protected rates.
+  // Referral qualification funds protected rates; trade and explicitly non-referral offers reserve zero.
   const maxCommissionBps = o.reserveRetailCommission === false ? 0 :
     (await commissionReserve(ctx,cv.productId,category,true,o.now!)).bps;
   const confirmed = (m: number | null, zero: boolean) => (m !== null ? m : zero ? 0 : null);
@@ -86,15 +86,18 @@ export async function computeScenarios(ctx: Ctx, cv: Doc<'catVariants'>, o: Opts
   const inputsHash = stableStringify({ ...input, wholesalePiece: `${input.wholesalePiece.n}/${input.wholesalePiece.d}`, retailMinor, tradeMinor, retailApproved, tradeApproved });
   return { minimumRetailMinor: min.retailMinor, minimumTradeMinor: tradeFloor, retailMinor, tradeMinor, retailApproved, tradeApproved,
     belowMinimum: retailMinor < min.retailMinor, belowTradeMinimum: tradeMinor !== null && tradeMinor < tradeFloor,
-    inputsHash, category, ...s, referralQualified: retailApproved && s.referralQualified };
+    inputsHash, category, ...s, referralQualified: retailApproved && o.reserveRetailCommission !== false && s.referralQualified };
 }
 
 /** Candidate prices are useful for planning, but cannot establish a payable offer. */
 export async function qualifyApprovedPrice(ctx: Ctx, cv: Doc<'catVariants'>, channel: 'retail' | 'trade', now = Date.now()) {
-  const result = await computeScenarios(ctx, cv, { now, reserveRetailCommission: channel === 'retail' });
+  if (channel === 'retail' && cv.referralEligible === undefined)
+    throw new CommerceError('COST_REVIEW_REQUIRED', 'Commission eligibility unresolved');
+  const fundReferrals = channel === 'retail' && cv.referralEligible === true;
+  const result = await computeScenarios(ctx, cv, { now, reserveRetailCommission: fundReferrals });
   if (!(channel === 'retail' ? result.retailApproved : result.tradeApproved))
     throw new CommerceError('COST_REVIEW_REQUIRED', `No current approved ${channel} price`);
-  if (channel === 'retail' ? result.belowMinimum || !result.referralQualified : result.belowTradeMinimum)
+  if (channel === 'retail' ? result.belowMinimum || (fundReferrals && !result.referralQualified) : result.belowTradeMinimum)
     throw new CommerceError('COST_REVIEW_REQUIRED', `Current ${channel} price does not fund its approved margin, delivery allowance and commission`);
   return result;
 }

@@ -147,6 +147,7 @@ export async function assertSellable(ctx: Ctx, variantId: Id<'catVariants'>, pur
   if (v.availability === 'discontinued') throw new CommerceError('STOCK_UNAVAILABLE', 'Discontinued', 'This item has been discontinued.');
   const r = await evaluate(ctx, v, now);
   const holds = new Set<string>([...v.holds, ...r.holds]);
+  if (v.referralEligible === false && purpose !== 'link') holds.delete('COMMISSION_UNQUALIFIED');
   if (purpose === 'link') {
     if (v.referralEligible !== true) holds.add('COMMISSION_UNQUALIFIED');
   }

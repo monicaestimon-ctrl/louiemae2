@@ -203,9 +203,11 @@ export const setReferralEligibility = indexedMutation({
       const economics = await computeScenarios(ctx, cv);
       if (!economics.referralQualified || economics.belowMinimum)
         throw new CommerceError('REFERRAL_INELIGIBLE', 'The approved retail price does not fund its current commission and margin policy');
+      await ctx.db.patch(cv._id, { referralEligible: true, updatedAt: Date.now() });
       await recordScenarios(ctx, cv._id, admin.email);
     }
     await ctx.db.patch(cv._id, { referralEligible: a.eligible, updatedAt: Date.now() });
+    if (!a.eligible && supplier?.code === 'zuo') await recordScenarios(ctx, cv._id, admin.email);
     await audit(ctx, { actor: admin.email, action: a.eligible ? 'referral.enable' : 'referral.disable', entityTable: 'catVariants', entityId: cv._id, reason: a.reason });
   },
 });

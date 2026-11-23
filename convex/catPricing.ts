@@ -43,7 +43,7 @@ export async function recordScenarios(ctx: MutationCtx, variantId: Id<'catVarian
   if (!cv) return null;
   let res;
   try {
-    res = await computeScenarios(ctx, cv);
+    res = await computeScenarios(ctx, cv, { reserveRetailCommission: cv.referralEligible !== false });
   } catch (e) {
     await openHold(ctx, variantId, 'PRICING_UNVERIFIED', 'Current economics could not be verified', by);
     await openReview(ctx, 'pricing_blocked', 'catVariants', variantId, commerceErrorData(e)?.detail ?? String((e as Error).message));
@@ -55,7 +55,9 @@ export async function recordScenarios(ctx: MutationCtx, variantId: Id<'catVarian
   if (res.retailApproved) await resolveHold(ctx, variantId, 'PRICING_UNVERIFIED', by, 'Current economics verified');
   else await openHold(ctx, variantId, 'PRICING_UNVERIFIED', 'A calculated candidate is not an approved retail price', by);
   // Commission prequalification against the full schedule (v2 §7): a visible state, never a hidden cap.
-  if (res.referralQualified) {
+  if (cv.referralEligible === false) {
+    await resolveHold(ctx, variantId, 'COMMISSION_UNQUALIFIED', by, 'Referrals explicitly disabled; direct-sale economics checked');
+  } else if (res.referralQualified) {
     await resolveHold(ctx, variantId, 'COMMISSION_UNQUALIFIED', by, 'Full schedule supported');
     if (cv.referralEligible === undefined) await ctx.db.patch(variantId, { referralEligible: true });
   } else {
@@ -94,7 +96,7 @@ export const approvePrice = indexedMutation({
     if (!a.reason.trim()) throw new CommerceError('INVALID_INPUT', 'Add a reason');
     const cv = await ctx.db.get(a.variantId);
     if (!cv) throw new CommerceError('INVALID_INPUT', 'Variant not found');
-    const res = await computeScenarios(ctx, cv);
+    const res = await computeScenarios(ctx, cv, { reserveRetailCommission: a.channel === 'retail' && cv.referralEligible !== false });
     const floor = a.channel === 'retail' ? res.minimumRetailMinor : res.minimumTradeMinor;
     if (a.packPriceMinor < floor) throw new CommerceError('COST_REVIEW_REQUIRED', `Below the ${cv.marginPolicyKey ?? 'zuo-standard-20'} minimum of ${floor}`, `This price is below the approved minimum of $${(floor / 100).toFixed(2)}.`);
     const cost = cv.currentCostRevisionId ? await ctx.db.get(cv.currentCostRevisionId) : null;
