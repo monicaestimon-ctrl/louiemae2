@@ -27,7 +27,8 @@ export async function legacyCredits(ctx: Ctx, userId: Id<'users'>) {
     if (amount <= 0 || amount !== -h.amountCents || !h.ref?.trim() || refs.has(h.ref)) reconciliation('Ambiguous legacy credit hold');
     refs.add(h.ref!); held = cents(held + amount, 'Held credit total');
   }
-  const balance = Math.max(0, rows.reduce((n, r) => cents(n + cents(r.amountCents, 'Legacy credit row'), 'Legacy credit total'), 0));
+  const balance = rows.reduce((n, r) => cents(n + cents(r.amountCents, 'Legacy credit row'), 'Legacy credit total'), 0);
+  if (balance < 0) reconciliation('Negative legacy credit or underfunded holds require explicit reconciliation');
   cents(balance + held, 'Opening credit total');
   const fingerprint = await digest(rows.map(r => ({ id: r._id, amount: r.amountCents, kind: r.kind ?? null, held: r.heldCents ?? null, ref: r.ref ?? null, at: r.at })));
   return { rows, holds, balance, held, fingerprint };

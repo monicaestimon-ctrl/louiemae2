@@ -121,6 +121,20 @@ describe('migration financial integrity', () => {
     await expect(commitSnapshot(s.t, 'creditSnapshot')).rejects.toThrow(/hold/);
     expect(await s.t.run(ctx => ctx.db.query('ldgCreditEvents').collect())).toEqual([]);
   });
+  it.each([false, true])('does not erase negative credit or manufacture hold funding (hold=%s)', async withHold => {
+    const s = await creditFixture();
+    await s.t.run(async ctx => {
+      if (withHold) await ctx.db.patch(s.earnedId, { amountCents: 3000 });
+      else {
+        await ctx.db.delete(s.holdId);
+        await ctx.db.patch(s.earnedId, { amountCents: -1000 });
+      }
+    });
+    await expect(s.t.mutation(internal.v2Migrations.creditSnapshot, { dryRun: true })).rejects.toThrow(/Negative legacy credit/);
+    await expect(commitSnapshot(s.t, 'creditSnapshot')).rejects.toThrow(/Negative legacy credit/);
+    expect(await s.t.run(ctx => ctx.db.query('ldgCreditEvents').collect())).toEqual([]);
+    expect(await s.t.action(internal.v2Migrations.runLedgerParity, {})).toMatchObject({ passed: false, complete: false });
+  });
   it('does not import or certify a truncated credit history', async () => {
     const s = await creditFixture();
     await s.t.run(async ctx => { for (let i = 2; i <= CREDIT_LIMIT; i++) await ctx.db.insert('holmCredits', { userId: s.userId, amountCents: 1, kind: 'earned', reason: 'Synthetic boundary', at: NOW + i }); });
