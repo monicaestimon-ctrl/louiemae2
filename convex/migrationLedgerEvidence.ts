@@ -8,6 +8,8 @@ type Ctx = QueryCtx | MutationCtx;
 export const CREDIT_LIMIT = 2000;
 export const COMMISSION_LIMIT = 5000;
 export const SYNC_LIMIT = 200;
+export const HOLD_LIMIT = 100;
+export const COMMISSION_PAGE = 10;
 export const reconciliation = (message: string): never => { throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED', message); };
 export function completeRows<T>(rows: T[], limit: number, scope: string): T[] {
   if (rows.length > limit) reconciliation(`${scope}: exceeds ${limit} rows; complete scoped reconciliation required`);
@@ -19,7 +21,7 @@ export function cents(value: number, scope: string) {
 }
 export async function legacyCredits(ctx: Ctx, userId: Id<'users'>) {
   const rows = completeRows(await ctx.db.query('holmCredits').withIndex('by_user', q => q.eq('userId', userId)).take(CREDIT_LIMIT + 1), CREDIT_LIMIT, 'Legacy credit');
-  const holds = rows.filter(r => r.kind === 'reserved');
+  const holds = completeRows(rows.filter(r => r.kind === 'reserved'), HOLD_LIMIT, 'Active legacy credit holds');
   const refs = new Set<string>();
   let held = 0;
   for (const h of holds) {
@@ -50,8 +52,8 @@ export async function commissionEvidence(ctx: Ctx, commission: Doc<'holmCommissi
   const accounted = obligations.reduce((n, o) => cents(n + (o.state === 'void' ? 0 : cents(o.earnedMinor - o.reversedMinor, 'Legacy obligation')), 'Legacy accounted total'), 0);
   return { obligations, accounted, events };
 }
-export async function creditParity(ctx: Ctx, userId: Id<'users'>) {
-  const source = await legacyCredits(ctx, userId);
+export async function creditParity(ctx: Ctx, userId: Id<'users'>, knownSource?: Awaited<ReturnType<typeof legacyCredits>>) {
+  const source = knownSource ?? await legacyCredits(ctx, userId);
   const account = await ctx.db.query('ldgCreditAccounts').withIndex('by_user', q => q.eq('userId', userId)).unique();
   if (!account) {
     if (source.rows.length) reconciliation('Legacy credit has no v2 account');
@@ -74,4 +76,20 @@ export async function creditParity(ctx: Ctx, userId: Id<'users'>) {
     catch { reconciliation('Credit event replay failed'); }
   }
   for (const key of Object.keys(projection) as (keyof typeof projection)[]) if (cents(projection[key], 'Credit projection') !== cents(account[key], 'Credit account')) reconciliation(`Credit projection differs: ${key}`);
+}
+
+/** The append-only dispute event survives a full reversal or old void projection. */
+export async function restorationBlocked(ctx: Ctx, commission: Doc<'holmCommissions'>, original: Doc<'ldgObligations'>) {
+  if (original.state === 'held' || commission.disputed) return true;
+  if (commission.paymentIntentId) {
+    const payment = await ctx.db.query('holmPaymentStates').withIndex('by_payment', q => q.eq('paymentIntentId', commission.paymentIntentId!)).unique();
+    if (payment?.disputed) return true;
+  }
+  const history = completeRows(await ctx.db.query('ldgCommissionEvents').withIndex('by_obligation_at', q => q.eq('obligationId', original._id)).take(SYNC_LIMIT + 1), SYNC_LIMIT, 'Commission dispute history');
+  let blocked = false;
+  for (const event of history) {
+    if (event.type === 'dispute_hold' || event.type === 'dispute_lost') blocked = true;
+    if (event.type === 'dispute_release') blocked = false;
+  }
+  return blocked;
 }

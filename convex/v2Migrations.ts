@@ -20,7 +20,7 @@ import { digest } from './dlvSecurity';
 import { payoutRoute } from '../lib/flags';
 import { walkMigrationPages, MigrationPaginationError } from '../lib/migrationPagination';
 import { commerceErrorData } from '../lib/errors';
-import { legacyCredits, creditParity, commissionEvidence, completeRows, COMMISSION_LIMIT, reconciliation, cents } from './migrationLedgerEvidence';
+import { legacyCredits, creditParity, commissionEvidence, completeRows, COMMISSION_LIMIT, reconciliation, cents, COMMISSION_PAGE, restorationBlocked } from './migrationLedgerEvidence';
 
 const PAGE = 50;
 const page = { cursor: v.optional(v.union(v.string(), v.null())), dryRun: v.optional(v.boolean()), expectedSourceHash: v.optional(v.string()) };
@@ -202,7 +202,7 @@ export const creditSnapshot = internalMutation({
   args: page,
   handler: async (ctx, a) => {
     const dryRun = a.dryRun !== false;
-    const res = await ctx.db.query('users').paginate({ cursor: a.cursor ?? null, numItems: PAGE });
+    const res = await ctx.db.query('users').paginate({ cursor: a.cursor ?? null, numItems: 1 });
     const counts: Counts = {};
     const reviewInputs: unknown[] = [];
     for (const user of res.page) {
@@ -214,7 +214,7 @@ export const creditSnapshot = internalMutation({
       const account = await ctx.db.query('ldgCreditAccounts').withIndex('by_user', q => q.eq('userId', user._id)).unique();
       reviewInputs.push({ userId: user._id, fingerprint, opening, account });
       if (opening) {
-        await creditParity(ctx, user._id);
+        await creditParity(ctx, user._id, source);
         bump(counts, 'exists');
         continue;
       }
@@ -239,7 +239,7 @@ type ParityPage = { mismatches: string[]; mismatchCount: number; diagnosticsTrun
 export const ledgerParity = internalQuery({
   args: { cursor: v.optional(v.union(v.string(), v.null())) },
   handler: async (ctx, a): Promise<ParityPage> => {
-    const res = await ctx.db.query('users').paginate({ cursor: a.cursor ?? null, numItems: 25 });
+    const res = await ctx.db.query('users').paginate({ cursor: a.cursor ?? null, numItems: 1 });
     const mismatches: string[] = [];
     const counts: Counts = { users: res.page.length, commissions: 0 };
     let incompleteScopes = 0;
@@ -252,14 +252,9 @@ export const ledgerParity = internalQuery({
         const obligations = b ? completeRows(await ctx.db.query('ldgObligations').withIndex('by_beneficiary_created', q => q.eq('beneficiaryId', b._id)).take(COMMISSION_LIMIT + 1), COMMISSION_LIMIT, 'Beneficiary obligations') : [];
         const migrated = obligations.filter(o => o.legacyCommissionId);
         if (legacy.length !== migrated.length) mismatches.push(`${user._id}: migrated commission count differs`);
-        for (const c of legacy) {
-          counts.commissions++;
-          const matches = migrated.filter(o => o.legacyCommissionId === c._id);
-          if (matches.length !== 1) { mismatches.push(`${c._id}: missing or duplicate migrated obligation`); continue; }
-          const evidence = await commissionEvidence(ctx, c, matches[0]);
-          const target = c.status === 'void' ? 0 : cents(c.amountCents, 'Legacy commission');
-          if (target !== evidence.accounted) mismatches.push(`${c._id}: legacy ${target} vs v2 ${evidence.accounted}`);
-        }
+        // Amount/ownership evidence is checked in bounded commission subpages below.
+        // Do not open one sync-history index range for every commission in this user query.
+        counts.commissions += legacy.length;
       } catch (error) {
         incompleteScopes++;
         mismatches.push(`${user._id}: commission review required: ${commerceErrorData(error)?.detail ?? 'Incomplete or ambiguous evidence'}`);
@@ -275,19 +270,30 @@ export const ledgerParity = internalQuery({
   },
 });
 
-/** Legacy money rows with a deleted/missing owner must not disappear from a user-based scan. */
+/** Global commission subpages exhaust each user's history without unbounded nested ranges. */
 export const ledgerSourceReferences = internalQuery({
   args: { source: v.union(v.literal('commissions'), v.literal('credits')), cursor: v.optional(v.union(v.string(), v.null())) },
-  handler: async (ctx, a): Promise<{ mismatches: string[]; count: number; continueCursor: string; isDone: boolean }> => {
+  handler: async (ctx, a): Promise<{ mismatches: string[]; incompleteScopes: number; count: number; continueCursor: string; isDone: boolean }> => {
     const page = a.source === 'commissions'
-      ? await ctx.db.query('holmCommissions').paginate({ cursor: a.cursor ?? null, numItems: 100 })
+      ? await ctx.db.query('holmCommissions').paginate({ cursor: a.cursor ?? null, numItems: COMMISSION_PAGE })
       : await ctx.db.query('holmCredits').paginate({ cursor: a.cursor ?? null, numItems: 100 });
-    const mismatches: string[] = [];
+    const mismatches: string[] = []; let incompleteScopes = 0;
     for (const row of page.page) {
       const userId = 'partnerId' in row ? row.partnerId : row.userId;
-      if (!(await ctx.db.get(userId))) mismatches.push(`${row._id}: legacy ${a.source} owner is missing`);
+      if (!(await ctx.db.get(userId))) { mismatches.push(`${row._id}: legacy ${a.source} owner is missing`); continue; }
+      if (!('partnerId' in row)) continue;
+      try {
+        const original = await ctx.db.query('ldgObligations').withIndex('by_legacy', q => q.eq('legacyCommissionId', row._id)).unique();
+        if (!original) { mismatches.push(`${row._id}: missing migrated obligation`); continue; }
+        const evidence = await commissionEvidence(ctx, row, original);
+        const target = row.status === 'void' ? 0 : cents(row.amountCents, 'Legacy commission');
+        if (target !== evidence.accounted) mismatches.push(`${row._id}: legacy ${target} vs v2 ${evidence.accounted}`);
+      } catch (error) {
+        incompleteScopes++;
+        mismatches.push(`${row._id}: commission review required: ${commerceErrorData(error)?.detail ?? 'Incomplete or ambiguous evidence'}`);
+      }
     }
-    return { mismatches, count: page.page.length, continueCursor: page.continueCursor, isDone: page.isDone };
+    return { mismatches, incompleteScopes, count: page.page.length, continueCursor: page.continueCursor, isDone: page.isDone };
   },
 });
 
@@ -305,9 +311,9 @@ export const runLedgerParity = internalAction({
         mismatches.push(...result.mismatches.slice(0, Math.max(0, 50 - mismatches.length)));
       });
       for (const source of ['commissions', 'credits'] as const) {
-        await walkMigrationPages<{ mismatches: string[]; count: number; continueCursor: string; isDone: boolean }>(
+        await walkMigrationPages<{ mismatches: string[]; incompleteScopes: number; count: number; continueCursor: string; isDone: boolean }>(
           cursor => ctx.runQuery(internal.v2Migrations.ledgerSourceReferences, { source, cursor }), result => {
-            pages++; mismatchCount += result.mismatches.length;
+            pages++; mismatchCount += result.mismatches.length; incompleteScopes += result.incompleteScopes;
             bump(counts, `source_${source}`, result.count);
             mismatches.push(...result.mismatches.slice(0, Math.max(0, 50 - mismatches.length)));
           });
@@ -372,7 +378,7 @@ export const syncLegacyLedgerPage = internalMutation({
   args: { cursor: v.optional(v.union(v.string(), v.null())) },
   handler: async (ctx, a) => {
     if (payoutRoute() !== 'v2') return { skipped: 'legacy payout route active' };
-    const res = await ctx.db.query('holmCommissions').paginate({ cursor: a.cursor ?? null, numItems: 100 });
+    const res = await ctx.db.query('holmCommissions').paginate({ cursor: a.cursor ?? null, numItems: 2 });
     let mirrored = 0;
     let adjusted = 0;
     for (const c of res.page) {
@@ -418,7 +424,7 @@ export const syncLegacyLedgerPage = internalMutation({
       if (delta) {
         // Paid amounts remain immutable. A later negative change is a visible future offset.
         const pending = delta > 0 && c.status === 'pending';
-        if (delta > 0 && o.state === 'held') reconciliation('Resolve the commission dispute before restoring earnings');
+        if (delta > 0 && await restorationBlocked(ctx, c, o)) reconciliation('Resolve the commission dispute before restoring earnings');
         await applyCommissionEvent(ctx, { eventKey: `${key}:${part}`, type: delta < 0 ? 'offset' : 'manual_adjustment', amountMinor: delta,
           actor: 'sync:legacy', reason: delta < 0 ? 'Legacy commission reduced after payout' : 'Legacy commission restored',
           create: { beneficiaryId: o.beneficiaryId, source: delta < 0 ? 'offset' : 'adjustment', rateBps: 0, basisMinor: 0,

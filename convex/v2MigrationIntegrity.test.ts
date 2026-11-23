@@ -6,7 +6,7 @@ import schema from './schema';
 import { internal } from './_generated/api';
 import { applyCommissionEvent, applyCreditEvent } from './ldgCore';
 import { settle } from './ldgCredits';
-import { CREDIT_LIMIT, COMMISSION_LIMIT, SYNC_LIMIT, completeRows } from './migrationLedgerEvidence';
+import { CREDIT_LIMIT, COMMISSION_LIMIT, SYNC_LIMIT, HOLD_LIMIT, completeRows } from './migrationLedgerEvidence';
 const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 const NOW = Date.UTC(2026, 10, 23);
 beforeEach(() => { vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'setInterval'], now: NOW }); process.env.PAYOUT_EXECUTION_ENABLED = 'true'; process.env.PARTNER_PAYOUTS_ENABLED = 'false'; });
@@ -46,7 +46,7 @@ describe('migration financial integrity', () => {
       const events = await s.t.run(ctx => ctx.db.query('ldgCommissionEvents').collect());
       expect(await s.t.mutation(internal.v2Migrations.syncLegacyLedgerPage, {})).toMatchObject({ adjusted: 0 });
       expect(await s.t.run(ctx => ctx.db.query('ldgCommissionEvents').collect())).toEqual(events);
-      expect((await s.t.query(internal.v2Migrations.ledgerParity, {})).mismatches).toEqual([]);
+      expect(await s.t.action(internal.v2Migrations.runLedgerParity, {})).toMatchObject({ passed: true, complete: true });
     }
     expect(await s.t.run(ctx => ctx.db.get(original._id))).toMatchObject({ earnedMinor: original.earnedMinor, rateBps: original.rateBps, basisMinor: original.basisMinor });
     if (status === 'paid') expect((await s.t.run(ctx => ctx.db.get(original._id)))!.state).toBe('transferred');
@@ -57,7 +57,7 @@ describe('migration financial integrity', () => {
     for (const target of [-500, -200, -500, 0, -500]) {
       await s.t.run(ctx => ctx.db.patch(s.commissionId, { amountCents: target }));
       await s.t.mutation(internal.v2Migrations.syncLegacyLedgerPage, {});
-      expect((await s.t.query(internal.v2Migrations.ledgerParity, {})).mismatches).toEqual([]);
+      expect(await s.t.action(internal.v2Migrations.runLedgerParity, {})).toMatchObject({ passed: true, complete: true });
     }
     expect((await s.t.run(ctx => ctx.db.query('ldgObligations').first()))!.earnedMinor).toBe(-500);
   });
@@ -72,7 +72,7 @@ describe('migration financial integrity', () => {
     expect(await s.t.mutation(internal.v2Migrations.syncLegacyLedgerPage, {})).toMatchObject({ adjusted: 0 });
     await s.t.run(ctx => ctx.db.patch(s.commissionId, { amountCents: 1000 }));
     expect(await s.t.mutation(internal.v2Migrations.syncLegacyLedgerPage, {})).toMatchObject({ adjusted: 1 });
-    expect((await s.t.query(internal.v2Migrations.ledgerParity, {})).mismatches).toEqual([]);
+    expect(await s.t.action(internal.v2Migrations.runLedgerParity, {})).toMatchObject({ passed: true, complete: true });
   });
   it('finds credit-only users without profiles or beneficiaries and checks missing accounts', async () => {
     const s = await creditFixture();
@@ -163,7 +163,7 @@ describe('migration financial integrity', () => {
       await ctx.db.insert('holmCredits', { userId, amountCents: 10000, kind: 'earned', reason: 'Synthetic', at: NOW });
     } });
     const result = await t.action(internal.v2Migrations.runLedgerParity, { includeDetails: true });
-    expect(result).toMatchObject({ passed: false, complete: false, pages: 5, mismatchCount: 55, diagnosticsTruncated: true, counts: { users: 55 } });
+    expect(result).toMatchObject({ passed: false, complete: false, pages: 58, mismatchCount: 55, diagnosticsTruncated: true, counts: { users: 55 } });
     expect(result.mismatches).toHaveLength(50);
   });
   it('reports legacy financial rows whose user was deleted', async () => {
@@ -211,6 +211,72 @@ describe('migration financial integrity', () => {
     expect(await s.t.run(ctx => ctx.db.query('ldgCommissionEvents').collect())).toHaveLength(1);
     await expect(s.t.action(internal.v2Migrations.runBackfills, { commit: true, only: ['ledger'] })).rejects.toThrow(/expectedSourceHash/);
   });
+  it('walks dense credit users in separate source-bound transactions', async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async ctx => {
+      for (let u = 0; u < 17; u++) {
+        const userId = await ctx.db.insert('users', { email: `dense-${u}@example.com` });
+        for (let i = 0; i < CREDIT_LIMIT; i++) await ctx.db.insert('holmCredits', { userId, amountCents: 1, kind: 'earned', reason: 'Synthetic', at: NOW + i });
+      }
+    });
+    let cursor: string | null = null; let users = 0; let pages = 0;
+    do {
+      const page: { counts: Record<string, number>; sourceHash: string; isDone: boolean; continueCursor: string } = await t.mutation(internal.v2Migrations.creditSnapshot, { cursor, dryRun: true });
+      expect(page.counts.accounts ?? 0).toBeLessThanOrEqual(1);
+      expect(page.sourceHash).toBeTruthy(); users += page.counts.accounts ?? 0; pages++;
+      cursor = page.isDone ? null : page.continueCursor;
+    } while (cursor);
+    expect(users).toBe(17); expect(pages).toBeGreaterThanOrEqual(17); expect(pages).toBeLessThanOrEqual(18);
+    expect(await t.run(ctx => ctx.db.query('ldgCreditEvents').collect())).toEqual([]);
+  }, 60000);
+  it('refuses active holds beyond the per-transaction write budget without partial money', async () => {
+    const s = await creditFixture();
+    await s.t.run(async ctx => {
+      for (let i = 1; i <= HOLD_LIMIT; i++) await ctx.db.insert('holmCredits', { userId: s.userId, amountCents: -1, heldCents: 1, kind: 'reserved', ref: `hold:${i}`, reason: 'Synthetic', at: NOW + i });
+    });
+    await expect(commitSnapshot(s.t, 'creditSnapshot')).rejects.toThrow(/Active legacy credit holds/);
+    expect(await s.t.run(ctx => ctx.db.query('ldgCreditEvents').collect())).toEqual([]);
+  });
+  it.each([31, 4200])('bounds a %s-commission history and checks the tail across subpages', async count => {
+    const s = await fixture();
+    await s.t.run(async ctx => {
+      const original = (await ctx.db.query('ldgObligations').first())!;
+      const { _id, _creationTime, ...copy } = original; void _id; void _creationTime;
+      for (let i = 1; i < count; i++) {
+        const id = await ctx.db.insert('holmCommissions', { partnerId: s.userId, source: 'storefront_order', amountCents: i === count - 1 ? 999 : 1000, baseCents: 10000, rateBps: 1000, status: 'cleared', clearsAt: NOW, createdAt: NOW + i });
+        await ctx.db.insert('ldgObligations', { ...copy, legacyCommissionId: id, createdAt: NOW + i });
+      }
+    });
+    const first = await s.t.query(internal.v2Migrations.ledgerSourceReferences, { source: 'commissions' });
+    expect(first).toMatchObject({ count: 10, isDone: false, mismatches: [] });
+    const accountPage = await s.t.query(internal.v2Migrations.ledgerParity, {});
+    expect(accountPage).toMatchObject({ scopeComplete: true, counts: { commissions: count } });
+    if (count === 31) {
+      const full = await s.t.action(internal.v2Migrations.runLedgerParity, { includeDetails: true });
+      expect(full).toMatchObject({ complete: true, passed: false, mismatchCount: 1, counts: { commissions: count, source_commissions: count } });
+      expect(full.pages).toBeGreaterThan(4);
+      expect(full.mismatches.join()).toContain('legacy 999 vs v2 1000');
+    }
+  }, 60000);
+  it.each(['won', 'lost', 'historical-void'] as const)('preserves dispute protection after a full reversal (%s)', async outcome => {
+    const s = await fixture();
+    const original = (await s.t.run(ctx => ctx.db.query('ldgObligations').first()))!;
+    await s.t.run(ctx => applyCommissionEvent(ctx, { eventKey: 'dispute:fixture', obligationId: original._id, type: 'dispute_hold', amountMinor: 0, actor: 'fixture' }));
+    await s.t.run(ctx => ctx.db.patch(s.commissionId, { amountCents: 0 }));
+    await s.t.mutation(internal.v2Migrations.syncLegacyLedgerPage, {});
+    expect(await s.t.run(ctx => ctx.db.get(original._id))).toMatchObject({ state: 'held', reversedMinor: 1000, heldMinor: 0 });
+    if (outcome === 'historical-void') await s.t.run(ctx => ctx.db.patch(original._id, { state: 'void' }));
+    await s.t.run(ctx => ctx.db.patch(s.commissionId, { amountCents: 1000 }));
+    await expect(s.t.mutation(internal.v2Migrations.syncLegacyLedgerPage, {})).rejects.toThrow(/dispute/);
+    expect(await s.t.run(ctx => ctx.db.query('ldgObligations').collect())).toHaveLength(1);
+    if (outcome === 'historical-void') return; // old immutable hold event still blocks restoration
+    await s.t.run(ctx => applyCommissionEvent(ctx, { eventKey: `dispute:${outcome}`, obligationId: original._id, type: outcome === 'won' ? 'dispute_release' : 'dispute_lost', amountMinor: 0, actor: 'fixture', at: NOW + 1 }));
+    if (outcome === 'lost') await expect(s.t.mutation(internal.v2Migrations.syncLegacyLedgerPage, {})).rejects.toThrow(/dispute/);
+    else {
+      await s.t.mutation(internal.v2Migrations.syncLegacyLedgerPage, {});
+      expect(await s.t.action(internal.v2Migrations.runLedgerParity, {})).toMatchObject({ passed: true, complete: true });
+    }
+  });
   it('accepts the exact read boundary and refuses the next record', () => {
     expect(completeRows([1, 2], 2, 'fixture')).toEqual([1, 2]);
     expect(() => completeRows([1, 2, 3], 2, 'fixture')).toThrow(/exceeds/);
@@ -220,6 +286,12 @@ describe('migration financial integrity', () => {
 // Local test review-and-commit harness. Financial production commits remain explicit pages.
 async function commitSnapshot(t: ReturnType<typeof convexTest>, name: 'ledgerSnapshot' | 'creditSnapshot') {
   const fn = internal.v2Migrations[name];
-  const reviewed = await t.mutation(fn, { dryRun: true });
-  return t.mutation(fn, { dryRun: false, expectedSourceHash: reviewed.sourceHash });
+  let cursor: string | null = null;
+  for (let pages = 0; pages < 10000; pages++) {
+    const reviewed = await t.mutation(fn, { cursor, dryRun: true });
+    const committed: { isDone: boolean; continueCursor: string } = await t.mutation(fn, { cursor, dryRun: false, expectedSourceHash: reviewed.sourceHash });
+    if (committed.isDone) return committed;
+    cursor = committed.continueCursor;
+  }
+  throw new Error('Incomplete test migration');
 }

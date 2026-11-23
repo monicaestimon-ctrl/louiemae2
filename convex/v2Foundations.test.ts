@@ -180,8 +180,8 @@ describe('backfills (S05, S06)', () => {
     const obligations = await t.run((ctx) => ctx.db.query('ldgObligations').collect());
     expect(obligations).toHaveLength(4);
     expect(obligations.map((o) => o.state).sort()).toEqual(['cleared', 'pending', 'transferred', 'void']);
-    const parity = await t.query(internal.v2Migrations.ledgerParity, {});
-    expect(parity.mismatches).toEqual([]);
+    const parity = await t.action(internal.v2Migrations.runLedgerParity, {});
+    expect(parity).toMatchObject({ passed: true, complete: true });
     const acct = await t.run((ctx) => ctx.db.query('ldgCreditAccounts').first());
     expect(acct).toMatchObject({ availableMinor: 6_000, reservedMinor: 4_000 });
     // legacy rows untouched
@@ -230,6 +230,12 @@ it('reports stale explicit lighting categories without mutating records or grant
 // Local test review-and-commit harness. Financial production commits remain explicit pages.
 async function commitSnapshot(t: ReturnType<typeof convexTest>, name: 'ledgerSnapshot' | 'creditSnapshot') {
   const fn = internal.v2Migrations[name];
-  const reviewed = await t.mutation(fn, { dryRun: true });
-  return t.mutation(fn, { dryRun: false, expectedSourceHash: reviewed.sourceHash });
+  let cursor: string | null = null;
+  for (let pages = 0; pages < 10000; pages++) {
+    const reviewed = await t.mutation(fn, { cursor, dryRun: true });
+    const committed: { isDone: boolean; continueCursor: string } = await t.mutation(fn, { cursor, dryRun: false, expectedSourceHash: reviewed.sourceHash });
+    if (committed.isDone) return committed;
+    cursor = committed.continueCursor;
+  }
+  throw new Error('Incomplete test migration');
 }
