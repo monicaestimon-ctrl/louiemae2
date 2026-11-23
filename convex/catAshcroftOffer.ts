@@ -1,3 +1,4 @@
+import { retailDelivery } from '../lib/retailLaunch';
 import { requireFlag } from '../lib/flags';
 // Deliberate final-price offers preserve external legacy variant IDs.
 import type { QueryCtx, MutationCtx } from './_generated/server';
@@ -32,5 +33,8 @@ export async function approvedAshcroftOffer(ctx: Ctx, listing: Doc<'commerceList
     throw new CommerceError('PRICE_CHANGED', 'Republish the current approved channel price');
   const capacity = await availableAshcroftAfterCommitments(ctx, cv, stock.availableUnits, now);
   const economics = await ashcroftScenarios(ctx, cv, { now, reserveRetailCommission: channel === 'retail' && cv.referralEligible !== false });
+  const rate = retailDelivery(listing.snapshot.category, listing.snapshot.name);
+  if (!rate || rate.freight !== economics.basketBasis.freightMinor || rate.delivery !== economics.basketBasis.deliveryMinor)
+    throw new CommerceError('COST_REVIEW_REQUIRED', 'Ashcroft listing delivery differs from its approved economics');
   return { cv, option: option[0], price, stock, capacity, economics };
 }

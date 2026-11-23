@@ -177,6 +177,8 @@ export const commerceTables = {
     .index('by_cj', ['cjProductId']),
   commerceListings: defineTable({
     pricingMode: v.optional(v.literal('approved_v2')),
+    // Retained exact legacy identities survive selective publication; never a payable offer.
+    ashcroftIdentityOptions: v.optional(v.array(v.object({ id: v.string(), sku: v.string(), minimum: v.number(), increment: v.number() }))),
     productId: v.id('commerceProducts'),
     channel,
     published: v.boolean(),

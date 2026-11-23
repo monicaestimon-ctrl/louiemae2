@@ -50,10 +50,10 @@ export async function discoveryOffers(ctx: QueryCtx | MutationCtx, listing: Doc<
       retailFrom: 0, retailTo: null, tradeFrom: 0, tradeTo: null,
     }));
   }
+  const candidates = product.provider === 'ashcroft' ? await ctx.db.query('catVariants').withIndex('by_product', q => q.eq('productId', product._id)).take(201) : [];
   const offers: DiscoveryOffer[] = [];
   for (const option of listing.snapshot.variants) {
     const id = ctx.db.normalizeId('catVariants', option.id);
-    const candidates = product.provider === 'ashcroft' ? await ctx.db.query('catVariants').withIndex('by_product', q => q.eq('productId', product._id)).take(201) : [];
     const matches = candidates.filter(cv => cv.legacyVariantId === option.id);
     const variant = product.provider === 'ashcroft' ? (candidates.length <= 200 && matches.length === 1 ? matches[0] : null) : id ? await ctx.db.get(id) : null;
     if (!variant || variant.productId !== product._id) continue;

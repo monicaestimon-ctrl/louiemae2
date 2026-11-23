@@ -1,3 +1,4 @@
+import { ashcroftBasketFunded } from '../lib/economics/ashcroft';
 import { approvedAshcroftOffer } from './catAshcroftOffer';
 import type { ashcroftScenarios } from './catAshcroftEconomics';
 import { deliveryZone } from '../lib/delivery/zones';
@@ -391,7 +392,7 @@ export async function resolveLines(
             validUntil: feed.validUntil, economics: offer.economics.inputsHash, listingRevision: listing.revision, option, supplierRow, rate }),
           lineKey: `${i}:${product._id}:${cv._id}`, productId: product._id, variant: cv, provider: 'ashcroft', name,
           packs: l.packs, pieces: l.packs, unitPackMinor: offer.price.packPriceMinor, category: offer.economics.category,
-          supplierCode: 'ashcroft', fixedDeliveryMinor: rate.delivery * l.packs, cartons: [], originZip: '',
+          supplierCode: 'ashcroft', fixedDeliveryMinor: offer.economics.basketBasis.deliveryMinor * l.packs, cartons: [], originZip: '',
           costRevisionId: cv.currentCostRevisionId, priceRevisionId: offer.price._id });
         continue;
       }
@@ -760,9 +761,7 @@ export async function computeEstimate(
       const merchandiseTax = tax?.lineTaxes?.find(t => t.key === line.lineKey)?.taxMinor ?? 0;
       const deliveryTaxShare = tax ? Math.ceil((tax.deliveryTaxMinor ?? 0) * line.fixedDeliveryMinor / Math.max(1, tax.deliveryMinor)) : 0;
       // baseMinor already includes freight minus the net retained delivery charge: do not add freight again.
-      const contribution = net - Math.ceil(net * (basis.processingBps + basis.returnsBps + basis.overheadBps + basis.commissionBps) / 10000)
-        - basis.baseMinor * line.packs - Math.ceil((merchandiseTax + deliveryTaxShare) * basis.processingBps / 10000);
-      if (contribution < Math.ceil(net * basis.marginBps / 10000)) reasons.push('An Ashcroft offer requires review after discounts, credit or tax expenses');
+      if (!ashcroftBasketFunded(basis, net, line.packs, merchandiseTax + deliveryTaxShare)) reasons.push('An Ashcroft offer requires review after discounts, credit or tax expenses');
     }
     return reasons;
   };

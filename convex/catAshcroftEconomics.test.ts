@@ -48,8 +48,8 @@ async function setup() {
   return { t, admin, ...ids, compute, qualify };
 }
 
-describe('Ashcroft supplier-specific qualification', () => {
-  it('publishes final Ashcroft prices once, preserves legacy IDs and funds independent retail/trade delivery', async () => {
+
+async function publicationSetup() {
     const s = await setup();
     process.env.CATALOG_PUBLICATION_V2_ENABLED = 'true';
     process.env.RETAIL_ZUO_CHECKOUT_ENABLED = 'true';
@@ -72,6 +72,12 @@ describe('Ashcroft supplier-specific qualification', () => {
       return ctx.db.insert('ashcroftInventoryFeeds', { source: 'Fixture selling-unit inventory', sha256: 'a'.repeat(64),
         observedAt: NOW - 1000, validUntil: NOW + 3600000, importedAt: NOW, rows: [{ sku: cv.supplierSku, quantity: 10 }] });
     });
+    return { s, cv, source, original };
+}
+
+describe('Ashcroft supplier-specific qualification', () => {
+  it('publishes final Ashcroft prices once, preserves legacy IDs and funds independent retail/trade delivery', async () => {
+    const { s, cv, source, original } = await publicationSetup();
     await s.admin.mutation(api.catPublication.verifyCanonicalIdentity, { productId: cv.productId, variantIds: [cv._id] });
     await s.admin.mutation(api.catPublication.publish, { productIds: [cv.productId], channels: ['retail', 'house'] });
     const retail = await s.t.run(ctx => retailDetail(ctx, cv.productId));
@@ -122,6 +128,44 @@ describe('Ashcroft supplier-specific qualification', () => {
     const restored = (await s.t.run(ctx => ctx.db.get(s.listingId)))!;
     expect(restored.snapshot).toEqual(original.snapshot);
     expect(restored.pricingMode).toBeUndefined();
+  });
+
+  it('can approve and republish a variant omitted from a prior two-channel publication', async () => {
+    const { s, cv, source } = await publicationSetup();
+    const second = await s.t.run(async ctx => {
+      const listing = (await ctx.db.get(s.listingId))!;
+      await ctx.db.patch(listing._id, { snapshot: { ...listing.snapshot, variants: [...listing.snapshot.variants, { ...listing.snapshot.variants[0], id: 'second' }] },
+        fulfillment: [...listing.fulfillment!, { ...listing.fulfillment![0], id: 'second', sku: 'BEN-SECOND' }] });
+      const next = await ensureAshcroftIdentity(ctx, { productId: cv.productId, variantId: 'second', sku: 'BEN-SECOND', name: 'Second bench', minimum: 1, increment: 1 }, 'fixture');
+      const { _id: costId, _creationTime: costTime, ...cost } = (await ctx.db.get(s.costId))!;
+      void costId; void costTime;
+      const nextCost = await ctx.db.insert('catCostRevisions', { ...cost, variantId: next._id });
+      await ctx.db.patch(next._id, { holds: [], currentCostRevisionId: nextCost, marginPolicyKey: 'ashcroft-fixture', referralEligible: true });
+      const media = (await ctx.db.query('catMediaAssets').first())!;
+      const { _id: imageId, _creationTime: imageTime, ...image } = media;
+      void imageId; void imageTime;
+      await ctx.db.insert('catMediaAssets', { ...image, verifiedAgainst: { sku: 'BEN-SECOND', pack: '1' } });
+      await ctx.db.patch(source, { rows: [{ sku: cv.supplierSku, quantity: 10 }, { sku: 'BEN-SECOND', quantity: 10 }] });
+      return next;
+    });
+    await s.admin.mutation(api.catPricing.approvePrice, { variantId: second._id, channel: 'retail', packPriceMinor: 80000, reason: 'Fixture retail price' });
+    const request = { productIds: [cv.productId], channels: ['retail', 'house'] as ('retail' | 'house')[] };
+    expect((await s.admin.mutation(api.catPublication.publish, request))[0].variants).toBe(1);
+    expect((await s.t.run(ctx => ctx.db.get(s.listingId)))!.snapshot.variants.map(v => v.id)).toEqual(['legacy']);
+    await s.admin.mutation(api.catPricing.approvePrice, { variantId: second._id, channel: 'trade', packPriceMinor: 60000, reason: 'Fixture later trade price' });
+    expect((await s.admin.mutation(api.catPublication.publish, request))[0].variants).toBe(2);
+    expect((await s.t.run(ctx => ctx.db.get(s.listingId)))!.snapshot.variants.map(v => v.id)).toContain('second');
+  });
+
+  it('rejects mismatched channel delivery and an inconsistent single-channel rollback atomically', async () => {
+    const { s, cv } = await publicationSetup();
+    await s.admin.mutation(api.catPublication.publish, { productIds: [cv.productId], channels: ['retail', 'house'] });
+    const house = (await s.t.run(ctx => ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', cv.productId).eq('channel', 'house')).unique()))!;
+    await s.t.run(ctx => ctx.db.patch(house._id, { snapshot: { ...house.snapshot, category: 'sofa', name: 'Fixture sofa' } }));
+    await expect(s.t.run(async ctx => approvedAshcroftOffer(ctx, (await ctx.db.get(house._id))!, 'legacy', 'trade', NOW))).rejects.toThrow(/delivery/);
+    const before = await s.t.run(ctx => ctx.db.get(s.listingId));
+    await expect(s.admin.mutation(api.catPublication.rollback, { productId: cv.productId, channel: 'retail', reason: 'Fixture inconsistent rollback' })).rejects.toThrow(/delivery models differ/);
+    expect(await s.t.run(ctx => ctx.db.get(s.listingId))).toEqual(before);
   });
 
   it('does not let inventory observations hide a conflicting cost source', async () => {

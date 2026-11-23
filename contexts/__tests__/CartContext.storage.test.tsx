@@ -188,3 +188,18 @@ it('warns when browser restrictions also prevent invalidating the old saved cart
   expect(screen.getByTestId('quantity')).toHaveTextContent('3');
   expect(screen.getByTestId('notice')).toHaveTextContent('previous saved cart may return');
 });
+
+it('accepts a reviewed checkout-mode change while retaining the line quantity and option', () => {
+  const option = { id: 'v1', name: 'Default', priceAdjustment: 0, inStock: true };
+  const old = { ...product, checkoutMode: 'legacy' as const, variants: [option] };
+  localStorage.setItem('louiemae_ashcroft_cart_v1', JSON.stringify([{ product: old, selectedVariant: option, quantity: 2 }]));
+  function Accept() {
+    const c = useCart();
+    return <><button onClick={() => c.acceptCurrentItem(old.id, option.id, { ...old, checkoutMode: 'v2' }, option)}>Accept mode</button>
+      <output>{c.items[0]?.product.checkoutMode}:{c.items[0]?.quantity}:{c.items[0]?.selectedVariant?.id}</output></>;
+  }
+  render(<CartProvider><Accept /></CartProvider>);
+  fireEvent.click(screen.getByText('Accept mode'));
+  expect(screen.getByText('v2:2:v1')).toBeInTheDocument();
+  expect(localStorage.getItem('louiemae_ashcroft_cart_v1')).toContain('"checkoutMode":"v2"');
+});

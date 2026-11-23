@@ -1,3 +1,4 @@
+import { ashcroftListingIdentity, assertAshcroftChannelDelivery } from './catAshcroftListingIdentity';
 import { currentAshcroftInventory } from './ordInventory';
 import { retailDelivery } from '../lib/retailLaunch';
 import { isLighting } from '../lib/catCategory';
@@ -44,13 +45,8 @@ async function publicationIdentity(ctx: Ctx, product: Doc<'commerceProducts'>, c
     throw new CommerceError('INVALID_INPUT', 'Variant must belong to this supplier and product');
   if (product.provider === 'ashcroft') {
     const retail = await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', product._id).eq('channel', 'retail')).unique();
-    const options = retail?.snapshot.variants.filter(v => v.id === cv.legacyVariantId) ?? [];
-    const routes = retail?.fulfillment?.filter(v => v.id === cv.legacyVariantId) ?? [];
-    if (!cv.legacyVariantId || cv.optionKey !== cv.legacyVariantId || cv.packId !== '1' || cv.piecesPerPack !== 1
-      || options.length !== 1 || routes.length !== 1 || routes[0].sku !== cv.supplierSku
-      || options[0].minimum !== cv.orderMinimumPacks || options[0].increment !== cv.orderIncrementPacks)
-      throw new CommerceError('INVALID_INPUT', 'Exact legacy Ashcroft selling-unit identity required');
-    return cv.legacyVariantId;
+    if (!retail) throw new CommerceError('INVALID_INPUT', 'Retail identity source missing');
+    return ashcroftListingIdentity(retail, cv);
   }
   const draft = product.draft.variants.filter(v => v.id === cv._id);
   if (cv.supplierSku !== product.zuoStaging?.sku || cv.piecesPerPack !== product.zuoStaging?.pack
@@ -376,13 +372,19 @@ export const publish = mutation({
       for (const channel of a.channels) {
         const { snapshot, fulfillment } = await snapshotFor(ctx, product, g.meta, channel, sellable);
         const old = await ctx.db.query('commerceListings').withIndex('by_product_channel', (q) => q.eq('productId', productId).eq('channel', channel)).unique();
-        const data = { productId, channel, pricingMode: 'approved_v2' as const, published: true, revision: product.revision, snapshot, fulfillment, updatedAt: now };
+        const identities = product.provider === 'ashcroft' && channel === 'retail'
+          ? g.variants.filter(cv => cv.availability !== 'discontinued').map(cv => ({ id: cv.legacyVariantId!, sku: cv.supplierSku, minimum: cv.orderMinimumPacks, increment: cv.orderIncrementPacks })) : undefined;
+        // Validate every retained identity against the pre-publication source before saving it.
+        if (identities) for (const cv of g.variants.filter(cv => cv.availability !== 'discontinued')) await publicationIdentity(ctx, product, cv);
+        const data = { productId, channel, pricingMode: 'approved_v2' as const, published: true, revision: product.revision, snapshot, fulfillment, updatedAt: now,
+          ...(identities ? { ashcroftIdentityOptions: identities } : {}) };
         const listingId = old ? (await ctx.db.patch(old._id, data), old._id) : await ctx.db.insert('commerceListings', data);
         const state = await ctx.db.query('catListingState').withIndex('by_listing', (q) => q.eq('listingId', listingId)).first();
         const st = { stage: 'published' as const, holds: [], publishedRevision: product.revision, publishedAt: now, ...(old?.published ? { previousSnapshot: { snapshot: old.snapshot, fulfillment: old.fulfillment, revision: old.revision, pricingMode: old.pricingMode } } : {}), updatedAt: now };
         if (state) await ctx.db.patch(state._id, st);
         else await ctx.db.insert('catListingState', { listingId, ...st });
       }
+      if (product.provider === 'ashcroft') assertAshcroftChannelDelivery(await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', productId)).collect());
       // Verify the final content/rate identity too; any mismatch rolls back both channel writes.
       if (product.provider === 'ashcroft') for (const cv of sellable) for (const channel of a.channels)
         await assertSellable(ctx, cv._id, 'publish', now, channel === 'house' ? 'trade' : 'retail');
@@ -429,6 +431,8 @@ export const rollback = mutation({
     const now = Date.now();
     if (prev) await ctx.db.patch(listing._id, { snapshot: prev.snapshot, fulfillment: prev.fulfillment, pricingMode: prev.pricingMode, revision: prev.revision, updatedAt: now });
     else await ctx.db.patch(listing._id, { published: false, updatedAt: now });
+    if ((await ctx.db.get(a.productId))?.provider === 'ashcroft')
+      assertAshcroftChannelDelivery(await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', a.productId)).collect());
     if (state) await ctx.db.patch(state._id, { previousSnapshot: undefined, reason: `rollback: ${a.reason}`, updatedAt: now, ...(prev ? {} : { stage: 'ready' as const, unpublishedAt: now }) });
     await audit(ctx, { actor: admin.email, action: 'publication.rollback', entityTable: 'commerceListings', entityId: listing._id, reason: a.reason, after: prev ? 'restored previous revision' : 'unpublished' });
   },
