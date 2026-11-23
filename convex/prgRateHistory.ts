@@ -59,8 +59,8 @@ export async function effectiveException(ctx: Ctx, productId: Id<'commerceProduc
 
 /** Category changes are audited; walk those changes backwards for basket-scope clicks. */
 export async function categoryAtClick(ctx: Ctx, productId: Id<'commerceProducts'>, current: CommissionCategory, at: number) {
-  const rows = await ctx.db.query('sysAuditEvents').withIndex('by_entity', q =>
-    q.eq('entityTable', 'commerceProducts').eq('entityId', productId).gte('at', at)).order('desc').take(101);
+  const rows = await ctx.db.query('sysAuditEvents').withIndex('by_entity_action_at', q =>
+    q.eq('entityTable', 'commerceProducts').eq('entityId', productId).eq('action', 'category.commit').gte('at', at)).order('desc').take(101);
   if (rows.length > 100) return review('Protected category history requires reconciliation');
   let category: CommissionCategory | 'review_required' = current;
   for (const row of rows.filter(row => row.action === 'category.commit')) {

@@ -61,6 +61,7 @@ export const v2Tables = {
     at: v.number(),
   })
     .index('by_entity', ['entityTable', 'entityId', 'at'])
+    .index('by_entity_action_at', ['entityTable', 'entityId', 'action', 'at'])
     .index('by_actor_at', ['actor', 'at'])
     .index('by_action_at', ['action', 'at']),
 
@@ -994,6 +995,7 @@ export const v2Tables = {
     expiresAt: v.number(),
   })
     .index('by_click', ['clickId'])
+    .index('by_eligible_at_click', ['eligible', 'at', 'clickId'])
     .index('by_visitor_at', ['visitorKeyHash', 'at'])
     .index('by_user_at', ['userId', 'at'])
     .index('by_visitor_eligible_at_click', ['visitorKeyHash', 'eligible', 'at', 'clickId'])

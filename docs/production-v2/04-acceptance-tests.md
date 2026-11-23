@@ -69,3 +69,7 @@ Every requirement gets a test ID, an environment, a code or config revision, an 
 ```
 
 A row may say PASSED only when the observed result matches the expected one in the named environment. "Compiles", "deployed" or "configured" is not evidence for a behavioural test.
+
+### Commission reserve acceptance
+
+`convex/commissionReserve.test.ts` verifies current visible exceptions, protected historical schedule/category rates, exact 30-day expiry, seed approval versus nominal effective dates, future quote-expiry boundaries, millisecond replacement protection, ignored invalid visits, complete scan bounds, exception validation and category lineage. It also verifies that unrelated pricing audits cannot hide category changes. Direct and referred retail delivery call the same reserve service without a buyer/referrer parameter; trade resolution continues to reserve zero retail-referral commission. Existing earned commission records are not modified.
