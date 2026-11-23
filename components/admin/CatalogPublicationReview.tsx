@@ -227,14 +227,41 @@ function Queue() {
   );
 }
 
+function AshcroftPreparation() {
+  const { results, status, loadMore } = usePaginatedQuery(api.catPublication.ashcroftPreparationQueue, {}, { initialNumItems: 25 });
+  const prepare = useMutation(api.catPublication.prepareAshcroft);
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [failed, setFailed] = useState(false);
+  async function review(row: (typeof results)[number]) {
+    setBusy(true); setFailed(false); setMessage('Preparing review…');
+    try {
+      await prepare({ productId: row.productId, expectedRevision: row.revision, reason: reason.trim() });
+      setMessage('Added to the review queue. Category, costs, prices and images still require review.');
+    } catch (error) { setFailed(true); setMessage(commerceErrorData(error)?.detail ?? customerMessage(error)); }
+    finally { setBusy(false); }
+  }
+  return <div className="space-y-3 border border-earth/20 p-3">
+    <p>Prepare existing Ashcroft identities for review. This does not approve evidence, change live prices or publish products.</p>
+    <label className="block">Preparation review note<textarea value={reason} maxLength={1000} onChange={e => setReason(e.target.value)} className="block w-full border p-2" /></label>
+    <ul>{results.map(row => <li key={row.productId}><button className={button} disabled={busy || reason.trim().length < 10} onClick={() => review(row)}>Prepare {row.name}</button></li>)}</ul>
+    {status === 'LoadingFirstPage' && <p role="status">Loading Ashcroft records…</p>}
+    {(status === 'CanLoadMore' || status === 'LoadingMore') && <button className={button} disabled={busy || status === 'LoadingMore'} onClick={() => loadMore(25)}>Load more Ashcroft records</button>}
+    {status === 'Exhausted' && results.length === 0 && <p>No unprepared Ashcroft records remain.</p>}
+    <p role={failed ? 'alert' : 'status'}>{message}</p>
+  </div>;
+}
+
 export default function CatalogPublicationReview() {
   const [open, setOpen] = useState(false);
+  const [prepare, setPrepare] = useState(false);
   return (
     <section className="bg-white border border-earth/10 rounded-lg p-4 space-y-3">
       <button className={button} aria-expanded={open} onClick={() => setOpen(!open)}>
         Product review and publication
       </button>
-      {open ? <Queue /> : null}
+      {open ? <><Queue /><button className={button} aria-expanded={prepare} onClick={() => setPrepare(!prepare)}>Prepare Ashcroft for catalog review</button>{prepare && <AshcroftPreparation />}</> : null}
     </section>
   );
 }

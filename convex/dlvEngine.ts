@@ -1,3 +1,6 @@
+import { ashcroftBasketFunded } from '../lib/economics/ashcroft';
+import { approvedAshcroftOffer } from './catAshcroftOffer';
+import type { ashcroftScenarios } from './catAshcroftEconomics';
 import { deliveryZone } from '../lib/delivery/zones';
 import { ashcroftAvailableFromFeed, latestFeed } from './ashcroftInventory';
 import { isLighting, proposeCategory } from '../lib/catCategory';
@@ -113,6 +116,7 @@ export type ResolvedLine = {
   warehouseServices?: ('ground' | 'ltl')[];
   stockReadiness?: 'counted' | 'confirmation_required';
   ashcroftFeedId?: Id<'ashcroftInventoryFeeds'>;
+  ashcroftEconomics?: Awaited<ReturnType<typeof ashcroftScenarios>>['basketBasis'];
 };
 
 async function categoryOf(
@@ -346,7 +350,7 @@ export async function resolveLines(
         },
       });
     } else if (product.provider === 'ashcroft') {
-      if (channel !== 'retail')
+      if (channel !== 'retail' && listing.pricingMode !== 'approved_v2')
         throw new CommerceError(
           'TRADE_APPROVAL_REQUIRED',
           'Ashcroft trade orders use House quotes'
@@ -379,6 +383,19 @@ export async function resolveLines(
       const inventory = await currentAshcroftInventory(ctx, cv, now);
       if (l.packs > await availableAshcroftAfterCommitments(ctx, cv, inventory.availableUnits, now))
         throw new CommerceError('STOCK_UNAVAILABLE', 'Ashcroft supplier quantity is committed to other checkouts or paid orders');
+      if (listing.pricingMode === 'approved_v2') {
+        const offer = await approvedAshcroftOffer(ctx, listing, l.variantId, channel, now);
+        if (channel === 'trade') await assertLineMechanism(ctx, cv._id, 'trade');
+        out.push({ validUntil: Math.min(feed.validUntil, offer.economics.validUntil),
+          ashcroftFeedId: inventory.feed._id, ashcroftEconomics: offer.economics.basketBasis,
+          dependencyHash: await digest({ feedId: feed._id, sha256: feed.sha256, observedAt: feed.observedAt,
+            validUntil: feed.validUntil, economics: offer.economics.inputsHash, listingRevision: listing.revision, option, supplierRow, rate }),
+          lineKey: `${i}:${product._id}:${cv._id}`, productId: product._id, variant: cv, provider: 'ashcroft', name,
+          packs: l.packs, pieces: l.packs, unitPackMinor: offer.price.packPriceMinor, category: offer.economics.category,
+          supplierCode: 'ashcroft', fixedDeliveryMinor: offer.economics.basketBasis.deliveryMinor * l.packs, cartons: [], originZip: '',
+          costRevisionId: cv.currentCostRevisionId, priceRevisionId: offer.price._id });
+        continue;
+      }
       const proposed = proposeCategory(categoryText).category;
       const category = await categoryOf(ctx, product._id, proposed);
       out.push({
@@ -654,7 +671,7 @@ export async function computeEstimate(
         ),
       };
   });
-  for (const l of lines.filter((x) => x.provider === 'zuo')) {
+  for (const l of lines.filter((x) => x.provider === 'zuo' || x.ashcroftEconomics)) {
     await assertLineMap(
       ctx,
       l.variant._id,
@@ -735,6 +752,19 @@ export async function computeEstimate(
           t.deliveryTaxMinor !== undefined
       )
     : [];
+  const ashcroftFundingReasons = (tax?: Doc<'dlvTaxCalculations'>) => {
+    const reasons: string[] = [];
+    for (const line of ash) {
+      const basis = line.ashcroftEconomics;
+      if (!basis) continue;
+      const net = line.unitPackMinor * line.packs - (line.creditMinor ?? 0);
+      const merchandiseTax = tax?.lineTaxes?.find(t => t.key === line.lineKey)?.taxMinor ?? 0;
+      const deliveryTaxShare = tax ? Math.ceil((tax.deliveryTaxMinor ?? 0) * line.fixedDeliveryMinor / Math.max(1, tax.deliveryMinor)) : 0;
+      // baseMinor already includes freight minus the net retained delivery charge: do not add freight again.
+      if (!ashcroftBasketFunded(basis, net, line.packs, merchandiseTax + deliveryTaxShare)) reasons.push('An Ashcroft offer requires review after discounts, credit or tax expenses');
+    }
+    return reasons;
+  };
   const usedTaxes: Doc<'dlvTaxCalculations'>[] = [];
   const verifiedTax = (delivery: number) => taxRows.find((t) => t.deliveryMinor === delivery);
   configs.push(taxPolicy);
@@ -744,8 +774,8 @@ export async function computeEstimate(
       supplierCode: 'ashcroft',
       rule: 'ashcroft-launch',
       classification: 'per_item',
-      freightMinor: 0,
-      subsidyMinor: 0,
+      freightMinor: ash.reduce((n, l) => n + (l.ashcroftEconomics?.freightMinor ?? 0) * l.packs, 0),
+      subsidyMinor: ash.reduce((n, l) => n + Math.max(0, (l.ashcroftEconomics?.freightMinor ?? 0) * l.packs - l.fixedDeliveryMinor), 0),
       requirementMinor: extraFixedMinor,
       chargeMinor: extraFixedMinor,
       quoteRequired: !ashcroftPolicyReady,
@@ -774,6 +804,8 @@ export async function computeEstimate(
         configVersions,
       };
     const tax = verifiedTax(extraFixedMinor);
+    const fundingReasons = ashcroftFundingReasons(tax);
+    if (fundingReasons.length) return { serviceTerms: serviceTerms(groupsOut.map(g => g.classification), servicePolicy?.value), status: 'quote_required', lines, merchandiseMinor, creditMinor, groups: groupsOut, reasons: fundingReasons, sourceVersionsHash: await versions(), configVersions };
     if (tax) configs.push(tax);
     return {
       serviceTerms: serviceTerms(
@@ -960,6 +992,8 @@ export async function computeEstimate(
   });
   // Tax shown only at full-address precision with an approved tax table.
   const verified = verifiedTax(est.deliveryMinor);
+  const fundingReasons = ashcroftFundingReasons(verified);
+  if (fundingReasons.length) return { serviceTerms: serviceTerms(groupsOut.map(g => g.classification), servicePolicy?.value), status: 'quote_required', lines, merchandiseMinor, creditMinor, groups: groupsOut, reasons: fundingReasons, sourceVersionsHash: await versions(), configVersions };
   // State-rate matrices remain simulation inputs only; final checkout needs address-bound evidence.
   const showTax = !!input.destination.address && !!verified;
   if (taxPolicy) configs.push(...[...new Map(usedTaxes.map((t) => [t._id, t])).values()]);

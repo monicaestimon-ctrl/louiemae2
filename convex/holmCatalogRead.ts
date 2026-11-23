@@ -1,3 +1,4 @@
+import { approvedAshcroftOffer } from './catAshcroftOffer';
 import type { Doc } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import { ashcroftAvailable } from './ashcroftInventory';
@@ -62,6 +63,21 @@ export function variantFreight(route: FulfillmentVariant, rate: ReturnType<typeo
 export async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>, includeUnfunded = false) {
   const product = await ctx.db.get(listing.productId);
   if (!product || product.provider === 'zuo') return null;
+  if (product.provider === 'ashcroft' && listing.pricingMode === 'approved_v2') {
+    const variants = [];
+    if (!flag('TRADE_CHECKOUT_V2_ENABLED')) return null;
+    for (const option of listing.snapshot.variants) {
+      try {
+        const offer = await approvedAshcroftOffer(ctx, listing, option.id, 'trade');
+        if (offer.capacity < option.minimum) continue;
+        const cost = offer.cv.currentCostRevisionId ? await ctx.db.get(offer.cv.currentCostRevisionId) : null;
+        variants.push({ ...option, offerAvailable: true, retail: offer.economics.retailApproved ? offer.economics.retailMinor : 0,
+          cost: cost?.wholesaleMinor ?? 0, sku: offer.cv.supplierSku, freightKnown: true,
+          trade: offer.price.packPriceMinor, floor: offer.economics.minimumTradeMinor });
+      } catch (error) { if (!isCommerceError(error)) throw error; }
+    }
+    return variants.length ? { product, listing, variants, inStock: true } : null;
+  }
   const ready = await listingReady(ctx, product, listing);
   if (!ready && !includeUnfunded) return null;
   const { linked, store, rate } = await pricingParts(ctx, product, listing);
@@ -128,6 +144,6 @@ export async function catalogItem(ctx: QueryCtx, listing: Doc<'commerceListings'
   return { id: product._id, name: s.name, description: s.description, category: s.category,
     images: imageMedia ? imageMedia.map(m => m.url) : s.images, imageMedia, facts: s.facts,
     assets: await publicAssets(ctx, (await assetsFor(ctx, product._id)) ?? undefined, s.facts), inStock, variants,
-    checkoutMode: product.provider === 'zuo' ? 'v2' as const : 'quote' as const };
+    checkoutMode: product.provider === 'zuo' || listing.pricingMode === 'approved_v2' ? 'v2' as const : 'quote' as const };
 }
 

@@ -1,4 +1,5 @@
 import { internalMutation as indexedInternalMutation } from './functions';
+import { approvedAshcroftOffer } from './catAshcroftOffer';
 import { customerFacing } from '../lib/delivery/publicErrors';
 import { assertDeliveryBounds } from '../lib/delivery/requestBounds';
 // Delivery estimate contract (spec S18, v2 §12). ZIP estimates are non-binding; a full-address
@@ -76,10 +77,14 @@ export const productProfile = query({
       if (!listing?.published || !option) return null;
       // Legacy Ashcroft variants use supplier IDs rather than canonical catVariant IDs.
       // These are selling-unit quantities; actual eligibility is rechecked by the engine.
-      if (product?.provider === 'ashcroft') return {
-        piecesPerPack: 1, minimumPacks: option.minimum, incrementPacks: option.increment,
-        ...(a.channel === 'trade' ? { requiresProjectQuote: true } : {}),
-      };
+      if (product?.provider === 'ashcroft') {
+        if (listing.pricingMode === 'approved_v2') {
+          await approvedAshcroftOffer(ctx, listing, a.variantId, a.channel);
+          return { piecesPerPack: 1, minimumPacks: option.minimum, incrementPacks: option.increment };
+        }
+        return { piecesPerPack: 1, minimumPacks: option.minimum, incrementPacks: option.increment,
+          ...(a.channel === 'trade' ? { requiresProjectQuote: true } : {}) };
+      }
       if (!vid || product?.provider !== 'zuo') return null;
       const cv = await ctx.db.get(vid);
       if (
@@ -182,6 +187,7 @@ export const compute = indexedInternalMutation({
             pieces: l.pieces,
             originZip: l.originZip,
             ...(l.engine ? { economics: l.engine } : {}),
+            ...(l.ashcroftEconomics ? { ashcroftEconomics: l.ashcroftEconomics } : {}),
             ...(l.costRevisionId ? { costRevisionId: l.costRevisionId } : {}),
             ...(l.priceRevisionId ? { priceRevisionId: l.priceRevisionId } : {}),
             category: l.category,

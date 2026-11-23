@@ -12,7 +12,7 @@ import { TIER_ORDER } from '../lib/tiers';
 
 const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 const ADMIN = 'owner@louiemae.com';
-const FLAGS = ['CREATOR_ENROLLMENT_V2_ENABLED', 'RETAIL_LINK_GENERATION_V2_ENABLED', 'COMMISSION_ACCRUAL_V2_ENABLED', 'ATTRIBUTION_V2_ENABLED', 'HOLM_TRADE_ONLY_ENABLED'];
+const FLAGS = ['RETAIL_ZUO_CHECKOUT_ENABLED', 'DELIVERY_AUTOMATION_ENABLED', 'CREATOR_ENROLLMENT_V2_ENABLED', 'RETAIL_LINK_GENERATION_V2_ENABLED', 'COMMISSION_ACCRUAL_V2_ENABLED', 'ATTRIBUTION_V2_ENABLED', 'HOLM_TRADE_ONLY_ENABLED'];
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'], now: Date.now() });
@@ -119,12 +119,32 @@ async function linkFixture(s: Awaited<ReturnType<typeof setup>>) {
     const retailId = await ctx.db.insert('commerceProducts', { provider: 'ashcroft', sourceKey: 'ashcroft:bench', draft, revision: 1, updatedAt: 1 });
     const houseId = await ctx.db.insert('commerceProducts', { provider: 'owner_managed', sourceKey: 'om:bench', draft, revision: 1, updatedAt: 1 });
     const snapshot = { name: 'Beckett bench', description: '', category: 'bench', images: [], facts: '', variants: [{ id: 'v1', name: 'Default Title', minimum: 1, increment: 1, price: 60_000 }] };
-    const retailListingId = await ctx.db.insert('commerceListings', { productId: retailId, channel: 'retail', published: true, revision: 1, updatedAt: 1, snapshot, fulfillment: [{ id: 'v1', name: 'Default Title', sku: 'BEN1', cost: 100, minimum: 1, increment: 1, retail: 60000, commercial: 50000 }] });
+    const retailListingId = await ctx.db.insert('commerceListings', { pricingMode: 'approved_v2', productId: retailId, channel: 'retail', published: true, revision: 1, updatedAt: 1, snapshot, fulfillment: [{ id: 'v1', name: 'Default Title', sku: 'BEN1', cost: 100, minimum: 1, increment: 1, retail: 60000, commercial: 50000 }] });
     const feedId = await ctx.db.insert('ashcroftInventoryFeeds', { source: 'Isolated referral fixture', sha256: 'a'.repeat(64), observedAt: Date.now(), validUntil: Date.now() + 86400000, importedAt: Date.now(), rows: [{ sku: 'BEN1', quantity: 5 }] });
     await ctx.db.insert('commerceListings', { productId: houseId, channel: 'house', published: true, revision: 1, updatedAt: 1, snapshot: { ...snapshot, variants: [{ ...snapshot.variants[0], id: 'h1' }] } });
     const supplierId = await ctx.db.insert('catSuppliers', { code: 'ashcroft', name: 'Ashcroft', publicAttributionAllowed: false, fulfillmentRoute: 'manual_dealer_ashcroft', freshnessKey: 'freshness-default', createdAt: 1 });
     const variantId = await ctx.db.insert('catVariants', { productId: retailId, supplierId, supplierSku: 'BEN1', packId: '1', optionKey: 'v1', supplierVariantName: 'x', louieMaeVariantName: 'x', piecesPerPack: 1, orderMinimumPacks: 1, orderIncrementPacks: 1, availability: 'in_stock', fulfillmentRoute: 'manual_dealer_ashcroft', holds: [], referralEligible: true, legacyVariantId: 'v1', createdAt: 1, updatedAt: 1 });
-    await ctx.db.insert('catProductMeta', { productId: retailId, commissionCategory: 'furniture', navCategory: 'bench', louieMaeName: 'Beckett bench', slug: 'beckett', slugHistory: [], supplierName: 'x', holds: [], stage: 'published', createdAt: 1, updatedAt: 1 });
+    await ctx.db.insert('catProductMeta', { supplierId, productId: retailId, commissionCategory: 'furniture', navCategory: 'bench', louieMaeName: 'Beckett bench', slug: 'beckett', slugHistory: [], supplierName: 'x', holds: [], stage: 'published', createdAt: 1, updatedAt: 1 });
+    const now = Date.now();
+    const revision = { createdAt: now, createdBy: 'fixture', effectiveFrom: now, source: 'fixture' };
+    const freshness = (await ctx.db.query('sysConfig').withIndex('by_kind_key_version', q => q.eq('kind', 'freshnessPolicy').eq('key', 'freshness-default')).first())!;
+    await ctx.db.patch(freshness._id, { status: 'approved' });
+    const trade = (await ctx.db.query('sysConfig').withIndex('by_kind_key_version', q => q.eq('kind', 'tradeDiscountSchedule').eq('key', 'trade-discount')).first())!;
+    await ctx.db.patch(trade._id, { status: 'approved', value: { ...trade.value, suppliers: { ...trade.value.suppliers, ashcroft: { defaultBps: 2500, projectStacking: true } } } });
+    for (const cfg of [
+      { kind: 'pricingAssumptions' as const, key: 'ashcroft-pricing-assumptions', value: { supplierCode: 'ashcroft', wholesaleUnitBasis: 'selling_unit', supplierPaymentReserveBps: 300, processingBps: 300, returnsBps: 200, overheadBps: 500, handlingPerSellingUnitMinor: 0, fixedProcessingPerSellingUnitMinor: 30, fundedTradeDiscountBps: 0 } },
+      { kind: 'marginPolicy' as const, key: 'ashcroft-referral-fixture', value: { targetBps: 2000 } },
+    ]) {
+      if (!await ctx.db.query('sysConfig').withIndex('by_kind_key_version', q => q.eq('kind', cfg.kind).eq('key', cfg.key)).first())
+        await ctx.db.insert('sysConfig', { ...cfg, version: 1, status: 'approved', note: 'Isolated funded referral fixture', ...revision });
+    }
+    const costId = await ctx.db.insert('catCostRevisions', { variantId, wholesaleMinor: 10000, wholesaleUnitBasis: 'selling_unit', currency: 'USD',
+      dutiesMinor: null, dutiesConfirmedZero: true, inboundFreightMinor: null, inboundConfirmedZero: true, supplierFeesMinor: null, feesConfirmedZero: true,
+      mapMinor: null, mapUnitBasis: 'pack', mapSource: 'none', mapApplicability: 'not_applicable', costSource: 'Isolated fixture', verifiedAt: now, observationIds: [], ...revision });
+    const priceId = await ctx.db.insert('catPriceRevisions', { variantId, channel: 'retail', packPriceMinor: 60000, piecePriceMinorInfo: 60000,
+      informationUnitBasis: 'selling_unit', marginPolicyKey: 'ashcroft-referral-fixture', marginPolicyVersion: 1, roundingPolicyVersion: 1,
+      status: 'approved', origin: 'manual', approvedAt: now, approvedBy: 'fixture', ...revision });
+    await ctx.db.patch(variantId, { currentCostRevisionId: costId, retailPriceRevisionId: priceId, marginPolicyKey: 'ashcroft-referral-fixture' });
     return { retailId, houseId, variantId, retailListingId, feedId };
   });
 }

@@ -30,6 +30,7 @@ export function publicProductSnapshot(value: unknown): Product | null {
   return { id, name: row.name, description: row.description, category: row.category, collection: row.collection, price: row.price,
     images: row.images.map(image => publicProductImage(image as string)).filter(Boolean), inStock: row.inStock === true,
     ...(variants ? { variants } : {}),
+    ...(row.checkoutMode === 'legacy' || row.checkoutMode === 'v2' ? { checkoutMode: row.checkoutMode } : {}),
     ...(row.fulfillmentProvider === 'ashcroft' || row.fulfillmentProvider === 'zuo' ? { fulfillmentProvider: row.fulfillmentProvider } : {}),
     ...(money(row.deliveryFee) && row.deliveryFee >= 0 ? { deliveryFee: row.deliveryFee } : {}) };
 }

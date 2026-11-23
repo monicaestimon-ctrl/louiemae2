@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   verifyCanonicalIdentity: vi.fn(),
   advance: vi.fn(),
   publish: vi.fn(),
+  prepareAshcroft: vi.fn(),
   data: {
     stockExcluded: false,
     stage: 'imported_draft',
@@ -23,7 +24,7 @@ vi.mock('convex/react', () => ({
   useQuery: () => mocks.data,
   useMutation: (ref: Parameters<typeof getFunctionName>[0]) =>
     mocks[getFunctionName(ref).split(':')[1] as 'publish'],
-  usePaginatedQuery: () => ({
+  usePaginatedQuery: (ref: Parameters<typeof getFunctionName>[0]) => getFunctionName(ref).endsWith(':ashcroftPreparationQueue') ? ({ status: 'Exhausted', loadMore: vi.fn(), results: [{ productId: 'ashcroft', name: 'Fixture bench', revision: 4 }] }) : ({
     status: 'Exhausted',
     loadMore: vi.fn(),
     results: [
@@ -162,5 +163,16 @@ it('restores a verified restock only through an explicit selected draft action',
     })
   );
   expect(mocks.releaseManualReview).not.toHaveBeenCalled();
+  expect(mocks.publish).not.toHaveBeenCalled();
+});
+
+it('requires a preparation note and sends the displayed Ashcroft revision without publishing', async () => {
+  open();
+  fireEvent.click(screen.getByRole('button', { name: 'Prepare Ashcroft for catalog review' }));
+  const prepare = screen.getByRole('button', { name: 'Prepare Fixture bench' });
+  expect(prepare).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Preparation review note'), { target: { value: 'Reviewed supplier identity and existing listing' } });
+  fireEvent.click(prepare);
+  await waitFor(() => expect(mocks.prepareAshcroft).toHaveBeenCalledWith({ productId: 'ashcroft', expectedRevision: 4, reason: 'Reviewed supplier identity and existing listing' }));
   expect(mocks.publish).not.toHaveBeenCalled();
 });

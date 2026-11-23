@@ -66,3 +66,11 @@ export function ashcroftScenario(i: AshcroftPricingInput, name: string, priceMin
     contributionBps: toMinor(div(mul(contribution, rat(10000)), price), 'floor'), passes,
     ...(passes ? {} : { reason: 'below margin policy' }) };
 }
+
+/** Same unrounded contribution comparison as qualification, including post-discount/tax costs. */
+export function ashcroftBasketFunded(b: { baseNumerator: string; baseDenominator: string; processingBps: number; returnsBps: number; overheadBps: number; commissionBps: number; marginBps: number }, netMinor: number, units: number, taxMinor = 0) {
+  const net = rat(netMinor);
+  const contribution = sub(sub(mul(net, sub(rat(1), bpsRat(b.processingBps + b.returnsBps + b.overheadBps + b.commissionBps))),
+    mul(rat(BigInt(b.baseNumerator), BigInt(b.baseDenominator)), rat(units))), mul(rat(taxMinor), bpsRat(b.processingBps)));
+  return cmp(contribution, mul(net, bpsRat(b.marginBps))) >= 0;
+}

@@ -43,7 +43,8 @@ async function catVariantFor(ctx: QueryCtx, productId: Id<'commerceProducts'>, v
   const id = ctx.db.normalizeId('catVariants', variantId);
   if (id) { const row = await ctx.db.get(id); return row?.productId === productId ? row : null; }
   const rows = await ctx.db.query('catVariants').withIndex('by_product', (q) => q.eq('productId', productId)).collect();
-  return rows.find((r) => r.legacyVariantId === variantId) ?? null;
+  const matches = rows.filter(r => r.legacyVariantId === variantId);
+  return matches.length === 1 ? matches[0] : null;
 }
 
 /** Preview and creation share current authority; a recorded qualification flag
@@ -58,7 +59,7 @@ async function qualifiedRetailTarget(ctx: QueryCtx, productId: Id<'commerceProdu
   if (!cv || cv.holds.length || cv.referralEligible !== true) throw new CommerceError('REFERRAL_INELIGIBLE', 'Not prequalified');
   if (cv.availability === 'discontinued') throw new CommerceError('REFERRAL_INELIGIBLE', 'Discontinued', 'This item is no longer sold, so it has no retail referral link.');
   const product = await ctx.db.get(target.productId);
-  if (product?.provider === 'zuo') await assertSellable(ctx, cv._id, 'link');
+  if (product?.provider === 'zuo' || product?.provider === 'ashcroft') await assertSellable(ctx, cv._id, 'link');
   const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', target.productId)).first();
   if (!meta || meta.holds.length || meta.commissionCategory === 'review_required') throw new CommerceError('REFERRAL_INELIGIBLE', 'Category under review');
   const sched = await schedule(ctx);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ashcroftBase, ashcroftMinimums, ashcroftScenario, type AshcroftPricingInput } from './ashcroft';
+import { ashcroftBase, ashcroftBasketFunded, ashcroftMinimums, ashcroftScenario, type AshcroftPricingInput } from './ashcroft';
 import { rat, toMinor } from '../decimal';
 import { parseConfig } from '../config';
 
@@ -49,4 +49,16 @@ describe('independent Ashcroft selling-unit economics', () => {
       { fixedProcessingPerSellingUnitMinor: undefined }, { fundedTradeDiscountBps: 10000 }])
       expect(() => parseConfig('pricingAssumptions', { ...input.assumptions, ...patch })).toThrow();
   });
+});
+
+it('uses identical exact funding at fractional minimum prices and rejects unfunded credit or tax', () => {
+  const i = { ...input, wholesaleSellingUnit: rat(10002), maxCommissionBps: 0 };
+  const base = ashcroftBase(i);
+  const basis = { baseNumerator: String(base.n), baseDenominator: String(base.d), ...i.assumptions, commissionBps: 0, marginBps: i.marginBps };
+  expect(ashcroftMinimums(i).minimumRetailMinor).toBe(27742);
+  expect(ashcroftScenario(i, 'retail', 27742, 0).passes).toBe(true);
+  expect(ashcroftBasketFunded(basis, 27742, 1)).toBe(true);
+  expect(ashcroftBasketFunded(basis, 27742 * 3, 3)).toBe(true);
+  expect(ashcroftBasketFunded(basis, 27741, 1)).toBe(false);
+  expect(ashcroftBasketFunded(basis, 27742, 1, 100)).toBe(false);
 });

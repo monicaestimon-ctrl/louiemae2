@@ -22,7 +22,7 @@ export const CartDrawer: React.FC = () => {
     const { isOpen, closeCart, items, subtotal, itemCount, removeFromCart, notice } = useCart();
     const current = useCurrentCartReview(items, isOpen);
     // Zuo items (or a mixed cart) use the v2 checkout: full-address delivery and tax before payment.
-    const hasV2 = items.some((item) => item.product.fulfillmentProvider === 'zuo');
+    const hasV2 = items.some((item) => item.product.fulfillmentProvider === 'zuo' || item.product.checkoutMode === 'v2');
     const delivery = items.reduce((sum, item) => sum + (item.product.deliveryFee ?? 0) * item.quantity, 0);
     const [isCheckingOut, setIsCheckingOut] = useState(false);
     // Store credit (signed-in members): pre-set from their Hub setting, changeable per order.

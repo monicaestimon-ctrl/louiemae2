@@ -250,7 +250,7 @@ export const createIntent = indexedInternalMutation({
         unitPackMinor: l.unitPackMinor,
         discountMinor: 0,
         creditMinor: l.creditMinor ?? 0,
-        ...(l.engine?.marginBps != null ? { marginFloorBps: l.engine.marginBps } : {}),
+        ...((l.ashcroftEconomics?.marginBps ?? l.engine?.marginBps) != null ? { marginFloorBps: l.ashcroftEconomics?.marginBps ?? l.engine!.marginBps! } : {}),
         commissionCategory: l.category,
         supplierCode: l.supplierCode,
         supplierSku: l.variant.supplierSku,

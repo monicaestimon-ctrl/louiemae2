@@ -1,3 +1,4 @@
+import { ashcroftListingIdentity } from './catAshcroftListingIdentity';
 // Read-only Ashcroft qualification. Legacy storefront pricing is not cut over by this service.
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc } from './_generated/dataModel';
@@ -10,7 +11,7 @@ import { commissionReserve } from './dlvCommission';
 import { retailDelivery } from '../lib/retailLaunch';
 import { isLighting } from '../lib/catCategory';
 import { bpsRat, mul, parseDecimal, rat, sub, toMinor } from '../lib/decimal';
-import { ASHCROFT_ENGINE_VERSION, ashcroftMinimums, ashcroftScenario, type AshcroftPricingInput } from '../lib/economics/ashcroft';
+import { ASHCROFT_ENGINE_VERSION, ashcroftBase, ashcroftMinimums, ashcroftScenario, type AshcroftPricingInput } from '../lib/economics/ashcroft';
 import { isCurrentPrice } from './catPriceValidity';
 import { stableStringify } from '../lib/zuoImport';
 
@@ -41,11 +42,8 @@ export async function ashcroftScenarios(ctx: Ctx, cv: Doc<'catVariants'>, option
   if (!meta || meta.supplierId !== supplier._id || meta.commissionCategory === 'review_required')
     throw new CommerceError('COST_REVIEW_REQUIRED', 'Reviewed Ashcroft category required');
   const listing = await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', cv.productId).eq('channel', 'retail')).unique();
-  const option = listing?.snapshot.variants.filter(v => v.id === cv.legacyVariantId) ?? [];
-  const route = listing?.fulfillment?.filter(v => v.id === cv.legacyVariantId) ?? [];
-  if (!listing || option.length !== 1 || route.length !== 1 || route[0].sku !== cv.supplierSku
-    || option[0].minimum !== cv.orderMinimumPacks || option[0].increment !== cv.orderIncrementPacks)
-    throw new CommerceError('COST_REVIEW_REQUIRED', 'Ashcroft listing identity or quantity basis changed');
+  if (!listing) throw new CommerceError('COST_REVIEW_REQUIRED', 'Retail source missing');
+  ashcroftListingIdentity(listing, cv);
   const rate = retailDelivery(listing.snapshot.category, listing.snapshot.name);
   if (!rate) throw new CommerceError('DELIVERY_QUOTE_REQUIRED', 'No Ashcroft per-item delivery model');
   if (isLighting(`${listing.snapshot.category} ${listing.snapshot.name}`) && meta.commissionCategory !== 'decor')
@@ -82,6 +80,7 @@ export async function ashcroftScenarios(ctx: Ctx, cv: Doc<'catVariants'>, option
     assumptions: assumptions.value, marginBps: margin.value.targetBps, maxCommissionBps: reserve.bps,
   };
   const minimums = ashcroftMinimums(input);
+  const exactBase = ashcroftBase(input);
   const retail = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
   const tradePrice = cv.tradePriceRevisionId ? await ctx.db.get(cv.tradePriceRevisionId) : null;
   const retailApproved = isCurrentPrice(retail, cv._id, 'retail', now);
@@ -97,7 +96,17 @@ export async function ashcroftScenarios(ctx: Ctx, cv: Doc<'catVariants'>, option
   const inputsHash = stableStringify({ engine: ASHCROFT_ENGINE_VERSION, input: { ...input, wholesaleSellingUnit: `${input.wholesaleSellingUnit.n}/${input.wholesaleSellingUnit.d}` },
     cost: cost._id, listingRevision: listing.revision, category, retailMinor, tradeMinor, retailApproved, tradeApproved,
     policies: [freshness, delivery, margin, assumptions, trade].map(p => ({ id: p.id, version: p.version })), reserve });
+  const policies = [freshness, delivery, margin, assumptions, trade];
   return { ...minimums, minimumBaseTradeMinor, retailMinor, tradeMinor, retailApproved, tradeApproved,
+    basketBasis: { baseMinor: minimums.basePackMinor, baseNumerator: String(exactBase.n), baseDenominator: String(exactBase.d), processingBps: assumptions.value.processingBps,
+      returnsBps: assumptions.value.returnsBps, overheadBps: assumptions.value.overheadBps,
+      marginBps: margin.value.targetBps, commissionBps: reserve.bps,
+      freightMinor: rate.freight, deliveryMinor: rate.delivery },
+    validUntil: Math.min(cost.effectiveTo ?? Number.MAX_SAFE_INTEGER,
+      cost.verifiedAt! + freshness.value.costMapMaxDays * 86400000,
+      ...policies.map(p => p.effectiveTo ?? Number.MAX_SAFE_INTEGER), reserve.validUntil ?? Number.MAX_SAFE_INTEGER,
+      ...(retailApproved ? [retail.effectiveTo ?? Number.MAX_SAFE_INTEGER] : []),
+      ...(tradeApproved ? [tradePrice.effectiveTo ?? Number.MAX_SAFE_INTEGER] : [])),
     belowMinimum: retailMinor < minimums.minimumRetailMinor,
     belowTradeMinimum: tradeMinor !== null && tradeMinor < minimumBaseTradeMinor,
     inputsHash, category, scenarios, engineVersion: ASHCROFT_ENGINE_VERSION,

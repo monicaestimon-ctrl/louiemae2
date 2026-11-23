@@ -84,6 +84,7 @@ export function savedCartItem(value: unknown): CartItem | null {
     name: p.name as string,
     price: p.price,
     fulfillmentProvider: p.fulfillmentProvider,
+    ...(p.checkoutMode === 'legacy' || p.checkoutMode === 'v2' ? { checkoutMode: p.checkoutMode } : {}),
     images: Array.isArray(p.images) ? p.images.filter(image).slice(0, 10) : [],
     description: '',
     category: text(p.category, 200) ? (p.category as string) : '',
