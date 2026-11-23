@@ -50,14 +50,14 @@ export async function gates(ctx: Ctx, productId: Id<'commerceProducts'>) {
     if (cost && !cost.verifiedAt) out.economics_review.push(`${tag}: cost not verified`);
     if (!cv.marginPolicyKey) out.economics_review.push(`${tag}: no margin policy assigned`);
     try {
-      const economics = await computeScenarios(ctx, cv);
+      const economics = await computeScenarios(ctx, cv, { reserveRetailCommission: cv.referralEligible !== false });
       if (economics.belowMinimum) out.economics_review.push(`${tag}: retail price is below the current minimum`);
       if (economics.belowTradeMinimum) out.economics_review.push(`${tag}: trade price is below the current minimum`);
       if (cv.referralEligible && !economics.referralQualified) out.economics_review.push(`${tag}: promised commission is not funded`);
     } catch (error) {
       out.economics_review.push(`${tag}: ${commerceErrorData(error)?.detail ?? 'Current economics need review'}`);
     }
-    for (const h of cv.holds) out.economics_review.push(`${tag}: hold ${h}`);
+    for (const h of cv.holds) if (!(h === 'COMMISSION_UNQUALIFIED' && cv.referralEligible === false)) out.economics_review.push(`${tag}: hold ${h}`);
     const retail = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
     if (!isCurrentPrice(retail, cv._id, 'retail')) out.content_review.push(`${tag}: no current approved retail price`);
     if (cv.referralEligible === undefined) out.content_review.push(`${tag}: commission prequalification not run (or referral not explicitly disabled)`);
