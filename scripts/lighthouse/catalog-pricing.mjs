@@ -56,7 +56,7 @@ const data = {
   exceptionHistoryTruncated: false,
 };
 const entry = `import React from'react';import{createRoot}from'react-dom/client';import Panel from'./components/admin/CatalogPricingReview';window.commands=[];window.fixtureData=${JSON.stringify(data)};const root=createRoot(document.getElementById('root'));window.refresh=()=>root.render(<main><h1>SKU approval fixture</h1><Panel variantId="variant"/></main>);window.refresh();`;
-const stub = `import{getFunctionName}from'convex/server';export const useQuery=()=>window.fixtureData;export const useMutation=ref=>async args=>{window.commands.push({name:getFunctionName(ref),args});return'fixture-saved'};`;
+const stub = `import{getFunctionName}from'convex/server';export const useQuery=()=>window.fixtureLoading?undefined:window.fixtureData;export const useMutation=ref=>async args=>{window.commands.push({name:getFunctionName(ref),args});return'fixture-saved'};`;
 const bundle = await build({
   stdin: { contents: entry, resolveDir: process.cwd(), loader: 'tsx' },
   bundle: true,
@@ -143,6 +143,53 @@ try {
     assert.equal(command.args.packPriceMinor, 85025);
     assert.equal(command.args.expectedReviewHash, 'a'.repeat(64));
     await page.evaluate(() => {
+      window.fixtureLoading = true;
+      window.refresh();
+    });
+    await page.waitForFunction(() => document.body.textContent.includes('your draft is preserved'));
+    assert.equal(
+      await page.evaluate(
+        () =>
+          [...document.querySelectorAll('label')]
+            .find((l) => l.textContent.includes('Final merchandise price'))
+            .querySelector('input').value
+      ),
+      '850.25'
+    );
+    assert.equal(
+      await page.evaluate(() =>
+        [...document.querySelectorAll('button')]
+          .find((b) => b.textContent === 'Approve final price')
+          .matches(':disabled')
+      ),
+      true
+    );
+    await page.evaluate(() => {
+      window.fixtureLoading = false;
+      window.refresh();
+    });
+    await page.waitForFunction(
+      () => !document.body.textContent.includes('your draft is preserved')
+    );
+    assert.equal(
+      await page.evaluate(
+        () =>
+          [...document.querySelectorAll('label')]
+            .find((l) => l.textContent.includes('Final merchandise price'))
+            .querySelector('input').value
+      ),
+      '850.25'
+    );
+    assert.equal(
+      await page.evaluate(() =>
+        [...document.querySelectorAll('button')]
+          .find((b) => b.textContent === 'Approve final price')
+          .matches(':disabled')
+      ),
+      false
+    );
+
+    await page.evaluate(() => {
       window.fixtureData = { ...window.fixtureData, reviewHash: 'b'.repeat(64) };
       window.refresh();
     });
@@ -167,6 +214,7 @@ try {
       pageErrors: errors,
       keyboardSubmit: true,
       staleApprovalBlocked: true,
+      backgroundRefreshPreservesDraft: true,
       mockedCommands: 1,
     });
     await page.close();

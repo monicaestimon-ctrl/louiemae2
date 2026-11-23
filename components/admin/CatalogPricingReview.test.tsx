@@ -7,12 +7,13 @@ import CatalogPricingReview from './CatalogPricingReview';
 const mock = vi.hoisted(() => ({
   call: vi.fn(),
   query: vi.fn(),
+  loading: false,
   data: {} as Record<string, unknown>,
 }));
 vi.mock('convex/react', () => ({
   useQuery: (_ref: unknown, args: unknown) => {
     mock.query(args);
-    return mock.data;
+    return mock.loading ? undefined : mock.data;
   },
   useMutation: (ref: unknown) => (args: unknown) => mock.call(getFunctionName(ref as never), args),
 }));
@@ -21,6 +22,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 beforeEach(() => {
+  mock.loading = false;
   mock.query.mockClear();
   mock.call.mockReset().mockResolvedValue('approved-price');
   mock.data = {
@@ -163,4 +165,37 @@ it('requests a new server review on manual refresh and scheduled time boundaries
   expect(mock.query.mock.lastCall![0].refreshKey).toBe(original + 1);
   act(() => vi.advanceTimersByTime(1001));
   expect(mock.query.mock.lastCall![0].refreshKey).toBe(original + 2);
+});
+
+it('preserves drafts and blocks writes through uncached background refreshes, then exposes changed evidence', () => {
+  vi.useFakeTimers();
+  mock.data = { ...mock.data, nextRefreshAt: Date.now() + 1000 };
+  const { rerender } = render(view());
+  priceFields();
+  mock.loading = true;
+  act(() => vi.advanceTimersByTime(1001));
+  expect(screen.getByLabelText(/Final merchandise price/)).toHaveValue('850.25');
+  expect(screen.getByRole('button', { name: 'Approve final price' })).toBeDisabled();
+  expect(screen.getByText(/Approval is paused; your draft is preserved/)).toHaveAttribute('role', 'status');
+  mock.loading = false;
+  mock.data = { ...mock.data, nextRefreshAt: Date.now() + 1000 };
+  rerender(view());
+  expect(screen.getByLabelText(/Final merchandise price/)).toHaveValue('850.25');
+  expect(screen.getByRole('button', { name: 'Approve final price' })).toBeEnabled();
+  mock.loading = true;
+  act(() => vi.advanceTimersByTime(1001));
+  mock.loading = false;
+  mock.data = { ...mock.data, reviewHash: 'b'.repeat(64), nextRefreshAt: Date.now() + 1000 };
+  rerender(view());
+  expect(screen.getByLabelText(/Final merchandise price/)).toHaveValue('850.25');
+  expect(screen.getByRole('alert')).toHaveTextContent('changed while');
+  expect(screen.getByRole('button', { name: 'Approve final price' })).toBeDisabled();
+  mock.loading = true;
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh pricing review' }));
+  expect(screen.getByLabelText(/Final merchandise price/)).toHaveValue('850.25');
+  mock.loading = false;
+  rerender(view());
+  expect(screen.getByLabelText(/Final merchandise price/)).toHaveValue('');
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(mock.call).not.toHaveBeenCalled();
 });

@@ -13,11 +13,26 @@ const money = (minor: number | null | undefined) =>
 const button = 'min-h-11 border border-earth/30 px-3 py-2 disabled:opacity-40';
 const field = 'block border border-earth/30 p-2 w-full min-h-11';
 export default function CatalogPricingReview({ variantId }: { variantId: Id<'catVariants'> }) {
+  return <ReviewSubscription key={variantId} variantId={variantId} />;
+}
+function ReviewSubscription({ variantId }: { variantId: Id<'catVariants'> }) {
   const [refreshKey, setRefreshKey] = useState(() => Date.now());
-  const data = useQuery(api.catPricing.review, { variantId, refreshKey });
+  const result = useQuery(api.catPricing.review, { variantId, refreshKey });
+  const data = result?.variant._id === variantId ? result : undefined;
+  const [retained, setRetained] = useState<Detail | undefined>(data);
   const [generation, setGeneration] = useState(0);
+  const [resetOnResult, setResetOnResult] = useState(false);
+  // Preserve the mounted form through an uncached query transition. Only an explicit
+  // user refresh resets drafts, and only after its new result has arrived.
+  if (data && (retained !== data || resetOnResult)) {
+    setRetained(data);
+    if (resetOnResult) {
+      setResetOnResult(false);
+      setGeneration((n) => n + 1);
+    }
+  }
   useEffect(() => {
-    if (!data || data.variant._id !== variantId) return;
+    if (!data) return;
     const timer = window.setTimeout(
       () => setRefreshKey((n) => n + 1),
       Math.max(
@@ -26,28 +41,40 @@ export default function CatalogPricingReview({ variantId }: { variantId: Id<'cat
       )
     );
     return () => window.clearTimeout(timer);
-  }, [data, variantId, refreshKey]);
-  if (!data || data.variant._id !== variantId) return <p role="status">Loading pricing review…</p>;
+  }, [data, refreshKey]);
+  const latest = data ?? retained;
+  if (!latest) return <p role="status">Loading pricing review…</p>;
   return (
-    <PricingForm
-      key={`${variantId}:${generation}`}
-      initial={data}
-      latest={data}
-      reload={() => {
-        setRefreshKey((n) => n + 1);
-        setGeneration((n) => n + 1);
-      }}
-    />
+    <>
+      {!data && (
+        <p role="status">
+          Refreshing pricing evidence. Approval is paused; your draft is preserved.
+        </p>
+      )}
+      <PricingForm
+        key={generation}
+        initial={latest}
+        latest={latest}
+        refreshing={!data}
+        reload={() => {
+          setResetOnResult(true);
+          setRefreshKey((n) => n + 1);
+        }}
+      />
+    </>
   );
 }
+
 function PricingForm({
   initial,
   latest,
   reload,
+  refreshing,
 }: {
   initial: Detail;
   latest: Detail;
   reload: () => void;
+  refreshing: boolean;
 }) {
   const [base] = useState(initial);
   const approve = useMutation(api.catPricing.approvePrice);
@@ -75,7 +102,7 @@ function PricingForm({
     [message, setMessage] = useState(''),
     [failed, setFailed] = useState(false);
   const stale = base.reviewHash !== latest.reviewHash;
-  const canWrite = base.canApprove && latest.canApprove && !stale && !busy;
+  const canWrite = base.canApprove && latest.canApprove && !stale && !busy && !refreshing;
   const noted = reason.trim().length >= 10;
   const scope = { variantId: base.variant._id, expectedReviewHash: base.reviewHash };
   const unit = base.supplierCode === 'ashcroft' ? 'selling unit' : 'pack';
@@ -198,7 +225,7 @@ function PricingForm({
           The evidence or terms changed while this review was open. Refresh before approving.
         </p>
       )}
-      <button type="button" className={button} disabled={busy} onClick={reload}>
+      <button type="button" className={button} disabled={busy || refreshing} onClick={reload}>
         Refresh pricing review
       </button>
       <fieldset disabled={!canWrite} className="space-y-3">
