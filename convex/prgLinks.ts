@@ -13,6 +13,7 @@ import { assertSellable, evaluate } from './catCore';
 import { computeScenarios, recordScenarios } from './catPricing';
 import { beneficiaryOf, referralActive } from './prgCore';
 import { productRate, schedule } from './prgAttribution';
+import { completeExceptionRates } from './prgRateHistory';
 import { flag, requireFlag } from '../lib/flags';
 import { CommerceError, isCommerceError, customerMessage } from '../lib/errors';
 import { retailDetail } from './retailStorefront';
@@ -214,12 +215,16 @@ export const createException = mutation({
   args: { productId: v.id('commerceProducts'), rates: v.array(v.object({ tierKey: v.union(v.literal('base'), v.literal('active'), v.literal('top'), v.literal('elite')), rateBps: v.number() })), visibleNote: v.string(), effectiveFrom: v.optional(v.number()) },
   handler: async (ctx, a) => {
     const admin = await requireCjAdminIdentity(ctx);
-    if (a.rates.length !== 4 || a.rates.some((r) => !Number.isInteger(r.rateBps) || r.rateBps < 0 || r.rateBps > 2300)) throw new CommerceError('INVALID_INPUT', 'Give a rate for each of the four tiers (0–23%).');
+    if (!completeExceptionRates(a.rates)) throw new CommerceError('INVALID_INPUT', 'Give exactly one rate for each of the four tiers (0–23%).');
     if (!a.visibleNote.trim()) throw new CommerceError('INVALID_INPUT', 'Exceptions must carry a note shown to partners.');
     const now = Date.now();
+    const starts = a.effectiveFrom ?? now;
+    if (!Number.isSafeInteger(starts) || starts < now) throw new CommerceError('INVALID_INPUT', 'Exception effective date must be now or in the future.');
+    if (!(await ctx.db.get(a.productId))) throw new CommerceError('INVALID_INPUT', 'Product not found.');
     const prev = await ctx.db.query('prgSkuCommissionExceptions').withIndex('by_product_effective', (q) => q.eq('productId', a.productId)).order('desc').first();
-    if (prev && prev.effectiveTo === undefined) await ctx.db.patch(prev._id, { effectiveTo: a.effectiveFrom ?? now });
-    const id = await ctx.db.insert('prgSkuCommissionExceptions', { productId: a.productId, rates: a.rates, effectiveFrom: a.effectiveFrom ?? now, visibleNote: a.visibleNote, approvedBy: admin.email, version: (prev?.version ?? 0) + 1, createdAt: now });
+    if (prev && starts <= prev.effectiveFrom) throw new CommerceError('INVALID_INPUT', 'The next exception must start after the latest scheduled version.');
+    if (prev && (prev.effectiveTo === undefined || prev.effectiveTo > starts)) await ctx.db.patch(prev._id, { effectiveTo: starts });
+    const id = await ctx.db.insert('prgSkuCommissionExceptions', { productId: a.productId, rates: a.rates, effectiveFrom: starts, visibleNote: a.visibleNote.trim(), approvedBy: admin.email, version: (prev?.version ?? 0) + 1, createdAt: now });
     await audit(ctx, { actor: admin.email, action: 'commission.exception', entityTable: 'prgSkuCommissionExceptions', entityId: id, after: a });
     return id;
   },

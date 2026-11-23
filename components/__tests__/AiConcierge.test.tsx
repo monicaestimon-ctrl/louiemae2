@@ -28,7 +28,8 @@ it('defers action setup, survives denied storage, keeps drafts and restores focu
   expect(document.querySelector('meta[name=robots]')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Ask the Louie Mae concierge' }));
   const input = await screen.findByRole('textbox', { name: 'Ask the concierge' });
-  expect(input).toHaveFocus();
+  // Opening resolves a lazy panel; focus is assigned by its effect after commit.
+  await waitFor(() => expect(input).toHaveFocus());
   expect(input).toHaveAttribute('maxlength', '800');
   expect(document.querySelector('meta[name=robots]')?.getAttribute('content')).toContain('noindex');
   fireEvent.change(input, { target: { value: 'Preserved question' } });

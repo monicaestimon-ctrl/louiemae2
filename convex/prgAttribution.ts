@@ -17,18 +17,18 @@ import { ATTRIBUTION_WINDOW_MS, appliedRate, looksLikeBot, opaqueId, visitorKeyH
 import { rateFor } from '../lib/tiers';
 import type { AttributionPolicy, CommissionCategory, CommissionSchedule, TierKey } from '../lib/config';
 import { REF_CODE } from '../lib/holmPartners';
+import { categoryAtClick, checkedSchedule, effectiveException, historicalSchedule } from './prgRateHistory';
 
 type Ctx = QueryCtx | MutationCtx;
 
 export async function schedule(ctx: Ctx) {
   const s = await activeConfig<CommissionSchedule>(ctx, 'commissionSchedule', 'commission-schedule');
-  return { value: s.value, version: s.version };
+  return { value: checkedSchedule(s.value), version: s.version };
 }
 
 /** The rate for a product and tier: a visible SKU exception schedule wins over the category schedule. */
 export async function productRate(ctx: Ctx, productId: Id<'commerceProducts'>, tier: TierKey, category: CommissionCategory, sched: CommissionSchedule, at = Date.now()) {
-  const exc = await ctx.db.query('prgSkuCommissionExceptions').withIndex('by_product_effective', (q) => q.eq('productId', productId)).order('desc').take(10);
-  const live = exc.find((e) => e.effectiveFrom <= at && (e.effectiveTo === undefined || e.effectiveTo > at));
+  const live = await effectiveException(ctx, productId, at);
   const fromException = live?.rates.find((r) => r.tierKey === tier)?.rateBps;
   return { rateBps: Math.min(fromException ?? rateFor(sched, tier, category), sched.ceilingBps), exceptionVersion: live?.version, exceptionNote: live?.visibleNote };
 }
@@ -156,6 +156,7 @@ export async function snapshotForIntent(ctx: MutationCtx, a: { intentId: Id<'ord
   }
   const sched = await schedule(ctx);
   const lines = [];
+  let protectedSchedule: CommissionSchedule | undefined;
   for (const l of a.lines) {
     const variant = await ctx.db.get(l.variantId);
     const eligible = l.category !== 'review_required' && variant?.referralEligible === true && !businessReferral;
@@ -165,7 +166,14 @@ export async function snapshotForIntent(ctx: MutationCtx, a: { intentId: Id<'ord
     }
     const current = (await productRate(ctx, l.productId, b.tierKey, l.category, sched.value)).rateBps;
     const snap = click.rateSnapshot;
-    const protectedBps = snap.product?.productId === l.productId ? snap.product.rateBps : (await productRate(ctx, l.productId, snap.tierKey, l.category, sched.value)).rateBps;
+    let protectedBps: number;
+    if (snap.product?.productId === l.productId) protectedBps = snap.product.rateBps;
+    else {
+      protectedSchedule ??= await historicalSchedule(ctx, snap.scheduleVersion, click.at);
+      const protectedCategory = await categoryAtClick(ctx, l.productId, l.category, click.at);
+      protectedBps = protectedCategory === 'review_required' ? 0 :
+        (await productRate(ctx, l.productId, snap.tierKey, protectedCategory, protectedSchedule, click.at)).rateBps;
+    }
     lines.push({ lineKey: l.lineKey, productId: l.productId, category: l.category, protectedRateBps: protectedBps, currentRateBps: current, appliedRateBps: appliedRate(protectedBps, current), eligible: true });
   }
   return ctx.db.insert('prgAttributionSnapshots', { intentId: a.intentId, clickId: click.clickId, beneficiaryId: b._id, membershipSource: click.membershipSource, scope: 'basket', lines, tierKeyAtPurchase: b.tierKey, scheduleVersion: sched.version, createdAt: Date.now() });
