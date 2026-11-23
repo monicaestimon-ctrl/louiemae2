@@ -18,6 +18,7 @@ import { groupFreight, resolveLines, type FreightConfig, type ResolvedLine } fro
 import { digest } from './dlvSecurity';
 import { availableAfterCommitments, availableAshcroftAfterCommitments, currentAshcroftInventory } from './ordInventory';
 import { applyCreditEvent } from './ldgCore';
+import { ensureAshcroftIdentity } from './catAshcroft';
 import { reserve as reserveCredit, settle as settleCredit } from './ldgCredits';
 
 const PERIMETER_SECRET = '1'.repeat(64);
@@ -124,6 +125,7 @@ afterEach(() => {
     'CREDIT_V2_ENABLED',
     'COMMISSION_ACCRUAL_V2_ENABLED',
     'ATTRIBUTION_V2_ENABLED',
+    'CATALOG_PUBLICATION_V2_ENABLED',
   ])
     delete process.env[k];
 });
@@ -463,6 +465,41 @@ async function setup(opts: { approveMixed?: boolean } = {}) {
     return { productId, variantId, ashId };
   });
   return { t, admin, ...ids };
+}
+
+// Synthetic evidence only: exercise real approval/publication before the checkout lifecycle.
+async function approvedAshcroftSetup() {
+  const s = await setup({ approveMixed: true });
+  process.env.CATALOG_PUBLICATION_V2_ENABLED = 'true';
+  process.env.TRADE_CHECKOUT_V2_ENABLED = 'true';
+  const ids = await s.t.run(async ctx => {
+    const revision = { createdAt: NOW - 1000, createdBy: 'fixture', effectiveFrom: NOW - 1000, source: 'fixture' };
+    await ctx.db.insert('sysConfig', { kind: 'pricingAssumptions', key: 'ashcroft-pricing-assumptions', version: 1, status: 'approved',
+      value: { supplierCode: 'ashcroft', wholesaleUnitBasis: 'selling_unit', supplierPaymentReserveBps: 300, processingBps: 300, returnsBps: 200, overheadBps: 500,
+        handlingPerSellingUnitMinor: 0, fixedProcessingPerSellingUnitMinor: 30, fundedTradeDiscountBps: 0 }, note: 'Synthetic fixture only', ...revision });
+    await ctx.db.insert('sysConfig', { kind: 'marginPolicy', key: 'ashcroft-fixture', version: 1, status: 'approved', value: { targetBps: 2000 }, note: 'Synthetic fixture only', ...revision });
+    const schedule = (await ctx.db.query('sysConfig').withIndex('by_kind_key_version', q => q.eq('kind', 'tradeDiscountSchedule').eq('key', 'trade-discount')).order('desc').first())!;
+    await ctx.db.patch(schedule._id, { value: { ...schedule.value, suppliers: { ...schedule.value.suppliers, ashcroft: { defaultBps: 2500, projectStacking: true } } } });
+    const cv = await ensureAshcroftIdentity(ctx, { productId: s.ashId, variantId: 'b1', sku: 'BEN123', name: 'Beckett bench', minimum: 1, increment: 1 }, 'fixture');
+    await ctx.db.insert('catProductMeta', { productId: s.ashId, supplierId: cv.supplierId, commissionCategory: 'furniture', navCategory: 'bench', louieMaeName: 'Beckett bench',
+      slug: 'beckett-bench', slugHistory: [], supplierName: 'Fixture bench', holds: [], stage: 'ready', createdAt: NOW, updatedAt: NOW });
+    const costId = await ctx.db.insert('catCostRevisions', { variantId: cv._id, wholesaleMinor: 30000, wholesalePrecise: '300', wholesaleUnitBasis: 'selling_unit', currency: 'USD',
+      dutiesMinor: null, dutiesConfirmedZero: true, inboundFreightMinor: null, inboundConfirmedZero: true, supplierFeesMinor: null, feesConfirmedZero: true,
+      mapMinor: null, mapUnitBasis: 'pack', mapSource: 'none', mapApplicability: 'not_applicable', costSource: 'Synthetic fixture only', verifiedAt: NOW - 1000, observationIds: [], ...revision });
+    await ctx.db.patch(cv._id, { currentCostRevisionId: costId, marginPolicyKey: 'ashcroft-fixture', referralEligible: true, holds: [] });
+    const storageId = await ctx.storage.store(new Blob(['synthetic image']));
+    await ctx.db.insert('catMediaAssets', { productId: s.ashId, role: 'hero', storageId, derivatives: [], contentHash: 'fixture', mime: 'image/jpeg', width: 1200, height: 1200, bytes: 15,
+      sourceUrl: 'https://example.com/fixture.jpg', rights: { basis: 'Synthetic fixture permission', attributionRequired: false, privateOriginal: false },
+      altText: 'Fixture bench', verifiedAgainst: { sku: 'BEN123', pack: '1' }, status: 'verified', createdAt: NOW });
+    return { ashVariantId: cv._id, ashCostId: costId };
+  });
+  for (const [channel, packPriceMinor] of [['retail', 80000], ['trade', 60000]] as const) {
+    const review = await s.admin.query(api.catPricing.review, { variantId: ids.ashVariantId });
+    await s.admin.mutation(api.catPricing.approvePrice, { variantId: ids.ashVariantId, expectedReviewHash: review.reviewHash, channel, packPriceMinor, reason: 'Synthetic funded channel price' });
+  }
+  await s.admin.mutation(api.catPublication.verifyCanonicalIdentity, { productId: s.ashId, variantIds: [ids.ashVariantId] });
+  await s.admin.mutation(api.catPublication.publish, { productIds: [s.ashId], channels: ['retail', 'house'] });
+  return { ...s, ...ids };
 }
 
 async function processEvents(t: ReturnType<typeof convexTest>) {
@@ -2987,5 +3024,148 @@ describe('Ashcroft selling-unit inventory commitments', () => {
     await expect(s.t.run(ctx => availableAshcroftAfterCommitments(ctx, cv, 100, Date.now(), undefined, true))).rejects.toThrow(/basis/);
     await expect(s.t.run(ctx => currentAshcroftInventory(ctx, { ...cv, optionKey: 'changed' }, Date.now()))).rejects.toThrow(/identity/);
     await expect(s.t.run(ctx => currentAshcroftInventory(ctx, { ...cv, supplierSku: 'MISSING' }, Date.now()))).rejects.toThrow(/confirmation/);
+  });
+});
+
+
+describe('approved Ashcroft checkout lifecycle', () => {
+  it('freezes the final approved price and supplier evidence through payment replay and mixed fulfillment', async () => {
+    const s = await approvedAshcroftSetup();
+    const lines = [zuoLine(s), { productId: s.ashId, variantId: 'b1', packs: 1 }];
+    const { est, intent, payload } = await paidOrder(s, lines);
+    const frozen = (await s.t.run(ctx => ctx.db.get(intent.intentId)))!;
+    expect(frozen.merchandiseMinor).toBe(45806 + 80000);
+    expect(frozen.lineSnapshot.find(l => l.supplierCode === 'ashcroft')).toMatchObject({ variantId: s.ashVariantId, supplierSku: 'BEN123', unitPackMinor: 80000, costRevisionId: s.ashCostId, pieces: 1, packs: 1, deliveryAllocMinor: 2900 });
+    expect(frozen.lineSnapshot.find(l => l.supplierCode === 'ashcroft')!.priceRevisionId).toBeTruthy();
+    const reservations = await s.t.run(ctx => ctx.db.query('ordInventoryReservations').collect());
+    expect(reservations.find(r => r.variantId === s.ashVariantId)).toMatchObject({ inventoryBasis: 'ashcroft_selling_unit', supplierSku: 'BEN123', piecesPerPack: 1, packs: 1, status: 'consumed' });
+    expect(reservations.find(r => r.variantId === s.ashVariantId)!.ashcroftFeedId).toBeTruthy();
+    const estimate = (await s.t.run(ctx => ctx.db.get(est.estimateId)))!;
+    expect(estimate.groups.find(g => g.supplierCode === 'ashcroft')).toMatchObject({ freightMinor: 11900, chargeMinor: 2900 });
+    const before = await s.t.run(ctx => ctx.db.query('ordOrderLines').collect());
+    await s.t.run(ctx => ctx.db.patch(s.ashVariantId, { supplierSku: 'REPLACEMENT', currentCostRevisionId: undefined, retailPriceRevisionId: undefined }));
+    await s.t.mutation(internal.ordPayments.receive, { eventId: 'evt_approved_repeat', type: 'checkout.session.completed', livemode: false, payloadHash: 'h', payload });
+    await processEvents(s.t);
+    expect(await s.t.run(ctx => ctx.db.query('ordOrders').collect())).toHaveLength(1);
+    expect(await s.t.run(ctx => ctx.db.query('ordOrderLines').collect())).toEqual(before);
+    const children = await s.t.run(ctx => ctx.db.query('ordSupplierOrders').collect());
+    expect(children).toHaveLength(2);
+    const zuo = children.find(c => c.supplierCode === 'zuo')!;
+    const ash = children.find(c => c.supplierCode === 'ashcroft')!;
+    const edi = await s.t.run(ctx => buildPayload(ctx, zuo));
+    expect(edi.lines.map(l => l.supplierSku)).toEqual(['111182']);
+    await expect(s.t.run(ctx => buildPayload(ctx, ash))).rejects.toThrow(/only for Zuo/);
+    const queue = await s.admin.query(api.ordFulfillment.dealerQueue, { route: 'manual_dealer_ashcroft' });
+    expect(queue[0].items[0]).toMatchObject({ supplierSku: 'BEN123', packs: 1, pieces: 1 });
+    expect(await s.t.run(ctx => ctx.db.query('ordPaidExceptions').collect())).toHaveLength(0);
+  });
+
+  it('uses authenticated approved trade prices and never creates retail referral earnings', async () => {
+    const s = await approvedAshcroftSetup();
+    const userId = await s.t.run(async ctx => {
+      const userId = await ctx.db.insert('users', { email: 'approved-trade@example.com' });
+      await ctx.db.insert('holmProfiles', { userId, displayName: 'Fixture studio', tradeStatus: 'approved', createdAt: NOW, updatedAt: NOW });
+      return userId;
+    });
+    const trade = s.t.withIdentity({ subject: `${userId}|s`, email: 'approved-trade@example.com' });
+    const lines = [{ productId: s.ashId, variantId: 'b1', packs: 1 }];
+    const picker = await trade.query(api.dlvTradeCalculator.catalog, { paginationOpts: { cursor: null, numItems: 20 } });
+    expect(picker.page.find(p => p.id === s.ashId)?.variants[0].id).toBe('b1');
+    const savings = await trade.query(api.dlvTradeCalculator.calculate, { lines });
+    expect(savings).toMatchObject({ tradeSubtotalMinor: 60000, retailComparisonMinor: 80000, baseTradeSavingsMinor: 20000, finalMerchandiseMinor: 60000 });
+    expect(savings.lines[0]).toMatchObject({ productId: s.ashId, variantId: 'b1' });
+    const input = { lines, channel: 'trade' as const, zip: '95206', address: ADDRESS, visitorKey: 'approved-trade-fixture' };
+    await expect(estimateViaGateway(s.t, input)).rejects.toThrow();
+    const est = await estimateViaGateway(trade, input);
+    expect(est).toMatchObject({ status: 'ok', merchandiseMinor: 60000, deliveryChargeMinor: 2900 });
+    const intent = await trade.mutation(internal.ordCheckout.createIntent, { idempotencyKey: 'approved-trade-fixture', estimateId: est.estimateId,
+      lines, address: ADDRESS, service: 'curbside', acceptTotalMinor: est.totalMinor! });
+    if (intent.status === 'price_changed') throw Error('Unexpected price change');
+    const snapshot = (await s.t.run(ctx => ctx.db.get(intent.intentId)))!;
+    expect(snapshot.channel).toBe('trade');
+    expect(snapshot.lineSnapshot[0]).toMatchObject({ unitPackMinor: 60000, variantId: s.ashVariantId, costRevisionId: s.ashCostId });
+    await s.t.mutation(internal.ordCheckout.attachSession, { intentId: intent.intentId, sessionId: 'cs_trade_fixture' });
+    await s.t.mutation(internal.ordPayments.receive, { eventId: 'evt_trade_fixture', type: 'checkout.session.completed', livemode: false, payloadHash: 'fixture',
+      payload: { id: 'cs_trade_fixture', intentId: intent.intentId, payment_status: 'paid', amount_total: intent.totalMinor, currency: 'usd', payment_intent: 'pi_trade_fixture', email: 'approved-trade@example.com', shipping: ADDRESS } });
+    await processEvents(s.t);
+    expect(await s.t.run(ctx => ctx.db.query('ordOrders').collect())).toHaveLength(1);
+    expect(await s.t.run(ctx => ctx.db.query('prgAttributionSnapshots').collect())).toHaveLength(0);
+    expect(await s.t.run(ctx => ctx.db.query('ldgObligations').collect())).toHaveLength(0);
+  });
+
+  it('uses the same approved project tier in the calculator and delivery engine', async () => {
+    const s = await approvedAshcroftSetup();
+    const proposal = (await s.admin.query(api.sysConfig.list, { status: 'proposed' })).records.find(r => r.key === 'project-discount')!;
+    await s.admin.mutation(api.sysConfig.approve, { id: proposal._id });
+    const userId = await s.t.run(async ctx => {
+      const userId = await ctx.db.insert('users', { email: 'project-fixture@example.com' });
+      await ctx.db.insert('holmProfiles', { userId, displayName: 'Project fixture', tradeStatus: 'approved', createdAt: NOW, updatedAt: NOW });
+      return userId;
+    });
+    const trade = s.t.withIdentity({ subject: `${userId}|s`, email: 'project-fixture@example.com' });
+    const lines = [{ productId: s.ashId, variantId: 'b1', packs: 17 }];
+    const result = await trade.query(api.dlvTradeCalculator.calculate, { lines });
+    expect(result).toMatchObject({ tradeSubtotalMinor: 1020000, projectTierBps: 300, projectSavingsMinor: 30600, finalMerchandiseMinor: 989400 });
+    const estimate = await estimateViaGateway(trade, { lines, channel: 'trade', zip: '95206', address: ADDRESS, visitorKey: 'approved-project-fixture' });
+    expect(estimate).toMatchObject({ status: 'ok', merchandiseMinor: result.finalMerchandiseMinor, deliveryChargeMinor: 17 * 2900 });
+    const intent = await trade.mutation(internal.ordCheckout.createIntent, { idempotencyKey: 'approved-project-fixture', estimateId: estimate.estimateId, lines, address: ADDRESS,
+      service: 'curbside', acceptTotalMinor: estimate.totalMinor! });
+    expect(intent.status).toBe('created');
+    if (intent.status === 'price_changed') throw Error('Unexpected changed project price');
+    expect((await s.t.run(ctx => ctx.db.get(intent.intentId)))!.lineSnapshot[0].unitPackMinor).toBe(58200);
+    const larger = [{ ...lines[0], packs: 42 }];
+    const floor = await trade.query(api.dlvTradeCalculator.calculate, { lines: larger });
+    expect(floor.projectTierBps).toBe(500);
+    expect(floor.lines[0].finalPackMinor).toBe(57168);
+    // This larger fixture exceeds the automatic per-item shipment limit.
+    await expect(estimateViaGateway(trade, { lines: larger, channel: 'trade', zip: '95206', address: ADDRESS, visitorKey: 'approved-project-floor' })).rejects.toSatisfy(error => isCommerceError(error, 'INVALID_INPUT'));
+
+  });
+
+  it('removes stale, unavailable and legacy-base Ashcroft offers from calculator selection', async () => {
+    const s = await approvedAshcroftSetup();
+    await s.t.run(async ctx => { await ctx.db.insert('holmProfiles', { userId: (await ctx.db.query('users').first())!._id, displayName: 'Fixture', tradeStatus: 'approved', createdAt: NOW, updatedAt: NOW }); });
+    const lines = [{ productId: s.ashId, variantId: 'b1', packs: 1 }];
+    const picker = () => s.admin.query(api.dlvTradeCalculator.catalog, { paginationOpts: { cursor: null, numItems: 20 } });
+    expect((await picker()).page.some(p => p.id === s.ashId)).toBe(true);
+    const house = (await s.t.run(ctx => ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', s.ashId).eq('channel', 'house')).unique()))!;
+    for (const change of ['cost', 'stock', 'legacy'] as const) {
+      await s.t.run(async ctx => {
+        await ctx.db.patch(s.ashCostId, { feesConfirmedZero: change !== 'cost' });
+        const feed = (await ctx.db.query('ashcroftInventoryFeeds').first())!;
+        await ctx.db.patch(feed._id, { rows: [{ sku: 'BEN123', quantity: change === 'stock' ? 0 : 100 }] });
+        await ctx.db.patch(house._id, { pricingMode: change === 'legacy' ? undefined : 'approved_v2' });
+      });
+      expect((await picker()).page.some(p => p.id === s.ashId)).toBe(false);
+      await expect(s.admin.query(api.dlvTradeCalculator.calculate, { lines })).rejects.toThrow();
+    }
+  });
+
+  it.each(['disabled', 'alaska', 'stairs'] as const)('does not offer an automatic approved checkout for %s', async boundary => {
+    const s = await approvedAshcroftSetup();
+    const lines = [{ productId: s.ashId, variantId: 'b1', packs: 1 }];
+    if (boundary === 'disabled') delete process.env.DELIVERY_AUTOMATION_ENABLED;
+    const address = boundary === 'alaska' ? { ...ADDRESS, city: 'Anchorage', state: 'AK', postalCode: '99501' }
+      : boundary === 'stairs' ? { ...ADDRESS, access: { ...STANDARD_ACCESS, stairs: true } } : ADDRESS;
+    const result = estimateViaGateway(s.t, { lines, channel: 'retail', zip: address.postalCode, address, visitorKey: 'approved-boundary-fixture' });
+    if (boundary === 'disabled') await expect(result).rejects.toThrow();
+    else expect((await result).status).not.toBe('ok');
+    expect(await s.t.run(ctx => ctx.db.query('ordCheckoutIntents').collect())).toHaveLength(0);
+  });
+
+  it.each(['cost', 'price', 'stock'] as const)('does not accept a stale approved offer after %s changes', async change => {
+    const s = await approvedAshcroftSetup();
+    const lines = [{ productId: s.ashId, variantId: 'b1', packs: 1 }];
+    const est = await estimateViaGateway(s.t, { lines, channel: 'retail', zip: '95206', address: ADDRESS, visitorKey: 'approved-stale-fixture' });
+    expect(est.status).toBe('ok');
+    await s.t.run(async ctx => {
+      if (change === 'cost') await ctx.db.patch(s.ashCostId, { feesConfirmedZero: false });
+      if (change === 'price') await ctx.db.patch(s.ashVariantId, { retailPriceRevisionId: undefined });
+      if (change === 'stock') { const feed = (await ctx.db.query('ashcroftInventoryFeeds').first())!; await ctx.db.patch(feed._id, { rows: [{ sku: 'BEN123', quantity: 0 }] }); }
+    });
+    await expect(s.t.mutation(internal.ordCheckout.createIntent, { idempotencyKey: 'approved-stale-fixture', estimateId: est.estimateId, guestCapability: est.guestCapability,
+      lines, address: ADDRESS, service: 'curbside', acceptTotalMinor: est.totalMinor! })).rejects.toThrow();
+    expect(await s.t.run(ctx => ctx.db.query('ordCheckoutIntents').collect())).toHaveLength(0);
+    expect(await s.t.run(ctx => ctx.db.query('ordInventoryReservations').collect())).toHaveLength(0);
   });
 });

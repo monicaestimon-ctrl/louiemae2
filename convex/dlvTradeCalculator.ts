@@ -2,7 +2,9 @@ import { customerFacing } from '../lib/delivery/publicErrors';
 import { assertDeliveryBounds } from '../lib/delivery/requestBounds';
 import { v } from 'convex/values';
 import { paginationOptsValidator } from 'convex/server';
-import { query } from './_generated/server';
+import { query, type QueryCtx } from './_generated/server';
+import type { Doc } from './_generated/dataModel';
+import { approvedAshcroftOffer } from './catAshcroftOffer';
 import { viewer, isVerified } from './holmAccess';
 import { activeConfig, maybeConfig } from './sysConfig';
 import type { CommissionSchedule, TradeDiscountSchedule } from '../lib/config';
@@ -14,6 +16,21 @@ import { checkPackQuantity } from '../lib/catUnits';
 import { projectPrices, approvedProjectPolicy } from './dlvProjectPricing';
 import { lineArg } from './dlvEstimates';
 import { flag, requireFlag } from '../lib/flags';
+
+// Ashcroft retains storefront option IDs; never treat legacy base prices as final offers.
+async function calculatorVariant(ctx: QueryCtx, listing: Doc<'commerceListings'>, optionId: string, now: number) {
+  const product = await ctx.db.get(listing.productId);
+  if (product?.provider === 'ashcroft') {
+    const offer = await approvedAshcroftOffer(ctx, listing, optionId, 'trade', now);
+    if (offer.capacity < offer.cv.orderMinimumPacks) throw new CommerceError('STOCK_UNAVAILABLE');
+    return offer.cv;
+  }
+  const id = ctx.db.normalizeId('catVariants', optionId);
+  if (!id) throw new CommerceError('COST_REVIEW_REQUIRED', 'This item needs an approved project quote');
+  const cv = await assertSellable(ctx, id, 'estimate', now, 'trade');
+  if (cv.productId !== listing.productId) throw new CommerceError('INVALID_INPUT');
+  return cv;
+}
 
 export const settings = query({
   args: {},
@@ -58,12 +75,10 @@ export const catalog = query({
       for (const p of page.page) {
         const variants = [];
         for (const x of p.snapshot.variants) {
-          const id = ctx.db.normalizeId('catVariants', x.id);
-          if (!id) continue;
           try {
-            const cv = await assertSellable(ctx, id, 'estimate', now, 'trade');
+            const cv = await calculatorVariant(ctx, p, x.id, now);
             const price = cv.tradePriceRevisionId ? await ctx.db.get(cv.tradePriceRevisionId) : null;
-            if (cv.productId !== p.productId || !isCurrentPrice(price, id, 'trade', now) || price.packPriceMinor !== x.price) continue;
+            if (cv.productId !== p.productId || !isCurrentPrice(price, cv._id, 'trade', now) || price.packPriceMinor !== x.price) continue;
             variants.push({
               id: x.id,
               name: x.name,
@@ -96,19 +111,16 @@ export const calculate = query({
       ]);
       const seen = new Set<string>();
       const lines = [];
-      const projectInputs = [];
+      const projectInputs: Parameters<typeof projectPrices>[1] = [];
       const now = Date.now();
       for (const l of a.lines) {
-        if (seen.has(l.variantId)) throw new CommerceError('INVALID_INPUT');
-        seen.add(l.variantId);
-        const id = ctx.db.normalizeId('catVariants', l.variantId);
-        if (!id)
-          throw new CommerceError(
-            'COST_REVIEW_REQUIRED',
-            'This item needs an approved project quote'
-          );
-        const cv = await assertSellable(ctx, id, 'estimate', now, 'trade');
-        if (cv.productId !== l.productId) throw new CommerceError('INVALID_INPUT');
+        const productId = ctx.db.normalizeId('commerceProducts', l.productId);
+        if (!productId) throw new CommerceError('INVALID_INPUT');
+        const listing = await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', productId).eq('channel', 'house')).unique();
+        if (!listing?.published) throw new CommerceError('COST_REVIEW_REQUIRED');
+        const cv = await calculatorVariant(ctx, listing, l.variantId, now);
+        if (seen.has(cv._id)) throw new CommerceError('INVALID_INPUT');
+        seen.add(cv._id);
         checkPackQuantity(cv, l.packs);
         const [supplier, retail, trade, meta, retailListing, tradeListing] = await Promise.all([
           ctx.db.get(cv.supplierId),
@@ -134,16 +146,20 @@ export const calculate = query({
         if (
           !tradeListing?.published ||
           !isCurrentPrice(trade, cv._id, 'trade', now) ||
-          tradeListing.snapshot.variants.find((v) => v.id === cv._id)?.price !==
+          tradeListing.snapshot.variants.find((v) => v.id === l.variantId)?.price !==
             trade.packPriceMinor
         )
           throw new CommerceError('COST_REVIEW_REQUIRED');
         const category = meta?.commissionCategory;
-        const comparable =
+        let comparable =
           retailListing?.published &&
           isCurrentPrice(retail, cv._id, 'retail', now) &&
-          retailListing.snapshot.variants.find((v) => v.id === cv._id)?.price ===
+          retailListing.snapshot.variants.find((v) => v.id === l.variantId)?.price ===
             retail.packPriceMinor;
+        if (comparable && supplier?.code === 'ashcroft') {
+          try { await approvedAshcroftOffer(ctx, retailListing!, l.variantId, 'retail', now); }
+          catch (error) { if (!isCommerceError(error)) throw error; comparable = false; }
+        }
         const eligibleProject =
           !!supplier &&
           supplier.code !== 'zuo' &&
@@ -163,7 +179,7 @@ export const calculate = query({
         projectInputs.push({ variant: cv, packs: l.packs, unitPackMinor: trade.packPriceMinor });
         lines.push({
           productId: cv.productId,
-          variantId: cv._id,
+          variantId: l.variantId,
           name: meta?.louieMaeName ?? cv.louieMaeVariantName,
           packs: l.packs,
           piecesPerPack: cv.piecesPerPack,
@@ -184,8 +200,8 @@ export const calculate = query({
         .reduce((n, l) => n + l.tradePackMinor * l.packs, 0);
       const tier = project?.value.tiers.filter((t) => eligibleSubtotal >= t.minMinor).at(-1);
       const applied = await projectPrices(ctx, projectInputs);
-      for (const l of lines) {
-        const p = applied.lines.find((x) => x.variantId === l.variantId)!;
+      for (const [index, l] of lines.entries()) {
+        const p = applied.lines.find((x) => x.variantId === projectInputs[index].variant._id)!;
         l.finalPackMinor = p.price;
         l.projectReason = p.reason;
       }
