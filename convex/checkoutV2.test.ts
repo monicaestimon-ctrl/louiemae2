@@ -404,6 +404,9 @@ async function setup(opts: { approveMixed?: boolean } = {}) {
         variants: [{ id: variantId, name: 'Oak', minimum: 1, increment: 1, price: 45_806 }],
       },
     });
+    await ctx.db.insert('ashcroftInventoryFeeds', { source: 'Fixture current supplier inventory', sha256: 'a'.repeat(64),
+      observedAt: NOW - 1000, validUntil: NOW + 72 * 3600000, importedAt: NOW,
+      rows: [{ sku: 'BEN123', quantity: 100 }] });
     // An Ashcroft product on its existing launch rules.
     const ashId = await ctx.db.insert('commerceProducts', {
       provider: 'ashcroft',
@@ -714,6 +717,65 @@ describe('delivery estimates (S17, S18)', () => {
         visitorKey: 'v',
       })
     ).rejects.toSatisfy((e) => isCommerceError(e, 'FEATURE_DISABLED'));
+  });
+
+  it('binds Ashcroft stock evidence to estimate expiry and source changes', async () => {
+    const s = await setup({ approveMixed: true });
+    const until = Date.now() + 45_000;
+    await s.t.run(async ctx => {
+      const feed = (await ctx.db.query('ashcroftInventoryFeeds').first())!;
+      await ctx.db.patch(feed._id, { validUntil: until });
+    });
+    const input = { lines: [{ productId: s.ashId, variantId: 'b1', packs: 2 }], channel: 'retail' as const, zip: '95206', visitorKey: 'visitor-1234567890' };
+    const first = await estimateViaGateway(s.t, input);
+    expect(first.expiresAt).toBe(until);
+    const original = await s.t.run(ctx => ctx.db.get(first.estimateId));
+    const mixed = await estimateViaGateway(s.t, { ...input, lines: [...input.lines, zuoLine(s)] });
+    expect(mixed.expiresAt).toBe(until);
+    await s.t.run(async ctx => {
+      const feed = (await ctx.db.query('ashcroftInventoryFeeds').first())!;
+      await ctx.db.patch(feed._id, { sha256: 'b'.repeat(64), rows: [{ sku: 'BEN123', quantity: 90 }] });
+    });
+    const next = await estimateViaGateway(s.t, input);
+    const revised = await s.t.run(ctx => ctx.db.get(next.estimateId));
+    expect(revised?.sourceVersionsHash).not.toBe(original?.sourceVersionsHash);
+    expect(next.deliveryChargeMinor).toBe(first.deliveryChargeMinor);
+  });
+
+  it.each(['missing', 'expired', 'future', 'absent-sku', 'insufficient'])('rejects Ashcroft %s inventory in v2 estimates', async state => {
+    const s = await setup();
+    await s.t.run(async ctx => {
+      const feed = (await ctx.db.query('ashcroftInventoryFeeds').first())!;
+      if (state === 'missing') await ctx.db.delete(feed._id);
+      else if (state === 'expired') await ctx.db.patch(feed._id, { validUntil: NOW });
+      else if (state === 'future') await ctx.db.patch(feed._id, { observedAt: NOW + 60000 });
+      else await ctx.db.patch(feed._id, { rows: [{ sku: state === 'absent-sku' ? 'OTHER' : 'BEN123', quantity: 1 }] });
+    });
+    await expect(s.t.run(ctx => resolveLines(ctx, [{ productId: s.ashId, variantId: 'b1', packs: 2 }], 'retail', NOW)))
+      .rejects.toThrow(/unavailable/);
+  });
+
+  it('uses selling-unit minimums and increments for Ashcroft orders', async () => {
+    const s = await setup();
+    await s.t.run(async ctx => {
+      const listing = (await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', s.ashId).eq('channel', 'retail')).unique())!;
+      await ctx.db.patch(listing._id, { snapshot: { ...listing.snapshot, variants: listing.snapshot.variants.map(v => ({ ...v, minimum: 2, increment: 2 })) } });
+    });
+    for (const packs of [1, 3]) await expect(s.t.run(ctx => resolveLines(ctx, [{ productId: s.ashId, variantId: 'b1', packs }], 'retail', NOW)))
+      .rejects.toThrow(/minimum|steps/);
+    const lines = await s.t.run(ctx => resolveLines(ctx, [{ productId: s.ashId, variantId: 'b1', packs: 4 }], 'retail', NOW));
+    expect(lines[0].fixedDeliveryMinor).toBe(4 * 2900);
+  });
+
+  it('classifies Ashcroft lighting as decor in newly resolved snapshots', async () => {
+    const s = await setup();
+    await s.t.run(async ctx => {
+      const listing = (await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', s.ashId).eq('channel', 'retail')).unique())!;
+      await ctx.db.patch(listing._id, { snapshot: { ...listing.snapshot, category: 'lighting', name: 'Aster floor lamp' } });
+    });
+    const lines = await s.t.run(ctx => resolveLines(ctx, [{ productId: s.ashId, variantId: 'b1', packs: 1 }], 'retail', NOW));
+    expect(lines[0].category).toBe('decor');
+    expect(lines[0].fixedDeliveryMinor).toBe(1900);
   });
 
   it('versions the independent Ashcroft per-item policy and caps estimate validity', async () => {
