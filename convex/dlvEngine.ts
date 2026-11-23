@@ -1,5 +1,6 @@
 import { deliveryZone } from '../lib/delivery/zones';
-import { ashcroftAvailable } from './ashcroftInventory';
+import { ashcroftAvailableFromFeed, latestFeed } from './ashcroftInventory';
+import { isLighting, proposeCategory } from '../lib/catCategory';
 import { ensureAshcroftIdentity } from './catAshcroft';
 import { modeledParcelFreight, type ModeledParcelRates } from '../lib/delivery/modeledParcel';
 // Server-owned delivery service (spec S17, S18, v2 §9–§12). One engine serves product, cart,
@@ -116,13 +117,17 @@ export type ResolvedLine = {
 async function categoryOf(
   ctx: Ctx,
   productId: Id<'commerceProducts'>,
-  fallback: 'furniture' | 'decor' | 'clothing' = 'furniture'
+  fallback: 'furniture' | 'decor' | 'clothing' | 'review_required' = 'furniture'
 ) {
   const meta = await ctx.db
     .query('catProductMeta')
     .withIndex('by_product', (q) => q.eq('productId', productId))
     .first();
-  if (!meta) return fallback;
+  if (!meta) {
+    if (fallback === 'review_required')
+      throw new CommerceError('COST_REVIEW_REQUIRED', 'Category needs review');
+    return fallback;
+  }
   if (meta.commissionCategory === 'review_required')
     throw new CommerceError('COST_REVIEW_REQUIRED', 'Category under review');
   return meta.commissionCategory;
@@ -347,10 +352,14 @@ export async function resolveLines(
         );
       const supplierRow = listing.fulfillment?.find((x) => x.id === l.variantId);
       const rate = retailDelivery(listing.snapshot.category, listing.snapshot.name);
+      // V2 estimates require dated inventory. The no-feed legacy fallback is not
+      // evidence for a new checkout, and must not give an estimate unlimited life.
+      const feed = await latestFeed(ctx);
       if (
         !supplierRow?.sku ||
         !rate ||
-        !(await ashcroftAvailable(ctx, supplierRow.sku, listing.snapshot.description, l.packs))
+        !feed ||
+        !ashcroftAvailableFromFeed(feed, supplierRow.sku, listing.snapshot.description, l.packs, now)
       )
         throw new CommerceError(
           'STOCK_UNAVAILABLE',
@@ -364,7 +373,16 @@ export async function resolveLines(
           ? listing.snapshot.name
           : `${listing.snapshot.name} — ${option.name}`;
       const cv = await ensureAshcroftIdentity(ctx, { productId: product._id, variantId: l.variantId, sku: supplierRow.sku, name, minimum: option.minimum, increment: option.increment }, 'system:delivery');
+      checkPackQuantity(cv, l.packs);
+      const categoryText = `${listing.snapshot.category} ${listing.snapshot.name}`;
+      const proposed = proposeCategory(categoryText).category;
+      const category = await categoryOf(ctx, product._id, proposed);
       out.push({
+        validUntil: feed.validUntil,
+        dependencyHash: await digest({ feedId: feed._id, sha256: feed.sha256,
+          observedAt: feed.observedAt, validUntil: feed.validUntil,
+          stock: feed.rows.find(row => row.sku === supplierRow.sku),
+          listingRevision: listing.revision, option, supplierRow, rate }),
         lineKey: `${i}:${product._id}:${cv._id}`,
         productId: product._id,
         variant: cv,
@@ -373,7 +391,7 @@ export async function resolveLines(
         packs: l.packs,
         pieces: l.packs,
         unitPackMinor: launchPrice(option.price, rate.freight, rate.delivery),
-        category: await categoryOf(ctx, product._id),
+        category: isLighting(categoryText) ? 'decor' : category,
         supplierCode: 'ashcroft',
         fixedDeliveryMinor: rate.delivery * l.packs,
         cartons: [],
@@ -772,6 +790,7 @@ export async function computeEstimate(
       creditMinor,
       validUntil: Math.min(
         Number.MAX_SAFE_INTEGER,
+        ...lines.map(line => line.validUntil ?? Infinity),
         ashcroftRule?.effectiveTo ?? Infinity,
         servicePolicy?.effectiveTo ?? Infinity,
         taxPolicy?.effectiveTo ?? Infinity,
