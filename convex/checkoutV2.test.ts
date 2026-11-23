@@ -767,6 +767,25 @@ describe('delivery estimates (S17, S18)', () => {
     expect(lines[0].fixedDeliveryMinor).toBe(4 * 2900);
   });
 
+  it.each(['furniture', 'review_required', 'missing'] as const)('respects %s metadata before an ambiguous Ashcroft text proposal', async commissionCategory => {
+    const s = await setup();
+    const input = [{ productId: s.ashId, variantId: 'b1', packs: 1 }];
+    const original = await s.t.run(ctx => resolveLines(ctx, input, 'retail', NOW));
+    await s.t.run(async ctx => {
+      const listing = (await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', s.ashId).eq('channel', 'retail')).unique())!;
+      await ctx.db.patch(listing._id, { snapshot: { ...listing.snapshot, name: 'Bench with art panels' } });
+      if (commissionCategory !== 'missing') await ctx.db.insert('catProductMeta', {
+        productId: s.ashId, supplierId: original[0].variant.supplierId, commissionCategory,
+        navCategory: 'bench', louieMaeName: 'Bench with art panels', slug: 'bench', slugHistory: [],
+        supplierName: 'Fixture bench', holds: [], stage: 'published', createdAt: NOW, updatedAt: NOW,
+      });
+    });
+    if (commissionCategory === 'furniture') {
+      const lines = await s.t.run(ctx => resolveLines(ctx, input, 'retail', NOW));
+      expect(lines[0].category).toBe('furniture');
+    } else await expect(s.t.run(ctx => resolveLines(ctx, input, 'retail', NOW))).rejects.toThrow(/review/);
+  });
+
   it('classifies Ashcroft lighting as decor in newly resolved snapshots', async () => {
     const s = await setup();
     await s.t.run(async ctx => {

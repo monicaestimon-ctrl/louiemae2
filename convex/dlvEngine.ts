@@ -117,13 +117,17 @@ export type ResolvedLine = {
 async function categoryOf(
   ctx: Ctx,
   productId: Id<'commerceProducts'>,
-  fallback: 'furniture' | 'decor' | 'clothing' = 'furniture'
+  fallback: 'furniture' | 'decor' | 'clothing' | 'review_required' = 'furniture'
 ) {
   const meta = await ctx.db
     .query('catProductMeta')
     .withIndex('by_product', (q) => q.eq('productId', productId))
     .first();
-  if (!meta) return fallback;
+  if (!meta) {
+    if (fallback === 'review_required')
+      throw new CommerceError('COST_REVIEW_REQUIRED', 'Category needs review');
+    return fallback;
+  }
   if (meta.commissionCategory === 'review_required')
     throw new CommerceError('COST_REVIEW_REQUIRED', 'Category under review');
   return meta.commissionCategory;
@@ -372,8 +376,6 @@ export async function resolveLines(
       checkPackQuantity(cv, l.packs);
       const categoryText = `${listing.snapshot.category} ${listing.snapshot.name}`;
       const proposed = proposeCategory(categoryText).category;
-      if (proposed === 'review_required')
-        throw new CommerceError('COST_REVIEW_REQUIRED', 'Ashcroft category needs review');
       const category = await categoryOf(ctx, product._id, proposed);
       out.push({
         validUntil: feed.validUntil,
