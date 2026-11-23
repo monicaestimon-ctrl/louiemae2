@@ -112,6 +112,7 @@ export async function creditAccountFor(ctx: MutationCtx, userId: Id<'users'>) {
 export type CreditEventInput = {
   eventKey: string;
   sourceFingerprint?: string;
+  awardPolicy?: { configId: Id<'sysConfig'>; version: number; qualifyingMinMinor: number };
   userId: Id<'users'>;
   type: CreditEventType;
   amountMinor: number;

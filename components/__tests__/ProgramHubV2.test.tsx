@@ -83,6 +83,16 @@ describe('v2 program hub (S33, S34, UX01)', () => {
     expect(document.body.textContent).not.toMatch(/@(?!louiemae\.com)/); // no buyer emails; only our support address
   });
 
+  it('explains a refund review without presenting held credit as spendable', () => {
+    answers.set('prgTiers.myTier', { tier: 'base', qualifyingMinor: 0, next: 'active', toNextMinor: 1500000 });
+    answers.set('ldgCommissions.myEarnings', { totals: { pending: 0, held: 0, cleared: 0, reserved: 0, submitted: 0, transferred: 0 }, entries: [] });
+    answers.set('prgMemberships.myPrograms', { creator: { state: 'active', reviewReasons: [] }, trade: null, beneficiary: { tier: 'base', refCode: 'REF', payoutReadiness: 'not_started', status: 'active' }, creatorTerms: terms, referralTerms: terms });
+    answers.set('ldgCredits.myCreditV2', { reviewRequired: true, reviewMessage: 'Store credit is temporarily unavailable while a referral refund is reviewed. Your credit history is preserved.', availableMinor: 0, reservedMinor: 0, pendingAwardMinor: 0, history: [], terms: 'Store credit has no cash value.' });
+    render(<ProgramHubV2 site="creators" />);
+    expect(screen.getByText(/Store credit is temporarily unavailable/)).toHaveAttribute('role', 'status');
+    expect(commands).not.toHaveBeenCalled();
+  });
+
   it('shows the business team to owners only', () => {
     answers.set('prgMemberships.myOrganizations', [{ organizationId: 'o1', name: 'Ava Studio', role: 'owner', members: [{ userId: 'u2', role: 'purchasing', status: 'active', email: 'sam@ava.studio' }] }]);
     render(<TeamPanel />);

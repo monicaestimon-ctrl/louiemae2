@@ -5,23 +5,25 @@
 // and reinstated (never paid out as cash) on refunds.
 import { v } from 'convex/values';
 import { internalMutation, mutation, query } from './_generated/server';
+import { internal } from './_generated/api';
 import type { MutationCtx, QueryCtx } from './_generated/server';
-import type { Doc, Id } from './_generated/dataModel';
+import type { Id } from './_generated/dataModel';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { requireUser, viewer } from './holmAccess';
-import { applyCreditEvent, creditAccountFor } from './ldgCore';
+import { applyCreditEvent } from './ldgCore';
 import { activeConfig } from './sysConfig';
-import { audit, bumpMetric, keyExists, openReview } from './sysCore';
+import { bumpMetric, keyExists, openReview } from './sysCore';
 import { flag } from '../lib/flags';
 import { CommerceError } from '../lib/errors';
 import type { CreditPolicy } from '../lib/config';
+import { awardQualification, creditUnderReview, invalidateAward, reconcileAward } from './businessCreditAwards';
 
 type Ctx = QueryCtx | MutationCtx;
 const DAY = 86_400_000;
 
 export async function available(ctx: Ctx, userId: Id<'users'>) {
   const acct = await ctx.db.query('ldgCreditAccounts').withIndex('by_user', (q) => q.eq('userId', userId)).first();
-  return Math.max(0, acct?.availableMinor ?? 0);
+  return acct && await creditUnderReview(ctx, acct._id) ? 0 : Math.max(0, acct?.availableMinor ?? 0);
 }
 
 async function eventsByRef(ctx: Ctx, ref: string) {
@@ -74,12 +76,8 @@ export const reinstateForOrder = internalMutation({
 
 // ---------------- the $100 business referral award ----------------
 async function policy(ctx: Ctx) {
-  return (await activeConfig<CreditPolicy>(ctx, 'creditPolicy', 'business-credit')).value;
+  return activeConfig<CreditPolicy>(ctx, 'creditPolicy', 'business-credit');
 }
-
-/** Qualifying merchandise of a paid v2 order: after discounts and credit, excluding delivery and tax. */
-const qualifying = (order: Doc<'ordOrders'>, lines: Doc<'ordOrderLines'>[]) =>
-  lines.reduce((t, l) => t + Math.max(0, l.unitPackMinor * l.packs - l.discountMinor - l.creditMinor - l.refundedMinor), 0) || Math.max(0, order.totals.merchandise - order.totals.discount - order.totals.credit);
 
 /**
  * A paid order by a referred business: opens a pending award for the referrer once per referred
@@ -91,69 +89,77 @@ export async function onOrderPaid(ctx: MutationCtx, orderId: Id<'ordOrders'>) {
   const order = await ctx.db.get(orderId);
   if (!order?.buyerUserId) return null;
   const ref = await ctx.db.query('holmReferrals').withIndex('by_referred', (q) => q.eq('referredUserId', order.buyerUserId!)).first();
-  if (!ref || ref.status === 'credited') return null;
-  const p = await policy(ctx);
+  if (!ref || ref.status === 'credited' || ref.referrerId === order.buyerUserId || order.paidAt < ref.createdAt) return null;
+  const policyRecord = await policy(ctx);
+  const p = policyRecord.value;
+  if (!Number.isSafeInteger(p.awardMinor) || p.awardMinor <= 0) return null;
   const profile = await ctx.db.query('holmProfiles').withIndex('by_user', (q) => q.eq('userId', order.buyerUserId!)).unique();
   if (profile?.tradeStatus !== 'approved') return null; // the business must be verified
-  const lines = await ctx.db.query('ordOrderLines').withIndex('by_order', (q) => q.eq('orderId', order._id)).collect();
-  if (qualifying(order, lines) < p.qualifyingMinMinor) return null;
-  // "New": no earlier paid order by this business.
-  const earlier = (await ctx.db.query('ordOrders').withIndex('by_buyer', (q) => q.eq('buyerUserId', order.buyerUserId!)).collect()).filter((o) => o._id !== order._id && o.paidAt < order.paidAt && o.status !== 'cancelled');
-  if (earlier.length) {
-    await openReview(ctx, 'credit_not_new_business', 'ordOrders', order._id, 'Referred business already had a paid order; no award.');
+  if ((await awardQualification(ctx, order, p.qualifyingMinMinor)).status !== 'qualified') return null;
+  // The business must have been referred before becoming a paying customer.
+  const earlier = (await ctx.db.query('ordOrders').withIndex('by_buyer', (q) => q.eq('buyerUserId', order.buyerUserId!)).take(101));
+  if (earlier.length > 100 || earlier.some(o => o._id !== order._id && o.paidAt < ref.createdAt)) {
+    await openReview(ctx, 'credit_not_new_business', 'ordOrders', order._id, 'Review existing customer history before awarding a new-business referral.');
     return null;
   }
   // Anti-double-reward: the same beneficiary cannot also earn retail commission on this order.
-  const commissions = (await ctx.db.query('ldgObligations').withIndex('by_order', (q) => q.eq('orderId', order._id)).collect()).filter((o) => o.source === 'retail_order');
+  const commissions = (await ctx.db.query('ldgObligations').withIndex('by_order', (q) => q.eq('orderId', order._id)).take(101));
+  if (commissions.length > 100) return null;
   const referrerBen = await ctx.db.query('prgBeneficiaries').withIndex('by_legacy_user', (q) => q.eq('legacyUserId', ref.referrerId)).first();
-  if (referrerBen && commissions.some((o) => o.beneficiaryId === referrerBen._id)) return null;
-  const org = await ctx.db.query('prgOrganizations').withIndex('by_legacy_owner', (q) => q.eq('legacyOwnerUserId', order.buyerUserId!)).first();
+  if (referrerBen && commissions.some((o) => o.source === 'retail_order' && o.beneficiaryId === referrerBen._id)) return null;
+  const org = await ctx.db.query('prgOrganizations').withIndex('by_legacy_owner', (q) => q.eq('legacyOwnerUserId', order.buyerUserId!)).unique();
+  if (org) {
+    if (org.verification !== 'verified') return null;
+    const seats = await ctx.db.query('prgOrganizationMembers').withIndex('by_user', q => q.eq('userId', ref.referrerId).eq('status', 'active')).take(101);
+    if (seats.length > 100 || seats.some(seat => seat.organizationId === org._id)) return null;
+    if (await ctx.db.query('ldgCreditEvents').withIndex('by_referred_org', q => q.eq('referredOrganizationId', org._id)).first()) return null;
+  }
   const key = `award:${ref.referredUserId}`;
   if (await keyExists(ctx, key)) return null;
-  await applyCreditEvent(ctx, { eventKey: key, userId: ref.referrerId, type: 'award_pending', amountMinor: p.awardMinor, ref: key, orderId: order._id, ...(org ? { referredOrganizationId: org._id } : {}), availableAt: order.paidAt + p.awardAfterDays * DAY, actor: 'system:credit', reason: 'Business referral' });
+  await applyCreditEvent(ctx, { eventKey: key, userId: ref.referrerId, type: 'award_pending', awardPolicy: { configId: policyRecord.id, version: policyRecord.version, qualifyingMinMinor: p.qualifyingMinMinor }, amountMinor: p.awardMinor, ref: key, orderId: order._id, ...(org ? { referredOrganizationId: org._id } : {}), availableAt: order.paidAt + p.awardAfterDays * DAY, actor: 'system:credit', reason: 'Business referral' });
   await bumpMetric(ctx, 'credit.award_pending');
   return key;
 }
 
-/** Hourly: pending awards past 30 days become available, or are cancelled if a refund took the order below $500. */
+/** Hourly bounded walk; settled historical events cannot starve later pending awards. */
 export const awardDue = internalMutation({
-  args: {},
-  handler: async (ctx) => {
+  args: { cursor: v.optional(v.union(v.string(), v.null())), cutoff: v.optional(v.number()) },
+  handler: async (ctx, a) => {
     if (!flag('CREDIT_V2_ENABLED')) return 0;
-    const p = await policy(ctx);
-    const now = Date.now();
-    const due = await ctx.db.query('ldgCreditEvents').withIndex('by_type_available', (q) => q.eq('type', 'award_pending').lte('availableAt', now)).take(100);
+    const cutoff = a.cutoff ?? Date.now();
+    if (!Number.isSafeInteger(cutoff) || cutoff < 0 || cutoff > Date.now()) throw new CommerceError('INVALID_INPUT', 'Invalid award cutoff');
+    const page = await ctx.db.query('ldgCreditEvents').withIndex('by_type_available', q => q.eq('type', 'award_pending').lte('availableAt', cutoff))
+      .paginate({ cursor: a.cursor ?? null, numItems: 1 });
     let n = 0;
-    for (const e of due) {
+    for (const e of page.page) {
       const settledKey = `award-settled:${e.ref}`;
       if (await keyExists(ctx, settledKey)) continue;
-      const acct = (await ctx.db.get(e.accountId))!;
+      const result = await reconcileAward(ctx, e);
+      if (result.status !== 'qualified') continue;
+      const account = await ctx.db.get(e.accountId);
+      if (!account) throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED', 'Award account missing');
+      await applyCreditEvent(ctx, { eventKey: settledKey, userId: account.userId, type: 'award_available', amountMinor: e.amountMinor, ref: e.ref, orderId: e.orderId, actor: 'system:credit', reason: 'Award available under original terms' });
       const order = e.orderId ? await ctx.db.get(e.orderId) : null;
-      const lines = order ? await ctx.db.query('ordOrderLines').withIndex('by_order', (q) => q.eq('orderId', order._id)).collect() : [];
-      const stillQualifies = !!order && order.status !== 'cancelled' && qualifying(order, lines) >= p.qualifyingMinMinor;
-      await applyCreditEvent(ctx, { eventKey: settledKey, userId: acct.userId, type: stillQualifies ? 'award_available' : 'award_cancelled', amountMinor: e.amountMinor, ref: e.ref, ...(e.orderId ? { orderId: e.orderId } : {}), actor: 'system:credit', reason: stillQualifies ? 'Award available' : 'Refund took the order below the minimum' });
-      if (stillQualifies && order?.buyerUserId) {
-        const r = await ctx.db.query('holmReferrals').withIndex('by_referred', (q) => q.eq('referredUserId', order.buyerUserId!)).first();
-        if (r) await ctx.db.patch(r._id, { status: 'credited', creditCents: e.amountMinor });
+      if (order?.buyerUserId) {
+        const referral = await ctx.db.query('holmReferrals').withIndex('by_referred', q => q.eq('referredUserId', order.buyerUserId!)).unique();
+        if (referral) await ctx.db.patch(referral._id, { status: 'credited', creditCents: e.amountMinor });
       }
       n++;
     }
+    if (!page.isDone) await ctx.scheduler.runAfter(0, internal.ldgCredits.awardDue, { cursor: page.continueCursor, cutoff });
     return n;
   },
 });
 
-/** Admin reversal of an awarded credit after a qualifying order was refunded: unspent credit is reversed, spent credit becomes a visible offset. */
+/** Source-bound, audited and retry-safe administrative fraud/refund reversal. Never moves cash. */
 export const reverseAward = mutation({
-  args: { userId: v.id('users'), amountMinor: v.number(), reason: v.string() },
+  args: { awardEventId: v.id('ldgCreditEvents'), reason: v.string() },
   handler: async (ctx, a) => {
     const admin = await requireCjAdminIdentity(ctx);
-    if (!a.reason.trim()) throw new CommerceError('INVALID_INPUT', 'Add a reason');
-    const acct = await creditAccountFor(ctx, a.userId);
-    const unspent = Math.min(Math.max(0, acct.availableMinor), a.amountMinor);
-    const key = `reverse:${a.userId}:${Date.now()}`;
-    if (unspent > 0) await applyCreditEvent(ctx, { eventKey: `${key}:r`, userId: a.userId, type: 'reversed', amountMinor: unspent, actor: admin.email, reason: a.reason });
-    if (a.amountMinor - unspent > 0) await applyCreditEvent(ctx, { eventKey: `${key}:o`, userId: a.userId, type: 'offset_created', amountMinor: a.amountMinor - unspent, actor: admin.email, reason: a.reason });
-    await audit(ctx, { actor: admin.email, action: 'credit.reverse', entityTable: 'users', entityId: a.userId, after: { unspent, offset: a.amountMinor - unspent }, reason: a.reason });
+    if (a.reason.trim().length < 5) throw new CommerceError('INVALID_INPUT', 'Explain the award reversal');
+    const award = await ctx.db.get(a.awardEventId);
+    if (!award) throw new CommerceError('INVALID_INPUT', 'Award not found');
+    await invalidateAward(ctx, award, admin.email, a.reason.trim());
   },
 });
 
@@ -164,8 +170,11 @@ export const myCreditV2 = query({
     if (!me) return null;
     const acct = await ctx.db.query('ldgCreditAccounts').withIndex('by_user', (q) => q.eq('userId', me.userId)).first();
     const events = acct ? await ctx.db.query('ldgCreditEvents').withIndex('by_account_at', (q) => q.eq('accountId', acct._id)).order('desc').take(50) : [];
+    const reviewRequired = !!acct && await creditUnderReview(ctx, acct._id);
     return {
-      availableMinor: Math.max(0, acct?.availableMinor ?? 0),
+      reviewRequired,
+      reviewMessage: reviewRequired ? 'Store credit is temporarily unavailable while a referral refund is reviewed. Your credit history is preserved.' : null,
+      availableMinor: reviewRequired ? 0 : Math.max(0, acct?.availableMinor ?? 0),
       reservedMinor: acct?.reservedMinor ?? 0,
       pendingAwardMinor: acct?.pendingAwardMinor ?? 0,
       history: events.map((e) => ({ type: e.type, amountMinor: e.amountMinor, at: e.at, availableAt: e.availableAt ?? null, reason: e.reason ?? null })),

@@ -4,16 +4,16 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { DeliveryCheckout } from './CheckoutV2';
 import DeliveryQuoteRequest from './DeliveryQuoteRequest';
-const mocks = vi.hoisted(() => ({ estimate: vi.fn(), quote: vi.fn(), remember: vi.fn() }));
+const mocks = vi.hoisted(() => ({ estimate: vi.fn(), quote: vi.fn(), remember: vi.fn(), credit: undefined as unknown }));
 vi.mock('../../lib/delivery/checkoutReturn', () => ({ rememberCheckout: mocks.remember }));
 vi.mock('./useDeliveryRequest', () => ({
   useDeliveryRequest: (operation: string) =>
     operation === 'estimate' ? mocks.estimate : mocks.quote,
 }));
-vi.mock('convex/react', () => ({ useQuery: () => undefined }));
+vi.mock('convex/react', () => ({ useQuery: () => mocks.credit }));
 vi.mock('@convex-dev/auth/react', () => ({ useAuthToken: () => null }));
 vi.mock('../../lib/partnerLink', () => ({ visitorId: () => 'fixture' }));
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => { vi.clearAllMocks(); mocks.credit = undefined; });
 
 it('links all invalid address fields and preserves focus while correcting them', () => {
   render(<DeliveryCheckout lines={[]} />);
@@ -287,4 +287,14 @@ it('discards a pending payment response after the checkout instance unmounts', a
   expect(mocks.remember).not.toHaveBeenCalled();
   expect(window.location.hash).not.toBe('#must-not-redirect');
   vi.unstubAllGlobals();
+});
+
+
+it('explains held credit and leaves cash checkout available without offering unavailable credit', () => {
+  mocks.credit = { availableMinor: 0, reviewRequired: true, reviewMessage: 'Store credit is temporarily unavailable while a referral refund is reviewed. Your credit history is preserved.' };
+  render(<DeliveryCheckout lines={[]} />);
+  expect(screen.getByText(/Store credit is temporarily unavailable/)).toHaveAttribute('role', 'status');
+  expect(screen.queryByRole('checkbox', { name: /credit/i })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Review delivery and total' })).toBeEnabled();
+  expect(mocks.estimate).not.toHaveBeenCalled();
 });

@@ -377,6 +377,7 @@ export function DeliveryCheckout({
             </span>
           )}
         </div>
+        {credit?.reviewRequired && <p className="delivery-span" role="status">{credit.reviewMessage}</p>}
         {credit && credit.availableMinor > 0 && (
           <label className="delivery-span delivery-check">
             <input

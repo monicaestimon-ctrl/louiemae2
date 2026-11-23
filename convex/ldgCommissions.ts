@@ -8,6 +8,7 @@ import { internalMutation, mutation, query } from './_generated/server';
 import type { MutationCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
+import { reconcileAwardsForOrder } from './businessCreditAwards';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { requireUser } from './holmAccess';
 import { applyCommissionEvent, payable } from './ldgCore';
@@ -122,6 +123,7 @@ export const onPaymentEvent = internalMutation({
     const lines = await ctx.db.query('ordOrderLines').withIndex('by_order', (q) => q.eq('orderId', order._id)).collect();
     if (a.kind === 'refund') {
       const charge = a.chargeCents ?? order.totals.total;
+      await reconcileAwardsForOrder(ctx, order._id, { refundedMinor: a.refundedCents ?? 0, chargeMinor: charge });
       const refunded = Math.min(a.refundedCents ?? 0, charge);
       // Line-level returns are authoritative; otherwise the refund is shared by value.
       const recorded = lines.reduce((t, l) => t + l.refundedMinor, 0);

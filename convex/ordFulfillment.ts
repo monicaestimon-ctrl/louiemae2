@@ -14,6 +14,7 @@ import { allocate } from '../lib/money';
 import { splitDisclosure, ORDER_STATUS_LABEL } from '../lib/customerCopy';
 import { CommerceError } from '../lib/errors';
 import { formatUsd } from '../lib/money';
+import { reconcileAwardsForOrder } from './businessCreditAwards';
 import { ownsOrder } from './ordAccess';
 import { digest } from './dlvSecurity';
 
@@ -139,7 +140,10 @@ export async function rollUp(ctx: MutationCtx, orderId: Id<'ordOrders'>) {
   else if (delivered > 0) status = 'partially_delivered';
   else if (shipped >= total) status = 'shipped';
   else if (shipped > 0) status = 'partially_shipped';
-  if (status !== order.status) await ctx.db.patch(orderId, { status });
+  if (status !== order.status) {
+    await ctx.db.patch(orderId, { status });
+    if (status === 'cancelled') await reconcileAwardsForOrder(ctx, orderId);
+  }
   return status;
 }
 
