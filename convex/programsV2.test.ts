@@ -117,16 +117,51 @@ async function linkFixture(s: Awaited<ReturnType<typeof setup>>) {
     const retailId = await ctx.db.insert('commerceProducts', { provider: 'ashcroft', sourceKey: 'ashcroft:bench', draft, revision: 1, updatedAt: 1 });
     const houseId = await ctx.db.insert('commerceProducts', { provider: 'owner_managed', sourceKey: 'om:bench', draft, revision: 1, updatedAt: 1 });
     const snapshot = { name: 'Beckett bench', description: '', category: 'bench', images: [], facts: '', variants: [{ id: 'v1', name: 'Default Title', minimum: 1, increment: 1, price: 60_000 }] };
-    await ctx.db.insert('commerceListings', { productId: retailId, channel: 'retail', published: true, revision: 1, updatedAt: 1, snapshot });
+    const retailListingId = await ctx.db.insert('commerceListings', { productId: retailId, channel: 'retail', published: true, revision: 1, updatedAt: 1, snapshot, fulfillment: [{ id: 'v1', name: 'Default Title', sku: 'BEN1', cost: 100, minimum: 1, increment: 1, retail: 60000, commercial: 50000 }] });
+    const feedId = await ctx.db.insert('ashcroftInventoryFeeds', { source: 'Isolated referral fixture', sha256: 'a'.repeat(64), observedAt: Date.now(), validUntil: Date.now() + 86400000, importedAt: Date.now(), rows: [{ sku: 'BEN1', quantity: 5 }] });
     await ctx.db.insert('commerceListings', { productId: houseId, channel: 'house', published: true, revision: 1, updatedAt: 1, snapshot: { ...snapshot, variants: [{ ...snapshot.variants[0], id: 'h1' }] } });
     const supplierId = await ctx.db.insert('catSuppliers', { code: 'ashcroft', name: 'Ashcroft', publicAttributionAllowed: false, fulfillmentRoute: 'manual_dealer_ashcroft', freshnessKey: 'freshness-default', createdAt: 1 });
     const variantId = await ctx.db.insert('catVariants', { productId: retailId, supplierId, supplierSku: 'BEN1', packId: '1', optionKey: 'v1', supplierVariantName: 'x', louieMaeVariantName: 'x', piecesPerPack: 1, orderMinimumPacks: 1, orderIncrementPacks: 1, availability: 'in_stock', fulfillmentRoute: 'manual_dealer_ashcroft', holds: [], referralEligible: true, legacyVariantId: 'v1', createdAt: 1, updatedAt: 1 });
     await ctx.db.insert('catProductMeta', { productId: retailId, commissionCategory: 'furniture', navCategory: 'bench', louieMaeName: 'Beckett bench', slug: 'beckett', slugHistory: [], supplierName: 'x', holds: [], stage: 'published', createdAt: 1, updatedAt: 1 });
-    return { retailId, houseId, variantId };
+    return { retailId, houseId, variantId, retailListingId, feedId };
   });
 }
 
-describe('retail links and attribution (S26, S27, REF01–REF03)', () => {
+describe('retail links and attribution (S26, S27, REF01â€“REF03)', () => {
+  it('previews the same current retail eligibility that creation enforces', async () => {
+    const s = await setup();
+    const fx = await linkFixture(s);
+    const args = { productId: fx.retailId, variantId: 'v1' };
+    expect(await s.t.query(api.prgLinks.preview, args)).toMatchObject({ status: 'sign_in' });
+    const u = await s.user('preview@studio.com');
+    expect(await u.as.query(api.prgLinks.preview, args)).toMatchObject({ status: 'membership_required' });
+    await enrollCreator(s, u.as);
+    expect(await u.as.query(api.prgLinks.preview, args)).toMatchObject({ status: 'eligible', applicableRateBps: 1000, category: 'furniture', destinationUrl: `https://www.louiemae.com/products/${fx.retailId}?variant=v1` });
+    expect(await s.t.run(ctx => ctx.db.query('prgReferralLinks').collect())).toHaveLength(0);
+    await s.t.run(ctx => ctx.db.patch(fx.feedId, { rows: [{ sku: 'BEN1', quantity: 0 }] }));
+    expect(await u.as.query(api.prgLinks.preview, args)).toMatchObject({ status: 'unavailable' });
+    await expect(u.as.mutation(api.prgLinks.create, { ...args, channelTag: 'share' })).rejects.toSatisfy(error => isCommerceError(error, 'REFERRAL_INELIGIBLE'));
+    expect(await s.t.run(ctx => ctx.db.query('prgReferralLinks').collect())).toHaveLength(0);
+  });
+
+  it.each(['cost', 'expired-stock', 'hold', 'withdrawn', 'discontinued'] as const)('refuses %s products despite a previous qualification flag', async problem => {
+    const s = await setup();
+    const fx = await linkFixture(s);
+    const u = await s.user('changed@studio.com');
+    await enrollCreator(s, u.as);
+    await s.t.run(async ctx => {
+      if (problem === 'cost') await ctx.db.patch(fx.retailListingId, { fulfillment: [] });
+      if (problem === 'expired-stock') await ctx.db.patch(fx.feedId, { validUntil: Date.now() - 1 });
+      if (problem === 'hold') await ctx.db.patch(fx.variantId, { holds: ['COST_MISSING'] });
+      if (problem === 'withdrawn') await ctx.db.patch(fx.retailListingId, { published: false });
+      if (problem === 'discontinued') await ctx.db.patch(fx.variantId, { availability: 'discontinued' });
+    });
+    const args = { productId: fx.retailId, variantId: 'v1' };
+    expect(await u.as.query(api.prgLinks.preview, args)).toMatchObject({ status: 'unavailable' });
+    await expect(u.as.mutation(api.prgLinks.create, { ...args, channelTag: 'share' })).rejects.toThrow();
+    expect(await s.t.run(ctx => ctx.db.query('prgReferralLinks').collect())).toHaveLength(0);
+  });
+
   it('builds a Louie Mae link from a HOLM variant through its mapping, and refuses unmapped pieces', async () => {
     const s = await setup();
     const fx = await linkFixture(s);
@@ -140,6 +175,16 @@ describe('retail links and attribution (S26, S27, REF01–REF03)', () => {
     const dest = await s.t.query(api.prgLinks.resolve, { linkId: link.linkId });
     expect(dest).toMatchObject({ kind: 'product', productId: fx.retailId, variantId: 'v1', collection: 'furniture' });
     await expect(u.as.mutation(api.prgLinks.create, { path: '//evil.com', channelTag: 'link' })).rejects.toThrow();
+    for (const path of ['/trade', '/account', `/products/${fx.retailId}`, '/admin', '/r/other'])
+      await expect(u.as.mutation(api.prgLinks.create, { path, channelTag: 'link' })).rejects.toSatisfy(error => isCommerceError(error, 'INVALID_INPUT'));
+    expect(await u.as.mutation(api.prgLinks.create, { path: '/#shop', channelTag: 'link' })).toMatchObject({ destination: '/#shop' });
+    await s.admin.mutation(api.prgLinks.createException, { productId: fx.retailId, rates: ['base', 'active', 'top', 'elite'].map(tierKey => ({ tierKey: tierKey as 'base' | 'active' | 'top' | 'elite', rateBps: 500 })), visibleNote: 'This item earns 5% at every tier.' });
+    expect(await u.as.query(api.prgLinks.preview, { productId: fx.houseId, variantId: 'h1' })).toMatchObject({ applicableRateBps: 500, exceptionNote: 'This item earns 5% at every tier.' });
+    await s.t.run(async ctx => {
+      const mapping = await ctx.db.query('catRetailMappings').first();
+      await ctx.db.patch(mapping!._id, { effectiveTo: Date.now() });
+    });
+    expect(await u.as.query(api.prgLinks.preview, { productId: fx.houseId, variantId: 'h1' })).toMatchObject({ status: 'unavailable' });
   });
 
   it('credits the last eligible click, blocks self-referral and protects the click-time rate', async () => {

@@ -665,7 +665,7 @@ async function boardPdf(doc,{title,board,counts:given,link,pieceLink,prices,mode
   return new Blob([await pdf.save()],{type:'application/pdf'});
 }
 
-const pieceUrl=(pid,ref,ch)=>pieceShareUrl(shareOrigin(),pid,ref,ch);
+const pieceUrl=(pid)=>pieceShareUrl(shareOrigin(),pid);
 
 const isPhone=()=>matchMedia('(pointer:coarse)').matches&&innerWidth<900;
 

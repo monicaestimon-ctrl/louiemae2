@@ -4,7 +4,7 @@ import { gzipSync } from 'node:zlib';
 const manifest = JSON.parse(await readFile('dist/.vite/manifest.json', 'utf8'));
 const tools = ['trade/TradeWelcome.tsx', 'trade/editors.ts', 'trade/admin/HouseStaff.ts', 'trade/TradeApplication.tsx', 'trade/TradeAccount.tsx',
   'trade/DiscoverCatalog.tsx', 'components/delivery/TradeDeliveryCalculator.tsx', 'components/delivery/ProjectDeliveryPanel.tsx',
-  'components/delivery/ProductDeliveryEstimate.tsx', 'components/partner/ProgramHubV2.tsx', 'components/delivery/DeliveryQuoteStatus.tsx'];
+  'components/delivery/ProductDeliveryEstimate.tsx', 'components/partner/ProgramHubV2.tsx', 'components/partner/ProductRetailReferral.tsx', 'components/delivery/DeliveryQuoteStatus.tsx'];
 const roots = Object.keys(manifest).filter(key => manifest[key].dynamicImports?.includes(tools[0]));
 assert.equal(roots.length, 1, 'Expected one HOLM application chunk');
 const initial = new Set();

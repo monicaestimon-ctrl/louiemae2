@@ -6,27 +6,32 @@ import { v } from 'convex/values';
 import { mutation, query } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Id } from './_generated/dataModel';
-import { requireUser } from './holmAccess';
+import { requireUser, viewer } from './holmAccess';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { audit, rateLimit } from './sysCore';
 import { assertSellable, evaluate } from './catCore';
 import { computeScenarios, recordScenarios } from './catPricing';
 import { beneficiaryOf, referralActive } from './prgCore';
 import { productRate, schedule } from './prgAttribution';
-import { requireFlag } from '../lib/flags';
-import { CommerceError } from '../lib/errors';
+import { flag, requireFlag } from '../lib/flags';
+import { CommerceError, isCommerceError, customerMessage } from '../lib/errors';
+import { retailDetail } from './retailStorefront';
+import type { TierKey } from '../lib/config';
 import { opaqueId } from '../lib/attribution';
-import { safeRedirect } from '../lib/enrollment';
 
 const SITE = 'https://www.louiemae.com';
 export const DISCLOSURE_EXAMPLE = '#ad — I earn a commission if you buy through my link.';
+// Generic links cannot bypass product qualification or point at authenticated trade pages.
+const RETAIL_PAGES = new Set(['/', '/#shop', '/#collection/furniture', '/#collection/decor', '/#new-arrivals']);
 
 async function retailTarget(ctx: QueryCtx, productId: Id<'commerceProducts'>, variantId: string) {
   const retail = await ctx.db.query('commerceListings').withIndex('by_product_channel', (q) => q.eq('productId', productId).eq('channel', 'retail')).unique();
   if (retail?.published && retail.snapshot.variants.some((x) => x.id === variantId)) return { productId, variantId, listing: retail };
   // A HOLM variant: use its explicit retail mapping.
-  const map = await ctx.db.query('catRetailMappings').withIndex('by_holm_variant', (q) => q.eq('holmProductId', productId).eq('holmVariantId', variantId).eq('status', 'active')).first();
-  if (!map) return null;
+  const maps = await ctx.db.query('catRetailMappings').withIndex('by_holm_variant', (q) => q.eq('holmProductId', productId).eq('holmVariantId', variantId).eq('status', 'active')).take(2);
+  const map = maps.length === 1 ? maps[0] : null;
+  const now = Date.now();
+  if (!map || map.effectiveFrom > now || (map.effectiveTo !== undefined && map.effectiveTo <= now)) return null;
   const listing = await ctx.db.query('commerceListings').withIndex('by_product_channel', (q) => q.eq('productId', map.retailProductId).eq('channel', 'retail')).unique();
   if (!listing?.published || !listing.snapshot.variants.some((x) => x.id === map.retailVariantId)) return null;
   return { productId: map.retailProductId, variantId: map.retailVariantId, listing };
@@ -35,10 +40,57 @@ async function retailTarget(ctx: QueryCtx, productId: Id<'commerceProducts'>, va
 /** The catalog variant behind a retail listing variant (Zuo variants directly; others via their mirror). */
 async function catVariantFor(ctx: QueryCtx, productId: Id<'commerceProducts'>, variantId: string) {
   const id = ctx.db.normalizeId('catVariants', variantId);
-  if (id) return ctx.db.get(id);
+  if (id) { const row = await ctx.db.get(id); return row?.productId === productId ? row : null; }
   const rows = await ctx.db.query('catVariants').withIndex('by_product', (q) => q.eq('productId', productId)).collect();
   return rows.find((r) => r.legacyVariantId === variantId) ?? null;
 }
+
+/** Preview and creation share current authority; a recorded qualification flag
+ * cannot make a withdrawn, unavailable or unsupported retail listing linkable. */
+async function qualifiedRetailTarget(ctx: QueryCtx, productId: Id<'commerceProducts'>, variantId: string, tier: TierKey) {
+  const target = await retailTarget(ctx, productId, variantId);
+  if (!target) throw new CommerceError('REFERRAL_INELIGIBLE', 'No current retail mapping', "This piece isn't sold on Louie Mae yet, so it has no retail referral link.");
+  const current = await retailDetail(ctx, target.productId);
+  if (!current?.inStock || !current.variants.some(option => option.id === target.variantId && option.inStock))
+    throw new CommerceError('REFERRAL_INELIGIBLE', 'Retail variant unavailable', 'This option is not currently available for retail referrals.');
+  const cv = await catVariantFor(ctx, target.productId, target.variantId);
+  if (!cv || cv.holds.length || cv.referralEligible !== true) throw new CommerceError('REFERRAL_INELIGIBLE', 'Not prequalified');
+  if (cv.availability === 'discontinued') throw new CommerceError('REFERRAL_INELIGIBLE', 'Discontinued', 'This item is no longer sold, so it has no retail referral link.');
+  const product = await ctx.db.get(target.productId);
+  if (product?.provider === 'zuo') await assertSellable(ctx, cv._id, 'link');
+  const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', target.productId)).first();
+  if (!meta || meta.holds.length || meta.commissionCategory === 'review_required') throw new CommerceError('REFERRAL_INELIGIBLE', 'Category under review');
+  const sched = await schedule(ctx);
+  const rate = await productRate(ctx, target.productId, tier, meta.commissionCategory, sched.value);
+  const option = target.listing.snapshot.variants.find(value => value.id === target.variantId)!;
+  return { target, category: meta.commissionCategory, rate, option };
+}
+
+/** Public status, private eligibility/rate only for the current referral member.
+ * No link or membership is created by viewing a product. */
+export const preview = query({
+  args: { productId: v.id('commerceProducts'), variantId: v.string(), refreshToken: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    if (!flag('RETAIL_LINK_GENERATION_V2_ENABLED') || !flag('COMMISSION_ACCRUAL_V2_ENABLED'))
+      return { status: 'unavailable' as const, message: 'Retail referral sharing is not active yet.' };
+    const me = await viewer(ctx);
+    if (!me) return { status: 'sign_in' as const, message: 'Sign in to check your retail referral membership.' };
+    const source = await referralActive(ctx, me.userId);
+    const beneficiary = await beneficiaryOf(ctx, me.userId);
+    if (!source || beneficiary?.status !== 'active') return { status: 'membership_required' as const, message: 'Activate eligible retail referrals in your account before sharing.' };
+    try {
+      const qualified = await qualifiedRetailTarget(ctx, args.productId, args.variantId, beneficiary.tierKey);
+      return { status: 'eligible' as const, productName: qualified.target.listing.snapshot.name, variantName: qualified.option.name,
+        destinationUrl: `${SITE}/products/${qualified.target.productId}?variant=${encodeURIComponent(qualified.target.variantId)}`,
+        category: qualified.category, applicableRateBps: qualified.rate.rateBps,
+        exceptionNote: qualified.rate.exceptionNote ?? null,
+        disclosureExample: DISCLOSURE_EXAMPLE };
+    } catch (error) {
+      if (isCommerceError(error)) return { status: 'unavailable' as const, message: customerMessage(error) };
+      throw error;
+    }
+  },
+});
 
 /** Copy retail referral link: validated destination, the beneficiary's applicable rate and the disclosure example. */
 export const create = mutation({
@@ -57,35 +109,24 @@ export const create = mutation({
     const now = Date.now();
     if (a.path !== undefined) {
       const path = a.path.trim();
-      if (path.length > 200 || safeRedirect(path, '') !== path) throw new CommerceError('INVALID_INPUT', 'Links can only point at louiemae.com pages.');
+      if (!RETAIL_PAGES.has(path)) throw new CommerceError('INVALID_INPUT', 'Choose a supported Louie Mae retail page. Product links require an eligible product.');
       const linkId = opaqueId(10);
       await ctx.db.insert('prgReferralLinks', { linkId, beneficiaryId: b._id, membershipSource: source, destination: { kind: 'page', path }, channelTag, createdAt: now });
       return { linkId, url: `${SITE}/r/${linkId}`, destination: path, eligibility: 'eligible' as const, disclosureExample: DISCLOSURE_EXAMPLE };
     }
     if (!a.productId || !a.variantId) throw new CommerceError('INVALID_INPUT', 'Choose a product');
-    const target = await retailTarget(ctx, a.productId, a.variantId);
-    if (!target) throw new CommerceError('REFERRAL_INELIGIBLE', 'No published retail mapping', "This piece isn't sold on louiemae.com yet, so it has no retail link.");
-    const cv = await catVariantFor(ctx, target.productId, target.variantId);
-    if (!cv) throw new CommerceError('REFERRAL_INELIGIBLE', 'No catalog variant');
-    const product = await ctx.db.get(target.productId);
-    if (product?.provider === 'zuo') await assertSellable(ctx, cv._id, 'link');
-    else if (cv.referralEligible !== true) throw new CommerceError('REFERRAL_INELIGIBLE', 'Not prequalified');
-    const meta = await ctx.db.query('catProductMeta').withIndex('by_product', (q) => q.eq('productId', target.productId)).first();
-    if (!meta || meta.commissionCategory === 'review_required') throw new CommerceError('REFERRAL_INELIGIBLE', 'Category under review');
-    const sched = await schedule(ctx);
-    const rate = await productRate(ctx, target.productId, b.tierKey, meta.commissionCategory, sched.value);
+    const { target, category, rate, option } = await qualifiedRetailTarget(ctx, a.productId, a.variantId, b.tierKey);
     const linkId = opaqueId(10);
     await ctx.db.insert('prgReferralLinks', { linkId, beneficiaryId: b._id, membershipSource: source, destination: { kind: 'variant', productId: target.productId, variantId: target.variantId }, channelTag, createdAt: now });
-    const option = target.listing.snapshot.variants.find((x) => x.id === target.variantId);
     return {
       linkId,
       url: `${SITE}/r/${linkId}`,
       destination: `${target.listing.snapshot.name}${option && option.name !== 'Default Title' ? ` — ${option.name}` : ''}`,
       productName: target.listing.snapshot.name,
       variantName: option?.name ?? '',
-      category: meta.commissionCategory,
+      category,
       applicableRateBps: rate.rateBps,
-      exceptionNote: rate.exceptionVersion !== undefined ? 'This piece has its own commission schedule.' : null,
+      exceptionNote: rate.exceptionNote ?? null,
       eligibility: 'eligible' as const,
       disclosureExample: DISCLOSURE_EXAMPLE,
     };

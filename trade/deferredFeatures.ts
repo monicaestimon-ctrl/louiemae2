@@ -9,5 +9,6 @@ export const ProjectDeliveryPanel = deferredFeature(() => import('../components/
 export const ProductDeliveryEstimate = deferredFeature(() => import('../components/delivery/ProductDeliveryEstimate'), 'Delivery estimate');
 export const ProgramHubV2 = deferredFeature(() => import('../components/partner/ProgramHubV2'), 'Referrals and earnings');
 export const TeamPanel = deferredFeature(() => import('../components/partner/ProgramHubV2').then(m => ({ default: m.TeamPanel })), 'Team settings');
+export const ProductRetailReferral = deferredFeature(() => import('../components/partner/ProductRetailReferral'), 'Retail referrals');
 
 export const TradeAccount = deferredFeature(() => import('./TradeAccount').then(m => ({ default: m.TradeAccount })), 'Account');

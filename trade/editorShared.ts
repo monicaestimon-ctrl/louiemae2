@@ -172,7 +172,7 @@ function SaveMenu({ctx,product,onDone,returnFocus,align='right'}){
 function PinCard({p,ctx,verified=false}){
   const available=verified||(ctx.savedProducts?ctx.savedProducts.get(p.id)?.lid===p.lid:has(p.id));
   return html`<${CatalogProductCard} product=${p} boards=${ctx.boards} mode=${ctx.mode} available=${available}
-    pinterestUrl=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id,ctx.me.refCode,'pin'))}
+    pinterestUrl=${pinItUrl(p.img,p.name+' '+p.line+' · Louie Mae',pieceShareUrl(shareOrigin(),p.id))}
     icons=${{down:I('down',{width:14}),pinterest:I('pint'),studio:I('brush'),add:I('plus')}}
     onOpen=${identity=>ctx.openPin(identity.pid,identity)}
     onSave=${(selected,boardId)=>ctx.saveTo(selected.id,boardId,false,selected)}
