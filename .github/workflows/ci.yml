@@ -97,6 +97,7 @@ jobs:
           node scripts/lighthouse/discovery.mjs
           node scripts/lighthouse/product-referral.mjs
           npm run test:holm-tools:browser
+          npm run test:editor-keyboard:browser
           npm run test:planner-dialogs:browser
           node scripts/lighthouse/holm-editor-loading.mjs
           node scripts/lighthouse/holm-catalog-intent.mjs

@@ -1,5 +1,6 @@
 /* eslint-disable */
 // @ts-nocheck
+import { EditorNumberField } from './EditorNumberField';
 import { shareableBoard } from './shareableBoard';
 import { calibrationScale, renderPlannerLabels, renderAtRevision, usingDisposable, withRestoredVisibility } from './editorSafety';
 import { HouseStaffGate } from './admin/HouseStaffGate';
@@ -44,11 +45,12 @@ import { projectLines } from './projectLines';
 import { resolveProjectProduct, resolveProjectItems, sameProjectSelection, sameSavedRow, restoreProjectItem, projectItemKey, mergeProjectItem } from './projectIdentity';
 import { SafeImage } from '../components/SafeImage';
 import DeliveryBoundary from '../components/delivery/DeliveryBoundary';
-import { area as polyArea, inside as inPoly, centroid as polyCentre, bounds as polyBounds, setWallLength } from '../lib/holmPlan';
+import { validRoomPolygon, area as polyArea, inside as inPoly, centroid as polyCentre, bounds as polyBounds, setWallLength } from '../lib/holmPlan';
 import { html, MAT, TYPE, byId, has, tp, pr, cut, pinItUrl, threeP, loadThree, LX, useThree, SPACES, SPACE_KEYS, COMMUNITY, load, store, hex2rgb, cdist, uid, copyText, COLOR_WORDS, matchPrompt, ICONS, I, useOutside, SaveMenu, PinCard, BoardPin, Wall, GLOW_AT, ROOMS, TEX, rnd, texture, STUDY, FLOOR_TILE, PAGES, pageOf, borderOf, POLY0, BW, boardH, boardPath, maskOf, LAYOUTS, SLOTS, mkImg, mkText, toneF, cropStyle, ElView, blends, elStyle, bgStyle, BoardPreview, errText, dataUrlBlob, dimsText, bundleUrl, gltfP, gltfLoader, glbCache, loadGLB, fitToDims } from './editorShared';
 
 const editorIdentity=reference=>typeof reference==='number'?{pid:reference,...(has(reference)?{lid:byId(reference).lid,vid:byId(reference).vid}:{})}:{pid:reference.pid,lid:reference.lid,vid:reference.vid};
 
+const STUDIO_TABS=[['pieces','Pieces'],['inspo','Inspo'],['boards','Boards'],['ideas','Ideas']];
 const VIEWS=[['collage','Collage'],['room','Room'],['3d','3D']];
 
 const TITLE_MAX=32;
@@ -197,6 +199,7 @@ function Studio({ctx}){
     return d;
   });
   const {els,bg,mode,page,title}=doc;
+  const addTabsId=useId();
   const [tab,setTab]=useState('pieces');const [pq,setPq]=useState('');const [pf,setPf]=useState('all');
   const syncRef=useRef(seed?.sync?.map(editorIdentity)||null);
   const savedCatalog=useProjectCatalog([...els.filter(e=>e.kind==='img'),...(syncRef.current||[]),...(tab==='boards'?ctx.boards.flatMap(b=>b.pins):[])],BY_ID);
@@ -216,7 +219,7 @@ function Studio({ctx}){
   useEffect(()=>{if(seed)ctx.setStudioSeed(null)},[]);
   const record=prev=>{hist.current.past.push(prev);if(hist.current.past.length>80)hist.current.past.shift();hist.current.future=[];dirty.current=true;setSteps(s=>s+1)};
   const commitDoc=next=>{record(docRef.current);setDoc(next)};
-  const commit=nextEls=>commitDoc({...docRef.current,els:nextEls});
+  const commit=nextEls=>{const current=docRef.current.els;if(nextEls.length===current.length&&nextEls.every((item,i)=>item===current[i]))return;commitDoc({...docRef.current,els:nextEls})};
   useEffect(()=>{const requested=syncRef.current;if(!requested)return;const currentDoc=docRef.current;const imgs=currentDoc.els.filter(e=>e.kind==='img'&&productFor(e).lid);if(requested.some(item=>!productFor(item).lid))return;const verified=item=>{const p=productFor(item);return {pid:item.pid,lid:p.lid,vid:p.vid}};const {keep,add}=reconcileEditorSelections(imgs.map(verified),requested.map(verified));const drop=new Set(imgs.filter((_,i)=>!keep.has(i)).map(e=>e.id));syncRef.current=null;const st=currentDoc.mode==='room'?'room':'cutout';commitDoc({...currentDoc,els:[...currentDoc.els.filter(e=>!drop.has(e.id)),...add.map((identity,i)=>({...mkImg(identity,0,currentDoc.mode,SLOTS,st),x:6+(i%4)*23,y:60+Math.floor(i/4)*14,w:20}))]})});
   const undo=()=>{const h=hist.current;if(!h.past.length)return;h.future.push(docRef.current);dirty.current=true;setDoc(h.past.pop());setSteps(s=>s+1)};
   const redo=()=>{const h=hist.current;if(!h.future.length)return;h.past.push(docRef.current);dirty.current=true;setDoc(h.future.pop());setSteps(s=>s+1)};
@@ -224,12 +227,13 @@ function Studio({ctx}){
   const setBg=b=>commitDoc({...docRef.current,bg:b});
   const S=sels.length===1?els.find(e=>e.id===sel):null;const multi=sels.length>1;
   useEffect(()=>setPop(null),[sels.join()]);
-  const patch=(id,o)=>commit(els.map(e=>e.id===id?{...e,...o}:e));
+  const patch=(id,o)=>commit(els.map(e=>e.id===id&&!(e.locked&&['x','y','w','size','rot','crop','shape'].some(k=>k in o))?{...e,...o}:e));
   const patchMany=(ids,f)=>commit(els.map(e=>ids.includes(e.id)?{...e,...f(e)}:e));
   const groupOf=id=>{const e=els.find(x=>x.id===id);return e?.g?els.filter(x=>x.g===e.g).map(x=>x.id):[id]};
   const pick=(id,shift)=>{const g=groupOf(id);if(shift){setSels(s=>s.includes(id)?s.filter(x=>!g.includes(x)):[...s.filter(x=>!g.includes(x)),...g.filter(x=>x!==id),id]);return}
     if(!(sels.includes(id)&&sels.length>1))setSels([...g.filter(x=>x!==id),id])};
-  const live=(id,o)=>setDoc(d=>({...d,els:d.els.map(e=>e.id===id?{...e,...o}:e)}));
+  const live=(id,o)=>{const current=docRef.current.els.find(e=>e.id===id);if(current?.locked&&['x','y','w','size','rot','crop','shape'].some(k=>k in o))return;dirty.current=true;setDoc(d=>({...d,els:d.els.map(e=>e.id===id?{...e,...o}:e)}))};
+  const rangeKeys=e=>{if(!e.repeat&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End','PageUp','PageDown'].includes(e.key))record(docRef.current)};
   // Autosave every change to the account (or this device when signed out).
   useEffect(()=>{store('collage',doc.id);if(!dirty.current)return;setSaved('Saving…');const t=setTimeout(()=>{ctx.saveCollage(docRef.current,true);dirty.current=false;setSaved('Saved')},600);return()=>clearTimeout(t)},[doc]);
   // Leaving the Studio (for the 3D view, say) saves anything still waiting.
@@ -289,7 +293,7 @@ function Studio({ctx}){
     const span=X?last.x+last.w-first.x:last.y+last.h-first.y;const sum=bs.reduce((s,b)=>s+(X?b.w:b.h),0);const gap=(span-sum)/(bs.length-1);let p=X?first.x:first.y;const at={};
     bs.forEach(b=>{at[b.id]=X?{x:p}:{y:p};p+=(X?b.w:b.h)+gap});commit(els.map(e=>at[e.id]&&!e.locked?{...e,...at[e.id]}:e))};
   // Switch a piece's look, keeping its centre where it was.
-  const restyle=(e,st)=>{const k=pageOf(docRef.current.page);const ratio=k[2]/k[3];const n={...e,style:st,shadow:st==='room'?'floor':e.shadow==='floor'?'soft':e.shadow};if(st!=='framed')n.rot=0;
+  const restyle=(e,st)=>{if(e.locked)return e;const k=pageOf(docRef.current.page);const ratio=k[2]/k[3];const n={...e,style:st,shadow:st==='room'?'floor':e.shadow==='floor'?'soft':e.shadow};if(st!=='framed')n.rot=0;
     const w0=wOf(e,bg),w1=wOf(n,bg);n.x=e.x+(w0-w1)/2;n.y=e.y+(w0*ratio/elAR(e)-w1*ratio/elAR(n))/2;return n};
   useEffect(()=>{const k=e=>{if(editorShortcutsBlocked(e))return;
     if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo();return}
@@ -314,10 +318,13 @@ function Studio({ctx}){
     if(k==='room'&&!bg.img){setDrawer('bg');ctx.toast('Add a photo of your space to see the pieces in it')}};
   const pickRail=k=>{setPop(null);if(k==='compose'){setComposeOpen(true);return}setDrawer(d=>d===k?null:k)};
   const W0=BW,H0=boardH(page);
-  const dragPoint=(e,i)=>{e.stopPropagation();e.preventDefault();const r=canvasRef.current.getBoundingClientRect();const snap=docRef.current;const pts=[...(snap.poly||POLY0)];
-    const mv=ev=>{pts[i]=[Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width)),Math.max(0,Math.min(1,(ev.clientY-r.top)/r.height))];setDoc(d=>({...d,shape:'poly',poly:[...pts]}))};
-    const up=()=>{removeEventListener('pointermove',mv);record(snap)};addEventListener('pointermove',mv);addEventListener('pointerup',up,{once:true})};
+  const dragPoint=(e,i)=>{e.stopPropagation();e.preventDefault();const r=canvasRef.current.getBoundingClientRect();const snap=docRef.current;const pts=[...(snap.poly||POLY0)];let moved=false;
+    const mv=ev=>{if(!moved){record(snap);moved=true}dirty.current=true;pts[i]=[Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width)),Math.max(0,Math.min(1,(ev.clientY-r.top)/r.height))];setDoc(d=>({...d,shape:'poly',poly:[...pts]}))};
+    const up=()=>{removeEventListener('pointermove',mv)};addEventListener('pointermove',mv);addEventListener('pointerup',up,{once:true})};
   const addPoint=()=>{const p=[...(doc.poly||POLY0)];let best=0,bl=0;p.forEach((a,i)=>{const b=p[(i+1)%p.length];const l=Math.hypot((b[0]-a[0])*W0,(b[1]-a[1])*H0);if(l>bl){bl=l;best=i}});const a=p[best],b=p[(best+1)%p.length];p.splice(best+1,0,[(a[0]+b[0])/2,(a[1]+b[1])/2]);commitDoc({...doc,shape:'poly',poly:p})};
+  const setCorner=(i,axis,value)=>{const p=docRef.current.poly||POLY0;commitDoc({...docRef.current,shape:'poly',poly:p.map((point,k)=>k===i?point.map((v,a)=>a===axis?Math.max(0,Math.min(1,value)):v):point)})};
+  const removeCorner=(i,canvasFocus=false)=>{const p=docRef.current.poly||POLY0;if(p.length<=3)return;commitDoc({...docRef.current,poly:p.filter((_,k)=>k!==i)});requestAnimationFrame(()=>{const next=Math.min(i,p.length-2);(canvasFocus?document.getElementById(addTabsId+'-corner-'+next):document.getElementById(addTabsId+'-corner-row-'+next)?.querySelector('button'))?.focus()})};
+  const cornerKeys=(e,i)=>{const step=e.shiftKey?.05:.01;const move={ArrowLeft:[0,-step],ArrowRight:[0,step],ArrowUp:[1,-step],ArrowDown:[1,step]}[e.key];if(move){e.preventDefault();e.stopPropagation();const p=docRef.current.poly||POLY0;setCorner(i,move[0],Math.round((p[i][move[0]]+move[1])*10000)/10000)}else if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();e.stopPropagation();removeCorner(i,true)}};
   const MATS={...MAT,wood:'Wood'};const types=[...new Set(PRODUCTS.map(p=>p.type))];const mats=[...new Set(PRODUCTS.map(p=>p.mat))];
   const filters=[['all','All'],...types.map(t=>['t:'+t,TYPE[t]||t[0].toUpperCase()+t.slice(1)+'s']),...mats.map(m=>['m:'+m,MATS[m]||m])];
   // The Studio offers pieces that have dimensions and a seamless cutout; the rest are still being prepared.
@@ -347,37 +354,56 @@ function Studio({ctx}){
       <div className="row" style=${{gap:6}}>
         <button className="btn btn-line btn-sm" onClick=${()=>addEl(mkText('Add a title',10,10,7))}>${I('text',{width:15})} Text</button>
         <button className="btn btn-line btn-sm" onClick=${()=>addEl({id:uid(),kind:'swatch',color:'#A65F2C',x:80,y:8,w:8,rot:0,locked:false,hidden:false})}>${I('frame',{width:15})} Swatch</button></div>
-      <div className="sx-tabs" role="tablist">${[['pieces','Pieces'],['inspo','Inspo'],['boards','Boards'],['ideas','Ideas']].map(([k,l])=>html`<button key=${k} role="tab" aria-selected=${tab===k} className=${tab===k?'on':''} onClick=${()=>setTab(k)}>${l}</button>`)}</div>
+      <div className="sx-tabs" role="tablist" aria-label="Add to collage">${STUDIO_TABS.map(([k,l],i)=>html`<button key=${k} id=${addTabsId+'-'+k} role="tab" aria-controls=${addTabsId+'-'+k+'-panel'} aria-selected=${tab===k} tabIndex=${tab===k?0:-1} className=${tab===k?'on':''} onClick=${()=>setTab(k)} onKeyDown=${e=>{const next={ArrowRight:(i+1)%4,ArrowLeft:(i+3)%4,Home:0,End:3}[e.key];if(next===undefined)return;e.preventDefault();setTab(STUDIO_TABS[next][0]);e.currentTarget.parentElement.querySelectorAll('[role=tab]')[next].focus()}}>${l}</button>`)}</div>
+      <div role="tabpanel" id=${addTabsId+'-pieces-panel'} aria-labelledby=${addTabsId+'-pieces'} tabIndex="0" hidden=${tab!=='pieces'}>
       ${tab==='pieces'&&html`<${React.Fragment}><input className="field sx-search" placeholder="Search pieces" aria-label="Search pieces" value=${pq} onInput=${e=>setPq(e.target.value)}/>
         <div className="sx-chips scroll-x">${filters.map(([k,l])=>html`<button key=${k} className=${'chip'+(pf===k?' on':'')} onClick=${()=>setPf(k)}>${l}</button>`)}</div>
         <div className="sx-grid">${prods.map(p=>html`<button key=${p.id} className="sx-card" draggable="true" onDragStart=${e=>e.dataTransfer.setData('text/pid',String(p.id))} onClick=${()=>addProduct(p.id)} title=${'Add '+p.name}>
           <span className="sx-card-i"><img src=${cut(p.id)} alt="" loading="lazy"/></span><b>${p.name}</b><span className="num">${fmt(pr(p,ctx.mode))}</span></button>`)}</div>
         ${!prods.length&&html`<p className="sx-note">Nothing matches. Try another word.</p>`}${preparing>0&&html`<p className="sx-note">${preparing} more piece${preparing===1?' is':'s are'} being photographed for the Studio.</p>`}<//>`}
+      </div>
+      <div role="tabpanel" id=${addTabsId+'-inspo-panel'} aria-labelledby=${addTabsId+'-inspo'} tabIndex="0" hidden=${tab!=='inspo'}>
       ${tab==='inspo'&&html`<${React.Fragment}><p className="sx-note">Inspo carries no price or link and never counts in the total. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Library</button></p>
         ${ctx.inspo.length?html`<div className="sx-grid">${ctx.inspo.map(x=>html`<button key=${x.id} className="sx-card" onClick=${()=>addEl({...mkInspo(x),x:26,y:20,w:44,rot:0})} title=${'Add '+x.title}><span className="sx-card-i photo"><img src=${x.src} alt="" loading="lazy"/></span><b>${x.title}</b></button>`)}</div>`
           :html`<p className="sx-note">No inspo yet. <button className="lnk" onClick=${()=>ctx.go('inspo')}>Upload inspiration</button></p>`}<//>`}
+      </div>
+      <div role="tabpanel" id=${addTabsId+'-boards-panel'} aria-labelledby=${addTabsId+'-boards'} tabIndex="0" hidden=${tab!=='boards'}>
       ${tab==='boards'&&html`<${React.Fragment}><p className="sx-note">Adds to the canvas; never replaces it.</p>${ctx.boards.map(b=>html`<div key=${b.id} className="sx-board"><div className="row" style=${{justifyContent:'space-between'}}><b>${b.title}</b><button className="lnk" disabled=${!b.pins.length} onClick=${()=>{commit([...els,...b.pins.slice(0,6).map((x,i)=>mkImg(x,i+els.length,mode,SLOTS,mode==='room'?'room':'cutout'))]);ctx.toast(`${Math.min(6,b.pins.length)} pieces added`)}}>Add all</button></div>
         <div className="sx-grid three">${b.pins.map(x=>html`<button key=${projectItemKey(x)} className="sx-card" onClick=${()=>addProduct(x)} title=${'Add '+productFor(x).name}><span className="sx-card-i"><img src=${pieceImage(x)} alt="" loading="lazy"/></span></button>`)}</div></div>`)}<//>`}
+      </div>
+      <div role="tabpanel" id=${addTabsId+'-ideas-panel'} aria-labelledby=${addTabsId+'-ideas'} tabIndex="0" hidden=${tab!=='ideas'}>
       ${tab==='ideas'&&html`${COMMUNITY.length?html`<div className="sx-grid">${COMMUNITY.map(b=>html`<button key=${b.id} className="sx-card" onClick=${()=>setIdea(b)}><span className="sx-card-i photo" style=${{backgroundImage:`url(${byId(b.items[0]).img})`,backgroundSize:'cover'}}></span><b>${b.title}</b><span>${b.by}</span></button>`)}</div>`
         :html`<p className="sx-note">Community boards appear here as members share them. Compose a board of your own from the wand in the rail.</p>`}`}
+      </div>
     <//>`}
     ${drawer==='layers'&&html`<${SxDrawer} title="Layers" onClose=${()=>setDrawer(null)}>
-      <p className="sx-note">Top of the list is in front. Drag to reorder; Shift-click to select several.</p>
-      <div className="sx-layers">${layers.map(({e})=>html`<div key=${e.id} className=${'layer sx-layer'+(sels.includes(e.id)?' on':'')+(overL===e.id?' drop':'')} draggable="true" onDragStart=${()=>setDragL(e.id)} onDragOver=${ev=>{ev.preventDefault();setOverL(e.id)}} onDragLeave=${()=>setOverL(null)} onDrop=${()=>{dropLayer(dragL,e.id);setOverL(null)}} onClick=${ev=>pick(e.id,ev.shiftKey)}>
+      <p className="sx-note">Top of the list is in front. Select a layer to edit it. Hold Shift while clicking or pressing Enter to select several. Use Arrange to reorder.</p>
+      <div className="sx-layers">${layers.map(({e})=>html`<div key=${e.id} className=${'layer sx-layer'+(sels.includes(e.id)?' on':'')+(overL===e.id?' drop':'')} draggable="true" onDragStart=${()=>setDragL(e.id)} onDragOver=${ev=>{ev.preventDefault();setOverL(e.id)}} onDragLeave=${()=>setOverL(null)} onDrop=${()=>{dropLayer(dragL,e.id);setOverL(null)}}>
+        <button className="sx-layer-select" aria-label=${'Select '+nameOf(e)} aria-pressed=${sels.includes(e.id)} onClick=${ev=>pick(e.id,ev.shiftKey)}>
         <span className="th" style=${e.kind==='img'?{backgroundImage:`url(${pieceImage(e)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat'}:e.kind==='inspo'?{backgroundImage:`url(${e.src})`}:e.kind==='swatch'?{background:e.color}:{}}>${e.kind==='text'?'T':''}</span>
-        <span style=${{opacity:e.hidden?.45:1}}>${nameOf(e)}${e.g&&html` <small className="sx-gtag">Group</small>`}</span>
-        <button className=${'ib'+(e.hidden?' keep':'')} aria-label=${e.hidden?'Show layer':'Hide layer'} onClick=${ev=>{ev.stopPropagation();patch(e.id,{hidden:!e.hidden})}}>${I(e.hidden?'eyeoff':'eye')}</button>
-        <button className=${'ib'+(e.locked?' keep':'')} aria-label=${e.locked?'Unlock layer':'Lock layer'} onClick=${ev=>{ev.stopPropagation();patch(e.id,{locked:!e.locked})}}>${I(e.locked?'lock':'unlock')}</button>
+        <span style=${{opacity:e.hidden?.45:1}}>${nameOf(e)}${e.g&&html` <small className="sx-gtag">Group</small>`}</span></button>
+        <button className=${'ib'+(e.hidden?' keep':'')} aria-label=${(e.hidden?'Show ':'Hide ')+nameOf(e)} onClick=${ev=>{ev.stopPropagation();patch(e.id,{hidden:!e.hidden})}}>${I(e.hidden?'eyeoff':'eye')}</button>
+        <button className=${'ib'+(e.locked?' keep':'')} aria-label=${(e.locked?'Unlock ':'Lock ')+nameOf(e)} onClick=${ev=>{ev.stopPropagation();patch(e.id,{locked:!e.locked})}}>${I(e.locked?'lock':'unlock')}</button>
         <span className="sx-grip" aria-hidden="true">⋮⋮</span>
       </div>`)}</div>
       ${!els.length&&html`<p className="sx-note">The board is empty. Add a piece from the rail.</p>`}
+      ${(S||multi)&&html`<section className="sx-selection" aria-label="Layer properties">
+        <b>${multi?sels.length+' selected layers':nameOf(S)}</b>
+        ${S&&html`<div className="sx-number-grid">
+          ${[['x','Across (%)',-1000,1000,.5],['y','Down (%)',-1000,1000,.5],['rot','Rotation (degrees)',-360,360,1],...(S.kind==='text'?[['size','Text size',2,80,.2]]:[['w','Width (%)',5,1000,.5]])].map(([k,label,min,max,step])=>html`<${EditorNumberField} key=${S.id+k} label=${label} value=${k==='w'?wOf(S,bg):(S[k]||0)} min=${min} max=${max} step=${step} disabled=${!!S.locked||(k==='w'&&!!lockW(S,bg))} onCommit=${value=>patch(S.id,{[k]:value})}/>`)}
+        </div>${lockW(S,bg)&&html`<p className="sx-note">Width follows the product's real dimensions and the photo scale.</p>`}${S.locked&&html`<p className="sx-note">Unlock this layer before changing its position, size or rotation.</p>`}
+        <div className="sx-property-actions" role="group" aria-label="Arrange">${[['front','Bring to front'],['fwd','Forward'],['bwd','Backward'],['back','Send to back']].map(([to,label])=>html`<button key=${to} className="btn btn-line btn-sm" onClick=${()=>arrange(S.id,to)}>${label}</button>`)}</div>`}
+        <div className="sx-property-actions">${multi&&html`<button className="btn btn-line btn-sm" onClick=${grouped?ungroup:group}>${grouped?'Ungroup':'Group'}</button>`}<button className="btn btn-line btn-sm" onClick=${dup}>Duplicate selection</button><button className="btn btn-line btn-sm" onClick=${del}>Delete selection</button></div>
+      </section>`}
     <//>`}
     ${drawer==='board'&&html`<${SxDrawer} title="Board" onClose=${()=>{setDrawer(null);setPolyEdit(false)}}>
       <span className="sx-lbl">Shape</span>
       <div className="sx-shapes">${BOARD_SHAPES.map(([k,l])=>html`<button key=${k} className=${(doc.shape||'rect')===k?'on':''} aria-pressed=${(doc.shape||'rect')===k} onClick=${()=>{commitDoc({...doc,shape:k,poly:k==='poly'?(doc.poly||POLY0):doc.poly});setPolyEdit(k==='poly')}}>
         <svg viewBox="0 0 80 100" aria-hidden="true"><path d=${boardPath(k,80,100,doc.poly)}/></svg><span>${l}</span></button>`)}</div>
-      ${doc.shape==='poly'&&html`<div className="sx-col" style=${{gap:8}}><span className="sx-note">Drag the points on the board to shape it.</span>
-        <div className="row" style=${{gap:6}}><button className="btn btn-line btn-sm" onClick=${()=>setPolyEdit(!polyEdit)}>${polyEdit?'Done shaping':'Edit points'}</button><button className="btn btn-line btn-sm" onClick=${addPoint}>Add a point</button><button className="lnk" onClick=${()=>commitDoc({...doc,poly:POLY0})}>Reset</button></div></div>`}
+      ${doc.shape==='poly'&&html`<div className="sx-col" style=${{gap:8}}><span className="sx-note">Drag a corner, use its arrow keys (Shift for larger steps), or enter coordinates below. Delete removes a focused corner; at least three must remain.</span>
+        <div className="row" style=${{gap:6}}><button className="btn btn-line btn-sm" onClick=${()=>setPolyEdit(!polyEdit)}>${polyEdit?'Done shaping':'Edit points'}</button><button className="btn btn-line btn-sm" disabled=${(doc.poly||POLY0).length>=64} onClick=${addPoint}>Add a point</button><button className="lnk" onClick=${()=>commitDoc({...doc,poly:POLY0})}>Reset</button></div>
+        <div className="sx-corner-fields">${(doc.poly||POLY0).map((point,i)=>html`<fieldset key=${i} id=${addTabsId+'-corner-row-'+i} className="sx-selection"><legend>Corner ${i+1}</legend><div className="sx-number-grid">${[[0,'Across (%)'],[1,'Down (%)']].map(([axis,label])=>html`<${EditorNumberField} key=${axis} label=${label} value=${Math.round(point[axis]*10000)/100} min=${0} max=${100} step=${1} onCommit=${value=>setCorner(i,axis,value/100)}/>`)}
+        </div><button className="btn btn-line btn-sm" disabled=${(doc.poly||POLY0).length<=3} onClick=${()=>removeCorner(i)}>Remove corner ${i+1}</button></fieldset>`)}</div></div>`}
       <span className="sx-lbl">Edge</span>
       <div className="sx-chips">${EDGES.map(([k,l])=>html`<button key=${k} className=${'chip'+((doc.edge||'none')===k?' on':'')} onClick=${()=>commitDoc({...doc,edge:k})}>${l}</button>`)}</div>
       ${doc.edge==='thick'&&html`<div className="swatches">${EDGE_COLORS.map(c=>html`<button key=${c} style=${{background:c}} className=${(doc.edgeColor||'#FBF8F2')===c?'on':''} aria-label=${'Border colour '+c} onClick=${()=>commitDoc({...doc,edgeColor:c})}></button>`)}</div>`}
@@ -409,7 +435,7 @@ function Studio({ctx}){
         </div>
         <${BoardEdge} doc=${doc}/>
         ${polyEdit&&doc.shape==='poly'&&html`<svg className="sx-poly" viewBox=${`0 0 ${W0} ${H0}`} preserveAspectRatio="none" aria-hidden="true"><path d=${boardPath('poly',W0,H0,doc.poly)}/></svg>
-          ${(doc.poly||POLY0).map(([x,y],i)=>html`<button key=${i} className="sx-pt" style=${{left:x*100+'%',top:y*100+'%'}} aria-label=${'Corner point '+(i+1)} onPointerDown=${e=>dragPoint(e,i)} onDoubleClick=${()=>{const p=doc.poly||POLY0;if(p.length>3)commitDoc({...doc,poly:p.filter((_,k)=>k!==i)})}}></button>`)}`}
+          ${(doc.poly||POLY0).map(([x,y],i)=>html`<button key=${i} className="sx-pt" style=${{left:x*100+'%',top:y*100+'%'}} id=${addTabsId+'-corner-'+i} aria-label=${'Corner point '+(i+1)+', '+Math.round(x*100)+'% across, '+Math.round(y*100)+'% down'} onKeyDown=${e=>cornerKeys(e,i)} onPointerDown=${e=>dragPoint(e,i)} onDoubleClick=${()=>removeCorner(i,true)}></button>`)}`}
         </div>
       </div>
       ${(S||multi)&&barStyle&&html`<div className="sx-selbar" style=${barStyle} onPointerDown=${e=>e.stopPropagation()} role="toolbar" aria-label=${'Edit '+kindName}>
@@ -430,13 +456,13 @@ function Studio({ctx}){
               <span className="sx-lbl">Tilt</span><div className="seg">${[-4,-2,0,2,4].map(t=>html`<button key=${t} className=${Math.round(S.rot)===t?'on':''} onClick=${()=>patch(S.id,{rot:t})}>${t>0?'+'+t:t}°</button>`)}</div><//>`}
             <button className="toggle" onClick=${()=>patch(S.id,{motion:!S.motion})}><span>Gentle motion</span><span className=${'sw'+(S.motion?' on':'')}></span></button>
             <button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>ctx.openPin(S.pid,{pid:S.pid,lid:S.lid,vid:S.vid})}>View ${productFor(S).name} details</button><//>`}
-          ${pop==='crop'&&framedSel&&html`<${React.Fragment}>${[['z','Zoom',1,3,.05,1],['x','Across',0,100,1,50],['y','Up and down',0,100,1,50]].map(([k,l,mn,mx,st,d])=>html`<label key=${k} className="sx-range"><span className="sx-lbl">${l}</span><input type="range" min=${mn} max=${mx} step=${st} value=${(S.crop||{})[k]??d} onPointerDown=${()=>record(docRef.current)} onInput=${e=>live(S.id,{crop:{z:1,x:50,y:50,...S.crop,[k]:+e.target.value}})}/></label>`)}
+          ${pop==='crop'&&framedSel&&html`<${React.Fragment}>${[['z','Zoom',1,3,.05,1],['x','Across',0,100,1,50],['y','Up and down',0,100,1,50]].map(([k,l,mn,mx,st,d])=>html`<label key=${k} className="sx-range"><span className="sx-lbl">${l}</span><input type="range" min=${mn} max=${mx} step=${st} value=${(S.crop||{})[k]??d} onPointerDown=${()=>record(docRef.current)} onKeyDown=${rangeKeys} onInput=${e=>live(S.id,{crop:{z:1,x:50,y:50,...S.crop,[k]:+e.target.value}})}/></label>`)}
             <button className="lnk" style=${{justifySelf:'start'}} onClick=${()=>patch(S.id,{crop:undefined})}>Reset crop</button><//>`}
           ${pop==='shape'&&html`<div className="seg">${SHAPES.map(([k,l])=>html`<button key=${k} className=${S.shape===k?'on':''} onClick=${()=>patch(S.id,{shape:k})}>${l}</button>`)}</div>`}
           ${pop==='tone'&&html`<div className="seg">${['none','warm','mono','dusk'].map(t=>html`<button key=${t} className=${S.tone===t?'on':''} onClick=${()=>patch(S.id,{tone:t})}>${t==='none'?'Original':t[0].toUpperCase()+t.slice(1)}</button>`)}</div>`}
           ${pop==='text'&&html`<textarea className="field" rows="2" aria-label="Text" value=${S.text} onFocus=${()=>record(docRef.current)} onInput=${e=>live(S.id,{text:e.target.value})}></textarea>`}
           ${pop==='font'&&html`<${React.Fragment}><div className="seg">${[['display','Serif'],['sans','Sans'],['mono','Caps']].map(([k,l])=>html`<button key=${k} className=${S.font===k?'on':''} onClick=${()=>patch(S.id,{font:k})}>${l}</button>`)}</div>
-            <label className="sx-range"><span className="sx-lbl">Size</span><input type="range" min="2" max="16" step=".2" value=${S.size} onPointerDown=${()=>record(docRef.current)} onInput=${e=>live(S.id,{size:+e.target.value})}/></label><//>`}
+            <label className="sx-range"><span className="sx-lbl">Size</span><input type="range" min="2" max="16" step=".2" value=${S.size} onPointerDown=${()=>record(docRef.current)} onKeyDown=${rangeKeys} onInput=${e=>live(S.id,{size:+e.target.value})}/></label><//>`}
           ${pop==='color'&&html`<div className="swatches">${['#2B211A','#FBF8F2','#A65F2C','#6C6948','#AE884C','#B07A4A','#E7DFD0'].map(c=>html`<button key=${c} style=${{background:c}} className=${S.color===c?'on':''} aria-label=${'Colour '+c} onClick=${()=>patch(S.id,{color:c})}></button>`)}</div>`}
           ${pop==='arrange'&&S&&html`<div className="sx-col">
             <button className="pop-item" onClick=${()=>arrange(S.id,'front')}>${I('up',{width:15})} Bring to front</button>
@@ -859,7 +885,7 @@ function ReadyRoom({ctx,onDraftChange,products}){
   const commit=next=>{next={...next,placementConflicts:next.items.filter(i=>plHit(next,i,i.x,i.z)).map(i=>i.uid)};hist.current.past.push(docRef.current);if(hist.current.past.length>60)hist.current.past.shift();hist.current.future=[];setDoc(next)};
   const undo=()=>{const h=hist.current;if(!h.past.length)return;h.future.push(docRef.current);setDoc(h.past.pop())};
   const redo=()=>{const h=hist.current;if(!h.future.length)return;h.past.push(docRef.current);setDoc(h.future.pop())};
-  const patchItem=(id,o)=>{const d=docRef.current;commit({...d,items:d.items.map(i=>{if(i.uid!==id)return i;const n={...i,...o};if('x' in o||'z' in o||'rot' in o){const position=plPlace(d,n,n.x,n.z);if(!position){ctx.toast('No clear space for this move. Your previous position is preserved.');return i}const [x,z]=position;n.x=r2(x);n.z=r2(z)}return n})})};
+  const patchItem=(id,o)=>{const d=docRef.current;const current=d.items.find(i=>i.uid===id);if(!current||(current.lock&&['x','z','rot'].some(k=>k in o)))return;commit({...d,items:d.items.map(i=>{if(i.uid!==id)return i;if(i.lock&&('x' in o||'z' in o||'rot' in o))return i;const n={...i,...o};if('x' in o||'z' in o||'rot' in o){const position=plPlace(d,n,n.x,n.z);if(!position){ctx.toast('No clear space for this move. Your previous position is preserved.');return i}const [x,z]=position;n.x=r2(x);n.z=r2(z)}return n})})};
   const addItem=(pid,x,z)=>{if(!plReady(pid)){ctx.toast(`Measurements needed: ${byId(pid).name} has no width, depth and height yet`);return}const d=docRef.current;const it={uid:uid(),...currentIdentity(pid),x:0,z:0,rot:0,hang:byId(pid).hangs};const position=plPlace(d,it,x??0,z??0);if(!position){ctx.toast('There is no clear space for this piece. Enlarge the room or remove another piece.');return}const [px,pz]=position;it.x=r2(px);it.z=r2(pz);commit({...d,items:[...d.items,it]});setSel(it.uid)};
   const removeItem=id=>{const d=docRef.current;commit({...d,items:d.items.filter(i=>i.uid!==id),rugs:(d.rugs||[]).filter(r=>r.uid!==id)});setSel(null)};
   const rugOf=id=>(docRef.current.rugs||[]).find(r=>r.uid===id);
@@ -1196,8 +1222,8 @@ function ReadyRoom({ctx,onDraftChange,products}){
         <p className="help" style=${{margin:0}}>Click to place in the middle of the room, or drag onto the floor.</p>
         <div className="pl-cat">${prods.map(p=>html`<button key=${p.id} draggable="true" onDragStart=${e=>e.dataTransfer.setData('text/pid',String(p.id))} onClick=${()=>addItem(p.id,0,0)} title=${'Place '+p.name}><img src=${cut(p.id)} alt="" loading="lazy"/><b>${p.name}</b><span className="mono">${plCm(p.id)?Math.round(plCm(p.id))+' cm':'Measurements needed'} · ${ctx.mode==='trade'?fmt(tp(p)):fmt(p.price)}</span></button>`)}</div>
 </div><//>`}
-    ${drawer==='layers'&&html`<${SxDrawer} title="Layers" onClose=${()=>setDrawer(null)}><div className="pl-sec sx-pl">${doc.items.length?doc.items.map(it=>{const p=byId(it);return html`<div key=${it.uid} className=${'layer'+(sel===it.uid?' on':'')} onClick=${()=>setSel(it.uid)}><span className="th" style=${{backgroundImage:`url(${cut(it)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat',backgroundPosition:'center'}}></span><span>${p.name}</span><button className="ib" aria-label=${it.lock?'Unlock':'Lock'} onClick=${e=>{e.stopPropagation();patchItem(it.uid,{lock:!it.lock})}}>${I(it.lock?'lock':'unlock')}</button><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(it.uid)}}>${I('trash')}</button></div>`}):html`<p className="help">No pieces yet. Add some from the Pieces tab.</p>`}
-        ${(doc.rugs||[]).map(r=>html`<div key=${r.uid} className=${'layer'+(sel===r.uid?' on':'')} onClick=${()=>setSel(r.uid)}><span className="th" style=${{background:r.color||'#D8C7A6',borderRadius:r.round?'50%':'4px'}}></span><span>Rug · ${r.size}</span><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(r.uid)}}>${I('trash')}</button></div>`)}</div><//>`}
+    ${drawer==='layers'&&html`<${SxDrawer} title="Layers" onClose=${()=>setDrawer(null)}><div className="pl-sec sx-pl">${doc.items.length?doc.items.map(it=>{const p=byId(it);return html`<div key=${it.uid} className=${'layer'+(sel===it.uid?' on':'')} ><button className="sx-layer-select" aria-label=${'Select '+p.name} aria-pressed=${sel===it.uid} onClick=${()=>setSel(it.uid)}><span className="th" style=${{backgroundImage:`url(${cut(it)})`,backgroundSize:'contain',backgroundRepeat:'no-repeat',backgroundPosition:'center'}}></span><span>${p.name}</span></button><button className="ib" aria-label=${it.lock?'Unlock':'Lock'} onClick=${e=>{e.stopPropagation();patchItem(it.uid,{lock:!it.lock})}}>${I(it.lock?'lock':'unlock')}</button><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(it.uid)}}>${I('trash')}</button></div>`}):html`<p className="help">No pieces yet. Add some from the Pieces tab.</p>`}
+        ${(doc.rugs||[]).map(r=>html`<div key=${r.uid} className=${'layer'+(sel===r.uid?' on':'')} ><button className="sx-layer-select" aria-label=${'Select rug '+r.size} aria-pressed=${sel===r.uid} onClick=${()=>setSel(r.uid)}><span className="th" style=${{background:r.color||'#D8C7A6',borderRadius:r.round?'50%':'4px'}}></span><span>Rug · ${r.size}</span></button><button className="ib" aria-label="Remove" onClick=${e=>{e.stopPropagation();removeItem(r.uid)}}>${I('trash')}</button></div>`)}</div><//>`}
 
     <section className=${'sx-stagewrap'+(sel?' has-sel':'')}>
       <div className="pl-vp sx-vp" ref=${vpRef} tabIndex="0" aria-label="Room viewport">
@@ -1218,8 +1244,8 @@ function ReadyRoom({ctx,onDraftChange,products}){
       </div>
       ${(selRug||selPiece)&&html`<div className="sx-selbar sx-selbar-pl" role="toolbar" aria-label="Edit selection" onPointerDown=${e=>e.stopPropagation()}>
         <button className=${pop==='info'?'on':''} aria-expanded=${pop==='info'} onClick=${()=>setPop(pop==='info'?null:'info')}>${selRug?'Rug':byId(selPiece).name}</button>
-        <button aria-label="Rotate left 15°" title="Rotate (Shift+R)" onClick=${()=>patchSel(sel,{rot:(((selRug||selPiece).rot||0)+345)%360})}>↺</button>
-        <button aria-label="Rotate right 15°" title="Rotate (R)" onClick=${()=>patchSel(sel,{rot:(((selRug||selPiece).rot||0)+15)%360})}>↻</button>
+        <button disabled=${!!selPiece?.lock} aria-label="Rotate left 15°" title="Rotate (Shift+R)" onClick=${()=>patchSel(sel,{rot:(((selRug||selPiece).rot||0)+345)%360})}>↺</button>
+        <button disabled=${!!selPiece?.lock} aria-label="Rotate right 15°" title="Rotate (R)" onClick=${()=>patchSel(sel,{rot:(((selRug||selPiece).rot||0)+15)%360})}>↻</button>
         <button aria-label="Duplicate" title="Duplicate (D)" onClick=${()=>dupItem(sel)}>${I('copy',{width:16})}</button>
         ${selPiece&&html`<button aria-label=${selPiece.lock?'Unlock':'Lock'} onClick=${()=>patchItem(selPiece.uid,{lock:!selPiece.lock})}>${I(selPiece.lock?'unlock':'lock',{width:16})}</button>`}
         <button aria-label="Delete" onClick=${()=>removeItem(sel)}>${I('trash',{width:16})}</button>
@@ -1233,13 +1259,13 @@ function ReadyRoom({ctx,onDraftChange,products}){
         <div className="seg">${RUG_MATS.map(([k,l])=>html`<button key=${k} className=${R0.mat===k?'on':''} onClick=${()=>patchRug(R0.uid,{mat:k})}>${l}</button>`)}</div>
         <span className="lbl">Colour</span>
         <div className="swatches">${RUG_COLORS.map(([c,l])=>html`<button key=${l} title=${l} aria-label=${'Rug colour '+l} className=${R0.color===c?'on':''} style=${{background:c||'#CDBB98'}} onClick=${()=>patchRug(R0.uid,{color:c})}></button>`)}</div>
-        <div className="pl-dims">${[['x','X (m)'],['z','Z (m)']].map(([k,l])=>html`<label key=${k}><span className="mono mute">${l}</span><input className="field num" type="number" step="0.05" value=${R0[k]} onChange=${e=>patchRug(R0.uid,{[k]:+e.target.value||0})}/></label>`)}<label><span className="mono mute">Rotate</span><input className="field num" type="number" step="15" value=${R0.rot||0} onChange=${e=>patchRug(R0.uid,{rot:((+e.target.value||0)%360+360)%360})}/></label></div>
+        <div className="pl-dims">${[['x','X (m)',doc.W],['z','Z (m)',doc.D],['rot','Rotation (degrees)',720]].map(([k,label,span])=>html`<${EditorNumberField} key=${R0.uid+k} label=${label} value=${R0[k]||0} min=${-span/2} max=${span/2} step=${k==='rot'?15:.05} onCommit=${value=>patchRug(R0.uid,{[k]:k==='rot'?(value%360+360)%360:value})}/>`)}</div>
         
 </div>`:html`<div className="pl-sec" style=${{padding:0}}>
         <div className="pl-insp-h"><img src=${cut(S0)} alt=""/><div><span className="mono mute">${SD.p.sku} · ${MAT[SD.p.mat]}</span><h3>${SD.p.name}</h3><p className="mute" style=${{fontSize:13}}>${SD.p.line}</p></div></div>
         <div className="kv"><span className="mono mute">Footprint</span><span>${SD.w.toFixed(2)} × ${SD.d.toFixed(2)} m (approx.)</span><span className="mono mute">Price</span><span>${ctx.mode==='trade'?fmt(tp(SD.p),true):fmt(SD.p.price,true)}</span>
           <span className="mono mute">To left wall</span><span>${(S0.x-SD.w/2+doc.W/2).toFixed(2)} m</span><span className="mono mute">To right wall</span><span>${(doc.W/2-S0.x-SD.w/2).toFixed(2)} m</span><span className="mono mute">To back wall</span><span>${(S0.z-SD.d/2+doc.D/2).toFixed(2)} m</span></div>
-        <div className="pl-dims">${[['x','X (m)'],['z','Z (m)']].map(([k,l])=>html`<label key=${k}><span className="mono mute">${l}</span><input className="field num" type="number" step="0.05" value=${S0[k]} onChange=${e=>patchItem(S0.uid,{[k]:+e.target.value||0})}/></label>`)}<label><span className="mono mute">Rotate</span><input className="field num" type="number" step="15" value=${S0.rot||0} onChange=${e=>patchItem(S0.uid,{rot:((+e.target.value||0)%360+360)%360})}/></label></div>
+        <div className="pl-dims">${[['x','X (m)',doc.W],['z','Z (m)',doc.D],['rot','Rotation (degrees)',720]].map(([k,label,span])=>html`<${EditorNumberField} key=${S0.uid+k} label=${label} value=${S0[k]||0} min=${-span/2} max=${span/2} step=${k==='rot'?15:.05} disabled=${!!S0.lock} onCommit=${value=>patchItem(S0.uid,{[k]:k==='rot'?(value%360+360)%360:value})}/>`)}</div>${S0.lock&&html`<p className="sx-note">Unlock this piece before moving or rotating it.</p>`}
         
         <button className="btn btn-ink btn-sm" onClick=${()=>ctx.openPin(S0.pid,currentIdentity(S0))}>View product</button>
 </div>`}</div>`}
@@ -1312,6 +1338,7 @@ function FloorPlanEditor({ctx,doc,units,onClose,onApply}){
   const init=()=>{const u=doc.underlay;if(doc.zones?.length&&u){const k=1/u.mPerPx;const px=([x,z])=>[(x-u.ox)*k,(z-u.oz)*k];return {img:u.img,w:u.w,h:u.h,mPerPx:u.mPerPx,opacity:u.opacity??.5,zones:doc.zones.map(z=>({...z,poly:z.poly.map(px)})),blocks:(doc.blocks||[]).map(b=>({...b,x:(b.x-u.ox)*k,z:(b.z-u.oz)*k}))}}
     if(doc.zones?.length){const k=50,ox=-10,oz=-7;return {img:null,w:1000,h:700,mPerPx:1/k,opacity:.5,zones:doc.zones.map(z=>({...z,poly:z.poly.map(([x,y])=>[(x-ox)*k,(y-oz)*k])})),blocks:(doc.blocks||[]).map(b=>({...b,x:(b.x-ox)*k,z:(b.z-oz)*k}))}}
     return {img:null,w:1000,h:700,mPerPx:.02,opacity:.5,zones:[],blocks:[]}};
+  const [entry,setEntry]=useState([50,50]);
   const [P,setP]=useState(init);const [mode,setMode]=useState(P.zones.length?'select':'upload');const [draft,setDraft]=useState([]);const [cal,setCal]=useState([]);const [calLen,setCalLen]=useState('');
   const [sel,setSel]=useState(P.zones[0]?.id||null);const [busy,setBusy]=useState('');const [err,setErr]=useState('');const [hover,setHover]=useState(null);const svgRef=useRef();const fileRef=useRef();
   const readWalls=useAction(api.holmPlans.readWalls);
@@ -1319,11 +1346,12 @@ function FloorPlanEditor({ctx,doc,units,onClose,onApply}){
   const at=e=>{const s=svgRef.current;const pt=s.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;const p=pt.matrixTransform(s.getScreenCTM().inverse());return [p.x,p.y]};
   const lenPx=(a,b)=>Math.hypot(b[0]-a[0],b[1]-a[1]);
   const upload=async f=>{if(!f)return;setBusy('upload');setErr('');try{const im=await planImage(f);setP(p=>({...p,...im}));setMode('scale');setCal([])}catch(e){setErr(errText(e))}finally{setBusy('')}};
-  const onClick=e=>{const p=at(e);
+  const placePoint=p=>{if(!p.every(Number.isFinite)||p[0]<0||p[0]>P.w||p[1]<0||p[1]>P.h){setErr('Place the point within the drawing sheet.');return}setErr('');
     if(mode==='scale'){setCal(c=>c.length>=2?[p]:[...c,p]);return}
-    if(mode==='draw'){if(draft.length>2&&lenPx(p,draft[0])<14){closeDraft();return}setDraft(d=>[...d,d.length?snap90(d[d.length-1],p):p]);return}
+    if(mode==='draw'){if(draft.length>=64){setErr('A room can have up to 64 corners. Finish it or undo a point.');return}if(draft.length>2&&lenPx(p,draft[0])<14){closeDraft();return}setDraft(d=>[...d,d.length?snap90(d[d.length-1],p):p]);return}
     if(mode==='block'){const [n,w,d,h]=BLOCKS[0];addBlock(p,n,w,d,h);return}};
-  const closeDraft=()=>{if(draft.length<3)return;const id=uid();const name=ZONE_NAMES[P.zones.length%ZONE_NAMES.length];setP(p=>({...p,zones:[...p.zones,{id,name,poly:draft,floor:doc.floor,wall:doc.wall}]}));setDraft([]);setSel(id);setMode('select')};
+  const onClick=e=>placePoint(at(e));
+  const closeDraft=()=>{if(!validRoomPolygon(draft)){setErr('Use at least three distinct corners enclosing an area, without crossing walls. Your points are kept for editing.');return}setErr('');setHover(null);const id=uid();const name=ZONE_NAMES[P.zones.length%ZONE_NAMES.length];setP(p=>({...p,zones:[...p.zones,{id,name,poly:draft,floor:doc.floor,wall:doc.wall}]}));setDraft([]);setSel(id);setMode('select')};
   const addBlock=(p,name,w,d,h)=>setP(s=>({...s,blocks:[...s.blocks,{id:uid(),name,x:p[0],z:p[1],w,d,h,rot:0}]}));
   const planKeys=e=>{if(e.key==='Escape'&&draft.length){e.preventDefault();setDraft([]);return}if(['INPUT','TEXTAREA','SELECT','BUTTON','A'].includes(e.target.tagName))return;if(e.key==='Enter'&&mode==='draw'){e.preventDefault();closeDraft()}if((e.key==='Backspace'||e.key==='Delete')&&mode==='draw'&&draft.length){e.preventDefault();setDraft(d=>d.slice(0,-1))}};
   // Drag a corner to move it.
@@ -1337,11 +1365,12 @@ function FloorPlanEditor({ctx,doc,units,onClose,onApply}){
       setMode(r.scale?'scale':'select');ctx.toast(r.scale?'Walls read. Check the scale against a wall you know, then fix any wall.':'Walls read. Set the scale from a wall you know, then fix any wall.')}
     catch(e){setErr(errText(e))}finally{setBusy('')}};
   // Save in metres, centred on the plan, with the underlay placed to match.
-  const apply=()=>{if(!P.zones.length){setErr('Draw at least one room first.');return}const k=P.mPerPx;const all=P.zones.flatMap(z=>z.poly);const xs=all.map(p=>p[0]*k),zs=all.map(p=>p[1]*k);const cx=(Math.min(...xs)+Math.max(...xs))/2,cz=(Math.min(...zs)+Math.max(...zs))/2;
-    const m=([x,y])=>[r2(x*k-cx),r2(y*k-cz)];const zones=P.zones.map(z=>({...z,poly:z.poly.map(m)}));const b=polyBounds(zones.map(z=>z.poly));
+  const apply=()=>{if(!P.zones.length){setErr('Draw at least one room first.');return}const k=P.mPerPx;if(!Number.isFinite(k)||k<=0||!P.zones.every(z=>validRoomPolygon(z.poly))||P.blocks.some(b=>![b.x,b.z,b.w,b.d,b.h].every(Number.isFinite)||b.w<=0||b.d<=0||b.h<=0)){setErr('Check the scale, room corners and block dimensions. Rooms need an area and cannot have crossing walls.');return}const all=P.zones.flatMap(z=>z.poly);const xs=all.map(p=>p[0]*k),zs=all.map(p=>p[1]*k);const cx=(Math.min(...xs)+Math.max(...xs))/2,cz=(Math.min(...zs)+Math.max(...zs))/2;
+    const m=([x,y])=>[r2(x*k-cx),r2(y*k-cz)];const zones=P.zones.map(z=>({...z,poly:z.poly.map(m)}));if(!zones.every(z=>validRoomPolygon(z.poly))){setErr('This scale collapses room corners. Adjust the scale or corners before applying.');return}const b=polyBounds(zones.map(z=>z.poly));
     onApply({zones,blocks:P.blocks.map(bl=>({...bl,x:r2(bl.x*k-cx),z:r2(bl.z*k-cz)})),W:r2(b.maxX-b.minX),D:r2(b.maxZ-b.minZ),underlay:P.img?{img:P.img,w:P.w,h:P.h,mPerPx:k,ox:r2(-cx),oz:r2(-cz),opacity:P.opacity}:null})};
   const Z=P.zones.find(z=>z.id===sel);const k=P.mPerPx;const fmtM=m=>`${toU(m).toFixed(2)} ${uLab}`;
-  const hint={upload:'Upload the plan as an image or PDF, or draw on the blank sheet.',scale:'Click both ends of a wall you know, then type its real length.',draw:'Click each corner. Click the first corner or press Enter to close the room; Backspace removes the last corner.',block:'Click to place a column; change its size in the list.',select:'Drag corners to adjust. Type a wall length to set it exactly.'}[mode];
+  const gridStep=Number.isFinite(k)&&k>0?Math.max(1/k,P.w/200,P.h/200):Math.max(P.w,P.h);
+  const hint={upload:'Upload the plan as an image or PDF, or draw on the blank sheet.',scale:'Place both ends of a known wall with the pointer or coordinate fields, then enter its real length.',draw:'Place corners with the pointer or coordinate fields. Finish room closes it; Undo last point removes a corner.',block:'Click to place a column; change its size in the list.',select:'Drag corners or edit their coordinates. Type a wall length to set it exactly.'}[mode];
   return html`<${Modal} open label="Floor plan" onClose=${onClose}><div className="scrim sx-scrim" onKeyDown=${planKeys}>
     <div className="sx-dialog fplan">
       <div className="sx-drawer-h"><b>Floor plan</b><button className="ib" aria-label="Close" onClick=${onClose}>${I('x')}</button></div>
@@ -1354,10 +1383,17 @@ function FloorPlanEditor({ctx,doc,units,onClose,onApply}){
         ${mode==='block'&&html`<span className="row" style=${{gap:6,flexWrap:'wrap'}}>${BLOCKS.map(([n,w,d,h])=>html`<button key=${n} className="chip" onClick=${()=>addBlock([P.w/2,P.h/2],n,w,d,h)}>${n}</button>`)}</span>`}
       </div>
       <p className="sx-note">${hint} <span className="mono">1 px = ${(k*100).toFixed(1)} cm</span></p>
+      ${['scale','draw','block'].includes(mode)&&html`<div className="fp-point-entry" role="group" aria-label="Point placement">
+        ${[[0,'Across (%)'],[1,'Down (%)']].map(([axis,label])=>html`<${EditorNumberField} key=${axis} label=${label} value=${entry[axis]} min=${0} max=${100} step=${1} onCommit=${value=>setEntry(p=>p.map((v,i)=>i===axis?value:v))}/>`)}
+        <button className="btn btn-line btn-sm" onClick=${()=>placePoint([entry[0]*P.w/100,entry[1]*P.h/100])}>${mode==='scale'?'Add calibration point':mode==='block'?'Place column':'Add corner'}</button>
+        ${mode==='draw'&&html`<button className="btn btn-cog btn-sm" disabled=${draft.length<3} onClick=${closeDraft}>Finish room</button><button className="btn btn-line btn-sm" disabled=${!draft.length} onClick=${()=>{setDraft(p=>p.slice(0,-1));setErr('')}}>Undo last point</button><span role="status">${draft.length} corners placed</span>`}
+        ${mode==='scale'&&html`<button className="btn btn-line btn-sm" disabled=${!cal.length} onClick=${()=>setCal([])}>Clear calibration points</button><span role="status">${cal.length} of 2 calibration points</span>`}
+      </div>`}
+
       <div className="fp-body">
         <div className="fp-sheet"><svg ref=${svgRef} viewBox=${`0 0 ${P.w} ${P.h}`} tabIndex="0" aria-label="Floor plan drawing area" onClick=${e=>{e.currentTarget.focus();onClick(e)}} onPointerMove=${e=>mode==='draw'&&draft.length&&setHover(snap90(draft[draft.length-1],at(e)))} style=${{cursor:mode==='select'?'default':'crosshair'}}>
           <rect width=${P.w} height=${P.h} fill="#FBF8F2"/>
-          ${P.img?html`<image href=${P.img} width=${P.w} height=${P.h} opacity=${P.opacity}/>`:html`<path d=${Array.from({length:Math.ceil(P.w/(1/k))},(_,i)=>`M${i/k} 0V${P.h}`).join('')+Array.from({length:Math.ceil(P.h/(1/k))},(_,i)=>`M0 ${i/k}H${P.w}`).join('')} stroke="rgba(43,33,26,.08)"/>`}
+          ${P.img?html`<image href=${P.img} width=${P.w} height=${P.h} opacity=${P.opacity}/>`:html`<path d=${Array.from({length:Math.ceil(P.w/gridStep)},(_,i)=>`M${i*gridStep} 0V${P.h}`).join('')+Array.from({length:Math.ceil(P.h/gridStep)},(_,i)=>`M0 ${i*gridStep}H${P.w}`).join('')} stroke="rgba(43,33,26,.08)"/>`}
           ${P.zones.map(z=>html`<g key=${z.id} className=${'fp-zone'+(z.id===sel?' on':'')} onClick=${e=>{if(mode==='select'){e.stopPropagation();setSel(z.id)}}}>
             <polygon points=${z.poly.map(p=>p.join(',')).join(' ')}/>
             ${z.poly.map((a,i)=>{const b=z.poly[(i+1)%z.poly.length];return html`<text key=${i} x=${(a[0]+b[0])/2} y=${(a[1]+b[1])/2} className="fp-len">${fmtM(lenPx(a,b)*k)}</text>`})}
@@ -1376,8 +1412,10 @@ function FloorPlanEditor({ctx,doc,units,onClose,onApply}){
             <label className="sx-col" style=${{gap:4}}><span className="sx-lbl">Name</span><input className="field" style=${{height:36}} value=${Z.name} maxLength="40" onInput=${e=>setP(p=>({...p,zones:p.zones.map(z=>z.id===Z.id?{...z,name:e.target.value}:z)}))}/></label>
             <span className="sx-lbl">Walls (${uLab})</span>
             <div className="fp-walls">${Z.poly.map((a,i)=>{const b=Z.poly[(i+1)%Z.poly.length];return html`<label key=${i}><span className="mono mute">${i+1}</span><input className="field num" type="number" step="0.01" min="0.1" value=${+toU(lenPx(a,b)*k).toFixed(2)} onChange=${e=>{const v=fromU(+e.target.value);if(v>0)setP(p=>({...p,zones:p.zones.map(z=>z.id===Z.id?{...z,poly:setWallLength(z.poly,i,v/k)}:z)}))}}/></label>`})}</div>
+            <span className="sx-lbl">Corner coordinates</span><div className="sx-number-grid">${Z.poly.flatMap((point,i)=>[[0,'Across',P.w],[1,'Down',P.h]].map(([axis,label,span])=>html`<${EditorNumberField} key=${Z.id+i+label} label=${'Corner '+(i+1)+' '+label.toLowerCase()+' (%)'} value=${Math.round(point[axis]/span*100000)/1000} min=${0} max=${100} step=${1} onCommit=${value=>{setErr('');setP(p=>({...p,zones:p.zones.map(z=>z.id!==Z.id?z:{...z,poly:z.poly.map((v,index)=>index!==i?v:v.map((n,a)=>a===axis?value*span/100:n))})}))}}/>`))}</div>
             <button className="lnk" style=${{color:'var(--bad)',justifySelf:'start'}} onClick=${()=>{setP(p=>({...p,zones:p.zones.filter(z=>z.id!==Z.id)}));setSel(null)}}>Delete this room</button></div>`}
           ${P.blocks.length>0&&html`<${React.Fragment}><span className="sx-lbl">Columns and fixed blocks</span>${P.blocks.map(b=>html`<div key=${b.id} className="fp-brow"><input className="field" style=${{height:32}} value=${b.name} onInput=${e=>setP(p=>({...p,blocks:p.blocks.map(x=>x.id===b.id?{...x,name:e.target.value}:x)}))} aria-label="Name"/>
+            ${[['x','Across (%)',P.w],['z','Down (%)',P.h]].map(([key,label,span])=>html`<${EditorNumberField} key=${key} label=${label} value=${Math.round(b[key]/span*100000)/1000} min=${0} max=${100} step=${1} onCommit=${value=>setP(p=>({...p,blocks:p.blocks.map(x=>x.id===b.id?{...x,[key]:value*span/100}:x)}))}/>`)}
             ${['w','d','h'].map(kk=>html`<input key=${kk} className="field num" style=${{height:32}} type="number" step="0.05" min="0.05" title=${{w:'Width',d:'Depth',h:'Height'}[kk]+' ('+uLab+')'} aria-label=${{w:'Width',d:'Depth',h:'Height'}[kk]} value=${+toU(b[kk]).toFixed(2)} onChange=${e=>{const v=fromU(+e.target.value);if(v>0)setP(p=>({...p,blocks:p.blocks.map(x=>x.id===b.id?{...x,[kk]:v}:x)}))}}/>`)}
             <button className="ib" aria-label="Remove" onClick=${()=>setP(p=>({...p,blocks:p.blocks.filter(x=>x.id!==b.id)}))}>${I('x',{width:14})}</button></div>`)}<//>`}
         </aside>

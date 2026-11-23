@@ -25,7 +25,7 @@ export function cleanPlanRead(raw: unknown): PlanRead {
         const o = (x ?? {}) as { name?: unknown; points?: unknown };
         return { name: String(o.name || `${fallback} ${i + 1}`).slice(0, 40), points: pts(o.points) };
       })
-      .filter((x) => x.points.length >= 3 && Math.abs(area(x.points)) > 1e-4);
+      .filter((x) => validRoomPolygon(x.points) && Math.abs(area(x.points)) > 1e-4);
   const s = r.scale;
   const sa = pts([s?.a])[0], sb = pts([s?.b])[0], m = Number(s?.meters);
   return {
@@ -77,9 +77,35 @@ export const bounds = (polys: Pt[][]) => {
 export function setWallLength(poly: Pt[], i: number, length: number): Pt[] {
   const a = poly[i], b = poly[(i + 1) % poly.length];
   const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
-  if (!(d > 0) || !(length > 0)) return poly;
+  if (!Number.isFinite(d) || !Number.isFinite(length) || !(d > 0) || !(length > 0)) return poly;
   const k = length / d;
   const out = poly.slice();
   out[(i + 1) % poly.length] = [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
   return out;
+}
+
+/** A room must be finite, nondegenerate and simple; touching/crossing nonadjacent walls is invalid. */
+export function validRoomPolygon(raw: unknown): raw is Pt[] {
+  if (!Array.isArray(raw) || raw.length < 3 || raw.length > 64
+    || !raw.every(p => Array.isArray(p) && p.length === 2 && p.every(isNum))) return false;
+  const points = raw as Pt[];
+  const measured = area(points), epsilon = 1e-8;
+  if (!Number.isFinite(measured) || Math.abs(measured) <= epsilon) return false;
+  const cross = (a: Pt, b: Pt, c: Pt) => (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+  const on = (a: Pt, b: Pt, p: Pt) => Math.abs(cross(a,b,p)) <= epsilon
+    && p[0] >= Math.min(a[0],b[0])-epsilon && p[0] <= Math.max(a[0],b[0])+epsilon
+    && p[1] >= Math.min(a[1],b[1])-epsilon && p[1] <= Math.max(a[1],b[1])+epsilon;
+  for (let i=0; i<points.length; i++) {
+    const a=points[i], b=points[(i+1)%points.length];
+    if (Math.hypot(b[0]-a[0],b[1]-a[1]) <= epsilon) return false;
+    for (let j=i+1; j<points.length; j++) {
+      if (j===i+1 || (i===0 && j===points.length-1)) continue;
+      const c=points[j], d=points[(j+1)%points.length];
+      const abC=cross(a,b,c), abD=cross(a,b,d), cdA=cross(c,d,a), cdB=cross(c,d,b);
+      if (on(a,b,c)||on(a,b,d)||on(c,d,a)||on(c,d,b)
+        || (((abC>epsilon&&abD < -epsilon)||(abC < -epsilon&&abD>epsilon))
+          && ((cdA>epsilon&&cdB < -epsilon)||(cdA < -epsilon&&cdB>epsilon)))) return false;
+    }
+  }
+  return true;
 }
