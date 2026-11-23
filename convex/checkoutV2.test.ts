@@ -826,6 +826,14 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
     });
     await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, args)).rejects.toThrow(/warehouse capacity/);
     await s.t.run(async ctx => { const stock = (await ctx.db.query('catStockRevisions').first())!; await ctx.db.patch(stock._id, { quantity: '1000' }); });
+    // A canonical Ashcroft identity is not stock evidence. Unknown is resolved by the
+    // independently checked supplier listing; explicit withdrawal cannot be bypassed.
+    const ashcroftMirror = (await s.t.run(ctx => ctx.db.query('catVariants').collect())).find(v => v.legacyVariantId === 'b1')!;
+    expect(ashcroftMirror.availability).toBe('unknown');
+    await s.t.run(ctx => ctx.db.patch(ashcroftMirror._id, { availability: 'out_of_stock' }));
+    const unavailableOriginal = await s.admin.query(api.ordExceptionFulfillment.detail, { id: exception._id });
+    await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, { ...args, expectedFingerprint: unavailableOriginal.fingerprint })).rejects.toThrow(/exact original SKU/);
+    await s.t.run(ctx => ctx.db.patch(ashcroftMirror._id, { availability: 'unknown' }));
     await s.t.run(ctx => reserveCredit(ctx, user, 1000, 'other-checkout-fixture'));
     await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, args)).rejects.toThrow(/Available credit/);
     expect(await s.t.run(ctx => ctx.db.query('ordOrders').collect())).toHaveLength(0);

@@ -92,7 +92,8 @@ export const detail = query({
       .withIndex('by_variant_effective', (q) => q.eq('variantId', a.variantId))
       .order('desc')
       .take(20);
-    return { variant, current, history, canApproveMap: actor.approver };
+    const supplier = await ctx.db.get(variant.supplierId);
+    return { variant, current, history, supplierCode: supplier?.code ?? null, canApproveMap: actor.approver };
   },
 });
 
@@ -101,6 +102,7 @@ const costArgs = {
     expectedRevisionId: v.union(v.id('catCostRevisions'), v.null()),
     requestKey: v.string(),
     wholesaleUsd: v.union(v.string(), v.null()),
+    wholesaleUnitBasis: v.optional(v.union(v.literal('piece'), v.literal('selling_unit'))),
     verified: v.boolean(),
     observedAt: v.number(),
     duties: expense,
@@ -162,6 +164,12 @@ async function saveCostEvidence(ctx: MutationCtx, a: ObjectType<typeof costArgs>
     }
     const variant = await ctx.db.get(a.variantId);
     if (!variant) throw new CommerceError('INVALID_INPUT', 'Variant not found');
+    const supplier = await ctx.db.get(variant.supplierId);
+    const unitBasis = a.wholesaleUnitBasis ?? (supplier?.code === 'zuo' ? 'piece' : undefined);
+    if (!unitBasis || (supplier?.code === 'ashcroft' && unitBasis !== 'selling_unit') || (supplier?.code === 'zuo' && unitBasis !== 'piece'))
+      throw new CommerceError('INVALID_INPUT', 'Confirm supplier wholesale unit basis: Zuo per piece; Ashcroft per selling unit');
+    if (supplier?.code === 'ashcroft' && a.map.state === 'explicit_sku' && a.map.basis !== 'pack')
+      throw new CommerceError('INVALID_INPUT', 'Ashcroft MAP must be recorded per selling unit, not unverified physical contents');
     if ((variant.currentCostRevisionId ?? null) !== a.expectedRevisionId)
       throw new CommerceError(
         'INVALID_INPUT',
@@ -229,7 +237,7 @@ async function saveCostEvidence(ctx: MutationCtx, a: ObjectType<typeof costArgs>
           extractedValue: value,
           unit:
             field === 'wholesale'
-              ? 'USD_per_piece'
+              ? `USD_per_${unitBasis}`
               : field === 'map' && a.map.state === 'explicit_sku'
                 ? `USD_per_${a.map.basis}`
                 : 'source_state',
@@ -245,6 +253,7 @@ async function saveCostEvidence(ctx: MutationCtx, a: ObjectType<typeof costArgs>
     const id = await ctx.db.insert('catCostRevisions', {
       variantId: variant._id,
       wholesaleMinor,
+      wholesaleUnitBasis: unitBasis,
       ...(a.wholesaleUsd !== null ? { wholesalePrecise: a.wholesaleUsd } : {}),
       currency: 'USD',
       dutiesMinor: duties.minor,

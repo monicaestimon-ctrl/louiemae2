@@ -189,7 +189,11 @@ export const resumeOriginal = mutation({
         (line.warehouseId && line.warehouseId !== variant.warehouseId) ||
         variant.productId !== line.productId ||
         variant.piecesPerPack * line.packs !== line.pieces ||
-        variant.availability !== 'in_stock' ||
+        // Ashcroft mirrors carry no stock claim; its current supplier check below and
+        // the fresh operator confirmation remain mandatory. Explicit withdrawal still blocks.
+        (line.supplierCode === 'ashcroft'
+          ? !['unknown', 'in_stock'].includes(variant.availability)
+          : variant.availability !== 'in_stock') ||
         supplier?.code !== line.supplierCode ||
         product?.provider !== line.supplierCode
       )

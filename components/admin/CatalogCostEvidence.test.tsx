@@ -93,3 +93,14 @@ it('reuses the exact retry key after an uncertain save and changes it when input
   await waitFor(() => expect(mock.save).toHaveBeenCalledTimes(3));
   expect(mock.save.mock.calls[2][0].requestKey).not.toBe(mock.save.mock.calls[0][0].requestKey);
 });
+
+it('records an Ashcroft set as one selling-unit cost without a Zuo handling assumption', async () => {
+  mock.data = { ...mock.data, supplierCode: 'ashcroft' };
+  render(view());
+  expect(screen.getByLabelText('Wholesale USD per selling unit (blank means unknown)')).toHaveValue('115.00');
+  expect(screen.getByLabelText('Duties per selling unit')).toHaveValue('unknown');
+  expect(screen.queryByText(/separately modeled \$10/)).not.toBeInTheDocument();
+  completeSource();
+  fireEvent.click(screen.getByRole('button', { name: 'Save evidence revision' }));
+  await waitFor(() => expect(mock.save).toHaveBeenCalledWith(expect.objectContaining({ wholesaleUsd: '115.00', wholesaleUnitBasis: 'selling_unit', verified: false })));
+});
