@@ -120,4 +120,3 @@ describe('Ashcroft identity preparation', () => {
     expect((await s.t.run(ctx => ctx.db.get(id)))?.wholesaleUnitBasis).toBe('piece');
   });
 });
-

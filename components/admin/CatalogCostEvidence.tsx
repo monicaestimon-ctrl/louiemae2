@@ -43,8 +43,10 @@ function CostForm({
   const cost = base.current;
   const sellingUnit = base.supplierCode === 'ashcroft';
   const unitLabel = sellingUnit ? 'selling unit' : 'piece';
+  const wholesaleBasisNeedsReview = sellingUnit && !!cost && cost.wholesaleUnitBasis !== 'selling_unit';
+  const mapBasisNeedsReview = sellingUnit && cost?.mapUnitBasis === 'piece';
   const [wholesale, setWholesale] = useState(
-    cost?.wholesalePrecise ??
+    wholesaleBasisNeedsReview ? '' : cost?.wholesalePrecise ??
       (cost?.wholesaleMinor == null ? '' : (cost.wholesaleMinor / 100).toFixed(2))
   );
   const [verified, setVerified] = useState(false);
@@ -63,7 +65,7 @@ function CostForm({
         ? 'explicit_sku'
         : 'unknown'
   );
-  const [map, setMap] = useState(cost?.mapMinor == null ? '' : (cost.mapMinor / 100).toFixed(2));
+  const [map, setMap] = useState(mapBasisNeedsReview || cost?.mapMinor == null ? '' : (cost.mapMinor / 100).toFixed(2));
   const [basis, setBasis] = useState<'piece' | 'pack'>(sellingUnit ? 'pack' : cost?.mapUnitBasis ?? 'piece');
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState('');
@@ -83,6 +85,10 @@ function CostForm({
         setBusy(true);
         setMessage('');
         try {
+          if (mapState === 'explicit_sku' && (!map.trim() || dollarsToMinor(map, 'half_up') <= 0)) {
+            setMessage(`Enter a positive MAP amount per ${sellingUnit ? 'selling unit' : basis} from the current source.`);
+            return;
+          }
           const args = {
             variantId: base.variant._id,
             expectedRevisionId: base.current?._id ?? null,
@@ -123,6 +129,9 @@ function CostForm({
           ? 'USD per selling unit. A set sold as one unit has one wholesale cost; do not multiply by its physical contents. Additional expenses are per selling unit. Customer delivery freight is modeled separately.'
           : 'USD only. Wholesale is per piece; additional expenses are per selling pack. Do not include customer delivery freight or the separately modeled $10 handling allowance again.'}
       </p>
+      {(wholesaleBasisNeedsReview || mapBasisNeedsReview) && (
+        <p>Previous amounts with a different or unconfirmed unit basis are not carried forward. Enter the supplier’s selling-unit amounts from the current source; physical set contents are not inferred.</p>
+      )}
       {stale && !saved && (
         <p role="alert">
           This record changed. Your edits are retained; reload and reconcile before saving.

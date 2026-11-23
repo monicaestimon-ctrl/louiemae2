@@ -525,6 +525,18 @@ async function paidOrder(
 }
 
 describe('delivery estimates (S17, S18)', () => {
+  it.each(['different SKU', 'duplicate variant'] as const)('rejects an Ashcroft House %s conflict before creating an identity', async conflict => {
+    const s = await setup();
+    await s.t.run(async ctx => {
+      const retail = (await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', s.ashId).eq('channel', 'retail')).unique())!;
+      const route = retail.fulfillment![0];
+      await ctx.db.insert('commerceListings', { productId: s.ashId, channel: 'house', published: true, revision: 1, updatedAt: 1,
+        snapshot: retail.snapshot, fulfillment: conflict === 'different SKU' ? [{ ...route, sku: 'OTHER-SKU' }] : [route, route] });
+    });
+    await expect(s.t.run(ctx => resolveLines(ctx, [{ productId: s.ashId, variantId: 'b1', packs: 1 }], 'retail', NOW))).rejects.toThrow(/conflicts between channels/);
+    expect((await s.t.run(ctx => ctx.db.query('catVariants').collect())).filter(v => v.productId === s.ashId)).toHaveLength(0);
+  });
+
   it('limits demand to the warehouse count and requires confirmation for on-hand stock', async () => {
     const s = await setup();
     await s.t.run(async ctx => { const stock = (await ctx.db.query('catStockRevisions').first())!; await ctx.db.patch(stock._id, { validUntil: NOW + 15000 }); });

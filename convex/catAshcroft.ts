@@ -29,6 +29,13 @@ async function existingIdentity(ctx: Ctx, identity: Identity): Promise<Doc<'catV
   return found ?? null;
 }
 
+function validateHouseRoute(house: Doc<'commerceListings'> | null, variantId: string, sku: string) {
+  const rows = house?.fulfillment?.filter(v => v.id === variantId) ?? [];
+  if (rows.length > 1 || (rows[0] && rows[0].sku !== sku))
+    throw new CommerceError('COST_REVIEW_REQUIRED', 'Ashcroft identity conflicts between channels');
+  return rows;
+}
+
 /** Shared by delivery and the migration. A selling unit is not a claim about physical set contents. */
 export async function ensureAshcroftIdentity(ctx: MutationCtx, identity: Identity, actor: string): Promise<Doc<'catVariants'>> {
   const product = await ctx.db.get(identity.productId);
@@ -36,6 +43,8 @@ export async function ensureAshcroftIdentity(ctx: MutationCtx, identity: Identit
     || !Number.isSafeInteger(identity.minimum) || identity.minimum < 1
     || !Number.isSafeInteger(identity.increment) || identity.increment < 1)
     throw new CommerceError('INVALID_INPUT', 'Invalid Ashcroft selling-unit identity');
+  const house = await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', identity.productId).eq('channel', 'house')).unique();
+  validateHouseRoute(house, identity.variantId, identity.sku);
   const existing = await existingIdentity(ctx, identity);
   if (existing) return existing;
   const supplier = await ensureSupplier(ctx, 'ashcroft');
@@ -63,10 +72,10 @@ async function source(ctx: Ctx, productId: Identity['productId'], variantId: str
   const house = await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', productId).eq('channel', 'house')).unique();
   const options = retail?.snapshot.variants.filter(v => v.id === variantId) ?? [];
   const fulfillment = retail?.fulfillment?.filter(v => v.id === variantId) ?? [];
-  const houseRoute = house?.fulfillment?.filter(v => v.id === variantId) ?? [];
   if (product?.provider !== 'ashcroft' || !retail?.published || options.length !== 1 || fulfillment.length !== 1
-    || !fulfillment[0].sku.trim() || houseRoute.length > 1 || (houseRoute[0] && houseRoute[0].sku !== fulfillment[0].sku))
+    || !fulfillment[0].sku.trim())
     throw new CommerceError('COST_REVIEW_REQUIRED', 'Published Ashcroft identity is missing or conflicts between channels');
+  const houseRoute = validateHouseRoute(house, variantId, fulfillment[0].sku);
   const option = options[0];
   const identity = { productId, variantId, sku: fulfillment[0].sku, name: option.name === 'Default Title' ? retail.snapshot.name : option.name,
     minimum: option.minimum, increment: option.increment };
