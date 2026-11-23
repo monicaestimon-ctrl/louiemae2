@@ -112,3 +112,7 @@ it('combines legacy and explicit rows by their effective option identity', () =>
   expect(restored.items[0].quantity).toBe(4);
   expect(restored.recoveryNotice).toBeTruthy();
 });
+
+it('preserves v2 checkout routing through saved-cart restoration', () => {
+  expect(restoreCart(JSON.stringify([{ ...line, product: { ...line.product, checkoutMode: 'v2' } }])).items[0].product.checkoutMode).toBe('v2');
+});

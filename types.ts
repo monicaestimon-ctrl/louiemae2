@@ -46,6 +46,7 @@ export interface ProductImageMedia {
 export interface Product {
   imageMedia?: ProductImageMedia[];
   fulfillmentProvider?: 'ashcroft' | 'zuo';
+  checkoutMode?: 'legacy' | 'v2';
   deliveryFee?: number;
   id: string;
   name: string;

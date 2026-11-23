@@ -182,6 +182,7 @@ export const compute = indexedInternalMutation({
             pieces: l.pieces,
             originZip: l.originZip,
             ...(l.engine ? { economics: l.engine } : {}),
+            ...(l.ashcroftEconomics ? { ashcroftEconomics: l.ashcroftEconomics } : {}),
             ...(l.costRevisionId ? { costRevisionId: l.costRevisionId } : {}),
             ...(l.priceRevisionId ? { priceRevisionId: l.priceRevisionId } : {}),
             category: l.category,

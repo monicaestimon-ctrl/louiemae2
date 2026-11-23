@@ -176,6 +176,7 @@ export const commerceTables = {
     .index('by_source', ['sourceKey'])
     .index('by_cj', ['cjProductId']),
   commerceListings: defineTable({
+    pricingMode: v.optional(v.literal('approved_v2')),
     productId: v.id('commerceProducts'),
     channel,
     published: v.boolean(),

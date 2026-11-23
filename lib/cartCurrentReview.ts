@@ -78,6 +78,7 @@ export function reviewCartItem(item: CartItem, value: unknown): CurrentCartRevie
   );
   const fingerprint = JSON.stringify([
     product.id,
+    product.checkoutMode ?? 'legacy',
     variant.id,
     cents(product.price + variant.priceAdjustment),
     cents(product.deliveryFee ?? 0),
@@ -86,6 +87,7 @@ export function reviewCartItem(item: CartItem, value: unknown): CurrentCartRevie
     maximum,
   ]);
   const changed =
+    (product.checkoutMode ?? 'legacy') !== (item.product.checkoutMode ?? 'legacy') ||
     cents(product.price + variant.priceAdjustment) !==
       cents(item.product.price + savedVariant.priceAdjustment) ||
     cents(product.deliveryFee ?? 0) !== cents(item.product.deliveryFee ?? 0) ||

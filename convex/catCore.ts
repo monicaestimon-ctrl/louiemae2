@@ -1,3 +1,4 @@
+import { currentAshcroftInventory, availableAshcroftAfterCommitments } from './ordInventory';
 // Shared catalog helpers (spec S04, S10, S15): suppliers, holds and the single server-side
 // sellability gate every publish, cart, estimate, checkout, link and job path calls.
 import type { MutationCtx, QueryCtx } from './_generated/server';
@@ -106,6 +107,20 @@ export async function evaluate(ctx: Ctx, v: Doc<'catVariants'>, now = Date.now()
     result.stockObservedAt = stock.current ? stock.observedAt : undefined;
     result.holds = result.holds.filter(h => h !== 'STOCK_UNVERIFIED');
     if (!stock.current || stock.availability === 'unknown') result.holds.push('STOCK_UNVERIFIED');
+  }
+  if (supplier?.code === 'ashcroft') {
+    // Freight uses the independently approved per-selling-unit model, not invented cartons.
+    result.holds = result.holds.filter(h => h !== 'CARTON_MISSING' && h !== 'STOCK_UNVERIFIED');
+    try {
+      const stock = await currentAshcroftInventory(ctx, v, now, true);
+      const available = await availableAshcroftAfterCommitments(ctx, v, stock.availableUnits, now);
+      result.availability = v.availability === 'discontinued' ? 'discontinued' : available >= v.orderMinimumPacks ? 'in_stock' : 'out_of_stock';
+      result.stockObservedAt = stock.feed.observedAt;
+    } catch (error) {
+      if (!(error instanceof CommerceError)) throw error;
+      result.availability = 'unknown';
+      result.holds.push('STOCK_UNVERIFIED');
+    }
   }
   if (supplier?.code === 'zuo') {
     const constraint = await zuoStockConstraint(ctx, v._id, result.stockObservedAt, now);

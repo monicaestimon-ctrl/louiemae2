@@ -97,7 +97,17 @@ export async function ashcroftScenarios(ctx: Ctx, cv: Doc<'catVariants'>, option
   const inputsHash = stableStringify({ engine: ASHCROFT_ENGINE_VERSION, input: { ...input, wholesaleSellingUnit: `${input.wholesaleSellingUnit.n}/${input.wholesaleSellingUnit.d}` },
     cost: cost._id, listingRevision: listing.revision, category, retailMinor, tradeMinor, retailApproved, tradeApproved,
     policies: [freshness, delivery, margin, assumptions, trade].map(p => ({ id: p.id, version: p.version })), reserve });
+  const policies = [freshness, delivery, margin, assumptions, trade];
   return { ...minimums, minimumBaseTradeMinor, retailMinor, tradeMinor, retailApproved, tradeApproved,
+    basketBasis: { baseMinor: minimums.basePackMinor, processingBps: assumptions.value.processingBps,
+      returnsBps: assumptions.value.returnsBps, overheadBps: assumptions.value.overheadBps,
+      marginBps: margin.value.targetBps, commissionBps: reserve.bps,
+      freightMinor: rate.freight, deliveryMinor: rate.delivery },
+    validUntil: Math.min(cost.effectiveTo ?? Number.MAX_SAFE_INTEGER,
+      cost.verifiedAt! + freshness.value.costMapMaxDays * 86400000,
+      ...policies.map(p => p.effectiveTo ?? Number.MAX_SAFE_INTEGER), reserve.validUntil ?? Number.MAX_SAFE_INTEGER,
+      ...(retailApproved ? [retail.effectiveTo ?? Number.MAX_SAFE_INTEGER] : []),
+      ...(tradeApproved ? [tradePrice.effectiveTo ?? Number.MAX_SAFE_INTEGER] : [])),
     belowMinimum: retailMinor < minimums.minimumRetailMinor,
     belowTradeMinimum: tradeMinor !== null && tradeMinor < minimumBaseTradeMinor,
     inputsHash, category, scenarios, engineVersion: ASHCROFT_ENGINE_VERSION,

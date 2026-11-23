@@ -1,3 +1,5 @@
+import { isLighting } from '../lib/catCategory';
+import { approvedAshcroftOffer } from './catAshcroftOffer';
 import { legacySupplierCostMinor } from '../lib/legacySupplierCost';
 import { publicQuantityRules, type OrderQuantityRules } from '../lib/orderQuantity';
 import type { QueryCtx } from './_generated/server';
@@ -14,20 +16,27 @@ export async function storefrontListing(ctx: QueryCtx, listing: Doc<'commerceLis
   const current = evidence ?? { feed: await latestFeed(ctx), now: Date.now() };
   const product = await ctx.db.get(listing.productId);
   const s = listing.snapshot;
+  const meta = listing.pricingMode === 'approved_v2' ? await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', listing.productId)).unique() : null;
   const rate = retailDelivery(s.category, s.name);
   const variants = await Promise.all(s.variants.map(async v => {
     const quantityRules = publicQuantityRules(v.minimum, v.increment);
+    let approved = false;
+    if (listing.pricingMode === 'approved_v2') {
+      try { const offer = await approvedAshcroftOffer(ctx, listing, v.id, 'retail', current.now); approved = offer.capacity >= v.minimum; }
+      catch (error) { if (!isCommerceError(error)) throw error; }
+    }
     return {
       id: v.id, name: v.name, image: v.image, quantityRules,
-      price: rate ? launchPrice(v.price, rate.freight, rate.delivery) / 100 : v.price / 100,
-      inStock: !!quantityRules && !!rate && !!product &&
+      price: listing.pricingMode === 'approved_v2' ? v.price / 100 : rate ? launchPrice(v.price, rate.freight, rate.delivery) / 100 : v.price / 100,
+      inStock: listing.pricingMode === 'approved_v2' ? approved : !!quantityRules && !!rate && !!product &&
         legacySupplierCostMinor(listing.fulfillment?.find(f => f.id === v.id)?.cost, product.draft.currency, product.draft.usdRate) !== null && ashcroftAvailableFromFeed(current.feed, listing.fulfillment?.find(f => f.id === v.id)?.sku, s.description, v.minimum, current.now),
     };
   }));
   const price = Math.min(...variants.map(v => v.price));
   return { _id: listing.productId, name: s.name, description: [retailDescription(s.description), s.facts].filter(Boolean).join('\n\n'),
-    category: s.category, collection: s.category === 'Lighting' ? 'decor' : 'furniture',
+    category: s.category, collection: meta?.commissionCategory === 'decor' || isLighting(`${s.category} ${s.name}`) ? 'decor' : 'furniture',
     images: s.images, imageMedia: s.imageMedia, price, deliveryFee: (rate?.delivery ?? 0) / 100,
+    checkoutMode: listing.pricingMode === 'approved_v2' ? 'v2' as const : 'legacy' as const,
     fulfillmentProvider: 'ashcroft' as const, inStock: variants.some(v => v.inStock),
     variants: variants.map(({ price: variantPrice, ...v }) => ({ ...v, priceAdjustment: variantPrice - price })),
     variantCount: variants.length, isNew: false,
@@ -44,7 +53,7 @@ function zuoStorefrontListing(listing: Doc<'commerceListings'>, collection: 'fur
   const variants = s.variants.map(v => ({ id: v.id, name: v.name, image: v.image, price: v.price / 100, quantityRules: quantityRules.get(v.id), inStock: true }));
   const price = Math.min(...variants.map(v => v.price));
   return { _id: listing.productId, name: s.name, description: s.description, category: s.category, collection,
-    images: imageMedia ? imageMedia.map(m => m.url) : s.images, imageMedia, price, deliveryFee: 0, fulfillmentProvider: 'zuo' as const, inStock: true,
+    images: imageMedia ? imageMedia.map(m => m.url) : s.images, imageMedia, price, deliveryFee: 0, checkoutMode: 'v2' as const, fulfillmentProvider: 'zuo' as const, inStock: true,
     variants: variants.map(({ price: variantPrice, ...v }) => ({ ...v, priceAdjustment: variantPrice - price })),
     variantCount: variants.length, isNew: false,
   };

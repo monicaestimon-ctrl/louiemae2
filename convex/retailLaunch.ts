@@ -1,8 +1,9 @@
+import { approvedAshcroftOffer } from './catAshcroftOffer';
 import { legacySupplierCostMinor } from '../lib/legacySupplierCost';
 import { CommerceError, isCommerceError } from '../lib/errors';
 import { ashcroftQuantity } from '../lib/ashcroftInventory';
 import { latestFeed } from './ashcroftInventory';
-import { currentInventory } from './ordInventory';
+import { currentInventory, availableAfterCommitments } from './ordInventory';
 import { MAX_ORDER_QUANTITY, publicQuantityRules } from '../lib/orderQuantity';
 import { ashcroftAvailable } from './ashcroftInventory';
 import { v } from 'convex/values';
@@ -44,6 +45,13 @@ export const catalog = query({
       page.page.map(async (listing) => {
         const product = await ctx.db.get(listing.productId);
         if (!product || product.provider !== 'ashcroft') return null;
+        if (listing.pricingMode === 'approved_v2') {
+          const detail = await storefrontListing(ctx, listing);
+          return { id: product._id, ...listing.snapshot, description: detail.description,
+            checkoutMode: 'v2' as const, deliveryFee: detail.deliveryFee,
+            variants: listing.snapshot.variants.map(option => ({ ...option,
+              purchasable: detail.variants.some(v => v.id === option.id && v.inStock) })) };
+        }
         const rate = retailDelivery(listing.snapshot.category, listing.snapshot.name);
         return {
           id: product._id,
@@ -82,26 +90,32 @@ export const cartReview = query({
     if (!detail) return null;
     const option = detail.variants.find(v => v.id === args.variantId);
     let maximum = 0;
+    let expiresAt = evidence?.feed?.validUntil ?? null;
     if (option?.inStock) {
       if (detail.fulfillmentProvider === 'ashcroft') {
         const listing = await ctx.db.query('commerceListings')
           .withIndex('by_product_channel', q => q.eq('productId', id).eq('channel', 'retail')).unique();
-        const sku = listing?.fulfillment?.find(v => v.id === args.variantId)?.sku;
-        const available = ashcroftQuantity(evidence?.feed ?? null, sku, now);
-        maximum = available === null ? 0 : Math.min(20, available);
+        if (listing?.pricingMode === 'approved_v2') {
+          try { const offer = await approvedAshcroftOffer(ctx, listing, args.variantId, 'retail', now); maximum = Math.min(20, offer.capacity); expiresAt = Math.min(offer.stock.feed.validUntil, offer.economics.validUntil); }
+          catch (error) { if (!isCommerceError(error)) throw error; }
+        } else {
+          const sku = listing?.fulfillment?.find(v => v.id === args.variantId)?.sku;
+          const available = ashcroftQuantity(evidence?.feed ?? null, sku, now);
+          maximum = available === null ? 0 : Math.min(20, available);
+        }
       } else {
         const variantId = ctx.db.normalizeId('catVariants', args.variantId);
         const variant = variantId ? await ctx.db.get(variantId) : null;
         if (variant?.productId === id) {
           try {
             const { view } = await currentInventory(ctx, variant, Date.now());
-            maximum = view.automatic && view.availablePacks !== null ? Math.min(MAX_ORDER_QUANTITY, view.availablePacks) : 0;
+            maximum = view.automatic && view.availablePacks !== null ? Math.min(MAX_ORDER_QUANTITY, await availableAfterCommitments(ctx, variant, view.availablePacks, now)) : 0;
           } catch (error) { if (!isCommerceError(error)) throw error; }
         }
       }
     }
     // Counts are in the existing selling basis. Supplier identity, costs and warehouse evidence stay private.
-    return { product: detail, variantId: args.variantId, quantity: args.quantity, maximum, expiresAt: evidence?.feed?.validUntil ?? null };
+    return { product: detail, variantId: args.variantId, quantity: args.quantity, maximum, expiresAt };
   },
 });
 
@@ -137,6 +151,7 @@ export const createSnapshot = internalMutation({
         )
         .unique();
       if (!listing?.published) throw new Error('This item is no longer available.');
+      if (listing.pricingMode === 'approved_v2') throw new CommerceError('PRICE_CHANGED', 'This offer requires the current checkout; refresh your cart.');
       const option = listing.snapshot.variants.find((x) => x.id === item.variantId);
       const supplier = listing.fulfillment?.find((x) => x.id === item.variantId);
       const rate = retailDelivery(listing.snapshot.category, listing.snapshot.name);

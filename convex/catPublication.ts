@@ -1,3 +1,6 @@
+import { currentAshcroftInventory } from './ordInventory';
+import { retailDelivery } from '../lib/retailLaunch';
+import { isLighting } from '../lib/catCategory';
 // Publication state machine and server gates (spec S15, v2 §6, §22, §25). One server-owned path
 // from imported draft to published for v2 (Zuo) products. Publishing takes explicit product ids
 // (never "all drafts"), publishes only variants that pass every gate, commits both channels
@@ -32,10 +35,73 @@ async function variantsOf(ctx: Ctx, productId: Id<'commerceProducts'>) {
   return ctx.db.query('catVariants').withIndex('by_product', (q) => q.eq('productId', productId)).collect();
 }
 
+function includedProduct(product: Doc<'commerceProducts'> | null) {
+  return product?.provider === 'ashcroft' || (product?.provider === 'zuo' && !!product.zuoStaging && !product.zuoStaging.excluded);
+}
+async function publicationIdentity(ctx: Ctx, product: Doc<'commerceProducts'>, cv: Doc<'catVariants'>) {
+  const supplier = await ctx.db.get(cv.supplierId);
+  if (cv.productId !== product._id || supplier?.code !== product.provider || cv.availability === 'discontinued')
+    throw new CommerceError('INVALID_INPUT', 'Variant must belong to this supplier and product');
+  if (product.provider === 'ashcroft') {
+    const retail = await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', product._id).eq('channel', 'retail')).unique();
+    const options = retail?.snapshot.variants.filter(v => v.id === cv.legacyVariantId) ?? [];
+    const routes = retail?.fulfillment?.filter(v => v.id === cv.legacyVariantId) ?? [];
+    if (!cv.legacyVariantId || cv.optionKey !== cv.legacyVariantId || cv.packId !== '1' || cv.piecesPerPack !== 1
+      || options.length !== 1 || routes.length !== 1 || routes[0].sku !== cv.supplierSku
+      || options[0].minimum !== cv.orderMinimumPacks || options[0].increment !== cv.orderIncrementPacks)
+      throw new CommerceError('INVALID_INPUT', 'Exact legacy Ashcroft selling-unit identity required');
+    return cv.legacyVariantId;
+  }
+  const draft = product.draft.variants.filter(v => v.id === cv._id);
+  if (cv.supplierSku !== product.zuoStaging?.sku || cv.piecesPerPack !== product.zuoStaging?.pack
+    || draft.length !== 1 || draft[0].sku !== cv.supplierSku) throw new CommerceError('INVALID_INPUT', 'Canonical product, SKU, pack and draft variant must match');
+  return String(cv._id);
+}
+
+export const ashcroftPreparationQueue = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, a) => {
+    await requireDeliveryRole(ctx, 'approver');
+    if (a.paginationOpts.numItems < 1 || a.paginationOpts.numItems > 25) throw new CommerceError('INVALID_INPUT');
+    const page = await ctx.db.query('commerceProducts').order('desc').paginate(a.paginationOpts);
+    const rows = await Promise.all(page.page.map(async product => {
+      if (product.provider !== 'ashcroft') return null;
+      const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', product._id)).unique();
+      return meta ? null : { productId: product._id, name: product.draft.name, revision: product.revision };
+    }));
+    return { ...page, page: rows.filter((r): r is NonNullable<typeof r> => r !== null) };
+  },
+});
+
+/** Prepare existing Ashcroft content for explicit review; does not copy approvals or publish. */
+export const prepareAshcroft = mutation({
+  args: { productId: v.id('commerceProducts'), expectedRevision: v.number(), reason: v.string() },
+  handler: async (ctx, a) => {
+    const actor = await requireDeliveryRole(ctx, 'approver');
+    const product = await ctx.db.get(a.productId);
+    if (product?.provider !== 'ashcroft' || product.revision !== a.expectedRevision || (a.reason.trim().length < 10 || a.reason.length > 1000))
+      throw new CommerceError('INVALID_INPUT', 'Review the current Ashcroft product and record a reason');
+    const existing = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', a.productId)).unique();
+    if (existing) return existing._id;
+    const variants = await variantsOf(ctx, a.productId);
+    if (!variants.length || variants.length > 50) throw new CommerceError('INVALID_INPUT', 'Prepare canonical identities first');
+    for (const cv of variants) await publicationIdentity(ctx, product, cv);
+    const now = Date.now();
+    const id = await ctx.db.insert('catProductMeta', { productId: product._id, supplierId: variants[0].supplierId,
+      supplierName: product.draft.name, louieMaeName: product.draft.name, navCategory: product.draft.category,
+      commissionCategory: 'review_required', slug: String(product._id), slugHistory: [], holds: ['MANUAL'],
+      stage: 'imported_draft', createdAt: now, updatedAt: now });
+    await audit(ctx, { actor: actor.email, action: 'publication.ashcroft_prepared', entityTable: 'commerceProducts', entityId: product._id,
+      after: { metaId: id }, reason: a.reason.trim() });
+    return id;
+  },
+});
+
 /** What blocks each transition for a product (empty list = gate passes). */
 export async function gates(ctx: Ctx, productId: Id<'commerceProducts'>) {
   const meta = await ctx.db.query('catProductMeta').withIndex('by_product', (q) => q.eq('productId', productId)).first();
   if (!meta) throw new CommerceError('INVALID_INPUT', 'Product has no catalog record');
+  const product = await ctx.db.get(productId);
   const variants = await variantsOf(ctx, productId);
   const live = variants.filter((cv) => cv.availability !== 'discontinued' && !cv.holds.includes('MANUAL'));
   const out: Record<string, string[]> = { evidence_review: [], economics_review: [], content_review: [], ready: [], published: [] };
@@ -45,7 +111,12 @@ export async function gates(ctx: Ctx, productId: Id<'commerceProducts'>) {
     const cartons = await ctx.db.query('catCartons').withIndex('by_variant', (q) => q.eq('variantId', cv._id)).collect();
     const tag = `${cv.supplierSku}/${cv.packId}`;
     if (!cost || cost.wholesaleMinor === null) out.evidence_review.push(`${tag}: wholesale cost missing`);
-    if (!cartons.length) out.evidence_review.push(`${tag}: carton data missing`);
+    if (product?.provider === 'ashcroft') {
+      try { await publicationIdentity(ctx, product, cv); await currentAshcroftInventory(ctx, cv, Date.now(), true); }
+      catch { out.evidence_review.push(`${tag}: current Ashcroft identity or feed missing`); }
+      if (!retailDelivery(meta.navCategory, meta.louieMaeName)) out.evidence_review.push(`${tag}: no supported Ashcroft delivery model`);
+      if (isLighting(`${meta.navCategory} ${meta.louieMaeName}`) && meta.commissionCategory !== 'decor') out.content_review.push('Lighting must be decor');
+    } else if (!cartons.length) out.evidence_review.push(`${tag}: carton data missing`);
     if (cost && cost.mapApplicability === 'unknown') out.economics_review.push(`${tag}: MAP applicability unresolved`);
     if (cost && !cost.verifiedAt) out.economics_review.push(`${tag}: cost not verified`);
     if (!cv.marginPolicyKey) out.economics_review.push(`${tag}: no margin policy assigned`);
@@ -94,8 +165,8 @@ export const reviewQueue = query({
     const page = await ctx.db.query('catProductMeta').order('desc').paginate(a.paginationOpts);
     const rows = await Promise.all(page.page.map(async meta => {
       const product = await ctx.db.get(meta.productId);
-      return product?.provider === 'zuo' ? { productId: meta.productId, name: meta.louieMaeName,
-        stage: meta.stage, holds: meta.holds, stockExcluded: stockOnlyExcluded(product), included: !!product.zuoStaging && !product.zuoStaging.excluded } : null;
+      return product && ['zuo', 'ashcroft'].includes(product.provider) ? { productId: meta.productId, name: meta.louieMaeName,
+        stage: meta.stage, holds: meta.holds, stockExcluded: stockOnlyExcluded(product), included: includedProduct(product) } : null;
     }));
     return { ...page, page: rows.filter((r): r is NonNullable<typeof r> => r !== null) };
   },
@@ -147,22 +218,18 @@ export const verifyCanonicalIdentity = mutation({
       throw new CommerceError('INVALID_INPUT', 'Choose 1–50 distinct variants');
     const product = await ctx.db.get(a.productId);
     const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', a.productId)).unique();
-    if (!product || product.provider !== 'zuo' || !product.zuoStaging || product.zuoStaging.excluded || !meta || meta.stage === 'archived')
+    if (!product || !includedProduct(product) || !meta || meta.stage === 'archived')
       throw new CommerceError('INVALID_INPUT', 'Included staged Zuo product required');
     const now = Date.now();
     for (const id of a.variantIds) {
       const cv = await ctx.db.get(id);
-      const supplier = cv ? await ctx.db.get(cv.supplierId) : null;
-      const draft = product.draft.variants.filter(v => v.id === id);
-      if (!cv || cv.productId !== product._id || supplier?.code !== 'zuo' || cv.availability === 'discontinued'
-        || cv.supplierSku !== product.zuoStaging.sku || cv.piecesPerPack !== product.zuoStaging.pack
-        || draft.length !== 1 || draft[0].sku !== cv.supplierSku)
-        throw new CommerceError('INVALID_INPUT', 'Canonical product, SKU, pack and draft variant must match');
-      const maps = await ctx.db.query('catRetailMappings').withIndex('by_holm_variant', q => q.eq('holmProductId', product._id).eq('holmVariantId', id).eq('status', 'active')).collect();
-      if (maps.length > 1 || maps.some(m => m.retailProductId !== product._id || m.retailVariantId !== id || m.effectiveFrom > now || (m.effectiveTo !== undefined && m.effectiveTo <= now)))
+      if (!cv) throw new CommerceError('INVALID_INPUT', 'Variant missing');
+      const publicId = await publicationIdentity(ctx, product, cv);
+      const maps = await ctx.db.query('catRetailMappings').withIndex('by_holm_variant', q => q.eq('holmProductId', product._id).eq('holmVariantId', publicId).eq('status', 'active')).collect();
+      if (maps.length > 1 || maps.some(m => m.retailProductId !== product._id || m.retailVariantId !== publicId || m.effectiveFrom > now || (m.effectiveTo !== undefined && m.effectiveTo <= now)))
         throw new CommerceError('INVALID_INPUT', 'Existing retail mapping needs explicit conflict review');
-      if (!maps.length) await ctx.db.insert('catRetailMappings', { holmProductId: product._id, holmVariantId: id,
-        retailProductId: product._id, retailVariantId: id, status: 'active', createdAt: now,
+      if (!maps.length) await ctx.db.insert('catRetailMappings', { holmProductId: product._id, holmVariantId: publicId,
+        retailProductId: product._id, retailVariantId: publicId, status: 'active', createdAt: now,
         createdBy: actor.email, effectiveFrom: now, source: 'verified_staged_canonical_identity' });
       await resolveHold(ctx, id, 'MAPPING_MISSING', actor.email, 'Verified staged canonical product, supplier SKU, pack and draft variant identity');
     }
@@ -184,13 +251,12 @@ export const releaseManualReview = mutation({
       throw new CommerceError('INVALID_INPUT', 'Choose 1–50 distinct variants for this product');
     const product = await ctx.db.get(a.productId);
     const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', a.productId)).unique();
-    if (!product || product.provider !== 'zuo' || !product.zuoStaging || product.zuoStaging.excluded || !meta || meta.stage === 'archived')
+    if (!product || !includedProduct(product) || !meta || meta.stage === 'archived')
       throw new CommerceError('INVALID_INPUT', 'An included, non-archived staged Zuo product is required');
     for (const id of a.variantIds) {
       const cv = await ctx.db.get(id);
-      if (!cv || cv.productId !== product._id || cv.availability === 'discontinued'
-        || cv.supplierSku !== product.zuoStaging.sku || cv.piecesPerPack !== product.zuoStaging.pack)
-        throw new CommerceError('INVALID_INPUT', 'Every reviewed variant must belong to this product and remain available for review');
+      if (!cv) throw new CommerceError('INVALID_INPUT', 'Variant missing');
+      await publicationIdentity(ctx, product, cv);
       await resolveHold(ctx, id, 'MANUAL', actor.email, a.reason.trim());
     }
     await ctx.db.patch(meta._id, { holds: meta.holds.filter(h => h !== 'MANUAL'), updatedAt: Date.now() });
@@ -235,7 +301,7 @@ async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, m
   }));
   const imageMedia = prepared.flatMap(({ asset, url, renditions }) => url ? [{
     url, altText: asset.altText,
-    variantIds: variants.filter(cv => verifiedImageMatches(asset, cv)).map(cv => String(cv._id)),
+    variantIds: variants.filter(cv => verifiedImageMatches(asset, cv)).map(cv => product.provider === 'ashcroft' ? cv.legacyVariantId! : String(cv._id)),
     renditions,
   }] : []);
   const images = imageMedia.map(m => m.url);
@@ -248,12 +314,13 @@ async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, m
     const price = channel === 'retail' ? retail : trade;
     if (!isCurrentPrice(price, cv._id, channel === 'retail' ? 'retail' : 'trade')) throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: no current approved ${channel === 'retail' ? 'retail' : 'trade'} price`);
     const cost = cv.currentCostRevisionId ? await ctx.db.get(cv.currentCostRevisionId) : null;
-    const imageUrl = imageMedia.find(m => m.variantIds.includes(cv._id))?.url;
+    const publicId = product.provider === 'ashcroft' ? cv.legacyVariantId! : String(cv._id);
+    const imageUrl = imageMedia.find(m => m.variantIds.includes(publicId))?.url;
     if (!imageUrl) throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: public variant photograph is unavailable`);
     const packCost = supplierPackCostMinor(cost, cv.piecesPerPack);
     if (packCost === null) throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: supplier cost missing`);
     snapVariants.push({
-      id: cv._id as string,
+      id: publicId,
       name: cv.louieMaeVariantName,
       image: imageUrl,
       minimum: cv.orderMinimumPacks,
@@ -261,7 +328,7 @@ async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, m
       price: price.packPriceMinor,
     });
     fulfillment.push({
-      id: cv._id as string,
+      id: publicId,
       name: cv.louieMaeVariantName,
       sku: cv.supplierSku,
       cost: packCost / 100,
@@ -289,7 +356,7 @@ export const publish = mutation({
     const results = [];
     for (const productId of a.productIds) {
       const product = await ctx.db.get(productId);
-      if (!product || product.provider !== 'zuo') throw new CommerceError('INVALID_INPUT', 'Only catalog-reviewed (Zuo) products publish here.');
+      if (!product || !['zuo', 'ashcroft'].includes(product.provider) || product.zuoStaging?.excluded) throw new CommerceError('INVALID_INPUT', 'Included catalog-reviewed supplier product required.');
       const g = await gates(ctx, productId);
       if (g.meta.stage !== 'ready' && g.meta.stage !== 'published') throw new CommerceError('COST_REVIEW_REQUIRED', `${g.meta.louieMaeName} is at ${g.meta.stage}, not ready`);
       const readyBlockers = Object.values(g.gates).flat();
@@ -298,7 +365,8 @@ export const publish = mutation({
       const skipped: string[] = [];
       for (const cv of g.live) {
         try {
-          await assertSellable(ctx, cv._id, 'publish', now);
+          if (product.provider === 'ashcroft') await publicationIdentity(ctx, product, cv);
+          for (const channel of a.channels) await assertSellable(ctx, cv._id, 'publish', now, channel === 'house' ? 'trade' : 'retail');
           sellable.push(cv);
         } catch (e) {
           skipped.push(`${cv.supplierSku}: ${commerceErrorData(e)?.detail ?? 'blocked'}`);
@@ -308,13 +376,16 @@ export const publish = mutation({
       for (const channel of a.channels) {
         const { snapshot, fulfillment } = await snapshotFor(ctx, product, g.meta, channel, sellable);
         const old = await ctx.db.query('commerceListings').withIndex('by_product_channel', (q) => q.eq('productId', productId).eq('channel', channel)).unique();
-        const data = { productId, channel, published: true, revision: product.revision, snapshot, fulfillment, updatedAt: now };
+        const data = { productId, channel, pricingMode: 'approved_v2' as const, published: true, revision: product.revision, snapshot, fulfillment, updatedAt: now };
         const listingId = old ? (await ctx.db.patch(old._id, data), old._id) : await ctx.db.insert('commerceListings', data);
         const state = await ctx.db.query('catListingState').withIndex('by_listing', (q) => q.eq('listingId', listingId)).first();
-        const st = { stage: 'published' as const, holds: [], publishedRevision: product.revision, publishedAt: now, ...(old?.published ? { previousSnapshot: { snapshot: old.snapshot, fulfillment: old.fulfillment, revision: old.revision } } : {}), updatedAt: now };
+        const st = { stage: 'published' as const, holds: [], publishedRevision: product.revision, publishedAt: now, ...(old?.published ? { previousSnapshot: { snapshot: old.snapshot, fulfillment: old.fulfillment, revision: old.revision, pricingMode: old.pricingMode } } : {}), updatedAt: now };
         if (state) await ctx.db.patch(state._id, st);
         else await ctx.db.insert('catListingState', { listingId, ...st });
       }
+      // Verify the final content/rate identity too; any mismatch rolls back both channel writes.
+      if (product.provider === 'ashcroft') for (const cv of sellable) for (const channel of a.channels)
+        await assertSellable(ctx, cv._id, 'publish', now, channel === 'house' ? 'trade' : 'retail');
       await ctx.db.patch(g.meta._id, { stage: 'published', updatedAt: now });
       await audit(ctx, { actor: admin.email, action: `publication.publish:${a.channels.join(',')}`, entityTable: 'commerceProducts', entityId: productId, after: { variants: sellable.map((x) => x.supplierSku), skipped } });
       results.push({ productId, variants: sellable.length, skipped });
@@ -354,9 +425,9 @@ export const rollback = mutation({
     const listing = await ctx.db.query('commerceListings').withIndex('by_product_channel', (q) => q.eq('productId', a.productId).eq('channel', a.channel)).unique();
     if (!listing) throw new CommerceError('INVALID_INPUT', 'No listing');
     const state = await ctx.db.query('catListingState').withIndex('by_listing', (q) => q.eq('listingId', listing._id)).first();
-    const prev = state?.previousSnapshot as { snapshot: Doc<'commerceListings'>['snapshot']; fulfillment?: Doc<'commerceListings'>['fulfillment']; revision: number } | undefined;
+    const prev = state?.previousSnapshot as { snapshot: Doc<'commerceListings'>['snapshot']; fulfillment?: Doc<'commerceListings'>['fulfillment']; revision: number; pricingMode?: 'approved_v2' } | undefined;
     const now = Date.now();
-    if (prev) await ctx.db.patch(listing._id, { snapshot: prev.snapshot, ...(prev.fulfillment ? { fulfillment: prev.fulfillment } : {}), revision: prev.revision, updatedAt: now });
+    if (prev) await ctx.db.patch(listing._id, { snapshot: prev.snapshot, fulfillment: prev.fulfillment, pricingMode: prev.pricingMode, revision: prev.revision, updatedAt: now });
     else await ctx.db.patch(listing._id, { published: false, updatedAt: now });
     if (state) await ctx.db.patch(state._id, { previousSnapshot: undefined, reason: `rollback: ${a.reason}`, updatedAt: now, ...(prev ? {} : { stage: 'ready' as const, unpublishedAt: now }) });
     await audit(ctx, { actor: admin.email, action: 'publication.rollback', entityTable: 'commerceListings', entityId: listing._id, reason: a.reason, after: prev ? 'restored previous revision' : 'unpublished' });

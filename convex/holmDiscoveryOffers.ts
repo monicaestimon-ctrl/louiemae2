@@ -21,7 +21,7 @@ export type DiscoveryOffer = {
 };
 
 export const listingPriceInputs = (listing: Doc<'commerceListings'> | null) => listing && ({
-  productId: listing.productId, channel: listing.channel, published: listing.published,
+  productId: listing.productId, channel: listing.channel, published: listing.published, pricingMode: listing.pricingMode,
   name: listing.snapshot.name, category: listing.snapshot.category,
   variants: listing.snapshot.variants.map(v => ({ id: v.id, price: v.price })),
   fulfillment: listing.fulfillment?.map(v => ({ id: v.id, sku: v.sku, cost: v.cost, retail: v.retail, commercial: v.commercial })),
@@ -41,7 +41,7 @@ export async function discoveryOffers(ctx: QueryCtx | MutationCtx, listing: Doc<
   if (!listing.published || listing.channel !== 'house') return [];
   const product = await ctx.db.get(listing.productId);
   if (!product) return [];
-  if (product.provider !== 'zuo') {
+  if (product.provider !== 'zuo' && listing.pricingMode !== 'approved_v2') {
     const priced = await pricedListing(ctx, listing, true);
     return (priced?.variants ?? []).filter(option => Number.isSafeInteger(option.retail) && option.retail > 0
       && Number.isSafeInteger(option.trade) && option.trade > 0).map(option => ({
@@ -53,12 +53,14 @@ export async function discoveryOffers(ctx: QueryCtx | MutationCtx, listing: Doc<
   const offers: DiscoveryOffer[] = [];
   for (const option of listing.snapshot.variants) {
     const id = ctx.db.normalizeId('catVariants', option.id);
-    const variant = id ? await ctx.db.get(id) : null;
+    const candidates = product.provider === 'ashcroft' ? await ctx.db.query('catVariants').withIndex('by_product', q => q.eq('productId', product._id)).take(201) : [];
+    const matches = candidates.filter(cv => cv.legacyVariantId === option.id);
+    const variant = product.provider === 'ashcroft' ? (candidates.length <= 200 && matches.length === 1 ? matches[0] : null) : id ? await ctx.db.get(id) : null;
     if (!variant || variant.productId !== product._id) continue;
     const trade = approvedDiscoveryPrice(variant.tradePriceRevisionId ? await ctx.db.get(variant.tradePriceRevisionId) : null, variant._id, 'trade');
     if (!trade || trade.minor !== option.price) continue;
     const retail = approvedDiscoveryPrice(variant.retailPriceRevisionId ? await ctx.db.get(variant.retailPriceRevisionId) : null, variant._id, 'retail');
-    offers.push({ listingId: listing._id, productId: product._id, variantId: variant._id,
+    offers.push({ listingId: listing._id, productId: product._id, variantId: option.id,
       retailMinor: retail?.minor ?? null, tradeMinor: trade.minor,
       retailFrom: retail?.from ?? null, retailTo: retail?.to ?? null, tradeFrom: trade.from, tradeTo: trade.to,
       ...(retail ? { retailRevisionId: retail.revisionId } : {}), tradeRevisionId: trade.revisionId });

@@ -52,6 +52,7 @@ it('distinguishes pending and transport failure from confirmed unavailability', 
 it('requires explicit review of price, delivery or selling rule changes', () => {
   for (const current of [
     { ...product, price: 101 },
+    { ...product, checkoutMode: 'v2' },
     { ...product, deliveryFee: 30 },
     { ...product, variants: [{ ...variant, quantityRules: { minimum: 1, increment: 1 } }] },
   ]) {

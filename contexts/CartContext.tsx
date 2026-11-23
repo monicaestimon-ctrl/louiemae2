@@ -178,7 +178,8 @@ export const CartProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         const saved = item.selectedVariant ?? item.product.variants?.[0];
         if (
           saved?.id !== variant.id ||
-          item.product.fulfillmentProvider !== product.fulfillmentProvider
+          item.product.fulfillmentProvider !== product.fulfillmentProvider ||
+          item.product.checkoutMode !== product.checkoutMode
         )
           return item;
         // A legacy line without an explicit selection retains its original option and cart key.

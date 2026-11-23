@@ -465,6 +465,7 @@ async function priceSelection(
       .query('commerceListings')
       .withIndex('by_product_channel', (q) => q.eq('productId', s.productId).eq('channel', 'house'))
       .unique();
+    if (listing?.pricingMode === 'approved_v2') throw new Error('Use the current project delivery and checkout flow for this approved offer.');
     const priced = listing ? await pricedListing(ctx, listing) : null;
     const variant = priced?.variants.find((x) => x.id === s.variantId);
     const route = listing?.fulfillment?.find((x) => x.id === s.variantId);
