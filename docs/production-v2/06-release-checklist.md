@@ -81,7 +81,7 @@ To roll back, turn the flag off. Paid orders, tracking and obligations keep work
 
 - Use the already-downloaded private Zuo package and dated evidence first. Ask for a missing source only when it cannot be verified from those files or authorized connected sources.
 - Resolve only outstanding decisions in Step 1; do not repeat approvals already provided.
-- Restore Zoho and authenticated production-browser access when available; these acceptance checks are deferred, not completed.
+- Normal authenticated HOLM sign-in, Trade Hub and House management access were verified November 23. Authenticated checkout and program lifecycle acceptance remain separate checks. Restore Zoho access when available; do not treat the browser sign-in result as supplier-email verification.
 - Authorize any Stripe test or live payment, transfer or payout check. The agent build makes none, and those scenarios are recorded as BLOCKED in the evidence log.
 - Production environment changes are within the standing rollout authorization once their readiness gates pass. Do not activate financial execution or unsupported checkout paths merely to remove a visible blocker.
 - Name an owner for each runbook (05 §4).
