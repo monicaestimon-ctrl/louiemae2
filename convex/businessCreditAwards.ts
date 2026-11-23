@@ -38,6 +38,8 @@ export async function awardQualification(ctx: Ctx, order: Doc<'ordOrders'>, mini
     const restored = refunded.reduce((n, r) => n + r.refund.creditRestored, 0);
     allocatedCash += refunded.reduce((n, r) => n + r.refund.cash, 0);
     if (merchandise > line.refundedMinor || merchandise + restocking > gross || restored > line.creditMinor) return review('Return allocation differs from order line');
+    // Original amounts still reconcile above, but cancelled merchandise cannot qualify.
+    if (line.status === 'cancelled') continue;
     if (merchandise === line.refundedMinor) {
       const kept = Math.max(0, basis - merchandise - restocking + restored);
       lower += kept; upper += kept;

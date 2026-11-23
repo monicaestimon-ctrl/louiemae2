@@ -334,6 +334,7 @@ export const cancelAllocations = mutation({
     const exceptions = [...c.exceptions, { at: Date.now(), kind: 'supplier_cancel', note: a.reason }];
     await ctx.db.patch(c._id, { exceptions, status: allocs.every((x) => x.status === 'cancelled') ? 'cancelled' : c.status, updatedAt: Date.now() });
     await rollUp(ctx, c.orderId);
+    await reconcileAwardsForOrder(ctx, c.orderId);
     const order = (await ctx.db.get(c.orderId))!;
     await notify(ctx, { dedupeKey: `cancel:${c._id}:${a.allocationIds.join(',')}`, audience: 'customer', template: 'line_cancelled', to: order.email, subject: `An update on your order ${order.number}`, text: `These items can't be supplied:\n${cancelledNames.join('\n')}\n\nWe'll contact you about a refund for the affected items; the rest of your order is unaffected. Contact Louie Mae support with order ${order.number} for help.` });
     await audit(ctx, { actor: admin.email, action: 'supplier_order.cancel_lines', entityTable: 'ordSupplierOrders', entityId: c._id, reason: a.reason });

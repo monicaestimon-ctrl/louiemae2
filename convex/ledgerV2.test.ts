@@ -399,6 +399,30 @@ describe('business referral credit v2 (S31, CRE01, CRE02)', () => {
     expect(await s.t.run(ctx => onOrderPaid(ctx, paid.orderId))).toBeNull();
   });
 
+  it.each([false, true])('reconciles partial cancellations with the parent still paid (cleared=%s)', async cleared => {
+    const s = await businessAward();
+    // Reduce the remaining line to $400 and reconcile original immutable totals in this fixture.
+    const ids = await s.t.run(async ctx => {
+      const order = (await ctx.db.get(s.order.orderId))!;
+      const lines = await ctx.db.query('ordOrderLines').withIndex('by_order', q => q.eq('orderId', order._id)).collect();
+      const cancel = lines.find(l => l.unitPackMinor === 100000)!;
+      const remaining = lines.find(l => l.unitPackMinor === 50000)!;
+      await ctx.db.patch(remaining._id, { unitPackMinor: 40000 });
+      await ctx.db.patch(order._id, { totals: { ...order.totals, merchandise: 140000, total: 145000 } });
+      const child = await ctx.db.insert('ordSupplierOrders', { orderId: order._id, supplierCode: 'zuo', service: 'curbside', route: 'manual_dealer_zuo', status: 'queued', submission: { mode: 'none' }, exceptions: [], createdAt: Date.now(), updatedAt: Date.now() });
+      const allocation = await ctx.db.insert('ordAllocations', { orderLineId: cancel._id, supplierOrderId: child, pieces: 1, packs: 1, status: 'open' });
+      await ctx.db.insert('ordAllocations', { orderLineId: remaining._id, supplierOrderId: child, pieces: 1, packs: 1, status: 'open' });
+      return { child, allocation };
+    });
+    if (cleared) await s.clear();
+    const args = { supplierOrderId: ids.child, allocationIds: [ids.allocation], reason: 'Supplier confirmed cancellation', requestKey: 'cancel-award-fixture' };
+    await s.admin.mutation(api.ordFulfillment.cancelAllocations, args);
+    await s.admin.mutation(api.ordFulfillment.cancelAllocations, args);
+    expect((await s.t.run(ctx => ctx.db.get(s.order.orderId)))?.status).toBe('paid');
+    expect(await s.account()).toMatchObject({ pendingAwardMinor: 0, availableMinor: 0 });
+    expect(await s.t.run(ctx => available(ctx, s.referrer))).toBe(0);
+  });
+
   it('uses original award terms and withholds records whose accepted terms or complete lines are missing', async () => {
     const s = await businessAward();
     await s.t.run(async ctx => {
