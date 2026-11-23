@@ -875,3 +875,8 @@ Explicit final-price publication now preserves legacy public IDs while routing q
 ### Finance workflow: reviewed SKU pricing and referral decisions
 
 The finance diagnostics selector now opens a dedicated pricing review alongside cost evidence. Approvers can assign eligible documented policies, save exact final retail/trade prices, enable only funded referrals and create visible four-tier product exceptions. Fingerprint-bound submissions reject stale evidence or terms; reactive forms freeze until refreshed. Prices remain distinct from published snapshots, and supplier-specific qualification is required for both Zuo and Ashcroft. Legacy Ashcroft base listings cannot generate new v2 referral links merely through a canonical price approval. See [review workflow and acceptance](../sku-pricing-approval.md). This does not approve missing production evidence or activate checkout/program flags.
+
+
+### Approved Ashcroft checkout lifecycle and calculator linkage
+
+Synthetic lifecycle verification now covers approved-price intents, selling-unit commitments, payment replay, frozen paid terms and mixed supplier children. The HOLM calculator accepts eligible legacy option IDs through the approved Ashcroft adapter, uses actual approved channel prices and the shared project tier, and keeps identical option IDs on different products independent. See [lifecycle acceptance and production limits](../ashcroft-approved-checkout.md). No production financial transaction, supplier transmission or evidence approval is implied.

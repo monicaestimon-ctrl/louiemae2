@@ -40,3 +40,17 @@ it('distinguishes loading, further pages and a genuinely exhausted empty catalog
   expect(screen.getByRole('status').textContent).toContain('No products are currently eligible');
   expect(screen.getByRole('button',{name:'Estimate project delivery'})).toBeDisabled();
 });
+
+it('keeps identical legacy option IDs on different products independent',()=>{
+  fixture.products=[{id:'bench',name:'Bench',variants:[{id:'default',name:'Oak',minimum:1,increment:1}]},{id:'chair',name:'Chair',variants:[{id:'default',name:'Oak',minimum:1,increment:1}]}];
+  render(<Calculator/>);
+  fireEvent.change(screen.getByRole('combobox'),{target:{value:'bench|default'}});
+  fireEvent.change(screen.getByRole('combobox'),{target:{value:'chair|default'}});
+  const inputs=screen.getAllByRole('spinbutton',{name:'Packs'});
+  expect(inputs).toHaveLength(2);
+  fireEvent.change(inputs[0],{target:{value:'3'}});
+  expect(inputs[0]).toHaveValue(3); expect(inputs[1]).toHaveValue(1);
+  fireEvent.click(screen.getAllByRole('button',{name:'Remove'})[0]);
+  expect(screen.getAllByRole('spinbutton',{name:'Packs'})).toHaveLength(1);
+  expect(screen.getByRole('spinbutton',{name:'Packs'})).toHaveValue(1);
+});

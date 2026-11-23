@@ -85,7 +85,7 @@ function ApprovedCalculator() {
           const [productId, variantId] = e.target.value.split('|');
           if (productId && variantId)
             setLines((x) =>
-              x.some((l) => l.variantId === variantId)
+              x.some((l) => l.productId === productId && l.variantId === variantId)
                 ? x
                 : [
                     ...x,
@@ -116,9 +116,9 @@ function ApprovedCalculator() {
         </button>
       )}
       {lines.map((l) => (
-        <div key={l.variantId} className="flex gap-2">
+        <div key={`${l.productId}:${l.variantId}`} className="flex gap-2">
           <span>
-            {result?.lines.find((x) => x.variantId === l.variantId)?.name ?? 'Selected product'}
+            {result?.lines.find((x) => x.productId === l.productId && x.variantId === l.variantId)?.name ?? 'Selected product'}
           </span>
           <input
             type="number"
@@ -135,14 +135,14 @@ function ApprovedCalculator() {
             onChange={(e) =>
               setLines((xs) =>
                 xs.map((x) =>
-                  x.variantId === l.variantId ? { ...x, packs: Number(e.target.value) } : x
+                  x.productId === l.productId && x.variantId === l.variantId ? { ...x, packs: Number(e.target.value) } : x
                 )
               )
             }
           />
           <button
             type="button"
-            onClick={() => setLines((xs) => xs.filter((x) => x.variantId !== l.variantId))}
+            onClick={() => setLines((xs) => xs.filter((x) => x.productId !== l.productId || x.variantId !== l.variantId))}
           >
             Remove
           </button>
