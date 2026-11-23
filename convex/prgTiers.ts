@@ -9,22 +9,30 @@ import type { Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { requireUser } from './holmAccess';
-import { acquireLock, audit, releaseLock } from './sysCore';
+import { acquireLock, audit, openReview, releaseLock } from './sysCore';
 import { activeConfig, maybeConfig } from './sysConfig';
 import { beneficiaryOf } from './prgCore';
-import { inLocalWindow, nextTier, quarterOf, tierFor, tierProgress, tierWindow } from '../lib/tiers';
+import { tierDateDue, nextTier, quarterOf, tierFor, tierProgress, tierWindow } from '../lib/tiers';
 import type { CommissionSchedule, TierPolicy } from '../lib/config';
-import { CommerceError } from '../lib/errors';
+import { CommerceError, isCommerceError } from '../lib/errors';
 
 /** Qualifying eligible merchandise in the window: paid retail referrals, net of refunds, excluding void and held. */
+const HISTORY_LIMIT = 10000;
+const LEASE_MS = 10 * 60_000;
+const validMoney = (value: number) => Number.isSafeInteger(value) && value >= 0;
+
 export async function qualifyingMinor(ctx: MutationCtx, beneficiaryId: Id<'prgBeneficiaries'>, start: number, end: number) {
-  const rows = await ctx.db.query('ldgObligations').withIndex('by_beneficiary_created', (q) => q.eq('beneficiaryId', beneficiaryId)).take(10_000);
+  if (![start, end].every(Number.isSafeInteger) || start > end) throw new CommerceError('INVALID_INPUT', 'Invalid tier window');
+  // Query the payment window before bounding it. Imported records without paidAt use their recorded creation time.
+  const paid = await ctx.db.query('ldgObligations').withIndex('by_beneficiary_paid_created', q => q.eq('beneficiaryId', beneficiaryId).gte('paidAt', start).lte('paidAt', end)).take(HISTORY_LIMIT + 1);
+  const historical = await ctx.db.query('ldgObligations').withIndex('by_beneficiary_paid_created', q => q.eq('beneficiaryId', beneficiaryId).eq('paidAt', undefined).gte('createdAt', start).lte('createdAt', end)).take(HISTORY_LIMIT + 1);
+  if (paid.length + historical.length > HISTORY_LIMIT) throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED', 'Complete tier evidence exceeds the reviewed transaction limit');
   let total = 0;
-  for (const o of rows) {
+  for (const o of [...paid, ...historical]) {
     if (o.source === 'adjustment' || o.source === 'offset' || o.state === 'void' || o.state === 'held') continue;
-    const at = o.paidAt ?? o.createdAt;
-    if (at < start || at > end) continue; // up to and including the computation instant
-    total += Math.max(0, o.basisMinor - o.refundedBasisMinor);
+    if (!validMoney(o.basisMinor) || !validMoney(o.refundedBasisMinor) || o.refundedBasisMinor > o.basisMinor) throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED', 'Invalid qualifying merchandise or refund evidence');
+    total += o.basisMinor - o.refundedBasisMinor;
+    if (!validMoney(total)) throw new CommerceError('PAYMENT_RECONCILIATION_REQUIRED', 'Tier total exceeds safe money arithmetic');
   }
   return total;
 }
@@ -38,10 +46,23 @@ export async function recompute(ctx: MutationCtx, beneficiaryId: Id<'prgBenefici
   try {
     const b = await ctx.db.get(beneficiaryId);
     if (!b) return null;
-    const { start, end } = tierWindow(now, policy.value);
-    const q = await qualifyingMinor(ctx, beneficiaryId, start, end);
-    const earned = tierFor(q, sched);
     const last = await ctx.db.query('prgTierSnapshots').withIndex('by_beneficiary_computed', (x) => x.eq('beneficiaryId', beneficiaryId)).order('desc').first();
+    if (last && (last.computedAt > now || last.watermark === watermark || (reason === 'daily' && last.computedAt === now))) {
+      const pendingReview = await ctx.db.query('sysReviewItems').withIndex('by_entity', x => x.eq('entityTable', 'prgBeneficiaries').eq('entityId', b._id)).filter(x => x.and(x.eq(x.field('kind'), 'tier_evidence_review'), x.eq(x.field('status'), 'open'))).first();
+      return { tier: b.tierKey, qualifyingMinor: last.qualifyingMinor, stale: true, reviewRequired: !!pendingReview };
+    }
+    const { start, end } = tierWindow(now, policy.value);
+    let q: number;
+    try { q = await qualifyingMinor(ctx, beneficiaryId, start, end); }
+    catch (error) {
+      if (!isCommerceError(error, 'PAYMENT_RECONCILIATION_REQUIRED')) throw error;
+      await openReview(ctx, 'tier_evidence_review', 'prgBeneficiaries', b._id, 'Complete and valid qualifying sales evidence is required; the previous tier is retained.');
+      return { tier: b.tierKey, qualifyingMinor: last?.qualifyingMinor ?? null, reviewRequired: true };
+    }
+    const review = await ctx.db.query('sysReviewItems').withIndex('by_entity', x => x.eq('entityTable', 'prgBeneficiaries').eq('entityId', b._id))
+      .filter(x => x.and(x.eq(x.field('kind'), 'tier_evidence_review'), x.eq(x.field('status'), 'open'))).first();
+    if (review) await ctx.db.patch(review._id, { status: 'resolved', resolution: 'Complete tier evidence reconciled', resolvedBy: 'system:tiers', resolvedAt: Date.now() });
+    const earned = tierFor(q, sched);
     // A downgrade is considered once per calendar quarter (on the first recompute of the quarter).
     const quarterChanged = !last || quarterOf(last.computedAt) !== quarterOf(now);
     const tier = nextTier(b.tierKey, earned, policy.value.downgrade, quarterChanged);
@@ -54,7 +75,13 @@ export async function recompute(ctx: MutationCtx, beneficiaryId: Id<'prgBenefici
         if (p) await ctx.db.patch(p._id, { partnerTier: tier, sales12Cents: q });
         await ctx.db.insert('holmTierChanges', { partnerId: b.legacyUserId, tier, from: b.tierKey, at: now, reason: `v2 ${reason}: $${Math.round(q / 100).toLocaleString('en-US')} qualifying` });
       }
-    } else await ctx.db.patch(b._id, { tierSnapshotId: id });
+    } else {
+      await ctx.db.patch(b._id, { tierSnapshotId: id });
+      if (b.legacyUserId) {
+        const p = await ctx.db.query('holmProfiles').withIndex('by_user', x => x.eq('userId', b.legacyUserId!)).unique();
+        if (p) await ctx.db.patch(p._id, { sales12Cents: q });
+      }
+    }
     return { tier, qualifyingMinor: q };
   } finally {
     await releaseLock(ctx, lock, watermark);
@@ -67,30 +94,62 @@ export const onEvent = internalMutation({
   handler: (ctx, a) => recompute(ctx, a.beneficiaryId, 'event', a.watermark),
 });
 
-/** Hourly: once per local day at the policy time (00:15 America/Chicago), recompute everyone in pages. */
+/** Hourly watchdog: resume an expired work lease before starting today's due run. */
 export const dailyTick = internalMutation({
   args: { now: v.optional(v.number()) },
   handler: async (ctx, a) => {
     const now = a.now ?? Date.now();
     const policy = await maybeConfig<TierPolicy>(ctx, 'tierPolicy', 'tier-policy');
     if (!policy) return { skipped: 'policy not approved' };
-    const localDate = inLocalWindow(now, policy.value.tz, policy.value.dailyLocal);
-    if (!localDate) return { skipped: 'outside window' };
-    const done = await ctx.db.query('prgTierSnapshots').withIndex('by_reason_date', (q) => q.eq('reason', 'daily').eq('localDate', localDate)).first();
-    const started = await ctx.db.query('sysLocks').withIndex('by_name', (q) => q.eq('name', `tier-daily:${localDate}`)).first();
-    if (done || started) return { skipped: 'already ran' };
-    await ctx.db.insert('sysLocks', { name: `tier-daily:${localDate}`, holder: 'cron', expiresAt: now + 86_400_000 });
-    await ctx.scheduler.runAfter(0, internal.prgTiers.dailyPage, { cursor: null, now, localDate });
+    const schedule = await maybeConfig<CommissionSchedule>(ctx, 'commissionSchedule', 'commission-schedule');
+    if (!schedule) return { skipped: 'schedule not approved' };
+    const expired = await ctx.db.query('prgTierRuns').withIndex('by_status_lease', q => q.eq('status', 'running').lte('leaseUntil', Date.now())).first();
+    if (expired) {
+      const generation = expired.generation + 1;
+      await ctx.db.patch(expired._id, { generation, leaseUntil: Date.now() + LEASE_MS, updatedAt: Date.now() });
+      await ctx.scheduler.runAfter(0, internal.prgTiers.dailyPage, { runId: expired._id, generation, expectedCursor: expired.cursor });
+      return { resumed: expired.localDate };
+    }
+    const localDate = tierDateDue(now, policy.value.tz, policy.value.dailyLocal);
+    if (!localDate) return { skipped: 'before scheduled time' };
+    const prior = await ctx.db.query('prgTierRuns').withIndex('by_date', q => q.eq('localDate', localDate)).unique();
+    if (prior) return { skipped: prior.status === 'running' ? 'in progress' : 'finished', status: prior.status };
+    const id = await ctx.db.insert('prgTierRuns', { localDate, tz: policy.value.tz, computedAt: now, policyId: policy.id, scheduleId: schedule.id,
+      status: 'running', cursor: null, generation: 1, leaseUntil: Date.now() + LEASE_MS, processed: 0, reviewCount: 0, startedAt: Date.now(), updatedAt: Date.now() });
+    await ctx.scheduler.runAfter(0, internal.prgTiers.dailyPage, { runId: id, generation: 1, expectedCursor: null });
     return { started: localDate };
   },
 });
 
+/** One beneficiary per transaction; cursor and continuation commit together. */
 export const dailyPage = internalMutation({
-  args: { cursor: v.union(v.string(), v.null()), now: v.number(), localDate: v.string() },
+  args: {
+    runId: v.optional(v.id('prgTierRuns')), generation: v.optional(v.number()), expectedCursor: v.optional(v.union(v.string(), v.null())),
+    // A queued pre-upgrade continuation cannot establish completion. The watchdog restarts it safely.
+    cursor: v.optional(v.union(v.string(), v.null())), now: v.optional(v.number()), localDate: v.optional(v.string()),
+  },
   handler: async (ctx, a) => {
-    const page = await ctx.db.query('prgBeneficiaries').withIndex('by_status', (q) => q.eq('status', 'active')).paginate({ cursor: a.cursor, numItems: 25 });
-    for (const b of page.page) await recompute(ctx, b._id, 'daily', `daily:${a.localDate}`, a.now, a.localDate);
-    if (!page.isDone) await ctx.scheduler.runAfter(0, internal.prgTiers.dailyPage, { cursor: page.continueCursor, now: a.now, localDate: a.localDate });
+    if (!a.runId) return { skipped: 'legacy continuation' };
+    const run = await ctx.db.get(a.runId);
+    if (!run || run.status !== 'running' || run.generation !== a.generation || run.cursor !== a.expectedCursor) return { skipped: 'stale continuation' };
+    const policy = await maybeConfig<TierPolicy>(ctx, 'tierPolicy', 'tier-policy');
+    const schedule = await maybeConfig<CommissionSchedule>(ctx, 'commissionSchedule', 'commission-schedule');
+    if (!policy || !schedule || policy.id !== run.policyId || schedule.id !== run.scheduleId) {
+      await ctx.db.patch(run._id, { status: 'review', failureReason: 'Approved configuration changed during the run', completedAt: Date.now(), updatedAt: Date.now() });
+      await openReview(ctx, 'tier_run_review', 'prgTierRuns', run._id, 'Tier configuration changed; this run is not complete.');
+      return { reviewRequired: true };
+    }
+    const page = await ctx.db.query('prgBeneficiaries').withIndex('by_status_created', q => q.eq('status', 'active').lte('createdAt', run.computedAt)).paginate({ cursor: run.cursor, numItems: 1 });
+    let reviewCount = run.reviewCount;
+    for (const b of page.page) {
+      const result = await recompute(ctx, b._id, 'daily', `daily:${run._id}:${run.generation}`, run.computedAt, run.localDate);
+      if (result?.reviewRequired) reviewCount++;
+    }
+    await ctx.db.patch(run._id, { cursor: page.continueCursor, processed: run.processed + page.page.length, reviewCount,
+      leaseUntil: Date.now() + LEASE_MS, updatedAt: Date.now(),
+      ...(page.isDone ? { status: reviewCount ? 'review' as const : 'complete' as const, completedAt: Date.now() } : {}) });
+    if (!page.isDone) await ctx.scheduler.runAfter(0, internal.prgTiers.dailyPage, { runId: run._id, generation: run.generation, expectedCursor: page.continueCursor });
+    return { complete: page.isDone && !reviewCount, reviewCount };
   },
 });
 
@@ -119,6 +178,7 @@ export const myTier = query({
     const sched = await maybeConfig<CommissionSchedule>(ctx, 'commissionSchedule', 'commission-schedule');
     const snap = b.tierSnapshotId ? await ctx.db.get(b.tierSnapshotId) : null;
     const q = snap?.qualifyingMinor ?? 0;
-    return { tier: b.tierKey, qualifyingMinor: q, ...(sched ? tierProgress(b.tierKey, q, sched.value) : { next: null, toNextMinor: 0 }) };
+    const review = await ctx.db.query('sysReviewItems').withIndex('by_entity', x => x.eq('entityTable', 'prgBeneficiaries').eq('entityId', b._id)).filter(x => x.and(x.eq(x.field('kind'), 'tier_evidence_review'), x.eq(x.field('status'), 'open'))).first();
+    return { reviewRequired: !!review, verifiedAt: snap?.computedAt ?? null, tier: b.tierKey, qualifyingMinor: q, ...(sched ? tierProgress(b.tierKey, q, sched.value) : { next: null, toNextMinor: 0 }) };
   },
 });

@@ -905,7 +905,8 @@ export const v2Tables = {
     .index('by_org', ['organizationId'])
     .index('by_refCode', ['refCode'])
     .index('by_legacy_user', ['legacyUserId'])
-    .index('by_status', ['status', 'updatedAt']),
+    .index('by_status', ['status', 'updatedAt'])
+    .index('by_status_created', ['status', 'createdAt']),
 
   prgOrganizations: defineTable({
     legalName: v.string(),
@@ -1033,6 +1034,16 @@ export const v2Tables = {
     createdAt: v.number(),
   }).index('by_intent', ['intentId']),
 
+  prgTierRuns: defineTable({
+    localDate: v.string(), tz: v.string(), computedAt: v.number(),
+    policyId: v.id('sysConfig'), scheduleId: v.id('sysConfig'),
+    status: v.union(v.literal('running'), v.literal('complete'), v.literal('review')),
+    cursor: v.union(v.string(), v.null()), generation: v.number(), leaseUntil: v.number(),
+    processed: v.number(), reviewCount: v.number(),
+    startedAt: v.number(), updatedAt: v.number(), completedAt: v.optional(v.number()),
+    failureReason: v.optional(v.string()),
+  }).index('by_date', ['localDate']).index('by_status_lease', ['status', 'leaseUntil']),
+
   prgTierSnapshots: defineTable({
     beneficiaryId: v.id('prgBeneficiaries'),
     tierKey,
@@ -1088,7 +1099,8 @@ export const v2Tables = {
     .index('by_order_line', ['orderLineId'])
     .index('by_order', ['orderId'])
     .index('by_legacy', ['legacyCommissionId'])
-    .index('by_beneficiary_created', ['beneficiaryId', 'createdAt']),
+    .index('by_beneficiary_created', ['beneficiaryId', 'createdAt'])
+    .index('by_beneficiary_paid_created', ['beneficiaryId', 'paidAt', 'createdAt']),
 
   ldgCommissionEvents: defineTable({
     eventKey: v.string(),

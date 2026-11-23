@@ -74,3 +74,16 @@ export const quarterOf = (at: number) => {
   const d = new Date(at);
   return d.getUTCFullYear() * 4 + Math.floor(d.getUTCMonth() / 3);
 };
+
+
+/** Previous calendar date in the policy timezone, including 23/25-hour DST days. */
+export function previousLocalDate(at: number, tz: string) {
+  const p = localParts(at, tz);
+  return new Date(Date.UTC(p.year, p.month - 1, p.day - 1)).toISOString().slice(0, 10);
+}
+
+/** Catch up throughout the local day after the configured time, not just its first hour. */
+export function tierDateDue(at: number, tz: string, hhmm: string) {
+  const p = localParts(at, tz), [hour, minute] = hhmm.split(':').map(Number);
+  return p.hour * 60 + p.minute >= hour * 60 + minute ? p.date : null;
+}

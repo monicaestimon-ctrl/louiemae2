@@ -131,3 +131,16 @@ Regression acceptance includes fully/partially refunded pending and cleared awar
 
 
 Partial supplier cancellations also reconcile awards immediately while other lines remain payable/shippable. Cancelled-line original amounts still reconcile to original order totals, but their merchandise contributes zero to the award threshold. Opening or resolving a credit review invalidates both accepted and in-flight checkout estimates; a fresh total is required without clearing the customer's address. Regression tests cover pending and already-cleared partial cancellations, repeated cancellation requests, and the credit-to-cash review flow without invoking payment.
+
+
+### Complete tier evidence and recoverable daily work
+
+Tier calculation selects the qualifying payment window through a beneficiary/payment-time index before applying its reviewed 10,000-row evidence limit. Historical records missing a payment timestamp use their recorded creation timestamp through the same index. Both subsets must fit the combined limit; invalid merchandise/refund cents and unsafe totals also require review. Never save a partial or zero substitute. Preserve the last verified tier, show a sales-progress review message to the partner, and resolve the review only after a complete valid recomputation. Historical earned commission rates are unchanged. Same-tier recalculations keep legacy sales progress synchronized.
+
+A daily run is a durable `prgTierRuns` record with a fixed computation instant, accepted policy/schedule IDs, local date, cursor, generation, lease, processed/review counts and terminal status. Each transaction handles one beneficiary and commits its continuation with its cursor. The beneficiary index uses creation time, so updating a tier cannot move the pagination boundary. Newer event/override snapshots take precedence over an older daily continuation; retry watermarks prevent duplicate snapshots. A review case does not stop later beneficiaries, but the overall run finishes as `review`, not `complete`.
+
+The hourly watchdog recovers an expired ten-minute lease from its saved cursor, increments its generation and rejects older workers. It can start a missed run later that local day after its configured time. Configuration changes mid-run produce an explicit review instead of mixing policy versions; subsequent daily runs use the approved configuration. Infrastructure failures leave the lease/cursor recoverable. Pre-upgrade queued continuation arguments cannot mark a durable run complete. Existing generic lock rows and a first beneficiary snapshot are not completion evidence.
+
+Monitoring requires the entire previous local calendar day's durable run to be complete. Yesterday uses calendar arithmetic in the policy timezone, not a 24-hour subtraction across DST. No tier policy, referral flag, payout route, or live financial function is activated by deploying this change.
+
+Regression evidence covers 10,000 expired records ahead of a current sale, payment-versus-creation timestamps, historical missing timestamps, refund/state exclusions, unsafe/incomplete current evidence, partial completion, duplicate/stale workers, expired leases, mutable-index avoidance, newer events, configuration drift, DST/catch-up, and honest completion alerts.

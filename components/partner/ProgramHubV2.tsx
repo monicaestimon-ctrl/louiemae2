@@ -367,7 +367,7 @@ function Earnings() {
       {tier && (
         <p style={{ margin: 0 }}>
           Tier: <b>{TIER_LABEL[tier.tier]}</b>
-          {tier.next
+          {tier.reviewRequired ? ' · Sales progress is under review; your previous tier is retained.' : tier.next
             ? ` · ${money(tier.toNextMinor)} more in eligible sales to reach ${TIER_LABEL[tier.next]}`
             : ' · Top of the program'}
         </p>

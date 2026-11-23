@@ -93,6 +93,16 @@ describe('v2 program hub (S33, S34, UX01)', () => {
     expect(commands).not.toHaveBeenCalled();
   });
 
+  it('labels incomplete tier progress without promising an unverified next-tier amount', () => {
+    answers.set('prgMemberships.myPrograms', { creator: { state: 'active', reviewReasons: [] }, trade: null, beneficiary: { tier: 'active', refCode: 'REF', payoutReadiness: 'not_started', status: 'active' }, creatorTerms: terms, referralTerms: terms });
+    answers.set('prgTiers.myTier', { tier: 'active', qualifyingMinor: 2000000, next: 'top', toNextMinor: 3000000, reviewRequired: true });
+    answers.set('ldgCommissions.myEarnings', { totals: { pending: 0, held: 0, cleared: 0, reserved: 0, submitted: 0, transferred: 0 }, entries: [] });
+    render(<ProgramHubV2 site="creators" />);
+    expect(screen.getByText(/Sales progress is under review/)).toBeInTheDocument();
+    expect(screen.queryByText(/more in eligible sales to reach/)).not.toBeInTheDocument();
+    expect(commands).not.toHaveBeenCalled();
+  });
+
   it('shows the business team to owners only', () => {
     answers.set('prgMemberships.myOrganizations', [{ organizationId: 'o1', name: 'Ava Studio', role: 'owner', members: [{ userId: 'u2', role: 'purchasing', status: 'active', email: 'sam@ava.studio' }] }]);
     render(<TeamPanel />);
