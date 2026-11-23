@@ -173,10 +173,10 @@ describe('backfills (S05, S06)', () => {
     expect(memberships.filter((m) => m.userId === ids.both).map((m) => m.program).sort()).toEqual(['creator', 'trade']); // one identity, two memberships
     expect(await t.run((ctx) => ctx.db.query('sysReviewItems').collect())).toHaveLength(1);
 
-    await t.mutation(internal.v2Migrations.ledgerSnapshot, { dryRun: false });
-    await t.mutation(internal.v2Migrations.ledgerSnapshot, { dryRun: false });
-    await t.mutation(internal.v2Migrations.creditSnapshot, { dryRun: false });
-    await t.mutation(internal.v2Migrations.creditSnapshot, { dryRun: false });
+    await commitSnapshot(t, 'ledgerSnapshot');
+    await commitSnapshot(t, 'ledgerSnapshot');
+    await commitSnapshot(t, 'creditSnapshot');
+    await commitSnapshot(t, 'creditSnapshot');
     const obligations = await t.run((ctx) => ctx.db.query('ldgObligations').collect());
     expect(obligations).toHaveLength(4);
     expect(obligations.map((o) => o.state).sort()).toEqual(['cleared', 'pending', 'transferred', 'void']);
@@ -226,3 +226,10 @@ it('reports stale explicit lighting categories without mutating records or grant
   expect(await t.run(ctx=>ctx.db.query('sysAuditEvents').collect())).toEqual([]);
   await expect(t.query(api.catCategories.preview,{})).rejects.toThrow();
 });
+
+// Local test review-and-commit harness. Financial production commits remain explicit pages.
+async function commitSnapshot(t: ReturnType<typeof convexTest>, name: 'ledgerSnapshot' | 'creditSnapshot') {
+  const fn = internal.v2Migrations[name];
+  const reviewed = await t.mutation(fn, { dryRun: true });
+  return t.mutation(fn, { dryRun: false, expectedSourceHash: reviewed.sourceHash });
+}

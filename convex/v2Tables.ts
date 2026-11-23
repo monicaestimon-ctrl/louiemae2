@@ -1114,6 +1114,7 @@ export const v2Tables = {
 
   ldgCreditEvents: defineTable({
     eventKey: v.string(),
+    sourceFingerprint: v.optional(v.string()), // immutable reviewed legacy opening source
     accountId: v.id('ldgCreditAccounts'),
     type: creditEventType,
     amountMinor: v.number(),
