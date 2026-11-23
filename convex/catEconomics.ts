@@ -5,11 +5,12 @@ import { activeConfig } from './sysConfig';
 import { CommerceError } from '../lib/errors';
 import { rat, mul, parseDecimal } from '../lib/decimal';
 import { commissionReserve } from './dlvCommission';
-import { minimumRetail, minimumTrade, scenarios, type PricingInput, type SizeClass } from '../lib/economics/pricing';
+import { ENGINE_VERSION, minimumRetail, minimumTrade, scenarios, type PricingInput, type SizeClass } from '../lib/economics/pricing';
+import { ashcroftScenarios } from './catAshcroftEconomics';
 import type { MarginPolicy, PricingAssumptions, TradeDiscountSchedule } from '../lib/config';
 import { stableStringify } from '../lib/zuoImport';
 import { isCurrentPrice } from './catPriceValidity';
-import { costIntegrityIssue } from './catCostValidity';
+import { costIntegrityIssue, costObservations } from './catCostValidity';
 import { evaluateVariant, type Observation } from '../lib/catFreshness';
 import type { FreshnessPolicy } from '../lib/config';
 type Ctx = QueryCtx | MutationCtx;
@@ -31,7 +32,7 @@ export async function pricingInput(ctx: Ctx, cv: Doc<'catVariants'>, o: Opts = {
   const integrity = costIntegrityIssue(cost, cv, o.now!);
   if (integrity) throw new CommerceError('COST_REVIEW_REQUIRED', integrity);
   const policy = await cfg<FreshnessPolicy>(ctx, 'freshnessPolicy', supplier.freshnessKey, o);
-  const observations = await ctx.db.query('catSourceObservations').withIndex('by_variant_field_observed', q => q.eq('variantId', cv._id)).order('desc').take(200);
+  const observations = await costObservations(ctx, cv._id, o.now);
   const evidence = evaluateVariant({ cost, piecesPerPack: cv.piecesPerPack, cartons: 1,
     observations: observations as Observation[], policy, now: o.now! });
   const costHolds = evidence.holds.filter(h => h !== 'STOCK_UNVERIFIED');
@@ -73,6 +74,7 @@ export async function pricingInput(ctx: Ctx, cv: Doc<'catVariants'>, o: Opts = {
 /** Runs the engine for a variant (no writes). */
 export async function computeScenarios(ctx: Ctx, cv: Doc<'catVariants'>, o: Opts = {}) {
   o = { ...o, now: o.now ?? Date.now() };
+  if ((await ctx.db.get(cv.supplierId))?.code === 'ashcroft') return ashcroftScenarios(ctx, cv, o);
   const { input, category } = await pricingInput(ctx, cv, o);
   const min = minimumRetail(input);
   const tradeFloor = minimumTrade(input);
@@ -86,9 +88,9 @@ export async function computeScenarios(ctx: Ctx, cv: Doc<'catVariants'>, o: Opts
     extra: tradeMinor === null ? [] : [{ name: 'trade_approved', priceMinor: tradeMinor, commissionBps: 0 }],
   });
   const inputsHash = stableStringify({ ...input, wholesalePiece: `${input.wholesalePiece.n}/${input.wholesalePiece.d}`, retailMinor, tradeMinor, retailApproved, tradeApproved });
-  return { minimumRetailMinor: min.retailMinor, minimumTradeMinor: tradeFloor, retailMinor, tradeMinor, retailApproved, tradeApproved,
+  return { minimumRetailMinor: min.retailMinor, minimumTradeMinor: tradeFloor, minimumBaseTradeMinor: tradeFloor, retailMinor, tradeMinor, retailApproved, tradeApproved,
     belowMinimum: retailMinor < min.retailMinor, belowTradeMinimum: tradeMinor !== null && tradeMinor < tradeFloor,
-    inputsHash, category, ...s, referralQualified: retailApproved && o.reserveRetailCommission !== false && s.referralQualified };
+    inputsHash, category, ...s, engineVersion: ENGINE_VERSION, referralQualified: retailApproved && o.reserveRetailCommission !== false && s.referralQualified };
 }
 
 /** Candidate prices are useful for planning, but cannot establish a payable offer. */

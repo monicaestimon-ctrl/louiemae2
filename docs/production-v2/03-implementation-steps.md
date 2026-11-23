@@ -854,3 +854,9 @@ This foundation does not activate Ashcroft trade checkout. Supplier-specific eco
 ### Ashcroft estimate evidence binding
 
 V2 Ashcroft estimates now require the dated independent inventory feed, bind its source identity and SKU quantity to the resolved line, and expire no later than the feed in both supplier-only and mixed carts. Selling-unit order minimums/increments are enforced. Lighting resolves to décor in new transaction snapshots; unknown categories require review. The retained customer delivery formula remains unchanged. See [implementation and acceptance details](../delivery-ashcroft-inventory-binding.md). Supplier-specific economics, actual approved trade prices and activation remain incomplete.
+
+### Ashcroft selling-unit economics and approved-price qualification
+
+The supplier-specific simulator and approval service now use independently approved Ashcroft assumptions, exact selling-unit costs, retained per-item freight/customer-delivery funding, documented margin policy and protected retail commission reserve. Actual trade offers carry no referral commission and respect the approved base-discount cap; project reductions remain separately authorized. Simulation candidates cannot qualify a sale. Cost observations are scoped separately from stock history so inventory updates cannot hide wholesale/MAP conflicts. Scenario and price records preserve the supplier engine and selling-unit basis.
+
+See [calculation, evidence requirements and remaining integration](../ashcroft-economics-qualification.md). This phase does not install production pricing settings, approve unknown expenses, change legacy prices, publish canonical Ashcroft offers or enable trade checkout. Publication provenance, inventory reservations and basket/credit/tax revalidation follow before activation.

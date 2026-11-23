@@ -20,6 +20,7 @@ import type * as blogPosts from "../blogPosts.js";
 import type * as brandVoice from "../brandVoice.js";
 import type * as campaigns from "../campaigns.js";
 import type * as catAshcroft from "../catAshcroft.js";
+import type * as catAshcroftEconomics from "../catAshcroftEconomics.js";
 import type * as catCategories from "../catCategories.js";
 import type * as catCore from "../catCore.js";
 import type * as catCostValidity from "../catCostValidity.js";
@@ -222,6 +223,7 @@ declare const fullApi: ApiFromModules<{
   brandVoice: typeof brandVoice;
   campaigns: typeof campaigns;
   catAshcroft: typeof catAshcroft;
+  catAshcroftEconomics: typeof catAshcroftEconomics;
   catCategories: typeof catCategories;
   catCore: typeof catCore;
   catCostValidity: typeof catCostValidity;
