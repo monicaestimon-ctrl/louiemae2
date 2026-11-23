@@ -76,3 +76,8 @@ A row may say PASSED only when the observed result matches the expected one in t
 ## Current Zuo economics regression coverage
 
 Catalog and checkout fixtures verify that foreign or future cost records, negative or fractional expenses, inconsistent precise costs, invalid MAP amounts and unauthorized margin cohorts cannot establish sellability. Cost or commission increases withdraw an unfunded offer even with empty stored holds. Candidate prices remain useful for planning but cannot publish or enable referrals. Cross-channel price pointers cannot supersede the referenced price. Documented margin exceptions retain their approval reference. Trade and explicitly non-referral retail offers qualify without a retail commission reserve, while new referral links require fully funded published rates. These are automated fixtures, not proof of supplier evidence or production activation.
+
+
+### Ashcroft identity and cost-basis acceptance
+
+`catAshcroft.test.ts` covers read-only preview, unchanged listings, exact-source commit, idempotent retries, SKU/legacy-variant collisions, changed quantity basis, conflicting channel mappings, explicit selling-unit costs and Zuo backwards compatibility. `CatalogCostEvidence.test.tsx` verifies one wholesale charge for an Ashcroft set and no Zuo handling assumption. Catalog tests reject incompatible Zuo cost basis; mixed-order recovery tests retain independent supplier checks and reject explicit stock withdrawal. These fixtures do not establish current supplier cost, rights, MAP exemption or inventory evidence.

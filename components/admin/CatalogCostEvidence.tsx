@@ -41,8 +41,12 @@ function CostForm({
   // Keep the base revision stable while reactive queries receive another staff member's edits.
   const [base] = useState(initial);
   const cost = base.current;
+  const sellingUnit = base.supplierCode === 'ashcroft';
+  const unitLabel = sellingUnit ? 'selling unit' : 'piece';
+  const wholesaleBasisNeedsReview = sellingUnit && !!cost && cost.wholesaleUnitBasis !== 'selling_unit';
+  const mapBasisNeedsReview = sellingUnit && cost?.mapUnitBasis === 'piece';
   const [wholesale, setWholesale] = useState(
-    cost?.wholesalePrecise ??
+    wholesaleBasisNeedsReview ? '' : cost?.wholesalePrecise ??
       (cost?.wholesaleMinor == null ? '' : (cost.wholesaleMinor / 100).toFixed(2))
   );
   const [verified, setVerified] = useState(false);
@@ -61,8 +65,8 @@ function CostForm({
         ? 'explicit_sku'
         : 'unknown'
   );
-  const [map, setMap] = useState(cost?.mapMinor == null ? '' : (cost.mapMinor / 100).toFixed(2));
-  const [basis, setBasis] = useState<'piece' | 'pack'>(cost?.mapUnitBasis ?? 'piece');
+  const [map, setMap] = useState(mapBasisNeedsReview || cost?.mapMinor == null ? '' : (cost.mapMinor / 100).toFixed(2));
+  const [basis, setBasis] = useState<'piece' | 'pack'>(sellingUnit ? 'pack' : cost?.mapUnitBasis ?? 'piece');
   const [busy, setBusy] = useState(false),
     [message, setMessage] = useState('');
   const [retry, setRetry] = useState<{ payload: string; key: string } | null>(null);
@@ -81,10 +85,15 @@ function CostForm({
         setBusy(true);
         setMessage('');
         try {
+          if (mapState === 'explicit_sku' && (!map.trim() || dollarsToMinor(map, 'half_up') <= 0)) {
+            setMessage(`Enter a positive MAP amount per ${sellingUnit ? 'selling unit' : basis} from the current source.`);
+            return;
+          }
           const args = {
             variantId: base.variant._id,
             expectedRevisionId: base.current?._id ?? null,
             wholesaleUsd: wholesale.trim() || null,
+            wholesaleUnitBasis: sellingUnit ? 'selling_unit' as const : 'piece' as const,
             verified,
             observedAt: new Date(observed).getTime(),
             evidence,
@@ -113,13 +122,16 @@ function CostForm({
       }}
     >
       <h4>
-        Cost evidence · {base.variant.supplierSku} · {base.variant.piecesPerPack} piece(s) per
-        selling pack
+        Cost evidence · {base.variant.supplierSku} · {sellingUnit ? 'Per selling unit' : `${base.variant.piecesPerPack} piece(s) per selling pack`}
       </h4>
       <p>
-        USD only. Wholesale is per piece; additional expenses are per selling pack. Do not include
-        customer delivery freight or the separately modeled $10 handling allowance again.
+        {sellingUnit
+          ? 'USD per selling unit. A set sold as one unit has one wholesale cost; do not multiply by its physical contents. Additional expenses are per selling unit. Customer delivery freight is modeled separately.'
+          : 'USD only. Wholesale is per piece; additional expenses are per selling pack. Do not include customer delivery freight or the separately modeled $10 handling allowance again.'}
       </p>
+      {(wholesaleBasisNeedsReview || mapBasisNeedsReview) && (
+        <p>Previous amounts with a different or unconfirmed unit basis are not carried forward. Enter the supplier’s selling-unit amounts from the current source; physical set contents are not inferred.</p>
+      )}
       {stale && !saved && (
         <p role="alert">
           This record changed. Your edits are retained; reload and reconcile before saving.
@@ -127,7 +139,7 @@ function CostForm({
       )}
       <fieldset disabled={busy || saved} className="space-y-3">
         <label className="block">
-          Wholesale USD per piece (blank means unknown)
+          Wholesale USD per {unitLabel} (blank means unknown)
           <input
             className="border block"
             value={wholesale}
@@ -138,7 +150,7 @@ function CostForm({
         {(['duties', 'inbound', 'fees'] as const).map((key) => (
           <div key={key}>
             <label>
-              {labels[key]} per pack
+              {labels[key]} per {sellingUnit ? 'selling unit' : 'pack'}
               <select
                 className="border ml-2"
                 value={expenses[key].state}
@@ -206,8 +218,8 @@ function CostForm({
                 value={basis}
                 onChange={(e) => setBasis(e.target.value as typeof basis)}
               >
-                <option value="piece">Per piece</option>
-                <option value="pack">Per selling pack</option>
+                {!sellingUnit && <option value="piece">Per piece</option>}
+                <option value="pack">{sellingUnit ? 'Per selling unit' : 'Per selling pack'}</option>
               </select>
             </label>
           </div>
@@ -274,6 +286,8 @@ function CostForm({
               · Wholesale{' '}
               {row.wholesalePrecise ??
                 (row.wholesaleMinor == null ? 'unknown' : (row.wholesaleMinor / 100).toFixed(2))}
+              {' · '}{row.wholesaleUnitBasis === 'selling_unit' ? 'per selling unit'
+                : row.wholesaleUnitBasis === 'piece' || base.supplierCode === 'zuo' ? 'per piece' : 'unit basis unconfirmed'}
             </li>
           ))}
         </ul>

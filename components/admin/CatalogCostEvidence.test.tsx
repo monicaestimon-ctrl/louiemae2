@@ -93,3 +93,37 @@ it('reuses the exact retry key after an uncertain save and changes it when input
   await waitFor(() => expect(mock.save).toHaveBeenCalledTimes(3));
   expect(mock.save.mock.calls[2][0].requestKey).not.toBe(mock.save.mock.calls[0][0].requestKey);
 });
+
+it('records an Ashcroft set as one selling-unit cost without a Zuo handling assumption', async () => {
+  mock.data = { ...mock.data, supplierCode: 'ashcroft', current: { ...(mock.data.current as object), wholesaleUnitBasis: 'selling_unit' } };
+  render(view());
+  expect(screen.getByLabelText('Wholesale USD per selling unit (blank means unknown)')).toHaveValue('115.00');
+  expect(screen.getByLabelText('Duties per selling unit')).toHaveValue('unknown');
+  expect(screen.queryByText(/separately modeled \$10/)).not.toBeInTheDocument();
+  completeSource();
+  fireEvent.click(screen.getByRole('button', { name: 'Save evidence revision' }));
+  await waitFor(() => expect(mock.save).toHaveBeenCalledWith(expect.objectContaining({ wholesaleUsd: '115.00', wholesaleUnitBasis: 'selling_unit', verified: false })));
+});
+
+it('requires fresh selling-unit MAP instead of relabeling an Ashcroft per-piece amount', async () => {
+  mock.data = { ...mock.data, supplierCode: 'ashcroft', current: { ...(mock.data.current as object),
+    wholesaleUnitBasis: 'selling_unit', mapSource: 'explicit_sku', mapApplicability: 'applies', mapUnitBasis: 'piece', mapMinor: 10000 } };
+  render(view());
+  expect(screen.getByLabelText('MAP USD')).toHaveValue('');
+  expect(screen.getByLabelText('MAP unit')).toHaveValue('pack');
+  completeSource();
+  fireEvent.submit(screen.getByRole('button', { name: 'Save evidence revision' }).closest('form')!);
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Enter a positive MAP amount per selling unit'));
+  expect(mock.save).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('MAP USD'), { target: { value: '200' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save evidence revision' }));
+  await waitFor(() => expect(mock.save).toHaveBeenCalledWith(expect.objectContaining({ map: { state: 'explicit_sku', minor: 20000, basis: 'pack' } })));
+});
+
+it('preserves an existing Ashcroft selling-unit MAP and clears unconfirmed wholesale basis', () => {
+  mock.data = { ...mock.data, supplierCode: 'ashcroft', current: { ...(mock.data.current as object),
+    mapSource: 'explicit_sku', mapApplicability: 'applies', mapUnitBasis: 'pack', mapMinor: 20000 } };
+  render(view());
+  expect(screen.getByLabelText('MAP USD')).toHaveValue('200.00');
+  expect(screen.getByLabelText('Wholesale USD per selling unit (blank means unknown)')).toHaveValue('');
+});

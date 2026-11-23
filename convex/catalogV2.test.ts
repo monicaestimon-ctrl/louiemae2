@@ -1101,7 +1101,7 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
       return ctx.db.insert('catVariants', { ...copy, supplierSku: 'OTHER' });
     });
     for (const change of [{ variantId: other }, { effectiveFrom: NOW + 1 }, { supplierFeesMinor: -1 },
-      { wholesaleMinor: 1.5 }, { wholesalePrecise: '1' }, { wholesalePrecise: '-115' }, { mapMinor: -1 }]) {
+      { wholesaleUnitBasis: 'selling_unit' as const }, { wholesaleMinor: 1.5 }, { wholesalePrecise: '1' }, { wholesalePrecise: '-115' }, { mapMinor: -1 }]) {
       await t.run(ctx => ctx.db.patch(cost._id, change));
       await expect(t.run(ctx => assertSellable(ctx, cv._id, 'purchase', NOW))).rejects.toSatisfy(e => isCommerceError(e, 'COST_REVIEW_REQUIRED'));
       const { _id, _creationTime, ...original } = cost; void _id; void _creationTime;

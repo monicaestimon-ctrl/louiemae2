@@ -525,6 +525,18 @@ async function paidOrder(
 }
 
 describe('delivery estimates (S17, S18)', () => {
+  it.each(['different SKU', 'duplicate variant'] as const)('rejects an Ashcroft House %s conflict before creating an identity', async conflict => {
+    const s = await setup();
+    await s.t.run(async ctx => {
+      const retail = (await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', s.ashId).eq('channel', 'retail')).unique())!;
+      const route = retail.fulfillment![0];
+      await ctx.db.insert('commerceListings', { productId: s.ashId, channel: 'house', published: true, revision: 1, updatedAt: 1,
+        snapshot: retail.snapshot, fulfillment: conflict === 'different SKU' ? [{ ...route, sku: 'OTHER-SKU' }] : [route, route] });
+    });
+    await expect(s.t.run(ctx => resolveLines(ctx, [{ productId: s.ashId, variantId: 'b1', packs: 1 }], 'retail', NOW))).rejects.toThrow(/conflicts between channels/);
+    expect((await s.t.run(ctx => ctx.db.query('catVariants').collect())).filter(v => v.productId === s.ashId)).toHaveLength(0);
+  });
+
   it('limits demand to the warehouse count and requires confirmation for on-hand stock', async () => {
     const s = await setup();
     await s.t.run(async ctx => { const stock = (await ctx.db.query('catStockRevisions').first())!; await ctx.db.patch(stock._id, { validUntil: NOW + 15000 }); });
@@ -826,6 +838,14 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
     });
     await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, args)).rejects.toThrow(/warehouse capacity/);
     await s.t.run(async ctx => { const stock = (await ctx.db.query('catStockRevisions').first())!; await ctx.db.patch(stock._id, { quantity: '1000' }); });
+    // A canonical Ashcroft identity is not stock evidence. Unknown is resolved by the
+    // independently checked supplier listing; explicit withdrawal cannot be bypassed.
+    const ashcroftMirror = (await s.t.run(ctx => ctx.db.query('catVariants').collect())).find(v => v.legacyVariantId === 'b1')!;
+    expect(ashcroftMirror.availability).toBe('unknown');
+    await s.t.run(ctx => ctx.db.patch(ashcroftMirror._id, { availability: 'out_of_stock' }));
+    const unavailableOriginal = await s.admin.query(api.ordExceptionFulfillment.detail, { id: exception._id });
+    await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, { ...args, expectedFingerprint: unavailableOriginal.fingerprint })).rejects.toThrow(/exact original SKU/);
+    await s.t.run(ctx => ctx.db.patch(ashcroftMirror._id, { availability: 'unknown' }));
     await s.t.run(ctx => reserveCredit(ctx, user, 1000, 'other-checkout-fixture'));
     await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, args)).rejects.toThrow(/Available credit/);
     expect(await s.t.run(ctx => ctx.db.query('ordOrders').collect())).toHaveLength(0);

@@ -1,5 +1,6 @@
 import { deliveryZone } from '../lib/delivery/zones';
 import { ashcroftAvailable } from './ashcroftInventory';
+import { ensureAshcroftIdentity } from './catAshcroft';
 import { modeledParcelFreight, type ModeledParcelRates } from '../lib/delivery/modeledParcel';
 // Server-owned delivery service (spec S17, S18, v2 §9–§12). One engine serves product, cart,
 // checkout and trade estimates. The server reloads prices, membership, stock and source versions;
@@ -8,7 +9,7 @@ import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { activeConfig, maybeConfig } from './sysConfig';
 import { availableAfterCommitments } from './ordInventory';
-import { assertSellable, ensureSupplier, isCurrentPrice } from './catCore';
+import { assertSellable, isCurrentPrice } from './catCore';
 import { viewer, isVerified } from './holmAccess';
 import { CommerceError } from '../lib/errors';
 import {
@@ -111,47 +112,6 @@ export type ResolvedLine = {
   warehouseServices?: ('ground' | 'ltl')[];
   stockReadiness?: 'counted' | 'confirmation_required';
 };
-
-/**
- * Ashcroft lines keep their approved per-item rules (v2 §1). They get a mirror catVariant so
- * orders reference one variant id, but no Zuo freshness or pricing assumption touches them.
- */
-async function ashcroftMirror(
-  ctx: MutationCtx,
-  product: Doc<'commerceProducts'>,
-  variantId: string,
-  sku: string,
-  name: string
-) {
-  const supplier = await ensureSupplier(ctx, 'ashcroft');
-  const existing = await ctx.db
-    .query('catVariants')
-    .withIndex('by_identity', (q) =>
-      q.eq('supplierId', supplier._id).eq('supplierSku', sku).eq('packId', '1')
-    )
-    .first();
-  if (existing) return existing;
-  const now = Date.now();
-  const id = await ctx.db.insert('catVariants', {
-    productId: product._id,
-    supplierId: supplier._id,
-    supplierSku: sku,
-    packId: '1',
-    optionKey: variantId,
-    supplierVariantName: name,
-    louieMaeVariantName: name,
-    piecesPerPack: 1,
-    orderMinimumPacks: 1,
-    orderIncrementPacks: 1,
-    availability: 'in_stock',
-    fulfillmentRoute: 'manual_dealer_ashcroft',
-    holds: [],
-    legacyVariantId: variantId,
-    createdAt: now,
-    updatedAt: now,
-  });
-  return (await ctx.db.get(id))!;
-}
 
 async function categoryOf(
   ctx: Ctx,
@@ -403,7 +363,7 @@ export async function resolveLines(
         option.name === 'Default Title'
           ? listing.snapshot.name
           : `${listing.snapshot.name} — ${option.name}`;
-      const cv = await ashcroftMirror(ctx, product, l.variantId, supplierRow.sku, name);
+      const cv = await ensureAshcroftIdentity(ctx, { productId: product._id, variantId: l.variantId, sku: supplierRow.sku, name, minimum: option.minimum, increment: option.increment }, 'system:delivery');
       out.push({
         lineKey: `${i}:${product._id}:${cv._id}`,
         productId: product._id,

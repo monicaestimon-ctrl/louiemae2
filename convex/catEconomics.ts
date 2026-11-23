@@ -26,6 +26,8 @@ export async function pricingInput(ctx: Ctx, cv: Doc<'catVariants'>, o: Opts = {
   if (supplier?.code !== 'zuo') throw new CommerceError('COST_REVIEW_REQUIRED', 'Supplier-specific economics adapter required');
   const cost = cv.currentCostRevisionId ? await ctx.db.get(cv.currentCostRevisionId) : null;
   if (!cost || cost.wholesaleMinor === null) throw new CommerceError('COST_REVIEW_REQUIRED', 'No current wholesale cost');
+  if (cost.wholesaleUnitBasis && cost.wholesaleUnitBasis !== 'piece')
+    throw new CommerceError('COST_REVIEW_REQUIRED', 'Zuo wholesale must be recorded per physical piece');
   const integrity = costIntegrityIssue(cost, cv, o.now!);
   if (integrity) throw new CommerceError('COST_REVIEW_REQUIRED', integrity);
   const policy = await cfg<FreshnessPolicy>(ctx, 'freshnessPolicy', supplier.freshnessKey, o);

@@ -317,7 +317,8 @@ export const v2Tables = {
 
   catCostRevisions: defineTable({
     variantId: v.id('catVariants'),
-    wholesaleMinor: v.union(v.number(), v.null()), // cents per piece
+    wholesaleMinor: v.union(v.number(), v.null()), // cents per recorded unit basis; legacy Zuo is per piece
+    wholesaleUnitBasis: v.optional(v.union(v.literal('piece'), v.literal('selling_unit'))),
     wholesalePrecise: v.optional(v.string()),
     currency: v.literal('USD'),
     fxRate: v.optional(v.string()),
