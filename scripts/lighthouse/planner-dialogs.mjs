@@ -131,7 +131,30 @@ try {
   assert.equal(await page.$$eval('.fp-zone', e=>e.length),0);
   assert.ok(await page.$eval('.fp-point-entry',e=>e.textContent.includes('3 corners placed')));
   await activate('Undo last point');await point(30,40);await point(10,40);await activate('Finish room');
-  await page.waitForSelector('.fp-zone');await activate('Use this plan');
+  await page.waitForSelector('.fp-zone');
+  await activate('Draw a room');await point(60,10);await point(70,10);await point(80,10);
+  await activate('Finish room');await activate('Use this plan');
+  await page.waitForFunction(()=>document.querySelector('[role=alert]')?.textContent.includes('Finish or discard'));
+  assert.equal(await page.evaluate(()=>window.fixturePlan),undefined,'An unfinished draft prevents apply even with an existing valid room');
+  assert.ok(await page.$eval('.fp-point-entry',e=>e.textContent.includes('3 corners placed')));
+  await page.keyboard.press('Escape');
+  await activate('Columns');await activate('Place column');
+  await page.addScriptTag({ content: axe.source });
+  for (const width of [390,1440]) {
+    await page.setViewport({width,height:900});
+    const layout = await page.$eval('.fp-block-coordinates',e=>{
+      const row=e.getBoundingClientRect(),fields=[...e.querySelectorAll('input')].map(i=>{const r=i.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width}});
+      return {width:row.width,fields,overflow:e.scrollWidth>e.clientWidth};
+    });
+    assert.equal(layout.overflow,false);assert.ok(layout.fields.every(f=>f.width>=90));
+    assert.ok(layout.fields[0].right<=layout.fields[1].left,'Column coordinates do not overlap');
+    await page.$eval('.fp-block-coordinates',e=>e.scrollIntoView({block:'center'}));
+    await page.screenshot({path:`artifacts/lighthouse/planner-blocks-${width}.png`});
+    const violations=await page.evaluate(async()=> (await axe.run(document.querySelector('dialog'),{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}})).violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>n.target)})));
+    assert.deepEqual(violations,[],JSON.stringify({width,violations}));
+  }
+  await page.setViewport({width:390,height:844});
+  await activate('Use this plan');
   const plan = await page.evaluate(()=>window.fixturePlan);
   assert.ok(plan && plan.W>0 && plan.D>0, 'Coordinate-only plan has a valid area');
   assert.equal(plan.zones[0].poly.length,4);
@@ -175,6 +198,8 @@ try {
     coincidentCalibrationRejected: true,
     enterClosesDraft: true,
     coordinateOnlyRoomApplied: true,
+    unfinishedDraftBlocksApply: true,
+    columnCoordinatesFitMobileAndDesktop: true,
     degenerateDraftRetainedAndRepaired: true,
     tabContained: true,
     focusRestored: true,

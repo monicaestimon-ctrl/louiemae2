@@ -175,6 +175,10 @@ try {
     await undo();await page.waitForFunction(()=>document.querySelectorAll('.sx-pt').length===4);
     await number('.sx-corner-fields input',10);
     await page.waitForFunction(()=>JSON.parse(localStorage.getItem('hol:collages'))[0]?.poly?.[0]?.[0]===.1);
+    await action('.sx-corner-fields','Remove corner 4');
+    await page.waitForFunction(()=>document.querySelectorAll('.sx-pt').length===3);
+    assert.equal(await page.evaluate(()=>document.activeElement.matches('.sx-corner-fields input')),true,'Fourth corner removal focuses an enabled coordinate field');
+    await page.keyboard.press('Escape');await undo();await page.waitForFunction(()=>document.querySelectorAll('.sx-pt').length===4);
     await scan('corners');
     // Pointer edits must still dirty the document before the autosave effect runs.
     const corner = await (await page.$('.sx-pt')).boundingBox();

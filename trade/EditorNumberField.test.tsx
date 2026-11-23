@@ -32,3 +32,17 @@ it('commits Enter once and follows a later undo value', () => {
   view.rerender(<EditorNumberField {...props} value={10} />);
   expect(screen.getByRole('spinbutton')).toHaveValue(10);
 });
+
+it('leaves Enter and Escape to active IME composition, including keyCode 229', () => {
+  const save = vi.fn();
+  render(<EditorNumberField label="Width" value={20} min={5} max={1000} onCommit={save} />);
+  const input = screen.getByRole('spinbutton'); input.focus();
+  fireEvent.input(input, { target: { value: '30' } });
+  for (const key of ['Enter', 'Escape']) {
+    fireEvent.keyDown(input, { key, isComposing: true });
+    expect(input).toHaveFocus(); expect(input).toHaveValue(30); expect(save).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key, keyCode: 229 });
+    expect(input).toHaveFocus(); expect(input).toHaveValue(30); expect(save).not.toHaveBeenCalled();
+  }
+  fireEvent.keyDown(input, { key: 'Enter' }); expect(save).toHaveBeenCalledExactlyOnceWith(30);
+});

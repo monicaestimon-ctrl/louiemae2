@@ -24,6 +24,7 @@ export function EditorNumberField({ label, value, min, max, step = .5, disabled 
       disabled={disabled} aria-invalid={!!error} aria-describedby={error ? errorId : undefined}
       onInput={() => setError('')} onBlur={event => commit(event.currentTarget)}
       onKeyDown={event => {
+        if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
         if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); }
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); event.currentTarget.value = String(value); setError(''); event.currentTarget.blur(); }
       }} />
