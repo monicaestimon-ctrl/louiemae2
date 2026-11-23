@@ -228,11 +228,15 @@ export const pending = query({
       .query('ordInventoryReservations')
       .withIndex('by_variant_status', (q) => q.eq('variantId', cv._id).eq('status', 'consumed'))
       .take(51);
+    const supplierCode = (await ctx.db.get(cv.supplierId))?.code ?? 'unknown';
+    const feed = supplierCode === 'ashcroft' ? await latestFeed(ctx) : null;
     return {
       canReconcile: actor.approver,
       currentRevisionId: cv.currentStockRevisionId ?? null,
-      supplierCode: (await ctx.db.get(cv.supplierId))?.code ?? 'unknown',
-      currentAshcroftFeedId: (await ctx.db.get(cv.supplierId))?.code === 'ashcroft' ? (await latestFeed(ctx))?._id ?? null : null,
+      supplierCode,
+      currentAshcroftFeedId: feed?._id ?? null,
+      ashcroftSource: feed ? { source: feed.source, observedAt: feed.observedAt, validUntil: feed.validUntil,
+        quantity: feed.rows.find(r => r.sku === cv.supplierSku)?.quantity ?? null } : null,
       hasMore: rows.length > 50,
       rows: rows.slice(0, 50).map((r) => ({
         id: r._id,

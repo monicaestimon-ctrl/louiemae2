@@ -11,6 +11,7 @@ const mock = vi.hoisted(() => ({
     currentRevisionId: 'stock-1' as string | null,
     currentAshcroftFeedId: null as string | null,
     supplierCode: 'zuo',
+    ashcroftSource: null as { source: string; observedAt: number; validUntil: number; quantity: number | null } | null,
     hasMore: false,
     rows: [
       {
@@ -32,6 +33,7 @@ beforeEach(() => {
   mock.data.currentRevisionId = 'stock-1';
   mock.data.currentAshcroftFeedId = null;
   mock.data.supplierCode = 'zuo';
+  mock.data.ashcroftSource = null;
   mock.data.rows[0].inventoryBasis = null;
   mock.data.rows[0].supplierSku = null;
   mock.data.canReconcile = true;
@@ -69,6 +71,12 @@ it('retains notes and requires a new review when the Ashcroft feed changes', () 
   expect(screen.getByRole('button', { name: 'Reconcile supplier allocation' })).toBeDisabled();
 });
 const view = () => render(<InventoryCommitments variantId={'variant' as Id<'catVariants'>} />);
+it.each([null, 0])('distinguishes unknown from zero supplier quantity (%s)', quantity => {
+  mock.data.supplierCode = 'ashcroft';
+  mock.data.ashcroftSource = { source: 'Fixture supplier feed', observedAt: 1795392000000, validUntil: 1795651200000, quantity };
+  view();
+  expect(screen.getByText(/Latest supplier feed:/)).toHaveTextContent(`supplier count: ${quantity ?? 'Unknown'} selling units before our commitments`);
+});
 it('requires explicit confirmation and binds evidence to the selected stock revision', async () => {
   view();
   fireEvent.click(screen.getByRole('button', { name: 'Review allocation reservation-1' }));

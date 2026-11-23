@@ -43,13 +43,14 @@ export const records = query({
     const page = await ctx.db.query('catVariants').paginate(a.paginationOpts);
     return {
       ...page,
-      page: page.page.map((row) => ({
+      page: await Promise.all(page.page.map(async (row) => ({
         id: row._id,
         sku: row.supplierSku,
         name: row.louieMaeVariantName,
         piecesPerPack: row.piecesPerPack,
         availability: row.availability,
-      })),
+        supplierCode: (await ctx.db.get(row.supplierId))?.code ?? 'unknown',
+      }))),
     };
   },
 });
@@ -72,6 +73,7 @@ export const detail = query({
       .order('desc')
       .take(20);
     return {
+      supplierCode: (await ctx.db.get(s.variant.supplierId))?.code ?? 'unknown',
       variant: {
         id: s.variant._id,
         supplierId: s.variant.supplierId,

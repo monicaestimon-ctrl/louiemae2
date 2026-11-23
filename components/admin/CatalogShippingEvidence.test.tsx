@@ -9,7 +9,7 @@ vi.mock('convex/react', () => ({
   useMutation: () => mock.save,
   useQuery: () => mock.data,
   usePaginatedQuery: () => ({
-    results: [{ id: 'variant', sku: 'SKU-1', piecesPerPack: 2, availability: 'in_stock' }],
+    results: [{ id: 'variant', sku: 'SKU-1', piecesPerPack: 2, availability: 'in_stock', supplierCode: mock.data.supplierCode }],
     status: 'Exhausted',
     loadMore: vi.fn(),
   }),
@@ -29,8 +29,8 @@ beforeEach(() => {
 });
 function open() {
   const view = render(<CatalogShippingEvidence />);
-  fireEvent.click(screen.getByText('Warehouse and shipping carton evidence'));
-  fireEvent.click(screen.getByRole('button', { name: 'SKU-1 · 2 piece(s) · in_stock' }));
+  fireEvent.click(screen.getByText('Supplier shipping and inventory evidence'));
+  fireEvent.click(screen.getByRole('button', { name: /^SKU-1/ }));
   return view;
 }
 it('keeps shipping inputs unknown and records raw carton units without multiplying by pack pieces', async () => {
@@ -89,4 +89,15 @@ it('offers the separately protected warehouse form only to approvers', () => {
   expect(screen.getByLabelText('IANA timezone')).toHaveValue('');
   expect(screen.getByLabelText('ground dispatch documented')).not.toBeChecked();
   expect(screen.getByLabelText('ltl dispatch documented')).not.toBeChecked();
+});
+
+it('routes Ashcroft to its supplier-feed workflow without physical-piece or warehouse inputs', () => {
+  mock.data.supplierCode = 'ashcroft';
+  mock.data.canApprove = true;
+  open();
+  expect(screen.getByText(/Ashcroft uses its dated supplier inventory feed/)).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'SKU-1 · selling unit · in_stock' })).toBeInTheDocument();
+  expect(screen.queryByLabelText('Fulfillment warehouse')).not.toBeInTheDocument();
+  expect(screen.queryByText('Approve warehouse evidence')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Save shipping evidence' })).not.toBeInTheDocument();
 });

@@ -30,6 +30,11 @@ export default function InventoryCommitments({ variantId }: { variantId: Id<'cat
         allocation. An internal checkout hold does not reserve supplier stock. A new feed alone does
         not release these commitments.
       </p>
+      {ashcroft && (data.ashcroftSource ? <p>
+        Latest supplier feed: {data.ashcroftSource.source} · observed {new Date(data.ashcroftSource.observedAt).toLocaleString()}
+        {' · '}expires {new Date(data.ashcroftSource.validUntil).toLocaleString()}
+        {' · '}supplier count: {data.ashcroftSource.quantity ?? 'Unknown'} selling units before our commitments.
+      </p> : <p>No Ashcroft supplier feed is available. Missing inventory cannot establish availability.</p>)}
       {!data.rows.length && <p>No unreconciled paid commitments for this variant.</p>}
       <ul>
         {data.rows.map((row) => (
