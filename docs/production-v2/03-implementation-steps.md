@@ -870,3 +870,8 @@ This is an inventory prerequisite, not activation: legacy retail checkout, canon
 ### Ashcroft approved offer integration
 
 Explicit final-price publication now preserves legacy public IDs while routing qualified Ashcroft retail/HOLM offers through supplier-specific economics, inventory and v2 checkout. Saved carts review checkout-mode changes; old endpoints cannot bypass the new route. Independent delivery funding is checked after project reductions, credits and tax processing, and publication rollback preserves pricing provenance. See [scope, acceptance and remaining activation gates](../ashcroft-approved-checkout.md). Production evidence/configuration and permitted payment acceptance remain separate.
+
+
+### Finance workflow: reviewed SKU pricing and referral decisions
+
+The finance diagnostics selector now opens a dedicated pricing review alongside cost evidence. Approvers can assign eligible documented policies, save exact final retail/trade prices, enable only funded referrals and create visible four-tier product exceptions. Fingerprint-bound submissions reject stale evidence or terms; reactive forms freeze until refreshed. Prices remain distinct from published snapshots, and supplier-specific qualification is required for both Zuo and Ashcroft. Legacy Ashcroft base listings cannot generate new v2 referral links merely through a canonical price approval. See [review workflow and acceptance](../sku-pricing-approval.md). This does not approve missing production evidence or activate checkout/program flags.

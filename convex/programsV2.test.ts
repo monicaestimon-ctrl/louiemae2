@@ -200,7 +200,7 @@ describe('retail links and attribution (S26, S27, REF01â€“REF03)', () => {
     for (const path of ['/trade', '/account', `/products/${fx.retailId}`, '/admin', '/r/other'])
       await expect(u.as.mutation(api.prgLinks.create, { path, channelTag: 'link' })).rejects.toSatisfy(error => isCommerceError(error, 'INVALID_INPUT'));
     expect(await u.as.mutation(api.prgLinks.create, { path: '/#shop', channelTag: 'link' })).toMatchObject({ destination: '/#shop' });
-    await s.admin.mutation(api.prgLinks.createException, { productId: fx.retailId, rates: ['base', 'active', 'top', 'elite'].map(tierKey => ({ tierKey: tierKey as 'base' | 'active' | 'top' | 'elite', rateBps: 500 })), visibleNote: 'This item earns 5% at every tier.' });
+    await s.admin.mutation(api.prgLinks.createException, { productId: fx.retailId, reviewVariantId: fx.variantId, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: fx.variantId })).reviewHash, rates: ['base', 'active', 'top', 'elite'].map(tierKey => ({ tierKey: tierKey as 'base' | 'active' | 'top' | 'elite', rateBps: 500 })), visibleNote: 'This item earns 5% at every tier.' });
     expect(await u.as.query(api.prgLinks.preview, { productId: fx.houseId, variantId: 'h1' })).toMatchObject({ applicableRateBps: 500, exceptionNote: 'This item earns 5% at every tier.' });
     await s.t.run(async ctx => {
       const mapping = await ctx.db.query('catRetailMappings').first();
@@ -372,20 +372,20 @@ describe('historical basket rate protection (S27, REF03)', () => {
 describe('complete effective SKU exceptions (S28)', () => {
   it('future rows cannot hide the currently applicable exception', async () => {
     const s = await protectionFixture();
-    await s.admin.mutation(api.prgLinks.createException, { productId: s.fx.retailId, rates: exceptionRates(500), visibleNote: 'Visible 5% exception' });
-    for (let i = 1; i <= 12; i++) await s.admin.mutation(api.prgLinks.createException, { productId: s.fx.retailId, rates: exceptionRates(400), visibleNote: 'Future exception', effectiveFrom: Date.now() + i * 10000 });
+    await s.admin.mutation(api.prgLinks.createException, { productId: s.fx.retailId, reviewVariantId: s.fx.variantId, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: s.fx.variantId })).reviewHash, rates: exceptionRates(500), visibleNote: 'Visible 5% exception' });
+    for (let i = 1; i <= 12; i++) await s.admin.mutation(api.prgLinks.createException, { productId: s.fx.retailId, reviewVariantId: s.fx.variantId, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: s.fx.variantId })).reviewHash, rates: exceptionRates(400), visibleNote: 'Future exception', effectiveFrom: Date.now() + i * 10000 });
     const rate = await s.t.run(async ctx => productRate(ctx, s.fx.retailId, 'base', 'furniture', (await schedule(ctx)).value));
     expect(rate).toMatchObject({ rateBps: 500, exceptionVersion: 1, exceptionNote: 'Visible 5% exception' });
   });
 
   it('rejects duplicated tiers and backdated or out-of-order changes without writing', async () => {
     const s = await protectionFixture();
-    const args = { productId: s.fx.retailId, visibleNote: 'Exception', rates: exceptionRates(500) };
-    await expect(s.admin.mutation(api.prgLinks.createException, { ...args, rates: Array(4).fill({ tierKey: 'base', rateBps: 500 }) })).rejects.toSatisfy(error => isCommerceError(error, 'INVALID_INPUT'));
-    await expect(s.admin.mutation(api.prgLinks.createException, { ...args, effectiveFrom: Date.now() - 1 })).rejects.toSatisfy(error => isCommerceError(error, 'INVALID_INPUT'));
+    const args = { productId: s.fx.retailId, reviewVariantId: s.fx.variantId, visibleNote: 'Exception', rates: exceptionRates(500) };
+    await expect(s.admin.mutation(api.prgLinks.createException, { ...args, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: s.fx.variantId })).reviewHash, rates: Array(4).fill({ tierKey: 'base', rateBps: 500 }) })).rejects.toSatisfy(error => isCommerceError(error, 'INVALID_INPUT'));
+    await expect(s.admin.mutation(api.prgLinks.createException, { ...args, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: s.fx.variantId })).reviewHash, effectiveFrom: Date.now() - 1 })).rejects.toSatisfy(error => isCommerceError(error, 'INVALID_INPUT'));
     expect(await s.t.run(ctx => ctx.db.query('prgSkuCommissionExceptions').collect())).toHaveLength(0);
-    await s.admin.mutation(api.prgLinks.createException, { ...args, effectiveFrom: Date.now() + 10000 });
-    await expect(s.admin.mutation(api.prgLinks.createException, args)).rejects.toSatisfy(error => isCommerceError(error, 'INVALID_INPUT'));
+    await s.admin.mutation(api.prgLinks.createException, { ...args, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: s.fx.variantId })).reviewHash, effectiveFrom: Date.now() + 10000 });
+    await expect(s.admin.mutation(api.prgLinks.createException, { ...args, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: s.fx.variantId })).reviewHash })).rejects.toSatisfy(error => isCommerceError(error, 'INVALID_INPUT'));
     expect(await s.t.run(ctx => ctx.db.query('prgSkuCommissionExceptions').collect())).toHaveLength(1);
   });
 

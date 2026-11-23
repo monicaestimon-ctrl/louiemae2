@@ -114,6 +114,7 @@ jobs:
           npm run test:field:browser
           node scripts/lighthouse/field-admin.mjs
           node scripts/lighthouse/catalog-publication.mjs
+          node scripts/lighthouse/catalog-pricing.mjs
           node scripts/lighthouse/house-staff.mjs
           node scripts/lighthouse/staff-entry.mjs
           node scripts/lighthouse/trade-hub-entry.mjs
@@ -154,6 +155,7 @@ jobs:
             artifacts/lighthouse/field-admin/
             artifacts/lighthouse/catalog-publication-*.png
             artifacts/lighthouse/catalog-publication-browser.json
+            artifacts/lighthouse/catalog-pricing/
             artifacts/lighthouse/house-staff/
             artifacts/lighthouse/staff-entry/
           if-no-files-found: ignore
