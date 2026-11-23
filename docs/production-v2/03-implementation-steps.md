@@ -880,3 +880,8 @@ The finance diagnostics selector now opens a dedicated pricing review alongside 
 ### Approved Ashcroft checkout lifecycle and calculator linkage
 
 Synthetic lifecycle verification now covers approved-price intents, selling-unit commitments, payment replay, frozen paid terms and mixed supplier children. The HOLM calculator accepts eligible legacy option IDs through the approved Ashcroft adapter, uses actual approved channel prices and the shared project tier, and keeps identical option IDs on different products independent. See [lifecycle acceptance and production limits](../ashcroft-approved-checkout.md). No production financial transaction, supplier transmission or evidence approval is implied.
+
+
+### Ledger migration integrity
+
+Financial page commits now require the exact reviewed dry-run source hash. Credit openings retain immutable source provenance and reconcile active holds plus native event projections. Complete read-only parity covers credit-only users and missing legacy owners, reports every page and explicit diagnostic limits, and never certifies a truncated prefix. Legacy commission sync handles refund/restoration cycles using all linked effects and transition-specific keys while preserving earned terms and paid amounts. See [financial migration review and cutover rules](06-release-checklist.md#financial-migration-review-and-integrity). Production financial migration and payout execution remain separate controlled gates.

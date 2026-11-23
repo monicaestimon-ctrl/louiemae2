@@ -200,8 +200,8 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
 
-      - name: v2 ledger parity check (read-only)
-        run: npx convex run v2Migrations:ledgerParity '{}'
+      - name: v2 ledger parity report (complete read-only scan; not cutover approval)
+        run: npx convex run v2Migrations:runLedgerParity '{}'
         continue-on-error: true
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}

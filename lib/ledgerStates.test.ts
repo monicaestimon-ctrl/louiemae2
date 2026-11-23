@@ -28,6 +28,14 @@ describe('commission obligation state machine', () => {
     expect(() => applyCommission(o({ state: 'transferred' }), 'dispute_hold', 0, 0)).toThrow();
   });
 
+  it('keeps a fully reversed dispute held until its resolution is recorded', () => {
+    const held = applyCommission(o({ state: 'cleared' }), 'dispute_hold', 0, 0);
+    const refunded = applyCommission(held, 'refund_reversal', -1000, 1);
+    expect(refunded).toMatchObject({ state: 'held', heldMinor: 0, reversedMinor: 1000 });
+    expect(applyCommission(refunded, 'dispute_release', 0, 200).state).toBe('void');
+    expect(applyCommission(refunded, 'dispute_lost', 0, 200).state).toBe('void');
+  });
+
   it('walks the payout path and recovers from failures', () => {
     let x = applyCommission(o({ state: 'cleared' }), 'reserved', 0, 0);
     x = applyCommission(x, 'transfer_submitted', 0, 0);

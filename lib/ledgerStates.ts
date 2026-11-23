@@ -57,12 +57,12 @@ export function applyCommission(o: ObligationView, type: CommissionEventType, am
       if (take < 0 || take > remaining) throw new LedgerTransitionError('refund reversal must be between 0 and the remaining amount');
       const reversed = o.reversedMinor + take;
       const left = o.earnedMinor - reversed;
-      return { ...o, reversedMinor: reversed, heldMinor: o.state === 'held' ? left : o.heldMinor, state: left === 0 ? 'void' : o.state };
+      return { ...o, reversedMinor: reversed, heldMinor: o.state === 'held' ? left : o.heldMinor, state: left === 0 && o.state !== 'held' ? 'void' : o.state };
     }
     case 'dispute_hold':
       return { ...o, state: 'held', heldMinor: remaining };
     case 'dispute_release':
-      return { ...o, heldMinor: 0, state: now >= o.clearsAt ? 'cleared' : 'pending' };
+      return { ...o, heldMinor: 0, state: remaining <= 0 ? 'void' : now >= o.clearsAt ? 'cleared' : 'pending' };
     case 'dispute_lost':
       return { ...o, heldMinor: 0, reversedMinor: o.earnedMinor, state: 'void' };
     case 'cleared':
