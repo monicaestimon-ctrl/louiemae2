@@ -1072,12 +1072,12 @@ a.pin-act{text-decoration:none}
 .pl-cv:active{cursor:grabbing}
 .pl-labels{position:absolute;inset:0;pointer-events:none}
 .pl-lab{position:absolute;transform:translate(-50%,-50%);font:500 11px/1 var(--sans);background:rgba(251,248,242,.92);color:#2B211A;padding:4px 7px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.12)}
-.pl-lab.sel{background:#E8541E;color:#fff}
+.pl-lab.sel{background:#A63E17;color:#fff}
 .pl-lab.rug{background:var(--card);box-shadow:0 1px 4px rgba(0,0,0,.12);color:var(--ink);font-family:var(--mono);font-size:10px;letter-spacing:.03em}
 .pl-lab.rug.sel{background:var(--cognac);color:var(--onink)}
 .pl-fail{position:absolute;inset:0;display:grid;place-items:center;padding:24px;text-align:center;font-size:15px;color:var(--mute)}
 .pl-lab.dim{font-family:var(--mono);background:transparent;box-shadow:none;color:#6B4A33;letter-spacing:.04em}
-.pl-lab.dist{font-family:var(--mono);background:#E8541E;color:#fff;font-size:10px}
+.pl-lab.dist{font-family:var(--mono);background:#A63E17;color:#fff;font-size:10px}
 .pl-hint,.pl-style-tag{position:absolute;left:12px;bottom:12px;font-size:10.5px;letter-spacing:.05em;color:#6B5A4C;background:rgba(251,248,242,.85);padding:6px 10px;border-radius:8px;pointer-events:none}
 .pl-style-tag{left:auto;right:12px;top:12px;bottom:auto}
 .pl-dims{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
@@ -2069,7 +2069,7 @@ header.top:not(.over){background:color-mix(in srgb,var(--paper) 94%,transparent)
 .fp-side{display:grid;gap:8px;align-content:start;overflow:auto;max-height:64svh}
 .fp-row{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);font-size:13px;text-align:left}.fp-row.on{border-color:var(--ink)}.fp-row b{font-weight:500}
 .fp-walls{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.fp-walls label{display:grid;gap:2px;font-size:11px}.fp-walls .field{height:32px;padding:0 6px}
-.fp-brow{display:grid;grid-template-columns:minmax(0,1.6fr) repeat(3,minmax(0,1fr)) 28px;gap:4px;align-items:center}.fp-brow .field{padding:0 6px;font-size:13px}
+.fp-brow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) 28px;gap:4px;align-items:center}.fp-brow .field{padding:0 6px;font-size:13px}
 @media (max-width:860px){.fp-body{grid-template-columns:1fr}.fp-sheet{max-height:48svh}}
 /* AI render: waiting state */
 .ai-wait{display:flex;flex-direction:column;align-items:center;gap:6px;padding:48px 16px;text-align:center}
@@ -2086,3 +2086,18 @@ header.top:not(.over){background:color-mix(in srgb,var(--paper) 94%,transparent)
 .pin-ov :is(button,a){pointer-events:auto}
 
 .ix-main a,.ix-more a{min-height:44px;display:flex;align-items:center}
+
+/* Native editor selection and bounded keyboard transforms. */
+.sx-layer-select{display:flex;align-items:center;gap:8px;flex:1;min-width:0;text-align:left;border-radius:6px;padding:2px}
+.sx-layer-select>span:not(.th){flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sx-selection{display:grid;gap:10px;border-top:1px solid var(--line);padding-top:12px;min-width:0}
+.sx-number-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.sx-number{display:grid;gap:4px;min-width:0}.sx-number input{width:100%;min-width:0;height:38px}
+.sx-property-actions{display:flex;gap:6px;flex-wrap:wrap}
+.sx-layer-select:focus-visible,.sx-pt:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+
+.sx-drawer [role=tabpanel]{display:grid;gap:12px;align-content:start}.sx-drawer [role=tabpanel][hidden]{display:none}
+
+.fp-point-entry{display:flex;align-items:end;gap:8px;flex-wrap:wrap}.fp-point-entry .sx-number{width:125px}.fp-point-entry [role=status]{font-size:13px}.fp-brow>.field:first-child{grid-column:1/4;grid-row:1}.fp-brow>button{grid-column:4;grid-row:1}.fp-block-coordinates{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(90px,1fr));gap:8px}.fp-block-coordinates .sx-number{min-width:0}
+
+@media(max-width:760px){.sx-drawer-b{padding-bottom:76px;scroll-padding-bottom:76px}}

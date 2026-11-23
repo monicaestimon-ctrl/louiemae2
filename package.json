@@ -29,6 +29,7 @@
     "test:credentials:browser": "node scripts/lighthouse/credentials.mjs",
     "test:holm:browser": "node scripts/lighthouse/holm.mjs",
     "test:holm-tools:browser": "node scripts/lighthouse/tools.mjs",
+    "test:editor-keyboard:browser": "node scripts/lighthouse/editor-keyboard.mjs",
     "test:planner-dialogs:browser": "node scripts/lighthouse/planner-dialogs.mjs",
     "test:application:browser": "node scripts/lighthouse/application.mjs",
     "test:enrollment:browser": "node scripts/lighthouse/enrollment.mjs",

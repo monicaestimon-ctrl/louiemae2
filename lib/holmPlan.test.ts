@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { area, centroid, cleanPlanRead, inside, setWallLength, type Pt } from './holmPlan';
+import { area, centroid, cleanPlanRead, inside, setWallLength, validRoomPolygon, type Pt } from './holmPlan';
 
 const L: Pt[] = [[0, 0], [6, 0], [6, 3], [3, 3], [3, 5], [0, 5]];
 
@@ -43,5 +43,22 @@ describe('cleanPlanRead', () => {
   it('survives anything', () => {
     expect(cleanPlanRead('nonsense')).toEqual({ rooms: [], blocks: [], scale: null });
     expect(cleanPlanRead(null)).toEqual({ rooms: [], blocks: [], scale: null });
+  });
+});
+
+describe('editable room validation', () => {
+  it('keeps rectangles, concave rooms and either winding', () => {
+    expect(validRoomPolygon(L)).toBe(true); expect(validRoomPolygon([...L].reverse())).toBe(true);
+    expect(validRoomPolygon([[0,0],[4,0],[4,3],[0,3]])).toBe(true);
+  });
+  it('rejects degenerate, intersecting, repeated and nonfinite corners', () => {
+    for (const shape of [[], [[0,0],[1,0],[2,0]], [[0,0],[4,4],[0,4],[3,0]],
+      [[0,0],[4,0],[4,0],[4,4],[0,4]], [[0,0],[4,0],[4,4],[0,0],[0,4]],
+      [[0,0],[Infinity,0],[4,4]], [[0,0],[NaN,0],[4,4]], [[0,0],[4,null],[4,4]]]) expect(validRoomPolygon(shape)).toBe(false);
+  });
+  it('bounds geometry complexity and drops crossing AI shapes', () => {
+    const many=Array.from({length:65},(_,i)=>[Math.cos(i/65*2*Math.PI),Math.sin(i/65*2*Math.PI)]);
+    expect(validRoomPolygon(many)).toBe(false);
+    expect(cleanPlanRead({rooms:[{points:[[0,0],[1,1],[0,1],[.8,0]]}]}).rooms).toEqual([]);
   });
 });
