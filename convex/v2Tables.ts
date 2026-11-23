@@ -895,6 +895,7 @@ export const v2Tables = {
     taxReadiness: v.union(v.literal('none'), v.literal('pending'), v.literal('approved')),
     tierKey,
     tierSnapshotId: v.optional(v.id('prgTierSnapshots')),
+    tierEvidenceAttemptAt: v.optional(v.number()),
     legacyUserId: v.optional(v.id('users')),
     refCode: v.optional(v.string()),
     status: v.union(v.literal('active'), v.literal('suspended'), v.literal('closed')),

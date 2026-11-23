@@ -47,10 +47,13 @@ export async function recompute(ctx: MutationCtx, beneficiaryId: Id<'prgBenefici
     const b = await ctx.db.get(beneficiaryId);
     if (!b) return null;
     const last = await ctx.db.query('prgTierSnapshots').withIndex('by_beneficiary_computed', (x) => x.eq('beneficiaryId', beneficiaryId)).order('desc').first();
-    if (last && (last.computedAt > now || last.watermark === watermark || (reason === 'daily' && last.computedAt === now))) {
+    if ((b.tierEvidenceAttemptAt !== undefined && b.tierEvidenceAttemptAt > now) || (last && (last.computedAt > now || last.watermark === watermark || (reason === 'daily' && last.computedAt === now)))) {
       const pendingReview = await ctx.db.query('sysReviewItems').withIndex('by_entity', x => x.eq('entityTable', 'prgBeneficiaries').eq('entityId', b._id)).filter(x => x.and(x.eq(x.field('kind'), 'tier_evidence_review'), x.eq(x.field('status'), 'open'))).first();
-      return { tier: b.tierKey, qualifyingMinor: last.qualifyingMinor, stale: true, reviewRequired: !!pendingReview };
+      return { tier: b.tierKey, qualifyingMinor: last?.qualifyingMinor ?? null, stale: true, reviewRequired: !!pendingReview };
     }
+    // Failed evidence reads have no snapshot. Advance this watermark on every attempt,
+    // so an older saved daily window cannot clear a newer review or downgrade its tier.
+    await ctx.db.patch(b._id, { tierEvidenceAttemptAt: now });
     const { start, end } = tierWindow(now, policy.value);
     let q: number;
     try { q = await qualifyingMinor(ctx, beneficiaryId, start, end); }

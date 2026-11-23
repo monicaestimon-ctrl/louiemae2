@@ -117,6 +117,35 @@ it('keeps a newer event result and its immutable rates when an older daily worke
   expect((await s.runs())[0]).toMatchObject({ status: 'complete' });
 });
 
+
+it('retains a newer repeated evidence failure when an older daily window would otherwise clear it', async () => {
+  const s = await setup(); const b = s.beneficiaries[0];
+  const priorQuarter = Date.UTC(2026, 8, 30, 12);
+  const earned = await s.earn(b, { paidAt: priorQuarter });
+  await s.t.run(ctx => recompute(ctx, b, 'event', 'verified-prior-quarter', priorQuarter));
+  await s.t.run(ctx => ctx.db.patch(earned, { refundedBasisMinor: 1500000 }));
+  const first = await s.earn(b, { paidAt: NOW + 500, basisMinor: 100, refundedBasisMinor: 101 });
+  vi.setSystemTime(NOW + 1000);
+  expect(await s.t.run(ctx => recompute(ctx, b, 'event', 'failed-first'))).toMatchObject({ tier: 'active', reviewRequired: true });
+  vi.setSystemTime(NOW + 1500);
+  await s.t.mutation(internal.prgTiers.dailyTick, {});
+  // The same open review sees a later failed attempt; its opening time is insufficient.
+  await s.t.run(ctx => ctx.db.patch(first, { state: 'void' }));
+  const second = await s.earn(b, { paidAt: NOW + 2000, basisMinor: 100, refundedBasisMinor: 101 });
+  vi.setSystemTime(NOW + 3000);
+  expect(await s.t.run(ctx => recompute(ctx, b, 'event', 'failed-again'))).toMatchObject({ reviewRequired: true });
+  await s.drain();
+  expect(await s.admin.query(api.prgTiers.myTier, {})).toMatchObject({ tier: 'active', reviewRequired: true });
+  expect(await s.t.run(ctx => ctx.db.get(b))).toMatchObject({ tierEvidenceAttemptAt: NOW + 3000 });
+  expect(await s.t.run(ctx => ctx.db.query('prgTierSnapshots').collect())).toHaveLength(1);
+  expect((await s.runs())[0]).toMatchObject({ status: 'review', reviewCount: 1 });
+  await s.t.run(ctx => ctx.db.patch(second, { refundedBasisMinor: 100 }));
+  vi.setSystemTime(NOW + 4000);
+  await s.t.run(ctx => recompute(ctx, b, 'event', 'complete-repair'));
+  expect(await s.admin.query(api.prgTiers.myTier, {})).toMatchObject({ tier: 'base', reviewRequired: false, qualifyingMinor: 0 });
+  expect(await s.t.run(ctx => ctx.db.get(b))).toMatchObject({ tierEvidenceAttemptAt: NOW + 4000 });
+});
+
 it('finishes a traversal with review status rather than pretending incomplete evidence succeeded', async () => {
   const s = await setup(2);
   await s.earn(s.beneficiaries[0], { basisMinor: -1 });
