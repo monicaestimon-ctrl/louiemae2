@@ -28,9 +28,14 @@ function write(key: string, value: unknown) {
 }
 
 /** A random id for this browser, kept so the server can match a later order to the click. */
+export function existingVisitorId(): string | null {
+  const value = read<unknown>('visitor', null);
+  return typeof value === 'string' && /^[\w-]{16,64}$/.test(value) ? value : null;
+}
+
 export function visitorId(): string {
-  let v = read<string | null>('visitor', null);
-  if (!v || !/^[\w-]{16,64}$/.test(v)) {
+  let v = existingVisitorId();
+  if (!v) {
     v = Array.from(globalThis.crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
     write('visitor', v);
   }

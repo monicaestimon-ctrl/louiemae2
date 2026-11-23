@@ -1,4 +1,5 @@
 import { STOREFRONT_ORIGIN } from './lib/productMetadata';
+import { useReferralAssociation } from './contexts/useReferralAssociation';
 import React, {
   useState,
   useEffect,
@@ -106,7 +107,8 @@ const isWideNav = () => window.matchMedia(WIDE_NAV).matches;
 // We need a wrapper component to use the context inside App
 /** Keep shared navigation and cart state outside recoverable route content. */
 const AppContent = () => {
-  const { siteContent, customPagesStatus, siteContentStatus } = useSite();
+  const { siteContent, customPagesStatus, siteContentStatus, isAuthenticated, isAuthLoading } = useSite();
+  useReferralAssociation(isAuthenticated && !isAuthLoading);
   // A visit through a partner link (?ref=CODE&ch=channel) on any storefront page: saved for
   // 30 days and shared with /trade, then taken out of the address bar.
   const recordPartnerClick = useMutation(api.holmPartners.recordClick);

@@ -3,6 +3,7 @@ import { validModeledParcel } from '../delivery/modeledParcel';
 // status; customer paths only read `approved` records. These parsers validate a record's value
 // for its kind, so a typo can't become a live price, rate or schedule.
 import { CommerceError } from '../errors';
+import { ATTRIBUTION_WINDOW_MS } from '../attribution';
 
 export const CONFIG_KINDS = [
   'marginPolicy',
@@ -358,7 +359,9 @@ export function parseConfig(kind: ConfigKind, value: unknown): unknown {
       int(kind, o.costMapMaxDays, 'costMapMaxDays', 1, 365);
       return o as FreshnessPolicy;
     case 'attributionPolicy':
-      int(kind, o.windowMs, 'windowMs', 1);
+      if (o.windowMs !== ATTRIBUTION_WINDOW_MS || o.lastClickWins !== true || o.basketScope !== true ||
+          o.rateProtection !== 'max(protected,current)' || typeof o.consentUnknownAllowsStorage !== 'boolean')
+        bad(kind, 'Requires the implemented 30-day last-click basket policy and explicit consent setting');
       return o as AttributionPolicy;
     case 'tierPolicy':
       if (!TIME.test(String(o.dailyLocal))) bad(kind, 'dailyLocal must be HH:MM');

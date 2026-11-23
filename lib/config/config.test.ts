@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { parseConfig } from './index';
+import { parseConfig, type AttributionPolicy } from './index';
 import { CONFIG_SEED } from './seed';
 import { flag, flagStates, payoutRoute, requireFlag, V2_FLAGS } from '../flags';
 import { isCommerceError } from '../errors';
 
 describe('config seed and parsers', () => {
+  it.each([{ windowMs: 1 }, { windowMs: 31 * 86400000 }, { lastClickWins: false }, { basketScope: false }, { rateProtection: 'current' }, { consentUnknownAllowsStorage: 'true' }])('rejects unsupported attribution policy %j', override => {
+    const approved = CONFIG_SEED.find(row => row.kind === 'attributionPolicy')!.value as AttributionPolicy;
+    expect(() => parseConfig('attributionPolicy', { ...approved, ...override })).toThrow();
+  });
   it('every seed record parses, and keys are unique per version', () => {
     const seen = new Set<string>();
     for (const s of CONFIG_SEED) {

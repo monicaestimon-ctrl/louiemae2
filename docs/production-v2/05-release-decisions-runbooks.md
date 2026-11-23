@@ -40,9 +40,9 @@ The order is: deploy disabled code, migrate additively, dry-run imports, inspect
 
 1. `CATALOG_PUBLICATION_V2_ENABLED`, for the pilot cohort only (gate 1).
 2. `DELIVERY_AUTOMATION_ENABLED` and `RETAIL_ZUO_CHECKOUT_ENABLED` (gates 1–4).
-3. `CREATOR_ENROLLMENT_V2_ENABLED`, `RETAIL_LINK_GENERATION_V2_ENABLED` and `ATTRIBUTION_V2_ENABLED` (gates 2–3).
+3. `CREATOR_ENROLLMENT_V2_ENABLED` and `ATTRIBUTION_V2_ENABLED` (gates 2–3). Retail link generation remains off until commission accrual is ready.
 4. `HOLM_TRADE_ONLY_ENABLED` and `TRADE_CHECKOUT_V2_ENABLED` (gates 2–3, with BC1 and BC9 approved).
-5. `COMMISSION_ACCRUAL_V2_ENABLED` (gates 2–5).
+5. `COMMISSION_ACCRUAL_V2_ENABLED`, then `RETAIL_LINK_GENERATION_V2_ENABLED` (gates 2–5). Never generate links promising commissions while accrual is disabled.
 6. `CREDIT_V2_ENABLED` (gates 2–5, D-05).
 7. `PAYOUT_EXECUTION_ENABLED` last (gate 5, with D-09 and D-10). Turn off `PARTNER_PAYOUTS_ENABLED` in the same change.
 

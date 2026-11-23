@@ -813,3 +813,11 @@ Generic retail links and other products in an attributed basket resolve the exac
 Exception schedules require exactly one entry for every tier. Future versions cannot hide the current exception; backdated/out-of-order writes, overlapping effective periods, incomplete schedules and missing or oversized history require review. Millisecond-equal schedule retirement retains the recorded click version; an ambiguous category transition at the exact click timestamp requires review.
 
 This closes the historical-rate calculation gap found during the release audit. It does not certify SKU economics, activate program flags or substitute for authenticated production acceptance. Interval-aware commission reserves and supplier-specific qualification remain separate audit work.
+
+### S27 follow-up: complete latest-click and account association
+
+Visitor and account lookups use descending eligible/time/click-ID indexes. Each source returns its proven latest valid click; an exhausted 200-row invalid prefix requires review rather than silently dropping attribution. The pure selector independently enforces exactly 30 days even if an older row contains a longer expiry. Configuration proposals, approvals and attribution reads reject unsupported window and attribution modes.
+
+Both retail and HOLM connect existing browser visits when the account signs in. The shared hook never creates a visitor identifier solely for association, honors denied consent, and passes unknown consent to the server's explicit policy. Each 50-row page checks the authenticated account, cutoff, expiry and prior ownership. Continuations use a stable index so assigning a user cannot skip later rows. The client yields after 20 pages, resumes larger histories after one minute, and cancels on sign-out/unmount. Rejected requests leave shopping usable and retry only on a later focus or storage event. Existing other-account ownership is never overwritten.
+
+These mechanics do not activate attribution or program flags, grant consent, or prove a real payment/commission lifecycle. The production rollout gates still apply.

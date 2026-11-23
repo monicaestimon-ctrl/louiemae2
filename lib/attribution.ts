@@ -8,7 +8,7 @@ export type ClickView = { clickId: string; beneficiaryId: string; eligible: bool
 export function winningClick<T extends ClickView>(clicks: readonly T[], now: number): T | null {
   let best: T | null = null;
   for (const c of clicks) {
-    if (!c.eligible || c.at > now || now >= c.expiresAt) continue;
+    if (!c.eligible || c.at > now || c.at <= now - ATTRIBUTION_WINDOW_MS || now >= c.expiresAt) continue;
     if (!best || c.at > best.at || (c.at === best.at && c.clickId > best.clickId)) best = c;
   }
   return best;
