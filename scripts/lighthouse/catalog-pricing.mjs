@@ -1,3 +1,4 @@
+/* global document, window, innerWidth */
 import { build } from 'esbuild';
 import puppeteer from 'puppeteer-core';
 import axe from 'axe-core';
