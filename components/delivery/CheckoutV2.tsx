@@ -130,8 +130,9 @@ export function DeliveryCheckout({
         authenticated: !!authToken,
         reviewBlocked,
         reviewFingerprint,
+        creditReviewRequired: !!credit?.reviewRequired,
       }),
-    [lines, channel, address, access, useCredit, email, authToken, reviewBlocked, reviewFingerprint]
+    [lines, channel, address, access, useCredit, email, authToken, reviewBlocked, reviewFingerprint, credit?.reviewRequired]
   );
   const [estKey, setEstKey] = useState('');
   const stale = !!est && (reviewBlocked || estKey !== key || est.expiresAt <= now);
@@ -143,7 +144,7 @@ export function DeliveryCheckout({
   }, [key]);
   useEffect(() => {
     setEst(null); setAccepted(null);
-  }, [reviewBlocked, reviewFingerprint]);
+  }, [reviewBlocked, reviewFingerprint, credit?.reviewRequired]);
 
   const review = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -377,6 +378,7 @@ export function DeliveryCheckout({
             </span>
           )}
         </div>
+        {credit?.reviewRequired && <p className="delivery-span" role="status">{credit.reviewMessage}</p>}
         {credit && credit.availableMinor > 0 && (
           <label className="delivery-span delivery-check">
             <input

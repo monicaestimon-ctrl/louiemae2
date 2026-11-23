@@ -9,6 +9,7 @@ import { requireDeliveryRole } from './dlvAccess';
 import { activeConfig } from './sysConfig';
 import { audit } from './sysCore';
 import { CommerceError } from '../lib/errors';
+import { reconcileAwardsForOrder } from './businessCreditAwards';
 
 export type ReturnPolicy = { windowDays: number; restockingBps: number; refundOriginalDelivery: boolean; customerPaysReturnFreight: boolean; damageClaimDays: number; requiresAuthorization: boolean };
 
@@ -71,6 +72,7 @@ export const transition = mutation({
     if (a.to === 'refunded') {
       const line = (await ctx.db.get(r.orderLineId))!;
       await ctx.db.patch(line._id, { refundedMinor: line.refundedMinor + r.refund.merchandise, ...(line.refundedMinor + r.refund.merchandise >= line.unitPackMinor * line.packs - line.discountMinor ? { status: 'refunded' as const } : {}) });
+      await reconcileAwardsForOrder(ctx, line.orderId);
     }
     await audit(ctx, { actor: admin.email, action: `return.${a.to}`, entityTable: 'ordReturns', entityId: r._id });
   },

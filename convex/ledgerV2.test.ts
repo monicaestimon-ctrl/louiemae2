@@ -6,8 +6,10 @@ import schema from './schema';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { accrueForOrder } from './ldgCommissions';
-import { onOrderPaid, reserve, settle } from './ldgCredits';
+import { onOrderPaid, reserve, settle, available } from './ldgCredits';
 import { applyCreditEvent, obligationEventTotals } from './ldgCore';
+import { reconcileAward, reconcileAwardsForOrder } from './businessCreditAwards';
+import { rollUp } from './ordFulfillment';
 import { cutoffFor } from './ldgPayouts';
 import { isCommerceError } from '../lib/errors';
 import type { PayoutSchedule } from '../lib/config';
@@ -102,7 +104,7 @@ describe('commission ledger v2 (S29, LED01, LED02)', () => {
     let rows = await obligations(s.t, o.orderId);
     expect(rows.reduce((t, r) => t + r.reversedMinor, 0)).toBe(3_000);
     await refund(155_000); // full refund
-    await refund(200_000); // beyond the charge: capped
+    await expect(refund(200_000)).rejects.toSatisfy(e => isCommerceError(e, 'INVALID_INPUT')); // impossible evidence cannot alter either ledger
     rows = await obligations(s.t, o.orderId);
     expect(rows.every((r) => r.state === 'void' && r.reversedMinor === r.earnedMinor)).toBe(true);
     for (const r of rows) {
@@ -259,6 +261,208 @@ describe('business referral credit v2 (S31, CRE01, CRE02)', () => {
     await s.t.mutation(internal.ldgCredits.awardDue, {});
     const acct = await s.t.run((ctx) => ctx.db.query('ldgCreditAccounts').withIndex('by_user', (q) => q.eq('userId', referrer)).first());
     expect(acct).toMatchObject({ pendingAwardMinor: 0, availableMinor: 0 });
+  });
+
+  async function businessAward() {
+    const s = await setup();
+    await s.approve('business-credit');
+    const b = await referredBusiness(s.t);
+    const order = await attributedOrder(s.t, { buyerUserId: b.biz });
+    await s.t.run(ctx => onOrderPaid(ctx, order.orderId));
+    const award = (await s.t.run(ctx => ctx.db.query('ldgCreditEvents').filter(q => q.eq(q.field('type'), 'award_pending')).unique()))!;
+    const account = () => s.t.run(ctx => ctx.db.get(award.accountId));
+    const clear = async () => {
+      vi.setSystemTime(Date.now() + 31 * DAY);
+      await s.t.mutation(internal.ldgCredits.awardDue, {});
+      // The installed harness caps recursive draining at 100 by default; this fixture deliberately exceeds it.
+      for (let page = 0; page < 110; page++) {
+        vi.runAllTimers();
+        await s.t.finishInProgressScheduledFunctions();
+      }
+      await s.t.finishAllScheduledFunctions(vi.runAllTimers);
+    };
+    return { ...s, ...b, order, award, account, clear };
+  }
+
+  it('rejects impossible refund evidence and keeps the confirmed cumulative amount monotonic', async () => {
+    const s = await businessAward();
+    const refund = (refundedMinor: number, chargeMinor = 155000) => s.t.run(ctx => reconcileAwardsForOrder(ctx, s.order.orderId, { refundedMinor, chargeMinor }));
+    await refund(10000);
+    await refund(5000);
+    for (const [amount, charge] of [[-1,155000], [155001,155000], [1,154999], [1.5,155000]]) {
+      await expect(refund(amount, charge)).rejects.toSatisfy(e => isCommerceError(e, 'INVALID_INPUT'));
+    }
+    expect((await s.t.run(ctx => ctx.db.get(s.order.orderId)))?.confirmedCashRefundMinor).toBe(10000);
+  });
+
+  it('cancels a fully refunded pending award without falling back to original merchandise', async () => {
+    const s = await businessAward();
+    await s.t.run(async ctx => {
+      for (const line of await ctx.db.query('ordOrderLines').withIndex('by_order', q => q.eq('orderId', s.order.orderId)).collect()) {
+        await ctx.db.patch(line._id, { refundedMinor: line.unitPackMinor });
+      }
+      await reconcileAwardsForOrder(ctx, s.order.orderId);
+    });
+    await s.clear();
+    expect(await s.account()).toMatchObject({ pendingAwardMinor: 0, availableMinor: 0 });
+  });
+
+  it('reverses a cleared award once after verified full cash refund, including duplicate and older notifications', async () => {
+    const s = await businessAward();
+    await s.clear();
+    for (const refundedCents of [155000, 155000, 10000]) {
+      await s.t.mutation(internal.ldgCommissions.onPaymentEvent, { paymentIntentId: s.order.pi, kind: 'refund', refundedCents, chargeCents: 155000 });
+    }
+    expect(await s.account()).toMatchObject({ availableMinor: 0, pendingAwardMinor: 0 });
+    const reversals = await s.t.run(ctx => ctx.db.query('ldgCreditEvents').filter(q => q.eq(q.field('type'), 'reversed')).collect());
+    expect(reversals.map(e => e.amountMinor)).toEqual([10000]);
+  });
+
+  it('preserves spent award history and records one future offset through source-bound admin reversal', async () => {
+    const s = await businessAward();
+    await s.clear();
+    await s.t.run(async ctx => {
+      await reserve(ctx, s.referrer, 6000, 'spent-credit');
+      await settle(ctx, 'spent-credit', 'redeemed');
+    });
+    const args = { awardEventId: s.award._id, reason: 'Verified referral fraud' };
+    await expect(s.t.mutation(api.ldgCredits.reverseAward, args)).rejects.toThrow();
+    await s.admin.mutation(api.ldgCredits.reverseAward, args);
+    await s.admin.mutation(api.ldgCredits.reverseAward, args);
+    expect(await s.account()).toMatchObject({ availableMinor: -6000 });
+    const offsets = await s.t.run(ctx => ctx.db.query('ldgCreditEvents').filter(q => q.eq(q.field('type'), 'offset_created')).collect());
+    expect(offsets.map(e => e.amountMinor)).toEqual([6000]);
+  });
+
+  it('holds ambiguous partial refunds visibly, blocks new credit holds, and resolves from exact line evidence', async () => {
+    const s = await businessAward();
+    await s.clear();
+    await s.t.run(ctx => reconcileAwardsForOrder(ctx, s.order.orderId, { refundedMinor: 105000, chargeMinor: 155000 }));
+    expect(await s.account()).toMatchObject({ availableMinor: 10000 }); // ledger is not guessed away
+    expect(await s.t.run(ctx => available(ctx, s.referrer))).toBe(0);
+    expect(await s.t.run(ctx => reserve(ctx, s.referrer, 10000, 'new-checkout'))).toBe(0);
+    const signed = s.t.withIdentity({ subject: `${s.referrer}|s`, email: 'ref@x.com' });
+    expect(await signed.query(api.ldgCredits.myCreditV2, {})).toMatchObject({ reviewRequired: true, availableMinor: 0 });
+    await s.t.run(async ctx => {
+      const lines = await ctx.db.query('ordOrderLines').withIndex('by_order', q => q.eq('orderId', s.order.orderId)).collect();
+      for (const line of lines) await ctx.db.patch(line._id, { refundedMinor: line.unitPackMinor });
+      await reconcileAwardsForOrder(ctx, s.order.orderId);
+    });
+    expect(await signed.query(api.ldgCredits.myCreditV2, {})).toMatchObject({ reviewRequired: false, availableMinor: 0 });
+    expect(await s.account()).toMatchObject({ availableMinor: 0 });
+  });
+
+  it('resolves allocated refunds at the exact threshold and excludes retained restocking fees', async () => {
+    const s = await businessAward();
+    await s.clear();
+    await s.t.run(ctx => reconcileAwardsForOrder(ctx, s.order.orderId, { refundedMinor: 105000, chargeMinor: 155000 }));
+    await s.t.run(async ctx => {
+      const line = (await ctx.db.query('ordOrderLines').withIndex('by_order', q => q.eq('orderId', s.order.orderId)).collect()).find(l => l.unitPackMinor === 100000)!;
+      await ctx.db.patch(line._id, { refundedMinor: 100000 });
+      await ctx.db.insert('ordReturns', { orderLineId: line._id, policyKey: 'fixture', reason: 'Return', pieces: 1, restockingMinor: 0, refund: { merchandise: 100000, tax: 0, delivery: 5000, creditRestored: 0, cash: 105000 }, goodwill: false, status: 'refunded', createdBy: 'fixture', createdAt: Date.now() });
+      await reconcileAwardsForOrder(ctx, s.order.orderId);
+    });
+    expect(await s.t.run(ctx => available(ctx, s.referrer))).toBe(10000); // $500 kept, delivery excluded
+    await s.t.run(async ctx => {
+      const line = (await ctx.db.query('ordOrderLines').withIndex('by_order', q => q.eq('orderId', s.order.orderId)).collect()).find(l => l.unitPackMinor === 50000)!;
+      await ctx.db.patch(line._id, { refundedMinor: 40000 });
+      await ctx.db.insert('ordReturns', { orderLineId: line._id, policyKey: 'fixture', reason: 'Return', pieces: 1, restockingMinor: 10000, refund: { merchandise: 40000, tax: 0, delivery: 0, creditRestored: 0, cash: 40000 }, goodwill: false, status: 'authorized', createdBy: 'fixture', createdAt: Date.now() });
+      // Reset the line: the real transition owns the refunded counter.
+      await ctx.db.patch(line._id, { refundedMinor: 0 });
+    });
+    const returns = await s.t.run(ctx => ctx.db.query('ordReturns').collect());
+    await s.admin.mutation(api.ordReturns.transition, { returnId: returns.find(r => r.status === 'authorized')!._id, to: 'refunded' });
+    expect(await s.account()).toMatchObject({ availableMinor: 0 });
+  });
+
+  it('allows a later first qualifying order but rejects self-referrals and pre-referral customers', async () => {
+    const s = await setup();
+    await s.approve('business-credit');
+    const b = await referredBusiness(s.t);
+    const small = await attributedOrder(s.t, { buyerUserId: b.biz, credit: 100001 });
+    expect(await s.t.run(ctx => onOrderPaid(ctx, small.orderId))).toBeNull();
+    const next = await attributedOrder(s.t, { buyerUserId: b.biz });
+    expect(await s.t.run(ctx => onOrderPaid(ctx, next.orderId))).toBe(`award:${b.biz}`);
+    const self = await referredBusiness(s.t);
+    await s.t.run(async ctx => {
+      const referral = (await ctx.db.query('holmReferrals').withIndex('by_referred', q => q.eq('referredUserId', self.biz)).unique())!;
+      await ctx.db.patch(referral._id, { referrerId: self.biz });
+    });
+    const own = await attributedOrder(s.t, { buyerUserId: self.biz });
+    expect(await s.t.run(ctx => onOrderPaid(ctx, own.orderId))).toBeNull();
+    const old = await referredBusiness(s.t);
+    const paid = await attributedOrder(s.t, { buyerUserId: old.biz });
+    await s.t.run(async ctx => {
+      const referral = (await ctx.db.query('holmReferrals').withIndex('by_referred', q => q.eq('referredUserId', old.biz)).unique())!;
+      await ctx.db.patch(referral._id, { createdAt: Date.now() + 1 });
+    });
+    expect(await s.t.run(ctx => onOrderPaid(ctx, paid.orderId))).toBeNull();
+  });
+
+  it.each([false, true])('reconciles partial cancellations with the parent still paid (cleared=%s)', async cleared => {
+    const s = await businessAward();
+    // Reduce the remaining line to $400 and reconcile original immutable totals in this fixture.
+    const ids = await s.t.run(async ctx => {
+      const order = (await ctx.db.get(s.order.orderId))!;
+      const lines = await ctx.db.query('ordOrderLines').withIndex('by_order', q => q.eq('orderId', order._id)).collect();
+      const cancel = lines.find(l => l.unitPackMinor === 100000)!;
+      const remaining = lines.find(l => l.unitPackMinor === 50000)!;
+      await ctx.db.patch(remaining._id, { unitPackMinor: 40000 });
+      await ctx.db.patch(order._id, { totals: { ...order.totals, merchandise: 140000, total: 145000 } });
+      const child = await ctx.db.insert('ordSupplierOrders', { orderId: order._id, supplierCode: 'zuo', service: 'curbside', route: 'manual_dealer_zuo', status: 'queued', submission: { mode: 'none' }, exceptions: [], createdAt: Date.now(), updatedAt: Date.now() });
+      const allocation = await ctx.db.insert('ordAllocations', { orderLineId: cancel._id, supplierOrderId: child, pieces: 1, packs: 1, status: 'open' });
+      await ctx.db.insert('ordAllocations', { orderLineId: remaining._id, supplierOrderId: child, pieces: 1, packs: 1, status: 'open' });
+      return { child, allocation };
+    });
+    if (cleared) await s.clear();
+    const args = { supplierOrderId: ids.child, allocationIds: [ids.allocation], reason: 'Supplier confirmed cancellation', requestKey: 'cancel-award-fixture' };
+    await s.admin.mutation(api.ordFulfillment.cancelAllocations, args);
+    await s.admin.mutation(api.ordFulfillment.cancelAllocations, args);
+    expect((await s.t.run(ctx => ctx.db.get(s.order.orderId)))?.status).toBe('paid');
+    expect(await s.account()).toMatchObject({ pendingAwardMinor: 0, availableMinor: 0 });
+    expect(await s.t.run(ctx => available(ctx, s.referrer))).toBe(0);
+  });
+
+  it('uses original award terms and withholds records whose accepted terms or complete lines are missing', async () => {
+    const s = await businessAward();
+    await s.t.run(async ctx => {
+      const config = (await ctx.db.get(s.award.awardPolicy!.configId))!;
+      await ctx.db.patch(config._id, { value: { ...config.value as object, qualifyingMinMinor: 200000 } });
+    });
+    await s.clear();
+    expect(await s.account()).toMatchObject({ availableMinor: 10000 });
+    await s.t.run(async ctx => {
+      await ctx.db.patch(s.award._id, { awardPolicy: undefined });
+      expect((await reconcileAward(ctx, (await ctx.db.get(s.award._id))!)).status).toBe('review');
+      await ctx.db.patch(s.award._id, { awardPolicy: s.award.awardPolicy });
+      for (const line of await ctx.db.query('ordOrderLines').withIndex('by_order', q => q.eq('orderId', s.order.orderId)).collect()) await ctx.db.delete(line._id);
+      expect((await reconcileAward(ctx, (await ctx.db.get(s.award._id))!)).status).toBe('review');
+    });
+    expect(await s.t.run(ctx => available(ctx, s.referrer))).toBe(0);
+  });
+
+  it('walks past more than 100 settled historical awards to release the later eligible one', async () => {
+    const s = await businessAward();
+    await s.t.run(async ctx => {
+      for (let i = 0; i < 101; i++) {
+        const key = `historical:${i}`;
+        await applyCreditEvent(ctx, { eventKey: key, userId: s.referrer, type: 'award_pending', amountMinor: 100, ref: key, availableAt: 0, actor: 'fixture' });
+        await applyCreditEvent(ctx, { eventKey: `award-settled:${key}`, userId: s.referrer, type: 'award_cancelled', amountMinor: 100, ref: key, actor: 'fixture' });
+      }
+    });
+    await s.clear();
+    expect(await s.account()).toMatchObject({ pendingAwardMinor: 0, availableMinor: 10000 });
+  });
+
+  it('reconciles cancelled parent orders and does not settle while the program is disabled', async () => {
+    const s = await businessAward();
+    process.env.CREDIT_V2_ENABLED = 'false';
+    await s.clear();
+    expect(await s.account()).toMatchObject({ pendingAwardMinor: 10000, availableMinor: 0 });
+    await s.t.run(ctx => rollUp(ctx, s.order.orderId)); // no live allocations -> cancelled
+    expect(await s.account()).toMatchObject({ pendingAwardMinor: 0, availableMinor: 0 });
+    process.env.CREDIT_V2_ENABLED = 'true';
+    await expect(s.t.mutation(internal.ldgCredits.awardDue, { cutoff: Date.now() + DAY })).rejects.toSatisfy(e => isCommerceError(e, 'INVALID_INPUT'));
   });
 
   it('never lets concurrent checkouts overspend, releases expired holds and reinstates credit (not cash) on refunds', async () => {

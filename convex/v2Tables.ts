@@ -704,6 +704,7 @@ export const v2Tables = {
     email: v.string(),
     shippingAddress: v.optional(shipAddress),
     paymentIntentId: v.optional(v.string()),
+    confirmedCashRefundMinor: v.optional(v.number()),
     paidAt: v.number(),
     totals: v.object({ merchandise: v.number(), discount: v.number(), credit: v.number(), delivery: v.number(), tax: v.number(), total: v.number() }),
     splitKnown: v.boolean(),
@@ -1115,6 +1116,7 @@ export const v2Tables = {
   ldgCreditEvents: defineTable({
     eventKey: v.string(),
     sourceFingerprint: v.optional(v.string()), // immutable reviewed legacy opening source
+    awardPolicy: v.optional(v.object({ configId: v.id('sysConfig'), version: v.number(), qualifyingMinMinor: v.number() })),
     accountId: v.id('ldgCreditAccounts'),
     type: creditEventType,
     amountMinor: v.number(),
@@ -1132,7 +1134,13 @@ export const v2Tables = {
     .index('by_account_at', ['accountId', 'at'])
     .index('by_ref', ['ref'])
     .index('by_referred_org', ['referredOrganizationId'])
-    .index('by_type_available', ['type', 'availableAt']),
+    .index('by_type_available', ['type', 'availableAt'])
+    .index('by_order_type', ['orderId', 'type']),
+
+  ldgCreditAwardReviews: defineTable({
+    awardEventId: v.id('ldgCreditEvents'), accountId: v.id('ldgCreditAccounts'),
+    status: v.union(v.literal('open'), v.literal('resolved')), reason: v.string(), updatedAt: v.number(),
+  }).index('by_award', ['awardEventId']).index('by_account_status', ['accountId', 'status']),
 
   ldgPayoutRuns: defineTable({
     period: v.string(),

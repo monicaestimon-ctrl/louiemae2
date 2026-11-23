@@ -4,16 +4,16 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { DeliveryCheckout } from './CheckoutV2';
 import DeliveryQuoteRequest from './DeliveryQuoteRequest';
-const mocks = vi.hoisted(() => ({ estimate: vi.fn(), quote: vi.fn(), remember: vi.fn() }));
+const mocks = vi.hoisted(() => ({ estimate: vi.fn(), quote: vi.fn(), remember: vi.fn(), credit: undefined as unknown }));
 vi.mock('../../lib/delivery/checkoutReturn', () => ({ rememberCheckout: mocks.remember }));
 vi.mock('./useDeliveryRequest', () => ({
   useDeliveryRequest: (operation: string) =>
     operation === 'estimate' ? mocks.estimate : mocks.quote,
 }));
-vi.mock('convex/react', () => ({ useQuery: () => undefined }));
+vi.mock('convex/react', () => ({ useQuery: () => mocks.credit }));
 vi.mock('@convex-dev/auth/react', () => ({ useAuthToken: () => null }));
 vi.mock('../../lib/partnerLink', () => ({ visitorId: () => 'fixture' }));
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => { vi.clearAllMocks(); mocks.credit = undefined; });
 
 it('links all invalid address fields and preserves focus while correcting them', () => {
   render(<DeliveryCheckout lines={[]} />);
@@ -287,4 +287,39 @@ it('discards a pending payment response after the checkout instance unmounts', a
   expect(mocks.remember).not.toHaveBeenCalled();
   expect(window.location.hash).not.toBe('#must-not-redirect');
   vi.unstubAllGlobals();
+});
+
+
+it('explains held credit and leaves cash checkout available without offering unavailable credit', () => {
+  mocks.credit = { availableMinor: 0, reviewRequired: true, reviewMessage: 'Store credit is temporarily unavailable while a referral refund is reviewed. Your credit history is preserved.' };
+  render(<DeliveryCheckout lines={[]} />);
+  expect(screen.getByText(/Store credit is temporarily unavailable/)).toHaveAttribute('role', 'status');
+  expect(screen.queryByRole('checkbox', { name: /credit/i })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Review delivery and total' })).toBeEnabled();
+  expect(mocks.estimate).not.toHaveBeenCalled();
+});
+
+
+it('invalidates a credit-funded estimate when a review opens and permits a newly reviewed cash total', async () => {
+  const lines = [{ productId: 'fixture', variantId: 'fixture', packs: 1 }];
+  const estimate = { estimateId: 'fixture', expiresAt: Date.now() + 60000, status: 'ok', merchandiseMinor: 10000, deliveryChargeMinor: 5999, taxMinor: 0, totalMinor: 10999, creditMinor: 5000, serviceName: 'Curbside delivery', serviceDetails: [], timingCaveat: '' };
+  mocks.credit = { availableMinor: 5000, reviewRequired: false };
+  mocks.estimate.mockResolvedValue(estimate);
+  const view = render(<DeliveryCheckout lines={lines} />);
+  for (const [label, value] of Object.entries({ 'Recipient name': 'Test recipient', 'Delivery contact phone': '5555550100', 'Street address': '123 Test St', City: 'Stockton', 'ZIP code': '95206', Email: 'test@example.com' }))
+    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review delivery and total' }));
+  await screen.findByRole('button', { name: 'Pay $109.99' });
+  mocks.credit = { availableMinor: 0, reviewRequired: true, reviewMessage: 'Store credit review required' };
+  view.rerender(<DeliveryCheckout lines={lines} />);
+  expect(screen.queryByRole('button', { name: /^Pay / })).toBeNull();
+  expect(screen.getByLabelText('Street address')).toHaveValue('123 Test St');
+  mocks.estimate.mockResolvedValue({ ...estimate, creditMinor: 0, totalMinor: 15999 });
+  fireEvent.click(screen.getByRole('button', { name: 'Review delivery and total' }));
+  await screen.findByRole('button', { name: 'Pay $159.99' });
+  mocks.credit = { availableMinor: 5000, reviewRequired: false };
+  view.rerender(<DeliveryCheckout lines={lines} />);
+  expect(screen.queryByRole('button', { name: /^Pay / })).toBeNull();
+  expect(mocks.estimate).toHaveBeenCalledTimes(2);
+  expect(mocks.quote).not.toHaveBeenCalled();
 });

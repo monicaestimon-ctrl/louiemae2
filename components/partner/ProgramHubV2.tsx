@@ -455,6 +455,7 @@ function Earnings() {
       <p style={{ margin: 0, fontSize: 12, color: 'inherit' }}>
         Click counts are informational; only paid, eligible orders earn commission.
       </p>
+      {credit?.reviewRequired && <p role="status">{credit.reviewMessage}</p>}
       {credit && (credit.availableMinor > 0 || credit.pendingAwardMinor > 0) && (
         <p style={{ margin: 0 }}>
           Store credit: {money(credit.availableMinor)} available
