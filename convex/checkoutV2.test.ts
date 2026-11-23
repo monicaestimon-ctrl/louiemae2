@@ -16,7 +16,7 @@ import { quoteOnlyReasons, zipRegion, STANDARD_ACCESS } from '../lib/delivery/de
 import { exemptionFor } from './dlvTaxExemptions';
 import { groupFreight, resolveLines, type FreightConfig, type ResolvedLine } from './dlvEngine';
 import { digest } from './dlvSecurity';
-import { availableAfterCommitments } from './ordInventory';
+import { availableAfterCommitments, availableAshcroftAfterCommitments, currentAshcroftInventory } from './ordInventory';
 import { applyCreditEvent } from './ldgCore';
 import { reserve as reserveCredit, settle as settleCredit } from './ldgCredits';
 
@@ -931,7 +931,14 @@ describe('checkout and verified payment (S19, DEL04, FUL01)', () => {
     await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, args)).rejects.toThrow(/Available credit/);
     expect(await s.t.run(ctx => ctx.db.query('ordOrders').collect())).toHaveLength(0);
     await s.t.run(ctx => settleCredit(ctx, 'other-checkout-fixture', 'released'));
+    const originalAshcroftHold = (await s.t.run(ctx => ctx.db.query('ordInventoryReservations').collect())).find(r => r.variantId === ashcroftMirror._id)!;
+    await s.t.run(async ctx => {
+      const old = (await ctx.db.query('ashcroftInventoryFeeds').first())!;
+      const { _id, _creationTime, ...rest } = old; void _id; void _creationTime;
+      await ctx.db.insert('ashcroftInventoryFeeds', { ...rest, sha256: 'b'.repeat(64), observedAt: Date.now() });
+    });
     const orderId = await s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, args);
+    expect((await s.t.run(ctx => ctx.db.get(originalAshcroftHold._id)))?.ashcroftFeedId).toBe(originalAshcroftHold.ashcroftFeedId);
     expect(await s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, args)).toBe(orderId);
     await expect(s.admin.mutation(api.ordExceptionFulfillment.resumeOriginal, { ...args, customerAgreement: 'Changed recovery notes' })).rejects.toThrow(/Changed recovery retry/);
     const order = (await s.t.run(ctx => ctx.db.get(orderId)))!;
@@ -2863,4 +2870,96 @@ it('reviews Zuo pack quantities from verified warehouse stock without guessing f
  expect(review).toMatchObject({maximum:3,quantity:5});expect(JSON.stringify(review)).not.toContain('111182');
  await s.t.run(async ctx=>{const stock=(await ctx.db.query('catStockRevisions').first())!;await ctx.db.patch(stock._id,{kind:'on_hand'});});
  expect(await s.t.query(api.retailLaunch.cartReview,{...args,attempt:2})).toMatchObject({maximum:0});
+});
+
+
+describe('Ashcroft selling-unit inventory commitments', () => {
+  it('deducts competing carts once and releases only expired unpaid capacity', async () => {
+    const s = await setup();
+    await s.t.run(async ctx => { const feed = (await ctx.db.query('ashcroftInventoryFeeds').first())!; await ctx.db.patch(feed._id, { rows: [{ sku: 'BEN123', quantity: 1 }] }); });
+    const lines = [{ productId: s.ashId, variantId: 'b1', packs: 1 }];
+    const estimate = (visitorKey: string) => estimateViaGateway(s.t, { lines, channel: 'retail', zip: '95206', address: ADDRESS, visitorKey });
+    const first = await estimate('ashcroft-first-cart'), second = await estimate('ashcroft-second-cart');
+    const args = { idempotencyKey: 'ashcroft-first-intent-key', estimateId: first.estimateId, guestCapability: first.guestCapability, lines, address: ADDRESS, service: 'curbside', acceptTotalMinor: first.totalMinor! };
+    const intent = await s.t.mutation(internal.ordCheckout.createIntent, args);
+    expect(intent.status).toBe('created');
+    expect((await s.t.mutation(internal.ordCheckout.createIntent, args)).status).toBe('existing');
+    await expect(s.t.mutation(internal.ordCheckout.createIntent, { ...args, idempotencyKey: 'ashcroft-second-intent-key', estimateId: second.estimateId, guestCapability: second.guestCapability, acceptTotalMinor: second.totalMinor! })).rejects.toThrow(/committed/);
+    const rows = await s.t.run(ctx => ctx.db.query('ordInventoryReservations').collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ inventoryBasis: 'ashcroft_selling_unit', supplierSku: 'BEN123', packs: 1 });
+    expect(rows[0].ashcroftFeedId).toBeTruthy(); expect(rows[0].warehouseId).toBeUndefined();
+    const cv = (await s.t.run(ctx => ctx.db.get(rows[0].variantId)))!;
+    expect(await s.t.run(ctx => availableAshcroftAfterCommitments(ctx, cv, 1, Date.now(), rows[0].intentId))).toBe(1);
+    await s.t.run(ctx => ctx.db.patch(rows[0]._id, { expiresAt: Date.now() }));
+    expect(await s.t.run(ctx => availableAshcroftAfterCommitments(ctx, cv, 1, Date.now()))).toBe(1);
+    await s.t.run(ctx => ctx.db.patch(rows[0]._id, { status: 'consumed' }));
+    expect(await s.t.run(ctx => availableAshcroftAfterCommitments(ctx, cv, 1, Date.now()))).toBe(0);
+  });
+
+  it('keeps paid allocations across feed refresh and requires authorized acknowledged reconciliation', async () => {
+    const s = await setup();
+    await paidOrder(s, [{ productId: s.ashId, variantId: 'b1', packs: 1 }]);
+    const row = (await s.t.run(ctx => ctx.db.query('ordInventoryReservations').first()))!;
+    const cv = (await s.t.run(ctx => ctx.db.get(row.variantId)))!;
+    expect(row.status).toBe('consumed');
+    const args = { reservationId: row._id, expectedAshcroftFeedId: row.ashcroftFeedId!, evidence: 'Fixture supplier allocation', note: 'Fixture newer count includes acknowledged paid unit', confirmed: true, requestKey: 'ashcroft-reconcile-fixture-key' };
+    await expect(s.admin.mutation(api.ordInventory.reconcile, args)).rejects.toThrow(/newer/);
+    const feedId = await s.t.run(async ctx => {
+      const old = (await ctx.db.get(row.ashcroftFeedId!))!;
+      const { _id, _creationTime, ...rest } = old; void _id; void _creationTime;
+      return ctx.db.insert('ashcroftInventoryFeeds', { ...rest, sha256: 'b'.repeat(64), observedAt: Date.now(), rows: [{ sku: 'BEN123', quantity: 99 }] });
+    });
+    expect(await s.t.run(ctx => availableAshcroftAfterCommitments(ctx, cv, 99, Date.now()))).toBe(98);
+    const update = { ...args, expectedAshcroftFeedId: feedId };
+    await expect(s.t.mutation(api.ordInventory.reconcile, update)).rejects.toThrow();
+    await expect(s.admin.mutation(api.ordInventory.reconcile, update)).rejects.toThrow(/handoff and acknowledgement/);
+    const child = (await s.t.run(ctx => ctx.db.query('ordSupplierOrders').first()))!;
+    await s.admin.mutation(api.ordFulfillment.markSubmitted, { supplierOrderId: child._id, supplierPo: 'FIXTURE-ASHCROFT', acceptedCostMinor: 30000 });
+    await s.admin.mutation(api.ordFulfillment.acknowledge, { supplierOrderId: child._id, confirmation: 'Fixture full supplier allocation' });
+    // Withdrawal blocks new sales, but cannot prevent legitimate paid-obligation reconciliation.
+    await s.t.run(ctx => ctx.db.patch(cv._id, { availability: 'out_of_stock' }));
+    await s.admin.mutation(api.ordInventory.reconcile, update);
+    await s.admin.mutation(api.ordInventory.reconcile, update);
+    await expect(s.admin.mutation(api.ordInventory.reconcile, { ...update, note: 'Changed retry' })).rejects.toThrow(/Retry/);
+    expect((await s.t.run(ctx => ctx.db.get(row._id)))?.reconciledAshcroftFeedId).toBe(feedId);
+    expect(await s.t.run(ctx => availableAshcroftAfterCommitments(ctx, cv, 99, Date.now()))).toBe(99);
+    expect((await s.admin.query(api.ordInventory.pending, { variantId: cv._id })).rows).toHaveLength(0);
+  });
+
+  it.each(['stock-drop', 'missing-hold', 'unknown-basis', 'expired-feed'])('retains one paid exception for %s without creating supplier orders', async failure => {
+    const s = await setup();
+    const lines = [{ productId: s.ashId, variantId: 'b1', packs: 1 }];
+    const est = await estimateViaGateway(s.t, { lines, channel: 'retail', zip: '95206', address: ADDRESS, visitorKey: 'ashcroft-payment-stock' });
+    const intent = await s.t.mutation(internal.ordCheckout.createIntent, { idempotencyKey: 'ashcroft-payment-stock-key', estimateId: est.estimateId, guestCapability: est.guestCapability, lines, address: ADDRESS, service: 'curbside', acceptTotalMinor: est.totalMinor! });
+    if (intent.status === 'price_changed') throw new Error('Unexpected fixture price change');
+    await s.t.mutation(internal.ordCheckout.attachSession, { intentId: intent.intentId, sessionId: 'cs_ashcroft_stock' });
+    await s.t.run(async ctx => {
+      const row = (await ctx.db.query('ordInventoryReservations').first())!;
+      const feed = (await ctx.db.query('ashcroftInventoryFeeds').first())!;
+      if (failure === 'missing-hold') await ctx.db.delete(row._id);
+      if (failure === 'unknown-basis') await ctx.db.patch(row._id, { inventoryBasis: undefined });
+      if (failure === 'stock-drop') await ctx.db.patch(feed._id, { rows: [{ sku: 'BEN123', quantity: 0 }] });
+      if (failure === 'expired-feed') await ctx.db.patch(feed._id, { validUntil: Date.now() });
+    });
+    const event = { eventId: 'evt_ashcroft_stock', type: 'checkout.session.completed', livemode: false, payloadHash: 'fixture', payload: { id: 'cs_ashcroft_stock', intentId: intent.intentId, payment_status: 'paid', amount_total: intent.totalMinor, currency: 'usd', payment_intent: 'pi_ashcroft_stock', email: 'fixture@example.com' } };
+    await s.t.mutation(internal.ordPayments.receive, event); await processEvents(s.t);
+    await s.t.mutation(internal.ordPayments.receive, { ...event, eventId: 'evt_ashcroft_duplicate' }); await processEvents(s.t);
+    const exceptions = await s.t.run(ctx => ctx.db.query('ordPaidExceptions').collect());
+    expect(exceptions).toHaveLength(1); expect(exceptions[0].reason).toBe('stock_failed');
+    expect(await s.t.run(ctx => ctx.db.query('ordSupplierOrders').collect())).toHaveLength(0);
+    const obligations = await s.t.run(ctx => ctx.db.query('ordInventoryReservations').collect());
+    expect(obligations).toHaveLength(1); expect(obligations[0].status).toBe('consumed');
+  });
+
+  it('rejects ambiguous old obligations and supplier identity changes instead of guessing a basis', async () => {
+    const s = await setup();
+    await paidOrder(s, [{ productId: s.ashId, variantId: 'b1', packs: 1 }]);
+    const row = (await s.t.run(ctx => ctx.db.query('ordInventoryReservations').first()))!;
+    const cv = (await s.t.run(ctx => ctx.db.get(row.variantId)))!;
+    await s.t.run(ctx => ctx.db.patch(row._id, { inventoryBasis: undefined }));
+    await expect(s.t.run(ctx => availableAshcroftAfterCommitments(ctx, cv, 100, Date.now()))).rejects.toThrow(/basis/);
+    await expect(s.t.run(ctx => currentAshcroftInventory(ctx, { ...cv, optionKey: 'changed' }, Date.now()))).rejects.toThrow(/identity/);
+    await expect(s.t.run(ctx => currentAshcroftInventory(ctx, { ...cv, supplierSku: 'MISSING' }, Date.now()))).rejects.toThrow(/confirmation/);
+  });
 });

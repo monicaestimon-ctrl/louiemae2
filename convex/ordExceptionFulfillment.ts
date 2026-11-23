@@ -1,4 +1,3 @@
-import { ashcroftAvailable } from './ashcroftInventory';
 import { v } from 'convex/values';
 import { mutation, query } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
@@ -8,7 +7,7 @@ import { CommerceError } from '../lib/errors';
 import { acceptsPlatformPayment } from '../lib/paymentMode';
 import { digest } from './dlvSecurity';
 import { audit } from './sysCore';
-import { currentInventory, availableAfterCommitments } from './ordInventory';
+import { currentInventory, availableAfterCommitments, currentAshcroftInventory, availableAshcroftAfterCommitments, ashcroftReservationBasis } from './ordInventory';
 import { finishVerifiedOrder } from './ordPayments';
 import { reserve as reserveCredit } from './ldgCredits';
 import { activeConfig } from './sysConfig';
@@ -172,6 +171,7 @@ export const resumeOriginal = mutation({
     )
       throw new CommerceError('INVALID_INPUT', 'Confirm every original line exactly once');
     const now = Date.now();
+    const ashcroftFeeds = new Map<Id<'catVariants'>, Id<'ashcroftInventoryFeeds'>>();
     for (const { line, variant, warehouse, supplier, product, listing } of s.lines) {
       const confirmation = a.confirmations.find((c) => c.lineKey === line.lineKey);
       if (
@@ -234,15 +234,17 @@ export const resumeOriginal = mutation({
           );
       } else if (line.supplierCode === 'ashcroft') {
         const supplierLine = listing?.fulfillment?.find((x) => x.id === variant.legacyVariantId);
+        const stock = await currentAshcroftInventory(ctx, variant, now);
         if (
           !listing?.published ||
           supplierLine?.sku !== variant.supplierSku ||
-          !(await ashcroftAvailable(ctx, supplierLine.sku, listing.snapshot.description, line.packs))
+          line.packs > await availableAshcroftAfterCommitments(ctx, variant, stock.availableUnits, now, intent._id)
         )
           throw new CommerceError(
             'STOCK_UNAVAILABLE',
             'Ashcroft listing is unavailable; do not substitute'
           );
+        ashcroftFeeds.set(variant._id, stock.feed._id);
       } else throw new CommerceError('STOCK_UNAVAILABLE', 'Unsupported supplier recovery');
     }
     // Expired checkouts may have released credit. Re-reserve it explicitly or fail without changing the accepted total.
@@ -298,9 +300,17 @@ export const resumeOriginal = mutation({
           'PAYMENT_RECONCILIATION_REQUIRED',
           'Inventory obligation quantity needs investigation'
         );
+      const feedId = ashcroftFeeds.get(line.variantId);
+      const sourceBasis = feedId ? ashcroftReservationBasis(variant!, feedId) : {};
+      if (matching.some(h => h.inventoryBasis && (!feedId || h.supplierSku !== variant!.supplierSku)))
+        throw new CommerceError('STOCK_UNAVAILABLE', 'Original selling-unit inventory identity changed');
       for (const hold of matching)
         await ctx.db.patch(hold._id, {
           status: 'consumed',
+          ...sourceBasis,
+          // Preserve the original source on a known obligation. Recovery supplies
+          // a current feed only when its original selling-unit evidence is missing.
+          ...(hold.ashcroftFeedId ? { ashcroftFeedId: hold.ashcroftFeedId } : {}),
           ...(variant!.warehouseId ? { warehouseId: variant!.warehouseId } : {}),
           ...(variant!.currentStockRevisionId
             ? { stockRevisionId: variant!.currentStockRevisionId }
@@ -316,6 +326,7 @@ export const resumeOriginal = mutation({
           expiresAt: now,
           createdAt: now,
           status: 'consumed',
+          ...sourceBasis,
           ...(variant!.warehouseId ? { warehouseId: variant!.warehouseId } : {}),
           ...(variant!.currentStockRevisionId
             ? { stockRevisionId: variant!.currentStockRevisionId }

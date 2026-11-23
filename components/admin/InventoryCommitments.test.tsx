@@ -8,7 +8,9 @@ const mock = vi.hoisted(() => ({
   save: vi.fn(),
   data: {
     canReconcile: true,
-    currentRevisionId: 'stock-1',
+    currentRevisionId: 'stock-1' as string | null,
+    currentAshcroftFeedId: null as string | null,
+    supplierCode: 'zuo',
     hasMore: false,
     rows: [
       {
@@ -17,6 +19,8 @@ const mock = vi.hoisted(() => ({
         packs: 2,
         warehouseId: 'warehouse-1',
         piecesPerPack: 2,
+        inventoryBasis: null as string | null,
+        supplierSku: null as string | null,
       },
     ],
   },
@@ -26,7 +30,43 @@ afterEach(cleanup);
 beforeEach(() => {
   mock.save.mockReset().mockResolvedValue('reservation-1');
   mock.data.currentRevisionId = 'stock-1';
+  mock.data.currentAshcroftFeedId = null;
+  mock.data.supplierCode = 'zuo';
+  mock.data.rows[0].inventoryBasis = null;
+  mock.data.rows[0].supplierSku = null;
   mock.data.canReconcile = true;
+});
+
+it('uses Ashcroft selling-unit feed evidence without inventing a warehouse revision', async () => {
+  mock.data.supplierCode = 'ashcroft';
+  mock.data.currentRevisionId = null;
+  mock.data.currentAshcroftFeedId = 'feed-1';
+  mock.data.rows[0].inventoryBasis = 'ashcroft_selling_unit';
+  mock.data.rows[0].supplierSku = 'BEN123';
+  view();
+  expect(screen.getByText(/2 selling unit\(s\)/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Review allocation reservation-1' }));
+  fireEvent.change(screen.getByLabelText('Supplier allocation evidence reference'), { target: { value: 'Supplier acknowledgement fixture' } });
+  fireEvent.change(screen.getByLabelText('Reconciliation note'), { target: { value: 'New selling-unit count includes this paid order' } });
+  fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.click(screen.getByRole('button', { name: 'Reconcile supplier allocation' }));
+  await waitFor(() => expect(mock.save).toHaveBeenCalled());
+  expect(mock.save.mock.calls[0][0]).toMatchObject({ expectedAshcroftFeedId: 'feed-1', confirmed: true });
+  expect(mock.save.mock.calls[0][0]).not.toHaveProperty('expectedRevisionId');
+});
+
+it('retains notes and requires a new review when the Ashcroft feed changes', () => {
+  mock.data.supplierCode = 'ashcroft';
+  mock.data.currentRevisionId = null;
+  mock.data.currentAshcroftFeedId = 'feed-1';
+  const result = view();
+  fireEvent.click(screen.getByRole('button', { name: 'Review allocation reservation-1' }));
+  fireEvent.change(screen.getByLabelText('Reconciliation note'), { target: { value: 'Keep this note' } });
+  mock.data.currentAshcroftFeedId = 'feed-2';
+  result.rerender(<InventoryCommitments variantId={'variant' as Id<'catVariants'>} />);
+  expect(screen.getByRole('alert')).toHaveTextContent('Stock or allocation changed');
+  expect(screen.getByLabelText('Reconciliation note')).toHaveValue('Keep this note');
+  expect(screen.getByRole('button', { name: 'Reconcile supplier allocation' })).toBeDisabled();
 });
 const view = () => render(<InventoryCommitments variantId={'variant' as Id<'catVariants'>} />);
 it('requires explicit confirmation and binds evidence to the selected stock revision', async () => {
