@@ -16,7 +16,7 @@ import { recordScenarios } from './catPricing';
 const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 const NOW = Date.UTC(2026, 10, 23);
 beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'], now: NOW }); process.env.CJ_ADMIN_EMAILS = 'owner@example.com'; });
-afterEach(() => { vi.useRealTimers(); delete process.env.CJ_ADMIN_EMAILS; delete process.env.CATALOG_PUBLICATION_V2_ENABLED; delete process.env.TRADE_CHECKOUT_V2_ENABLED; delete process.env.DELIVERY_AUTOMATION_ENABLED; delete process.env.RETAIL_ZUO_CHECKOUT_ENABLED; });
+afterEach(() => { vi.useRealTimers(); delete process.env.CJ_ADMIN_EMAILS; delete process.env.DELIVERY_ADMIN_ROLES; delete process.env.CATALOG_PUBLICATION_V2_ENABLED; delete process.env.TRADE_CHECKOUT_V2_ENABLED; delete process.env.DELIVERY_AUTOMATION_ENABLED; delete process.env.RETAIL_ZUO_CHECKOUT_ENABLED; });
 
 async function setup() {
   const t = convexTest(schema, modules);
@@ -252,5 +252,66 @@ describe('Ashcroft supplier-specific qualification', () => {
     expect(result.category).toBe('decor');
     expect(result.minimumRetailMinor).toBeLessThan(76956);
     expect(result.retailApproved).toBe(false);
+  });
+});
+
+describe('reviewed SKU approvals', () => {
+  it('binds approvals to current evidence, supports stable reads, and separates finance from approval', async () => {
+    const s = await setup();
+    const args = { variantId: s.variantId };
+    await expect(s.t.query(api.catPricing.review, args)).rejects.toThrow();
+    const review = await s.admin.query(api.catPricing.review, args);
+    expect(review.canApprove).toBe(true);
+    expect(review.commission).toMatchObject({ ok: true, rates: [{ tierKey: 'base', rateBps: 1000 }, { tierKey: 'active', rateBps: 1200 }, { tierKey: 'top', rateBps: 1500 }, { tierKey: 'elite', rateBps: 1800 }] });
+    vi.setSystemTime(NOW + 1000);
+    expect((await s.admin.query(api.catPricing.review, args)).reviewHash).toBe(review.reviewHash);
+    const approval = { ...args, expectedReviewHash: review.reviewHash, channel: 'retail' as const, packPriceMinor: 85000, reason: 'Reviewed funded final price' };
+    process.env.DELIVERY_ADMIN_ROLES = JSON.stringify({ 'owner@example.com': ['finance'] });
+    expect((await s.admin.query(api.catPricing.review, args)).canApprove).toBe(false);
+    await expect(s.admin.mutation(api.catPricing.approvePrice, approval)).rejects.toThrow(/staff role/);
+    await expect(s.admin.mutation(api.prgLinks.setReferralEligibility, { ...args, eligible: false, reason: 'Finance cannot change eligibility' })).rejects.toThrow(/staff role/);
+    process.env.DELIVERY_ADMIN_ROLES = JSON.stringify({ 'owner@example.com': ['support'] });
+    await expect(s.admin.query(api.catPricing.review, args)).rejects.toThrow();
+    delete process.env.DELIVERY_ADMIN_ROLES;
+    await s.t.run(ctx => ctx.db.patch(s.costId, { wholesaleMinor: 31000, wholesalePrecise: '310' }));
+    await expect(s.admin.mutation(api.catPricing.approvePrice, approval)).rejects.toThrow(/changed/);
+    await expect(s.admin.mutation(api.catPricing.assignPolicy, { ...args, policyKey: 'ashcroft-fixture', reason: 'Reviewed policy', expectedReviewHash: review.reviewHash })).rejects.toThrow(/changed/);
+    expect((await s.t.run(ctx => ctx.db.get(s.variantId)))!.retailPriceRevisionId).toBeUndefined();
+    const latest = await s.admin.query(api.catPricing.review, args);
+    const id = await s.admin.mutation(api.catPricing.approvePrice, { ...approval, expectedReviewHash: latest.reviewHash });
+    expect((await s.admin.query(api.catPricing.review, args)).prices.retail?._id).toBe(id);
+    expect((await s.t.run(ctx => ctx.db.get(s.listingId)))!.snapshot.variants[0].price).toBe(60000);
+  });
+
+  it('requires full funded Ashcroft economics before enabling referrals and preserves failed activation atomically', async () => {
+    const s = await setup();
+    await s.t.run(async ctx => {
+      const cv = (await ctx.db.get(s.variantId))!;
+      await ctx.db.patch(cv._id, { referralEligible: false, holds: [] });
+      await ctx.db.insert('ashcroftInventoryFeeds', { source: 'Fixture current source', sha256: 'a'.repeat(64), observedAt: NOW - 1000, validUntil: NOW + 3600000, importedAt: NOW, rows: [{ sku: cv.supplierSku, quantity: 10 }] });
+    });
+    await s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, channel: 'retail', packPriceMinor: 60000, reason: 'Fixture direct sale only' });
+    const before = await s.t.run(ctx => ctx.db.query('sysAuditEvents').collect());
+    const review = await s.admin.query(api.catPricing.review, { variantId: s.variantId });
+    await expect(s.admin.mutation(api.prgLinks.setReferralEligibility, { variantId: s.variantId, eligible: true, reason: 'Attempt unfunded full schedule', expectedReviewHash: review.reviewHash })).rejects.toThrow(/does not fund/);
+    expect((await s.t.run(ctx => ctx.db.get(s.variantId)))!.referralEligible).toBe(false);
+    expect(await s.t.run(ctx => ctx.db.query('sysAuditEvents').collect())).toEqual(before);
+    await s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, channel: 'retail', packPriceMinor: 85000, reason: 'Fixture fully funded rate' });
+    await s.admin.mutation(api.prgLinks.setReferralEligibility, { variantId: s.variantId, eligible: true, reason: 'Full advertised schedule funded' });
+    expect((await s.t.run(ctx => ctx.db.get(s.variantId)))!.referralEligible).toBe(true);
+  });
+
+  it('binds product-wide exceptions to a matching current review and keeps all four rates explicit', async () => {
+    const s = await setup();
+    const cv = (await s.t.run(ctx => ctx.db.get(s.variantId)))!;
+    const review = await s.admin.query(api.catPricing.review, { variantId: cv._id });
+    const args = { productId: cv.productId, reviewVariantId: cv._id, expectedReviewHash: review.reviewHash,
+      rates: (['base','active','top','elite'] as const).map(tierKey => ({ tierKey, rateBps: 500 })), visibleNote: 'Visible fixture exception' };
+    await s.admin.mutation(api.prgLinks.createException, args);
+    await expect(s.admin.mutation(api.prgLinks.createException, args)).rejects.toThrow(/changed/);
+    const after = await s.admin.query(api.catPricing.review, { variantId: cv._id });
+    expect(after.exceptions).toHaveLength(1);
+    expect(after.commission).toMatchObject({ ok: true, rates: args.rates });
+    await expect(s.admin.mutation(api.prgLinks.createException, { ...args, expectedReviewHash: after.reviewHash, rates: args.rates.slice(0, 3) })).rejects.toThrow(/four tiers/);
   });
 });

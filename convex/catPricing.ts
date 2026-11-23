@@ -1,3 +1,4 @@
+import { assertPricingReview, pricingReview } from './catPricingReview';
 import { internalMutation as indexedInternalMutation, mutation as indexedMutation } from './functions';
 // Pricing engine service (spec S12, v2 §7). Every variant carries a policy id and a reproducible
 // scenario result. Approved prices are never overwritten by the engine, and the 5% policy can
@@ -16,6 +17,14 @@ import { piecePriceInfo } from '../lib/catUnits';
 import type { MarginPolicy } from '../lib/config';
 export { pricingInput, computeScenarios } from './catEconomics';
 import { computeScenarios } from './catEconomics';
+
+export const review = query({
+  args: { variantId: v.id('catVariants') },
+  handler: async (ctx, a) => {
+    const actor = await requireDeliveryRole(ctx, 'finance');
+    return { ...(await pricingReview(ctx, a.variantId)), canApprove: actor.approver };
+  },
+});
 
 export const simulate = query({
   args: { variantId: v.id('catVariants') },
@@ -96,9 +105,10 @@ export const recomputeVariants = indexedMutation({
 
 /** The owner approves a pack price for a channel; it must clear the engine minimum (or the documented policy) and MAP. */
 export const approvePrice = indexedMutation({
-  args: { variantId: v.id('catVariants'), channel: v.union(v.literal('retail'), v.literal('trade')), packPriceMinor: v.number(), reason: v.string() },
+  args: { variantId: v.id('catVariants'), channel: v.union(v.literal('retail'), v.literal('trade')), packPriceMinor: v.number(), reason: v.string(), expectedReviewHash: v.optional(v.string()) },
   handler: async (ctx, a) => {
     const admin = await requireDeliveryRole(ctx, 'approver');
+    await assertPricingReview(ctx, a.variantId, a.expectedReviewHash);
     if (!Number.isSafeInteger(a.packPriceMinor) || a.packPriceMinor <= 0) throw new CommerceError('INVALID_INPUT', 'Price must be a positive whole number of cents');
     if (!a.reason.trim()) throw new CommerceError('INVALID_INPUT', 'Add a reason');
     const cv = await ctx.db.get(a.variantId);
@@ -151,9 +161,11 @@ export const approvePrice = indexedMutation({
  * policy needs a document reference; the MAP-floor hold stays until an explicit floor is set.
  */
 export const assignPolicy = indexedMutation({
-  args: { variantId: v.id('catVariants'), policyKey: v.string(), documentRef: v.optional(v.string()), reason: v.string() },
+  args: { variantId: v.id('catVariants'), policyKey: v.string(), documentRef: v.optional(v.string()), reason: v.string(), expectedReviewHash: v.optional(v.string()) },
   handler: async (ctx, a) => {
     const admin = await requireDeliveryRole(ctx, 'approver');
+    await assertPricingReview(ctx, a.variantId, a.expectedReviewHash);
+    if (!a.reason.trim()) throw new CommerceError('INVALID_INPUT', 'Add the policy approval reason');
     const cv = await ctx.db.get(a.variantId);
     if (!cv) throw new CommerceError('INVALID_INPUT', 'Variant not found');
     const policy = (await activeConfig<MarginPolicy>(ctx, 'marginPolicy', a.policyKey)).value;

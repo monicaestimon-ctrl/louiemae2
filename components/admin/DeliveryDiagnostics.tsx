@@ -1,4 +1,5 @@
 import DeliveryMonitoring from './DeliveryMonitoring';
+import CatalogPricingReview from './CatalogPricingReview';
 import CatalogCostEvidence from './CatalogCostEvidence';
 import React, { useState } from 'react';
 import { useConvex, useMutation, usePaginatedQuery, useQuery } from 'convex/react';
@@ -138,7 +139,7 @@ export default function DeliveryDiagnostics() {
                 <td>
                   {r.holds.join(', ') || r.availability}
                   <button className="block underline" onClick={() => setCostVariant(r.variantId)}>
-                    Review cost evidence
+                    Review cost and pricing
                   </button>
                 </td>
               </tr>
@@ -147,7 +148,7 @@ export default function DeliveryDiagnostics() {
         </table>
       </div>
       {status === 'CanLoadMore' && <button onClick={() => loadMore(20)}>Load next variants</button>}
-      {costVariant && <CatalogCostEvidence key={costVariant} variantId={costVariant} />}
+      {costVariant && <div key={costVariant} className="space-y-4"><CatalogCostEvidence variantId={costVariant} /><CatalogPricingReview variantId={costVariant} /></div>}
       <button
         disabled={busy}
         onClick={() =>

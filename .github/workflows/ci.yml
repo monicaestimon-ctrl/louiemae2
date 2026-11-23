@@ -114,6 +114,7 @@ jobs:
           npm run test:field:browser
           node scripts/lighthouse/field-admin.mjs
           node scripts/lighthouse/catalog-publication.mjs
+          node scripts/lighthouse/catalog-pricing.mjs
           node scripts/lighthouse/house-staff.mjs
           node scripts/lighthouse/staff-entry.mjs
           node scripts/lighthouse/trade-hub-entry.mjs

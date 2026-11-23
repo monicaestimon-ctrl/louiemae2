@@ -1,3 +1,5 @@
+import { assertPricingReview } from './catPricingReview';
+import { requireDeliveryRole } from './dlvAccess';
 import { mutation as indexedMutation } from './functions';
 // Retail mappings and the link builder (spec S26, v2 §16, §22). Retail links exist only for
 // approved referral members and mapped, published, purchasable retail variants, and always point
@@ -59,6 +61,8 @@ async function qualifiedRetailTarget(ctx: QueryCtx, productId: Id<'commerceProdu
   if (!cv || cv.holds.length || cv.referralEligible !== true) throw new CommerceError('REFERRAL_INELIGIBLE', 'Not prequalified');
   if (cv.availability === 'discontinued') throw new CommerceError('REFERRAL_INELIGIBLE', 'Discontinued', 'This item is no longer sold, so it has no retail referral link.');
   const product = await ctx.db.get(target.productId);
+  if (product?.provider === 'ashcroft' && target.listing.pricingMode !== 'approved_v2')
+    throw new CommerceError('REFERRAL_INELIGIBLE', 'Publish the approved final-price offer before generating referral links');
   if (product?.provider === 'zuo' || product?.provider === 'ashcroft') await assertSellable(ctx, cv._id, 'link');
   const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', target.productId)).first();
   if (!meta || meta.holds.length || meta.commissionCategory === 'review_required') throw new CommerceError('REFERRAL_INELIGIBLE', 'Category under review');
@@ -189,33 +193,41 @@ export const retireMapping = mutation({
 
 /** Explicit, visible referral eligibility for a variant (manual prequalification or disabling referrals). */
 export const setReferralEligibility = indexedMutation({
-  args: { variantId: v.id('catVariants'), eligible: v.boolean(), reason: v.string() },
+  args: { variantId: v.id('catVariants'), eligible: v.boolean(), reason: v.string(), expectedReviewHash: v.optional(v.string()) },
   handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+    const admin = await requireDeliveryRole(ctx, 'approver');
+    await assertPricingReview(ctx, a.variantId, a.expectedReviewHash);
     if (!a.reason.trim()) throw new CommerceError('INVALID_INPUT', 'Add the economics reason');
     const cv = await ctx.db.get(a.variantId);
     if (!cv) throw new CommerceError('INVALID_INPUT', 'Variant not found');
     const supplier = await ctx.db.get(cv.supplierId);
-    if (a.eligible && supplier?.code === 'zuo') {
+    if (a.eligible && supplier?.code !== 'zuo' && supplier?.code !== 'ashcroft')
+      throw new CommerceError('COST_REVIEW_REQUIRED', 'Supplier economics must be supported before enabling referrals');
+    if (a.eligible && (supplier?.code === 'zuo' || supplier?.code === 'ashcroft')) {
       const freshness = await evaluate(ctx, cv);
       const price = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
-      if (freshness.holds.length || !isCurrentPrice(price, cv._id, 'retail'))
+      if (freshness.holds.length || freshness.availability !== 'in_stock' || cv.availability === 'discontinued' || !isCurrentPrice(price, cv._id, 'retail'))
         throw new CommerceError('COST_REVIEW_REQUIRED', 'Current cost, stock and approved retail price are required before enabling referrals');
       // One strict calculation both qualifies and records. Any failure aborts the mutation
       // before the eligibility flag or its audit event can be written.
       await recordScenarios(ctx, cv._id, admin.email, { requireReferralQualification: true });
     }
     await ctx.db.patch(cv._id, { referralEligible: a.eligible, updatedAt: Date.now() });
-    if (!a.eligible && supplier?.code === 'zuo') await recordScenarios(ctx, cv._id, admin.email);
+    if (!a.eligible && (supplier?.code === 'zuo' || supplier?.code === 'ashcroft')) await recordScenarios(ctx, cv._id, admin.email);
     await audit(ctx, { actor: admin.email, action: a.eligible ? 'referral.enable' : 'referral.disable', entityTable: 'catVariants', entityId: cv._id, reason: a.reason });
   },
 });
 
 /** A visible, dated, tier-by-tier commission schedule for one product (never an undisclosed cap). */
 export const createException = mutation({
-  args: { productId: v.id('commerceProducts'), rates: v.array(v.object({ tierKey: v.union(v.literal('base'), v.literal('active'), v.literal('top'), v.literal('elite')), rateBps: v.number() })), visibleNote: v.string(), effectiveFrom: v.optional(v.number()) },
+  args: { productId: v.id('commerceProducts'), rates: v.array(v.object({ tierKey: v.union(v.literal('base'), v.literal('active'), v.literal('top'), v.literal('elite')), rateBps: v.number() })), visibleNote: v.string(), effectiveFrom: v.optional(v.number()), reviewVariantId: v.optional(v.id('catVariants')), expectedReviewHash: v.optional(v.string()) },
   handler: async (ctx, a) => {
-    const admin = await requireCjAdminIdentity(ctx);
+    const admin = await requireDeliveryRole(ctx, 'approver');
+    if (a.expectedReviewHash !== undefined || a.reviewVariantId !== undefined) {
+      const cv = a.reviewVariantId ? await ctx.db.get(a.reviewVariantId) : null;
+      if (!cv || cv.productId !== a.productId || !a.expectedReviewHash) throw new CommerceError('INVALID_INPUT', 'Review the matching product variant');
+      await assertPricingReview(ctx, cv._id, a.expectedReviewHash);
+    }
     if (!completeExceptionRates(a.rates)) throw new CommerceError('INVALID_INPUT', 'Give exactly one rate for each of the four tiers (0–23%).');
     if (!a.visibleNote.trim()) throw new CommerceError('INVALID_INPUT', 'Exceptions must carry a note shown to partners.');
     const now = Date.now();
