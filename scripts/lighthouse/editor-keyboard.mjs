@@ -170,6 +170,7 @@ try {
     await page.focus('.sx-pt');await page.keyboard.press('ArrowRight');
     await page.waitForFunction(()=>JSON.parse(localStorage.getItem('hol:collages'))[0]?.poly?.[0]?.[0]===.05);
     await page.keyboard.press('Delete');await page.waitForFunction(()=>document.querySelectorAll('.sx-pt').length===3);
+    await page.waitForFunction(()=>document.activeElement.matches('.sx-pt'));
     assert.equal(await page.evaluate(()=>document.activeElement.matches('.sx-pt')),true,'Corner removal retains focus');
     await page.keyboard.press('Delete');assert.equal(await page.$$eval('.sx-pt',e=>e.length),3);
     await undo();await page.waitForFunction(()=>document.querySelectorAll('.sx-pt').length===4);
@@ -177,7 +178,8 @@ try {
     await page.waitForFunction(()=>JSON.parse(localStorage.getItem('hol:collages'))[0]?.poly?.[0]?.[0]===.1);
     await action('.sx-corner-fields','Remove corner 4');
     await page.waitForFunction(()=>document.querySelectorAll('.sx-pt').length===3);
-    assert.equal(await page.evaluate(()=>document.activeElement.matches('.sx-corner-fields input')),true,'Fourth corner removal focuses an enabled coordinate field');
+    await page.waitForFunction(()=>document.activeElement.matches('.sx-corner-fields input:not(:disabled)'));
+    assert.equal(await page.evaluate(()=>document.activeElement.matches('.sx-corner-fields input:not(:disabled)')),true,'Fourth corner removal focuses an enabled coordinate field');
     await page.keyboard.press('Escape');await undo();await page.waitForFunction(()=>document.querySelectorAll('.sx-pt').length===4);
     await scan('corners');
     // Pointer edits must still dirty the document before the autosave effect runs.
