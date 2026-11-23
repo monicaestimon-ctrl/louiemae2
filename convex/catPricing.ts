@@ -13,7 +13,6 @@ import { openHold, resolveHold } from './catCore';
 import { projectDraftVariants } from './zuoImport';
 import { CommerceError, commerceErrorData } from '../lib/errors';
 import { piecePriceInfo } from '../lib/catUnits';
-import { ENGINE_VERSION } from '../lib/economics/pricing';
 import type { MarginPolicy } from '../lib/config';
 export { pricingInput, computeScenarios } from './catEconomics';
 import { computeScenarios } from './catEconomics';
@@ -57,7 +56,7 @@ export async function recordScenarios(ctx: MutationCtx, variantId: Id<'catVarian
   if (options.requireReferralQualification && (!res.referralQualified || res.belowMinimum))
     throw new CommerceError('REFERRAL_INELIGIBLE', 'The approved retail price does not fund its current commission and margin policy');
   const last = await ctx.db.query('catScenarioResults').withIndex('by_variant_computed', (q) => q.eq('variantId', variantId)).order('desc').first();
-  const id = last?.inputsHash === res.inputsHash && last.engineVersion === ENGINE_VERSION ? last._id : await ctx.db.insert('catScenarioResults', { variantId, inputsHash: res.inputsHash, scenarios: res.scenarios, minimumRetailMinor: res.minimumRetailMinor, computedAt: Date.now(), engineVersion: ENGINE_VERSION });
+  const id = last?.inputsHash === res.inputsHash && last.engineVersion === res.engineVersion ? last._id : await ctx.db.insert('catScenarioResults', { variantId, inputsHash: res.inputsHash, scenarios: res.scenarios, minimumRetailMinor: res.minimumRetailMinor, computedAt: Date.now(), engineVersion: res.engineVersion });
   // Reusing an identical calculation must still repair eligibility and holds.
   // Approval validity is channel-specific and checked by assertSellable. A missing retail
   // approval must not create a variant-wide blocker for a current funded trade offer.
@@ -73,7 +72,7 @@ export async function recordScenarios(ctx: MutationCtx, variantId: Id<'catVarian
     // Keep the eligibility decision: a failed computation is not an administrator opt-out.
   }
   if (res.belowMinimum || res.belowTradeMinimum) {
-    const detail = `Retail ${res.retailMinor} / minimum ${res.minimumRetailMinor}; trade ${res.tradeMinor ?? 'unapproved'} / minimum ${res.minimumTradeMinor}`;
+    const detail = `Retail ${res.retailMinor} / minimum ${res.minimumRetailMinor}; trade ${res.tradeMinor ?? 'unapproved'} / minimum ${res.minimumBaseTradeMinor}`;
     await openHold(ctx, variantId, 'MARGIN_BELOW_POLICY', detail, by);
     await openReview(ctx, 'price_below_minimum', 'catVariants', variantId, detail);
   } else await resolveHold(ctx, variantId, 'MARGIN_BELOW_POLICY', by, 'Both approved prices meet their current minimums');
@@ -105,11 +104,13 @@ export const approvePrice = indexedMutation({
     const cv = await ctx.db.get(a.variantId);
     if (!cv) throw new CommerceError('INVALID_INPUT', 'Variant not found');
     const res = await computeScenarios(ctx, cv, { reserveRetailCommission: a.channel === 'retail' && cv.referralEligible !== false });
-    const floor = a.channel === 'retail' ? res.minimumRetailMinor : res.minimumTradeMinor;
-    if (a.packPriceMinor < floor) throw new CommerceError('COST_REVIEW_REQUIRED', `Below the ${cv.marginPolicyKey ?? 'zuo-standard-20'} minimum of ${floor}`, `This price is below the approved minimum of $${(floor / 100).toFixed(2)}.`);
+    if (!cv.marginPolicyKey) throw new CommerceError('COST_REVIEW_REQUIRED', 'No margin policy assigned');
+    const floor = a.channel === 'retail' ? res.minimumRetailMinor : res.minimumBaseTradeMinor;
+    if (a.packPriceMinor < floor) throw new CommerceError('COST_REVIEW_REQUIRED', `Below the ${cv.marginPolicyKey} minimum of ${floor}`, `This price is below the approved minimum of $${(floor / 100).toFixed(2)}.`);
     const cost = cv.currentCostRevisionId ? await ctx.db.get(cv.currentCostRevisionId) : null;
     if (cost?.mapApplicability === 'applies' && cost.mapMinor !== null && a.packPriceMinor < cost.mapMinor * (cost.mapUnitBasis === 'piece' ? cv.piecesPerPack : 1)) throw new CommerceError('MAP_POLICY_REVIEW', 'Below pack MAP');
-    const marginPolicy = await activeConfig(ctx, 'marginPolicy', cv.marginPolicyKey ?? 'zuo-standard-20');
+    const marginPolicy = await activeConfig(ctx, 'marginPolicy', cv.marginPolicyKey);
+    const supplier = await ctx.db.get(cv.supplierId);
     const roundingPolicy = await activeConfig(ctx, 'roundingPolicy', 'rounding-pack-up-cents');
     const field = a.channel === 'retail' ? 'retailPriceRevisionId' : 'tradePriceRevisionId';
     const now = Date.now();
@@ -122,7 +123,8 @@ export const approvePrice = indexedMutation({
       channel: a.channel,
       packPriceMinor: a.packPriceMinor,
       piecePriceMinorInfo: piecePriceInfo(a.packPriceMinor, cv.piecesPerPack),
-      marginPolicyKey: cv.marginPolicyKey ?? 'zuo-standard-20',
+      informationUnitBasis: supplier?.code === 'ashcroft' ? 'selling_unit' : 'piece',
+      marginPolicyKey: cv.marginPolicyKey,
       marginPolicyVersion: marginPolicy.version,
       roundingPolicyVersion: roundingPolicy.version,
       approvedBy: admin.email,
@@ -174,7 +176,7 @@ export const contributionReport = query({
       variants.map(async (cv) => ({
         variantId: cv._id,
         sku: cv.supplierSku,
-        policy: cv.marginPolicyKey ?? 'zuo-standard-20',
+        policy: cv.marginPolicyKey ?? 'unassigned',
         latest: await ctx.db.query('catScenarioResults').withIndex('by_variant_computed', (q) => q.eq('variantId', cv._id)).order('desc').first(),
         note: 'Contribution after modeled variable costs, commission and allocated overhead. Not a measure of operating profit.',
       }))

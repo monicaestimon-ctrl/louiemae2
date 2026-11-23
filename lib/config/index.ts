@@ -67,6 +67,19 @@ export type PricingAssumptions = {
   overheadBps: number;
   allowanceBySize: Record<'SMALL' | 'MEDIUM' | 'LARGE' | 'OVERSIZE' | 'LTL', number>;
 };
+/** Independent per-selling-unit budget; no Zuo size allowance or $10 handling default. */
+export type AshcroftPricingAssumptions = {
+  supplierCode: 'ashcroft';
+  wholesaleUnitBasis: 'selling_unit';
+  supplierPaymentReserveBps: number;
+  handlingPerSellingUnitMinor: number;
+  fixedProcessingPerSellingUnitMinor: number;
+  processingBps: number;
+  returnsBps: number;
+  overheadBps: number;
+  /** Explicit guaranteed reduction only. Zero means actual approved trade prices, not a universal 25%. */
+  fundedTradeDiscountBps: number;
+};
 export type DeliveryLadder = {
   tiersMinor: number[];
   quoteAboveMinor: number;
@@ -185,6 +198,15 @@ export function parseConfig(kind: ConfigKind, value: unknown): unknown {
     case 'pricingAssumptions': {
       for (const f of ['supplierPaymentReserveBps', 'processingBps', 'returnsBps', 'overheadBps'])
         bps(kind, o[f], f);
+      if (o.supplierCode === 'ashcroft') {
+        if (o.wholesaleUnitBasis !== 'selling_unit') bad(kind, 'Ashcroft requires selling-unit assumptions');
+        for (const f of ['handlingPerSellingUnitMinor', 'fixedProcessingPerSellingUnitMinor']) int(kind, o[f], f);
+        int(kind, o.fundedTradeDiscountBps, 'fundedTradeDiscountBps', 0, 9999);
+        if (o.handlingPerPieceMinor !== undefined || o.allowanceBySize !== undefined)
+          bad(kind, 'Ashcroft cannot inherit Zuo physical-piece or size allowances');
+        return o as AshcroftPricingAssumptions;
+      }
+      if (o.supplierCode !== undefined && o.supplierCode !== 'zuo') bad(kind, 'Unknown pricing supplier');
       int(kind, o.handlingPerPieceMinor, 'handlingPerPieceMinor');
       const a = obj(kind, o.allowanceBySize);
       for (const s of ['SMALL', 'MEDIUM', 'LARGE', 'OVERSIZE', 'LTL'])

@@ -1,5 +1,27 @@
 import type { Doc } from './_generated/dataModel';
+import type { QueryCtx, MutationCtx } from './_generated/server';
 import { cmp, mul, parseDecimal, rat, toMinor } from '../lib/decimal';
+import { CommerceError } from '../lib/errors';
+import { currentObservation } from '../lib/catFreshness';
+
+/** Inventory updates must not push conflicting wholesale/MAP evidence out of the read window. */
+export async function costObservations(ctx: QueryCtx | MutationCtx, variantId: Doc<'catVariants'>['_id'], now = Date.now()) {
+  const result: Doc<'catSourceObservations'>[] = [];
+  for (const field of ['wholesale', 'map']) {
+    const rows = await ctx.db.query('catSourceObservations').withIndex('by_variant_field_observed', q => q.eq('variantId', variantId).eq('field', field)).order('desc').take(201);
+    const selected = rows.slice(0, 200);
+    if (rows.length > 200) {
+      const current = currentObservation(selected, field, now);
+      // Older observations cannot supersede a proven newer value or resolve a
+      // conflict already found. Unresolved timestamp ties or invalid prefixes
+      // still require a complete scoped review rather than a guessed winner.
+      if (current !== 'conflict' && (!current || current.observedAt <= rows[200].observedAt))
+        throw new CommerceError('COST_REVIEW_REQUIRED', 'Cost evidence history requires a complete scoped review');
+    }
+    result.push(...selected);
+  }
+  return result;
+}
 
 /** Structural cost integrity is independent of approval/freshness and never infers zero. */
 export function costIntegrityIssue(cost: Doc<'catCostRevisions'> | null, variant: Doc<'catVariants'>, now: number): string | null {

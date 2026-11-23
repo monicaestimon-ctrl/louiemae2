@@ -345,6 +345,7 @@ export const v2Tables = {
     channel: retailOrTrade,
     packPriceMinor: v.number(),
     piecePriceMinorInfo: v.number(),
+    informationUnitBasis: v.optional(v.union(v.literal('piece'), v.literal('selling_unit'))),
     marginPolicyKey: v.string(),
     marginPolicyVersion: v.number(),
     roundingPolicyVersion: v.number(),
