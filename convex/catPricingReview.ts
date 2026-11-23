@@ -161,6 +161,19 @@ export async function pricingReview(ctx: Ctx, variantId: Id<'catVariants'>) {
   const externalId = supplier?.code === 'ashcroft' ? variant.legacyVariantId : String(variant._id);
   return {
     reviewHash,
+    // Convex subscriptions do not invalidate when wall-clock time alone changes.
+    // Refresh at known boundaries, with a one-minute fallback for other expiry inputs.
+    nextRefreshAt: Math.min(
+      now + 60_000,
+      ...[
+        ...configs.filter((c) => c.status === 'approved'),
+        ...exceptions,
+        ...observations,
+        ...[cost, retail, trade].filter((c) => c !== null),
+      ]
+        .flatMap((c) => [c.effectiveFrom, c.effectiveTo])
+        .filter((at): at is number => typeof at === 'number' && at > now)
+    ),
     variant,
     supplierCode: supplier?.code ?? null,
     name: meta?.louieMaeName ?? variant.louieMaeVariantName,
@@ -180,26 +193,24 @@ export async function pricingReview(ctx: Ctx, variantId: Id<'catVariants'>) {
       pricingMode: l.pricingMode ?? 'legacy',
       amountMinor: l.snapshot.variants.find((v) => v.id === externalId)?.price ?? null,
     })),
-    exceptions: exceptions
-      .slice(0, 10)
-      .map((e) => ({
-        id: e._id,
-        version: e.version,
-        rates: e.rates,
-        visibleNote: e.visibleNote,
-        effectiveFrom: e.effectiveFrom,
-        effectiveTo: e.effectiveTo ?? null,
-      })),
+    exceptions: exceptions.slice(0, 10).map((e) => ({
+      id: e._id,
+      version: e.version,
+      rates: e.rates,
+      visibleNote: e.visibleNote,
+      effectiveFrom: e.effectiveFrom,
+      effectiveTo: e.effectiveTo ?? null,
+    })),
     exceptionHistoryTruncated: exceptions.length > 10,
   };
 }
 export async function assertPricingReview(
   ctx: Ctx,
   variantId: Id<'catVariants'>,
-  expected?: string
+  expected: string
 ) {
-  if (expected === undefined) return;
   if (
+    typeof expected !== 'string' ||
     !/^[a-f0-9]{64}$/.test(expected) ||
     (await pricingReview(ctx, variantId)).reviewHash !== expected
   )

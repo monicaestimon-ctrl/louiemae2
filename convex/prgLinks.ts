@@ -193,7 +193,7 @@ export const retireMapping = mutation({
 
 /** Explicit, visible referral eligibility for a variant (manual prequalification or disabling referrals). */
 export const setReferralEligibility = indexedMutation({
-  args: { variantId: v.id('catVariants'), eligible: v.boolean(), reason: v.string(), expectedReviewHash: v.optional(v.string()) },
+  args: { variantId: v.id('catVariants'), eligible: v.boolean(), reason: v.string(), expectedReviewHash: v.string() },
   handler: async (ctx, a) => {
     const admin = await requireDeliveryRole(ctx, 'approver');
     await assertPricingReview(ctx, a.variantId, a.expectedReviewHash);
@@ -220,14 +220,12 @@ export const setReferralEligibility = indexedMutation({
 
 /** A visible, dated, tier-by-tier commission schedule for one product (never an undisclosed cap). */
 export const createException = mutation({
-  args: { productId: v.id('commerceProducts'), rates: v.array(v.object({ tierKey: v.union(v.literal('base'), v.literal('active'), v.literal('top'), v.literal('elite')), rateBps: v.number() })), visibleNote: v.string(), effectiveFrom: v.optional(v.number()), reviewVariantId: v.optional(v.id('catVariants')), expectedReviewHash: v.optional(v.string()) },
+  args: { productId: v.id('commerceProducts'), rates: v.array(v.object({ tierKey: v.union(v.literal('base'), v.literal('active'), v.literal('top'), v.literal('elite')), rateBps: v.number() })), visibleNote: v.string(), effectiveFrom: v.optional(v.number()), reviewVariantId: v.id('catVariants'), expectedReviewHash: v.string() },
   handler: async (ctx, a) => {
     const admin = await requireDeliveryRole(ctx, 'approver');
-    if (a.expectedReviewHash !== undefined || a.reviewVariantId !== undefined) {
-      const cv = a.reviewVariantId ? await ctx.db.get(a.reviewVariantId) : null;
-      if (!cv || cv.productId !== a.productId || !a.expectedReviewHash) throw new CommerceError('INVALID_INPUT', 'Review the matching product variant');
-      await assertPricingReview(ctx, cv._id, a.expectedReviewHash);
-    }
+    const cv = await ctx.db.get(a.reviewVariantId);
+    if (!cv || cv.productId !== a.productId) throw new CommerceError('INVALID_INPUT', 'Review the matching product variant');
+    await assertPricingReview(ctx, cv._id, a.expectedReviewHash);
     if (!completeExceptionRates(a.rates)) throw new CommerceError('INVALID_INPUT', 'Give exactly one rate for each of the four tiers (0–23%).');
     if (!a.visibleNote.trim()) throw new CommerceError('INVALID_INPUT', 'Exceptions must carry a note shown to partners.');
     const now = Date.now();

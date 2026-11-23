@@ -55,8 +55,8 @@ async function publicationSetup() {
     process.env.RETAIL_ZUO_CHECKOUT_ENABLED = 'true';
     process.env.DELIVERY_AUTOMATION_ENABLED = 'true';
     process.env.TRADE_CHECKOUT_V2_ENABLED = 'true';
-    await s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, channel: 'retail', packPriceMinor: 80000, reason: 'Fixture funded retail offer' });
-    await s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, channel: 'trade', packPriceMinor: 60000, reason: 'Fixture funded trade offer' });
+    await s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: s.variantId })).reviewHash, channel: 'retail', packPriceMinor: 80000, reason: 'Fixture funded retail offer' });
+    await s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: s.variantId })).reviewHash, channel: 'trade', packPriceMinor: 60000, reason: 'Fixture funded trade offer' });
     const original = (await s.t.run(ctx => ctx.db.get(s.listingId)))!;
     const cv = (await s.t.run(ctx => ctx.db.get(s.variantId)))!;
     const source = await s.t.run(async ctx => {
@@ -148,11 +148,11 @@ describe('Ashcroft supplier-specific qualification', () => {
       await ctx.db.patch(source, { rows: [{ sku: cv.supplierSku, quantity: 10 }, { sku: 'BEN-SECOND', quantity: 10 }] });
       return next;
     });
-    await s.admin.mutation(api.catPricing.approvePrice, { variantId: second._id, channel: 'retail', packPriceMinor: 80000, reason: 'Fixture retail price' });
+    await s.admin.mutation(api.catPricing.approvePrice, { variantId: second._id, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: second._id })).reviewHash, channel: 'retail', packPriceMinor: 80000, reason: 'Fixture retail price' });
     const request = { productIds: [cv.productId], channels: ['retail', 'house'] as ('retail' | 'house')[] };
     expect((await s.admin.mutation(api.catPublication.publish, request))[0].variants).toBe(1);
     expect((await s.t.run(ctx => ctx.db.get(s.listingId)))!.snapshot.variants.map(v => v.id)).toEqual(['legacy']);
-    await s.admin.mutation(api.catPricing.approvePrice, { variantId: second._id, channel: 'trade', packPriceMinor: 60000, reason: 'Fixture later trade price' });
+    await s.admin.mutation(api.catPricing.approvePrice, { variantId: second._id, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: second._id })).reviewHash, channel: 'trade', packPriceMinor: 60000, reason: 'Fixture later trade price' });
     expect((await s.admin.mutation(api.catPublication.publish, request))[0].variants).toBe(2);
     expect((await s.t.run(ctx => ctx.db.get(s.listingId)))!.snapshot.variants.map(v => v.id)).toContain('second');
   });
@@ -208,9 +208,9 @@ describe('Ashcroft supplier-specific qualification', () => {
   it('approves independent channel prices without rewriting legacy listings or applying commission to trade', async () => {
     const s = await setup();
     const before = await s.t.run(ctx => ctx.db.get(s.listingId));
-    const retailId = await s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, channel: 'retail', packPriceMinor: 80000, reason: 'Fixture funded price' });
-    await expect(s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, channel: 'trade', packPriceMinor: 59000, reason: 'Fixture exceeds permitted base discount' })).rejects.toThrow(/minimum/);
-    await s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, channel: 'trade', packPriceMinor: 60000, reason: 'Fixture funded trade price' });
+    const retailId = await s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: s.variantId })).reviewHash, channel: 'retail', packPriceMinor: 80000, reason: 'Fixture funded price' });
+    await expect(s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: s.variantId })).reviewHash, channel: 'trade', packPriceMinor: 59000, reason: 'Fixture exceeds permitted base discount' })).rejects.toThrow(/minimum/);
+    await s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: s.variantId })).reviewHash, channel: 'trade', packPriceMinor: 60000, reason: 'Fixture funded trade price' });
     expect((await s.t.run(ctx => ctx.db.get(retailId)))?.informationUnitBasis).toBe('selling_unit');
     expect((await s.qualify('retail')).referralQualified).toBe(true);
     expect((await s.qualify('trade')).scenarios.find(r => r.name === 'trade_approved')).toMatchObject({ contributionMinor: 13983, passes: true });
@@ -269,7 +269,7 @@ describe('reviewed SKU approvals', () => {
     process.env.DELIVERY_ADMIN_ROLES = JSON.stringify({ 'owner@example.com': ['finance'] });
     expect((await s.admin.query(api.catPricing.review, args)).canApprove).toBe(false);
     await expect(s.admin.mutation(api.catPricing.approvePrice, approval)).rejects.toThrow(/staff role/);
-    await expect(s.admin.mutation(api.prgLinks.setReferralEligibility, { ...args, eligible: false, reason: 'Finance cannot change eligibility' })).rejects.toThrow(/staff role/);
+    await expect(s.admin.mutation(api.prgLinks.setReferralEligibility, { ...args, expectedReviewHash: review.reviewHash, eligible: false, reason: 'Finance cannot change eligibility' })).rejects.toThrow(/staff role/);
     process.env.DELIVERY_ADMIN_ROLES = JSON.stringify({ 'owner@example.com': ['support'] });
     await expect(s.admin.query(api.catPricing.review, args)).rejects.toThrow();
     delete process.env.DELIVERY_ADMIN_ROLES;
@@ -290,14 +290,14 @@ describe('reviewed SKU approvals', () => {
       await ctx.db.patch(cv._id, { referralEligible: false, holds: [] });
       await ctx.db.insert('ashcroftInventoryFeeds', { source: 'Fixture current source', sha256: 'a'.repeat(64), observedAt: NOW - 1000, validUntil: NOW + 3600000, importedAt: NOW, rows: [{ sku: cv.supplierSku, quantity: 10 }] });
     });
-    await s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, channel: 'retail', packPriceMinor: 60000, reason: 'Fixture direct sale only' });
+    await s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: s.variantId })).reviewHash, channel: 'retail', packPriceMinor: 60000, reason: 'Fixture direct sale only' });
     const before = await s.t.run(ctx => ctx.db.query('sysAuditEvents').collect());
     const review = await s.admin.query(api.catPricing.review, { variantId: s.variantId });
     await expect(s.admin.mutation(api.prgLinks.setReferralEligibility, { variantId: s.variantId, eligible: true, reason: 'Attempt unfunded full schedule', expectedReviewHash: review.reviewHash })).rejects.toThrow(/does not fund/);
     expect((await s.t.run(ctx => ctx.db.get(s.variantId)))!.referralEligible).toBe(false);
     expect(await s.t.run(ctx => ctx.db.query('sysAuditEvents').collect())).toEqual(before);
-    await s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, channel: 'retail', packPriceMinor: 85000, reason: 'Fixture fully funded rate' });
-    await s.admin.mutation(api.prgLinks.setReferralEligibility, { variantId: s.variantId, eligible: true, reason: 'Full advertised schedule funded' });
+    await s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: s.variantId })).reviewHash, channel: 'retail', packPriceMinor: 85000, reason: 'Fixture fully funded rate' });
+    await s.admin.mutation(api.prgLinks.setReferralEligibility, { variantId: s.variantId, expectedReviewHash: (await s.admin.query(api.catPricing.review, { variantId: s.variantId })).reviewHash, eligible: true, reason: 'Full advertised schedule funded' });
     expect((await s.t.run(ctx => ctx.db.get(s.variantId)))!.referralEligible).toBe(true);
   });
 
@@ -313,5 +313,35 @@ describe('reviewed SKU approvals', () => {
     expect(after.exceptions).toHaveLength(1);
     expect(after.commission).toMatchObject({ ok: true, rates: args.rates });
     await expect(s.admin.mutation(api.prgLinks.createException, { ...args, expectedReviewHash: after.reviewHash, rates: args.rates.slice(0, 3) })).rejects.toThrow(/four tiers/);
+  });
+});
+
+
+describe('mandatory pricing review binding and time boundaries', () => {
+  it('rejects missing review bindings before any approval writes', async () => {
+    const s = await setup();
+    const cv = (await s.t.run(ctx => ctx.db.get(s.variantId)))!;
+    const before = await s.t.run(ctx => ctx.db.query('sysAuditEvents').collect());
+    await expect(s.admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, channel: 'retail', packPriceMinor: 85000, reason: 'Missing review' } as never)).rejects.toThrow();
+    await expect(s.admin.mutation(api.catPricing.assignPolicy, { variantId: cv._id, policyKey: 'ashcroft-fixture', reason: 'Missing review' } as never)).rejects.toThrow();
+    await expect(s.admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, eligible: false, reason: 'Missing review' } as never)).rejects.toThrow();
+    await expect(s.admin.mutation(api.prgLinks.createException, { productId: cv.productId, rates: ['base','active','top','elite'].map(tierKey => ({tierKey,rateBps:500})), visibleNote: 'Missing review' } as never)).rejects.toThrow();
+    expect(await s.t.run(ctx => ctx.db.query('sysAuditEvents').collect())).toEqual(before);
+    expect((await s.t.run(ctx => ctx.db.get(cv._id)))!.retailPriceRevisionId).toBeUndefined();
+  });
+  it('exposes a future policy boundary and rejects the prior review once it becomes effective', async () => {
+    const s = await setup();
+    await s.t.run(async ctx => {
+      const current = (await ctx.db.query('sysConfig').withIndex('by_kind_key_version', q => q.eq('kind','marginPolicy').eq('key','ashcroft-fixture')).first())!;
+      const { _id, _creationTime, ...rest } = current; void _id; void _creationTime;
+      await ctx.db.insert('sysConfig', {...rest, version: 2, value: {targetBps: 2100}, effectiveFrom: NOW + 10000});
+    });
+    const before = await s.admin.query(api.catPricing.review, {variantId: s.variantId, refreshKey: 1});
+    expect(before.nextRefreshAt).toBe(NOW + 10000);
+    vi.setSystemTime(NOW + 10001);
+    await expect(s.admin.mutation(api.catPricing.approvePrice, {variantId:s.variantId, channel:'retail',packPriceMinor:90000,reason:'Stale scheduled policy',expectedReviewHash:before.reviewHash})).rejects.toThrow(/changed/);
+    const after = await s.admin.query(api.catPricing.review, {variantId:s.variantId,refreshKey:2});
+    expect(after.reviewHash).not.toBe(before.reviewHash);
+    expect(after.policies.find(p => p.key === 'ashcroft-fixture')?.targetBps).toBe(2100);
   });
 });

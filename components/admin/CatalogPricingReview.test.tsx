@@ -1,16 +1,27 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { getFunctionName } from 'convex/server';
 import type { Id } from '../../convex/_generated/dataModel';
 import CatalogPricingReview from './CatalogPricingReview';
-const mock = vi.hoisted(() => ({ call: vi.fn(), data: {} as Record<string, unknown> }));
+const mock = vi.hoisted(() => ({
+  call: vi.fn(),
+  query: vi.fn(),
+  data: {} as Record<string, unknown>,
+}));
 vi.mock('convex/react', () => ({
-  useQuery: () => mock.data,
+  useQuery: (_ref: unknown, args: unknown) => {
+    mock.query(args);
+    return mock.data;
+  },
   useMutation: (ref: unknown) => (args: unknown) => mock.call(getFunctionName(ref as never), args),
 }));
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 beforeEach(() => {
+  mock.query.mockClear();
   mock.call.mockReset().mockResolvedValue('approved-price');
   mock.data = {
     reviewHash: 'a'.repeat(64),
@@ -140,4 +151,16 @@ it('submits an explicit four-tier product exception bound to this review', async
       })
     )
   );
+});
+
+it('requests a new server review on manual refresh and scheduled time boundaries', () => {
+  vi.useFakeTimers();
+  const now = Date.now();
+  mock.data = { ...mock.data, nextRefreshAt: now + 1000 };
+  render(view());
+  const original = mock.query.mock.lastCall![0].refreshKey;
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh pricing review' }));
+  expect(mock.query.mock.lastCall![0].refreshKey).toBe(original + 1);
+  act(() => vi.advanceTimersByTime(1001));
+  expect(mock.query.mock.lastCall![0].refreshKey).toBe(original + 2);
 });

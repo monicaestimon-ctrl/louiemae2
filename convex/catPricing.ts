@@ -19,7 +19,7 @@ export { pricingInput, computeScenarios } from './catEconomics';
 import { computeScenarios } from './catEconomics';
 
 export const review = query({
-  args: { variantId: v.id('catVariants') },
+  args: { variantId: v.id('catVariants'), refreshKey: v.optional(v.number()) },
   handler: async (ctx, a) => {
     const actor = await requireDeliveryRole(ctx, 'finance');
     return { ...(await pricingReview(ctx, a.variantId)), canApprove: actor.approver };
@@ -105,7 +105,7 @@ export const recomputeVariants = indexedMutation({
 
 /** The owner approves a pack price for a channel; it must clear the engine minimum (or the documented policy) and MAP. */
 export const approvePrice = indexedMutation({
-  args: { variantId: v.id('catVariants'), channel: v.union(v.literal('retail'), v.literal('trade')), packPriceMinor: v.number(), reason: v.string(), expectedReviewHash: v.optional(v.string()) },
+  args: { variantId: v.id('catVariants'), channel: v.union(v.literal('retail'), v.literal('trade')), packPriceMinor: v.number(), reason: v.string(), expectedReviewHash: v.string() },
   handler: async (ctx, a) => {
     const admin = await requireDeliveryRole(ctx, 'approver');
     await assertPricingReview(ctx, a.variantId, a.expectedReviewHash);
@@ -161,7 +161,7 @@ export const approvePrice = indexedMutation({
  * policy needs a document reference; the MAP-floor hold stays until an explicit floor is set.
  */
 export const assignPolicy = indexedMutation({
-  args: { variantId: v.id('catVariants'), policyKey: v.string(), documentRef: v.optional(v.string()), reason: v.string(), expectedReviewHash: v.optional(v.string()) },
+  args: { variantId: v.id('catVariants'), policyKey: v.string(), documentRef: v.optional(v.string()), reason: v.string(), expectedReviewHash: v.string() },
   handler: async (ctx, a) => {
     const admin = await requireDeliveryRole(ctx, 'approver');
     await assertPricingReview(ctx, a.variantId, a.expectedReviewHash);

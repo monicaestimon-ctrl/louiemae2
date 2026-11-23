@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import type { Id } from '../../convex/_generated/dataModel';
@@ -13,15 +13,30 @@ const money = (minor: number | null | undefined) =>
 const button = 'min-h-11 border border-earth/30 px-3 py-2 disabled:opacity-40';
 const field = 'block border border-earth/30 p-2 w-full min-h-11';
 export default function CatalogPricingReview({ variantId }: { variantId: Id<'catVariants'> }) {
-  const data = useQuery(api.catPricing.review, { variantId });
+  const [refreshKey, setRefreshKey] = useState(() => Date.now());
+  const data = useQuery(api.catPricing.review, { variantId, refreshKey });
   const [generation, setGeneration] = useState(0);
+  useEffect(() => {
+    if (!data || data.variant._id !== variantId) return;
+    const timer = window.setTimeout(
+      () => setRefreshKey((n) => n + 1),
+      Math.max(
+        1_000,
+        Math.min(60_000, (data.nextRefreshAt ?? Date.now() + 60_000) - Date.now() + 1)
+      )
+    );
+    return () => window.clearTimeout(timer);
+  }, [data, variantId, refreshKey]);
   if (!data || data.variant._id !== variantId) return <p role="status">Loading pricing review…</p>;
   return (
     <PricingForm
       key={`${variantId}:${generation}`}
       initial={data}
       latest={data}
-      reload={() => setGeneration((n) => n + 1)}
+      reload={() => {
+        setRefreshKey((n) => n + 1);
+        setGeneration((n) => n + 1);
+      }}
     />
   );
 }

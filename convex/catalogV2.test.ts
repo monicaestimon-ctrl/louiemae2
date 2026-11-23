@@ -1012,9 +1012,9 @@ describe('Zuo import (CAT01, PRI01)', () => {
     await importPackage(admin, [row('A'), row('B', { cohort: 'reconciled_66', approvedRetail: '', approvedTrade: '' })], 'dry_run');
     await importPackage(admin, [row('A'), row('B', { cohort: 'reconciled_66', approvedRetail: '', approvedTrade: '' })], 'commit');
     const b = (await t.run((ctx) => ctx.db.query('catVariants').collect())).find((x) => x.supplierSku === 'B')!;
-    await expect(admin.mutation(api.catPricing.assignPolicy, { variantId: b._id, policyKey: 'zuo-approved-5', reason: 'try' })).rejects.toSatisfy((e) => isCommerceError(e, 'FORBIDDEN'));
-    await expect(admin.mutation(api.catPricing.assignPolicy, { variantId: b._id, policyKey: 'zuo-legacy-18', reason: 'try' })).rejects.toThrow();
-    await admin.mutation(api.catPricing.assignPolicy, { variantId: b._id, policyKey: 'zuo-legacy-18', documentRef: 'doc-18-B', reason: 'documented' });
+    await expect(admin.mutation(api.catPricing.assignPolicy, { variantId: b._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: b._id })).reviewHash, policyKey: 'zuo-approved-5', reason: 'try' })).rejects.toSatisfy((e) => isCommerceError(e, 'FORBIDDEN'));
+    await expect(admin.mutation(api.catPricing.assignPolicy, { variantId: b._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: b._id })).reviewHash, policyKey: 'zuo-legacy-18', reason: 'try' })).rejects.toThrow();
+    await admin.mutation(api.catPricing.assignPolicy, { variantId: b._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: b._id })).reviewHash, policyKey: 'zuo-legacy-18', documentRef: 'doc-18-B', reason: 'documented' });
     expect((await t.run((ctx) => ctx.db.get(b._id)))!.marginPolicyKey).toBe('zuo-legacy-18');
   });
 
@@ -1115,11 +1115,11 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     const { t, admin, cv } = await readyProduct();
     await t.run(ctx => ctx.db.patch(cv.currentCostRevisionId!, { dutiesConfirmedZero: true, inboundConfirmedZero: true, feesConfirmedZero: true }));
     await t.run(ctx => ctx.db.patch(cv._id, { retailPriceRevisionId: cv.tradePriceRevisionId }));
-    await expect(admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, channel: 'retail', packPriceMinor: 99999, reason: 'Attempt to replace mismatched pointer' })).rejects.toThrow(/does not belong/);
+    await expect(admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: cv._id })).reviewHash, channel: 'retail', packPriceMinor: 99999, reason: 'Attempt to replace mismatched pointer' })).rejects.toThrow(/does not belong/);
     expect((await t.run(ctx => ctx.db.get(cv.tradePriceRevisionId!)))?.status).toBe('approved');
     await t.run(ctx => ctx.db.patch(cv._id, { retailPriceRevisionId: cv.retailPriceRevisionId }));
-    await expect(admin.mutation(api.catPricing.assignPolicy, { variantId: cv._id, policyKey: 'zuo-legacy-18', reason: 'Document required' })).rejects.toThrow(/document/);
-    await admin.mutation(api.catPricing.assignPolicy, { variantId: cv._id, policyKey: 'zuo-legacy-18', documentRef: 'fixture:approved-exception', reason: 'Synthetic documented exception' });
+    await expect(admin.mutation(api.catPricing.assignPolicy, { variantId: cv._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: cv._id })).reviewHash, policyKey: 'zuo-legacy-18', reason: 'Document required' })).rejects.toThrow(/document/);
+    await admin.mutation(api.catPricing.assignPolicy, { variantId: cv._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: cv._id })).reviewHash, policyKey: 'zuo-legacy-18', documentRef: 'fixture:approved-exception', reason: 'Synthetic documented exception' });
     expect((await t.run(ctx => ctx.db.get(cv._id)))?.marginPolicyDocumentRef).toBe('fixture:approved-exception');
     await t.run(ctx => ctx.db.patch(cv._id, { marginPolicyDocumentRef: undefined }));
     await expect(t.run(async ctx => computeScenarios(ctx, (await ctx.db.get(cv._id))!))).rejects.toThrow(/approval document/);
@@ -1196,7 +1196,7 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
       await ctx.db.patch(cv.retailPriceRevisionId!, { effectiveTo: undefined });
       await ctx.db.patch(cv.currentCostRevisionId!, { feesConfirmedZero: false });
     });
-    await expect(admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, eligible: true, reason: 'Cannot activate unknown expenses' })).rejects.toThrow();
+    await expect(admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: cv._id })).reviewHash, eligible: true, reason: 'Cannot activate unknown expenses' })).rejects.toThrow();
     expect((await t.run(ctx => ctx.db.get(cv._id)))?.referralEligible).toBe(false);
     expect(await t.run(ctx => ctx.db.query('catScenarioResults').collect())).toHaveLength(0);
     expect((await t.run(ctx => ctx.db.query('sysAuditEvents').collect())).filter(e => e.action === 'referral.enable')).toHaveLength(0);
@@ -1210,14 +1210,14 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
       await ctx.db.patch(cv.retailPriceRevisionId!, { packPriceMinor: 44000 });
     });
     await expect(t.run(ctx => assertSellable(ctx, cv._id, 'purchase', NOW))).rejects.toThrow(/does not fund/);
-    await admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, eligible: false, reason: 'Offer as explicitly non-referral merchandise' });
+    await admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: cv._id })).reviewHash, eligible: false, reason: 'Offer as explicitly non-referral merchandise' });
     await expect(t.run(ctx => assertSellable(ctx, cv._id, 'purchase', NOW))).resolves.toBeTruthy();
     await expect(t.run(ctx => assertSellable(ctx, cv._id, 'link', NOW))).rejects.toSatisfy(e => isCommerceError(e, 'REFERRAL_INELIGIBLE'));
     expect((await admin.query(api.catPublication.status, { productId })).gates.economics_review).toEqual([]);
-    await admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, channel: 'retail', packPriceMinor: 44000, reason: 'Direct sale price funds approved margin' });
-    await expect(admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, eligible: true, reason: 'Attempt unfunded commission eligibility' })).rejects.toThrow(/does not fund/);
-    await admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, channel: 'retail', packPriceMinor: 50000, reason: 'New price funds commission qualification' });
-    await admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, eligible: true, reason: 'Current price supports the full advertised schedule' });
+    await admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: cv._id })).reviewHash, channel: 'retail', packPriceMinor: 44000, reason: 'Direct sale price funds approved margin' });
+    await expect(admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: cv._id })).reviewHash, eligible: true, reason: 'Attempt unfunded commission eligibility' })).rejects.toThrow(/does not fund/);
+    await admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: cv._id })).reviewHash, channel: 'retail', packPriceMinor: 50000, reason: 'New price funds commission qualification' });
+    await admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: cv._id })).reviewHash, eligible: true, reason: 'Current price supports the full advertised schedule' });
     await expect(t.run(ctx => assertSellable(ctx, cv._id, 'link', NOW))).resolves.toBeTruthy();
   });
 
@@ -1357,8 +1357,8 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     });
     expect(await t.run(ctx => recordScenarios(ctx, cv._id, 'fixture'))).toBe(scenarioId);
     expect(await t.run(ctx => ctx.db.get(cv._id))).toMatchObject({ referralEligible: true, holds: expect.arrayContaining(['MARGIN_BELOW_POLICY', 'COMMISSION_UNQUALIFIED']) });
-    await expect(admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, eligible: true, reason: 'Attempt to override qualification' })).rejects.toThrow();
-    await admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, channel: 'trade', packPriceMinor: 42000, reason: 'Trade price reviewed' });
+    await expect(admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: cv._id })).reviewHash, eligible: true, reason: 'Attempt to override qualification' })).rejects.toThrow();
+    await admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: cv._id })).reviewHash, channel: 'trade', packPriceMinor: 42000, reason: 'Trade price reviewed' });
     expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).toContain('MARGIN_BELOW_POLICY');
     const simulation = await t.run(async ctx => computeScenarios(ctx, (await ctx.db.get(cv._id))!));
     const { records } = await admin.query(api.sysConfig.list, { status: 'approved' });
@@ -1367,9 +1367,9 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
       const id = await admin.mutation(api.sysConfig.propose, { kind: current.kind as 'marginPolicy' | 'roundingPolicy', key, value: current.value, note: 'Fixture new policy version with unchanged commercial terms' });
       await admin.mutation(api.sysConfig.approve, { id });
     }
-    const priceId = await admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, channel: 'retail', packPriceMinor: simulation.minimumRetailMinor, reason: 'Retail funds full schedule' });
+    const priceId = await admin.mutation(api.catPricing.approvePrice, { variantId: cv._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: cv._id })).reviewHash, channel: 'retail', packPriceMinor: simulation.minimumRetailMinor, reason: 'Retail funds full schedule' });
     expect(await t.run(ctx => ctx.db.get(priceId))).toMatchObject({ marginPolicyVersion: 2, roundingPolicyVersion: 2 });
-    await admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, eligible: true, reason: 'Fresh qualification supports full schedule' });
+    await admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: cv._id })).reviewHash, eligible: true, reason: 'Fresh qualification supports full schedule' });
     expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).not.toContain('MARGIN_BELOW_POLICY');
     // A later cost gap cannot reuse an old successful qualification.
     await t.run(ctx => ctx.db.patch(cv.currentCostRevisionId!, { feesConfirmedZero: false }));
@@ -1377,7 +1377,7 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).toContain('PRICING_UNVERIFIED');
     const status = await admin.query(api.catPublication.status, { productId });
     expect(status.gates.economics_review.join(' ')).toContain('unknown');
-    await expect(admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, eligible: true, reason: 'Missing expense cannot be overridden' })).rejects.toThrow();
+    await expect(admin.mutation(api.prgLinks.setReferralEligibility, { variantId: cv._id, expectedReviewHash: (await admin.query(api.catPricing.review, { variantId: cv._id })).reviewHash, eligible: true, reason: 'Missing expense cannot be overridden' })).rejects.toThrow();
   });
 
   it('revalidates actual approved trade economics even when stored holds were cleared', async () => {
