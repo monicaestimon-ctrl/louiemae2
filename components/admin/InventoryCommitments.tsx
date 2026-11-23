@@ -9,6 +9,7 @@ export default function InventoryCommitments({ variantId }: { variantId: Id<'cat
   const reconcile = useMutation(api.ordInventory.reconcile);
   const [selected, setSelected] = useState<Id<'ordInventoryReservations'> | null>(null);
   const [revision, setRevision] = useState<Id<'catStockRevisions'> | null>(null);
+  const [feedId, setFeedId] = useState<Id<'ashcroftInventoryFeeds'> | null>(null);
   const [evidence, setEvidence] = useState(''),
     [note, setNote] = useState('');
   const [confirmed, setConfirmed] = useState(false),
@@ -18,28 +19,38 @@ export default function InventoryCommitments({ variantId }: { variantId: Id<'cat
   if (!data) return <p role="status">Loading inventory commitments…</p>;
   const stale =
     !!selected &&
-    (revision !== data.currentRevisionId || !data.rows.some((r) => r.id === selected));
+    (revision !== data.currentRevisionId || feedId !== (data.currentAshcroftFeedId ?? null) || !data.rows.some((r) => r.id === selected));
+  const ashcroft = data.supplierCode === 'ashcroft';
+  const sourceReady = ashcroft ? !!feedId : !!revision;
   return (
-    <details className="border p-3 mt-4">
+    <details className="border p-3 mt-4 break-words">
       <summary>Paid inventory commitments awaiting supplier reconciliation</summary>
       <p>
         Paid quantities remain deducted until a newer verified supplier count accounts for the
-        allocation. An internal checkout hold does not reserve stock at Zuo. A new feed alone does
+        allocation. An internal checkout hold does not reserve supplier stock. A new feed alone does
         not release these commitments.
       </p>
+      {ashcroft && (data.ashcroftSource ? <p>
+        Latest supplier feed: {data.ashcroftSource.source} · observed {new Date(data.ashcroftSource.observedAt).toLocaleString()}
+        {' · '}expires {new Date(data.ashcroftSource.validUntil).toLocaleString()}
+        {' · '}supplier count: {data.ashcroftSource.quantity ?? 'Unknown'} selling units before our commitments.
+      </p> : <p>No Ashcroft supplier feed is available. Missing inventory cannot establish availability.</p>)}
       {!data.rows.length && <p>No unreconciled paid commitments for this variant.</p>}
       <ul>
         {data.rows.map((row) => (
           <li key={row.id}>
-            {row.packs} pack(s) · checkout {row.intentId} · {row.piecesPerPack ?? 'Unknown'} pieces
-            per pack
+            {row.packs} {ashcroft ? 'selling unit(s)' : 'pack(s)'} · checkout {row.intentId} ·{' '}
+            {ashcroft
+              ? row.inventoryBasis === 'ashcroft_selling_unit' ? `SKU ${row.supplierSku}` : 'Selling-unit basis needs review'
+              : `${row.piecesPerPack ?? 'Unknown'} pieces per pack`}
             {data.canReconcile && (
               <button
-                className="border p-1 m-1"
+                className="border p-1 m-1 max-w-full break-all"
                 disabled={busy}
                 onClick={() => {
                   setSelected(row.id);
                   setRevision(data.currentRevisionId);
+                  setFeedId(data.currentAshcroftFeedId ?? null);
                   setEvidence('');
                   setNote('');
                   setConfirmed(false);
@@ -64,13 +75,13 @@ export default function InventoryCommitments({ variantId }: { variantId: Id<'cat
           className="space-y-2"
           onSubmit={async (event) => {
             event.preventDefault();
-            if (!revision || stale) return;
+            if (!sourceReady || stale) return;
             setBusy(true);
             setMessage('');
             try {
               const args = {
                 reservationId: selected,
-                expectedRevisionId: revision,
+                ...(ashcroft ? { expectedAshcroftFeedId: feedId! } : { expectedRevisionId: revision! }),
                 evidence,
                 note,
                 confirmed,
@@ -92,7 +103,7 @@ export default function InventoryCommitments({ variantId }: { variantId: Id<'cat
           }}
         >
           <p>
-            Selected allocation: {selected}. Current stock revision: {revision ?? 'Missing'}.
+            Selected allocation: {selected}. Current {ashcroft ? 'Ashcroft feed' : 'stock revision'}: {(ashcroft ? feedId : revision) ?? 'Missing'}.
           </p>
           <label className="block">
             Supplier allocation evidence reference
@@ -122,9 +133,8 @@ export default function InventoryCommitments({ variantId }: { variantId: Id<'cat
               required
               checked={confirmed}
               onChange={(e) => setConfirmed(e.target.checked)}
-            />
-            I verified that this newer warehouse available-to-sell count already accounts for this
-            exact paid allocation.
+            />{' '}
+            I verified that this newer {ashcroft ? 'Ashcroft selling-unit inventory' : 'warehouse available-to-sell'} count already accounts for this exact paid allocation.
           </label>
           {stale && (
             <p role="alert">
@@ -132,7 +142,7 @@ export default function InventoryCommitments({ variantId }: { variantId: Id<'cat
               notes remain above.
             </p>
           )}
-          <button disabled={busy || stale || !revision || !confirmed} className="border p-2">
+          <button disabled={busy || stale || !sourceReady || !confirmed} className="border p-2">
             {busy ? 'Saving…' : 'Reconcile supplier allocation'}
           </button>
         </form>

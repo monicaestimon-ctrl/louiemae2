@@ -9,7 +9,7 @@ import { modeledParcelFreight, type ModeledParcelRates } from '../lib/delivery/m
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { activeConfig, maybeConfig } from './sysConfig';
-import { availableAfterCommitments } from './ordInventory';
+import { availableAfterCommitments, currentAshcroftInventory, availableAshcroftAfterCommitments } from './ordInventory';
 import { assertSellable, isCurrentPrice } from './catCore';
 import { viewer, isVerified } from './holmAccess';
 import { CommerceError } from '../lib/errors';
@@ -112,6 +112,7 @@ export type ResolvedLine = {
   originZip: string;
   warehouseServices?: ('ground' | 'ltl')[];
   stockReadiness?: 'counted' | 'confirmation_required';
+  ashcroftFeedId?: Id<'ashcroftInventoryFeeds'>;
 };
 
 async function categoryOf(
@@ -375,10 +376,14 @@ export async function resolveLines(
       const cv = await ensureAshcroftIdentity(ctx, { productId: product._id, variantId: l.variantId, sku: supplierRow.sku, name, minimum: option.minimum, increment: option.increment }, 'system:delivery');
       checkPackQuantity(cv, l.packs);
       const categoryText = `${listing.snapshot.category} ${listing.snapshot.name}`;
+      const inventory = await currentAshcroftInventory(ctx, cv, now);
+      if (l.packs > await availableAshcroftAfterCommitments(ctx, cv, inventory.availableUnits, now))
+        throw new CommerceError('STOCK_UNAVAILABLE', 'Ashcroft supplier quantity is committed to other checkouts or paid orders');
       const proposed = proposeCategory(categoryText).category;
       const category = await categoryOf(ctx, product._id, proposed);
       out.push({
         validUntil: feed.validUntil,
+        ashcroftFeedId: inventory.feed._id,
         dependencyHash: await digest({ feedId: feed._id, sha256: feed.sha256,
           observedAt: feed.observedAt, validUntil: feed.validUntil,
           stock: feed.rows.find(row => row.sku === supplierRow.sku),

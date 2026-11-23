@@ -673,6 +673,10 @@ export const v2Tables = {
 
   ordInventoryReservations: defineTable({
     variantId: v.id('catVariants'),
+    inventoryBasis: v.optional(v.literal('ashcroft_selling_unit')),
+    supplierSku: v.optional(v.string()),
+    ashcroftFeedId: v.optional(v.id('ashcroftInventoryFeeds')),
+    reconciledAshcroftFeedId: v.optional(v.id('ashcroftInventoryFeeds')),
     warehouseId: v.optional(v.id('catWarehouses')),
     stockRevisionId: v.optional(v.id('catStockRevisions')),
     piecesPerPack: v.optional(v.number()),

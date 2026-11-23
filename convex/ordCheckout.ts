@@ -25,6 +25,7 @@ import { flag } from '../lib/flags';
 import { authorizeEstimate, digest } from './dlvSecurity';
 import { allocate } from '../lib/money';
 import { computeManualQuote } from './dlvManual';
+import { ashcroftReservationBasis } from './ordInventory';
 
 // Frozen once per intent; five minutes of setup headroom above Stripe's session minimum.
 const INTENT_MS = 35 * 60_000;
@@ -275,6 +276,7 @@ export const createIntent = indexedInternalMutation({
     for (const l of fresh.lines)
       await ctx.db.insert('ordInventoryReservations', {
         variantId: l.variant._id,
+        ...(l.ashcroftFeedId ? ashcroftReservationBasis(l.variant, l.ashcroftFeedId) : {}),
         ...(l.variant.warehouseId ? { warehouseId: l.variant.warehouseId } : {}),
         ...(l.variant.currentStockRevisionId ? { stockRevisionId: l.variant.currentStockRevisionId } : {}),
         piecesPerPack: l.variant.piecesPerPack,

@@ -32,10 +32,10 @@ export default function CatalogShippingEvidence() {
   const [selected, setSelected] = useState<Id<'catVariants'> | null>(null);
   return (
     <details className="border p-4 space-y-3">
-      <summary>Warehouse and shipping carton evidence</summary>
+      <summary>Supplier shipping and inventory evidence</summary>
       <p>
-        Shipping measurements describe one selling pack. These controls do not change product prices
-        or publish listings.
+        Review the supplier's inventory basis and shipping evidence. These controls do not change
+        product prices or publish listings.
       </p>
       <div className="flex flex-wrap gap-2">
         {results.map((row) => (
@@ -45,7 +45,7 @@ export default function CatalogShippingEvidence() {
             aria-pressed={selected === row.id}
             onClick={() => setSelected(row.id)}
           >
-            {row.sku} · {row.piecesPerPack} piece(s) · {row.availability}
+            {row.sku} · {row.supplierCode === 'ashcroft' ? 'selling unit' : `${row.piecesPerPack} piece(s)`} · {row.availability}
           </button>
         ))}
       </div>
@@ -65,6 +65,14 @@ function ShippingDetail({ variantId }: { variantId: Id<'catVariants'> }) {
   const data = useQuery(api.catShipping.detail, { variantId });
   const [generation, setGeneration] = useState(0);
   if (!data) return <p role="status">Loading shipping evidence…</p>;
+  if (data.supplierCode === 'ashcroft') return (
+    <div>
+      <p>Ashcroft uses its dated supplier inventory feed and per-selling-unit delivery model.
+        A set sold as one unit is not a claim that it contains one physical piece.
+        Warehouse and physical-pack controls do not apply to this model.</p>
+      <InventoryCommitments key={variantId} variantId={variantId} />
+    </div>
+  );
   return (
     <div>
       <CartonForm
