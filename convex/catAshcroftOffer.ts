@@ -10,7 +10,9 @@ import { ashcroftScenarios } from './catAshcroftEconomics';
 type Ctx = QueryCtx | MutationCtx;
 export async function approvedAshcroftOffer(ctx: Ctx, listing: Doc<'commerceListings'>, legacyId: string,
   channel: 'retail' | 'trade', now = Date.now()) {
-  requireFlag(channel === 'trade' ? 'TRADE_CHECKOUT_V2_ENABLED' : 'DELIVERY_AUTOMATION_ENABLED');
+  requireFlag('DELIVERY_AUTOMATION_ENABLED');
+  // The historical retail flag controls the shared v2 retail checkout endpoint.
+  requireFlag(channel === 'trade' ? 'TRADE_CHECKOUT_V2_ENABLED' : 'RETAIL_ZUO_CHECKOUT_ENABLED');
   if (!listing.published || listing.pricingMode !== 'approved_v2'
     || listing.channel !== (channel === 'retail' ? 'retail' : 'house'))
     throw new CommerceError('COST_REVIEW_REQUIRED', 'No published approved Ashcroft offer');

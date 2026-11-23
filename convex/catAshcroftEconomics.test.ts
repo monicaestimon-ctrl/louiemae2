@@ -16,7 +16,7 @@ import { recordScenarios } from './catPricing';
 const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 const NOW = Date.UTC(2026, 10, 23);
 beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'], now: NOW }); process.env.CJ_ADMIN_EMAILS = 'owner@example.com'; });
-afterEach(() => { vi.useRealTimers(); delete process.env.CJ_ADMIN_EMAILS; delete process.env.CATALOG_PUBLICATION_V2_ENABLED; delete process.env.TRADE_CHECKOUT_V2_ENABLED; delete process.env.DELIVERY_AUTOMATION_ENABLED; });
+afterEach(() => { vi.useRealTimers(); delete process.env.CJ_ADMIN_EMAILS; delete process.env.CATALOG_PUBLICATION_V2_ENABLED; delete process.env.TRADE_CHECKOUT_V2_ENABLED; delete process.env.DELIVERY_AUTOMATION_ENABLED; delete process.env.RETAIL_ZUO_CHECKOUT_ENABLED; });
 
 async function setup() {
   const t = convexTest(schema, modules);
@@ -52,6 +52,7 @@ describe('Ashcroft supplier-specific qualification', () => {
   it('publishes final Ashcroft prices once, preserves legacy IDs and funds independent retail/trade delivery', async () => {
     const s = await setup();
     process.env.CATALOG_PUBLICATION_V2_ENABLED = 'true';
+    process.env.RETAIL_ZUO_CHECKOUT_ENABLED = 'true';
     process.env.DELIVERY_AUTOMATION_ENABLED = 'true';
     process.env.TRADE_CHECKOUT_V2_ENABLED = 'true';
     await s.admin.mutation(api.catPricing.approvePrice, { variantId: s.variantId, channel: 'retail', packPriceMinor: 80000, reason: 'Fixture funded retail offer' });
@@ -85,6 +86,21 @@ describe('Ashcroft supplier-specific qualification', () => {
     await s.t.run(ctx => ctx.db.patch(s.costId, { feesConfirmedZero: true }));
     delete process.env.DELIVERY_AUTOMATION_ENABLED;
     expect((await s.t.run(ctx => retailDetail(ctx, cv.productId)))?.inStock).toBe(false);
+    process.env.DELIVERY_AUTOMATION_ENABLED = 'true';
+    delete process.env.RETAIL_ZUO_CHECKOUT_ENABLED;
+    expect((await s.t.run(ctx => retailDetail(ctx, cv.productId)))?.inStock).toBe(false);
+    process.env.RETAIL_ZUO_CHECKOUT_ENABLED = 'true';
+    expect(await s.t.query(api.dlvEstimates.productProfile, { productId: String(cv.productId), variantId: 'legacy', channel: 'retail' })).toEqual({ piecesPerPack: 1, minimumPacks: 1, incrementPacks: 1 });
+    const tradeUser = await s.t.run(async ctx => {
+      const userId = await ctx.db.insert('users', { email: 'trade@example.com' });
+      await ctx.db.insert('holmProfiles', { userId, displayName: 'Fixture studio', tradeStatus: 'approved', createdAt: NOW, updatedAt: NOW });
+      return userId;
+    });
+    const tradeClient = s.t.withIdentity({ subject: `${tradeUser}|s`, email: 'trade@example.com' });
+    const profileArgs = { productId: String(cv.productId), variantId: 'legacy', channel: 'trade' as const };
+    expect(await tradeClient.query(api.dlvEstimates.productProfile, profileArgs)).toEqual({ piecesPerPack: 1, minimumPacks: 1, incrementPacks: 1 });
+    delete process.env.DELIVERY_AUTOMATION_ENABLED;
+    await expect(tradeClient.query(api.dlvEstimates.productProfile, profileArgs)).rejects.toThrow();
     process.env.DELIVERY_AUTOMATION_ENABLED = 'true';
     const lines = [{ productId: String(cv.productId), variantId: 'legacy', packs: 1 }];
     const retailEstimate = await s.t.run(ctx => estimate(ctx, { lines, channel: 'retail', destination: { zip: '95206' }, service: 'curbside' }, NOW));
