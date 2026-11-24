@@ -32,6 +32,8 @@ Check each current registry record before changing it. Seeded defaults start as 
 
 ## Step 2. Catalog (gate 1)
 
+Record written supplier permissions under **Catalog & import → Supplier policies & evidence**. Select the supplier, policy type, evidence status, exact SKU scope (or explicitly all products), summary, and dated source references. Documented permission requires a source reference. Revising the same type and scope retires its previous version and retains the audit history; SKU ordering does not create a second active version. Only approvers can save. Recording media/private-label evidence does not grant supplier-wide public attribution or clear individual product qualification holds.
+
 The publication pipeline counts each stage through bounded, admin-only pages. A count marked **At least** is incomplete; use **Count next 100** until that qualifier disappears before recording a complete stage total. Loading is not zero. These counts describe publication metadata, not supplier availability or checkout eligibility. The legacy `v2Admin.pipeline` summary also exposes `countIsExact`; its capped count must not be reported as a full census.
 
 For the pipeline pagination release, deploy the additive `v2Admin.pipelineStage` backend query from the tested commit before promoting its frontend, so the admin page never requests an unavailable function. This release does not change product eligibility, publication stages, prices or flags.
