@@ -12,6 +12,7 @@ import PaidExceptionReview from './PaidExceptionReview';
 import FulfillmentShipments from './FulfillmentShipments';
 import CatalogMediaReview from './CatalogMediaReview';
 import CatalogPublicationReview from './CatalogPublicationReview';
+import PublicationPipeline from './PublicationPipeline';
 import './commerce-v2-admin.css';
 
 // Commerce v2 operations console (spec S35, v2 §20, §26). Admin-only: every query behind it
@@ -299,7 +300,6 @@ function ZuoImport() {
 
 function Catalog() {
   const holds = useQuery(api.v2Admin.openHolds, {});
-  const pipeline = useQuery(api.v2Admin.pipeline);
   const resolveHold = useMutation(api.v2Admin.resolveHoldAdmin);
   const [note, setNote] = useState('');
   const [msg, setMsg] = useState<string | null>(null);
@@ -309,18 +309,7 @@ function Catalog() {
       <CatalogMediaReview />
       <CatalogPublicationReview />
       <div className={card}>
-        <h3 className="font-serif text-lg">Publication pipeline</h3>
-        {pipeline ? (
-          <ul className="text-xs">
-            {Object.entries(pipeline).map(([stage, v]) => (
-              <li key={stage}>
-                {stage}: {v.count}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>Loading…</p>
-        )}
+        <PublicationPipeline />
         <p className="text-xs text-earth/60">Products move one stage at a time; each stage checks its gate on the server (docs/production-v2/03 S15).</p>
       </div>
       <div className={card}>
