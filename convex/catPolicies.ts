@@ -50,13 +50,24 @@ export const savePolicy = mutation({
   },
   handler: async (ctx, a) => {
     const admin = await requireDeliveryRole(ctx, 'approver');
-    if (a.status === 'documented' && !a.evidenceRefs.some((r) => r.trim())) throw new CommerceError('INVALID_INPUT', 'A documented policy needs at least one evidence reference.');
-    const supplier = await ensureSupplier(ctx, a.supplierCode);
+    const summary = a.summary.trim();
+    const supplierCode = a.supplierCode.trim().toLowerCase();
+    const evidenceRefs = [...new Set(a.evidenceRefs.map(r => r.trim()).filter(Boolean))];
+    const skus = [...new Set((a.scope.skus ?? []).map(s => s.trim()).filter(Boolean))].sort();
+    if (!summary || !supplierCode) throw new CommerceError('INVALID_INPUT', 'Supplier and policy summary are required.');
+    if ((a.scope.all === true && skus.length > 0) || (a.scope.all !== true && skus.length === 0))
+      throw new CommerceError('INVALID_INPUT', 'Choose all products or provide the specific supplier SKUs.');
+    const scope = a.scope.all === true ? { all: true } : { skus };
+    if (a.status === 'documented' && !evidenceRefs.length) throw new CommerceError('INVALID_INPUT', 'A documented policy needs at least one evidence reference.');
+    const supplier = await ensureSupplier(ctx, supplierCode);
     const now = Date.now();
-    for (const old of await supplierPolicies(ctx, supplier._id, now)) if (old.kind === a.kind && JSON.stringify(old.scope) === JSON.stringify(a.scope)) await ctx.db.patch(old._id, { effectiveTo: now });
-    const id = await ctx.db.insert('catSupplierPolicies', { supplierId: supplier._id, kind: a.kind, summary: a.summary, evidenceRefs: a.evidenceRefs, scope: a.scope, status: a.status, createdAt: now, createdBy: admin.email, effectiveFrom: now, source: 'admin' });
-    if (a.kind === 'private_label' || a.kind === 'media') await ctx.db.patch(supplier._id, { publicAttributionAllowed: a.status === 'documented' });
-    await audit(ctx, { actor: admin.email, action: 'supplier.policy', entityTable: 'catSupplierPolicies', entityId: id, after: a });
+    for (const old of await supplierPolicies(ctx, supplier._id, now)) {
+      const oldScope = old.scope.all === true ? { all: true } : { skus: [...new Set((old.scope.skus ?? []).map(s => s.trim()).filter(Boolean))].sort() };
+      if (old.kind === a.kind && JSON.stringify(oldScope) === JSON.stringify(scope)) await ctx.db.patch(old._id, { effectiveTo: now });
+    }
+    const id = await ctx.db.insert('catSupplierPolicies', { supplierId: supplier._id, kind: a.kind, summary, evidenceRefs, scope, status: a.status, createdAt: now, createdBy: admin.email, effectiveFrom: now, source: 'admin' });
+    // SKU-scoped media/private-label evidence does not grant supplier-wide public attribution.
+    await audit(ctx, { actor: admin.email, action: 'supplier.policy', entityTable: 'catSupplierPolicies', entityId: id, after: { ...a, supplierCode, summary, evidenceRefs, scope } });
     return id;
   },
 });

@@ -13,6 +13,7 @@ import FulfillmentShipments from './FulfillmentShipments';
 import CatalogMediaReview from './CatalogMediaReview';
 import CatalogPublicationReview from './CatalogPublicationReview';
 import PublicationPipeline from './PublicationPipeline';
+import SupplierPolicies from './SupplierPolicies';
 import './commerce-v2-admin.css';
 
 // Commerce v2 operations console (spec S35, v2 §20, §26). Admin-only: every query behind it
@@ -298,7 +299,7 @@ function ZuoImport() {
   );
 }
 
-function Catalog() {
+function Catalog({ canApprove }: { canApprove: boolean }) {
   const holds = useQuery(api.v2Admin.openHolds, {});
   const resolveHold = useMutation(api.v2Admin.resolveHoldAdmin);
   const [note, setNote] = useState('');
@@ -308,6 +309,7 @@ function Catalog() {
       <ZuoImport />
       <CatalogMediaReview />
       <CatalogPublicationReview />
+      <SupplierPolicies canApprove={canApprove} />
       <div className={card}>
         <PublicationPipeline />
         <p className="text-xs text-earth/60">Products move one stage at a time; each stage checks its gate on the server (docs/production-v2/03 S15).</p>
@@ -532,7 +534,7 @@ export default function CommerceV2Admin() {
       {section === 'decisions' && <Decisions canApprove={permissions.approver} />}
       {section === 'health' && <Health />}
       {section === 'reviews' && <Reviews />}
-      {section === 'catalog' && <Catalog />}
+      {section === 'catalog' && <Catalog canApprove={permissions.approver} />}
       {section === 'fulfillment' && <Fulfillment finance={permissions.finance} />}
       {section === 'delivery' && <DeliveryOperations />}
       {section === 'partners' && <Partners />}
