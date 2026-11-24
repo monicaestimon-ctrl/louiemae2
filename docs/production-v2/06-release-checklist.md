@@ -32,6 +32,10 @@ Check each current registry record before changing it. Seeded defaults start as 
 
 ## Step 2. Catalog (gate 1)
 
+The publication pipeline counts each stage through bounded, admin-only pages. A count marked **At least** is incomplete; use **Count next 100** until that qualifier disappears before recording a complete stage total. Loading is not zero. These counts describe publication metadata, not supplier availability or checkout eligibility. The legacy `v2Admin.pipeline` summary also exposes `countIsExact`; its capped count must not be reported as a full census.
+
+For the pipeline pagination release, deploy the additive `v2Admin.pipelineStage` backend query from the tested commit before promoting its frontend, so the admin page never requests an unavailable function. This release does not change product eligibility, publication stages, prices or flags.
+
 1. Reconcile the current import manifest and existing records first. Do not reimport the already-staged 803 products merely to activate them. Under **Catalog & import**, upload `Zuo-Draft-Import.json` and run **Dry run**. For the historical reconciled snapshot only, tick "Require the reconciled package counts" and require 865 / 803 / 306 / 135 / 296 / 66 / 62 / 226 / 639. For a genuinely new package, leave that historical-count option unticked and reconcile every dry-run count against the new package’s manifest. If the column names differ, add aliases in `lib/zuoImport.ts`, never edit the source file. Then run **Commit**.
 2. Pick the pilot cohort: one single item, one multi-piece pack, one décor or lighting item, one Ground shipment and one manually quoted LTL item. For each one:
    1. Verify its source-bound images using the reviewed ingestion/verification workflow and record revision-bound stock with `catStock.recordEvidence`. Preserve warehouse, pack/unit basis, source date and whether the quantity is on-hand or available-to-sell; the legacy binary stock setter is not a substitute.

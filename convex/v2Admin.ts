@@ -4,12 +4,14 @@ import { requireDeliveryRole } from './dlvAccess';
 // Every admin query requires the admin allowlist; supplier costs and customer details never
 // reach creators or trade users through these.
 import { v } from 'convex/values';
+import { paginationOptsValidator } from 'convex/server';
+import { catalogPageOptions } from '../lib/catalogPagination';
 import { mutation, query } from './_generated/server';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { audit } from './sysCore';
 import { resolveHold } from './catCore';
 import { flag } from '../lib/flags';
-import { holdReason } from './v2Validators';
+import { holdReason, publicationStage } from './v2Validators';
 import { CommerceError } from '../lib/errors';
 import { maybeConfig } from './sysConfig';
 import { programTerms } from '../lib/programTerms';
@@ -118,16 +120,28 @@ export const beneficiaries = query({
   },
 });
 
-/** Publication pipeline at a glance: products per stage. */
+/** Compact, bounded pages for complete stage counts without downloading product details. */
+export const pipelineStage = query({
+  args: { stage: publicationStage, paginationOpts: paginationOptsValidator },
+  handler: async (ctx, a) => {
+    await requireCjAdminIdentity(ctx);
+    const result = await ctx.db.query('catProductMeta')
+      .withIndex('by_stage', q => q.eq('stage', a.stage))
+      .paginate(catalogPageOptions(a.paginationOpts, 100));
+    return { ...result, page: result.page.map(row => ({ _id: row._id })) };
+  },
+});
+
+/** Legacy bounded summary. Counts are lower bounds unless countIsExact is true. */
 export const pipeline = query({
   args: {},
   handler: async (ctx) => {
     await requireCjAdminIdentity(ctx);
     const stages = ['imported_draft', 'evidence_review', 'economics_review', 'content_review', 'ready', 'published', 'archived'] as const;
-    const out: Record<string, { count: number; sample: { productId: string; name: string; holds: string[] }[] }> = {};
+    const out: Record<string, { count: number; countIsExact: boolean; sample: { productId: string; name: string; holds: string[] }[] }> = {};
     for (const s of stages) {
-      const rows = await ctx.db.query('catProductMeta').withIndex('by_stage', (q) => q.eq('stage', s)).take(500);
-      out[s] = { count: rows.length, sample: rows.slice(0, 25).map((m) => ({ productId: m.productId, name: m.louieMaeName, holds: m.holds })) };
+      const rows = await ctx.db.query('catProductMeta').withIndex('by_stage', (q) => q.eq('stage', s)).take(501);
+      out[s] = { count: Math.min(rows.length, 500), countIsExact: rows.length <= 500, sample: rows.slice(0, 25).map((m) => ({ productId: m.productId, name: m.louieMaeName, holds: m.holds })) };
     }
     return out;
   },
