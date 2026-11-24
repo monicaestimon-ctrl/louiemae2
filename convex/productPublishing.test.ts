@@ -54,3 +54,15 @@ it('bulk launch advances revision so an old editor cannot overwrite the launch',
   expect(await t.run(ctx => ctx.db.get(id))).toMatchObject({ storefrontStatus: 'published', productRevision: 3, subcategoryIds: ['chairs'] });
   await expect(t.mutation(api.products.update, { id, expectedRevision: 2, storefrontStatus: 'hidden' })).rejects.toThrow('This product changed');
 });
+
+it('rolls back the entire queued launch when a later product fails validation', async () => {
+  const { t, id } = await setup({ storefrontStatus: 'next_launch' });
+  const blockedId = await t.run(ctx => ctx.db.insert('products', {
+    name: 'Blocked chair', price: 90, description: 'Chair', images: ['chair.jpg'],
+    category: 'removed', collection: 'furniture', storefrontStatus: 'next_launch', productRevision: 7,
+  }));
+  await expect(t.mutation(api.products.launchNextProducts, {})).rejects.toThrow('Blocked chair:');
+  expect(await t.run(ctx => ctx.db.get(id))).toMatchObject({ storefrontStatus: 'next_launch', productRevision: 2 });
+  expect(await t.run(ctx => ctx.db.get(blockedId))).toMatchObject({ storefrontStatus: 'next_launch', productRevision: 7 });
+  expect(await t.run(ctx => ctx.db.query('productCatalog').collect())).toEqual([]);
+});
