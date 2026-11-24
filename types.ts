@@ -36,8 +36,17 @@ export interface CjInventorySnapshot {
   error?: string;
 }
 
+export interface ProductImageMedia {
+  url: string;
+  altText: string;
+  variantIds: string[];
+  renditions: { url: string; width: number }[];
+}
+
 export interface Product {
-  fulfillmentProvider?: 'ashcroft';
+  imageMedia?: ProductImageMedia[];
+  fulfillmentProvider?: 'ashcroft' | 'zuo';
+  checkoutMode?: 'legacy' | 'v2';
   deliveryFee?: number;
   id: string;
   name: string;
@@ -312,6 +321,7 @@ export interface EmailCampaign {
 // --- Product Sourcing API Types (OTAPI 1688) ---
 
 export interface ProductVariant {
+  quantityRules?: import('./lib/orderQuantity').OrderQuantityRules;
   id: string;
   name: string; // e.g., "Color: Cream" or "Size: M"
   image?: string;

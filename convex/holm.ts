@@ -1,27 +1,38 @@
+import { catalogItem, pricedListing, pricingParts, costCents, variantFreight } from './holmCatalogRead';
+import { ashcroftAvailable } from './ashcroftInventory';
 import { v } from 'convex/values';
+import { paginationOptsValidator } from 'convex/server';
+import { syncTrade } from './prgCore';
+import { maybeConfig } from './sysConfig';
+import { applyProjectTier } from '../lib/projectDiscount';
+import type { ProjectDiscountPolicy } from '../lib/config';
+import { flag } from '../lib/flags';
+import { CommerceError } from '../lib/errors';
 import { query, mutation } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
-import type { Doc, Id } from './_generated/dataModel';
+import type { Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import { requireCjAdminIdentity } from './cjAdminAccess';
-import { listingReady } from './commerceReadiness';
 import { address } from './commerceTables';
 import { clientShow, holmBusinessType } from './holmTables';
+import { assetIndex, publicAssets } from './holmAssets';
+import { catalogPageOptions } from '../lib/catalogPagination';
+import { holmIdentityState } from './holmIdentityMaintenance';
+import { holmLegacyId } from '../lib/holmProductIdentity';
 import { checkQuantity, totalLines } from '../lib/commerce';
-import { deliveryCents, freightFor } from '../lib/holmDelivery';
-import { launchPrice, retailDelivery } from '../lib/retailLaunch';
+import { reserveCredit } from './holmCredit';
+import { deliveryCents } from '../lib/holmDelivery';
 import {
   HOLM_RULES,
   applyProjectPricing,
   clientSellCents,
-  floorCents,
-  tradeCents,
 } from '../lib/holmPricing';
 
 type Ctx = QueryCtx | MutationCtx;
 
 // ---------- who is viewing ----------
 import { viewer, isVerified, isAdmin, isPartner, requireUser } from './holmAccess';
+import { HOLM_RATES, MARGIN_GUARD_BPS, productTypeFor, type ProductType } from '../lib/holmPartners';
 import { markReferralVerified, recordReferral, resolveAttribution } from './holmPartners';
 
 export const me = query({
@@ -38,6 +49,9 @@ export const me = query({
       tradeStatus: admin ? ('approved' as const) : me.profile?.tradeStatus || ('none' as const),
       verified: admin || isVerified(me.profile),
       partner: isPartner(me.profile),
+      partnerTier: isPartner(me.profile) ? me.profile?.partnerTier ?? ('base' as const) : null,
+      // the partner's own code, so share buttons can add it to the links they copy
+      refCode: isPartner(me.profile) ? me.profile?.refCode ?? null : null,
       admin,
     };
   },
@@ -68,59 +82,114 @@ export const ensureProfile = mutation({
 });
 
 // ---------- pricing ----------
-type FulfillmentVariant = NonNullable<Doc<'commerceListings'>['fulfillment']>[number];
-
 /**
- * Landed cost of one unit in USD cents: supplier cost, or CJ's landed cost when higher.
- * Ashcroft bills freight separately, so its freight allowance is part of the landed cost.
+ * Landed cost of one unit for each House project line, keyed productId:variantId, worked out
+ * the way the catalog prices it. It reads the product's supplier data directly, so a piece that
+ * has since been unpublished or gone out of stock still has its cost. Null when unknown.
  */
-function costCents(
-  product: Doc<'commerceProducts'>,
-  variant: FulfillmentVariant,
-  linked: Doc<'products'> | null,
-  freight: number
+export async function houseUnitCosts(
+  ctx: Ctx,
+  lines: { productId: Id<'commerceProducts'>; variantId: string }[],
+  channel: 'house' | 'retail' = 'house',
+  /** The moment of payment: exclusions apply to orders paid while they were in place. */
+  at = Date.now()
 ) {
-  const supplier = Math.round(variant.cost * (product.draft.usdRate || 1) * 100);
-  if (product.provider === 'ashcroft') return supplier > 0 ? supplier + freight : 0;
-  const landed = linked?.confirmedLandedCost ?? linked?.estimatedLandedCost;
-  return Math.max(supplier, landed ? Math.round(landed * 100) : 0);
-}
-/** Retail unit price in cents. House-only pieces fall back to the House estimate grossed up. */
-function retailCents(variant: FulfillmentVariant) {
-  if (variant.retail > 0) return variant.retail;
-  return Math.round(variant.commercial / 0.75);
-}
-
-async function pricedListing(ctx: Ctx, listing: Doc<'commerceListings'>) {
-  const product = await ctx.db.get(listing.productId);
-  if (!product || !(await listingReady(ctx, product, listing))) return null;
-  const linked = product.cjProductId ? await ctx.db.get(product.cjProductId) : null;
-  // Ashcroft pieces use the louiemae.com price as retail: the storefront builds the freight
-  // allowance into it (see storefrontListing), so trade at 25% off carries freight too.
-  const store =
-    product.provider === 'ashcroft'
-      ? await ctx.db
-          .query('commerceListings')
-          .withIndex('by_product_channel', (q) => q.eq('productId', product._id).eq('channel', 'retail'))
-          .unique()
-      : null;
-  const named = store?.snapshot ?? listing.snapshot;
-  const rate = product.provider === 'ashcroft' ? retailDelivery(named.category, named.name) : null;
-  const variants = listing.snapshot.variants.flatMap((sv) => {
-    const route = listing.fulfillment?.find((f) => f.id === sv.id);
-    if (!route) return [];
-    const base = store?.snapshot.variants.find((v) => v.id === sv.id)?.price || retailCents(route);
-    if (base <= 0) return [];
-    const retail = rate ? launchPrice(base, rate.freight, rate.delivery) : base;
-    const byPrefix = freightFor(route.sku);
-    const freight = rate ? { cents: rate.freight, known: true } : byPrefix;
-    const cost = costCents(product, route, linked, freight.cents);
-    return [{ ...sv, retail, cost, sku: route.sku, freightKnown: freight.known, trade: tradeCents(retail, cost), floor: floorCents(cost) }];
-  });
-  return variants.length ? { product, listing, variants, inStock: linked?.inStock !== false } : null;
+  const costs = new Map<string, number | null>();
+  const types = new Map<string, ProductType>();
+  const excluded = new Set<string>();
+  const inForce = (e: { at: number; removedAt?: number }) => e.at <= at && (e.removedAt === undefined || e.removedAt > at);
+  // Category exclusions are a short list; product exclusions are looked up by product below.
+  const categories = (await ctx.db.query('holmCommissionExclusions').withIndex('by_kind_value', (q) => q.eq('kind', 'category')).collect()).filter(inForce);
+  for (const productId of new Set(lines.map((l) => l.productId))) {
+    const product = await ctx.db.get(productId);
+    const listing = await ctx.db
+      .query('commerceListings')
+      .withIndex('by_product_channel', (q) => q.eq('productId', productId).eq('channel', channel))
+      .unique();
+    if (!product || !listing) continue;
+    types.set(productId, productTypeFor(product.provider, listing.snapshot.category));
+    const category = (listing.snapshot.category || '').toLowerCase();
+    const byProduct = await ctx.db
+      .query('holmCommissionExclusions')
+      .withIndex('by_kind_value', (q) => q.eq('kind', 'product').eq('value', productId))
+      .collect();
+    if (byProduct.some(inForce) || categories.some((e) => !!e.value && category.includes(e.value.toLowerCase()))) excluded.add(productId);
+    const { linked, rate } = await pricingParts(ctx, product, listing);
+    for (const route of listing.fulfillment ?? []) {
+      const cost = costCents(product, route, linked, variantFreight(route, rate).cents);
+      costs.set(`${productId}:${route.id}`, cost > 0 ? cost : null);
+    }
+  }
+  return Object.assign(costs, { types, excluded });
 }
 
 // ---------- catalog ----------
+/** Bounded source pages retain their cursor even when current eligibility removes all candidates. */
+export const catalogPage = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, a) => {
+    if (!Number.isInteger(a.paginationOpts.numItems) || a.paginationOpts.numItems < 1 || a.paginationOpts.numItems > 50)
+      throw new CommerceError('INVALID_INPUT');
+    const me = await viewer(ctx);
+    const trade = !!me && isVerified(me.profile);
+    const page = await ctx.db.query('commerceListings')
+      .withIndex('by_channel_published', q => q.eq('channel', 'house').eq('published', true))
+      .paginate(catalogPageOptions(a.paginationOpts, 24, 1_000_000));
+    const now = Date.now();
+    const items = [];
+    for (const listing of page.page) {
+      const item = await catalogItem(ctx, listing, trade, now);
+      if (item) items.push(item);
+    }
+    return { ...page, page: items };
+  },
+});
+
+/** Resolve explicit saved identities independently of the loaded page, without exposing private prices. */
+export const catalogLegacyItems = query({
+  args: { legacyIds: v.array(v.number()) },
+  handler: async (ctx, args) => {
+    if (args.legacyIds.length > 24 || args.legacyIds.some(id => !Number.isSafeInteger(id) || id < 1)) throw new CommerceError('INVALID_INPUT');
+    const state = await holmIdentityState(ctx);
+    if (!state?.enabled || state.phase !== 'verified') return { ready: false, items: [] };
+    const me = await viewer(ctx);
+    const trade = !!me && isVerified(me.profile);
+    const items = [];
+    const now = Date.now();
+    for (const legacyId of new Set(args.legacyIds)) {
+      const matches = await ctx.db.query('holmCatalogIdentities').withIndex('by_legacy', query => query.eq('legacyId', legacyId)).take(2);
+      if (matches.length > 1) { items.push({ legacyId, status: 'conflict' as const, item: null }); continue; }
+      const match = matches[0];
+      const listing = match ? await ctx.db.get(match.listingId) : null;
+      const valid = match && listing?.productId === match.productId && holmLegacyId(match.productId) === legacyId;
+      const item = valid ? await catalogItem(ctx, listing, trade, now) : null;
+      items.push({ legacyId, status: item ? 'resolved' as const : 'unavailable' as const, item });
+    }
+    return { ready: true, items };
+  },
+});
+
+/** Resolve explicit saved source identities using the same current eligibility boundary. */
+export const catalogItems = query({
+  args: { productIds: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    if (args.productIds.length > 24) throw new CommerceError('INVALID_INPUT');
+    const me = await viewer(ctx);
+    const trade = !!me && isVerified(me.profile);
+    const now = Date.now();
+    const results = [];
+    for (const productId of new Set(args.productIds)) {
+      const normalized = productId.length <= 128 ? ctx.db.normalizeId('commerceProducts', productId) : null;
+      const listing = normalized ? await ctx.db.query('commerceListings')
+        .withIndex('by_product_channel', q => q.eq('productId', normalized).eq('channel', 'house'))
+        .unique() : null;
+      const item = listing ? await catalogItem(ctx, listing, trade, now) : null;
+      results.push({ productId, item });
+    }
+    return results;
+  },
+});
+
 export const catalog = query({
   args: {},
   handler: async (ctx) => {
@@ -130,6 +199,7 @@ export const catalog = query({
       .query('commerceListings')
       .withIndex('by_channel_published', (q) => q.eq('channel', 'house').eq('published', true))
       .take(300);
+    const assets = await assetIndex(ctx);
     const out = [];
     for (const listing of listings) {
       const priced = await pricedListing(ctx, listing);
@@ -141,7 +211,9 @@ export const catalog = query({
         description: s.description,
         category: s.category,
         images: s.images,
+        imageMedia: s.imageMedia,
         facts: s.facts,
+        assets: await publicAssets(ctx, assets.get(listing.productId), s.facts),
         inStock: priced.inStock,
         variants: priced.variants.map((x) => ({
           id: x.id,
@@ -178,16 +250,24 @@ export const adminPricing = query({
     const deepest = Math.max(...HOLM_RULES.projectTiers.map((t) => t.bps));
     const rows = [];
     for (const listing of listings) {
-      const priced = await pricedListing(ctx, listing);
+      const priced = await pricedListing(ctx, listing, true);
       if (!priced) continue;
       for (const x of priced.variants) {
         const listedTrade = Math.round((x.retail * (10000 - HOLM_RULES.tradeDiscountBps)) / 10000);
         const project = Math.min(x.trade, Math.max(x.floor, Math.round((x.trade * (10000 - deepest)) / 10000)));
         const flags: string[] = [];
-        if (x.cost <= 0) flags.push('No dealer cost: trade has no margin floor');
+        if (!x.offerAvailable) flags.push('Availability review required: not a current offer');
+        if (x.trade <= 0) flags.push('Cost review required: new offers unavailable');
         if (x.cost > 0 && x.trade > listedTrade) flags.push(`Floor holds trade at ${Math.round((1 - x.trade / x.retail) * 100)}% off`);
         if (priced.product.provider === 'ashcroft' && !x.freightKnown) flags.push('Freight allowance estimated');
         if (x.cost > 0 && marginBps(project, x.cost) < HOLM_RULES.minMarginBps - 5) flags.push('Below margin floor');
+        // Retail margin left after the top (Elite) commission rate, held to 40% of profit.
+        const type = productTypeFor(priced.product.provider, listing.snapshot.category);
+        const profit = x.cost > 0 ? (x.retail * marginBps(x.retail, x.cost)) / 10000 : 0;
+        // never below zero: a line with no profit earns no commission (as in lineCommissions)
+        const elite = x.cost > 0 ? Math.max(0, Math.min((x.retail * HOLM_RATES.elite[type]) / 10000, (profit * MARGIN_GUARD_BPS) / 10000)) : 0;
+        const afterEliteBps = x.cost > 0 ? Math.round(((profit - elite) / x.retail) * 10000) : null;
+        if (afterEliteBps !== null && afterEliteBps < 2000) flags.push('Under 20% after Elite commission');
         rows.push({
           productId: priced.product._id,
           name: listing.snapshot.name,
@@ -198,8 +278,10 @@ export const adminPricing = query({
           projectCents: project,
           costCents: x.cost,
           retailMarginBps: x.cost > 0 ? marginBps(x.retail, x.cost) : null,
-          tradeMarginBps: x.cost > 0 ? marginBps(x.trade, x.cost) : null,
-          projectMarginBps: x.cost > 0 ? marginBps(project, x.cost) : null,
+          tradeMarginBps: x.cost > 0 && x.trade > 0 ? marginBps(x.trade, x.cost) : null,
+          projectMarginBps: x.cost > 0 && project > 0 ? marginBps(project, x.cost) : null,
+          afterEliteBps,
+          type,
           flags,
         });
       }
@@ -276,6 +358,7 @@ export const applyTrade = mutation({
         createdAt: now,
         ...profile,
       });
+    await syncTrade(ctx, me.userId, 'pending', name);
     await ctx.scheduler.runAfter(0, internal.holmEmail.send, {
       key: `trade-application:${id}`,
       to: 'owner',
@@ -343,6 +426,7 @@ export const reviewApplication = mutation({
     };
     if (profile) await ctx.db.patch(profile._id, patch);
     if (a.decision === 'approved') await markReferralVerified(ctx, app.userId);
+    await syncTrade(ctx, app.userId, a.decision, app.businessName);
     const copy = {
       approved: `Your trade account for ${app.businessName} is approved. Trade pricing is now on for every piece, and your digital trade pass is in your account.\n\nhttps://louiemae.com/trade`,
       rejected: `We weren't able to approve the trade account for ${app.businessName}.${note ? `\n\n${note}` : ''}\n\nReply to this email if anything has changed.`,
@@ -381,16 +465,27 @@ async function priceSelection(
       .query('commerceListings')
       .withIndex('by_product_channel', (q) => q.eq('productId', s.productId).eq('channel', 'house'))
       .unique();
+    if (listing?.pricingMode === 'approved_v2') throw new Error('Use the current project delivery and checkout flow for this approved offer.');
     const priced = listing ? await pricedListing(ctx, listing) : null;
     const variant = priced?.variants.find((x) => x.id === s.variantId);
     const route = listing?.fulfillment?.find((x) => x.id === s.variantId);
     if (!priced || !variant || !route) throw new Error('A piece is no longer available. Refresh the tray.');
     checkQuantity(s.quantity, variant);
+    if (priced.product.provider === 'ashcroft' && !(await ashcroftAvailable(ctx, route.sku, listing!.snapshot.description, s.quantity)))
+      throw new Error('Supplier inventory cannot cover this quantity. Refresh the tray.');
     rows.push({ s, priced, variant, route });
   }
-  const pp = trade
-    ? applyProjectPricing(rows.map((r) => ({ unitCents: r.variant.trade, quantity: r.s.quantity, floorCents: r.variant.floor })))
-    : null;
+  // v2 (S32): project tiers apply only to stackable lines, on the eligible trade subtotal, from the
+  // approved policy; Zuo lines never stack. Legacy pricing stays until TRADE_CHECKOUT_V2_ENABLED.
+  const v2Policy = trade && flag('TRADE_CHECKOUT_V2_ENABLED') ? await maybeConfig<ProjectDiscountPolicy>(ctx, 'projectDiscountPolicy', 'project-discount') : null;
+  const pp = !trade
+    ? null
+    : v2Policy
+      ? (() => {
+          const r = applyProjectTier(rows.map((x, i) => ({ key: String(i), tradeUnitMinor: x.variant.trade, quantity: x.s.quantity, floorUnitMinor: x.variant.floor, mapUnitMinor: null, stackable: x.priced.product.provider !== 'zuo' })), v2Policy.value);
+          return { units: r.lines.map((l) => l.unitMinor), bps: r.tierBps, discountCents: r.discountMinor };
+        })()
+      : applyProjectPricing(rows.map((r) => ({ unitCents: r.variant.trade, quantity: r.s.quantity, floorCents: r.variant.floor })));
   const lines = rows.map((r, i) => ({
     productId: r.priced.product._id,
     variantId: r.variant.id,
@@ -432,6 +527,7 @@ export const requestQuote = mutation({
     items: v.array(quoteItem),
     refCode: v.optional(v.string()),
     visitorId: v.optional(v.string()),
+    useCredit: v.optional(v.boolean()),
   },
   handler: async (ctx, a) => {
     const me = await viewer(ctx);
@@ -450,9 +546,9 @@ export const requestQuote = mutation({
       a.date.length > 40 ||
       JSON.stringify(a.address).length > 2000
     )
-      throw new Error('Check your contact and delivery details.');
+      throw new CommerceError('INVALID_INPUT', undefined, 'Check your contact and delivery details.');
     if (!a.address.line1.trim() || !a.address.city.trim() || !a.address.postalCode.trim())
-      throw new Error('Add the delivery address.');
+      throw new CommerceError('INVALID_INPUT', undefined, 'Add the delivery address.');
     const old = await ctx.db
       .query('commerceProjects')
       .withIndex('by_token', (q) => q.eq('token', a.token))
@@ -467,8 +563,10 @@ export const requestQuote = mutation({
       .order('desc')
       .take(3);
     if (recent.length === 3 && recent[2].createdAt > Date.now() - 3600000)
-      throw new Error('You have sent several requests. Please wait an hour before sending another.');
+      throw new CommerceError('RATE_LIMITED', undefined, 'You have sent several requests. Please wait an hour before sending another.');
     const trade = !!me && (isVerified(me.profile) || (await isAdmin(ctx)));
+    // v2 (S25): HOLM is the approved-trade purchasing channel; retail buyers shop on Louie Mae.
+    if (flag('HOLM_TRADE_ONLY_ENABLED') && !trade) throw new CommerceError('TRADE_APPROVAL_REQUIRED', 'Retail requests are no longer taken on HOLM', 'Trade pricing and quotes are for approved trade members. Shop retail on louiemae.com.');
     const priced = await priceSelection(ctx, a.items, trade);
     const delivery = deliveryCents(priced.subtotal);
     totalLines(priced.lines, delivery, 0);
@@ -506,11 +604,16 @@ export const requestQuote = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    // Store credit comes off the merchandise and shows as its own line on the invoice.
+    if (me && a.useCredit) {
+      const creditCents = await reserveCredit(ctx, me.userId, priced.subtotal, `project:${id}`);
+      if (creditCents > 0) await ctx.db.patch(id, { creditCents });
+    }
     // Partner commission is earned on retail-priced requests only.
     const attr = trade ? null : await resolveAttribution(ctx, a.refCode, a.visitorId, { userId: me?.userId, email });
     await ctx.db.insert('holmQuoteRequests', {
       userId: me?.userId,
-      ...(attr ? { partnerId: attr.partnerId, refCode: attr.refCode, channel: attr.channel, partnerState: 'awaiting_payment' as const } : {}),
+      ...(attr ? { partnerId: attr.partnerId, refCode: attr.refCode, channel: attr.channel, partnerState: 'awaiting_payment' as const, ...(attr.board ? { board: attr.board } : {}) } : {}),
       commerceProjectId: id,
       projectName: a.projectName || 'Untitled',
       priceMode: trade ? 'trade' : 'retail',

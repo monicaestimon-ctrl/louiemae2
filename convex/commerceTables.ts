@@ -1,6 +1,6 @@
 import { defineTable } from 'convex/server';
 import { v } from 'convex/values';
-export const provider = v.union(v.literal('cj'), v.literal('ashcroft'), v.literal('owner_managed'));
+export const provider = v.union(v.literal('cj'), v.literal('ashcroft'), v.literal('owner_managed'), v.literal('zuo'));
 export const channel = v.union(v.literal('retail'), v.literal('house'));
 export const variant = v.object({
   id: v.string(),
@@ -39,6 +39,10 @@ export const snapshot = v.object({
   description: v.string(),
   category: v.string(),
   images: v.array(v.string()),
+  imageMedia: v.optional(v.array(v.object({
+    url: v.string(), altText: v.string(), variantIds: v.array(v.string()),
+    renditions: v.array(v.object({ url: v.string(), width: v.number() })),
+  }))),
   facts: v.string(),
   variants: v.array(
     v.object({
@@ -72,9 +76,18 @@ export const projectLine = v.object({
   cjSku: v.optional(v.string()),
 });
 export const commerceTables = {
+  ashcroftInventoryFeeds: defineTable({
+    source: v.string(), sha256: v.string(), observedAt: v.number(), validUntil: v.number(), importedAt: v.number(),
+    rows: v.array(v.object({ sku: v.string(), quantity: v.number() })),
+  }).index('by_observed', ['observedAt']),
   retailCheckouts: defineTable({
     items: v.array(v.object({ productId: v.string(), variantId: v.string(), variantName: v.string(), name: v.string(), price: v.number(), quantity: v.number(), image: v.optional(v.string()), supplierSku: v.string(), fulfillmentProvider: v.literal('ashcroft') })),
     subtotal: v.number(), shipping: v.number(), createdAt: v.number(),
+    // the partner whose link brought this buyer (checked again when the payment completes)
+    partner: v.optional(v.object({ partnerId: v.id('users'), refCode: v.string(), visitorId: v.string(), channel: v.string(), board: v.optional(v.string()) })),
+    // store credit held for this checkout (taken off as a one-time Stripe discount)
+    creditCents: v.optional(v.number()),
+    creditUserId: v.optional(v.id('users')),
   }),
   commercePaymentLinks: defineTable({
     paymentIntentId: v.string(),
@@ -82,6 +95,7 @@ export const commerceTables = {
   }).index('by_payment', ['paymentIntentId']),
   commerceProjects: defineTable({
     token: v.string(),
+    creditCents: v.optional(v.number()), // store credit held for this quote; comes off the invoice as its own line
     channel,
     name: v.string(),
     email: v.string(),
@@ -149,6 +163,12 @@ export const commerceTables = {
     provider,
     sourceKey: v.string(),
     cjProductId: v.optional(v.id('products')),
+    zuoStaging: v.optional(v.object({
+      sku: v.string(), pack: v.number(), unitsPerSellUnit: v.number(), runId: v.string(), manifestSha256: v.string(),
+      sourceEvidence: v.string(), excluded: v.boolean(), exclusionReasons: v.array(v.string()),
+      holdReasons: v.array(v.string()), payload: v.string(),
+      status: v.literal('staged_not_orderable'),
+    })),
     draft,
     revision: v.number(),
     updatedAt: v.number(),
@@ -156,6 +176,9 @@ export const commerceTables = {
     .index('by_source', ['sourceKey'])
     .index('by_cj', ['cjProductId']),
   commerceListings: defineTable({
+    pricingMode: v.optional(v.literal('approved_v2')),
+    // Retained exact legacy identities survive selective publication; never a payable offer.
+    ashcroftIdentityOptions: v.optional(v.array(v.object({ id: v.string(), sku: v.string(), minimum: v.number(), increment: v.number() }))),
     productId: v.id('commerceProducts'),
     channel,
     published: v.boolean(),

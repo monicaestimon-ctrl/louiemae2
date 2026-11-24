@@ -7,6 +7,8 @@ const isTrue = (value: string | undefined): boolean =>
 
 export const shouldAllowUnsignedStripeWebhook = (env: StripeWebhookEnv = process.env): boolean => {
   const explicitTestFlag = isTrue(env.STRIPE_ALLOW_UNSIGNED_WEBHOOKS);
+  // Never with live keys, whatever else is set (v2 S38).
+  if (/^(sk|rk)_live_/.test(env.STRIPE_SECRET_KEY ?? '')) return false;
   const nodeEnv = env.NODE_ENV;
   const nonProductionRuntime = nodeEnv === "test" || nodeEnv === "development";
   return explicitTestFlag && nonProductionRuntime;

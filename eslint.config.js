@@ -52,6 +52,9 @@ export default [
                 confirm: 'readonly',
                 prompt: 'readonly',
                 HTMLElement: 'readonly',
+                HTMLDialogElement: 'readonly',
+                HTMLAnchorElement: 'readonly',
+                Document: 'readonly',
                 HTMLInputElement: 'readonly',
                 HTMLTextAreaElement: 'readonly',
                 HTMLButtonElement: 'readonly',
@@ -99,6 +102,7 @@ export default [
         },
     },
     {
-        ignores: ['dist/**', 'node_modules/**', '*.config.*'],
+        ignores: ['dist/**', 'node_modules/**', '*.config.*', 'public/trade/decoders/**',
+            'artifacts/**', 'outputs/**', 'tmp/**', 'coverage/**', '.vercel/**'],
     },
 ];

@@ -9,6 +9,7 @@
 import { readdir, mkdir, writeFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import sharp from 'sharp';
+import { brandImageWidths } from './brand-image-widths.mjs';
 
 const root = process.cwd();
 const sources = [
@@ -16,7 +17,6 @@ const sources = [
   { dir: 'public/images/brand', url: '/images/brand' },
 ];
 const outDir = 'public/images/opt/brand';
-const WIDTHS = [480, 960, 1600];
 const QUALITY = 74;
 
 const slug = (name) =>
@@ -34,9 +34,7 @@ for (const source of sources) {
     const input = path.join(root, source.dir, file);
     const meta = await sharp(input).metadata();
     const name = slug(file);
-    const widths = WIDTHS.filter((w) => w < meta.width);
-    if (widths.length < WIDTHS.length) widths.push(Math.min(meta.width, WIDTHS[WIDTHS.length - 1]));
-    const unique = [...new Set(widths)];
+    const unique = brandImageWidths(`${source.url}/${file}`, meta.width);
     for (const w of unique) {
       const out = path.join(root, outDir, `${name}-${w}.webp`);
       const done = await stat(out).catch(() => null);

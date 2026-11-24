@@ -1,0 +1,33 @@
+{
+  "source": "/images/brand/fam2.png",
+  "sha256": "1c8259c85e55cf55ba04a04ec07c488a5464da1aa19311f23044baefccc3eb3c",
+  "recipe": "avif-quality40-effort7-lossless-orientation-v1",
+  "base": "/images/opt/brand-formats/b3ba29ca62f2c1e0e92d49d0",
+  "renditions": [
+    {
+      "width": 480,
+      "bytes": 26603,
+      "sha256": "1571da397e1907b9153188be8b26bf05341f034955a9a92764f26593319be8e7"
+    },
+    {
+      "width": 640,
+      "bytes": 42940,
+      "sha256": "54e20e6b1d307d5f7ddca081351c0e1a6bc4e0295dd5fc5945968a725455cda7"
+    },
+    {
+      "width": 800,
+      "bytes": 61870,
+      "sha256": "c944eca66d9d5bc3abe71607b340d56738b980980f603e4a74adc83220b396e9"
+    },
+    {
+      "width": 960,
+      "bytes": 81920,
+      "sha256": "ad5f490a3fcd731d0dc367f7c6861a2af2e111bd79791d9ff5a8ad47d099d2e7"
+    },
+    {
+      "width": 1024,
+      "bytes": 90038,
+      "sha256": "3155922086f66d388ad03998f5e3b8f80ca27de2f5708e27ac1de103c5981f67"
+    }
+  ]
+}

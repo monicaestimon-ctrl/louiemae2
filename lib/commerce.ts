@@ -1,4 +1,5 @@
-export type Provider = 'cj' | 'ashcroft' | 'owner_managed';
+import { MAX_ORDER_QUANTITY } from './orderQuantity';
+export type Provider = 'cj' | 'ashcroft' | 'owner_managed' | 'zuo';
 export type Channel = 'retail' | 'house';
 export type CommerceVariant = {
   id: string;
@@ -33,12 +34,13 @@ export type CommerceDraft = {
   referencePermission: boolean;
 };
 export const providerLabels: Record<Provider, string> = {
+  zuo: 'Zuo - staged, not orderable',
   cj: 'CJ fulfillment',
   ashcroft: 'Ashcroft · manual dealer order',
   owner_managed: 'Owner-managed logistics',
 };
 export function allowsChannel(provider: Provider, channel: Channel) {
-  return provider !== 'owner_managed' || channel === 'house';
+  return provider !== 'zuo' && (provider !== 'owner_managed' || channel === 'house');
 }
 export function sourceIdentity(raw: string, provider: Provider) {
   const url = new URL(raw.trim());
@@ -130,8 +132,10 @@ export function checkQuantity(
 ) {
   if (
     !Number.isSafeInteger(quantity) ||
+    !Number.isSafeInteger(variant.minimum) || variant.minimum < 1 ||
+    !Number.isSafeInteger(variant.increment) || variant.increment < 1 ||
     quantity < variant.minimum ||
-    quantity > 9999 ||
+    quantity > MAX_ORDER_QUANTITY ||
     (quantity - variant.minimum) % variant.increment !== 0
   )
     throw new Error('Check the quantity, minimum and order increment.');
@@ -224,7 +228,7 @@ export function listingSnapshot(
   channel: Channel
 ): ListingSnapshot {
   if (!allowsChannel(provider, channel))
-    throw new Error('Owner-managed products can only publish to House.');
+    throw new Error(provider === 'zuo' ? 'Zuo staging is not approved for publication or checkout.' : 'Owner-managed products can only publish to House.');
   validateDraft(draft, true);
   if (
     provider === 'ashcroft' &&
@@ -286,6 +290,17 @@ export function blankCommerceDraft(): CommerceDraft {
     imagesApproved: false,
     referencePermission: false,
   };
+}
+/**
+ * What the customer pays for a project: lines, delivery and tax, less any store credit. Credit
+ * only comes off merchandise, so it can never make the total negative.
+ */
+export function projectTotal(p: { lines: { quantity: number; unitPrice: number }[]; delivery: number; tax: number; creditCents?: number }) {
+  return totalLines(p.lines, p.delivery, p.tax) - projectCredit(p);
+}
+/** The store credit a project's invoice takes off: never more than its merchandise. */
+export function projectCredit(p: { lines: { quantity: number; unitPrice: number }[]; creditCents?: number }) {
+  return Math.max(0, Math.min(Math.floor(p.creditCents ?? 0), totalLines(p.lines, 0, 0)));
 }
 export function totalLines(
   lines: { quantity: number; unitPrice: number }[],

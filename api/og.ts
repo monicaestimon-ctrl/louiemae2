@@ -1,4 +1,6 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { STOREFRONT_ORIGIN } from '../lib/productMetadata.js';
+import type { VercelRequest, VercelResponse } from '../lib/serverHttp.js';
+import { isCollectionId } from '../lib/collectionId.js';
 
 // Per-page metadata for social sharing previews
 const PAGE_META: Record<string, { title: string; description: string; image: string }> = {
@@ -45,18 +47,40 @@ const DEFAULT_META = {
     image: '/lm3.jpg',
 };
 
+/**
+ * A partner link (?ref=CODE&ch=channel) must survive the hop to the app, or the visit is never
+ * credited. Only well-formed values are passed on, so nothing user-supplied reaches the HTML.
+ */
+export function partnerQuery(query: VercelRequest['query']): string {
+    const one = (v: unknown) => (Array.isArray(v) ? v[0] : v);
+    const ref = String(one(query.ref) ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!/^[A-Z0-9]{4,16}$/.test(ref)) return '';
+    const ch = String(one(query.ch) ?? '').toLowerCase();
+    return `?ref=${ref}${/^[a-z]{1,20}$/.test(ch) ? `&ch=${ch}` : ''}`;
+}
+
 export default function handler(req: VercelRequest, res: VercelResponse) {
+    const partner = partnerQuery(req.query);
     // Keep old shared store URLs on the same temporary landing page.
     if (process.env.VITE_PRELAUNCH_MODE === 'true') {
         res.setHeader('Cache-Control', 'no-store');
-        return res.redirect(307, '/');
+        return res.redirect(307, `/${partner}`);
     }
-    const path = (req.query.path as string) || '';
-    const meta = PAGE_META[path] || DEFAULT_META;
-    const BASE_URL = 'https://louiemae.com';
+    const path = req.query.path ?? '';
+    // Only source-owned routes and bounded collection slugs enter metadata or scripts.
+    // Collections are managed dynamically; preserve their existing safe redirect path.
+    if (typeof path !== 'string' || (path !== '' && !Object.prototype.hasOwnProperty.call(PAGE_META, path) && !(path.startsWith('collection/') && isCollectionId(path.slice('collection/'.length))))) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('X-Robots-Tag', 'noindex');
+        return res.status(404).send('<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Page not found | Louie Mae</title></head><body><main><h1>Page not found</h1><a href="/">Return to Louie Mae</a></main></body></html>');
+    }
+    const meta = Object.prototype.hasOwnProperty.call(PAGE_META, path) ? PAGE_META[path] : DEFAULT_META;
+    const BASE_URL = STOREFRONT_ORIGIN;
     const imageUrl = `${BASE_URL}${meta.image}`;
     const pageUrl = `${BASE_URL}/${path}`;
-    const hashUrl = `${BASE_URL}/#${path}`;
+    const hashUrl = `${BASE_URL}/${partner}#${path}`;
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -98,3 +122,4 @@ export default function handler(req: VercelRequest, res: VercelResponse) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.status(200).send(html);
 }
+

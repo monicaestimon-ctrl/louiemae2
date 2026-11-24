@@ -1,3 +1,6 @@
+import { qualityTables } from './qualityTables';
+import { trendsiTables } from './trendsiTables';
+import { publicSearchTables } from './publicSearchTables';
 import { sourcePropertiesValidator } from './sourcePropertiesValidator';
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
@@ -6,6 +9,7 @@ import { authTables } from "@convex-dev/auth/server";
 import { furnitureTables } from './furnitureTables';
 import { commerceTables } from './commerceTables';
 import { holmTables } from './holmTables';
+import { v2Tables } from './v2Tables';
 
 const cjInventoryStatusValidator = v.union(
     v.literal("unknown"),
@@ -53,6 +57,9 @@ const cjFulfillmentReadinessValidator = v.union(
 );
 
 export default defineSchema({
+    ...trendsiTables,
+    ...qualityTables,
+    ...publicSearchTables,
     // Only processing leases are represented here; permanent identities remain in cjWebhookLog.
     webhookRecoveryQueue: defineTable({ webhookId: v.id('cjWebhookLog'), claimedAt: v.optional(v.string()), sourceCreatedAt: v.number() })
         .index('by_webhook', ['webhookId']).index('by_claimed_at', ['claimedAt', 'sourceCreatedAt', 'webhookId']),
@@ -69,6 +76,7 @@ export default defineSchema({
     ...furnitureTables,
     ...commerceTables,
     ...holmTables,
+    ...v2Tables,
 
     webhookSummaries: defineTable({
         webhookId: v.id('cjWebhookLog'), version: v.number(), sourceCreatedAt: v.number(),

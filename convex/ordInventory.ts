@@ -1,0 +1,414 @@
+// Internal holds protect our checkout capacity; they do not reserve supplier inventory.
+import { v } from 'convex/values';
+import { mutation, query } from './_generated/server';
+import type { MutationCtx, QueryCtx } from './_generated/server';
+import type { Doc, Id } from './_generated/dataModel';
+import { CommerceError } from '../lib/errors';
+import { stockView } from '../lib/stockEvidence';
+import { warehouseCurrent } from '../lib/shipping/evidence';
+import type { FreshnessPolicy } from '../lib/config';
+import { activeConfig } from './sysConfig';
+import { digest } from './dlvSecurity';
+import { requireDeliveryRole } from './dlvAccess';
+import { audit } from './sysCore';
+import { latestFeed } from './ashcroftInventory';
+import { ashcroftQuantity } from '../lib/ashcroftInventory';
+
+type Ctx = QueryCtx | MutationCtx;
+const unavailable = (message: string): never => {
+  throw new CommerceError('STOCK_UNAVAILABLE', message);
+};
+
+/** Ashcroft's dated selling-unit feed is independent of Zuo warehouse/physical-pack evidence. */
+export async function currentAshcroftInventory(ctx: Ctx, cv: Doc<'catVariants'>, now: number, forReconciliation = false) {
+  const supplier = await ctx.db.get(cv.supplierId);
+  const product = await ctx.db.get(cv.productId);
+  if (supplier?.code !== 'ashcroft' || product?.provider !== 'ashcroft' || !cv.legacyVariantId
+    || cv.optionKey !== cv.legacyVariantId || cv.packId !== '1' || cv.piecesPerPack !== 1
+    || (!forReconciliation && !['unknown', 'in_stock'].includes(cv.availability)))
+    unavailable('Ashcroft selling-unit identity or availability changed');
+  const feed = await latestFeed(ctx);
+  const units = ashcroftQuantity(feed, cv.supplierSku, now);
+  if (!feed || units === null || !Number.isSafeInteger(units) || units < 0)
+    return unavailable('Current Ashcroft supplier inventory requires confirmation');
+  return { feed, availableUnits: units };
+}
+
+export function ashcroftReservationBasis(cv: Doc<'catVariants'>, feedId: Id<'ashcroftInventoryFeeds'>) {
+  return { inventoryBasis: 'ashcroft_selling_unit' as const, supplierSku: cv.supplierSku, ashcroftFeedId: feedId };
+}
+
+/** Prove historical paid selling units from the immutable intent, never infer an original feed. */
+async function legacyPaidAshcroftMatches(ctx: Ctx, cv: Doc<'catVariants'>, row: Doc<'ordInventoryReservations'>) {
+  if (row.status !== 'consumed' || !Number.isSafeInteger(row.packs) || row.packs < 1
+    || (row.inventoryBasis !== undefined && row.inventoryBasis !== 'ashcroft_selling_unit')
+    || (row.supplierSku !== undefined && row.supplierSku !== cv.supplierSku)
+    || row.warehouseId !== undefined || (row.piecesPerPack !== undefined && row.piecesPerPack !== 1)) return false;
+  const intent = await ctx.db.get(row.intentId);
+  const lines = intent?.lineSnapshot.filter(l => l.variantId === cv._id) ?? [];
+  return !!intent && ['paid', 'exception'].includes(intent.status) && lines.length > 0
+    && lines.every(l => l.productId === cv.productId && l.supplierCode === 'ashcroft'
+      && l.supplierSku === cv.supplierSku && l.pieces === l.packs && Number.isSafeInteger(l.packs) && l.packs > 0)
+    && row.packs <= lines.reduce((sum, l) => sum + l.packs, 0);
+}
+
+/** Feed refresh alone never proves a paid allocation is included in the supplier count. */
+export async function availableAshcroftAfterCommitments(ctx: Ctx, cv: Doc<'catVariants'>, sourceUnits: number, now: number, excludeIntent?: Id<'ordCheckoutIntents'>, reviewedRecovery = false) {
+  if (!Number.isSafeInteger(sourceUnits) || sourceUnits < 0) unavailable('Invalid Ashcroft supplier count');
+  let committed = 0;
+  for (const row of await commitments(ctx, cv._id, now)) {
+    if (row.intentId === excludeIntent) continue;
+    if (row.inventoryBasis !== 'ashcroft_selling_unit' || row.supplierSku !== cv.supplierSku
+      || !row.ashcroftFeedId || !Number.isSafeInteger(row.packs) || row.packs < 1)
+      if (!reviewedRecovery || !await legacyPaidAshcroftMatches(ctx, cv, row))
+        unavailable('An existing Ashcroft commitment needs its selling-unit basis reconciled');
+    committed += row.packs;
+    if (!Number.isSafeInteger(committed)) unavailable('Ashcroft commitments require review');
+  }
+  return Math.max(0, sourceUnits - committed);
+}
+
+/** Read all relevant commitments or fail closed. Never silently truncate stock deductions. */
+export async function commitments(ctx: Ctx, variantId: Id<'catVariants'>, now: number) {
+  const held = await ctx.db
+    .query('ordInventoryReservations')
+    .withIndex('by_variant_status_expires', (q) =>
+      q.eq('variantId', variantId).eq('status', 'held').gt('expiresAt', now)
+    )
+    .take(501);
+  const consumed = await ctx.db
+    .query('ordInventoryReservations')
+    .withIndex('by_variant_status', (q) => q.eq('variantId', variantId).eq('status', 'consumed'))
+    .take(501);
+  if (held.length > 500 || consumed.length > 500)
+    unavailable('Inventory commitments require operational reconciliation');
+  return [...held, ...consumed];
+}
+
+export async function currentInventory(ctx: Ctx, cv: Doc<'catVariants'>, now: number) {
+  const supplier = await ctx.db.get(cv.supplierId);
+  const warehouse = cv.warehouseId ? await ctx.db.get(cv.warehouseId) : null;
+  const revision = cv.currentStockRevisionId ? await ctx.db.get(cv.currentStockRevisionId) : null;
+  const policy = await activeConfig<FreshnessPolicy>(
+    ctx,
+    'freshnessPolicy',
+    supplier?.freshnessKey ?? 'freshness-default'
+  );
+  const view = stockView(
+    revision,
+    cv.warehouseId,
+    cv.piecesPerPack,
+    now,
+    Math.min(policy.value.stockSyncMaxHours, policy.value.checkoutSourceMaxHours) * 3600000,
+    cv.orderMinimumPacks,
+    await digest(warehouse)
+  );
+  if (warehouse?.supplierId !== cv.supplierId || !warehouseCurrent(warehouse, now)) unavailable('Inventory warehouse requires review');
+  return { revision, view };
+}
+
+/** Shared by estimate reads and the serializable checkout mutation that inserts the holds. */
+export async function availableAfterCommitments(
+  ctx: Ctx,
+  cv: Doc<'catVariants'>,
+  sourcePacks: number,
+  now: number,
+  excludeIntent?: Id<'ordCheckoutIntents'>
+) {
+  let committed = 0;
+  for (const row of await commitments(ctx, cv._id, now)) {
+    if (row.intentId === excludeIntent) continue;
+    // Legacy obligations with unknown origin/pack cannot be safely reinterpreted.
+    if (!row.warehouseId || !row.piecesPerPack || !Number.isSafeInteger(row.packs) || row.packs < 1)
+      unavailable('An existing inventory commitment needs its warehouse and pack basis reconciled');
+    if (row.warehouseId !== cv.warehouseId) continue;
+    if (row.piecesPerPack !== cv.piecesPerPack)
+      unavailable('Pack size changed while inventory commitments remain');
+    committed += row.packs;
+  }
+  return Math.max(0, sourcePacks - committed);
+}
+
+/** Payment is already real: return a reason for the paid-exception queue, never retry a charge. */
+export async function paymentStockFailure(ctx: MutationCtx, intent: Doc<'ordCheckoutIntents'>) {
+  const now = Date.now();
+  const holds = await ctx.db
+    .query('ordInventoryReservations')
+    .withIndex('by_intent', (q) => q.eq('intentId', intent._id))
+    .collect();
+  const wanted = new Map<Id<'catVariants'>, number>();
+  for (const line of intent.lineSnapshot) {
+    if (!['zuo', 'ashcroft'].includes(line.supplierCode)) continue;
+    const variant = await ctx.db.get(line.variantId);
+    if (!variant || variant.productId !== line.productId || (line.supplierSku && line.supplierSku !== variant.supplierSku) ||
+      (line.warehouseId && line.warehouseId !== variant.warehouseId)) return 'Original supplier identity changed';
+    if ((await ctx.db.get(variant.supplierId))?.code !== line.supplierCode
+      || (await ctx.db.get(variant.productId))?.provider !== line.supplierCode)
+      return 'Original supplier identity changed';
+    wanted.set(line.variantId, (wanted.get(line.variantId) ?? 0) + line.packs);
+  }
+  for (const [id, packs] of wanted) {
+    const cv = await ctx.db.get(id);
+    if (!cv) return 'Variant is no longer available';
+    const own = holds.filter((r) => r.variantId === id);
+    if ((await ctx.db.get(cv.supplierId))?.code === 'ashcroft') {
+      if (!own.length || own.some(r => r.status !== 'held' || r.expiresAt <= now
+        || r.inventoryBasis !== 'ashcroft_selling_unit' || r.supplierSku !== cv.supplierSku || !r.ashcroftFeedId)
+        || own.reduce((n, r) => n + r.packs, 0) !== packs)
+        return 'Ashcroft checkout hold no longer matches the paid basket';
+      try {
+        const stock = await currentAshcroftInventory(ctx, cv, now);
+        if (packs > await availableAshcroftAfterCommitments(ctx, cv, stock.availableUnits, now, intent._id))
+          return 'Ashcroft supplier stock no longer covers the paid basket';
+      } catch (error) {
+        if (!(error instanceof CommerceError)) throw error;
+        return 'Current Ashcroft inventory evidence or commitments require review';
+      }
+      continue;
+    }
+    if (cv.availability !== 'in_stock') return 'Variant is no longer available';
+    if (
+      !own.length ||
+      own.some(
+        (r) =>
+          r.status !== 'held' ||
+          r.expiresAt <= now ||
+          r.warehouseId !== cv.warehouseId ||
+          r.piecesPerPack !== cv.piecesPerPack ||
+          !r.stockRevisionId
+      ) ||
+      own.reduce((n, r) => n + r.packs, 0) !== packs
+    )
+      return 'Checkout inventory hold no longer matches the paid basket';
+    try {
+      const stock = await currentInventory(ctx, cv, now);
+      if (!stock.view.automatic || stock.view.availablePacks === null)
+        return 'Current supplier stock requires confirmation';
+      const available = await availableAfterCommitments(
+        ctx,
+        cv,
+        stock.view.availablePacks,
+        now,
+        intent._id
+      );
+      if (packs > available) return 'Supplier stock no longer covers the paid basket';
+    } catch (error) {
+      if (!(error instanceof CommerceError)) throw error;
+      return 'Current inventory evidence or commitments require review';
+    }
+  }
+  return null;
+}
+
+/** A paid exception is still a real obligation; expiry must not return its stock to checkout. */
+export async function retainPaidCommitments(ctx: MutationCtx, intentId: Id<'ordCheckoutIntents'>) {
+  const rows = await ctx.db
+    .query('ordInventoryReservations')
+    .withIndex('by_intent', (q) => q.eq('intentId', intentId))
+    .collect();
+  for (const row of rows) {
+    if (row.status === 'held' || row.status === 'released')
+      await ctx.db.patch(row._id, { status: 'consumed' });
+  }
+  const intent = await ctx.db.get(intentId);
+  const wanted = new Map<Id<'catVariants'>, number>();
+  for (const line of intent?.lineSnapshot ?? []) {
+    if (['zuo', 'ashcroft'].includes(line.supplierCode))
+      wanted.set(line.variantId, (wanted.get(line.variantId) ?? 0) + line.packs);
+  }
+  for (const [variantId, packs] of wanted) {
+    const recorded = rows.filter((r) => r.variantId === variantId).reduce((n, r) => n + r.packs, 0);
+    if (recorded < packs) {
+      // Missing historical holds cannot erase a paid obligation. Unknown scope deliberately
+      // blocks checkout until operational reconciliation; never invent a warehouse.
+      await ctx.db.insert('ordInventoryReservations', {
+        variantId,
+        intentId,
+        packs: packs - recorded,
+        status: 'consumed',
+        expiresAt: Date.now(),
+        createdAt: Date.now(),
+      });
+    }
+  }
+}
+
+export const pending = query({
+  args: { variantId: v.id('catVariants') },
+  handler: async (ctx, a) => {
+    const actor = await requireDeliveryRole(ctx, 'operations');
+    const cv = await ctx.db.get(a.variantId);
+    if (!cv) throw new CommerceError('INVALID_INPUT');
+    const rows = await ctx.db
+      .query('ordInventoryReservations')
+      .withIndex('by_variant_status', (q) => q.eq('variantId', cv._id).eq('status', 'consumed'))
+      .take(51);
+    const supplierCode = (await ctx.db.get(cv.supplierId))?.code ?? 'unknown';
+    const feed = supplierCode === 'ashcroft' ? await latestFeed(ctx) : null;
+    return {
+      canReconcile: actor.approver,
+      currentRevisionId: cv.currentStockRevisionId ?? null,
+      supplierCode,
+      currentAshcroftFeedId: feed?._id ?? null,
+      ashcroftSource: feed ? { source: feed.source, observedAt: feed.observedAt, validUntil: feed.validUntil,
+        quantity: feed.rows.find(r => r.sku === cv.supplierSku)?.quantity ?? null } : null,
+      hasMore: rows.length > 50,
+      rows: rows.slice(0, 50).map((r) => ({
+        id: r._id,
+        intentId: r.intentId,
+        packs: r.packs,
+        warehouseId: r.warehouseId ?? null,
+        piecesPerPack: r.piecesPerPack ?? null,
+        inventoryBasis: r.inventoryBasis ?? null,
+        supplierSku: r.supplierSku ?? null,
+      })),
+    };
+  },
+});
+
+export const reconcile = mutation({
+  args: {
+    reservationId: v.id('ordInventoryReservations'),
+    expectedRevisionId: v.optional(v.id('catStockRevisions')),
+    expectedAshcroftFeedId: v.optional(v.id('ashcroftInventoryFeeds')),
+    evidence: v.string(),
+    note: v.string(),
+    confirmed: v.boolean(),
+    requestKey: v.string(),
+  },
+  handler: async (ctx, a) => {
+    const actor = await requireDeliveryRole(ctx, 'approver');
+    if (
+      !a.confirmed ||
+      a.evidence.trim().length < 3 ||
+      a.evidence.length > 1000 ||
+      a.note.trim().length < 3 ||
+      a.note.length > 1000 ||
+      !/^[\w-]{16,80}$/.test(a.requestKey)
+    )
+      throw new CommerceError(
+        'INVALID_INPUT',
+        'Confirm supplier allocation with a source reference and review note'
+      );
+    const key = `inventory-reconcile:${await digest(actor.email)}:${a.requestKey}`;
+    const hash = await digest(a);
+    const prior = await ctx.db
+      .query('sysIdempotencyKeys')
+      .withIndex('by_key', (q) => q.eq('key', key))
+      .first();
+    if (prior) {
+      if (prior.scope !== hash || prior.resultRef !== a.reservationId)
+        throw new CommerceError('INVALID_INPUT', 'Retry differs from the saved reconciliation');
+      return a.reservationId;
+    }
+    const row = await ctx.db.get(a.reservationId);
+    const cv = row ? await ctx.db.get(row.variantId) : null;
+    const intent = row ? await ctx.db.get(row.intentId) : null;
+    if (
+      !row ||
+      row.status !== 'consumed' ||
+      !cv ||
+      !intent ||
+      !['paid', 'exception'].includes(intent.status)
+    )
+      throw new CommerceError(
+        'INVALID_INPUT',
+        'Pending allocation or current stock changed; reload'
+      );
+    const ashcroft = (await ctx.db.get(cv.supplierId))?.code === 'ashcroft';
+    let sourceObservedAt: number;
+    let reconciliationSource: { reconciledRevisionId?: Id<'catStockRevisions'>; reconciledAshcroftFeedId?: Id<'ashcroftInventoryFeeds'> };
+    const order = await ctx.db
+      .query('ordOrders')
+      .withIndex('by_intent', (q) => q.eq('intentId', intent._id))
+      .first();
+    // Exceptions cannot release their obligation without a documented fulfillment/refund resolution.
+    if (!order || intent.status !== 'paid')
+      throw new CommerceError(
+        'INVALID_INPUT',
+        'Resolve the paid-order exception before reconciling supplier stock'
+      );
+    const intentReservations = await ctx.db.query('ordInventoryReservations')
+      .withIndex('by_intent', q => q.eq('intentId', intent._id)).take(501);
+    const siblings = intentReservations.filter(r => r.variantId === cv._id);
+    if (!siblings.length || intentReservations.length > 500 || siblings.some(r => r.status !== 'consumed'
+      || !Number.isSafeInteger(r.packs) || r.packs < 1))
+      throw new CommerceError('INVALID_INPUT', 'Complete paid reservation group requires review');
+    const paidLines = intent.lineSnapshot.filter(l => l.variantId === cv._id);
+    const paidPacks = paidLines.reduce((n, l) => n + l.packs, 0);
+    const reservedPacks = siblings.reduce((n, r) => n + r.packs, 0);
+    if (!paidLines.length || !Number.isSafeInteger(paidPacks) || paidPacks <= 0 || reservedPacks !== paidPacks
+      || paidLines.some(l => l.productId !== cv.productId || l.supplierSku !== cv.supplierSku || !Number.isSafeInteger(l.packs) || l.packs < 1))
+      throw new CommerceError('INVALID_INPUT', 'Paid quantities or supplier identity do not match the reservation group');
+    if (ashcroft) {
+      for (const sibling of siblings) if (!await legacyPaidAshcroftMatches(ctx, cv, sibling))
+        throw new CommerceError('INVALID_INPUT', 'Original paid Ashcroft selling-unit identity requires review');
+      const stock = await currentAshcroftInventory(ctx, cv, Date.now(), true);
+      if (a.expectedRevisionId || !a.expectedAshcroftFeedId || stock.feed._id !== a.expectedAshcroftFeedId
+        || siblings.some(r => r.ashcroftFeedId === stock.feed._id) || stock.feed.observedAt < order.paidAt)
+        throw new CommerceError('INVALID_INPUT', 'Use a newer current Ashcroft selling-unit count that accounts for this paid allocation');
+      sourceObservedAt = stock.feed.observedAt;
+      reconciliationSource = { reconciledAshcroftFeedId: stock.feed._id };
+    } else {
+      if (a.expectedAshcroftFeedId || !a.expectedRevisionId || cv.currentStockRevisionId !== a.expectedRevisionId)
+        throw new CommerceError('INVALID_INPUT', 'Pending allocation or current stock changed; reload');
+      const { revision, view } = await currentInventory(ctx, cv, Date.now());
+      if (!revision || !view.current || revision.kind !== 'available_to_sell' || revision.observedAt < order.paidAt
+        || siblings.some(r => revision._id === r.stockRevisionId || r.warehouseId !== cv.warehouseId || r.piecesPerPack !== cv.piecesPerPack))
+        throw new CommerceError('INVALID_INPUT', 'Use a newer current warehouse count that accounts for this paid allocation');
+      sourceObservedAt = revision.observedAt;
+      reconciliationSource = { reconciledRevisionId: revision._id };
+    }
+    const lines = await ctx.db
+      .query('ordOrderLines')
+      .withIndex('by_order', (q) => q.eq('orderId', order._id))
+      .collect();
+    let acknowledgedPacks = 0;
+    for (const line of lines.filter((l) => l.variantId === cv._id)) {
+      for (const allocation of await ctx.db
+        .query('ordAllocations')
+        .withIndex('by_line', (q) => q.eq('orderLineId', line._id))
+        .collect()) {
+        const child = await ctx.db.get(allocation.supplierOrderId);
+        if (
+          allocation.status !== 'cancelled' &&
+          child?.supplierConfirmation?.trim() &&
+          child.submission.handoffAt &&
+          child.submission.handoffAt <= sourceObservedAt &&
+          !child.submission.uncertain &&
+          ['acknowledged', 'partially_shipped', 'shipped', 'delivered'].includes(child.status)
+        )
+          acknowledgedPacks += allocation.packs;
+      }
+    }
+    if (acknowledgedPacks !== reservedPacks)
+      throw new CommerceError(
+        'INVALID_INPUT',
+        'Record supplier handoff and acknowledgement for the complete allocation before reconciliation'
+      );
+    for (const sibling of siblings) await ctx.db.patch(sibling._id, {
+      status: 'reconciled',
+      ...reconciliationSource,
+      reconciliationEvidence: a.evidence.trim(),
+      reconciledAt: Date.now(),
+      reconciledBy: actor.email,
+    });
+    await audit(ctx, {
+      actor: actor.email,
+      action: 'inventory.supplier_allocation_reconciled',
+      entityTable: 'ordInventoryReservations',
+      entityId: row._id,
+      before: siblings,
+      after: { ...reconciliationSource, reservationIds: siblings.map(r => r._id), evidence: a.evidence.trim() },
+      reason: a.note.trim(),
+      requestId: key,
+    });
+    await ctx.db.insert('sysIdempotencyKeys', {
+      key,
+      scope: hash,
+      resultRef: row._id,
+      createdAt: Date.now(),
+    });
+    return row._id;
+  },
+});

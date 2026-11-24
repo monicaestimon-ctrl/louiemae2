@@ -6,7 +6,10 @@
 // at `color`), then the film's own furnished room turns to night, quicker than on desktop.
 // Returns the source ranges and the cut's own timeline: chapter starts, when night falls
 // and its length (seconds).
-export const PHONE_CLAY_SPEED = 1.5, PHONE_NIGHT_SPEED = 1.3, PHONE_MORPH = 5.167;
+export const PHONE_CLAY_SPEED = 1.5, PHONE_NIGHT_SPEED = 1.3;
+// The generated shot, retimed to one constant camera pace (scripts/build-film-frames.mjs):
+// PHONE_PUSH seconds of travel, then PHONE_SETTLE seconds as the camera comes to rest.
+export const PHONE_PUSH = 3.6, PHONE_SETTLE = 0.4, PHONE_MORPH = PHONE_PUSH + PHONE_SETTLE;
 
 export function phoneCut(TL, { clayAt, darkRoom = false } = {}) {
   const plan = TL.ch[1], at = clayAt ?? TL.ch[2] - 1.54, color = TL.hot[0][0] + 0.3, night = TL.ch[4];
@@ -17,12 +20,12 @@ export function phoneCut(TL, { clayAt, darkRoom = false } = {}) {
   return {
     clay: { plan, end: at },
     color: { start: color, night, end: TL.total },
-    ch: [0, plan, morphAt + 1.0, morphAt + 3.0, nightAt + 0.3],
-    dark: darkRoom ? morphAt + 2.5 : nightAt + (TL.dark - night) / PHONE_NIGHT_SPEED,
+    ch: [0, plan, morphAt + 0.8, morphAt + 2.4, nightAt + 0.3],
+    dark: darkRoom ? morphAt + 2.0 : nightAt + (TL.dark - night) / PHONE_NIGHT_SPEED,
     total,
   };
 }
 
 /** The settings a phone cut was made with; phone.sha1 hashes the film and transition with this. */
 export const phoneCutSignature = (TL, opts = {}) =>
-  JSON.stringify([TL, opts.clayAt ?? null, PHONE_CLAY_SPEED, PHONE_NIGHT_SPEED, PHONE_MORPH, '720x960', 'crf26']);
+  JSON.stringify([TL, opts.clayAt ?? null, PHONE_CLAY_SPEED, PHONE_NIGHT_SPEED, PHONE_MORPH, '720x960', 'crf26', 'even-pace']);

@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+artifacts/lighthouse/
+tmp/lighthouse-profiles/
 *.local
 
 # Editor directories and files
@@ -25,3 +27,6 @@ dist-ssr
 
 # AI Agents
 .agents/skills/
+.trellis/
+.cutouts/
+__pycache__/

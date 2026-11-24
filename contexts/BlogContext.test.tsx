@@ -6,10 +6,12 @@ import { getFunctionName } from 'convex/server';
 import { SiteProvider, useSite } from './BlogContext';
 import { useAdminCatalog, useStorefrontCatalog } from './AdminCatalogDemand';
 
-const mocks = vi.hoisted(() => ({ authenticated: true, query: vi.fn(), mutation: vi.fn() }));
+const mocks = vi.hoisted(() => ({ authenticated: true, owner: true, query: vi.fn(), mutation: vi.fn() }));
 vi.mock('convex/react', () => ({
   useConvexAuth: () => ({ isAuthenticated: mocks.authenticated, isLoading: false }),
   useQuery: (reference: Parameters<typeof getFunctionName>[0], args: unknown) => mocks.query(getFunctionName(reference), args),
+  useQueries: (queries: Record<string, { query: Parameters<typeof getFunctionName>[0]; args: unknown }>) =>
+    Object.fromEntries(Object.entries(queries).map(([key, { query, args }]) => [key, mocks.query(getFunctionName(query), args)])),
   useMutation: () => mocks.mutation,
 }));
 vi.mock('@convex-dev/auth/react', () => ({ useAuthActions: () => ({ signIn: vi.fn(), signOut: vi.fn() }) }));
@@ -17,16 +19,17 @@ vi.mock('@convex-dev/auth/react', () => ({ useAuthActions: () => ({ signIn: vi.f
 function View({ admin, storefront = true }: { admin: boolean; storefront?: boolean }) {
   useAdminCatalog(admin);
   useStorefrontCatalog(storefront);
-  const { products, isCatalogLoading } = useSite();
-  return <output data-loading={isCatalogLoading}>{products.map(product => product.name).join(',')}</output>;
+  const { products, isCatalogLoading, catalogStatus } = useSite();
+  return <output data-loading={isCatalogLoading} data-catalog-status={catalogStatus}>{products.map(product => product.name).join(',')}</output>;
 }
 
 beforeEach(() => {
-  mocks.authenticated = true;
+  mocks.authenticated = true; mocks.owner = true;
   mocks.query.mockReset();
   mocks.mutation.mockReset();
   mocks.query.mockImplementation((name: string, args: unknown) => {
     if (args === 'skip') return undefined;
+    if (name === 'cjAdminAccess:session') return { owner: mocks.owner, delivery: !mocks.owner };
     if (name === 'products:list') return [{ _id: 'private', name: 'Private product' }];
     if (name === 'products:listForStorefront') return [{ _id: 'public', name: 'Published product' }];
     if (name === 'siteContent:get') return {};
@@ -48,7 +51,7 @@ describe('SiteProvider catalog isolation', () => {
     expect(screen.getByRole('status')).toHaveAttribute('data-loading', 'false');
     mocks.query.mockClear();
     view.rerender(<SiteProvider><View admin={false} storefront={false} /></SiteProvider>);
-    expect(catalogCalls().filter(([name]) => name === 'products:listForStorefront').at(-1)?.[1]).toBe('skip');
+    expect(screen.getByRole('status')).toHaveAttribute('data-catalog-status', 'idle');
     expect(mocks.mutation).not.toHaveBeenCalled();
   });
   it('keeps public demand while another consumer remains mounted', () => {
@@ -56,7 +59,7 @@ describe('SiteProvider catalog isolation', () => {
     view.rerender(<React.StrictMode><SiteProvider><View admin={false} storefront={false} /><View admin={false} /></SiteProvider></React.StrictMode>);
     expect(mocks.query.mock.calls.filter(([name]) => name === 'products:listForStorefront').at(-1)?.[1]).toEqual({});
     view.rerender(<React.StrictMode><SiteProvider><View admin={false} storefront={false} /><View admin={false} storefront={false} /></SiteProvider></React.StrictMode>);
-    expect(mocks.query.mock.calls.filter(([name]) => name === 'products:listForStorefront').at(-1)?.[1]).toBe('skip');
+    expect(screen.getAllByRole('status')[0]).toHaveAttribute('data-catalog-status', 'idle');
   });
   it('uses public products for authenticated browsing and releases private reads after navigation', () => {
     const view = render(<SiteProvider><View admin={false} /></SiteProvider>);
@@ -67,10 +70,17 @@ describe('SiteProvider catalog isolation', () => {
     mocks.query.mockClear();
     view.rerender(<SiteProvider><View admin={false} /></SiteProvider>);
     expect(screen.getByRole('status')).toHaveTextContent('Published product');
-    expect(mocks.query.mock.calls.filter(([name]) => name === 'products:list').at(-1)?.[1]).toBe('skip');
+    expect(screen.getByRole('status')).not.toHaveTextContent('Private product');
     expect(mocks.mutation).not.toHaveBeenCalled();
   });
 
+  it('keeps signed-in delivery staff on public catalog and blog reads even when private data is requested', () => {
+    mocks.owner = false;
+    render(<SiteProvider><View admin /></SiteProvider>);
+    expect(screen.getByRole('status')).toHaveTextContent('Published product');
+    expect(mocks.query.mock.calls.filter(([name]) => ['products:list', 'blogPosts:listAdmin'].includes(name)).every(([, args]) => args === 'skip')).toBe(true);
+    expect(mocks.mutation).not.toHaveBeenCalled();
+  });
   it('never subscribes to private products without authentication, even with a requesting view', () => {
     mocks.authenticated = false;
     render(<SiteProvider><View admin /></SiteProvider>);

@@ -1,3 +1,5 @@
+import { LazyProductPreview } from './LazyProductPreview';
+import { navigatePlainLink } from '../lib/navigation';
 
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -6,16 +8,10 @@ import { GlassButton } from './ui/GlassButton';
 import { FASHION_CATEGORIES, KIDS_CATEGORIES, INITIAL_SITE_CONTENT } from '../constants';
 import { useSite } from '../contexts/BlogContext';
 import { useNewsletter } from '../contexts/NewsletterContext';
-import type { ProductVariant, CollectionConfig } from '../types';
-import { useQuery } from 'convex/react';
-import { api } from '../convex/_generated/api';
-import { useStoreCatalog } from './useStoreCatalog';
-import { useStorefrontProductDetail } from './useStorefrontProductDetail';
-import { VariantSelector, NO_IMAGE_KEY } from './VariantSelector';
-import { AddToCartButton } from './cart/AddToCartButton';
-import { X, ArrowUpRight, Check } from 'lucide-react';
-import { DynamicSectionRenderer } from './DynamicPage';
-import { SafeImage } from './SafeImage';
+import type { CollectionConfig } from '../types';
+import { HomeRecommendations } from './HomeRecommendations';
+import { ArrowUpRight, Check } from 'lucide-react';
+import { HomeCustomSections } from './HomeCustomSections';
 import { responsiveImage } from '../lib/responsiveImage';
 
 const DEFAULT_HERO_IMAGE = INITIAL_SITE_CONTENT.home.hero.image;
@@ -32,14 +28,8 @@ export const HomePage: React.FC = () => {
   const savedHero = isLoading ? undefined : home.hero.image;
   useEffect(() => {
     const shell = heroShell();
-    if (!shell) return;
-    shell.hidden = false;
-    return () => { shell.hidden = true; };
-  }, []);
-  useEffect(() => {
-    const shell = heroShell();
     const p = shell?.querySelector('p');
-    const h2 = shell?.querySelector('h2');
+    const h2 = shell?.querySelector('h1');
     const line2 = h2?.querySelector('span');
     if (!p || !h2?.firstChild || !line2) return;
     if (p.textContent !== home.hero.pretitle) p.textContent = home.hero.pretitle;
@@ -47,23 +37,9 @@ export const HomePage: React.FC = () => {
     if (line2.textContent !== home.hero.titleLine2) line2.textContent = home.hero.titleLine2;
   }, [home.hero.pretitle, home.hero.titleLine1, home.hero.titleLine2]);
   const { addSubscriber } = useNewsletter();
-  const readiness = useQuery(api.catalogReadiness.status, {});
   const furniture = siteContent.collections.find(collection => collection.id === 'furniture') ?? furnitureFallback;
-  const recommendations = useStoreCatalog(furniture, 'All', readiness?.ready === true, 'featured', 6);
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
-  const { product: selectedProduct, loading: detailLoading, unavailable: detailUnavailable } = useStorefrontProductDetail(selectedProductId);
-  const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>();
-  const [activeImageGroupKey, setActiveImageGroupKey] = useState<string | null>(null);
-  const selectedVariant = selectedProduct?.variants?.length === 1
-    ? selectedProduct.variants[0]
-    : selectedProduct?.variants?.find(variant => variant.id === selectedVariantId && variant.inStock !== false);
-  const selectedPrice = (selectedProduct?.price ?? 0) + (selectedVariant?.priceAdjustment ?? 0);
-  const setSelectedVariant = (variant: ProductVariant | undefined) => setSelectedVariantId(variant?.id);
-  const openProduct = (id: string | null) => {
-    setSelectedProductId(id);
-    setSelectedVariantId(undefined);
-    setActiveImageGroupKey(null);
-  };
+  const openProduct = (id: string | null) => setSelectedProductId(id);
 
 
 
@@ -104,7 +80,7 @@ export const HomePage: React.FC = () => {
   ) : null;
 
   return (
-    <>
+    <main aria-label="Louie Mae home">
       {/* Hero Section: index.html's when there is one, otherwise the same hero drawn here.
           The default photo stays underneath and a saved replacement fades in over it once it
           has downloaded. */}
@@ -121,10 +97,10 @@ export const HomePage: React.FC = () => {
           <div className="absolute inset-0 bg-black/20 z-10"></div>
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-center px-6">
             <p className="motion-safe:animate-hero-in text-white/90 text-xs md:text-base uppercase tracking-[0.3em] mb-6">{home.hero.pretitle}</p>
-            <h2 className="motion-safe:animate-hero-rise font-serif text-[2.75rem] sm:text-5xl md:text-7xl lg:text-8xl text-cream leading-[1.08] mb-10 drop-shadow-lg max-w-5xl text-balance">
+            <h1 className="motion-safe:animate-hero-rise font-serif text-[2.75rem] sm:text-5xl md:text-7xl lg:text-8xl text-cream leading-[1.08] mb-10 drop-shadow-lg max-w-5xl text-balance">
               {home.hero.titleLine1}<br />
               <span className="italic">{home.hero.titleLine2}</span>
-            </h2>
+            </h1>
             <div className="motion-safe:animate-hero-in [animation-delay:300ms]">
               <GlassButton
                 onClick={() => navigateTo('#collection/new')}
@@ -153,102 +129,102 @@ export const HomePage: React.FC = () => {
           {/* Top Row: Furniture & Decor */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
             {/* Furniture */}
-            <div
+            <a
               id="furniture"
-              onClick={() => navigateTo('#collection/furniture')}
-              className="relative group cursor-pointer aspect-[4/3] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
+              href={'#collection/furniture'} onClick={event => navigatePlainLink(event, '#collection/furniture', navigateTo)}
+              className="block relative group cursor-pointer aspect-[4/3] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
                 loading="lazy"
                 decoding="async"
                 {...responsiveImage(home.categoryImages.furniture, '(min-width: 1024px) 50vw, 100vw')}
-                alt="Furniture"
+                alt=""
                 className="w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-105"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent group-hover:opacity-80 transition-opacity duration-500"></div>
               <div className="absolute bottom-6 left-6 md:bottom-8 md:left-8 transform transition-transform duration-500 group-hover:-translate-y-2">
                 <h2 className="font-serif text-2xl md:text-3xl text-white tracking-wide drop-shadow-md">Furniture</h2>
               </div>
-            </div>
+            </a>
 
             {/* Decor */}
-            <div
+            <a
               id="decor"
-              onClick={() => navigateTo('#collection/decor')}
-              className="relative group cursor-pointer aspect-[4/3] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
+              href={'#collection/decor'} onClick={event => navigatePlainLink(event, '#collection/decor', navigateTo)}
+              className="block relative group cursor-pointer aspect-[4/3] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
                 loading="lazy"
                 decoding="async"
                 {...responsiveImage(home.categoryImages.decor, '(min-width: 1024px) 50vw, 100vw')}
-                alt="Decor"
+                alt=""
                 className="w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-105"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent group-hover:opacity-80 transition-opacity duration-500"></div>
               <div className="absolute bottom-6 left-6 md:bottom-8 md:left-8 transform transition-transform duration-500 group-hover:-translate-y-2">
                 <h2 className="font-serif text-2xl md:text-3xl text-white tracking-wide drop-shadow-md">Decor</h2>
               </div>
-            </div>
+            </a>
           </div>
 
           {/* Bottom Row: Mae Collective, Kids, Blog */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
             {/* The Mae Collective */}
-            <div
+            <a
               id="fashion"
-              onClick={() => navigateTo('#collection/fashion')}
-              className="relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
+              href={'#collection/fashion'} onClick={event => navigatePlainLink(event, '#collection/fashion', navigateTo)}
+              className="block relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
                 loading="lazy"
                 decoding="async"
                 {...responsiveImage(home.categoryImages.fashion, '(min-width: 1024px) 50vw, 100vw')}
-                alt="The Mae Collective"
+                alt=""
                 className="w-full h-full object-cover object-top transition-transform duration-[1.5s] group-hover:scale-105"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent group-hover:opacity-80 transition-opacity duration-500"></div>
               <div className="absolute bottom-6 left-6 md:bottom-8 md:left-8 transform transition-transform duration-500 group-hover:-translate-y-2">
                 <h3 className="font-serif text-2xl md:text-3xl text-white drop-shadow-md">The Mae Collective</h3>
               </div>
-            </div>
+            </a>
 
             {/* Louie Kids & Co. */}
-            <div
+            <a
               id="kids"
-              onClick={() => navigateTo('#collection/kids')}
-              className="relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
+              href={'#collection/kids'} onClick={event => navigatePlainLink(event, '#collection/kids', navigateTo)}
+              className="block relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
                 loading="lazy"
                 decoding="async"
                 {...responsiveImage(home.categoryImages.kids, '(min-width: 1024px) 50vw, 100vw')}
-                alt="Louie Kids & Co."
+                alt=""
                 className="w-full h-full object-cover object-top transition-transform duration-[1.5s] group-hover:scale-105"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent group-hover:opacity-80 transition-opacity duration-500"></div>
               <div className="absolute bottom-6 left-6 md:bottom-8 md:left-8 transform transition-transform duration-500 group-hover:-translate-y-2">
                 <h3 className="font-serif text-2xl md:text-3xl text-white drop-shadow-md">Louie Kids & Co.</h3>
               </div>
-            </div>
+            </a>
 
             {/* Blog */}
-            <div
+            <a
               id="journal"
-              onClick={() => navigateTo('#blog')}
-              className="relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
+              href={'#blog'} onClick={event => navigatePlainLink(event, '#blog', navigateTo)}
+              className="block relative group cursor-pointer aspect-[4/3] md:aspect-auto md:h-[500px] w-full overflow-hidden rounded-2xl shadow-lg hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] hover:-translate-y-1 transition-all duration-500 border border-white/5"
             >
               <img
                 loading="lazy"
                 decoding="async"
                 {...responsiveImage(home.categoryImages.journal, '(min-width: 1024px) 50vw, 100vw')}
-                alt="Blog"
+                alt=""
                 className="w-full h-full object-cover transition-transform duration-[1.5s] group-hover:scale-105"
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent group-hover:opacity-80 transition-opacity duration-500"></div>
               <div className="absolute bottom-6 left-6 md:bottom-8 md:left-8 transform transition-transform duration-500 group-hover:-translate-y-2">
                 <h3 className="font-serif text-2xl md:text-3xl text-white drop-shadow-md">Blog</h3>
               </div>
-            </div>
+            </a>
           </div>
 
         </div>
@@ -274,9 +250,9 @@ export const HomePage: React.FC = () => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
             {FASHION_CATEGORIES.map((cat, idx) => (
               <FadeIn key={cat.id} delay={idx * 150} className="group cursor-pointer">
-                <div
-                  onClick={() => navigateTo(`#collection/fashion?cat=${encodeURIComponent(cat.title)}`)}
-                  className="relative aspect-[3/4] overflow-hidden rounded-2xl mb-4 shadow-md group-hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] group-hover:-translate-y-2 transition-all duration-500 border border-white/40"
+                <a
+                  href={`#collection/fashion?cat=${encodeURIComponent(cat.title)}`} onClick={event => navigatePlainLink(event, `#collection/fashion?cat=${encodeURIComponent(cat.title)}`, navigateTo)}
+                  className="block relative aspect-[3/4] overflow-hidden rounded-2xl mb-4 shadow-md group-hover:shadow-[0_20px_40px_rgba(0,0,0,0.15)] group-hover:-translate-y-2 transition-all duration-500 border border-white/40"
                 >
                   <img
                     loading="lazy"
@@ -287,12 +263,12 @@ export const HomePage: React.FC = () => {
                   />
                   {/* Subtle Inner Glow Overlay */}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-                </div>
+                </a>
                 <h3
-                  onClick={() => navigateTo(`#collection/fashion?cat=${encodeURIComponent(cat.title)}`)}
+
                   className="font-serif text-lg md:text-xl text-earth group-hover:text-bronze transition-colors px-1"
                 >
-                  {cat.title}
+                  <a href={`#collection/fashion?cat=${encodeURIComponent(cat.title)}`}>{cat.title}</a>
                 </h3>
               </FadeIn>
             ))}
@@ -311,43 +287,7 @@ export const HomePage: React.FC = () => {
             <h3 className="font-serif text-lg md:text-xl text-earth italic">Recommended Products</h3>
           </FadeIn>
 
-          {(isLoading || readiness === undefined || recommendations.loading) && <p role="status" className="text-center text-earth/80 mb-6">Loading recommendations…</p>}
-          {readiness !== undefined && !readiness.ready && <p role="status" className="text-center text-earth/80 mb-6">Products are temporarily unavailable. Please check back shortly.</p>}
-          {recommendations.complete && recommendations.products.length === 0 && <p className="text-center text-earth/80 mb-6">New pieces are coming soon.</p>}
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
-            {recommendations.products.map((product, idx) => (
-              <FadeIn key={product.id} delay={idx * 100} className="group cursor-pointer">
-                <div
-                  className="relative aspect-square overflow-hidden bg-white mb-4 rounded-2xl shadow-sm hover:shadow-[0_20px_40px_rgba(0,0,0,0.1)] hover:-translate-y-1 transition-all duration-500 border border-earth/5"
-                  onClick={() => openProduct(product.id)}
-                >
-                  {product.isNew && (
-                    <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-2 py-1 text-[9px] uppercase tracking-widest text-earth z-10 rounded-sm shadow-sm border border-white/50">
-                      New
-                    </span>
-                  )}
-                  <SafeImage
-                    src={product.images[0]}
-                    alt={product.name}
-                    className="w-full h-full object-contain"
-                  />
-
-                  {/* Quick View Overlay (Glass) */}
-                  <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-full group-hover:translate-y-0 transition-transform duration-500">
-                    <button className="w-full bg-white/80 backdrop-blur-md text-earth border border-white/50 py-3 rounded-lg text-[10px] uppercase tracking-[0.2em] shadow-[0_10px_20px_rgba(0,0,0,0.1)] hover:bg-earth hover:text-white transition-colors duration-300">
-                      Quick View
-                    </button>
-                  </div>
-                </div>
-                <div onClick={() => openProduct(product.id)} className="px-1">
-                  <h3 className="font-serif text-lg md:text-xl text-earth leading-tight mb-1 group-hover:text-bronze transition-colors">
-                    {product.name}
-                  </h3>
-                  {!product.inStock && <p className="text-xs uppercase tracking-widest text-bronze">Coming Soon</p>}<p className="font-serif italic text-earth/80 text-base group-hover:text-bronze/80 transition-colors">${product.price}</p>
-                </div>
-              </FadeIn>
-            ))}
-          </div>
+          <HomeRecommendations config={furniture} onOpen={id => openProduct(id)} />
         </div>
       </section>
 
@@ -369,9 +309,9 @@ export const HomePage: React.FC = () => {
                 className={`group cursor-pointer relative overflow-hidden rounded-[2.5rem] shadow-sm border border-earth/5 aspect-[4/3] md:aspect-auto ${idx === 0 ? 'md:row-span-2 md:h-auto' : 'md:h-[400px]'
                   }`}
               >
-                <div
-                  onClick={() => navigateTo(`#collection/kids?cat=${encodeURIComponent(cat.title)}`)}
-                  className="w-full h-full relative"
+                <a
+                  href={`#collection/kids?cat=${encodeURIComponent(cat.title)}`} onClick={event => navigatePlainLink(event, `#collection/kids?cat=${encodeURIComponent(cat.title)}`, navigateTo)}
+                  className="block w-full h-full relative"
                 >
                   {/* Mobile-only override for Girls category */}
                   {cat.id === 'girls' ? (
@@ -382,7 +322,7 @@ export const HomePage: React.FC = () => {
                       />
                       <img
                         {...responsiveImage(cat.image, '(min-width: 1024px) 50vw, 100vw')}
-                        alt={cat.title}
+                        alt=""
                         loading="lazy"
                         decoding="async"
                         className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
@@ -391,7 +331,7 @@ export const HomePage: React.FC = () => {
                   ) : (
                     <img
                       {...responsiveImage(cat.image, '(min-width: 1024px) 50vw, 100vw')}
-                      alt={cat.title}
+                      alt=""
                       loading="lazy"
                       decoding="async"
                       className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110"
@@ -400,7 +340,7 @@ export const HomePage: React.FC = () => {
 
                   {/* Overlay Gradient (Elevated) */}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-80 group-hover:opacity-90 transition-opacity"></div>
-                  
+
                   {/* Subtle Inner Border Glow */}
                   <div className="absolute inset-0 border-[2px] border-white/0 group-hover:border-white/10 rounded-[2.5rem] transition-colors duration-500 pointer-events-none z-10"></div>
 
@@ -416,7 +356,7 @@ export const HomePage: React.FC = () => {
                       </div>
                     </div>
                   </div>
-                </div>
+                </a>
               </FadeIn>
             ))}
           </div>
@@ -444,13 +384,7 @@ export const HomePage: React.FC = () => {
       </section>
 
       {/* DYNAMIC SECTIONS (Added via Admin) */}
-      {home.sections && home.sections.length > 0 && (
-        <div className="pb-24">
-          {home.sections.map((section, idx) => (
-            <DynamicSectionRenderer key={section.id} section={section} index={idx} />
-          ))}
-        </div>
-      )}
+      <HomeCustomSections sections={home.sections} />
 
       {/* 5. Newsletter - Atelier Gradient & Glowing Inputs */}
       <section className="below-fold relative py-32 text-center px-6 overflow-hidden">
@@ -462,9 +396,9 @@ export const HomePage: React.FC = () => {
 
         <FadeIn className="relative z-10">
           <h2 className="font-serif text-4xl md:text-6xl text-cream mb-4 tracking-tight drop-shadow-lg">Join The Mae Letter</h2>
-          <p className="font-serif text-2xl md:text-3xl italic text-bronze mb-12 font-light">Newsletter</p>
+          <p className="font-serif text-2xl md:text-3xl italic text-[#D6B99C] mb-12 font-light">Newsletter</p>
 
-          <div className="max-w-xl mx-auto space-y-2 text-cream/70 font-sans text-sm md:text-base leading-relaxed mb-16">
+          <div className="max-w-xl mx-auto space-y-2 text-muted-cream font-sans text-sm md:text-base leading-relaxed mb-16">
             <p>To Get First Look At New Product Drops, Personal Notifications</p>
             <p>To New Blog Posts, And Exclusive Access To Discount Codes</p>
             <p>And Updates From Louie Mae.</p>
@@ -472,7 +406,7 @@ export const HomePage: React.FC = () => {
 
           <form className="max-w-xl mx-auto space-y-8" onSubmit={handleSubscribe}>
             <div className="text-left group relative">
-              <label htmlFor="home-letter-name" className="block font-serif text-xl text-cream/90 mb-2 pl-4 transition-colors group-focus-within:text-bronze">First Name</label>
+              <label htmlFor="home-letter-name" className="block font-serif text-xl text-cream/90 mb-2 pl-4 transition-colors group-focus-within:text-[#D6B99C]">First Name</label>
               <div className="absolute -inset-0.5 bg-gradient-to-r from-bronze/0 via-bronze/20 to-bronze/0 rounded-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-500 blur-sm"></div>
               <input
                 id="home-letter-name"
@@ -484,7 +418,7 @@ export const HomePage: React.FC = () => {
               />
             </div>
             <div className="text-left group relative">
-              <label htmlFor="home-letter-email" className="block font-serif text-xl text-cream/90 mb-2 pl-4 transition-colors group-focus-within:text-bronze">Email</label>
+              <label htmlFor="home-letter-email" className="block font-serif text-xl text-cream/90 mb-2 pl-4 transition-colors group-focus-within:text-[#D6B99C]">Email</label>
               <div className="absolute -inset-0.5 bg-gradient-to-r from-bronze/0 via-bronze/20 to-bronze/0 rounded-xl opacity-0 group-focus-within:opacity-100 transition-opacity duration-500 blur-sm"></div>
               <input
                 id="home-letter-email"
@@ -510,66 +444,7 @@ export const HomePage: React.FC = () => {
         </FadeIn>
       </section>
 
-      {selectedProductId && (detailLoading || detailUnavailable) && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-6" role="dialog" aria-modal="true" aria-label="Product details">
-        <div className="bg-white rounded-2xl p-8 text-center">
-          <p role="status">{detailLoading ? 'Loading product details…' : 'This product is no longer available.'}</p>
-          <button onClick={() => openProduct(null)} className="mt-4 underline">Close</button>
-        </div>
-      </div>}
-      {/* Product Modal - Frosted Glass Upgrade */}
-      {selectedProduct && (
-        <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:p-8" role="dialog" aria-modal="true" aria-label="Product details">
-          <div className="absolute inset-0 backdrop-blur-xl motion-reduce:backdrop-blur-none bg-black/50" onClick={() => openProduct(null)}></div>
-
-          <div className="bg-white/95 backdrop-blur-xl w-full max-w-5xl h-[92vh] supports-[height:100svh]:h-[92svh] md:h-auto md:max-h-[85vh] rounded-t-3xl md:rounded-3xl shadow-[0_30px_60px_rgba(0,0,0,0.3)] relative flex flex-col md:flex-row overflow-hidden animate-fade-in-up border border-white/60">
-            <button
-              onClick={() => openProduct(null)}
-              aria-label="Close product details"
-              className="absolute top-3 right-3 md:top-4 md:right-4 z-20 p-2.5 md:p-2 bg-white/80 md:bg-black/5 hover:bg-black/10 rounded-full shadow-sm md:shadow-none transition-colors backdrop-blur-md"
-            >
-              <X className="w-5 h-5 text-earth" />
-            </button>
-
-            {/* Image Gallery */}
-            <div className="w-full md:w-1/2 bg-earth/5 h-[42%] shrink-0 md:h-auto overflow-hidden relative group">
-              <SafeImage src={selectedVariant?.image || (activeImageGroupKey && activeImageGroupKey !== NO_IMAGE_KEY ? activeImageGroupKey : selectedProduct.images[0])} alt={selectedProduct.name} className="w-full h-full object-contain" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent pointer-events-none" />
-            </div>
-
-            {/* Details */}
-            <div className="w-full md:w-1/2 flex-1 min-h-0 p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] md:p-12 overflow-y-auto overscroll-contain flex flex-col relative bg-gradient-to-br from-white/40 to-white/10">
-              <div className="mb-auto relative z-10">
-                <div className="flex items-center gap-3 mb-6 text-[10px] uppercase tracking-[0.2em] text-earth/60 font-medium">
-                  <span className="w-1.5 h-1.5 bg-bronze rounded-full shadow-[0_0_8px_rgba(139,90,43,0.5)]"></span>
-                  <span>{selectedProduct.category}</span>
-                </div>
-
-                <h2 className="font-serif text-3xl md:text-5xl text-earth mb-3 leading-tight drop-shadow-sm">{selectedProduct.name}</h2>
-                <p className="font-serif text-2xl italic text-bronze mb-8">${selectedPrice.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(selectedPrice) ? 0 : 2, maximumFractionDigits: 2 })}</p>
-
-                <div className="h-px w-full bg-gradient-to-r from-earth/20 via-earth/5 to-transparent mb-8"></div>
-
-                {(selectedProduct.variants?.length ?? 0) > 1 && <div className="mb-6"><VariantSelector variants={selectedProduct.variants} selectedVariant={selectedVariant} activeImageGroupKey={activeImageGroupKey} onSelectVariant={setSelectedVariant} onSetGroupKey={setActiveImageGroupKey} /></div>}
-                <p className="font-sans text-earth/70 leading-relaxed mb-8 text-sm">
-                  {selectedProduct.description}
-                </p>
-
-                <div className="space-y-4 mb-8">
-                  <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50/50 backdrop-blur-sm px-4 py-2 rounded-lg border border-green-100/50 max-w-max">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-600 animate-pulse"></span>
-                    {selectedProduct.fulfillmentProvider && selectedProduct.inStock ? 'Available to order' : 'Coming Soon'}
-                  </div>
-                </div>
-              </div>
-
-              <div className="relative z-10 mt-8">
-                {selectedProduct.fulfillmentProvider && selectedProduct.inStock && <p className="text-sm text-earth/60 mb-3">${selectedProduct.deliveryFee} Economy delivery per item</p>}
-                <AddToCartButton key={selectedProduct.id} product={selectedProduct} selectedVariant={selectedVariant} variantRequired={!!selectedProduct.variants?.length} className="rounded-lg shadow-xl" />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+      <LazyProductPreview productId={selectedProductId} onClose={() => openProduct(null)} />
+    </main>
   );
 };

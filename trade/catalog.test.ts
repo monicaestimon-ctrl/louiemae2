@@ -1,0 +1,73 @@
+import { expect, it } from 'vitest';
+import { liveProducts, type LiveItem } from './catalog';
+import { CURATED_SOURCES } from './curatedSources';
+
+const source = (id: number) => Object.keys(CURATED_SOURCES).find(key => CURATED_SOURCES[key] === id)!;
+const item = (id: string, name: string): LiveItem => ({
+  id, name, description: '', category: 'sectionals', images: ['/fixture.webp'], facts: '', inStock: true,
+  variants: [{ id: 'variant', name: 'Default', minimum: 1, increment: 1, retail: 10000, trade: null }],
+});
+
+it('keeps discovery price, image and add-to-project variant aligned', () => {
+  const row = item('discovery-fixture', 'Chair');
+  row.variants.push({ ...row.variants[0], id: 'lower', retail: 5000, trade: 4500, image: '/lower.webp', minimum: 2 });
+  row.defaultVariantId = 'lower';
+  expect(liveProducts([row])[0]).toMatchObject({ vid: 'lower', price: 50, trade: 45, img: '/lower.webp', minimum: 2 });
+  expect(liveProducts([{ ...row, defaultVariantId: 'withdrawn' }])).toEqual([]);
+});
+
+it('preserves server relevance and price ordering when mapping discovery pages', () => {
+  const rows = [item('z', 'Zebra Chair'), item('a', 'Amber Chair')];
+  expect(liveProducts(rows, true).map(row => row.lid)).toEqual(['z', 'a']);
+  expect(liveProducts(rows).map(row => row.lid)).toEqual(['a', 'z']);
+});
+
+it('keeps curated identities and assets stable across pages, ordering and renames', () => {
+  const left = item(source(5), 'Osborne Left Facing');
+  const right = item(source(6), 'Osborne Right Facing');
+  const identity = (rows: LiveItem[]) => liveProducts(rows).map(p => [p.lid, p.id, p.cutout]);
+  expect(identity([right, left])).toEqual(identity([left, right]));
+  expect(identity([right])).toEqual([[right.id, 6, 'c/6.webp']]);
+  expect(identity([{ ...left, name: 'A renamed sectional' }])).toEqual([[left.id, 5, 'c/5.webp']]);
+});
+
+it('does not give a same-named new product another product’s studio assets', () => {
+  const mapped = liveProducts([item('new-product', 'Osborne Velvet Sectional Left Facing')])[0];
+  expect(mapped.id).toBeGreaterThanOrEqual(1000);
+  expect(mapped.cutout).toBeNull();
+  expect(mapped.model).toBeNull();
+  expect(mapped.dimsCm).toBeNull();
+});
+
+it('fails closed on duplicate identities and real numeric hash collisions', () => {
+  const first = item('fixture-6678', 'First');
+  const second = item('fixture-17986', 'Second');
+  expect(liveProducts([first])[0].id).toBe(liveProducts([second])[0].id);
+  expect(() => liveProducts([first, second])).toThrow('Catalog product identities require review');
+  expect(() => liveProducts([first, first])).toThrow('Catalog product identities require review');
+});
+
+it('retains noncurated numeric IDs when unrelated rows or prices change', () => {
+  const saved = item('existing-source', 'Original');
+  const original = liveProducts([saved])[0];
+  const changed = liveProducts([item(source(1), 'Bramwell'), { ...saved, name: 'New name', variants: [{ ...saved.variants[0], retail: 20000 }] }]).find(p => p.lid === saved.id)!;
+  expect(changed.id).toBe(original.id);
+  expect(changed.price).toBe(200);
+  expect(changed.trade).toBeNull();
+});
+
+it('retains an approved trade price without inventing a missing retail comparison', () => {
+  const source = item('trade-only-price', 'Chair');
+  source.variants[0] = { ...source.variants[0], retail: null, trade: 9000 };
+  const product = liveProducts([source])[0];
+  expect(product.price).toBeNaN();
+  expect(product.trade).toBe(90);
+  expect(product.variants[0].retail).toBeNull();
+});
+
+it('maps missing facets honestly without changing identity or the approved price', () => {
+  const source = { ...item('unknown-facets', 'Quill'), category: '' };
+  const product = liveProducts([source])[0];
+  expect(product).toMatchObject({ lid: source.id, vid: 'variant', type: 'other', mat: 'unknown', tone: '', price: 100 });
+  expect(product.cutout).toBeNull();
+});

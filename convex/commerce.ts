@@ -1,6 +1,7 @@
+import { internalMutation as indexedInternalMutation, mutation as indexedMutation } from './functions';
 import { paginationOptsValidator } from 'convex/server';
 import { v } from 'convex/values';
-import { query, mutation, internalMutation, internalQuery } from './_generated/server';
+import { query, internalQuery } from './_generated/server';
 import { mutation as productMutation } from './functions';
 import { requireCjAdminIdentity } from './cjAdminAccess';
 import { draft, channel, provider } from './commerceTables';
@@ -33,13 +34,14 @@ export const record = internalQuery({
   args: { id: v.id('commerceProducts') },
   handler: (ctx, { id }) => ctx.db.get(id),
 });
-export const save = mutation({
+export const save = indexedMutation({
   args: { id: v.id('commerceProducts'), revision: v.number(), draft },
   handler: async (ctx, args) => {
     const actor = await requireCjAdminIdentity(ctx);
     const p = await ctx.db.get(args.id);
     if (!p || p.revision !== args.revision)
       throw new Error('This draft changed. Reload before saving.');
+    if (p.provider === 'zuo') throw new Error('Staged Zuo records require an explicit audited revision workflow.');
     validateDraft(args.draft);
     if (JSON.stringify(args.draft).length > 150000)
       throw new Error('Product details are too large.');
@@ -59,7 +61,7 @@ export const save = mutation({
     return revision;
   },
 });
-export const imported = internalMutation({
+export const imported = indexedInternalMutation({
   args: { sourceKey: v.string(), provider, draft, actor: v.string() },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -67,6 +69,7 @@ export const imported = internalMutation({
       .withIndex('by_source', (q) => q.eq('sourceKey', args.sourceKey))
       .unique();
     if (existing) return { id: existing._id, existing: true };
+    if (args.provider === 'zuo') throw new Error('Use the audited Zuo staging importer.');
     if (args.provider === 'cj') throw new Error('Link an existing retail CJ product instead.');
     validateDraft(args.draft);
     const id = await ctx.db.insert('commerceProducts', {
@@ -101,7 +104,7 @@ export const cjLibrary = query({
     };
   },
 });
-export const linkCj = mutation({
+export const linkCj = indexedMutation({
   args: { id: v.id('products') },
   handler: async (ctx, { id }) => {
     await requireCjAdminIdentity(ctx);
@@ -173,6 +176,9 @@ export const publish = productMutation({
     const p = await ctx.db.get(args.id);
     if (!p || p.revision !== args.revision)
       throw new Error('This draft changed. Reload before publishing.');
+    // Zuo products only publish through the v2 publication gates (catPublication).
+    const provider = p.provider;
+    if (provider === 'zuo') throw new Error('Zuo products publish through the catalog review gates.');
     if (p.provider === 'cj') {
       const linked = p.cjProductId ? await ctx.db.get(p.cjProductId) : null;
       if (!linked || !evaluateProductCjReadiness(linked).ready)
@@ -213,7 +219,7 @@ export const publish = productMutation({
     }
     const ready = args.channels.map((c) => ({
       channel: c,
-      snapshot: listingSnapshot(p.draft, p.provider, c),
+      snapshot: listingSnapshot(p.draft, provider, c),
     }));
     for (const item of ready) {
       const old = await ctx.db
@@ -281,7 +287,7 @@ export const catalog = query({
     };
   },
 });
-export const refreshCj = mutation({
+export const refreshCj = indexedMutation({
   args: { id: v.id('commerceProducts'), revision: v.number() },
   handler: async (ctx, a) => {
     const actor = await requireCjAdminIdentity(ctx);

@@ -1,0 +1,11 @@
+# Collection critical resources
+
+The first Kids category photograph now has a reviewed 360px WebP alongside its existing 480px and 533px sources. The 200 CSS-pixel mobile card needs 350 physical pixels at the audit device pixel ratio of 1.75. The new source supplies 360 pixels, weighs 27,484 bytes versus 40,200 bytes for the 480px source, and retains the original photograph, framing and quality-74/effort-6 encoding. It is not applied to unrelated square images whose portrait object-cover treatment can require more source pixels.
+
+`brandImageWidths` is shared by the image generator and source verification. The manifest, source/output hashes, dimensions and recipe are recorded in `collection-image-provenance.json`. Existing larger image sources remain available. The shared collection renderer and client hero use the same responsive source set and sizes.
+
+Generated collection documents retain the upright Cormorant 400 preload and remove the italic 400 preload. All font faces remain available through CSS. Furniture, decor and fashion do not need that italic face for their hero; Kids can still load it for later preview content. This is a resource-priority adjustment, not a claim that Kids no longer downloads italic or that the photograph explains every slow run.
+
+Validation requires source/hash/dimension and width-policy checks, renderer tests, and eight browser cases across four viewport/device-pixel combinations with and without page JavaScript. Browser checks verify sufficient source resolution, one healthy hero request, identical server/client image geometry and source, zero runtime errors and an accessibility scan of the interactive fixture. Source photographs and screenshots are visually reviewed. The fixture contains synthetic read-only categories; it cannot establish production inventory, purchase eligibility or Lighthouse scores.
+
+The prior production audit at commit 94807e4d retained 120 healthy runs: 23 of 24 performance batches passed and all Accessibility, Best Practices and SEO scores were 100. Kids mobile was 97/100/100/100/100. Keep that failure in the evidence packet. Run the fixed-commit production matrix after this phase is deployed; do not discard cold failures or repeat unchanged code until a favorable result appears.

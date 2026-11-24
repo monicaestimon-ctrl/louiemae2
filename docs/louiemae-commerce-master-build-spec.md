@@ -4,6 +4,8 @@ Version 1.1 · September 21, 2026 · Specification audit complete for the agreed
 
 Implementation progress, tested behavior, configuration, and release blockers are tracked separately in [Commerce implementation status](commerce-implementation-status.md).
 
+**November 8, 2026:** the v2 production build (Zuo, delivery engine, memberships, attribution, ledgers and payouts) is planned in [production-v2/00-README.md](production-v2/00-README.md). Where it conflicts with this document, v2 wins.
+
 ## 1. Implementation entry point and authority
 
 Confirmed House pricing policy (September 21, 2026): apply multipliers to supplier unit cost converted to USD: ≤$50 ×6; >$50–$75 ×4.5; >$75–<$175 ×4; $175–<$250 ×3; ≥$250 ×2. At each new band enforce the preceding band's upper-bound price: $300, $337.50, $700, then $750. Round converted cost and final estimates to cents. This prevents downward price jumps. These are House starting merchandise estimates only; retain existing retail pricing. Bulk/quantity/high-invoice discounts are customized from actual economics in the final quote, never automatically granted by a quantity or invoice threshold. No inferred delivery or tax is included.

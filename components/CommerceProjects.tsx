@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAction, useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import type { Doc, Id } from '../convex/_generated/dataModel';
-import { providerLabels, totalLines } from '../lib/commerce';
+import { providerLabels, projectCredit, projectTotal } from '../lib/commerce';
 import './commerce.css';
 const usd = (n: number) => (n / 100).toFixed(2);
 export function CommerceProjects() {
@@ -19,7 +19,7 @@ export function CommerceProjects() {
       {list.results.map((p) => (
         <button className="commerce-library-row" key={p._id} onClick={() => setId(p._id)}>
           {p.business || p.name} · {p.channel} · {p.status} · $
-          {usd(totalLines(p.lines, p.delivery, p.tax))}
+          {usd(projectTotal(p))}
         </button>
       ))}
       {list.status === 'CanLoadMore' && (
@@ -77,6 +77,18 @@ function ProjectEditor({ project: p }: { project: Doc<'commerceProjects'> }) {
       setBusy(false);
     }
   };
+  // Store credit on this quote, previewed from the draft; invalid draft values hide it (saving reports them).
+  const creditPreview = (() => {
+    if (!(p.creditCents && p.creditCents > 0)) return null;
+    try {
+      return {
+        credit: projectCredit({ lines, creditCents: p.creditCents }),
+        total: projectTotal({ lines, delivery, tax, creditCents: p.creditCents }),
+      };
+    } catch {
+      return null;
+    }
+  })();
   return (
     <div>
       <h3>
@@ -206,6 +218,12 @@ function ProjectEditor({ project: p }: { project: Doc<'commerceProjects'> }) {
               onChange={(e) => setTax(Math.round(Number(e.target.value) * 100))}
             />
           </label>
+          {creditPreview && creditPreview.credit > 0 && (
+            <p>
+              Store credit: −${usd(creditPreview.credit)} comes off the invoice as its own line.
+              Invoice total: ${usd(creditPreview.total)}.
+            </p>
+          )}
           {(Object.keys(address) as (keyof typeof address)[]).map((k) => (
             <label key={k}>
               {k}

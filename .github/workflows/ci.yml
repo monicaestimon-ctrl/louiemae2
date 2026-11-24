@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   # Preserve a production run once it starts so a later push cannot cancel a
@@ -35,17 +38,129 @@ jobs:
       - name: Type check
         run: npm run type-check
 
+      - name: Strict HOLM staff type check
+        run: npx tsc --noEmit -p tsconfig.holm-staff.json
+
       - name: Strict Convex type check
         run: npx tsc -p convex/tsconfig.json
 
       - name: Verify transactional catalog writers
         run: npm run verify:catalog-writers
 
+      - name: Verify append-only ledger and audit tables
+        run: npm run verify:append-only
+
+      - name: Verify no secrets or supplier data are tracked
+        run: npm run verify:repo-secrets
+
       - name: Run tests
         run: npm run test:run
 
+      - name: Verify public health monitoring policy
+        run: node --test scripts/lighthouse/smoke-policy.node.mjs scripts/lighthouse/release-evidence.node.mjs
+
+      - name: Verify Lighthouse acceptance policy
+        run: npm run test:lighthouse-policy
+
+      - name: Verify API route source boundary
+        run: node scripts/verify-api-routes.mjs
+
+      - name: Verify unbundled metadata function runtime
+        run: node scripts/verify-metadata-runtime.mjs
+
       - name: Build
         run: npm run build
+
+      - name: Verify product Node runtime and built template
+        run: node scripts/verify-product-runtime.mjs
+
+      - name: Verify source-bound product image renditions
+        run: |
+          node --test scripts/product-images.node.mjs
+          node scripts/verify-product-images.mjs
+          node scripts/verify-story-images.mjs
+          node scripts/verify-fashion-category-images.mjs
+          node scripts/verify-product-formats.mjs
+          node --test scripts/product-formats-staging.node.mjs
+          node scripts/verify-editorial-images.mjs
+          node --test scripts/brand-image-widths.node.mjs
+          node scripts/verify-collection-images.mjs
+
+      - name: Verify deferred HOLM bundle boundaries
+        run: npm run verify:deferred-bundles
+
+      - name: Verify HOLM interaction fixtures
+        env:
+          CHROME_PATH: /usr/bin/google-chrome
+        run: |
+          npm run test:holm:browser
+          node scripts/lighthouse/discovery.mjs
+          node scripts/lighthouse/product-referral.mjs
+          npm run test:holm-tools:browser
+          npm run test:editor-keyboard:browser
+          npm run test:planner-dialogs:browser
+          node scripts/lighthouse/holm-editor-loading.mjs
+          node scripts/lighthouse/holm-catalog-intent.mjs
+          node scripts/lighthouse/board-controls.mjs
+          node scripts/lighthouse/collection-assets.mjs
+          npm run test:tray-request:browser
+          npm run test:application:browser
+          node scripts/lighthouse/newsletter.mjs
+          node scripts/lighthouse/newsletter-loading.mjs
+          node scripts/lighthouse/document-identity-browser.mjs
+          node scripts/lighthouse/private-surfaces.mjs
+          node scripts/lighthouse/legacy-creator.mjs
+          node scripts/lighthouse/security-headers.mjs
+          node scripts/lighthouse/journal.mjs
+          npm run test:field:browser
+          node scripts/lighthouse/field-admin.mjs
+          node scripts/lighthouse/catalog-publication.mjs
+          node scripts/lighthouse/catalog-pricing.mjs
+          node scripts/lighthouse/house-staff.mjs
+          node scripts/lighthouse/staff-entry.mjs
+          node scripts/lighthouse/trade-hub-entry.mjs
+          node scripts/lighthouse/editorial-formats.mjs
+          node scripts/lighthouse/story-formats.mjs
+          node scripts/lighthouse/collection-formats.mjs
+          node scripts/lighthouse/startup-recovery.mjs
+          node scripts/lighthouse/visible-startup.mjs
+          node scripts/lighthouse/primary-image-startup.mjs
+          node scripts/lighthouse/product-formats.mjs
+          node scripts/lighthouse/delivery-estimator.mjs
+          node scripts/lighthouse/trade-calculator.mjs
+          node scripts/lighthouse/lazy-cart.mjs
+          node scripts/lighthouse/product-preview.mjs
+          node scripts/lighthouse/product-navigation.mjs
+          node scripts/lighthouse/public-handoff.mjs
+          node scripts/lighthouse/collection-signup.mjs
+          node scripts/lighthouse/collection-states.mjs
+          node scripts/lighthouse/reveal.mjs
+
+      - name: Retain HOLM quality evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: holm-quality-${{ github.sha }}
+          path: |
+            artifacts/lighthouse/deferred-bundles.json
+            artifacts/lighthouse/retail-bundles.json
+            artifacts/lighthouse/holm-modal-integration.json
+            artifacts/lighthouse/*browser.json
+            artifacts/lighthouse/*last-state.json
+            artifacts/lighthouse/*.png
+            artifacts/lighthouse/editorial-format-fixture/*.png
+            artifacts/lighthouse/story-formats/*.png
+            artifacts/lighthouse/product-formats/*.png
+            artifacts/lighthouse/board-controls/*.png
+            artifacts/lighthouse/field-monitoring/
+            artifacts/lighthouse/field-admin/
+            artifacts/lighthouse/catalog-publication-*.png
+            artifacts/lighthouse/catalog-publication-browser.json
+            artifacts/lighthouse/catalog-pricing/
+            artifacts/lighthouse/house-staff/
+            artifacts/lighthouse/staff-entry/
+          if-no-files-found: ignore
+          retention-days: 14
 
   deploy-convex:
     # Only deploy to Convex on pushes to main (not on PRs)
@@ -70,5 +185,24 @@ jobs:
         # Frontend quality/build already ran in lint-test-build, and Vercel builds
         # the frontend deployment. Do not spend a second build here.
         run: npx convex deploy
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+
+      - name: Seed v2 configuration (idempotent, adds missing records only)
+        run: npx convex run sysConfig:seed '{}'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+
+      - name: v2 identity backfill (idempotent, additive)
+        # The production dry run after #235 was reviewed (1 profile, no partners). Only identity
+        # rows are committed here; ledger and credit balances move at the payout cutover
+        # (docs/production-v2/06 step 7), after which sync-legacy-ledger keeps them in step.
+        run: npx convex run v2Migrations:runBackfills '{"commit":true,"only":["identity"]}'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+
+      - name: v2 ledger parity report (complete read-only scan; not cutover approval)
+        run: npx convex run v2Migrations:runLedgerParity '{}'
+        continue-on-error: true
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}

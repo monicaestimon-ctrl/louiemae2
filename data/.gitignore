@@ -1,0 +1,7 @@
+# Supplier package files can hold dealer costs: keep them out of git. Only checksums and
+# cost-free parity reports are committed (docs/production-v2/00-README.md §4).
+*
+!.gitignore
+!*.sha256
+!parity-*.md
+!*/

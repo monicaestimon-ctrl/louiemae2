@@ -1,0 +1,197 @@
+import { assertPricingReview, pricingReview } from './catPricingReview';
+import { internalMutation as indexedInternalMutation, mutation as indexedMutation } from './functions';
+// Pricing engine service (spec S12, v2 §7). Every variant carries a policy id and a reproducible
+// scenario result. Approved prices are never overwritten by the engine, and the 5% policy can
+// only be held by the approved 306-product cohort.
+import { v } from 'convex/values';
+import { query } from './_generated/server';
+import type { MutationCtx } from './_generated/server';
+import type { Id } from './_generated/dataModel';
+import { requireDeliveryRole } from './dlvAccess';
+import { activeConfig } from './sysConfig';
+import { audit, openReview } from './sysCore';
+import { openHold, resolveHold } from './catCore';
+import { projectDraftVariants } from './zuoImport';
+import { CommerceError, commerceErrorData } from '../lib/errors';
+import { piecePriceInfo } from '../lib/catUnits';
+import type { MarginPolicy } from '../lib/config';
+export { pricingInput, computeScenarios } from './catEconomics';
+import { computeScenarios } from './catEconomics';
+
+export const review = query({
+  args: { variantId: v.id('catVariants'), refreshKey: v.optional(v.number()) },
+  handler: async (ctx, a) => {
+    const actor = await requireDeliveryRole(ctx, 'finance');
+    return { ...(await pricingReview(ctx, a.variantId)), canApprove: actor.approver };
+  },
+});
+
+export const simulate = query({
+  args: { variantId: v.id('catVariants') },
+  handler: async (ctx, a) => {
+    await requireDeliveryRole(ctx, 'finance');
+    const cv = await ctx.db.get(a.variantId);
+    if (!cv) throw new CommerceError('INVALID_INPUT', 'Variant not found');
+    try {
+      return { ok: true as const, approvedConfig: true, ...(await computeScenarios(ctx, cv)) };
+    } catch (e) {
+      // Fall back to proposed config so the owner can see what approval would change.
+      try {
+        return { ok: true as const, approvedConfig: false, ...(await computeScenarios(ctx, cv, { simulate: true })) };
+      } catch (e2) {
+        return { ok: false as const, error: String((e2 as Error).message || e) };
+      }
+    }
+  },
+});
+
+/** Records scenario results for variants. Never changes an approved price; differences are flagged. */
+export async function recordScenarios(ctx: MutationCtx, variantId: Id<'catVariants'>, by: string, options: { requireReferralQualification?: boolean } = {}) {
+  const cv = await ctx.db.get(variantId);
+  if (!cv) {
+    if (options.requireReferralQualification) throw new CommerceError('INVALID_INPUT', 'Variant not found');
+    return null;
+  }
+  let res;
+  try {
+    res = await computeScenarios(ctx, cv, { reserveRetailCommission: options.requireReferralQualification || cv.referralEligible !== false });
+  } catch (e) {
+    if (options.requireReferralQualification) throw e;
+    await openHold(ctx, variantId, 'PRICING_UNVERIFIED', 'Current economics could not be verified', by);
+    await openReview(ctx, 'pricing_blocked', 'catVariants', variantId, commerceErrorData(e)?.detail ?? String((e as Error).message));
+    return null;
+  }
+  // Activation is atomic: never turn a failed calculation into a successful opt-in.
+  if (options.requireReferralQualification && (!res.referralQualified || res.belowMinimum))
+    throw new CommerceError('REFERRAL_INELIGIBLE', 'The approved retail price does not fund its current commission and margin policy');
+  const last = await ctx.db.query('catScenarioResults').withIndex('by_variant_computed', (q) => q.eq('variantId', variantId)).order('desc').first();
+  const id = last?.inputsHash === res.inputsHash && last.engineVersion === res.engineVersion ? last._id : await ctx.db.insert('catScenarioResults', { variantId, inputsHash: res.inputsHash, scenarios: res.scenarios, minimumRetailMinor: res.minimumRetailMinor, computedAt: Date.now(), engineVersion: res.engineVersion });
+  // Reusing an identical calculation must still repair eligibility and holds.
+  // Approval validity is channel-specific and checked by assertSellable. A missing retail
+  // approval must not create a variant-wide blocker for a current funded trade offer.
+  await resolveHold(ctx, variantId, 'PRICING_UNVERIFIED', by, 'Current economics verified');
+  // Commission prequalification against the full schedule (v2 §7): a visible state, never a hidden cap.
+  if (cv.referralEligible === false && !options.requireReferralQualification) {
+    await resolveHold(ctx, variantId, 'COMMISSION_UNQUALIFIED', by, 'Referrals explicitly disabled; direct-sale economics checked');
+  } else if (res.referralQualified) {
+    await resolveHold(ctx, variantId, 'COMMISSION_UNQUALIFIED', by, 'Full schedule supported');
+    if (cv.referralEligible === undefined) await ctx.db.patch(variantId, { referralEligible: true });
+  } else {
+    await openHold(ctx, variantId, 'COMMISSION_UNQUALIFIED', 'Full-schedule commission scenario is below the margin policy', by);
+    // Keep the eligibility decision: a failed computation is not an administrator opt-out.
+  }
+  if (res.belowMinimum || res.belowTradeMinimum) {
+    const detail = `Retail ${res.retailMinor} / minimum ${res.minimumRetailMinor}; trade ${res.tradeMinor ?? 'unapproved'} / minimum ${res.minimumBaseTradeMinor}`;
+    await openHold(ctx, variantId, 'MARGIN_BELOW_POLICY', detail, by);
+    await openReview(ctx, 'price_below_minimum', 'catVariants', variantId, detail);
+  } else await resolveHold(ctx, variantId, 'MARGIN_BELOW_POLICY', by, 'Both approved prices meet their current minimums');
+  return id;
+}
+
+export const recompute = indexedInternalMutation({
+  args: { variantIds: v.array(v.id('catVariants')) },
+  handler: async (ctx, a) => {
+    for (const id of a.variantIds.slice(0, 50)) await recordScenarios(ctx, id, 'system:pricing');
+  },
+});
+
+export const recomputeVariants = indexedMutation({
+  args: { variantIds: v.array(v.id('catVariants')) },
+  handler: async (ctx, a) => {
+    const admin = await requireDeliveryRole(ctx, 'finance');
+    for (const id of a.variantIds.slice(0, 50)) await recordScenarios(ctx, id, admin.email);
+  },
+});
+
+/** The owner approves a pack price for a channel; it must clear the engine minimum (or the documented policy) and MAP. */
+export const approvePrice = indexedMutation({
+  args: { variantId: v.id('catVariants'), channel: v.union(v.literal('retail'), v.literal('trade')), packPriceMinor: v.number(), reason: v.string(), expectedReviewHash: v.string() },
+  handler: async (ctx, a) => {
+    const admin = await requireDeliveryRole(ctx, 'approver');
+    await assertPricingReview(ctx, a.variantId, a.expectedReviewHash);
+    if (!Number.isSafeInteger(a.packPriceMinor) || a.packPriceMinor <= 0) throw new CommerceError('INVALID_INPUT', 'Price must be a positive whole number of cents');
+    if (!a.reason.trim()) throw new CommerceError('INVALID_INPUT', 'Add a reason');
+    const cv = await ctx.db.get(a.variantId);
+    if (!cv) throw new CommerceError('INVALID_INPUT', 'Variant not found');
+    const res = await computeScenarios(ctx, cv, { reserveRetailCommission: a.channel === 'retail' && cv.referralEligible !== false });
+    if (!cv.marginPolicyKey) throw new CommerceError('COST_REVIEW_REQUIRED', 'No margin policy assigned');
+    const floor = a.channel === 'retail' ? res.minimumRetailMinor : res.minimumBaseTradeMinor;
+    if (a.packPriceMinor < floor) throw new CommerceError('COST_REVIEW_REQUIRED', `Below the ${cv.marginPolicyKey} minimum of ${floor}`, `This price is below the approved minimum of $${(floor / 100).toFixed(2)}.`);
+    const cost = cv.currentCostRevisionId ? await ctx.db.get(cv.currentCostRevisionId) : null;
+    if (cost?.mapApplicability === 'applies' && cost.mapMinor !== null && a.packPriceMinor < cost.mapMinor * (cost.mapUnitBasis === 'piece' ? cv.piecesPerPack : 1)) throw new CommerceError('MAP_POLICY_REVIEW', 'Below pack MAP');
+    const marginPolicy = await activeConfig(ctx, 'marginPolicy', cv.marginPolicyKey);
+    const supplier = await ctx.db.get(cv.supplierId);
+    const roundingPolicy = await activeConfig(ctx, 'roundingPolicy', 'rounding-pack-up-cents');
+    const field = a.channel === 'retail' ? 'retailPriceRevisionId' : 'tradePriceRevisionId';
+    const now = Date.now();
+    const current = cv[field] ? await ctx.db.get(cv[field]!) : null;
+    if (current && (current.variantId !== cv._id || current.channel !== a.channel))
+      throw new CommerceError('COST_REVIEW_REQUIRED', 'Price revision does not belong to this variant and channel');
+    if (current) await ctx.db.patch(current._id, { status: 'superseded', effectiveTo: now });
+    const id = await ctx.db.insert('catPriceRevisions', {
+      variantId: cv._id,
+      channel: a.channel,
+      packPriceMinor: a.packPriceMinor,
+      piecePriceMinorInfo: piecePriceInfo(a.packPriceMinor, cv.piecesPerPack),
+      informationUnitBasis: supplier?.code === 'ashcroft' ? 'selling_unit' : 'piece',
+      marginPolicyKey: cv.marginPolicyKey,
+      marginPolicyVersion: marginPolicy.version,
+      roundingPolicyVersion: roundingPolicy.version,
+      approvedBy: admin.email,
+      approvedAt: now,
+      status: 'approved',
+      origin: 'manual',
+      reason: a.reason,
+      createdAt: now,
+      createdBy: admin.email,
+      effectiveFrom: now,
+      source: 'admin',
+    });
+    await ctx.db.patch(cv._id, { [field]: id, updatedAt: now });
+    await resolveHold(ctx, cv._id, 'MARGIN_BELOW_POLICY', admin.email, 'Price approved at or above the minimum');
+    await recordScenarios(ctx, cv._id, admin.email);
+    await projectDraftVariants(ctx, cv.productId);
+    await audit(ctx, { actor: admin.email, action: 'price.approve', entityTable: 'catVariants', entityId: cv._id, before: current?.packPriceMinor, after: { channel: a.channel, packPriceMinor: a.packPriceMinor }, reason: a.reason });
+    return id;
+  },
+});
+
+/**
+ * Assigns a margin policy. The 5% policy is allowed only for the approved 306 cohort; the 18%
+ * policy needs a document reference; the MAP-floor hold stays until an explicit floor is set.
+ */
+export const assignPolicy = indexedMutation({
+  args: { variantId: v.id('catVariants'), policyKey: v.string(), documentRef: v.optional(v.string()), reason: v.string(), expectedReviewHash: v.string() },
+  handler: async (ctx, a) => {
+    const admin = await requireDeliveryRole(ctx, 'approver');
+    await assertPricingReview(ctx, a.variantId, a.expectedReviewHash);
+    if (!a.reason.trim()) throw new CommerceError('INVALID_INPUT', 'Add the policy approval reason');
+    const cv = await ctx.db.get(a.variantId);
+    if (!cv) throw new CommerceError('INVALID_INPUT', 'Variant not found');
+    const policy = (await activeConfig<MarginPolicy>(ctx, 'marginPolicy', a.policyKey)).value;
+    if (policy.cohort && policy.cohort !== cv.cohort) throw new CommerceError('FORBIDDEN', `${a.policyKey} is limited to the ${policy.cohort} cohort and is never extended automatically`);
+    if (policy.requiresDocumentRef && !a.documentRef?.trim()) throw new CommerceError('INVALID_INPUT', `${a.policyKey} needs the document that approves it`);
+    await ctx.db.patch(cv._id, { marginPolicyKey: a.policyKey, marginPolicyDocumentRef: a.documentRef?.trim() || undefined, updatedAt: Date.now() });
+    if (!policy.blocksAutomaticSale) await resolveHold(ctx, cv._id, 'MAP_FLOOR_UNAPPROVED', admin.email, `Policy ${a.policyKey}`);
+    await recordScenarios(ctx, cv._id, admin.email);
+    await audit(ctx, { actor: admin.email, action: 'policy.assign', entityTable: 'catVariants', entityId: cv._id, before: cv.marginPolicyKey, after: a.policyKey, reason: [a.reason, a.documentRef].filter(Boolean).join(' · ') });
+  },
+});
+
+/** Contribution report rows for the admin (contribution is not operating profit). */
+export const contributionReport = query({
+  args: { productId: v.id('commerceProducts') },
+  handler: async (ctx, a) => {
+    await requireDeliveryRole(ctx, 'finance');
+    const variants = await ctx.db.query('catVariants').withIndex('by_product', (q) => q.eq('productId', a.productId)).collect();
+    return Promise.all(
+      variants.map(async (cv) => ({
+        variantId: cv._id,
+        sku: cv.supplierSku,
+        policy: cv.marginPolicyKey ?? 'unassigned',
+        latest: await ctx.db.query('catScenarioResults').withIndex('by_variant_computed', (q) => q.eq('variantId', cv._id)).order('desc').first(),
+        note: 'Contribution after modeled variable costs, commission and allocated overhead. Not a measure of operating profit.',
+      }))
+    );
+  },
+});

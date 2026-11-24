@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "scope": "Public landing, shop/story/journal, four collection roots and two Ashcroft product examples; not full-spec acceptance",
+  "routes": [
+    {
+      "id": "retail-home",
+      "path": "/",
+      "readySelector": "[data-catalog-ready='true']",
+      "requiredText": "Recommended Products"
+    },
+    {
+      "id": "holm-home",
+      "path": "/trade/",
+      "readySelector": "#root main.home",
+      "requiredText": "House"
+    },
+    {
+      "id": "ashcroft-sofa",
+      "path": "/products/qn73a88mnk5czwe2xvrzxf4ta58f0cdp",
+      "readySelector": "main[aria-busy='false']",
+      "requiredText": "Bramwell"
+    },
+    {
+      "id": "unavailable-lighting",
+      "path": "/products/qn7801qggjxaygjjzx7dggcpfh8g3k1q",
+      "readySelector": "main[aria-busy='false']",
+      "requiredText": "unavailable"
+    },
+    {
+      "id": "collection-furniture",
+      "path": "/collection/furniture",
+      "readySelector": "main[data-lm-collection-ready='furniture']",
+      "requiredText": "Furniture"
+    },
+    {
+      "id": "collection-decor",
+      "path": "/collection/decor",
+      "readySelector": "main[data-lm-collection-ready='decor']",
+      "requiredText": "Home Decor"
+    },
+    {
+      "id": "collection-fashion",
+      "path": "/collection/fashion",
+      "readySelector": "main[data-lm-collection-ready='fashion']",
+      "requiredText": "The Mae Collective"
+    },
+    {
+      "id": "collection-kids",
+      "path": "/collection/kids",
+      "readySelector": "main[data-lm-collection-ready='kids']",
+      "requiredText": "Louie Kids & Co."
+    },
+    {
+      "id": "public-shop",
+      "path": "/shop",
+      "readySelector": "main[data-public-page=\"shop\"]",
+      "requiredText": "Explore Collections"
+    },
+    {
+      "id": "public-story",
+      "path": "/story",
+      "readySelector": "main[data-public-page=\"story\"]",
+      "requiredText": "THE ORIGINS"
+    },
+    {
+      "id": "public-journal",
+      "path": "/blog",
+      "readySelector": "main[data-lm-journal-ready=\"index\"]",
+      "requiredText": "Simply Mae"
+    },
+    {
+      "id": "public-journal-article",
+      "path": "/blog/jd7dxb8yd0x1zfnrspr89gvxr980052x",
+      "readySelector": "main[data-lm-journal-ready=\"jd7dxb8yd0x1zfnrspr89gvxr980052x\"]",
+      "requiredText": "The Bread of Idleness"
+    }
+  ],
+  "pendingCoverage": [
+    "collection-filter-and-empty-states",
+    "eligible-zuo-ground-and-ltl",
+    "product-variants",
+    "search",
+    "cart",
+    "delivery",
+    "authenticated-trade",
+    "projects",
+    "referrals",
+    "outages",
+    "metadata"
+  ]
+}

@@ -1,16 +1,19 @@
 
 import React, { useState, useRef } from 'react';
+import DeliveryBoundary from './delivery/DeliveryBoundary';
+import CommerceV2Admin from './admin/CommerceV2Admin';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { api } from '../convex/_generated/api';
 import type { Id } from '../convex/_generated/dataModel';
 import { useSite } from '../contexts/BlogContext';
+import { useSiteAccount } from '../contexts/useSiteAccount';
 import { useAdminCatalog } from '../contexts/AdminCatalogDemand';
 import { RichTextEditor } from './RichTextEditor';
 import { useNewsletterAdmin } from '../contexts/NewsletterContext';
 import { FadeIn } from './FadeIn';
 import { Plus, Edit3, Trash2, LogOut, X, Image as ImageIcon, Layout, ArrowLeft, PenTool, BookOpen, Home, Settings, Wand2 as WandIcon, Loader2, FileText, ShoppingBag, Tag, ChevronDown, Layers, Menu, Upload, Grid, Maximize, Type, Mail, Users, Send, BarChart2, Package, Lock, ChevronLeft, ExternalLink, Search, Eye, EyeOff, Rocket, RefreshCw, Link2 } from 'lucide-react';
 import { BlogPost, CustomPage, PageSection, Product, CollectionType, CollectionConfig, EmailCampaign } from '../types';
-import { AdminOrders } from './AdminOrders';
+import { OrdersWorkspace } from './TrendsiManualAdmin';
 import { NewsletterStudio } from './NewsletterStudio';
 import { ProductImport } from './ProductImport';
 import { CJSettings } from './CJSettings';
@@ -22,6 +25,7 @@ import { SafeImage } from './SafeImage';
 import { productStorefrontStatusLabel } from '../lib/productVisibility';
 import { getEffectiveSubcategoryIds } from '../lib/productCategories';
 import { getUserFacingErrorMessage } from '../lib/errorMessages';
+import { withAdminWriteFeedback } from '../lib/adminWriteFeedback';
 import { type CjProductConnectionState } from '../lib/cjProductStatus';
 import { cjListingUrl } from '../lib/cjPricingReview';
 import { useAdminProductDetail } from './useAdminProductDetail';
@@ -41,7 +45,8 @@ type AdminTab =
    | 'cj-risk-check'
    | 'import'
    | 'shared-products'
-   | 'cj-settings';
+   | 'cj-settings'
+   | 'commerce-v2';
 
 type CjAdminNavTarget = 'cj-settings' | 'cj-control-room' | 'cj-risk-check';
 type CjAdminNavRequest = CjAdminNavTarget | {
@@ -49,6 +54,53 @@ type CjAdminNavRequest = CjAdminNavTarget | {
    orderId?: string;
    productId?: string;
 };
+
+type NavIcon = React.ComponentType<{ className?: string }>;
+type NavGroupId = 'sourcing' | 'settings' | 'commerce';
+
+// The six places used day to day. Everything else lives in a folded group below.
+const PRIMARY_NAV: Array<{ tab: AdminTab; label: string; icon: NavIcon }> = [
+   { tab: 'dashboard', label: 'Overview', icon: Home },
+   { tab: 'orders', label: 'Orders', icon: Package },
+   { tab: 'products', label: 'Products', icon: ShoppingBag },
+   { tab: 'journal', label: 'Journal', icon: BookOpen },
+   { tab: 'pages', label: 'Pages', icon: Layout },
+   { tab: 'newsletter', label: 'Newsletter', icon: Mail },
+];
+
+const NAV_GROUPS: Array<{ id: NavGroupId; label: string; icon: NavIcon; items: Array<{ tab: AdminTab; label: string }> }> = [
+   {
+      id: 'sourcing', label: 'Sourcing', icon: Upload, items: [
+         { tab: 'cj-control-room', label: 'CJ control room' },
+         { tab: 'cj-risk-check', label: 'Risk check' },
+         { tab: 'import', label: 'Import products' },
+         { tab: 'shared-products', label: 'Publishing destinations' },
+      ],
+   },
+   {
+      id: 'commerce', label: 'Commerce v2', icon: Package, items: [
+         { tab: 'commerce-v2', label: 'Operations & decisions' },
+      ],
+   },
+   {
+      id: 'settings', label: 'Settings', icon: Settings, items: [
+         { tab: 'structure', label: 'Store structure' },
+         { tab: 'cj-settings', label: 'CJ connection' },
+      ],
+   },
+];
+
+const SidebarLink: React.FC<{ icon: NavIcon; label: string; active: boolean; onClick: () => void }> = ({ icon: Icon, label, active, onClick }) => (
+   <button
+      type="button"
+      onClick={onClick}
+      aria-current={active ? 'page' : undefined}
+      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${active ? 'bg-white/[0.08] text-cream' : 'text-cream/55 hover:text-cream hover:bg-white/5'}`}
+   >
+      <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-bronze' : ''}`} />
+      <span>{label}</span>
+   </button>
+);
 
 type InventoryCjFilter = 'all' | CjProductConnectionState;
 
@@ -212,7 +264,22 @@ const ImageUploader: React.FC<{
 };
 
 export const AdminPage: React.FC = () => {
-   const { isAuthenticated, isAuthLoading, signIn, logout, posts, addPost, updatePost, deletePost, siteContent, updateSiteContent, addCustomPage, updateCustomPage, deleteCustomPage, addProduct, addProducts, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
+   const { isAuthenticated, isAuthLoading, logout } = useSite();
+   const account = useSiteAccount(isAuthenticated, isAuthLoading);
+   const access = account.session;
+   if (account.status === 'loading') return <main className="p-6 pt-28"><p role="status">Checking staff access…</p></main>;
+   if (account.status === 'unavailable') return <main className="p-6 pt-28"><h1>Account access temporarily unavailable</h1><p role="status">We cannot verify staff permissions. Please try again.</p><button onClick={() => window.location.reload()}>Try again</button><a href="/#support">Contact support</a></main>;
+   if (!isAuthenticated || access?.owner) return <OwnerAdminPage />;
+   return <main className="mx-auto max-w-6xl p-6 pt-28 space-y-6">
+      <button type="button" onClick={() => logout()}>Sign out</button>
+      {access?.delivery ? <DeliveryBoundary><CommerceV2Admin /></DeliveryBoundary> : <p role="alert">This account does not have staff access.</p>}
+   </main>;
+};
+/** Owner workspace with visible save failures and independently loaded administrative tools. */
+const OwnerAdminPage: React.FC = () => {
+   const { isAuthenticated, isAuthLoading, signIn, logout, posts, editorialStatus, retryEditorial, addPost, updatePost, deletePost, siteContent, updateSiteContent: writeSiteContent, addCustomPage, updateCustomPage: writeCustomPage, deleteCustomPage, addProduct, addProducts, updateProduct, deleteProduct, addCollection, updateCollection, deleteCollection } = useSite();
+   const updateSiteContent = withAdminWriteFeedback(writeSiteContent, message => alert(message));
+   const updateCustomPage = withAdminWriteFeedback(writeCustomPage, message => alert(message));
    const { subscribers, subscriberListTruncated, campaigns, createCampaign, updateCampaign, sendCampaign, deleteCampaign, stats } = useNewsletterAdmin();
    const linkDescriptionAuditToProduct = useMutation(api.descriptionAudits.linkAuditToProduct);
    const launchNextProducts = useMutation(api.products.launchNextProducts);
@@ -229,7 +296,7 @@ export const AdminPage: React.FC = () => {
    // Navigation State
    const [activeTab, setActiveTabState] = useState<AdminTab>(() => {
       const saved = localStorage.getItem('admin-active-tab');
-      const validTabs = ['dashboard', 'journal', 'pages', 'products', 'structure', 'newsletter', 'orders', 'cj-control-room', 'cj-risk-check', 'import', 'shared-products', 'cj-settings'] as const;
+      const validTabs = ['dashboard', 'journal', 'pages', 'products', 'structure', 'newsletter', 'orders', 'cj-control-room', 'cj-risk-check', 'import', 'shared-products', 'cj-settings', 'commerce-v2'] as const;
       return saved && (validTabs as readonly string[]).includes(saved) ? saved as typeof validTabs[number] : 'dashboard';
    });
    const [cjNavContext, setCjNavContext] = useState<{ orderId?: string; productId?: string }>({});
@@ -254,8 +321,8 @@ export const AdminPage: React.FC = () => {
    const [inventorySearch, setInventorySearch] = useState('');
    const [inventoryCjFilter, setInventoryCjFilter] = useState<InventoryCjFilter>('all');
 
-   // Expanded Menus State in Sidebar
-   const [expandedCollections, setExpandedCollections] = useState<Record<string, boolean>>({});
+   // Which folded sidebar group (Sourcing / Settings) is open. The group holding the active tab always shows.
+   const [openNavGroup, setOpenNavGroup] = useState<NavGroupId | null>(null);
 
    // Blog Editor State
    const [isEditingPost, setIsEditingPost] = useState(false);
@@ -341,12 +408,9 @@ export const AdminPage: React.FC = () => {
       window.location.hash = '';
    };
 
-   const toggleCollectionExpand = (id: string) => {
-      setExpandedCollections(prev => ({ ...prev, [id]: !prev[id] }));
-   };
-
    // --- HELPER: ADD SECTION ---
-   const handleAddSection = (type: PageSection['type']) => {
+   /** Retain the section picker until its requested section has actually been saved. */
+   const handleAddSection = async (type: PageSection['type']) => {
       const newSection: PageSection = {
          id: Date.now().toString(),
          type,
@@ -360,17 +424,18 @@ export const AdminPage: React.FC = () => {
          productId: type === 'product-feature' ? firstContentProduct?.page[0]?.id : undefined
       };
 
+      let saved = false;
       if (activePageEditor === 'home') {
-         updateSiteContent('home', { sections: [...(siteContent.home.sections || []), newSection] });
+         saved = await updateSiteContent('home', { sections: [...(siteContent.home.sections || []), newSection] });
       } else if (activePageEditor === 'story') {
-         updateSiteContent('story', { sections: [...(siteContent.story.sections || []), newSection] });
+         saved = await updateSiteContent('story', { sections: [...(siteContent.story.sections || []), newSection] });
       } else if (activePageEditor && activePageEditor !== 'story') {
          const page = siteContent.customPages.find(p => p.id === activePageEditor);
          if (page) {
-            updateCustomPage(page.id, { sections: [...page.sections, newSection] });
+            saved = await updateCustomPage(page.id, { sections: [...page.sections, newSection] });
          }
       }
-      setShowSectionPicker(false);
+      if (saved) setShowSectionPicker(false);
    };
 
    // --- NEWSLETTER HANDLERS ---
@@ -562,13 +627,16 @@ export const AdminPage: React.FC = () => {
       }
    };
 
-   const handleDeleteCollection = (id: string) => {
+   /** Confirm deletion and surface guard or server failures to the owner. */
+   const handleDeleteCollection = async (id: string) => {
       if (confirm(`Delete collection "${id}"? Products in this collection will remain but be uncategorized.`)) {
-         deleteCollection(id);
+         try { await deleteCollection(id); }
+         catch (error) { alert(getUserFacingErrorMessage(error, 'This collection could not be deleted.')); }
       }
    };
 
    // --- PAGE GENERATION HANDLERS ---
+   /** Keep the generation prompt until generated content is successfully persisted. */
    const handleGeneratePage = async () => {
       if (!generatorPrompt.title || !generatorPrompt.description) return;
 
@@ -589,25 +657,29 @@ export const AdminPage: React.FC = () => {
             })),
          };
 
-         addCustomPage(newPage);
+         await addCustomPage(newPage);
          setShowPageGenerator(false);
          setGeneratorPrompt({ title: '', description: '' });
          setActivePageEditor(newPage.id);
-      } catch {
-         alert("Failed to generate page. Please try again.");
+      } catch (error) {
+         alert(getUserFacingErrorMessage(error, 'Failed to generate or save this page. Please try again.'));
       } finally {
          setIsGenerating(false);
       }
    };
 
-   const handleDeleteCustomPage = (id: string) => {
+   /** Keep the page editor open when deletion is rejected. */
+   const handleDeleteCustomPage = async (id: string) => {
       if (confirm('Are you sure you want to delete this entire page?')) {
-         deleteCustomPage(id);
-         setActivePageEditor(null);
+         try {
+            await deleteCustomPage(id);
+            setActivePageEditor(null);
+         } catch (error) { alert(getUserFacingErrorMessage(error, 'This page could not be deleted.')); }
       }
    };
 
    // Helper to get collection title
+   const selectedCollection = siteContent.collections.find(collection => collection.id === filterCollection);
    const getCollectionTitle = (id: string) => {
       if (id === 'all') return 'All Inventory';
       return siteContent.collections.find(c => c.id === id)?.title || id;
@@ -702,11 +774,13 @@ export const AdminPage: React.FC = () => {
       );
    }
 
-   // Helper to switch tabs and close mobile sidebar
-   const switchTab = (tab: AdminTab, extra?: () => void) => {
+   // Sidebar navigation: switch tabs, leave any open editor, and close the mobile drawer.
+   const openTab = (tab: AdminTab) => {
       setActiveTab(tab);
       setSidebarOpen(false);
-      extra?.();
+      setActivePageEditor(null);
+      if (tab === 'newsletter') setNewsletterSubTab('overview');
+      if (tab === 'products') setIsEditingProduct(false);
    };
 
    // --- MAIN ADMIN INTERFACE ---
@@ -737,184 +811,74 @@ export const AdminPage: React.FC = () => {
             />
          )}
 
-         {/* Glassmorphic Sidebar */}
-         <aside className={`w-72 fixed h-[96vh] top-[2vh] left-4 z-[200] flex flex-col rounded-[2rem] overflow-hidden border border-bronze/30 shadow-[0_40px_100px_rgba(139,90,43,0.35),inset_0_1px_0_rgba(255,255,255,0.15)] backdrop-blur-3xl bg-gradient-to-b from-[#3a2a1a]/90 via-[#2d1f12]/85 to-[#1a130a]/90 text-cream transition-all duration-500 ${sidebarOpen ? 'translate-x-0' : '-translate-x-[calc(100%+2rem)]'} md:translate-x-0`}>
-            {/* Glossy sheen overlay */}
-            <div className="absolute inset-0 rounded-[2rem] bg-gradient-to-br from-white/10 via-transparent to-bronze/5 pointer-events-none" />
-            {/* Inner Glass Highlight */}
-            <div className="absolute inset-0 rounded-[2rem] border border-white/10 pointer-events-none" />
-            {/* Warm ambient glow */}
-            <div className="absolute bottom-0 left-0 right-0 h-1/2 bg-gradient-to-t from-bronze/10 to-transparent pointer-events-none" />
-            {/* Header */}
-            <div className="p-8 border-b border-bronze/15 bg-gradient-to-r from-white/[0.08] to-bronze/5 relative overflow-hidden group">
-               <div className="absolute top-0 right-0 w-32 h-32 bg-bronze/30 rounded-full blur-3xl -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700 pointer-events-none" />
-               <div className="absolute bottom-0 left-0 w-24 h-24 bg-amber-600/15 rounded-full blur-2xl -ml-12 -mb-12 pointer-events-none" />
-               <h2 className="font-serif text-3xl italic tracking-wide relative z-10 text-cream drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)]">The Atelier</h2>
-               <div className="flex items-center gap-2 mt-2 opacity-80">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shadow-[0_0_10px_rgba(74,222,128,0.5)]" />
-                  <p className="text-[9px] uppercase tracking-[0.25em] relative z-10 text-cream/70">Admin Console</p>
-               </div>
+         {/* Sidebar — a calm, single-column list: six daily destinations up top,
+             rarely-used tools folded into two groups, one exit at the bottom. */}
+         <aside aria-label="Admin navigation" className={`w-64 fixed inset-y-0 left-0 z-[200] flex flex-col border-r border-white/10 bg-[#17110C]/95 backdrop-blur-xl text-cream transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
+            <div className="flex items-center justify-between px-6 h-16 shrink-0">
+               <h2 className="font-serif text-xl italic text-cream">The Atelier</h2>
+               <button onClick={() => setSidebarOpen(false)} aria-label="Close navigation" className="md:hidden p-1 text-cream/50 hover:text-cream">
+                  <X className="w-5 h-5" />
+               </button>
             </div>
 
-            {/* Navigation */}
-            <nav className="flex-1 py-6 px-3 space-y-1 overflow-y-auto custom-scrollbar">
-               {/* Dashboard */}
-               <button
-                  onClick={() => switchTab('dashboard', () => setActivePageEditor(null))}
-                  className={`relative group w-full text-left px-5 py-3.5 text-xs uppercase tracking-[0.15em] flex items-center gap-4 rounded-xl transition-all mb-2 overflow-hidden ${activeTab === 'dashboard' ? 'bg-white/10 text-white shadow-lg border border-white/5' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
-               >
-                  <Home className={`w-4 h-4 transition-transform duration-500 ${activeTab === 'dashboard' ? 'scale-110 text-bronze' : 'group-hover:scale-110'}`} />
-                  <span className="relative z-10 font-medium">Dashboard</span>
-                  {activeTab === 'dashboard' && <div className="absolute inset-0 bg-gradient-to-r from-white/10 to-transparent opacity-100" />}
-               </button>
-
-               {/* Newsletter */}
-               <button
-                  onClick={() => switchTab('newsletter', () => { setNewsletterSubTab('overview'); setActivePageEditor(null); })}
-                  className={`relative group w-full text-left px-5 py-3.5 text-xs uppercase tracking-[0.15em] flex items-center gap-4 rounded-xl transition-all mb-2 overflow-hidden ${activeTab === 'newsletter' ? 'bg-white/10 text-white shadow-lg border border-white/5' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
-               >
-                  <Mail className={`w-4 h-4 transition-transform duration-500 ${activeTab === 'newsletter' ? 'scale-110 text-bronze' : 'group-hover:scale-110'}`} />
-                  <span className="relative z-10 font-medium">Newsletter</span>
-               </button>
-
-               {/* Orders */}
-               <button
-                  onClick={() => switchTab('orders', () => setActivePageEditor(null))}
-                  className={`relative group w-full text-left px-5 py-3.5 text-xs uppercase tracking-[0.15em] flex items-center gap-4 rounded-xl transition-all mb-2 overflow-hidden ${activeTab === 'orders' ? 'bg-white/10 text-white shadow-lg border border-white/5' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
-               >
-                  <Package className={`w-4 h-4 transition-transform duration-500 ${activeTab === 'orders' ? 'scale-110 text-bronze' : 'group-hover:scale-110'}`} />
-                  <span className="relative z-10 font-medium">Orders</span>
-               </button>
-
-               {/* CJ Control Room */}
-               <button
-                  onClick={() => switchTab('cj-control-room', () => setActivePageEditor(null))}
-                  className={`relative group w-full text-left px-5 py-3.5 text-xs uppercase tracking-[0.15em] flex items-center gap-4 rounded-xl transition-all mb-2 overflow-hidden ${activeTab === 'cj-control-room' ? 'bg-white/10 text-white shadow-lg border border-white/5' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
-               >
-                  <BarChart2 className={`w-4 h-4 transition-transform duration-500 ${activeTab === 'cj-control-room' ? 'scale-110 text-bronze' : 'group-hover:scale-110'}`} />
-                  <span className="relative z-10 font-medium">CJ Control</span>
-               </button>
-
-               {/* CJ Risk Check */}
-               <button
-                  onClick={() => switchTab('cj-risk-check', () => setActivePageEditor(null))}
-                  className={`relative group w-full text-left px-5 py-3.5 text-xs uppercase tracking-[0.15em] flex items-center gap-4 rounded-xl transition-all mb-2 overflow-hidden ${activeTab === 'cj-risk-check' ? 'bg-white/10 text-white shadow-lg border border-white/5' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
-               >
-                  <Lock className={`w-4 h-4 transition-transform duration-500 ${activeTab === 'cj-risk-check' ? 'scale-110 text-bronze' : 'group-hover:scale-110'}`} />
-                  <span className="relative z-10 font-medium">Risk Check</span>
-               </button>
-
-               {/* Separator */}
-               <div className="px-4 pt-6 pb-2">
-                  <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent mb-4" />
-                  <span className="text-[9px] uppercase tracking-[0.3em] text-bronze/70 font-bold block mb-2 shimmer-text">Store Management</span>
-               </div>
-
-               {/* Structure */}
-               <button
-                  onClick={() => switchTab('structure', () => setActivePageEditor(null))}
-                  className={`relative group w-full text-left px-5 py-3.5 text-xs uppercase tracking-[0.15em] flex items-center gap-4 rounded-xl transition-all mb-2 overflow-hidden ${activeTab === 'structure' ? 'bg-white/10 text-white shadow-lg border border-white/5' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
-               >
-                  <Layers className={`w-4 h-4 transition-transform duration-500 ${activeTab === 'structure' ? 'scale-110 text-bronze' : 'group-hover:scale-110'}`} />
-                  <span className="relative z-10 font-medium">Structure</span>
-               </button>
-
-               {/* Import */}
-               <button
-                  onClick={() => switchTab('import', () => setActivePageEditor(null))}
-                  className={`relative group w-full text-left px-5 py-3.5 text-xs uppercase tracking-[0.15em] flex items-center gap-4 rounded-xl transition-all mb-2 overflow-hidden ${activeTab === 'import' ? 'bg-white/10 text-white shadow-lg border border-white/5' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
-               >
-                  <Upload className={`w-4 h-4 transition-transform duration-500 ${activeTab === 'import' ? 'scale-110 text-bronze' : 'group-hover:scale-110'}`} />
-                  <span className="relative z-10 font-medium">Import</span>
-               </button>
-
-               {/* CJ Settings */}
-               <button onClick={() => switchTab('shared-products', () => setActivePageEditor(null))} className="w-full text-left px-5 py-3.5 text-xs uppercase tracking-widest text-cream mb-2 rounded-xl bg-white/5">Ashcroft & publishing destinations</button>
-               <button
-                  onClick={() => switchTab('cj-settings', () => setActivePageEditor(null))}
-                  className={`relative group w-full text-left px-5 py-3.5 text-xs uppercase tracking-[0.15em] flex items-center gap-4 rounded-xl transition-all mb-2 overflow-hidden ${activeTab === 'cj-settings' ? 'bg-white/10 text-white shadow-lg border border-white/5' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
-               >
-                  <Settings className={`w-4 h-4 transition-transform duration-500 ${activeTab === 'cj-settings' ? 'scale-110 text-bronze' : 'group-hover:scale-110'}`} />
-                  <span className="relative z-10 font-medium">CJ Settings</span>
-               </button>
-
-
-               {/* Collections Loop */}
-               <div className="px-4 pt-6 pb-2">
-                  <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent mb-4" />
-                  <span className="text-[9px] uppercase tracking-[0.3em] text-bronze/70 font-bold block mb-2 shimmer-text">Collections</span>
-               </div>
-
-               {siteContent.collections.map(collection => (
-                  <div className="mb-1" key={collection.id}>
-                     <button
-                        onClick={() => toggleCollectionExpand(collection.id)}
-                        className={`w-full text-left px-5 py-2.5 text-[10px] uppercase tracking-[0.2em] flex items-center justify-between rounded-lg transition-all ${activeTab === 'products' && filterCollection === collection.id ? 'text-white' : 'text-white/50 hover:text-white'}`}
-                     >
-                        <div className="flex items-center gap-3">
-                           <span className={`w-1 h-1 rounded-full ${activeTab === 'products' && filterCollection === collection.id ? 'bg-bronze shadow-[0_0_8px_rgba(168,140,119,0.8)]' : 'bg-white/20'}`} />
-                           {collection.title}
-                        </div>
-                        <ChevronDown className={`w-3 h-3 transition-transform duration-300 ${expandedCollections[collection.id] ? 'rotate-180 text-white' : 'text-white/20'}`} />
-                     </button>
-
-                     <div className={`overflow-hidden transition-all duration-500 ease-in-out ${expandedCollections[collection.id] ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'}`}>
-                        <div className="pl-4 space-y-0.5 mt-1 ml-4 border-l border-white/5">
-                           <button
-                              onClick={() => switchTab('products', () => { setFilterCollection(collection.id); setFilterCategory(null); setIsEditingProduct(false); setActivePageEditor(null); })}
-                              className={`w-full text-left px-3 py-2 text-[9px] uppercase tracking-[0.15em] rounded-r-lg transition-all hover:pl-5 duration-300 ${activeTab === 'products' && filterCollection === collection.id && !filterCategory ? 'text-bronze font-bold bg-white/5' : 'text-white/40 hover:text-white'}`}
-                           >
-                              View All
-                           </button>
-                           {collection.subcategories.map(cat => (
-                              <button
-                                 key={cat.id}
-                                 onClick={() => switchTab('products', () => { setFilterCollection(collection.id); setFilterCategory(cat.title); setIsEditingProduct(false); setActivePageEditor(null); })}
-                                 className={`w-full text-left px-3 py-2 text-[9px] uppercase tracking-[0.15em] rounded-r-lg transition-all hover:pl-5 duration-300 ${activeTab === 'products' && filterCollection === collection.id && filterCategory === cat.title ? 'text-white font-bold bg-white/5' : 'text-white/40 hover:text-white'}`}
-                              >
-                                 {cat.title.replace(collection.title + ' ', '')}
-                              </button>
-                           ))}
-                        </div>
-                     </div>
-                  </div>
+            <nav className="flex-1 overflow-y-auto custom-scrollbar px-3 py-2 space-y-0.5">
+               {PRIMARY_NAV.map(item => (
+                  <SidebarLink
+                     key={item.tab}
+                     icon={item.icon}
+                     label={item.label}
+                     active={activeTab === item.tab}
+                     onClick={() => openTab(item.tab)}
+                  />
                ))}
 
-               {/* Content Section */}
-               <div className="px-4 pt-6 pb-2">
-                  <div className="h-px w-full bg-gradient-to-r from-transparent via-white/10 to-transparent mb-4" />
-                  <span className="text-[9px] uppercase tracking-[0.3em] text-bronze/70 font-bold block mb-2 shimmer-text">Content</span>
+               <div className="pt-4">
+                  {NAV_GROUPS.map(group => {
+                     const groupActive = group.items.some(item => item.tab === activeTab);
+                     const open = openNavGroup === group.id || groupActive;
+                     return (
+                        <div key={group.id} className="mb-0.5">
+                           <button
+                              type="button"
+                              onClick={() => setOpenNavGroup(prev => (prev === group.id ? null : group.id))}
+                              aria-expanded={open}
+                              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${groupActive ? 'text-cream' : 'text-cream/55 hover:text-cream hover:bg-white/5'}`}
+                           >
+                              <group.icon className="w-4 h-4 shrink-0" />
+                              <span className="flex-1 text-left">{group.label}</span>
+                              <ChevronDown className={`w-3.5 h-3.5 text-cream/40 transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
+                           </button>
+                           {open && (
+                              <div className="ml-[1.4rem] pl-3 border-l border-white/10 py-1 space-y-0.5">
+                                 {group.items.map(item => (
+                                    <button
+                                       key={item.tab}
+                                       type="button"
+                                       onClick={() => openTab(item.tab)}
+                                       aria-current={activeTab === item.tab ? 'page' : undefined}
+                                       className={`w-full text-left px-3 py-2 rounded-md text-[13px] transition-colors ${activeTab === item.tab ? 'bg-white/[0.08] text-cream' : 'text-cream/50 hover:text-cream hover:bg-white/5'}`}
+                                    >
+                                       {item.label}
+                                    </button>
+                                 ))}
+                              </div>
+                           )}
+                        </div>
+                     );
+                  })}
                </div>
-
-               <button
-                  onClick={() => switchTab('journal', () => setActivePageEditor(null))}
-                  className={`relative group w-full text-left px-5 py-3.5 text-xs uppercase tracking-[0.15em] flex items-center gap-4 rounded-xl transition-all mb-2 overflow-hidden ${activeTab === 'journal' ? 'bg-white/10 text-white shadow-lg border border-white/5' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
-               >
-                  <BookOpen className={`w-4 h-4 transition-transform duration-500 ${activeTab === 'journal' ? 'scale-110 text-bronze' : 'group-hover:scale-110'}`} />
-                  <span className="relative z-10 font-medium">Journal</span>
-               </button>
-
-               <button
-                  onClick={() => switchTab('pages', () => setActivePageEditor(null))}
-                  className={`relative group w-full text-left px-5 py-3.5 text-xs uppercase tracking-[0.15em] flex items-center gap-4 rounded-xl transition-all mb-2 overflow-hidden ${activeTab === 'pages' ? 'bg-white/10 text-white shadow-lg border border-white/5' : 'text-white/40 hover:text-white hover:bg-white/5'}`}
-               >
-                  <Layout className={`w-4 h-4 transition-transform duration-500 ${activeTab === 'pages' ? 'scale-110 text-bronze' : 'group-hover:scale-110'}`} />
-                  <span className="relative z-10 font-medium">Pages</span>
-               </button>
-
             </nav>
 
-            {/* User Profile / Exit */}
-            <div className="p-4 bg-black/20 backdrop-blur-md border-t border-white/5 mt-auto">
-               <button onClick={() => { logout(); handleReturnToSite(); }} className="w-full flex items-center gap-3 px-4 py-3 text-xs uppercase tracking-[0.2em] text-red-300/60 hover:text-red-300 hover:bg-red-900/10 rounded-lg transition-all group">
-                  <LogOut className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-                  <span>Exit Studio</span>
+            <div className="px-3 py-3 border-t border-white/10">
+               <button onClick={() => { logout(); handleReturnToSite(); }} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-cream/45 hover:text-red-200 hover:bg-red-900/10 transition-colors">
+                  <LogOut className="w-4 h-4" />
+                  <span>Exit studio</span>
                </button>
             </div>
          </aside>
 
          {/* Main Content Area */}
-         <main className="ml-0 md:ml-[19.5rem] flex-1 p-4 md:px-6 md:py-6 pt-24 md:pt-6 min-h-screen overflow-y-auto custom-scrollbar relative">
+         <main className="ml-0 md:ml-64 flex-1 p-4 md:px-6 md:py-6 pt-24 md:pt-6 min-h-screen overflow-y-auto custom-scrollbar relative">
 
             {/* DASHBOARD VIEW */}
             {activeTab === 'dashboard' && (
@@ -997,7 +961,13 @@ export const AdminPage: React.FC = () => {
             {/* ORDERS TAB */}
             {activeTab === 'orders' && (
                <FadeIn>
-                  <AdminOrders />
+                  <OrdersWorkspace />
+               </FadeIn>
+            )}
+
+            {activeTab === 'commerce-v2' && (
+               <FadeIn>
+                  <CommerceV2Admin />
                </FadeIn>
             )}
 
@@ -1405,6 +1375,40 @@ export const AdminPage: React.FC = () => {
                            className="w-full rounded-xl border border-white/10 bg-black/20 py-3 pl-11 pr-4 text-sm text-cream placeholder:text-cream/30 focus:border-bronze focus:outline-none"
                         />
                      </div>
+                     <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Filter inventory by collection">
+                        {[{ id: 'all' as const, title: 'All collections' }, ...siteContent.collections].map(collection => {
+                           const active = filterCollection === collection.id;
+                           return (
+                              <button
+                                 key={collection.id}
+                                 type="button"
+                                 onClick={() => { setFilterCollection(collection.id); setFilterCategory(null); }}
+                                 aria-pressed={active}
+                                 className={`whitespace-nowrap rounded-full border px-3 py-2 text-[10px] uppercase tracking-widest transition-colors ${active ? 'border-bronze/50 bg-bronze/20 text-cream' : 'border-white/10 bg-white/5 text-cream/50 hover:bg-white/10 hover:text-cream'}`}
+                              >
+                                 {collection.title}
+                              </button>
+                           );
+                        })}
+                     </div>
+                     {selectedCollection && selectedCollection.subcategories.length > 0 && (
+                        <div className="mt-2 flex gap-2 overflow-x-auto pb-1" aria-label={`Filter ${selectedCollection.title} by category`}>
+                           {[null, ...selectedCollection.subcategories.map(cat => cat.title)].map(title => {
+                              const active = filterCategory === title;
+                              return (
+                                 <button
+                                    key={title ?? 'all'}
+                                    type="button"
+                                    onClick={() => setFilterCategory(title)}
+                                    aria-pressed={active}
+                                    className={`whitespace-nowrap rounded-full px-3 py-1.5 text-[11px] transition-colors ${active ? 'bg-white/15 text-cream' : 'text-cream/45 hover:bg-white/5 hover:text-cream'}`}
+                                 >
+                                    {title === null ? 'All' : title.replace(selectedCollection.title + ' ', '')}
+                                 </button>
+                              );
+                           })}
+                        </div>
+                     )}
                      {inventoryCjCounts && <p className="mt-3 text-[10px] text-cream/40">CJ status counts cover all inventory.</p>}
                      <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Filter inventory by CJ status">
                          {INVENTORY_CJ_FILTERS.map(option => {
@@ -1668,7 +1672,8 @@ export const AdminPage: React.FC = () => {
             )}
 
             {/* JOURNAL TAB */}
-            {activeTab === 'journal' && (
+            {activeTab === 'journal' && (editorialStatus === 'loading' || editorialStatus === 'unavailable') && <div role="status" className="p-8 text-cream"><p>{editorialStatus === 'loading' ? 'Loading journal…' : 'Journal is temporarily unavailable.'}</p>{editorialStatus === 'unavailable' && <button className="min-h-11 underline" onClick={retryEditorial}>Try again</button>}</div>}
+            {activeTab === 'journal' && editorialStatus !== 'loading' && editorialStatus !== 'unavailable' && (
                <FadeIn>
                   <div className="flex flex-col md:flex-row gap-3 md:gap-0 justify-between md:items-end mb-8 md:mb-12 border-b border-white/10 pb-4 md:pb-6">
                      <div><span className="text-bronze text-xs uppercase tracking-[0.4em] mb-2 block glow-text">Content Marketing</span><h1 className="font-serif text-2xl md:text-4xl text-cream drop-shadow-md">Simply Mae Journal</h1></div>
