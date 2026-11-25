@@ -7,7 +7,7 @@ import { mutation, query } from './_generated/server';
 import { internal } from './_generated/api';
 import { requireDeliveryRole } from './dlvAccess';
 import { openHold, refreshVariant } from './catCore';
-import { audit, openReview } from './sysCore';
+import { audit, bumpMetric, openReview } from './sysCore';
 import { availability } from './v2Validators';
 import { CommerceError, isCommerceError } from '../lib/errors';
 import { stockQuantity, stockView } from '../lib/stockEvidence';
@@ -252,26 +252,36 @@ export const recordEvidence = indexedMutation({
   },
 });
 
-/** One page of the freshness refresh; schedules the next page. Skips quietly while the policy is unapproved. */
+/** Refresh every supplier independently. An unapproved policy skips only that variant. */
 export const refreshPage = indexedInternalMutation({
   args: { cursor: v.optional(v.union(v.string(), v.null())) },
   handler: async (ctx, a) => {
+    if (!a.cursor) await bumpMetric(ctx, 'catalog.freshness.started');
     const page = await ctx.db
       .query('catVariants')
       .paginate({ cursor: a.cursor ?? null, numItems: 50 });
+    let refreshed = 0;
+    let skipped = 0;
     for (const cv of page.page) {
       try {
         await refreshVariant(ctx, cv._id, 'system:freshness');
+        refreshed++;
       } catch (e) {
-        if (isCommerceError(e, 'POLICY_NOT_APPROVED'))
-          return { skipped: 'freshness policy not approved' };
+        if (isCommerceError(e, 'POLICY_NOT_APPROVED')) {
+          skipped++;
+          continue;
+        }
         throw e;
       }
     }
+    await bumpMetric(ctx, 'catalog.freshness.page', refreshed);
+    if (skipped) await bumpMetric(ctx, 'catalog.freshness.policy_skipped', skipped);
     if (!page.isDone)
       await ctx.scheduler.runAfter(0, internal.catStock.refreshPage, {
         cursor: page.continueCursor,
       });
-    return { processed: page.page.length };
+    // Traversal completion is not evidence that skipped variants are qualified.
+    else await bumpMetric(ctx, 'catalog.freshness.scan_completed');
+    return { processed: page.page.length, refreshed, skipped };
   },
 });

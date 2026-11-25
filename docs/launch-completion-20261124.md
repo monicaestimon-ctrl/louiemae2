@@ -4,7 +4,7 @@ Full completion requires merged code, deployed configuration and observed produc
 
 ## Current release
 
-Remote main is `0d9c468bbe4402a128694bd2383f0b72b89cf044` (PR 372), verified against origin on November 24. Root checkout is preserved. Shipping follow-up uses `codex/zip-delivery-estimator`.
+Production main is `27c8a7abcb7af24a9e400c33c42846509b772d52` (PR 377), verified against public build-info on November 25. The root checkout is preserved. Earlier entries below are historical release evidence, not the current activation state.
 
 ## Sequence and remaining work
 
@@ -12,7 +12,7 @@ Remote main is `0d9c468bbe4402a128694bd2383f0b72b89cf044` (PR 372), verified aga
 | ------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Shipping accounting | Existing implementation; acceptance pending | Replay actual selected cartons, supplier groups, allowances, fees, reserve and tier boundaries; verify allowance deducted once.                                                                       |
 | Rate coverage       | Incomplete                                  | Ten exact benchmark ZIPs are not nationwide coverage. Select authenticated rate source, verify billable cartons and residential/accessorial inputs, compare against benchmarks and supplier invoices. |
-| Product estimator   | Implementation in this branch               | Debounced ZIP/quantity recalculation, retained ZIP, stale-response rejection, manual retry, permanent nonbinding disclosure. Test and deploy before marking complete.                                 |
+| Product estimator   | Deployed in PR 373                          | Debounced ZIP/quantity recalculation, retained ZIP, stale-response rejection, manual retry and permanent nonbinding disclosure are deployed. Nationwide rates remain incomplete.                       |
 | Catalog             | Incomplete; last audit historical           | Re-read qualification counts; resolve each selected product or record explicit unavailable reason. Do not equate physical stock to confirmed selling units.                                           |
 | Settings            | Incomplete; last audit historical           | Reconcile active versions and pending proposals; activate only supported scope.                                                                                                                       |
 | Shopping            | Incomplete                                  | Guest/retail/trade cart and project flows, supplier separation, tax, address changes, stock changes, frozen payment and fulfillment verification.                                                     |
@@ -86,3 +86,15 @@ Ran the existing `catStock:refreshPage` production workflow. Readback cleared 91
 The hourly catalog refresh previously shared the owner-paused `BACKGROUND_MONITORING_ENABLED` switch with CJ pricing/product-health monitoring. `CATALOG_FRESHNESS_ENABLED` is now an optional override: unset preserves the old behavior, true registers only the catalog refresh independently, and false pauses that refresh. It does not enable checkout, supplier synchronization, CJ monitoring, publication or financial jobs.
 
 After merge, set `CATALOG_FRESHNESS_ENABLED=true` on `prod:diligent-jay-261` and deploy the reviewed release to register the hourly job. Keep `BACKGROUND_MONITORING_ENABLED` unchanged. Verify the deployed cron configuration and retain the flag readback. To roll back this schedule, set the catalog flag false and redeploy. The one-time freshness refresh has already run; do not confuse this with hourly monitoring activation, which is still pending this release.
+
+## November 25 freshness activation and supplier evidence follow-up
+
+PR 377 is merged and deployed. `CATALOG_FRESHNESS_ENABLED=true` is configured in production; the broader background-monitoring flag remains unchanged. This confirms schedule activation, not a witnessed hourly completion.
+
+Review found that `catStock.refreshPage` returned at the first variant with an unapproved supplier freshness policy, leaving later variants and pages unchecked. The follow-up skips only those variants and continues the bounded scan. Other errors still fail the mutation. Existing holds on skipped variants remain untouched; no supplier policy or sales gate is bypassed.
+
+Hourly `sysMetrics` now record `catalog.freshness.started`, `catalog.freshness.page`, `catalog.freshness.policy_skipped` and `catalog.freshness.scan_completed`. The page metric's `sum` is the number refreshed; the skipped metric's `sum` is the number skipped (its `count` counts affected pages). Completion means pagination finished, not that every product qualified. A completed scan with skipped records still requires supplier-policy review. These metrics include manual invocations, so observing a completion alone must not be described as proof of cron execution.
+
+A two-page regression places an unapproved supplier first and verifies that all 50 remaining variants are refreshed, the last page repairs a missing stock hold, the skipped variant's holds are unchanged, and completion is recorded only after the final page. An empty-catalog regression checks explicit zero-work completion.
+
+Connected-mail review found the forwarded November 3 account approval and November 4 e-commerce onboarding response. They establish the account relationship and an offer of product files, images and daily inventory. They do not specify sellable stock units, all-in wholesale expenses or a live freight-quote API. The onboarding response is additional media-policy review evidence; no blanket rights clearance or catalog publication was inferred. No supplier message was sent. Private email details are not included in this repository.
