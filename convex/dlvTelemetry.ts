@@ -9,6 +9,14 @@ import { requireDeliveryRole } from './dlvAccess';
 import type { DeliveryMonitoringPolicy } from '../lib/config';
 import { summarizeObservations } from '../lib/delivery/monitoring';
 
+// Preserve existing deployments when unset; allow delivery alerts to run while
+// supplier/CJ monitoring is paused, or to be paused independently during rollback.
+function deliveryMonitoringEnabled() {
+  return process.env.DELIVERY_MONITORING_ENABLED === undefined
+    ? process.env.BACKGROUND_MONITORING_ENABLED === 'true'
+    : process.env.DELIVERY_MONITORING_ENABLED === 'true';
+}
+
 /** Written in a separate transaction after the action, including when estimate work failed.
  * No address, guest token, email, customer identifier or supplier price is accepted here. */
 export const record = internalMutation({
@@ -134,7 +142,7 @@ export async function monitoringReport(ctx: Ctx, now = Date.now()) {
     })),
     policy: policy?.value ?? null,
     policyVersion: policy?.version ?? null,
-    alertsEnabled: !!policy && process.env.BACKGROUND_MONITORING_ENABLED === 'true',
+    alertsEnabled: !!policy && deliveryMonitoringEnabled(),
     overdue,
     note: 'Observed storefront action requests only; one record per request, excluding internal tax iterations. Legacy direct mutation calls and admin simulations are excluded. No live carrier adapter or estimate cache is active. Matrix-tax latency includes tax-provider work. Missing samples do not prove health. Multi-supplier requests appear in each matching breakdown; do not add breakdown counts.',
   };
@@ -148,7 +156,7 @@ export const report = query({
 });
 
 export async function deliveryAlerts(ctx: Ctx) {
-  if (process.env.BACKGROUND_MONITORING_ENABLED !== 'true') return [];
+  if (!deliveryMonitoringEnabled()) return [];
   const report = await monitoringReport(ctx);
   const alerts: { key: string; title: string; detail: string }[] = [];
   if (!report.alertsEnabled || !report.policy) return alerts;

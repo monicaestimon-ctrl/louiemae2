@@ -98,3 +98,9 @@ Hourly `sysMetrics` now record `catalog.freshness.started`, `catalog.freshness.p
 A two-page regression places an unapproved supplier first and verifies that all 50 remaining variants are refreshed, the last page repairs a missing stock hold, the skipped variant's holds are unchanged, and completion is recorded only after the final page. An empty-catalog regression checks explicit zero-work completion.
 
 Connected-mail review found the forwarded November 3 account approval and November 4 e-commerce onboarding response. They establish the account relationship and an offer of product files, images and daily inventory. They do not specify sellable stock units, all-in wholesale expenses or a live freight-quote API. The onboarding response is additional media-policy review evidence; no blanket rights clearance or catalog publication was inferred. No supplier message was sent. Private email details are not included in this repository.
+
+## Next configuration increment after PR 378
+
+PR 378 is merged as `77543b86a686491fd6e224853342a87b1ade8538`. Frontend build-info matched and backend deployment completed. A manually initiated production scan completed 18 pages and refreshed all 882 variants, with zero policy skips. This is not proof of an hourly cron execution or catalog qualification.
+
+Current production readback shows ten current proposals plus one superseded carrier proposal. Delivery monitoring is still unapproved and the global background switch remains paused. The follow-up introduces an independent `DELIVERY_MONITORING_ENABLED` override, preserving inheritance when unset and continuing to require an approved policy. Six configuration combinations verify agreement between the staff report and alert evaluation, including explicit pause, invalid values, independent enable and the unapproved-policy gate. No production alert activation is claimed by this code change.

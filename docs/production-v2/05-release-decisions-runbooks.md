@@ -68,3 +68,9 @@ Fill in the owner name before gate 4. Each runbook covers: trigger, first respon
 ## 5. Definition of done (v2 PDF §25)
 
 Every enabled customer and partner path works on the recorded production revision. Every live variant passes its gates. Prices and ledgers reconcile to the accepted snapshots. Operations can fulfill, refund and resolve exceptions. Monitoring and rollback work. Terms match the behaviour. Evidence is attached. A workbook, a successful build, a deployed page or a configured secret does not on its own meet this definition.
+
+## Independent delivery monitoring
+
+`DELIVERY_MONITORING_ENABLED` controls delivery alerts independently of supplier/CJ monitoring. Unset inherits `BACKGROUND_MONITORING_ENABLED` for compatibility. Explicit `true` enables delivery monitoring only when `deliveryMonitoringPolicy/delivery-monitoring` has an active approved version. Explicit `false` pauses delivery alerts without stopping catalog freshness, observation retention, payment recovery or other monitoring. Other explicit values fail closed.
+
+The staff monitoring report and scheduled alert evaluation use the same switch. Keep the global background switch unchanged when activating delivery alerts. Before activation, review the active monitoring targets and operations notification destination. To roll back delivery alerts, set the delivery switch to `false`; recorded observations and paid-order handling remain intact. This switch does not enable checkout, carrier rates, supplier jobs or catalog publication.

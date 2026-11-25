@@ -9,10 +9,40 @@ import { summarizeObservations } from '../lib/delivery/monitoring';
 const modules = import.meta.glob(['./**/*.ts', './_generated/*.js']);
 afterEach(() => {
   delete process.env.BACKGROUND_MONITORING_ENABLED;
+  delete process.env.DELIVERY_MONITORING_ENABLED;
   vi.useRealTimers();
 });
 
 describe('durable delivery observations', () => {
+  it.each([
+    [undefined, undefined, false],
+    ['true', undefined, true],
+    ['false', 'true', true],
+    [undefined, 'true', true],
+    ['true', 'false', false],
+    ['true', 'invalid', false],
+  ])('reports and enforces delivery monitoring with background=%s override=%s', async (background, override, enabled) => {
+    if (background !== undefined) process.env.BACKGROUND_MONITORING_ENABLED = background;
+    if (override !== undefined) process.env.DELIVERY_MONITORING_ENABLED = override;
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.sysConfig.seed, {});
+    await t.run(ctx => ctx.db.insert('sysReviewItems', {
+      kind: 'actual_contribution_below_floor', entityTable: 'ordOrders', entityId: 'fixture',
+      detail: 'Fixture floor breach', status: 'open', createdAt: Date.now(),
+    }));
+    // An explicit enable still requires an approved monitoring policy.
+    expect((await t.run(ctx => monitoringReport(ctx))).alertsEnabled).toBe(false);
+    expect(await t.run(ctx => deliveryAlerts(ctx))).toEqual([]);
+    await t.run(async ctx => {
+      const policy = await ctx.db.query('sysConfig').withIndex('by_kind_key_version', q =>
+        q.eq('kind', 'deliveryMonitoringPolicy').eq('key', 'delivery-monitoring')).first();
+      await ctx.db.patch(policy!._id, { status: 'approved' });
+    });
+    expect((await t.run(ctx => monitoringReport(ctx))).alertsEnabled).toBe(enabled);
+    const alerts = await t.run(ctx => deliveryAlerts(ctx));
+    expect(alerts.some(a => a.key === 'delivery_actual_contribution_below_floor')).toBe(enabled);
+    expect(process.env.BACKGROUND_MONITORING_ENABLED).toBe(background);
+  });
   it('separates quotes and blocked requests from operational failures and computes nearest-rank p95', () => {
     const rows = Array.from({ length: 20 }, (_, i) => ({
       path: 'matrix' as const,
