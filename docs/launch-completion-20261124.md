@@ -60,3 +60,13 @@ Next catalog actions: verify staged canonical identities through the existing gu
 The owner is creating a FedEx account. Zuo's own June 18, 2025 article explicitly mentions tailored FTP, EDI and API integrations: https://zuomod.com/why-live-customer-service-and-local-sales-reps-matter-more-than-ever-in-furniture-especially-for-hos/ (reviewed November 25, 2026). This establishes an integration lead, not evidence of a live shipping-quote endpoint.
 
 Ask Zuo whether its dealer integration returns pre-order freight quotes for SKU quantities and destination ZIP, whether quotes use dealer-account rates, include residential/liftgate/fuel/accessorial charges, and provide a quote ID, expiry and response time suitable for checkout. Request supported EDI transaction sets or API documentation and sandbox access. Order acknowledgements, shipment notices or invoices alone do not establish live quoting. Invoice freight can support later calibration. No supplier message has been sent and EDI remains disabled pending documented capability and onboarding.
+
+## Canonical identity reconciliation preparation
+
+PR 375 production frontend now reports `db620f782b9d510f901a0b7c53ae75ef7d8b7805`.
+
+The November 25 production identity preflight identified 576 Zuo variant candidates from current staged product/SKU/pack/draft identity. Another 227 variants remain outside this batch: 226 excluded or missing staged products and one additional discontinued variant. These are preliminary identity candidates, not approved or purchasable products. The private candidate list is `outputs/production-access-audit-20261125/canonical-identity-candidates.json` in the root checkout.
+
+`catPublication:reconcileStagedIdentity` is an internal, deployment-only maintenance operation with explicit product and variant IDs. Default calls are dry runs. It reuses the staff identity verifier, validates supplier/SKU/pack/draft identity and active mapping conflicts, and reports the product revision and number of mappings to create. Commit calls must include `commit: true` and the reviewed `expectedRevision`. Each call accepts 1?50 distinct variants of one product and commits atomically. The audit actor is explicitly `deployment:catalog-identity-reconciliation`, not an impersonated staff account.
+
+After merge/deploy: run the candidate manifest through server dry runs, retain failures per variant, compare returned revisions with the manifest, then commit the verified records through the same operation. Read back mappings, remaining holds and publication state. Mapping reconciliation must not change stock, cost, media rights, commissions, stage, flags or listings. Preserve unavailable and excluded records until their own evidence gates pass.

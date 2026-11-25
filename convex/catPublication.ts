@@ -8,7 +8,7 @@ import { isLighting } from '../lib/catCategory';
 // atomically, and unpublish/rollback never touch paid orders or financial obligations.
 import { v } from 'convex/values';
 import { paginationOptsValidator } from 'convex/server';
-import { mutation, query } from './functions';
+import { mutation, query, internalMutation } from './functions';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Doc, Id } from './_generated/dataModel';
 import { requireCjAdminIdentity } from './cjAdminAccess';
@@ -206,10 +206,9 @@ export const restoreStockExcludedDraft = mutation({
 
 /** The staged importer uses one canonical product/variant in both channels.
  * Verify that identity before publication without pretending a retail listing exists. */
-export const verifyCanonicalIdentity = mutation({
-  args: { productId: v.id('commerceProducts'), variantIds: v.array(v.id('catVariants')) },
-  handler: async (ctx, a) => {
-    const actor = await requireDeliveryRole(ctx, 'approver');
+async function reconcileCanonicalIdentity(ctx: MutationCtx,
+  a: { productId: Id<'commerceProducts'>; variantIds: Id<'catVariants'>[] },
+  actor: { email: string }, commit: boolean) {
     if (!a.variantIds.length || a.variantIds.length > 50 || new Set(a.variantIds).size !== a.variantIds.length)
       throw new CommerceError('INVALID_INPUT', 'Choose 1–50 distinct variants');
     const product = await ctx.db.get(a.productId);
@@ -217,6 +216,7 @@ export const verifyCanonicalIdentity = mutation({
     if (!product || !includedProduct(product) || !meta || meta.stage === 'archived')
       throw new CommerceError('INVALID_INPUT', 'Included staged Zuo product required');
     const now = Date.now();
+    const planned: { id: Id<'catVariants'>; publicId: string; exists: boolean }[] = [];
     for (const id of a.variantIds) {
       const cv = await ctx.db.get(id);
       if (!cv) throw new CommerceError('INVALID_INPUT', 'Variant missing');
@@ -224,14 +224,40 @@ export const verifyCanonicalIdentity = mutation({
       const maps = await ctx.db.query('catRetailMappings').withIndex('by_holm_variant', q => q.eq('holmProductId', product._id).eq('holmVariantId', publicId).eq('status', 'active')).collect();
       if (maps.length > 1 || maps.some(m => m.retailProductId !== product._id || m.retailVariantId !== publicId || m.effectiveFrom > now || (m.effectiveTo !== undefined && m.effectiveTo <= now)))
         throw new CommerceError('INVALID_INPUT', 'Existing retail mapping needs explicit conflict review');
-      if (!maps.length) await ctx.db.insert('catRetailMappings', { holmProductId: product._id, holmVariantId: publicId,
+      planned.push({ id, publicId, exists: maps.length > 0 });
+    }
+    if (!commit) return { verifiedVariants: planned.length, productRevision: product.revision, mappingsToCreate: planned.filter(p => !p.exists).length };
+    for (const { id, publicId, exists } of planned) {
+      if (!exists) await ctx.db.insert('catRetailMappings', { holmProductId: product._id, holmVariantId: publicId,
         retailProductId: product._id, retailVariantId: publicId, status: 'active', createdAt: now,
         createdBy: actor.email, effectiveFrom: now, source: 'verified_staged_canonical_identity' });
       await resolveHold(ctx, id, 'MAPPING_MISSING', actor.email, 'Verified staged canonical product, supplier SKU, pack and draft variant identity');
     }
     await audit(ctx, { actor: actor.email, action: 'publication.identity_verified', entityTable: 'commerceProducts',
       entityId: product._id, after: { variantIds: a.variantIds }, reason: 'Same canonical variant in retail and HOLM; publication and eligibility checked separately' });
-    return { verifiedVariants: a.variantIds.length };
+    return { verifiedVariants: planned.length, productRevision: product.revision, mappingsToCreate: planned.filter(p => !p.exists).length };
+}
+
+export const verifyCanonicalIdentity = mutation({
+  args: { productId: v.id('commerceProducts'), variantIds: v.array(v.id('catVariants')) },
+  handler: async (ctx, a) => {
+    const actor = await requireDeliveryRole(ctx, 'approver');
+    const result = await reconcileCanonicalIdentity(ctx, a, actor, true);
+    return { verifiedVariants: result.verifiedVariants };
+  },
+});
+
+/** Deployment maintenance only. Explicit IDs, bounded scope and a read-only default.
+ * Uses the same validation as staff review and never approves commercial evidence. */
+export const reconcileStagedIdentity = internalMutation({
+  args: { productId: v.id('commerceProducts'), variantIds: v.array(v.id('catVariants')),
+    commit: v.optional(v.boolean()), expectedRevision: v.optional(v.number()) },
+  handler: async (ctx, a) => {
+    const product = await ctx.db.get(a.productId);
+    if (product?.provider !== 'zuo') throw new CommerceError('INVALID_INPUT', 'Staged Zuo product required');
+    if (a.commit && (!Number.isSafeInteger(a.expectedRevision) || product.revision !== a.expectedRevision))
+      throw new CommerceError('INVALID_INPUT', 'Review the current product revision before committing');
+    return reconcileCanonicalIdentity(ctx, a, { email: 'deployment:catalog-identity-reconciliation' }, a.commit === true);
   },
 });
 
