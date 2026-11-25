@@ -34,3 +34,15 @@ Sources reviewed November 24:
 Prefer a supplier-compatible live rating source. If using public rates, retain modeled/benchmark provenance and calibrate against actual invoices. Do not interpolate unsupported ZIPs from ten samples or use map distance alone as a tariff. Keep supplier fees/reserves/embedded allowances in the existing shared server accounting, not the rate adapter or browser.
 
 No flags, merchandise prices, checkout eligibility or production data are changed by this UI increment. Nationwide rate integration and full launch remain outstanding.
+
+## Production follow-up after PR 373
+
+- PR 373 merged as `bf375ee587f96a2bcd3962fcd31fd9203b452ea8`. Vercel production deployment `dpl_3tHA5ZUsKkchdv2fXGAUircj9SKn` is Ready, assigned to the public domains; public build-info matches the merge commit. Home, trade and shop returned HTTP 200. These HTTP checks do not certify complete shopping flows.
+- Product estimator tests: 19 passed. Subsequent modeled-parcel, engine and checkout regression run: 113 passed.
+- Read-only production inspection found no FedEx, UPS, Shippo, EasyPost or freight credential names in Convex, Vercel production settings or the inspected local environment files. A provider account question is pending; no secret values were printed.
+- Active carrier configuration remains version 2, ten exact modeled ZIPs, 10% uncertainty reserve and $10 supplier order fee. Estimate validity is 30 minutes. No approved versions exist for the Zuo curbside delivery rule, delivery controls or delivery monitoring policy.
+- Eleven proposed configuration records remain. These are not eleven missing policies: the old proposed freight record coexists with the newer approved version and must not replace it.
+- Current catalog tables contain 803 product metadata records and 882 variants. Counts do not establish publication or checkout eligibility.
+- Individual configuration approval was found to allow a superseded proposal to retire a newer approved version. The follow-up change adds the same latest-version safeguard already used by atomic delivery approval, before any record retirement or audit writes. Tests cover both a newer approved policy and a newer pending proposal, and confirm the latest proposal remains approvable.
+
+Full launch is still incomplete. Provider connectivity, catalog qualification, configuration activation and end-to-end operational verification remain required.

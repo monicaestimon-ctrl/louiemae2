@@ -75,3 +75,28 @@ it('retains an existing approved version when a release cannot complete', async 
   expect(original?.status).toBe('approved');
   expect(original?.effectiveTo).toBeUndefined();
 });
+
+it('individual approval cannot retire a newer approved carrier by approving an old proposal', async () => {
+  const { t, admin, carrier } = await setup();
+  const next = await admin.mutation(api.sysConfig.propose, {
+    kind: carrier.kind, key: carrier.key, value: carrier.value, note: 'Current reviewed rates',
+  });
+  await admin.mutation(api.sysConfig.approve, { id: next });
+  const before = await t.run(ctx => ctx.db.get(next));
+  const auditBefore = await t.run(ctx => ctx.db.query('sysAuditEvents').collect());
+  await expect(admin.mutation(api.sysConfig.approve, { id: carrier._id })).rejects.toThrow('A newer setting exists');
+  expect(await t.run(ctx => ctx.db.get(next))).toEqual(before);
+  expect(await t.run(async ctx => (await ctx.db.get(carrier._id))?.status)).toBe('proposed');
+  expect(await t.run(ctx => ctx.db.query('sysAuditEvents').collect())).toEqual(auditBefore);
+});
+
+it('individual approval rejects a superseded proposal even while its replacement is pending', async () => {
+  const { t, admin, ladder } = await setup();
+  const next = await admin.mutation(api.sysConfig.propose, {
+    kind: ladder.kind, key: ladder.key, value: ladder.value, note: 'Replacement pending review',
+  });
+  await expect(admin.mutation(api.sysConfig.approve, { id: ladder._id })).rejects.toThrow('A newer setting exists');
+  expect(await t.run(async ctx => (await ctx.db.get(next))?.status)).toBe('proposed');
+  await admin.mutation(api.sysConfig.approve, { id: next });
+  expect(await t.run(async ctx => (await ctx.db.get(next))?.status)).toBe('approved');
+});

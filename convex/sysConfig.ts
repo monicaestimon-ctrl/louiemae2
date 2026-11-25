@@ -204,6 +204,8 @@ async function approveRecord(ctx: MutationCtx, a: { id: Doc<'sysConfig'>['_id'];
       .query('sysConfig')
       .withIndex('by_kind_key_version', (q) => q.eq('kind', row.kind).eq('key', row.key))
       .collect();
+    if (current.some((r) => r.version > row.version))
+      throw new CommerceError('INVALID_INPUT', 'A newer setting exists; refresh the decision register');
     const starts = Math.max(row.effectiveFrom, now);
     if (current.some((r) => r.status === 'approved' && r._id !== row._id && r.effectiveFrom > now))
       throw new CommerceError(
