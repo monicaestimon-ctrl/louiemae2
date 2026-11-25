@@ -409,6 +409,53 @@ async function approve(t: ReturnType<typeof convexTest>, admin: Awaited<ReturnTy
   await admin.mutation(api.sysConfig.approve, { id: rec._id });
 }
 
+describe('catalog freshness traversal', () => {
+  it('continues across pages after a supplier with no approved policy, retaining its holds', async () => {
+    vi.useFakeTimers();
+    const { t, admin } = await setup();
+    await approve(t, admin, 'freshness-default');
+    await importPackage(admin, [row('REFRESH')], 'dry_run');
+    await importPackage(admin, [row('REFRESH')], 'commit');
+    const { skippedId, lastId, beforeHolds } = await t.run(async ctx => {
+      const first = (await ctx.db.query('catVariants').first())!;
+      const supplier = (await ctx.db.get(first.supplierId))!;
+      const { _id: supplierId, _creationTime: supplierCreated, ...supplierFields } = supplier;
+      void supplierId; void supplierCreated;
+      const unapproved = await ctx.db.insert('catSuppliers', { ...supplierFields, code: 'unapproved-fixture', freshnessKey: 'missing-fixture-policy' });
+      await ctx.db.patch(first._id, { supplierId: unapproved });
+      const { _id, _creationTime, ...variantFields } = first;
+      void _id; void _creationTime;
+      let lastId = first._id;
+      for (let i = 0; i < 50; i++) lastId = await ctx.db.insert('catVariants', { ...variantFields, supplierSku: `REFRESH-${i}` });
+      await ctx.db.patch(lastId, { holds: [] });
+      return { skippedId: first._id, lastId, beforeHolds: first.holds };
+    });
+    expect(await t.mutation(internal.catStock.refreshPage, {})).toEqual({ processed: 50, refreshed: 49, skipped: 1 });
+    expect(await t.run(ctx => ctx.db.query('sysMetrics').withIndex('by_name_bucket', q => q.eq('name', 'catalog.freshness.scan_completed')).first())).toBeNull();
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const state = await t.run(async ctx => ({
+      skipped: await ctx.db.get(skippedId), last: await ctx.db.get(lastId),
+      metrics: await ctx.db.query('sysMetrics').collect(),
+    }));
+    expect(state.skipped?.holds).toEqual(beforeHolds);
+    expect(state.last?.holds).toContain('STOCK_UNVERIFIED');
+    const metric = (name: string) => state.metrics.find(m => m.name === `catalog.freshness.${name}`);
+    expect(metric('started')?.count).toBe(1);
+    expect(metric('page')).toMatchObject({ count: 2, sum: 50 });
+    expect(metric('policy_skipped')).toMatchObject({ count: 1, sum: 1 });
+    expect(metric('scan_completed')?.count).toBe(1);
+  });
+
+  it('records an empty scan as completed with zero refreshed variants', async () => {
+    const { t } = await setup();
+    expect(await t.mutation(internal.catStock.refreshPage, {})).toEqual({ processed: 0, refreshed: 0, skipped: 0 });
+    const metrics = await t.run(ctx => ctx.db.query('sysMetrics').collect());
+    expect(metrics.find(m => m.name === 'catalog.freshness.page')).toMatchObject({ count: 1, sum: 0 });
+    expect(metrics.find(m => m.name === 'catalog.freshness.scan_completed')?.count).toBe(1);
+    expect(metrics.some(m => m.name === 'catalog.freshness.policy_skipped')).toBe(false);
+  });
+});
+
 describe('media identity and review', () => {
   async function fixture() {
     const { t, admin } = await setup();
