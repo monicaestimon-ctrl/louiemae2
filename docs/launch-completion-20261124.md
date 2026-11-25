@@ -70,3 +70,19 @@ The November 25 production identity preflight identified 576 Zuo variant candida
 `catPublication:reconcileStagedIdentity` is an internal, deployment-only maintenance operation with explicit product and variant IDs. Default calls are dry runs. It reuses the staff identity verifier, validates supplier/SKU/pack/draft identity and active mapping conflicts, and reports the product revision and number of mappings to create. Commit calls must include `commit: true` and the reviewed `expectedRevision`. Each call accepts 1?50 distinct variants of one product and commits atomically. The audit actor is explicitly `deployment:catalog-identity-reconciliation`, not an impersonated staff account.
 
 After merge/deploy: run the candidate manifest through server dry runs, retain failures per variant, compare returned revisions with the manifest, then commit the verified records through the same operation. Read back mappings, remaining holds and publication state. Mapping reconciliation must not change stock, cost, media rights, commissions, stage, flags or listings. Preserve unavailable and excluded records until their own evidence gates pass.
+
+## Production qualification review after PR 376
+
+PR 376 merged as `1adc38b2de5af1d35a21f3318a21dfc776c2861d` and frontend/backend deployment were verified. All 576 identity candidates passed server dry runs with matching revisions and committed successfully. Readback confirmed 576 active mappings, no unrelated variant changes, unchanged product metadata/listings and 227 remaining mapping holds.
+
+The mapped cohort already has 576 retail approvals, 576 trade approvals and 576 cost revisions; none has a confirmed stock revision. The actual media table (`catMediaAssets`) contains 576 assets for these products: 517 verified and 59 pending. Verified assets carry a separate unresolved publication-rights basis; image verification is not a supplier license.
+
+The saved Zuo Welcome Packet's Advertising Products section requires written request and retailer authorization before online use of supplier intellectual property. Do not clear MEDIA_RIGHTS from image availability alone. All 576 current cost revisions leave duties, inbound freight and supplier fees unconfirmed; no zero expense was inferred.
+
+Ran the existing `catStock:refreshPage` production workflow. Readback cleared 91 outdated COST_STALE holds in the mapped cohort, added the 576 cost-completeness holds that current evidence requires, and retained all 576 identity mappings. Remaining mapped-cohort exceptions include 136 MAP applicability holds, 134 MAP floor holds, 59 source/carton/media/stale-cost holds and three shipping-method changes. Per-variant evidence and receipts are retained in the private November 25 audit folder.
+
+### Independent catalog freshness monitoring
+
+The hourly catalog refresh previously shared the owner-paused `BACKGROUND_MONITORING_ENABLED` switch with CJ pricing/product-health monitoring. `CATALOG_FRESHNESS_ENABLED` is now an optional override: unset preserves the old behavior, true registers only the catalog refresh independently, and false pauses that refresh. It does not enable checkout, supplier synchronization, CJ monitoring, publication or financial jobs.
+
+After merge, set `CATALOG_FRESHNESS_ENABLED=true` on `prod:diligent-jay-261` and deploy the reviewed release to register the hourly job. Keep `BACKGROUND_MONITORING_ENABLED` unchanged. Verify the deployed cron configuration and retain the flag readback. To roll back this schedule, set the catalog flag false and redeploy. The one-time freshness refresh has already run; do not confuse this with hourly monitoring activation, which is still pending this release.
