@@ -80,7 +80,7 @@ export default function ProductDeliveryEstimate({
     );
   return (
     <DeliveryForm
-      key={`${productId}:${variantId}:${piecesPerPack}:${minimumPacks}:${incrementPacks}:${channel}:${selectedPacks ?? 'editable'}`}
+      key={`${productId}:${variantId}:${piecesPerPack}:${minimumPacks}:${incrementPacks}:${channel}`}
       {...{
         productId,
         variantId,
@@ -114,7 +114,8 @@ function DeliveryForm({
   const id = useId();
   const feedback = useFormValidation<'zip' | 'qty' | '_form'>();
   const [zip, setZip] = useState('');
-  const [qty, setQty] = useState(selectedPacks ?? minimumPacks);
+  const [editableQty, setQty] = useState(minimumPacks);
+  const qty = selectedPacks ?? editableQty;
   const sequence = useRef(0);
   const pendingRequest = useRef<number | null>(null);
   const [state, setState] = useState<{
@@ -133,8 +134,8 @@ function DeliveryForm({
     );
     return () => clearTimeout(timer);
   }, [state.expiresAt]);
-  const run = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const run = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (pendingRequest.current === sequence.current) return;
     const errors: { zip?: string; qty?: string } = {};
     if (!/^\d{5}$/.test(zip)) errors.zip = 'Enter a 5-digit ZIP code.';
@@ -174,11 +175,37 @@ function DeliveryForm({
     } catch (err) {
       if (requestId !== sequence.current) return;
       setState({ status: 'idle' });
-      feedback.report({ _form: customerMessage(err) });
+      if (e) feedback.report({ _form: customerMessage(err) });
+      else setState({ status: 'error', text: customerMessage(err) });
     } finally {
       if (pendingRequest.current === requestId) pendingRequest.current = null;
     }
   };
+  const latestRun = useRef(run);
+  useEffect(() => {
+    latestRun.current = run;
+  });
+  const resetFeedback = feedback.reset;
+  useEffect(() => {
+    const inputSequence = ++sequence.current;
+    setState({ status: 'idle' });
+    resetFeedback();
+    if (
+      !/^\d{5}$/.test(zip) ||
+      !Number.isSafeInteger(qty) ||
+      qty < minimumPacks ||
+      (qty - minimumPacks) % incrementPacks !== 0
+    )
+      return;
+    const timer = setTimeout(() => {
+      // A manual submission supersedes this automatic request, even if it has finished.
+      if (sequence.current === inputSequence) void latestRun.current();
+    }, 600);
+    return () => {
+      clearTimeout(timer);
+      sequence.current++;
+    };
+  }, [zip, qty, minimumPacks, incrementPacks, resetFeedback]);
   return (
     <div className="delivery-ui">
       <form onSubmit={run} noValidate aria-label="Estimate delivery" className="delivery-stack">
@@ -211,7 +238,7 @@ function DeliveryForm({
               }}
             />
             <p id={`${id}-zip-help`} className="delivery-note">
-              Five-digit U.S. ZIP code.
+              Enter five digits to automatically estimate delivery.
             </p>
             {feedback.errors.zip && (
               <p id={`${id}-zip-error`} className="delivery-error">
@@ -259,6 +286,7 @@ function DeliveryForm({
             {state.status === 'loading' ? 'Estimating…' : 'Estimate delivery'}
           </button>
         </div>
+        <p className="delivery-note">{ZIP_ESTIMATE_NOTE}</p>
         <div aria-live="polite" aria-atomic="true">
           {state.status === 'done' && (
             <>
@@ -268,11 +296,7 @@ function DeliveryForm({
                   {detail}
                 </p>
               ))}
-              {state.caveat && (
-                <p className="delivery-note">
-                  {state.caveat} {ZIP_ESTIMATE_NOTE}
-                </p>
-              )}
+              {state.caveat && <p className="delivery-note">{state.caveat}</p>}
               {state.quote && (
                 <p className="delivery-note">
                   We'll confirm delivery for this address before you pay.

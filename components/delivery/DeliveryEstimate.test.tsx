@@ -292,3 +292,65 @@ it('allows retry after a failed estimate without retaining a stale submission lo
   await screen.findByText('Curbside delivery: $59.99');
   expect(mock.estimate).toHaveBeenCalledTimes(2);
 });
+
+it('automatically recalculates selected quantity while preserving ZIP and ignoring stale results', async () => {
+  vi.useFakeTimers();
+  let resolveOld!: (value: unknown) => void;
+  mock.estimate
+    .mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          resolveOld = r;
+        })
+    )
+    .mockResolvedValueOnce(response(8999));
+  const view = render(<ProductDeliveryEstimate productId="p" variantId="v" selectedPacks={5} />);
+  fireEvent.change(screen.getByLabelText('ZIP code'), { target: { value: '95206' } });
+  await act(async () => vi.advanceTimersByTimeAsync(600));
+  expect(mock.estimate).toHaveBeenCalledTimes(1);
+  view.rerender(<ProductDeliveryEstimate productId="p" variantId="v" selectedPacks={7} />);
+  expect(screen.getByLabelText('ZIP code')).toHaveValue('95206');
+  await act(async () => vi.advanceTimersByTimeAsync(600));
+  expect(mock.estimate.mock.calls[1][0].lines[0].packs).toBe(7);
+  await act(async () => resolveOld(response(5999)));
+  expect(screen.getByText('Curbside delivery: $89.99')).toBeInTheDocument();
+});
+
+it('debounces ZIP edits and does not repeat a completed manual request', async () => {
+  vi.useFakeTimers();
+  mock.estimate.mockResolvedValue(response(5999));
+  render(<ProductDeliveryEstimate productId="p" variantId="v" />);
+  fireEvent.change(screen.getByLabelText('ZIP code'), { target: { value: '9520' } });
+  await act(async () => vi.advanceTimersByTimeAsync(600));
+  expect(mock.estimate).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText('ZIP code'), { target: { value: '95206' } });
+  fireEvent.submit(screen.getByRole('form', { name: 'Estimate delivery' }));
+  await act(async () => vi.advanceTimersByTimeAsync(600));
+  expect(mock.estimate).toHaveBeenCalledTimes(1);
+});
+
+it('does not automatically request an invalid selected pack quantity', async () => {
+  vi.useFakeTimers();
+  render(<ProductDeliveryEstimate productId="p" variantId="v" selectedPacks={4} />);
+  fireEvent.change(screen.getByLabelText('ZIP code'), { target: { value: '95206' } });
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(mock.estimate).not.toHaveBeenCalled();
+});
+
+it('keeps focus after an automatic failure and waits for a manual retry', async () => {
+  vi.useFakeTimers();
+  mock.estimate
+    .mockRejectedValueOnce(new Error('Unavailable'))
+    .mockResolvedValueOnce(response(5999));
+  render(<ProductDeliveryEstimate productId="p" variantId="v" />);
+  const zip = screen.getByLabelText('ZIP code');
+  zip.focus();
+  fireEvent.change(zip, { target: { value: '95206' } });
+  await act(async () => vi.advanceTimersByTimeAsync(600));
+  expect(zip).toHaveFocus();
+  await act(async () => vi.advanceTimersByTimeAsync(1000));
+  expect(mock.estimate).toHaveBeenCalledTimes(1);
+  fireEvent.submit(screen.getByRole('form', { name: 'Estimate delivery' }));
+  await act(async () => vi.advanceTimersByTimeAsync(0));
+  expect(screen.getByText('Curbside delivery: $59.99')).toBeInTheDocument();
+});
