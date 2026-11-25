@@ -6,12 +6,17 @@ const crons = cronJobs();
 
 // Owner-requested temporary pause. Resume explicitly per deployment.
 const monitoringEnabled = process.env.BACKGROUND_MONITORING_ENABLED === 'true';
+// Catalog evidence expiry can run independently of paused supplier/CJ monitoring.
+// Unset preserves existing deployments; an explicit false provides a scoped rollback.
+const catalogFreshnessEnabled = process.env.CATALOG_FRESHNESS_ENABLED === undefined
+  ? monitoringEnabled
+  : process.env.CATALOG_FRESHNESS_ENABLED === 'true';
 
 // Only summaries whose 48-hour pending threshold is due are revisited.
 if (monitoringEnabled) crons.interval('refresh-due-product-health', { minutes: 5 }, internal.productHealth.refreshDue, {});
 
 // v2 catalog: re-evaluate source freshness so stale cost, MAP or stock becomes a hold, never a sale.
-if (monitoringEnabled) crons.interval('refresh-catalog-freshness', { hours: 1 }, internal.catStock.refreshPage, {});
+if (catalogFreshnessEnabled) crons.interval('refresh-catalog-freshness', { hours: 1 }, internal.catStock.refreshPage, {});
 
 // v2 checkout: expired intents release their holds; verified payment events never wait unprocessed.
 crons.interval('expire-checkout-intents', { minutes: 15 }, internal.ordCheckout.expireStale, {});
