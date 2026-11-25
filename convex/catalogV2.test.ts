@@ -1232,10 +1232,19 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
       await ctx.db.patch(cv._id, { holds: ['MAPPING_MISSING', 'MANUAL', 'COST_MISSING'] });
     });
     const args = { productId, variantIds: [cv._id] };
+    const before = await t.run(async ctx => ({ variant: await ctx.db.get(cv._id), events: await ctx.db.query('sysAuditEvents').collect() }));
+    const preview = await t.mutation(internal.catPublication.reconcileStagedIdentity, args);
+    expect(preview).toMatchObject({ verifiedVariants: 1, mappingsToCreate: 1 });
+    expect(await t.run(ctx => ctx.db.query('catRetailMappings').collect())).toHaveLength(0);
+    expect(await t.run(ctx => ctx.db.get(cv._id))).toEqual(before.variant);
+    expect(await t.run(ctx => ctx.db.query('sysAuditEvents').collect())).toEqual(before.events);
+    await expect(t.mutation(internal.catPublication.reconcileStagedIdentity, { ...args, commit: true })).rejects.toThrow(/revision/);
+    await expect(t.mutation(internal.catPublication.reconcileStagedIdentity, { ...args, commit: true, expectedRevision: preview.productRevision + 1 })).rejects.toThrow(/revision/);
     await expect(t.mutation(api.catPublication.verifyCanonicalIdentity, args)).rejects.toThrow();
     await expect(admin.mutation(api.catPublication.verifyCanonicalIdentity, { ...args, variantIds: [cv._id, cv._id] })).rejects.toThrow(/distinct/);
+    await expect(t.mutation(internal.catPublication.reconcileStagedIdentity, { ...args, commit: true, expectedRevision: preview.productRevision })).resolves.toMatchObject({ verifiedVariants: 1, mappingsToCreate: 1 });
     await expect(admin.mutation(api.catPublication.verifyCanonicalIdentity, args)).resolves.toEqual({ verifiedVariants: 1 });
-    await admin.mutation(api.catPublication.verifyCanonicalIdentity, args);
+    await t.mutation(internal.catPublication.reconcileStagedIdentity, { ...args, commit: true, expectedRevision: preview.productRevision });
     const maps = await t.run(ctx => ctx.db.query('catRetailMappings').collect());
     expect(maps).toHaveLength(1);
     expect(maps[0]).toMatchObject({ holmProductId: productId, retailProductId: productId, holmVariantId: cv._id, retailVariantId: cv._id });
@@ -1245,6 +1254,7 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
       await ctx.db.patch(maps[0]._id, { retailVariantId: 'conflicting-variant' });
       await ctx.db.patch(cv._id, { holds: ['MAPPING_MISSING', 'MANUAL'] });
     });
+    await expect(t.mutation(internal.catPublication.reconcileStagedIdentity, args)).rejects.toThrow(/conflict/);
     await expect(admin.mutation(api.catPublication.verifyCanonicalIdentity, args)).rejects.toThrow(/conflict/);
     expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).toContain('MAPPING_MISSING');
     await t.run(ctx => ctx.db.patch(cv._id, { piecesPerPack: cv.piecesPerPack + 1 }));
