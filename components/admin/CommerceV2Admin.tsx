@@ -46,13 +46,18 @@ function Decisions({ canApprove }: { canApprove: boolean }) {
   const [releaseNote, setReleaseNote] = useState('');
   const [releasing, setReleasing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const isLatest = (record: NonNullable<typeof data>['records'][number]) =>
+    !data?.records.some(other => other.kind === record.kind && other.key === record.key && other.version > record.version);
   useEffect(() => {
     if (!data) return;
-    const eligible = new Set(data.records.filter(r => r.status === 'proposed' && DELIVERY_RELEASE_KINDS.has(r.kind)).map(r => r._id));
+    const eligible = new Set(data.records.filter(r => r.status === 'proposed' && DELIVERY_RELEASE_KINDS.has(r.kind)
+      && !data.records.some(other => other.kind === r.kind && other.key === r.key && other.version > r.version)).map(r => r._id));
     setSelected(ids => ids.every(id => eligible.has(id)) ? ids : ids.filter(id => eligible.has(id)));
   }, [data]);
   if (!data) return <p>Loading…</p>;
   const proposed = data.records.filter((r) => r.status === 'proposed');
+  const actionable = proposed.filter(isLatest);
+  const selectedEligible = selected.filter(id => actionable.some(r => r._id === id && DELIVERY_RELEASE_KINDS.has(r.kind)));
   const approved = data.records.filter((r) => r.status === 'approved');
   return (
     <div className="space-y-4">
@@ -68,21 +73,21 @@ function Decisions({ canApprove }: { canApprove: boolean }) {
         <p className="text-xs text-earth/60">Flags are changed in the Convex dashboard, in the order in docs/production-v2/05 §3, after the matching release gate is signed.</p>
       </div>
       <div className={card}>
-        <h3 className="font-serif text-lg">Awaiting your decision ({proposed.length})</h3>
+        <h3 className="font-serif text-lg">Awaiting your decision ({actionable.length})</h3>
         <fieldset disabled={!canApprove || releasing} className="space-y-2">
           <legend>Release selected delivery settings together</legend>
           <p className="text-xs">Review each value below. The selected proposals take effect together; checkout flags remain separate.</p>
           <label className="block">Delivery release note
             <input className="block border p-2 w-full" value={releaseNote} onChange={e => setReleaseNote(e.target.value)} />
           </label>
-          <button className={btn} disabled={!selected.length || !releaseNote.trim()} onClick={async () => {
+          <button className={btn} disabled={!selectedEligible.length || !releaseNote.trim()} onClick={async () => {
             setReleasing(true);
             try {
-              const result = await release({ ids: selected, note: releaseNote });
+              const result = await release({ ids: selectedEligible, note: releaseNote });
               setSelected([]); setReleaseNote(''); setMsg(`Released ${result.approved} delivery settings together`);
             } catch (e) { setMsg(errText(e)); }
             finally { setReleasing(false); }
-          }}>Approve selected delivery release ({selected.length})</button>
+          }}>Approve selected delivery release ({selectedEligible.length})</button>
           <button className={btn} disabled={!selected.length} onClick={() => setSelected([])}>Clear delivery selection</button>
         </fieldset>
         {proposed.map((r) => (
@@ -90,14 +95,15 @@ function Decisions({ canApprove }: { canApprove: boolean }) {
             <p>
               <b>{r.decision ?? '—'}</b> · {r.kind}/{r.key} v{r.version}
             </p>
-            {DELIVERY_RELEASE_KINDS.has(r.kind) && <label className="flex gap-2">
+            {!isLatest(r) && <p className="text-xs">Superseded by a newer version. Review the latest setting; this proposal cannot be approved.</p>}
+            {isLatest(r) && DELIVERY_RELEASE_KINDS.has(r.kind) && <label className="flex gap-2">
               <input type="checkbox" disabled={!canApprove || releasing} checked={selected.includes(r._id)} onChange={e => setSelected(ids => e.target.checked ? [...ids, r._id] : ids.filter(id => id !== r._id))} />
               Include {r.key} v{r.version} in delivery release
             </label>}
             <p className="text-xs text-earth/70">{r.note}</p>
             <pre className="text-[11px] bg-cream/50 p-2 overflow-auto max-h-40">{JSON.stringify(r.value, null, 2)}</pre>
             <div className="flex gap-2">
-              <button className={btn} disabled={!canApprove || releasing} onClick={() => approve({ id: r._id }).then(() => setMsg(`Approved ${r.key}`), (e) => setMsg(errText(e)))}>
+              <button className={btn} disabled={!canApprove || releasing || !isLatest(r)} onClick={() => approve({ id: r._id }).then(() => setMsg(`Approved ${r.key}`), (e) => setMsg(errText(e)))}>
                 Approve
               </button>
               <button className={btn} disabled={!canApprove || releasing} onClick={() => reject({ id: r._id, note: 'Rejected in the decision register' }).then(() => setMsg(`Rejected ${r.key}`), (e) => setMsg(errText(e)))}>

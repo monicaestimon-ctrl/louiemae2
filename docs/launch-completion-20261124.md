@@ -46,3 +46,17 @@ No flags, merchandise prices, checkout eligibility or production data are change
 - Individual configuration approval was found to allow a superseded proposal to retire a newer approved version. The follow-up change adds the same latest-version safeguard already used by atomic delivery approval, before any record retirement or audit writes. Tests cover both a newer approved policy and a newer pending proposal, and confirm the latest proposal remains approvable.
 
 Full launch is still incomplete. Provider connectivity, catalog qualification, configuration activation and end-to-end operational verification remain required.
+
+## November 25 configuration and catalog reconciliation
+
+PR 374 is merged as `5b9dea86957a266823f03c56ee7395feed9b6880`; production frontend commit matched and Convex deployment succeeded. Individual approvals now reject superseded versions. The follow-up register UI labels those old proposals, excludes them from the actionable count and release selection, and disables individual approval while retaining rejection/history access.
+
+Read-only catalog census at 2026-11-25T07:04:26.635Z: 803 product metadata records, all imported drafts; 882 variants; availability is unknown for 660, out of stock for 205, discontinued for 17. There are no canonical retail mapping records. These counts concern the canonical catalog, not every legacy storefront listing. Per-variant dispositions were saved privately in `outputs/production-access-audit-20261125/catalog-disposition.json` in the root checkout.
+
+Next catalog actions: verify staged canonical identities through the existing guarded publication action; reconcile the 803 mapping holds; finish exact-SKU image/rights review, current selling-unit stock evidence, channel price/commission qualification and supplier-specific delivery. Do not blanket-clear the 882 manual holds. The 62 absent-source/carton records and five method-change records require individual source reconciliation.
+
+### Zuo integration lead
+
+The owner is creating a FedEx account. Zuo's own June 18, 2025 article explicitly mentions tailored FTP, EDI and API integrations: https://zuomod.com/why-live-customer-service-and-local-sales-reps-matter-more-than-ever-in-furniture-especially-for-hos/ (reviewed November 25, 2026). This establishes an integration lead, not evidence of a live shipping-quote endpoint.
+
+Ask Zuo whether its dealer integration returns pre-order freight quotes for SKU quantities and destination ZIP, whether quotes use dealer-account rates, include residential/liftgate/fuel/accessorial charges, and provide a quote ID, expiry and response time suitable for checkout. Request supported EDI transaction sets or API documentation and sandbox access. Order acknowledgements, shipment notices or invoices alone do not establish live quoting. Invoice freight can support later calibration. No supplier message has been sent and EDI remains disabled pending documented capability and onboarding.

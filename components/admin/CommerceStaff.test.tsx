@@ -15,6 +15,7 @@ const mock = vi.hoisted(() => ({
   reads: vi.fn(),
   release: vi.fn(),
   fixtureStatus: 'proposed',
+  newerVersion: false,
 }));
 vi.mock('convex/react', () => ({
   useMutation: (ref: Parameters<typeof getFunctionName>[0]) => getFunctionName(ref) === 'sysConfig:approveDeliveryRelease' ? mock.release : vi.fn(),
@@ -27,6 +28,7 @@ vi.mock('convex/react', () => ({
       return {
         flags: {},
         records: [
+          ...(mock.newerVersion ? [{ _id: 'newer', status: 'approved', kind: 'deliveryLadder', key: 'fixture', version: 2, value: {} }] : []),
           {
             _id: 'fixture',
             status: mock.fixtureStatus,
@@ -52,6 +54,7 @@ beforeEach(() => {
   mock.reads.mockClear();
   mock.release.mockReset();
   mock.fixtureStatus = 'proposed';
+  mock.newerVersion = false;
   Object.assign(mock.permissions, {
     owner: false,
     support: true,
@@ -127,4 +130,23 @@ describe('staff console navigation', () => {
     view.rerender(<CommerceV2Admin />);
     expect(screen.getByRole('alert')).toHaveTextContent('No staff permissions');
   });
+});
+
+it('removes superseded selections and disables individual approval of the old proposal', async () => {
+  Object.assign(mock.permissions, { operations: true, approver: true });
+  const view = render(<CommerceV2Admin />);
+  fireEvent.click(screen.getByRole('button', { name: 'Decisions & flags' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Include fixture v1 in delivery release' }));
+  fireEvent.change(screen.getByLabelText('Delivery release note'), { target: { value: 'Reviewed release' } });
+  mock.newerVersion = true;
+  view.rerender(<CommerceV2Admin />);
+  expect(screen.getByText('Awaiting your decision (0)')).toBeInTheDocument();
+  expect(screen.getByText(/Superseded by a newer version/)).toBeInTheDocument();
+  expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled();
+  const release = screen.getByRole('button', { name: 'Approve selected delivery release (0)' });
+  expect(release).toBeDisabled();
+  fireEvent.click(release);
+  expect(mock.release).not.toHaveBeenCalled();
 });
