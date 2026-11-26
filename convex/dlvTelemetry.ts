@@ -23,7 +23,7 @@ export const record = internalMutation({
   args: {
     durationMs: v.number(),
     channel: v.union(v.literal('retail'), v.literal('trade')),
-    path: v.union(v.literal('matrix'), v.literal('matrix_tax')),
+    path: v.union(v.literal('matrix'), v.literal('matrix_tax'), v.literal('carrier'), v.literal('carrier_tax')),
     outcome: v.union(
       v.literal('ok'),
       v.literal('quote'),
@@ -126,7 +126,7 @@ export async function monitoringReport(ctx: Ctx, now = Date.now()) {
       code,
       count: sample.filter((r) => r.code === code).length,
     })),
-    paths: (['matrix', 'matrix_tax'] as const).map((path) => ({
+    paths: (['matrix', 'matrix_tax', 'carrier', 'carrier_tax'] as const).map((path) => ({
       path,
       ...summarizeObservations(sample.filter((r) => r.path === path)),
     })),
@@ -144,7 +144,7 @@ export async function monitoringReport(ctx: Ctx, now = Date.now()) {
     policyVersion: policy?.version ?? null,
     alertsEnabled: !!policy && deliveryMonitoringEnabled(),
     overdue,
-    note: 'Observed storefront action requests only; one record per request, excluding internal tax iterations. Legacy direct mutation calls and admin simulations are excluded. No live carrier adapter or estimate cache is active. Matrix-tax latency includes tax-provider work. Missing samples do not prove health. Multi-supplier requests appear in each matching breakdown; do not add breakdown counts.',
+    note: 'Observed storefront action requests only; one record per request, excluding internal tax iterations. Legacy direct mutation calls and admin simulations are excluded. Carrier paths include live FedEx requests; cache hits reuse stored carrier evidence. Tax paths include tax-provider work. Missing samples do not prove health. Multi-supplier requests appear in each matching breakdown; do not add breakdown counts.',
   };
 }
 export const report = query({

@@ -73,6 +73,7 @@ import type * as dlvAdmin from "../dlvAdmin.js";
 import type * as dlvCommission from "../dlvCommission.js";
 import type * as dlvEngine from "../dlvEngine.js";
 import type * as dlvEstimates from "../dlvEstimates.js";
+import type * as dlvFedex from "../dlvFedex.js";
 import type * as dlvManual from "../dlvManual.js";
 import type * as dlvOperations from "../dlvOperations.js";
 import type * as dlvPerimeter from "../dlvPerimeter.js";
@@ -276,6 +277,7 @@ declare const fullApi: ApiFromModules<{
   dlvCommission: typeof dlvCommission;
   dlvEngine: typeof dlvEngine;
   dlvEstimates: typeof dlvEstimates;
+  dlvFedex: typeof dlvFedex;
   dlvManual: typeof dlvManual;
   dlvOperations: typeof dlvOperations;
   dlvPerimeter: typeof dlvPerimeter;

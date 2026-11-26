@@ -295,13 +295,20 @@ export function parseConfig(kind: ConfigKind, value: unknown): unknown {
         if (!/^\d{5}$/.test(zip)) bad(kind, 'blocked destination must be a five-digit ZIP');
       return o as DeliveryControls;
     case 'carrierRule': {
-      if (o.rateBasis !== undefined && !['supplier_rate', 'modeled_parcel'].includes(String(o.rateBasis)))
+      if (o.rateBasis !== undefined && !['supplier_rate', 'modeled_parcel', 'live_fedex'].includes(String(o.rateBasis)))
         bad(kind, 'Unknown delivery rate basis');
       if (o.rateBasis === 'modeled_parcel' && !validModeledParcel(o.modeledParcel))
         bad(kind, 'A complete dated modeled-parcel table and package limits are required');
       if (o.modeledParcel !== undefined && o.rateBasis !== 'modeled_parcel')
         bad(kind, 'Parcel planning data requires an explicit modeled rate basis');
 
+      if (o.rateBasis === 'live_fedex') {
+        const fedex = obj(kind, o.fedex);
+        if (!['ACCOUNT', 'LIST'].includes(String(fedex.rateType))) bad(kind, 'FedEx rate type required');
+        const minutes = int(kind, fedex.validityMinutes, 'FedEx validity minutes', 1);
+        if (minutes > 30) bad(kind, 'FedEx rate validity cannot exceed 30 minutes');
+        if (o.ltlRatingBasis !== 'quote_only') bad(kind, 'Live parcel rates cannot authorize LTL');
+      } else if (o.fedex !== undefined) bad(kind, 'FedEx settings require live rate basis');
       const r = obj(kind, o.rule),
         ground = obj(kind, r.ground),
         ltl = obj(kind, r.ltl);

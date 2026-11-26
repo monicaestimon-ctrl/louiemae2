@@ -1,6 +1,6 @@
 export type Observation = {
   durationMs: number;
-  path: 'matrix' | 'matrix_tax';
+  path: 'matrix' | 'matrix_tax' | 'carrier' | 'carrier_tax';
   outcome: 'ok' | 'quote' | 'blocked' | 'error' | 'tax_error' | 'tax_unavailable';
 };
 export function summarizeObservations(rows: readonly Observation[]) {

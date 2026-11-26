@@ -5,6 +5,7 @@ import type { Id } from './_generated/dataModel';
 import { customerFacing, publicDeliveryError } from '../lib/delivery/publicErrors';
 import { assertDeliveryBounds } from '../lib/delivery/requestBounds';
 import Stripe from 'stripe';
+import { fedexRate } from '../lib/delivery/fedex';
 import { v } from 'convex/values';
 import { action, internalAction } from './_generated/server';
 import { internal } from './_generated/api';
@@ -46,10 +47,32 @@ export const estimate = action({
     try {
       assertDeliveryBounds(input);
       finalResult = await (async (): Promise<PublicDeliveryEstimate> => {
+        const work = await ctx.runMutation(internal.dlvFedex.prepare, {
+          lines: input.lines, channel: input.channel, zip: input.zip,
+          ...(input.address ? { address: input.address } : {}),
+          ...(input.service ? { service: input.service } : {}),
+        });
+        if (work.length) path = 'carrier';
+        // Parallel bounded supplier groups; each request has an eight-second total deadline.
+        await Promise.all(work.map(async w => {
+          const rate = await fedexRate(w.shipment, {
+            key: process.env.FEDEX_API_KEY ?? '', secret: process.env.FEDEX_SECRET_KEY ?? '',
+            account: process.env.FEDEX_ACCOUNT_NUMBER ?? '',
+          });
+          if (rate.ok === true) {
+            await ctx.runMutation(internal.dlvFedex.record, { key: w.key, configVersion: w.configVersion,
+              freightMinor: rate.freightMinor, service: rate.service, rateType: rate.rateType,
+              ...(rate.transactionId ? { transactionId: rate.transactionId } : {}),
+            });
+          } else {
+            code = `CARRIER_${rate.reason.toUpperCase()}`;
+            if (rate.reason !== 'unsupported') outcome = 'error';
+          }
+        }));
         let result = await ctx.runMutation(internal.dlvEstimates.compute, input);
         if (!a.address || result.status !== 'ok' || result.totalMinor !== null) return result;
         if (!process.env.STRIPE_SECRET_KEY) return result;
-        path = 'matrix_tax';
+        path = path === 'carrier' ? 'carrier_tax' : 'matrix_tax';
         const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
           timeout: 3000,
           maxNetworkRetries: 0,
