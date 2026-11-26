@@ -104,3 +104,21 @@ Connected-mail review found the forwarded November 3 account approval and Novemb
 PR 378 is merged as `77543b86a686491fd6e224853342a87b1ade8538`. Frontend build-info matched and backend deployment completed. A manually initiated production scan completed 18 pages and refreshed all 882 variants, with zero policy skips. This is not proof of an hourly cron execution or catalog qualification.
 
 Current production readback shows ten current proposals plus one superseded carrier proposal. Delivery monitoring is still unapproved and the global background switch remains paused. The follow-up introduces an independent `DELIVERY_MONITORING_ENABLED` override, preserving inheritance when unset and continuing to require an approved policy. Six configuration combinations verify agreement between the staff report and alert evaluation, including explicit pause, invalid values, independent enable and the unapproved-policy gate. No production alert activation is claimed by this code change.
+
+## November 26 live FedEx integration
+
+Production OAuth and rate access succeeded using the owner's securely supplied credentials. Thirty production requests succeeded across three imported Zuo carton configurations and the ten benchmark ZIPs (10001, 30303, 33130, 60601, 75201, 80202, 85001, 90012, 94103, 98101). Origin is 95206. The private receipt is `outputs/fedex-sandbox-verification/production-carton-benchmarks.json` in the root workspace. These are Louie Mae account estimates, not verification of Zuo's invoice rates or product qualification.
+
+The integration adds `live_fedex` carrier configuration, an internal production-only rate adapter and a short-lived server cache. The existing signed/rate-limited delivery action prepares requests from server-owned cartons and approved policies, then the shared engine consumes the carrier evidence for product, cart and checkout calculations. Shipment totals include carrier surcharges; the adapter adds no supplier fees, reserve or allowance. The engine continues applying these once. LTL, oversize, invalid input, missing credentials and unavailable/expired rates remain quote-required, with no automatic modeled or zero-rate fallback.
+
+Cache identity binds destination/address, individual cartons and quantities, account, requested rate basis and carrier policy version. Rate expiry limits estimate expiry, and source hashing protects checkout from changed evidence. Standard ground is selected explicitly; expedited responses are never substituted. Carrier failures are recorded through delivery monitoring without raw provider payloads or secrets.
+
+### Activation and verification still required
+
+1. Merge the reviewed commit after CI passes, then deploy backend/frontend and verify public build identity.
+2. Configure `FEDEX_API_KEY`, `FEDEX_SECRET_KEY`, and `FEDEX_ACCOUNT_NUMBER` only in the backend secret environment. Set `FEDEX_RATES_ENABLED=true` for the reviewed release. Never put these in frontend environment variables or repository files.
+3. Propose/approve a new `zuo-freight` carrier version with `rateBasis: live_fedex`, `fedex: { rateType: ACCOUNT, validityMinutes: 10 }`, and `ltlRatingBasis: quote_only`. Remove modeledParcel/modeledZip5Zones; retain documented origin, supplier fee scope, reserve and classification limits. Keep dated evidence and policy validity current.
+4. Review delivery controls separately. Carrier connectivity does not authorize clearing product holds or enabling unsupported warehouses, stock units, costs, MAP or media rights. Existing production controls are paused; do not describe the storefront integration as active until enabled and exercised.
+5. Verify production storefront product/cart/full-address flows, changed quantity/ZIP, unavailable quotes and cache expiry with eligible real products. Compare Zuo invoice freight when available. Full paid-order testing remains separately constrained by the acceptance spec.
+
+Rollback: set `FEDEX_RATES_ENABLED=false` to require a quote for live-rate configuration. Restore a reviewed prior carrier configuration only through normal versioned approval; do not silently substitute a historical benchmark.

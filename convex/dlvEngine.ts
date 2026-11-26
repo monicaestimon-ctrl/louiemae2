@@ -1,3 +1,4 @@
+import { fedexRequest, type FedexShipment } from '../lib/delivery/fedex';
 import { ashcroftBasketFunded } from '../lib/economics/ashcroft';
 import { approvedAshcroftOffer } from './catAshcroftOffer';
 import type { ashcroftScenarios } from './catAshcroftEconomics';
@@ -57,8 +58,9 @@ export type Destination = { zip: string; address?: AddressIn };
 
 /** The carrier/zone pricing record (sysConfig kind carrierRule). Rates use supplier evidence or explicitly approved planning benchmarks. */
 export type FreightConfig = {
-  rateBasis?: 'supplier_rate' | 'modeled_parcel';
+  rateBasis?: 'supplier_rate' | 'modeled_parcel' | 'live_fedex';
   modeledParcel?: ModeledParcelRates;
+  fedex?: { rateType: 'ACCOUNT' | 'LIST'; validityMinutes: number };
   evidenceRef?: string;
   verifiedAt?: number;
   validUntil?: number;
@@ -441,7 +443,8 @@ export function groupFreight(
   dest: Destination,
   f: FreightConfig,
   reasons: string[],
-  rated?: { mode?: 'ground' | 'ltl' }
+  rated?: { mode?: 'ground' | 'ltl' },
+  liveFreightMinor?: number
 ): number | null {
   if (
     !f.evidenceRef?.trim() ||
@@ -493,6 +496,11 @@ export function groupFreight(
   ) {
     reasons.push('Carrier rate outside its effective dates');
     return null;
+  }
+  if (f.rateBasis === 'live_fedex') {
+    if (c.mode !== 'ground') { reasons.push('Freight shipments require a confirmed quote'); return null; }
+    if (liveFreightMinor === undefined) { reasons.push('Live carrier rate unavailable'); return null; }
+    return liveFreightMinor + Math.ceil(liveFreightMinor * f.uncertaintyBps / 10_000);
   }
   if (f.rateBasis === 'modeled_parcel') {
     const zone = deliveryZone(f, dest.zip);
@@ -593,6 +601,8 @@ export type EstimateOutcome = {
   configVersions: Record<string, number>;
 };
 
+export type FedexWork = { key: string; configVersion: number; shipment: FedexShipment };
+
 /** Computes a full estimate (no writes besides Ashcroft mirror variants). */
 export async function computeEstimate(
   ctx: MutationCtx,
@@ -605,7 +615,8 @@ export async function computeEstimate(
     adminSimulation?: boolean;
     previewProposed?: boolean;
   },
-  now = Date.now()
+  now = Date.now(),
+  pendingRates?: FedexWork[]
 ): Promise<EstimateOutcome> {
   if (input.service !== 'curbside')
     throw new CommerceError(
@@ -683,6 +694,7 @@ export async function computeEstimate(
   const zuo = lines.filter((l) => l.provider === 'zuo');
   const ash = lines.filter((l) => l.provider === 'ashcroft');
   const configVersions: Record<string, number> = {};
+  let carrierValidUntil = Infinity;
   const configs: unknown[] = project ? [project.policy, project.schedule] : [];
   const servicePolicy = await deliveryConfig<DeliveryServicePolicy>(
     'serviceLevel',
@@ -914,10 +926,38 @@ export async function computeEstimate(
         'Supplier inventory quantity or allocation needs confirmation before automatic checkout'
       );
     const rated: { mode?: 'ground' | 'ltl' } = {};
+    let liveRate: Doc<'dlvCarrierRates'> | null = null;
+    let work: FedexWork | undefined;
+    if (freightCfg?.value.rateBasis === 'live_fedex' && freightCfg.value.fedex && !reasons.length &&
+        process.env.FEDEX_RATES_ENABLED === 'true' && process.env.FEDEX_ACCOUNT_NUMBER) {
+      // Bound expansion before allocating; pack/carton quantities are server-owned.
+      const count = gl.reduce((n, l) => n + l.packs * l.cartons.reduce((t, c) => t + c.cartonsPerPack, 0), 0);
+      if (Number.isSafeInteger(count) && count > 0 && count <= 50 &&
+          gl.every(l => l.cartons.every(c => Number.isSafeInteger(c.cartonsPerPack) && c.cartonsPerPack > 0))) {
+        const cartons = gl.flatMap(l => l.cartons.flatMap(c => Array.from({ length: c.cartonsPerPack * l.packs }, () => ({
+          lengthMm: c.lengthMm, widthMm: c.widthMm, heightMm: c.heightMm,
+          grossWeightG: c.grossWeightG, supplierMethod: c.supplierMethod,
+        }))));
+        const shipment: FedexShipment = { originZip: gl[0].originZip, zip: input.destination.zip,
+          ...(input.destination.address ? { address: input.destination.address } : {}),
+          cartons, rule: freightCfg.value.rule, rateType: freightCfg.value.fedex.rateType };
+        if (fedexRequest(shipment, process.env.FEDEX_ACCOUNT_NUMBER)) {
+          const key = await digest({ shipment, configVersion: freightCfg.version, account: process.env.FEDEX_ACCOUNT_NUMBER });
+          work = { key, configVersion: freightCfg.version, shipment };
+          liveRate = await ctx.db.query('dlvCarrierRates').withIndex('by_key', q => q.eq('key', key)).unique();
+          if (liveRate && liveRate.expiresAt <= now) liveRate = null;
+        }
+      }
+    }
     let freightMinor =
       freightCfg && !reasons.length
-        ? groupFreight(gl, input.destination, freightCfg.value, reasons, rated)
+        ? groupFreight(gl, input.destination, freightCfg.value, reasons, rated, liveRate?.freightMinor)
         : null;
+    if (work && !liveRate && reasons.length === 1 && reasons[0] === 'Live carrier rate unavailable') pendingRates?.push(work);
+    if (liveRate && freightMinor !== null) {
+      configs.push({ carrierRateKey: liveRate.key, freightMinor: liveRate.freightMinor, expiresAt: liveRate.expiresAt });
+      carrierValidUntil = Math.min(carrierValidUntil, liveRate.expiresAt);
+    }
     if (rated.mode && !servicePolicy?.value.modes[rated.mode]) {
       reasons.push('This delivery mode needs approved service terms');
       freightMinor = null;
@@ -1005,6 +1045,7 @@ export async function computeEstimate(
     ladderCfg.effectiveTo ?? Infinity,
     zuoRule.effectiveTo ?? Infinity,
     ashcroftRule?.effectiveTo ?? Infinity,
+    carrierValidUntil,
     freightCfg?.effectiveTo ?? Infinity,
     freightCfg?.value.rule.effectiveTo ?? Infinity,
     freightCfg?.value.validUntil ?? Infinity,

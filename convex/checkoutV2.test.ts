@@ -3169,3 +3169,83 @@ describe('approved Ashcroft checkout lifecycle', () => {
     expect(await s.t.run(ctx => ctx.db.query('ordInventoryReservations').collect())).toHaveLength(0);
   });
 });
+
+
+describe('live FedEx delivery evidence', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    for (const key of ['FEDEX_RATES_ENABLED', 'FEDEX_API_KEY', 'FEDEX_SECRET_KEY', 'FEDEX_ACCOUNT_NUMBER']) delete process.env[key];
+  });
+  async function liveSetup() {
+    const s = await setup();
+    const id = await s.admin.mutation(api.sysConfig.propose, {
+      kind: 'carrierRule', key: 'zuo-freight', note: 'Synthetic live carrier fixture',
+      value: { ...FREIGHT, rateBasis: 'live_fedex', ltlRatingBasis: 'quote_only', fedex: { rateType: 'ACCOUNT', validityMinutes: 10 } },
+    });
+    await s.admin.mutation(api.sysConfig.approve, { id });
+    Object.assign(process.env, { FEDEX_RATES_ENABLED: 'true', FEDEX_API_KEY: 'fixture-key', FEDEX_SECRET_KEY: 'fixture-secret', FEDEX_ACCOUNT_NUMBER: '123456789' });
+    const transport = vi.fn(async (url: string) => new Response(JSON.stringify(url.endsWith('/oauth/token') ? { access_token: 'fixture-token' } : {
+      transactionId: 'fixture-rate', output: { rateReplyDetails: [{ serviceType: 'GROUND_HOME_DELIVERY', ratedShipmentDetails: [{ rateType: 'ACCOUNT', currency: 'USD', totalNetCharge: 123.45 }] }] },
+    })));
+    vi.stubGlobal('fetch', transport);
+    return { ...s, transport };
+  }
+  it('warms a server-only rate, applies reserve once, reuses it, and expires it', async () => {
+    const s = await liveSetup();
+    const input = { lines: [zuoLine(s)], channel: 'retail' as const, zip: '95206', visitorKey: 'live-visitor' };
+    const first = await estimateViaGateway(s.t, input);
+    expect(first.status).toBe('ok');
+    expect(s.transport).toHaveBeenCalledTimes(2);
+    const stored = await s.t.run(ctx => ctx.db.get(first.estimateId));
+    expect(stored?.groups[0].freightMinor).toBe(12345 + Math.ceil(12345 * .1));
+    expect(first.expiresAt).toBe(NOW + 600000);
+    const second = await estimateViaGateway(s.t, input);
+    expect(second.deliveryChargeMinor).toBe(first.deliveryChargeMinor);
+    expect(s.transport).toHaveBeenCalledTimes(2);
+    await s.t.run(async ctx => { const rate = (await ctx.db.query('dlvCarrierRates').first())!; await ctx.db.patch(rate._id, { expiresAt: NOW }); });
+    const stale = await s.t.mutation(internal.dlvEstimates.compute, input);
+    expect(stale.status).toBe('quote_required');
+    expect(stale.deliveryChargeMinor).toBeNull();
+  });
+  it('uses the same delivery calculation for ZIP, full address and frozen checkout', async () => {
+    const s = await liveSetup();
+    const lines = [zuoLine(s)];
+    const input = { lines, channel: 'retail' as const, zip: '95206', visitorKey: 'live-visitor' };
+    const product = await estimateViaGateway(s.t, input);
+    const checkout = await estimateViaGateway(s.t, { ...input, address: ADDRESS });
+    expect(checkout.status).toBe('ok');
+    expect(checkout.totalMinor).not.toBeNull();
+    expect(checkout.deliveryChargeMinor).toBe(product.deliveryChargeMinor);
+    const intent = await s.t.mutation(internal.ordCheckout.createIntent, {
+      idempotencyKey: 'live-fedex-checkout-fixture', estimateId: checkout.estimateId,
+      guestCapability: checkout.guestCapability, lines, address: ADDRESS, service: 'curbside', acceptTotalMinor: checkout.totalMinor!,
+    });
+    expect(intent.status).toBe('created');
+    if (intent.status === 'price_changed') throw new Error('Unexpected price change');
+    const stored = await s.t.run(ctx => ctx.db.get(intent.intentId));
+    expect(stored?.deliveryMinor).toBe(checkout.deliveryChargeMinor);
+  });
+  it('new quantity, destination and account cannot reuse the prior rate', async () => {
+    const s = await liveSetup();
+    const input = { lines: [zuoLine(s)], channel: 'retail' as const, zip: '95206', visitorKey: 'live-visitor' };
+    await estimateViaGateway(s.t, input);
+    for (const change of [{ ...input, zip: '10001' }, { ...input, lines: [{ ...zuoLine(s), packs: 2 }] }]) {
+      expect((await s.t.mutation(internal.dlvEstimates.compute, change)).status).toBe('quote_required');
+    }
+    process.env.FEDEX_ACCOUNT_NUMBER = '987654321';
+    expect((await s.t.mutation(internal.dlvEstimates.compute, input)).status).toBe('quote_required');
+  });
+  it('provider failure gives quote-required instead of zero or a modeled fallback', async () => {
+    const s = await liveSetup();
+    s.transport.mockImplementation(async () => new Response('{}', { status: 503 }));
+    const result = await estimateViaGateway(s.t, { lines: [zuoLine(s)], channel: 'retail', zip: '95206', visitorKey: 'live-visitor' });
+    expect(result.status).toBe('quote_required');
+    expect(result.deliveryChargeMinor).toBeNull();
+    expect(await s.t.run(ctx => ctx.db.query('dlvCarrierRates').collect())).toHaveLength(0);
+  });
+  it('an unsigned request never calls the carrier', async () => {
+    const s = await liveSetup();
+    await expect(s.t.action(api.dlvTaxActions.estimate, { lines: [zuoLine(s)], channel: 'retail', zip: '95206', visitorKey: 'live-visitor' })).rejects.toThrow();
+    expect(s.transport).not.toHaveBeenCalled();
+  });
+});

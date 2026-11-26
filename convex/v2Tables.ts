@@ -22,6 +22,10 @@ import {
 } from './v2Validators';
 
 export const v2Tables = {
+  dlvCarrierRates: defineTable({ key: v.string(), configVersion: v.number(), freightMinor: v.number(),
+    service: v.string(), rateType: v.union(v.literal('ACCOUNT'), v.literal('LIST')),
+    transactionId: v.optional(v.string()), createdAt: v.number(), expiresAt: v.number(),
+  }).index('by_key', ['key']).index('by_expiry', ['expiresAt']),
   dlvRequestLimits: defineTable({ key: v.string(), tokens: v.number(), refilledAt: v.number(), expiresAt: v.number() }).index('by_key', ['key']).index('by_expiry', ['expiresAt']),
   dlvRequestPermits: defineTable({ nonce: v.string(), expiresAt: v.number() }).index('by_nonce', ['nonce']).index('by_expiry', ['expiresAt']),
 
@@ -538,7 +542,7 @@ export const v2Tables = {
   dlvObservations: defineTable({
     createdAt: v.number(), durationMs: v.number(),
     channel: retailOrTrade,
-    path: v.union(v.literal('matrix'), v.literal('matrix_tax')),
+    path: v.union(v.literal('matrix'), v.literal('matrix_tax'), v.literal('carrier'), v.literal('carrier_tax')),
     outcome: v.union(v.literal('ok'), v.literal('quote'), v.literal('blocked'), v.literal('error'), v.literal('tax_error'), v.literal('tax_unavailable')),
     code: v.optional(v.string()),
     requestId: v.optional(v.string()),

@@ -46,7 +46,7 @@ export default function DeliveryMonitoring() {
             {report.paths.map((p) => (
               <tr key={p.path}>
                 <td>
-                  {p.path === 'matrix_tax'
+                  {p.path === 'carrier' ? 'Live carrier' : p.path === 'carrier_tax' ? 'Live carrier + tax provider' : p.path === 'matrix_tax'
                     ? 'Matrix + tax provider'
                     : 'Matrix / existing tax result'}
                 </td>
