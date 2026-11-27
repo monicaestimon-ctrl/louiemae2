@@ -3303,6 +3303,22 @@ describe('live FedEx delivery evidence', () => {
     expect((await plan(s)).deliveryChargeMinor).toBeNull();
     expect(s.transport).not.toHaveBeenCalled();
   });
+  it('uses the documented planning origin without asserting a warehouse assignment', async () => {
+    const s = await planningSetup();
+    await s.t.run(ctx => ctx.db.patch(s.variantId, { warehouseId: undefined, holds: ['STOCK_UNVERIFIED'] }));
+    expect(await plan(s)).toMatchObject({ status: 'ok', payable: false });
+    expect(s.transport).toHaveBeenCalledTimes(2);
+    expect((await s.t.run(ctx => ctx.db.get(s.variantId)))?.warehouseId).toBeUndefined();
+  });
+  it.each(['expired', 'conflicting'] as const)('does not override an %s explicit warehouse', async mode => {
+    const s = await planningSetup();
+    await s.t.run(async ctx => {
+      const cv = (await ctx.db.get(s.variantId))!;
+      await ctx.db.patch(cv.warehouseId!, mode === 'expired' ? { validUntil: NOW - 1 } : { originZip: '10001' });
+    });
+    expect((await plan(s)).deliveryChargeMinor).toBeNull();
+    expect(s.transport).not.toHaveBeenCalled();
+  });
   it('does not invent a planning amount when FedEx fails', async () => {
     const s = await planningSetup();
     s.transport.mockImplementation(async () => new Response('{}', { status: 503 }));
