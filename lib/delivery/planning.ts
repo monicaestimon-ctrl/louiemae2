@@ -21,4 +21,4 @@ export function planningDelivery(input: {
   return ladderCharge(ceilDiv(numerator, 10000 - ladder.deliveryProcessingBps), ladder);
 }
 
-export const PLANNING_NOTE = 'Planning estimate only, including our delivery allowance and applicable fees. Subject to product availability and final delivery confirmation; this estimate cannot be used for payment.';
+export const PLANNING_NOTE = 'Planning estimate from the Zuo Stockton, CA reference origin (95206), including our delivery allowance and applicable fees. Subject to product availability and final delivery confirmation; this estimate cannot be used for payment.';

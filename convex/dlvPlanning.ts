@@ -52,8 +52,15 @@ export const prepare = internalQuery({
       checkPackQuantity(cv, line.packs);
       if (!cv.sizeClass || cv.sizeClass === 'UNKNOWN') return null;
       const warehouse = cv.warehouseId ? await ctx.db.get(cv.warehouseId) : null;
-      if (!warehouseCurrent(warehouse, now) || warehouse?.supplierId !== cv.supplierId || warehouse.originZip !== rule.value.originZip || !warehouse.services?.includes('ground')) return null;
-      expiresAt = Math.min(expiresAt, warehouse.validUntil!);
+      if (cv.warehouseId) {
+        // An explicit assignment must be current and consistent; never override contrary evidence.
+        if (!warehouseCurrent(warehouse, now) || warehouse?.supplierId !== cv.supplierId || warehouse.originZip !== rule.value.originZip || !warehouse.services?.includes('ground')) return null;
+        expiresAt = Math.min(expiresAt, warehouse.validUntil!);
+      } else if (rule.value.originZip !== '95206') {
+        // Zuo's 2026 US price list, Freight Program Cost, explicitly recommends this
+        // reference ZIP for FedEx/UPS estimates. This is not a stock/dispatch assignment.
+        return null;
+      }
       const rows = await ctx.db.query('catCartons').withIndex('by_variant', q => q.eq('variantId', cv._id)).collect();
       if (!rows.length) return null;
       for (const row of rows) {
