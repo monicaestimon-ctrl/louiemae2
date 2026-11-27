@@ -47,7 +47,17 @@ export type PublicDeliveryEstimate = {
 };
 
 /** Whether either delivery estimate workflow is available. */
-export const enabled = query({ args: {}, handler: () => process.env.DELIVERY_PLANNING_ENABLED === 'true' || flag('DELIVERY_AUTOMATION_ENABLED') });
+export const enabled = query({
+  args: { productId: v.optional(v.string()) },
+  handler: async (ctx, a) => {
+    if (a.productId === undefined) return process.env.DELIVERY_PLANNING_ENABLED === 'true' || flag('DELIVERY_AUTOMATION_ENABLED');
+    if (a.productId.length > 200) return false;
+    const id = ctx.db.normalizeId('commerceProducts', a.productId);
+    const product = id ? await ctx.db.get(id) : null;
+    if (product?.provider === 'zuo') return process.env.DELIVERY_PLANNING_ENABLED === 'true';
+    return product?.provider === 'ashcroft' && flag('DELIVERY_AUTOMATION_ENABLED');
+  },
+});
 
 export const productProfile = query({
   args: {
@@ -78,7 +88,6 @@ export const productProfile = query({
       // Legacy Ashcroft variants use supplier IDs rather than canonical catVariant IDs.
       // These are selling-unit quantities; actual eligibility is rechecked by the engine.
       if (product?.provider === 'ashcroft') {
-        if (!flag('DELIVERY_AUTOMATION_ENABLED')) return null;
         if (listing.pricingMode === 'approved_v2') {
           await approvedAshcroftOffer(ctx, listing, a.variantId, a.channel);
           return { piecesPerPack: 1, minimumPacks: option.minimum, incrementPacks: option.increment };

@@ -37,7 +37,7 @@ export default function ProductDeliveryEstimate({
   selectedPacks?: number;
   disabledMessage?: string;
 }) {
-  const availability = useRecoverableQuery(api.dlvEstimates.enabled, variantId ? {} : 'skip');
+  const availability = useRecoverableQuery(api.dlvEstimates.enabled, variantId ? { productId } : 'skip');
   const enabled = availability.data;
   const profileQuery = useRecoverableQuery(
     api.dlvEstimates.productProfile,

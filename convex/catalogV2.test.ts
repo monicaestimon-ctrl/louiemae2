@@ -1090,6 +1090,14 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
       return { productId, listingId };
     });
     const args = { productId: ids.productId, variantId: 'supplier-variant-1', channel: 'retail' as const };
+    vi.stubEnv('DELIVERY_PLANNING_ENABLED', 'true');
+    vi.stubEnv('DELIVERY_AUTOMATION_ENABLED', 'false');
+    try {
+      expect(await t.query(api.dlvEstimates.enabled, { productId: ids.productId })).toBe(false);
+      vi.stubEnv('DELIVERY_AUTOMATION_ENABLED', 'true');
+      expect(await t.query(api.dlvEstimates.enabled, { productId: ids.productId })).toBe(true);
+    } finally { vi.unstubAllEnvs(); }
+
     expect(await t.query(api.dlvEstimates.productProfile, args)).toEqual({ piecesPerPack: 1, minimumPacks: 2, incrementPacks: 2 });
     expect(await t.query(api.dlvEstimates.productProfile, { ...args, variantId: 'missing' })).toBeNull();
     await expect(t.query(api.dlvEstimates.productProfile, { ...args, channel: 'trade' })).rejects.toThrow();
