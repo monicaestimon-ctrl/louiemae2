@@ -159,6 +159,10 @@ export type SellPurpose = 'publish' | 'purchase' | 'link' | 'estimate';
 export async function assertSellable(ctx: Ctx, variantId: Id<'catVariants'>, purpose: SellPurpose, now = Date.now(), channel: 'retail' | 'trade' = 'retail') {
   const v = await ctx.db.get(variantId);
   if (!v) throw new CommerceError('STOCK_UNAVAILABLE', 'Variant not found');
+  if (purpose !== 'publish') {
+    const listing = await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', v.productId).eq('channel', channel === 'retail' ? 'retail' : 'house')).unique();
+    if (listing?.planningOnly) throw new CommerceError('DELIVERY_QUOTE_REQUIRED', 'Planning-only listing is not a purchasable offer');
+  }
   if (v.availability === 'discontinued') throw new CommerceError('STOCK_UNAVAILABLE', 'Discontinued', 'This item has been discontinued.');
   const r = await evaluate(ctx, v, now);
   const holds = new Set<string>([...v.holds, ...r.holds]);

@@ -34,6 +34,7 @@ afterEach(() => {
   delete process.env.CATALOG_PUBLICATION_V2_ENABLED;
   delete process.env.RETAIL_ZUO_CHECKOUT_ENABLED;
   delete process.env.TRADE_CHECKOUT_V2_ENABLED;
+  delete process.env.DELIVERY_PLANNING_ENABLED;
 });
 
 describe('cost evidence authoring', () => {
@@ -1121,6 +1122,38 @@ describe('sellability gates and publication (CAT02, OPS01)', () => {
     const cv = (await t.run((ctx) => ctx.db.query('catVariants').first()))!;
     return { t, admin, cv, productId: cv.productId };
   }
+
+  it('publishes approved content for planning without making held products purchasable', async () => {
+    const { t, admin, cv, productId } = await readyProduct();
+    process.env.DELIVERY_PLANNING_ENABLED = 'true';
+    const revision = await t.run(async ctx => {
+      const product = (await ctx.db.get(productId))!;
+      await ctx.db.patch(productId, { zuoStaging: { sku: cv.supplierSku, pack: cv.piecesPerPack, unitsPerSellUnit: cv.piecesPerPack, runId: 'planning-fixture', manifestSha256: 'a'.repeat(64), payload: 'fixture', sourceEvidence: '{}', excluded: false, exclusionReasons: [], holdReasons: [], status: 'staged_not_orderable' } });
+      await ctx.db.patch(cv._id, { holds: ['MANUAL', 'MEDIA_RIGHTS', 'STOCK_UNVERIFIED', 'COST_MISSING'] });
+      const storageId = await ctx.storage.store(new Blob(['fixture-image']));
+      await ctx.db.insert('catMediaAssets', { productId, variantId: cv._id, role: 'hero', storageId, derivatives: [], contentHash: 'fixture', mime: 'image/jpeg', width: 1200, height: 1200, bytes: 13, sourceUrl: 'https://example.com/photo.jpg', rights: { basis: 'supplier source; website review pending', attributionRequired: false, privateOriginal: false }, altText: 'Oak dining chair pair', verifiedAgainst: { sku: cv.supplierSku, pack: cv.packId }, status: 'verified', createdAt: NOW });
+      return product.revision;
+    });
+    const input = { productId, expectedRevision: revision, variantIds: [cv._id], websiteMediaEvidence: 'Fixture written supplier website image authorization', reason: 'Review exact product and image for planning only' };
+    await expect(t.mutation(api.catPublication.publishPlanning, input)).rejects.toThrow();
+    await expect(admin.mutation(api.catPublication.publishPlanning, { ...input, expectedRevision: revision + 1 })).rejects.toThrow();
+    expect(await admin.mutation(api.catPublication.publishPlanning, input)).toMatchObject({ payable: false, publishedVariants: 1 });
+    const listing = (await t.run(ctx => ctx.db.query('commerceListings').first()))!;
+    expect(listing.planningOnly).toBe(true);
+    expect(listing.fulfillment).toEqual([]);
+    const detail = await t.run(ctx => retailDetail(ctx, productId));
+    expect(detail).toMatchObject({ inStock: false, fulfillmentProvider: 'zuo' });
+    expect(detail?.variants[0].inStock).toBe(false);
+    const oldCost = (await t.run(ctx => ctx.db.get(cv.currentCostRevisionId!)))!;
+    await t.run(ctx => ctx.db.patch(cv.currentCostRevisionId!, { mapApplicability: 'applies', mapUnitBasis: 'pack', mapMinor: 99999999 }));
+    expect(await t.run(ctx => retailDetail(ctx, productId))).toBeNull();
+    await t.run(ctx => ctx.db.patch(cv.currentCostRevisionId!, { mapApplicability: oldCost.mapApplicability, mapUnitBasis: oldCost.mapUnitBasis, mapMinor: oldCost.mapMinor }));
+
+    expect((await t.run(ctx => ctx.db.get(cv._id)))?.holds).toContain('STOCK_UNVERIFIED');
+    for (const purpose of ['purchase', 'estimate', 'link'] as const) await expect(t.run(ctx => assertSellable(ctx, cv._id, purpose))).rejects.toThrow(/Planning-only/);
+    await t.run(async ctx => { const asset = (await ctx.db.query('catMediaAssets').first())!; await ctx.db.patch(asset._id, { status: 'rejected' }); });
+    expect(await t.run(ctx => retailDetail(ctx, productId))).toBeNull();
+  });
 
   it('rechecks live economics without a background hold refresh and never substitutes a candidate price', async () => {
     const { t, cv } = await readyProduct();
