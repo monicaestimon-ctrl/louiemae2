@@ -15,6 +15,16 @@ const source: StockEvidence = {
 const view = (over: Partial<StockEvidence> = {}, warehouse = 'CA', pack = 2, minimum = 1) =>
   stockView({ ...source, ...over }, warehouse, pack, now, 86400000, minimum, 'warehouse-v1');
 describe('stock source semantics', () => {
+  it('allows explicitly accepted provisional pieces without relabeling them supplier-confirmed', () => {
+    const provisionalAcceptance = { sourceObservationId: 'source-row', authorizationRef: 'Owner instruction November 27' };
+    const provisional = { confirmed: false, kind: 'on_hand' as const, provisionalAcceptance };
+    expect(view(provisional)).toMatchObject({ current: true, availablePacks: 2, automatic: true });
+    expect(view({ ...provisional, quantity: '1' })).toMatchObject({ availablePacks: 0, automatic: false });
+    expect(view({ ...provisional, observedAt: now - 86400001 }).current).toBe(false);
+    expect(view({ ...provisional, unitBasis: 'pack' }).current).toBe(false);
+    expect(view({ ...provisional, kind: 'binary', quantity: null }).current).toBe(false);
+    expect(view({ ...provisional, provisionalAcceptance: { ...provisionalAcceptance, authorizationRef: '' } }).current).toBe(false);
+  });
   it('floors piece counts into whole packs and respects the minimum purchase quantity', () => {
     expect(view()).toMatchObject({ availablePacks: 2, automatic: true, availability: 'in_stock' });
     expect(view({ unitBasis: 'pack' })).toMatchObject({ availablePacks: 5 });

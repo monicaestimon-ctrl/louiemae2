@@ -253,6 +253,32 @@ describe('shipping evidence authoring', () => {
 });
 
 describe('stock evidence authoring', () => {
+  it('binds owner-provisional Zuo pieces to the source and withdraws on newer evidence', async () => {
+    const { t, admin, cv, args } = await fixture();
+    await approve(t, admin, 'freshness-default');
+    const sourceObservationId = await t.run(ctx => ctx.db.insert('catSourceObservations', {
+      supplierId: cv.supplierId, variantId: cv._id, field: 'supplier_inventory_on_hand',
+      extractedValue: JSON.stringify({ kind: 'on_hand', CA_QTY: 5, FL_QTY: 99 }),
+      observedAt: args.observedAt, confidence: 'confirmed', contentHash: 'owner-source', verifier: 'fixture', createdAt: NOW,
+    }));
+    const provisional = { ...args, confirmed: false, provisionalAcceptance: { sourceObservationId, authorizationRef: 'Owner instruction: provisional available-to-order pieces, November 27' } };
+    await expect(t.mutation(api.catStock.recordEvidence, provisional)).rejects.toThrow();
+    process.env.DELIVERY_ADMIN_ROLES = JSON.stringify({ [ADMIN]: ['operations'] });
+    await expect(admin.mutation(api.catStock.recordEvidence, provisional)).rejects.toThrow(/Provisional/);
+    delete process.env.DELIVERY_ADMIN_ROLES;
+    for (const change of [{ quantity: '99' }, { confirmed: true }, { unitBasis: 'pack' as const }, { observedAt: NOW }])
+      await expect(admin.mutation(api.catStock.recordEvidence, { ...provisional, ...change })).rejects.toThrow(/Provisional/);
+    const id = await admin.mutation(api.catStock.recordEvidence, provisional);
+    expect(await t.run(ctx => ctx.db.get(id))).toMatchObject({ confirmed: false, kind: 'on_hand', provisionalAcceptance: provisional.provisionalAcceptance });
+    expect((await t.run(async ctx => evaluate(ctx, (await ctx.db.get(cv._id))!, NOW))).availability).toBe('in_stock');
+    expect((await t.run(async ctx => evaluate(ctx, (await ctx.db.get(cv._id))!, NOW + 2 * 86400000))).availability).toBe('unknown');
+    await t.run(ctx => ctx.db.insert('catSourceObservations', {
+      supplierId: cv.supplierId, variantId: cv._id, field: 'supplier_inventory_on_hand',
+      extractedValue: JSON.stringify({ kind: 'on_hand', CA_QTY: 0, FL_QTY: 0 }),
+      observedAt: NOW, confidence: 'confirmed', contentHash: 'new-zero', verifier: 'fixture', createdAt: NOW,
+    }));
+    expect((await t.run(async ctx => evaluate(ctx, (await ctx.db.get(cv._id))!, NOW))).availability).toBe('out_of_stock');
+  });
   async function fixture() {
     const { t, admin } = await setup();
     await importPackage(admin, [row('STOCK')], 'dry_run');
