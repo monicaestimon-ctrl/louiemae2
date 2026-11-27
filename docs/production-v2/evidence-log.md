@@ -83,3 +83,11 @@ Re-read the November 3?4 supplier onboarding correspondence (forwarded Gmail mes
 The production media audit found 724 visually verified variants. Their original source records still explicitly reserve publication-rights review. A named-product planning publication must record the reviewed website-use evidence, retain the existing sales holds, require canonical identity and approved MAP-compliant retail prices, and use verified public image renditions. No fulfillment cost snapshot or checkout authorization is created. A later price/MAP or image change removes the affected variant from browsing until reviewed again.
 
 Production activation and named-product publication must follow passing CI and deployment. HOLM publication and sales qualification remain separate follow-up work.
+
+### November 27 - qualified Zuo retail/HOLM publication and live checkout
+
+See [supplier reconciliation and remaining acceptance work](supplier-reconciliation-20261127.md#november-27-production-qualification-and-checkout-activation) for this release milestone. Current sources: 744 Zuo variant refreshes and the independent 424-row Ashcroft feed. Production readback verified 102 qualified Zuo products on retail and HOLM. Existing approved prices were retained and unverified trade prices stayed hidden.
+
+Retail pilot evidence: ten-ZIP estimates; full-address live FedEx and Stripe Tax totals; exact-total unpaid live Checkout creation; explicit session expiration delivered through the real webhook; over-stock rejection; Alaska quote fallback; and real product-page/cart totals matching at $560.79 for the Texas sample. No payment or supplier order was made. Verified-member HOLM checkout, Ashcroft v2 qualification and the remaining program/paid-lifecycle/stable-release acceptance work are still incomplete. Private receipt paths are listed in the reconciliation document.
+
+Local verification for this documentation milestone: 350 test files passed, 2,458 tests passed and one skipped (direct Vitest run, thread pool, two workers). Application/backend types, catalog-write guard, build and client-secret guard passed. Lint passed with zero errors and 552 warnings after excluding untracked temporary audit scripts. Earlier wrapped test runs did not produce completion evidence and are not counted as passing. No application source changed in this milestone.
