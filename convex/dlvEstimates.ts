@@ -46,8 +46,18 @@ export type PublicDeliveryEstimate = {
   shipmentGroups: { label: string; items: { name: string; packs: number }[] }[];
 };
 
-/** Whether automatic delivery estimates are on (the storefront hides the estimator otherwise). */
-export const enabled = query({ args: {}, handler: () => flag('DELIVERY_AUTOMATION_ENABLED') });
+/** Whether either delivery estimate workflow is available. */
+export const enabled = query({
+  args: { productId: v.optional(v.string()) },
+  handler: async (ctx, a) => {
+    if (a.productId === undefined) return process.env.DELIVERY_PLANNING_ENABLED === 'true' || flag('DELIVERY_AUTOMATION_ENABLED');
+    if (a.productId.length > 200) return false;
+    const id = ctx.db.normalizeId('commerceProducts', a.productId);
+    const product = id ? await ctx.db.get(id) : null;
+    if (product?.provider === 'zuo') return process.env.DELIVERY_PLANNING_ENABLED === 'true';
+    return product?.provider === 'ashcroft' && flag('DELIVERY_AUTOMATION_ENABLED');
+  },
+});
 
 export const productProfile = query({
   args: {
@@ -85,7 +95,7 @@ export const productProfile = query({
         return { piecesPerPack: 1, minimumPacks: option.minimum, incrementPacks: option.increment,
           ...(a.channel === 'trade' ? { requiresProjectQuote: true } : {}) };
       }
-      if (!vid || product?.provider !== 'zuo') return null;
+      if (!vid || product?.provider !== 'zuo' || process.env.DELIVERY_PLANNING_ENABLED !== 'true') return null;
       const cv = await ctx.db.get(vid);
       if (
         !cv ||
@@ -95,6 +105,7 @@ export const productProfile = query({
       )
         return null;
       return {
+        planning: true,
         piecesPerPack: cv.piecesPerPack,
         minimumPacks: cv.orderMinimumPacks,
         incrementPacks: cv.orderIncrementPacks,

@@ -50,6 +50,14 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 describe('delivery server gateway', () => {
+  it('signs and dispatches planning separately from payable estimates', async () => {
+    const res = await call({ body: { operation: 'planning', input } });
+    expect(res.status).toHaveBeenCalledWith(200);
+    const payload = mock.action.mock.calls[0][1];
+    expect(await verifyRequest('1'.repeat(64), 'planning', input, payload.proof, Date.now())).toBe(true);
+    expect(await verifyRequest('1'.repeat(64), 'estimate', input, payload.proof, Date.now())).toBe(false);
+  });
+
   it('keeps every local runtime dependency resolvable by deployed Node ESM', () => {
     const seen = new Set<string>();
     function inspect(file: string) {

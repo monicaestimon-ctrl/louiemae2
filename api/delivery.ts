@@ -35,7 +35,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (
       !body ||
       Buffer.byteLength(JSON.stringify(body), 'utf8') > DELIVERY_BODY_BYTES ||
-      (body.operation !== 'estimate' && body.operation !== 'quote') ||
+      (body.operation !== 'estimate' && body.operation !== 'quote' && body.operation !== 'planning') ||
       !body.input ||
       typeof body.input !== 'object' ||
       Array.isArray(body.input) ||
@@ -76,7 +76,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       client.setAuth(authorization.slice(7));
     }
     const result =
-      body.operation === 'estimate'
+      body.operation === 'planning'
+        ? await client.action(api.dlvPlanningActions.estimate, { ...body.input, proof } as FunctionArgs<typeof api.dlvPlanningActions.estimate>)
+        : body.operation === 'estimate'
         ? await client.action(api.dlvTaxActions.estimate, { ...body.input, proof } as FunctionArgs<
             typeof api.dlvTaxActions.estimate
           >)

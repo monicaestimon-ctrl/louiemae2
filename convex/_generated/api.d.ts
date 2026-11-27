@@ -76,6 +76,8 @@ import type * as dlvEstimates from "../dlvEstimates.js";
 import type * as dlvFedex from "../dlvFedex.js";
 import type * as dlvManual from "../dlvManual.js";
 import type * as dlvOperations from "../dlvOperations.js";
+import type * as dlvPlanning from "../dlvPlanning.js";
+import type * as dlvPlanningActions from "../dlvPlanningActions.js";
 import type * as dlvPerimeter from "../dlvPerimeter.js";
 import type * as dlvProjectPricing from "../dlvProjectPricing.js";
 import type * as dlvQuoteLifecycle from "../dlvQuoteLifecycle.js";
@@ -280,6 +282,8 @@ declare const fullApi: ApiFromModules<{
   dlvFedex: typeof dlvFedex;
   dlvManual: typeof dlvManual;
   dlvOperations: typeof dlvOperations;
+  dlvPlanning: typeof dlvPlanning;
+  dlvPlanningActions: typeof dlvPlanningActions;
   dlvPerimeter: typeof dlvPerimeter;
   dlvProjectPricing: typeof dlvProjectPricing;
   dlvQuoteLifecycle: typeof dlvQuoteLifecycle;
