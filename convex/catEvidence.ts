@@ -15,8 +15,7 @@ import { stableStringify } from '../lib/zuoImport';
 import { stagedAllowanceClass } from '../lib/zuoStagedCatalog';
 import { activeConfig } from './sysConfig';
 import type { PricingAssumptions } from '../lib/config';
-import { latestSupplierStock } from './supplierStockRead';
-import { supplierStockConstraint } from '../lib/supplierStock';
+import { latestSupplierStock, zuoStockConstraint } from './supplierStockRead';
 import { currentObservation } from '../lib/catFreshness';
 import { stockView } from '../lib/stockEvidence';
 
@@ -38,7 +37,7 @@ async function applySupplierAvailability(ctx: MutationCtx, variantId: Id<'catVar
       await evidenceDigest(cv.warehouseId ? await ctx.db.get(cv.warehouseId) : null));
     stockObservedAt = validated.current ? validated.observedAt : undefined;
   }
-  const constraint = supplierStockConstraint(observations, stockObservedAt, now);
+  const constraint = await zuoStockConstraint(ctx, variantId, stockObservedAt, now);
   if (!constraint || cv.availability === 'discontinued') return 'unchanged' as const;
   const changed = cv.availability !== constraint.availability || cv.availabilityObservedAt !== constraint.observedAt
     || !cv.holds.includes('STOCK_UNVERIFIED');

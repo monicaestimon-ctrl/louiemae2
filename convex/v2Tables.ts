@@ -310,6 +310,7 @@ export const v2Tables = {
     kind: v.union(v.literal('available_to_sell'), v.literal('on_hand'), v.literal('binary'), v.literal('unknown')),
     availability,
     confirmed: v.boolean(),
+    provisionalAcceptance: v.optional(v.object({ sourceObservationId: v.id('catSourceObservations'), authorizationRef: v.string() })),
     piecesPerPack: v.number(),
     source: v.string(),
     note: v.string(),

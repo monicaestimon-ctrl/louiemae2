@@ -10,6 +10,7 @@ export type StockEvidence = {
   kind: 'available_to_sell' | 'on_hand' | 'binary' | 'unknown';
   availability: Availability;
   confirmed: boolean;
+  provisionalAcceptance?: { sourceObservationId: string; authorizationRef: string };
   piecesPerPack: number;
   observedAt: number;
   validUntil?: number;
@@ -35,6 +36,9 @@ export function stockView(
   minimumPacks = 1,
   warehouseFingerprint?: string
 ) {
+  const provisional = !!source?.provisionalAcceptance?.sourceObservationId
+    && !!source.provisionalAcceptance.authorizationRef.trim()
+    && !source.confirmed && source.kind === 'on_hand' && source.unitBasis === 'piece';
   const unknown = {
     availability: 'unknown' as Availability,
     availablePacks: null as number | null,
@@ -48,7 +52,7 @@ export function stockView(
     !Number.isSafeInteger(minimumPacks) ||
     minimumPacks < 1 ||
     !source ||
-    !source.confirmed ||
+    (!source.confirmed && !provisional) ||
     !warehouseId ||
     source.warehouseId !== warehouseId ||
     !source.warehouseFingerprint ||
@@ -82,12 +86,12 @@ export function stockView(
   let availability = current ? source.availability : ('unknown' as Availability);
   if (availability === 'in_stock' && packs !== null && packs < minimumPacks)
     availability = 'out_of_stock';
-  // A physical on-hand count is not an available-to-sell allocation. Binary/on-hand sources
-  // require the manual supplier-confirmation route, never an invented guaranteed reservation.
+  // Retain on-hand provenance. Only a separately recorded owner acceptance permits
+  // its provisional use; this does not claim a supplier-guaranteed allocation.
   return {
     availability,
     availablePacks: packs,
-    automatic: current && source.kind === 'available_to_sell' && availability === 'in_stock',
+    automatic: current && (source.kind === 'available_to_sell' || provisional) && availability === 'in_stock',
     current,
     observedAt: source.observedAt,
   };

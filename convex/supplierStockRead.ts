@@ -9,5 +9,16 @@ export async function latestSupplierStock(ctx: QueryCtx | MutationCtx, variantId
 }
 
 export async function zuoStockConstraint(ctx: QueryCtx | MutationCtx, variantId: Id<'catVariants'>, stockObservedAt: number | undefined, now: number) {
-  return supplierStockConstraint(await latestSupplierStock(ctx, variantId), stockObservedAt, now);
+  const observations = await latestSupplierStock(ctx, variantId);
+  const cv = await ctx.db.get(variantId);
+  const revision = cv?.currentStockRevisionId ? await ctx.db.get(cv.currentStockRevisionId) : null;
+  const accepted = revision?.provisionalAcceptance
+    ? observations.find(o => o._id === revision.provisionalAcceptance?.sourceObservationId) : null;
+  // Only the exact still-current source accepted by the owner may bypass its own
+  // on-hand constraint. Newer, conflicting, or expired evidence still withdraws it.
+  if (accepted && stockObservedAt === accepted.observedAt && observations.length < 20
+    && observations[0]?.observedAt === accepted.observedAt
+    && observations.filter(o => o.observedAt === accepted.observedAt).every(o =>
+      ['confirmed', 'corroborated'].includes(o.confidence) && o.extractedValue === accepted.extractedValue)) return null;
+  return supplierStockConstraint(observations, stockObservedAt, now);
 }

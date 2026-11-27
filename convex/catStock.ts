@@ -12,6 +12,7 @@ import { availability } from './v2Validators';
 import { CommerceError, isCommerceError } from '../lib/errors';
 import { stockQuantity, stockView } from '../lib/stockEvidence';
 import { digest } from './dlvSecurity';
+import { latestSupplierStock } from './supplierStockRead';
 import type { Id } from './_generated/dataModel';
 
 /** Legacy binary writes lacked actual source dates, origin and units. Preserve history only. */
@@ -77,6 +78,7 @@ export const recordEvidence = indexedMutation({
     ),
     availability,
     confirmed: v.boolean(),
+    provisionalAcceptance: v.optional(v.object({ sourceObservationId: v.id('catSourceObservations'), authorizationRef: v.string() })),
     observedAt: v.number(),
     validUntil: v.optional(v.number()),
     source: v.string(),
@@ -145,6 +147,25 @@ export const recordEvidence = indexedMutation({
       );
     const warehouse = cv.warehouseId ? await ctx.db.get(cv.warehouseId) : null;
     const warehouseFingerprint = await digest(warehouse);
+    if (a.provisionalAcceptance) {
+      const supplier = await ctx.db.get(cv.supplierId);
+      const observation = await ctx.db.get(a.provisionalAcceptance.sourceObservationId);
+      const latest = await latestSupplierStock(ctx, cv._id);
+      let quantities: { kind?: string; CA_QTY?: unknown; FL_QTY?: unknown } = {};
+      try { quantities = JSON.parse(observation?.extractedValue ?? '{}') ?? {}; } catch { /* rejected below */ }
+      const count = warehouse?.state === 'CA' ? quantities.CA_QTY : warehouse?.state === 'FL' ? quantities.FL_QTY : null;
+      if (!actor.approver || supplier?.code !== 'zuo' || !warehouse || warehouse.supplierId !== cv.supplierId
+        || a.confirmed || a.kind !== 'on_hand' || a.unitBasis !== 'piece'
+        || a.availability === 'discontinued' || cv.availability === 'discontinued'
+        || a.provisionalAcceptance.authorizationRef.trim().length < 10 || a.provisionalAcceptance.authorizationRef.length > 1000
+        || !observation || observation.variantId !== cv._id || observation.supplierId !== cv.supplierId
+        || observation.field !== 'supplier_inventory_on_hand' || observation.observedAt !== a.observedAt
+        || !['confirmed', 'corroborated'].includes(observation.confidence) || quantities.kind !== 'on_hand'
+        || typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0 || count !== quantity
+        || !latest.length || latest.length >= 20 || latest[0].observedAt !== observation.observedAt
+        || latest.filter(o => o.observedAt === observation.observedAt).some(o => o.confidence === 'conflict' || o.extractedValue !== observation.extractedValue))
+        throw new CommerceError('INVALID_INPUT', 'Provisional Zuo acceptance requires an approver, the current warehouse piece count, and recorded owner authorization');
+    }
     if (a.expectedWarehouseFingerprint !== warehouseFingerprint)
       throw new CommerceError(
         'INVALID_INPUT',
@@ -177,6 +198,7 @@ export const recordEvidence = indexedMutation({
       kind: a.kind,
       availability: a.availability,
       confirmed: a.confirmed,
+      ...(a.provisionalAcceptance ? { provisionalAcceptance: a.provisionalAcceptance } : {}),
       piecesPerPack: cv.piecesPerPack,
       source: a.source.trim(),
       note: a.note.trim(),
@@ -206,7 +228,7 @@ export const recordEvidence = indexedMutation({
       observedAt: a.observedAt,
       contentHash: hash,
       verifier: actor.email,
-      confidence: view.current ? 'confirmed' : 'unverified',
+      confidence: view.current && !a.provisionalAcceptance ? 'confirmed' : 'unverified',
       createdAt: now,
     });
     await ctx.db.patch(cv._id, {
