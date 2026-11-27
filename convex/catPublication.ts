@@ -149,7 +149,7 @@ export const status = query({
     await requireDeliveryRole(ctx, 'approver');
     const g = await gates(ctx, a.productId);
     const product = await ctx.db.get(a.productId);
-    return { stockExcluded: stockOnlyExcluded(product), stage: g.meta.stage, holds: g.meta.holds, gates: g.gates, variants: g.variants.map((cv) => ({ id: cv._id, sku: cv.supplierSku, holds: cv.holds, availability: cv.availability })) };
+    return { productRevision: product?.revision ?? null, stockExcluded: stockOnlyExcluded(product), stage: g.meta.stage, holds: g.meta.holds, gates: g.gates, variants: g.variants.map((cv) => ({ id: cv._id, sku: cv.supplierSku, holds: cv.holds, availability: cv.availability })) };
   },
 });
 
@@ -310,7 +310,7 @@ export const advance = mutation({
   },
 });
 
-async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, meta: Doc<'catProductMeta'>, channel: 'retail' | 'house', variants: Doc<'catVariants'>[]) {
+async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, meta: Doc<'catProductMeta'>, channel: 'retail' | 'house', variants: Doc<'catVariants'>[], planningOnly = false) {
   const media = await ctx.db.query('catMediaAssets').withIndex('by_product', (q) => q.eq('productId', product._id)).collect();
   const verified = media.filter(m => variants.some(cv => verifiedImageMatches(m, cv))).sort((x, y) => (x.role === 'hero' ? -1 : y.role === 'hero' ? 1 : 0));
   const prepared = await Promise.all(verified.map(async m => {
@@ -340,7 +340,7 @@ async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, m
     const imageUrl = imageMedia.find(m => m.variantIds.includes(publicId))?.url;
     if (!imageUrl) throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: public variant photograph is unavailable`);
     const packCost = supplierPackCostMinor(cost, cv.piecesPerPack);
-    if (packCost === null) throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: supplier cost missing`);
+    if (!planningOnly && packCost === null) throw new CommerceError('COST_REVIEW_REQUIRED', `${cv.supplierSku}: supplier cost missing`);
     snapVariants.push({
       id: publicId,
       name: cv.louieMaeVariantName,
@@ -349,11 +349,11 @@ async function snapshotFor(ctx: MutationCtx, product: Doc<'commerceProducts'>, m
       increment: cv.orderIncrementPacks,
       price: price.packPriceMinor,
     });
-    fulfillment.push({
+    if (!planningOnly) fulfillment.push({
       id: publicId,
       name: cv.louieMaeVariantName,
       sku: cv.supplierSku,
-      cost: packCost / 100,
+      cost: packCost! / 100,
       minimum: cv.orderMinimumPacks,
       increment: cv.orderIncrementPacks,
       retail: retail?.status === 'approved' ? retail.packPriceMinor : 0,
@@ -402,11 +402,11 @@ export const publish = mutation({
           ? g.variants.filter(cv => cv.availability !== 'discontinued').map(cv => ({ id: cv.legacyVariantId!, sku: cv.supplierSku, minimum: cv.orderMinimumPacks, increment: cv.orderIncrementPacks })) : undefined;
         // Validate every retained identity against the pre-publication source before saving it.
         if (identities) for (const cv of g.variants.filter(cv => cv.availability !== 'discontinued')) await publicationIdentity(ctx, product, cv);
-        const data = { productId, channel, pricingMode: 'approved_v2' as const, published: true, revision: product.revision, snapshot, fulfillment, updatedAt: now,
+        const data = { productId, channel, planningOnly: false, pricingMode: 'approved_v2' as const, published: true, revision: product.revision, snapshot, fulfillment, updatedAt: now,
           ...(identities ? { ashcroftIdentityOptions: identities } : {}) };
         const listingId = old ? (await ctx.db.patch(old._id, data), old._id) : await ctx.db.insert('commerceListings', data);
         const state = await ctx.db.query('catListingState').withIndex('by_listing', (q) => q.eq('listingId', listingId)).first();
-        const st = { stage: 'published' as const, holds: [], publishedRevision: product.revision, publishedAt: now, ...(old?.published ? { previousSnapshot: { snapshot: old.snapshot, fulfillment: old.fulfillment, revision: old.revision, pricingMode: old.pricingMode } } : {}), updatedAt: now };
+        const st = { stage: 'published' as const, holds: [], publishedRevision: product.revision, publishedAt: now, ...(old?.published ? { previousSnapshot: { snapshot: old.snapshot, fulfillment: old.fulfillment, revision: old.revision, pricingMode: old.pricingMode, planningOnly: old.planningOnly } } : {}), updatedAt: now };
         if (state) await ctx.db.patch(state._id, st);
         else await ctx.db.insert('catListingState', { listingId, ...st });
       }
@@ -453,13 +453,50 @@ export const rollback = mutation({
     const listing = await ctx.db.query('commerceListings').withIndex('by_product_channel', (q) => q.eq('productId', a.productId).eq('channel', a.channel)).unique();
     if (!listing) throw new CommerceError('INVALID_INPUT', 'No listing');
     const state = await ctx.db.query('catListingState').withIndex('by_listing', (q) => q.eq('listingId', listing._id)).first();
-    const prev = state?.previousSnapshot as { snapshot: Doc<'commerceListings'>['snapshot']; fulfillment?: Doc<'commerceListings'>['fulfillment']; revision: number; pricingMode?: 'approved_v2' } | undefined;
+    const prev = state?.previousSnapshot as { snapshot: Doc<'commerceListings'>['snapshot']; fulfillment?: Doc<'commerceListings'>['fulfillment']; revision: number; pricingMode?: 'approved_v2'; planningOnly?: boolean } | undefined;
     const now = Date.now();
-    if (prev) await ctx.db.patch(listing._id, { snapshot: prev.snapshot, fulfillment: prev.fulfillment, pricingMode: prev.pricingMode, revision: prev.revision, updatedAt: now });
+    if (prev) await ctx.db.patch(listing._id, { snapshot: prev.snapshot, fulfillment: prev.fulfillment, pricingMode: prev.pricingMode, planningOnly: prev.planningOnly, revision: prev.revision, updatedAt: now });
     else await ctx.db.patch(listing._id, { published: false, updatedAt: now });
     if ((await ctx.db.get(a.productId))?.provider === 'ashcroft')
       assertAshcroftChannelDelivery(await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', a.productId)).collect());
     if (state) await ctx.db.patch(state._id, { previousSnapshot: undefined, reason: `rollback: ${a.reason}`, updatedAt: now, ...(prev ? {} : { stage: 'ready' as const, unpublishedAt: now }) });
     await audit(ctx, { actor: admin.email, action: 'publication.rollback', entityTable: 'commerceListings', entityId: listing._id, reason: a.reason, after: prev ? 'restored previous revision' : 'unpublished' });
+  },
+});
+
+/** Explicit content approval for browsing and nonbinding planning, never checkout. */
+export const publishPlanning = mutation({
+  args: { productId: v.id('commerceProducts'), expectedRevision: v.number(), variantIds: v.array(v.id('catVariants')), websiteMediaEvidence: v.string(), reason: v.string() },
+  handler: async (ctx, a) => {
+    const actor = await requireDeliveryRole(ctx, 'approver');
+    if (process.env.DELIVERY_PLANNING_ENABLED !== 'true') throw new CommerceError('FEATURE_DISABLED');
+    if (a.websiteMediaEvidence.trim().length < 30 || a.websiteMediaEvidence.length > 2000 || a.reason.trim().length < 10 || a.reason.length > 1000 || !a.variantIds.length || a.variantIds.length > 50 || new Set(a.variantIds).size !== a.variantIds.length) throw new CommerceError('INVALID_INPUT');
+    const product = await ctx.db.get(a.productId);
+    const meta = await ctx.db.query('catProductMeta').withIndex('by_product', q => q.eq('productId', a.productId)).unique();
+    if (!product || product.provider !== 'zuo' || product.revision !== a.expectedRevision || !meta || !meta.louieMaeName.trim() || !meta.navCategory.trim() || product.zuoStaging?.excluded) throw new CommerceError('INVALID_INPUT', 'Review the current included product and category');
+    const old = await ctx.db.query('commerceListings').withIndex('by_product_channel', q => q.eq('productId', a.productId).eq('channel', 'retail')).unique();
+    if (old?.published && !old.planningOnly) throw new CommerceError('INVALID_INPUT', 'Do not replace a live sale offer with planning publication');
+    const variants: Doc<'catVariants'>[] = [];
+    const media = await ctx.db.query('catMediaAssets').withIndex('by_product', q => q.eq('productId', a.productId)).collect();
+    for (const id of a.variantIds) {
+      const cv = await ctx.db.get(id);
+      if (!cv || cv.productId !== a.productId || cv.holds.some(h => ['SOURCE_ABSENT', 'MAPPING_MISSING', 'MAP_MISSING', 'MAP_ZERO', 'MAP_POLICY_DERIVED', 'MAP_FLOOR_UNAPPROVED', 'MEDIA_MISSING'].includes(h))) throw new CommerceError('INVALID_INPUT', 'Identity, advertised price and imagery must be reviewed');
+      await publicationIdentity(ctx, product, cv);
+      const cost = cv.currentCostRevisionId ? await ctx.db.get(cv.currentCostRevisionId) : null;
+      const price = cv.retailPriceRevisionId ? await ctx.db.get(cv.retailPriceRevisionId) : null;
+      if (!cost || cost.variantId !== cv._id || cost.mapApplicability === 'unknown' || !isCurrentPrice(price, cv._id, 'retail')) throw new CommerceError('MAP_POLICY_REVIEW');
+      if (cost.mapApplicability === 'applies' && (cost.mapMinor === null || cost.mapMinor <= 0 || !cost.mapUnitBasis || price.packPriceMinor < cost.mapMinor * (cost.mapUnitBasis === 'piece' ? cv.piecesPerPack : 1))) throw new CommerceError('MAP_POLICY_REVIEW');
+      const matches = media.filter(m => verifiedImageMatches(m, cv));
+      if (!matches.some(m => m.role === 'hero') || matches.some(m => m.rights.privateOriginal && !m.derivatives.length)) throw new CommerceError('INVALID_INPUT', 'Verified public hero imagery required');
+      variants.push(cv);
+    }
+    const { snapshot } = await snapshotFor(ctx, product, meta, 'retail', variants, true);
+    const now = Date.now();
+    const data = { productId: product._id, channel: 'retail' as const, pricingMode: 'approved_v2' as const, planningOnly: true, published: true, revision: product.revision, snapshot, fulfillment: [], updatedAt: now };
+    const listingId = old ? (await ctx.db.patch(old._id, data), old._id) : await ctx.db.insert('commerceListings', data);
+    // Keep qualification holds and catalog stage intact. The evidence authorizes only
+    // these reviewed images in this content snapshot; it grants no private-label rights.
+    await audit(ctx, { actor: actor.email, action: 'publication.planning', entityTable: 'commerceListings', entityId: listingId, reason: a.reason, after: { variantIds: a.variantIds, revision: product.revision, websiteMediaEvidence: a.websiteMediaEvidence, planningOnly: true } });
+    return { listingId, publishedVariants: a.variantIds.length, payable: false };
   },
 });

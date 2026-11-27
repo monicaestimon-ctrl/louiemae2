@@ -74,3 +74,12 @@ Operational receipts are retained outside the repository in `outputs/production-
 PR357 merged as `3ece37d26a8bbd6c0ca2c70a794ccf4b8589f706` after exact-head CI45098817723 passed and CodeRabbit reported no actionable application findings. A final test-only correction made the tray fixture keep stable Convex mutation identity and distinguish inactive referral association from quote submission; its complete local browser suite passed. Production backend dry-run and deployment passed, and the frontend build identity matched the merge. Read-only discovery verified all79 currently listed products across three sort modes, complete pagination and private-price hiding. Anonymous product referral checks passed at390/1440 widths with no axe violations or overflow. Program flags were not activated.
 
 The approved normal HOLM sign-in succeeded. Verified trade status, Trade Hub and House management were accessible in the signed-in browser. This resolves the earlier sign-in/staff-access dependency; it does not prove authenticated checkout, payout readiness, current Zoho access or full end-to-end release. The legacy Trade Hub still needs the v2 cutover and its related readiness work.
+
+
+### 2026-11-27 ? Zuo content-only browsing
+
+Re-read the November 3?4 supplier onboarding correspondence (forwarded Gmail message `1a1acab4310306ba`). The chairman reviewed Louie Mae's website and offered lifestyle imagery; the ecommerce manager supplied product/image workbooks to set up the line and keep the store current. This supports ordinary product promotion using the supplied imagery, not a blanket private-label/trademark grant or a waiver of MAP. The saved MAP policy's online-advertising terms remain applicable.
+
+The production media audit found 724 visually verified variants. Their original source records still explicitly reserve publication-rights review. A named-product planning publication must record the reviewed website-use evidence, retain the existing sales holds, require canonical identity and approved MAP-compliant retail prices, and use verified public image renditions. No fulfillment cost snapshot or checkout authorization is created. A later price/MAP or image change removes the affected variant from browsing until reviewed again.
+
+Production activation and named-product publication must follow passing CI and deployment. HOLM publication and sales qualification remain separate follow-up work.

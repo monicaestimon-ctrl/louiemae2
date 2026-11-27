@@ -1,3 +1,4 @@
+import { verifiedImageMatches } from './catMedia';
 import { isLighting } from '../lib/catCategory';
 import { approvedAshcroftOffer } from './catAshcroftOffer';
 import { legacySupplierCostMinor } from '../lib/legacySupplierCost';
@@ -50,29 +51,46 @@ export async function storefrontListing(ctx: QueryCtx, listing: Doc<'commerceLis
 function zuoStorefrontListing(listing: Doc<'commerceListings'>, collection: 'furniture' | 'decor', quantityRules: ReadonlyMap<string, OrderQuantityRules>) {
   const s = listing.snapshot;
   const imageMedia = s.imageMedia?.filter(m => m.variantIds.some(id => s.variants.some(v => v.id === id)));
-  const variants = s.variants.map(v => ({ id: v.id, name: v.name, image: v.image, price: v.price / 100, quantityRules: quantityRules.get(v.id), inStock: true }));
+  const variants = s.variants.map(v => ({ id: v.id, name: v.name, image: v.image, price: v.price / 100, quantityRules: quantityRules.get(v.id), inStock: !listing.planningOnly }));
   const price = Math.min(...variants.map(v => v.price));
   return { _id: listing.productId, name: s.name, description: s.description, category: s.category, collection,
-    images: imageMedia ? imageMedia.map(m => m.url) : s.images, imageMedia, price, deliveryFee: 0, checkoutMode: 'v2' as const, fulfillmentProvider: 'zuo' as const, inStock: true,
+    images: imageMedia ? imageMedia.map(m => m.url) : s.images, imageMedia, price, deliveryFee: 0, checkoutMode: 'v2' as const, fulfillmentProvider: 'zuo' as const, inStock: !listing.planningOnly,
     variants: variants.map(({ price: variantPrice, ...v }) => ({ ...v, priceAdjustment: variantPrice - price })),
     variantCount: variants.length, isNew: false,
   };
 }
 
-export const zuoRetailEnabled = () => process.env.RETAIL_ZUO_CHECKOUT_ENABLED === 'true';
+export const zuoRetailEnabled = () => process.env.RETAIL_ZUO_CHECKOUT_ENABLED === 'true' || process.env.DELIVERY_PLANNING_ENABLED === 'true';
 
 /** Published snapshots are historical content, not proof of current availability. */
 export async function currentZuoStorefrontListing(ctx: QueryCtx, listing: Doc<'commerceListings'>, collection: 'furniture' | 'decor', now = Date.now()) {
   if (!listing.published || listing.channel !== 'retail') return null;
+  if (!listing.planningOnly && process.env.RETAIL_ZUO_CHECKOUT_ENABLED !== 'true') return null;
+  const media = listing.planningOnly ? await ctx.db.query('catMediaAssets').withIndex('by_product', q => q.eq('productId', listing.productId)).collect() : [];
   const quantityRules = new Map<string, OrderQuantityRules>();
+  const approvedImageUrls = new Set<string>();
   const current = await Promise.all(listing.snapshot.variants.map(async option => {
     const id = ctx.db.normalizeId('catVariants', option.id);
     if (!id) return null;
     try {
-      const variant = await assertSellable(ctx, id, 'purchase', now);
+      if (listing.planningOnly && process.env.DELIVERY_PLANNING_ENABLED !== 'true') return null;
+      const variant = listing.planningOnly ? await ctx.db.get(id) : await assertSellable(ctx, id, 'purchase', now);
+      if (!variant || variant.availability === 'discontinued' || (listing.planningOnly && variant.holds.some(h => ['SOURCE_ABSENT', 'MAPPING_MISSING', 'MAP_MISSING', 'MAP_ZERO', 'MAP_POLICY_DERIVED', 'MAP_FLOOR_UNAPPROVED', 'MEDIA_MISSING'].includes(h)))) return null;
       if (variant.productId !== listing.productId) return null;
+      if (listing.planningOnly) {
+        const matches = media.filter(m => verifiedImageMatches(m, variant));
+        if (!matches.some(m => m.role === 'hero')) return null;
+        const urls = (await Promise.all(matches.flatMap(m => m.derivatives.length ? m.derivatives.map(d => ctx.storage.getUrl(d.storageId)) : !m.rights.privateOriginal && m.storageId ? [ctx.storage.getUrl(m.storageId)] : []))).filter((url): url is string => !!url);
+        if (!option.image || !urls.includes(option.image)) return null;
+        for (const url of urls) approvedImageUrls.add(url);
+      }
       const price = variant.retailPriceRevisionId ? await ctx.db.get(variant.retailPriceRevisionId) : null;
       if (!isCurrentPrice(price, id, 'retail', now) || price.packPriceMinor !== option.price) return null;
+      if (listing.planningOnly) {
+        const cost = variant.currentCostRevisionId ? await ctx.db.get(variant.currentCostRevisionId) : null;
+        if (!cost || cost.variantId !== id || cost.mapApplicability === 'unknown') return null;
+        if (cost.mapApplicability === 'applies' && (cost.mapMinor === null || cost.mapMinor <= 0 || !cost.mapUnitBasis || option.price < cost.mapMinor * (cost.mapUnitBasis === 'piece' ? variant.piecesPerPack : 1))) return null;
+      }
       const rules = publicQuantityRules(variant.orderMinimumPacks, variant.orderIncrementPacks, variant.piecesPerPack);
       if (!rules) return null;
       quantityRules.set(option.id, rules);
@@ -84,7 +102,7 @@ export async function currentZuoStorefrontListing(ctx: QueryCtx, listing: Doc<'c
   }));
   const variants = current.filter(option => option !== null);
   if (!variants.length) return null;
-  return zuoStorefrontListing({ ...listing, snapshot: { ...listing.snapshot, variants } }, collection, quantityRules);
+  return zuoStorefrontListing({ ...listing, snapshot: { ...listing.snapshot, variants, ...(listing.planningOnly ? { images: listing.snapshot.images.filter(url => approvedImageUrls.has(url)), imageMedia: listing.snapshot.imageMedia?.filter(m => approvedImageUrls.has(m.url)) } : {}) } }, collection, quantityRules);
 }
 
 export async function retailDetail(ctx: QueryCtx, id: Id<'commerceProducts'>, evidence?: AshcroftReviewEvidence) {
