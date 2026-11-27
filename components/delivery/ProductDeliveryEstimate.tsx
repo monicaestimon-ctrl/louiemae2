@@ -9,6 +9,7 @@ import { api } from '../../convex/_generated/api';
 import { visitorId } from '../../lib/partnerLink';
 import { customerMessage } from '../../lib/errors';
 import { QUOTE_CTA, ZIP_ESTIMATE_NOTE } from '../../lib/customerCopy';
+import { PLANNING_NOTE } from '../../lib/delivery/planning';
 
 const money = (minor: number) => `$${(minor / 100).toFixed(2)}`;
 
@@ -80,7 +81,8 @@ export default function ProductDeliveryEstimate({
     );
   return (
     <DeliveryForm
-      key={`${productId}:${variantId}:${piecesPerPack}:${minimumPacks}:${incrementPacks}:${channel}`}
+      planning={'planning' in profile && profile.planning === true}
+      key={`${productId}:${variantId}:${piecesPerPack}:${minimumPacks}:${incrementPacks}:${channel}:${'planning' in profile && profile.planning === true}`}
       {...{
         productId,
         variantId,
@@ -94,6 +96,7 @@ export default function ProductDeliveryEstimate({
   );
 }
 function DeliveryForm({
+  planning,
   productId,
   variantId,
   piecesPerPack,
@@ -103,6 +106,7 @@ function DeliveryForm({
   selectedPacks,
 }: {
   productId: string;
+  planning: boolean;
   variantId: string;
   piecesPerPack: number;
   minimumPacks: number;
@@ -110,7 +114,7 @@ function DeliveryForm({
   channel: 'retail' | 'trade';
   selectedPacks?: number;
 }) {
-  const estimate = useDeliveryRequest('estimate');
+  const estimate = useDeliveryRequest(planning ? 'planning' : 'estimate');
   const id = useId();
   const feedback = useFormValidation<'zip' | 'qty' | '_form'>();
   const [zip, setZip] = useState('');
@@ -286,7 +290,7 @@ function DeliveryForm({
             {state.status === 'loading' ? 'Estimating…' : 'Estimate delivery'}
           </button>
         </div>
-        <p className="delivery-note">{ZIP_ESTIMATE_NOTE}</p>
+        <p className="delivery-note">{planning ? PLANNING_NOTE : ZIP_ESTIMATE_NOTE}</p>
         <div aria-live="polite" aria-atomic="true">
           {state.status === 'done' && (
             <>

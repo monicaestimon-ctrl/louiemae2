@@ -41,7 +41,7 @@ async function take(
 /** Separate transaction: rejected business input cannot roll back consumption. No raw IP stored. */
 export const consume = internalMutation({
   args: {
-    operation: v.union(v.literal('estimate'), v.literal('quote')),
+    operation: v.union(v.literal('estimate'), v.literal('quote'), v.literal('planning')),
     input: v.any(),
     proof: v.optional(proofArg),
   },

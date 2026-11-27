@@ -5,6 +5,7 @@ import type { api } from '../../convex/_generated/api';
 import { CommerceError, commerceErrorData } from '../../lib/errors';
 
 type Methods = {
+  planning: typeof api.dlvPlanningActions.estimate;
   estimate: typeof api.dlvTaxActions.estimate;
   quote: typeof api.dlvTaxActions.requestQuote;
 };

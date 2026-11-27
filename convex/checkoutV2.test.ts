@@ -3174,7 +3174,7 @@ describe('approved Ashcroft checkout lifecycle', () => {
 describe('live FedEx delivery evidence', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-    for (const key of ['FEDEX_RATES_ENABLED', 'FEDEX_API_KEY', 'FEDEX_SECRET_KEY', 'FEDEX_ACCOUNT_NUMBER']) delete process.env[key];
+    for (const key of ['DELIVERY_PLANNING_ENABLED', 'FEDEX_RATES_ENABLED', 'FEDEX_API_KEY', 'FEDEX_SECRET_KEY', 'FEDEX_ACCOUNT_NUMBER']) delete process.env[key];
   });
   async function liveSetup() {
     const s = await setup();
@@ -3248,4 +3248,65 @@ describe('live FedEx delivery evidence', () => {
     await expect(s.t.action(api.dlvTaxActions.estimate, { lines: [zuoLine(s)], channel: 'retail', zip: '95206', visitorKey: 'live-visitor' })).rejects.toThrow();
     expect(s.transport).not.toHaveBeenCalled();
   });
+  async function planningSetup() {
+    const s = await liveSetup();
+    process.env.DELIVERY_PLANNING_ENABLED = 'true';
+    await s.t.run(async ctx => {
+      const configs = await ctx.db.query('sysConfig').collect();
+      for (const c of configs) {
+        if (c.key === 'zuo-freight' && c.status === 'approved') await ctx.db.patch(c._id, { value: { ...c.value, verifiedAt: NOW - 1000 } });
+        if (c.key === 'zuo-95206-curbside' && c.status === 'approved') await ctx.db.patch(c._id, { value: { ...c.value, supplierOrderFeeMinor: 1000, supplierFeeScope: 'order' } });
+      }
+      const cv = (await ctx.db.get(s.variantId))!;
+      const observation = await ctx.db.insert('catSourceObservations', { supplierId: cv.supplierId, variantId: cv._id, field: 'shipping_evidence', extractedValue: 'fixture cartons', observedAt: NOW - 1000, contentHash: 'fixture-shipping', verifier: 'fixture', confidence: 'confirmed', createdAt: NOW });
+      for (const row of await ctx.db.query('catCartons').collect()) await ctx.db.patch(row._id, { sourceObservationId: observation });
+    });
+    return { ...s, input: { lines: [zuoLine(s)], channel: 'retail' as const, zip: '95206', visitorKey: 'planning-fixture' } };
+  }
+  async function plan(s: Awaited<ReturnType<typeof planningSetup>>) {
+    process.env.DELIVERY_REQUEST_SECRET = PERIMETER_SECRET;
+    const proof = await signRequest(PERIMETER_SECRET, 'planning', s.input, { issuedAt: NOW, nonce: randomBytes(24).toString('hex'), rateKey: '2'.repeat(64) });
+    return s.t.action(api.dlvPlanningActions.estimate, { ...s.input, proof });
+  }
+  it('plans through sales holds without creating payment capabilities or clearing holds', async () => {
+    const s = await planningSetup();
+    await s.t.run(ctx => ctx.db.patch(s.variantId, { holds: ['STOCK_UNVERIFIED', 'COST_MISSING', 'MANUAL', 'COMMISSION_UNQUALIFIED'] }));
+    const result = await plan(s);
+    expect(result).toMatchObject({ status: 'ok', payable: false });
+    expect(result.deliveryChargeMinor).toBeGreaterThan(0);
+    expect(result).not.toHaveProperty('estimateId');
+    expect(await s.t.run(ctx => ctx.db.query('dlvEstimates').collect())).toHaveLength(0);
+    expect(await s.t.run(ctx => ctx.db.query('ordCheckoutIntents').collect())).toHaveLength(0);
+    expect((await s.t.run(ctx => ctx.db.get(s.variantId)))?.holds).toContain('COST_MISSING');
+    await expect(s.t.run(ctx => resolveLines(ctx, s.input.lines, 'retail', NOW))).rejects.toThrow();
+  });
+  it('keeps unpublished products private but permits authenticated staff planning', async () => {
+    const s = await planningSetup();
+    await s.t.run(async ctx => { for (const l of await ctx.db.query('commerceListings').collect()) await ctx.db.patch(l._id, { published: false }); });
+    expect((await plan(s)).status).toBe('quote_required');
+    expect(s.transport).not.toHaveBeenCalled();
+    await expect(s.t.action(api.dlvPlanningActions.preview, s.input)).rejects.toThrow();
+    expect(s.transport).not.toHaveBeenCalled();
+    expect((await s.admin.action(api.dlvPlanningActions.preview, s.input)).status).toBe('ok');
+  });
+  it('rejects missing or cross-operation proofs before calling FedEx', async () => {
+    const s = await planningSetup();
+    await expect(s.t.action(api.dlvPlanningActions.estimate, s.input)).rejects.toThrow();
+    process.env.DELIVERY_REQUEST_SECRET = PERIMETER_SECRET;
+    const proof = await signRequest(PERIMETER_SECRET, 'estimate', s.input, { issuedAt: NOW, nonce: randomBytes(24).toString('hex'), rateKey: '2'.repeat(64) });
+    await expect(s.t.action(api.dlvPlanningActions.estimate, { ...s.input, proof })).rejects.toThrow();
+    expect(s.transport).not.toHaveBeenCalled();
+  });
+  it.each(['METHOD_CHANGED', 'CARTON_MISSING', 'SOURCE_ABSENT'] as const)('does not plan with shipping hold %s', async hold => {
+    const s = await planningSetup();
+    await s.t.run(ctx => ctx.db.patch(s.variantId, { holds: [hold] }));
+    expect((await plan(s)).deliveryChargeMinor).toBeNull();
+    expect(s.transport).not.toHaveBeenCalled();
+  });
+  it('does not invent a planning amount when FedEx fails', async () => {
+    const s = await planningSetup();
+    s.transport.mockImplementation(async () => new Response('{}', { status: 503 }));
+    expect(await plan(s)).toMatchObject({ status: 'quote_required', payable: false, deliveryChargeMinor: null });
+  });
+
 });

@@ -1,6 +1,6 @@
 vi.mock('./useDeliveryRequest', () => ({
   useDeliveryRequest: (operation: string) =>
-    operation === 'estimate' ? mock.estimate : mock.request,
+    operation !== 'quote' ? mock.estimate : mock.request,
 }));
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -12,6 +12,7 @@ const mock = vi.hoisted(() => ({
   estimate: vi.fn(),
   request: vi.fn(),
   enabled: true,
+  planning: false,
   missing: false,
   projectQuote: false,
   pending: false,
@@ -26,6 +27,7 @@ vi.mock('convex/react', () => ({
         ? mock.missing
           ? null
           : {
+              planning: mock.planning,
               piecesPerPack: 2,
               minimumPacks: 3,
               incrementPacks: 2,
@@ -45,7 +47,8 @@ vi.mock('convex/react', () => ({
               : mock.missing
                 ? null
                 : {
-                    piecesPerPack: 2,
+                    planning: mock.planning,
+              piecesPerPack: 2,
                     minimumPacks: 3,
                     incrementPacks: 2,
                     requiresProjectQuote: mock.projectQuote,
@@ -60,6 +63,7 @@ beforeEach(() => {
   mock.estimate.mockReset();
   mock.request.mockReset();
   mock.enabled = true;
+  mock.planning = false;
   mock.missing = false;
   mock.projectQuote = false;
   mock.pending = false;
@@ -74,6 +78,15 @@ const response = (amount: number) => ({
   expiresAt: Date.now() + 60000,
 });
 describe('shared delivery product UI', () => {
+  it('labels Zuo planning as nonpayable and uses its independent estimate route', async () => {
+    mock.planning = true;
+    mock.estimate.mockResolvedValue(response(5999));
+    render(<ProductDeliveryEstimate productId="p" variantId="v" />);
+    fireEvent.change(screen.getByLabelText('ZIP code'), { target: { value: '95206' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Estimate delivery' }));
+    await screen.findByText('Curbside delivery: $59.99');
+    expect(screen.getByText(/this estimate cannot be used for payment/)).toBeInTheDocument();
+  });
   it('bounds pending availability without enabling an unverified estimate and supports retry', () => {
     vi.useFakeTimers();
     mock.pending = true;

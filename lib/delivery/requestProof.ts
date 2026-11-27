@@ -1,7 +1,7 @@
 import { stableStringify } from '../canonicalJson.js';
 
 export type RequestProof = { issuedAt: number; nonce: string; rateKey: string; signature: string };
-export type DeliveryOperation = 'estimate' | 'quote';
+export type DeliveryOperation = 'estimate' | 'quote' | 'planning';
 const bytes = (text: string) => new globalThis.TextEncoder().encode(text);
 const hex = (buffer: ArrayBuffer) =>
   Array.from(new Uint8Array(buffer), (b) => b.toString(16).padStart(2, '0')).join('');
